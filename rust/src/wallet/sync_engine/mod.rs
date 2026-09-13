@@ -56,7 +56,7 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
     download_blocks, download_subtree_roots, get_address_utxos_stream, get_compact_block_hash,
-    get_tree_state,
+    get_tree_state, get_tree_state_for_block,
 };
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
@@ -2013,8 +2013,8 @@ where
 }
 
 /// Downloads one compact-block batch and its preceding chain state in
-/// parallel. The requests are independent, and cloned tonic clients share the
-/// underlying HTTP/2 connection.
+/// parallel. If independently served responses do not form one sequence, the
+/// tree state is fetched again by the first block's exact predecessor hash.
 async fn download_scan_batch(
     client: &mut CompactTxStreamerClient<Channel>,
     start: BlockHeight,
@@ -2027,15 +2027,36 @@ async fn download_scan_batch(
         if use_empty_state {
             Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
         } else {
-            let state =
-                get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1))).await?;
-            state
+            get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1)))
+                .await?
                 .to_chain_state()
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
         }
     };
 
-    join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await
+    let (block_source, from_state) =
+        join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await?;
+    if block_source.starts_after(&from_state) {
+        return Ok((block_source, from_state));
+    }
+
+    let predecessor_hash = match block_source
+        .first_block_prev_hash()
+        .filter(|hash| !hash.is_empty())
+    {
+        Some(hash) => hash,
+        None => {
+            let BlockHash(hash) =
+                get_compact_block_hash(client, u64::from(u32::from(start - 1))).await?;
+            hash.to_vec()
+        }
+    };
+    let pinned_state = get_tree_state_for_block(client, predecessor_hash)
+        .await?
+        .to_chain_state()
+        .map_err(|e| SyncError::parse(format!("parse hash-pinned tree state: {e}")))?;
+
+    Ok((block_source, pinned_state))
 }
 
 fn validate_scan_batch(
@@ -2061,8 +2082,18 @@ fn validate_scan_batch(
             u32::from(from_state.block_height()),
         )));
     }
+    if !block_source.starts_after(from_state) {
+        return Err(inconsistent_scan_batch_error(start));
+    }
 
     Ok(())
+}
+
+fn inconsistent_scan_batch_error(start: BlockHeight) -> SyncError {
+    SyncError::net(format!(
+        "lightwalletd returned an inconsistent compact block/tree-state tuple while scanning from {}",
+        u32::from(start),
+    ))
 }
 
 struct Prefetch<T> {
@@ -2487,6 +2518,9 @@ async fn run_payment_link_claim_sync_once(
                     }
                     ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
                         SyncError::continuity(u32::from(at) as u64, "payment-link block conflict")
+                    }
+                    ChainError::Wallet(SqliteClientError::NonSequentialBlocks) => {
+                        inconsistent_scan_batch_error(start)
                     }
                     ChainError::Wallet(wallet_error)
                         if is_commitment_tree_root_conflict(&wallet_error) =>
@@ -3401,6 +3435,9 @@ async fn run_sync_impl(
                         at_height,
                         format!("BlockConflict at {at_height}: wallet rewind required"),
                     )
+                }
+                ChainError::Wallet(SqliteClientError::NonSequentialBlocks) => {
+                    inconsistent_scan_batch_error(start)
                 }
                 ChainError::Wallet(wallet_err) if is_commitment_tree_root_conflict(&wallet_err) => {
                     let at_height = u32::from(start) as u64;
@@ -4871,6 +4908,18 @@ mod tests {
                 "{name}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn inconsistent_scan_batches_are_retryable_network_failures() {
+        let error = inconsistent_scan_batch_error(block_height(10));
+
+        assert!(matches!(error, SyncError::Network(_)));
+        assert_eq!(
+            error.recovery_strategy(),
+            RecoveryStrategy::RetryWithBackoff,
+        );
+        assert!(error.to_string().starts_with("network:"));
     }
 
     #[test]

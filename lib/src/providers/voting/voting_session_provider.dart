@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -10,40 +9,26 @@ import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../account_provider.dart';
 import '../../features/voting/voting_error_messages.dart';
+import '../../services/voting/voting_rust_exception.dart';
+import '../../services/voting/voting_retry.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
+import '../../features/voting/voting_progress_presentation.dart';
 import '../../features/voting/voting_resume_plan.dart';
-import '../../features/voting/voting_share_status.dart';
 import '../../rust/api/voting.dart' as rust_api;
+import '../../rust/api/voting_session.dart' as rust_session;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
-import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
-import '../../services/voting/voting_api_client.dart';
-import '../../services/voting/voting_models.dart';
 import '../app_security_provider.dart';
-import 'voting_participation_provider.dart';
 import 'voting_config_provider.dart';
 import 'voting_home_cache_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
+import 'voting_snapshot_warmup_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
-
-final _minimumVotingBundleWeightZatoshi = BigInt.from(12500000);
-
-const _votingAlreadyStartedMessage =
-    "Voting has already started for these funds, but Vizor couldn't recover "
-    'the submission status. If you used another wallet, return to it to see '
-    'the status.';
-
-final _nullifierAlreadySpentPattern = RegExp(
-  r'nullifier already spent:\s*\S+',
-  caseSensitive: false,
-);
-const _spentNullifierRecoveryMaxAttempts = 3;
-const _spentNullifierRecoveryMaxDelay = Duration(seconds: 1);
 
 /// The PCZT value-pool tag for Ironwood actions.
 ///
@@ -54,22 +39,34 @@ const _ironwoodPcztPool = 1;
 /// Cap for independent voting work pools: delegation proofs, vote proofs,
 /// share submission, and recovery polling.
 const _votingWorkConcurrency = 3;
+const _votingBatchProofConcurrency = 3;
 
-/// How often a running share-tracking pass re-checks Dart-owned stop
-/// conditions.
-///
-/// The pass itself runs in Rust, so this is the granularity at which app lock,
-/// round expiry, or disposal reach it. Short enough that a lock screen stops
-/// helper traffic promptly, long enough not to spin.
-const _shareTrackingCancellationPollInterval = Duration(milliseconds: 250);
+// Background setup and QR preparation can briefly contend for the SDK's
+// bundle lease. Retrying reuses its persisted transaction and proof work.
+final _delegationSetupRetryPolicy = VotingRetryPolicy(
+  name: 'delegation setup',
+  delays: const [
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 800),
+  ],
+  shouldRetry: (error) => votingRustExceptionOf(error)?.retryable ?? false,
+);
 
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
-  return isVotingShareTrackingOpen(
-    roundStatus: round.status,
-    voteEndTime: round.voteEndTime,
-    now: now ?? DateTime.now(),
-  );
+  final status = round.status.trim().toLowerCase();
+  if (!const {
+    'active',
+    'open',
+    '1',
+    'session_status_active',
+  }.contains(status)) {
+    return false;
+  }
+  final voteEnd = round.voteEndTime;
+  return voteEnd != null && (now ?? DateTime.now()).isBefore(voteEnd);
 }
 
 /// Orchestrates one round's voting lifecycle for the UI.
@@ -85,10 +82,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   bool _retainAutomaticShareTracking() => true;
 
-  void _releaseAutomaticShareTracking() {
-    _cancelShareTrackingSchedule();
-    _disposeHelperDeliveryContext();
-  }
+  void _releaseAutomaticShareTracking() {}
 
   /// Pins automatic helper-share tracking before a submission job can drop its
   /// destructive-operation guard.
@@ -100,18 +94,44 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _operation = Future.value();
   final String _roundId;
-  final Map<String, Future<void>> _snapshotBundlePrecomputes = {};
-  final Set<String> _completedSnapshotBundlePrecomputes = {};
-  final Map<String, Future<List<int>>> _hotkeyEnsures = {};
-  Timer? _shareTrackingTimer;
-  int _shareTrackingScheduleEpoch = 0;
-  Future<void>? _activeAutomaticShareTrackingPass;
-  final Set<Future<void>> _activeShareTrackingPasses = {};
-  VotingHelperDeliveryContext? _helperDeliveryContext;
-  final Set<VotingShareTrackingPassHandle> _activeShareTrackingPassHandles = {};
-  final Set<String> _unrecoverableShareGenerations = {};
+  // Proof warm-up remains detached from the shared snapshot/PIR prerequisite,
+  // so one slow sibling cannot gate bundles whose SDK-coordinated proofs are
+  // already ready.
+  final Map<String, Future<void>> _backgroundDelegationProofPrecomputes = {};
+
+  /// The tracking run in flight, the session it runs on, and the context it
+  /// was started for.
+  ///
+  /// One run per notifier: the SDK drives passes to quiescence itself, so a
+  /// second concurrent run would only contend for the same share locks. The
+  /// context is what distinguishes that from a superseded run still unwinding
+  /// after cancellation, which must not block the next one from starting.
+  Future<void>? _shareTrackingRun;
+  VotingRoundSession? _shareTrackingSession;
+  _VotingSessionContext? _shareTrackingContext;
+
+  /// Pending re-arm of a run that stopped on a condition a later run could
+  /// clear, and how many consecutive times that has happened.
+  ///
+  /// The streak drives the backoff and resets as soon as a run reaches a
+  /// quiescence that is not retryable.
+  Timer? _shareTrackingRetryTimer;
+  int _shareTrackingRetryStreak = 0;
+
+  /// A tracking start that arrived while a run held the round.
+  ///
+  /// The finishing run honours it, because its own snapshot cannot describe
+  /// shares persisted after it started.
+  bool _shareTrackingRestartRequested = false;
+
+  /// The focused immediate-share check in flight, and its session.
+  ///
+  /// Drained alongside a tracking run: it touches the same sidecar, so a
+  /// destructive wallet operation must wait for it too.
+  Future<void>? _focusedConfirmation;
+  VotingRoundSession? _focusedConfirmationSession;
+  final Set<VotingRoundSession> _activeRoundSessions = {};
   bool _automaticShareTrackingStopped = false;
-  bool _shareTrackingRoundClosed = false;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
   _VotingSessionContext? _currentContext;
@@ -123,39 +143,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Completer<void> _sessionInvalidated = Completer<void>();
   int? _runningActionGeneration;
   bool _isDisposed = false;
-
-  VotingHelperDeliveryContext _helperDeliveryContextFor(
-    VotingRustApi rust,
-    _VotingSessionContext context,
-  ) {
-    final current = _helperDeliveryContext;
-    if (current != null &&
-        !current.isDisposed &&
-        current.dbPath == context.dbPath &&
-        current.accountUuid == context.accountUuid &&
-        current.roundId == context.round.roundId) {
-      return current;
-    }
-    if (_activeShareTrackingPassHandles.isNotEmpty) {
-      throw StateError(
-        'Cannot replace a helper delivery context while tracking is active.',
-      );
-    }
-    current?.dispose();
-    final created = rust.createVotingHelperDeliveryContext(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-    );
-    _helperDeliveryContext = created;
-    return created;
-  }
-
-  void _disposeHelperDeliveryContext() {
-    final context = _helperDeliveryContext;
-    _helperDeliveryContext = null;
-    context?.dispose();
-  }
 
   rust_api.ApiVotingRoundContext _apiRoundContext(
     _VotingSessionContext context,
@@ -188,12 +175,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       isHardwareAccount: context.isHardwareAccount,
       config: context.config,
       round: context.round,
-      resumePlan: context.resumePlan,
       roundPlan: context.roundPlan,
       phase: _phaseForPlans(context.roundPlan),
     );
-    _shareTrackingTimer?.cancel();
-    await _scheduleShareTracking(context, context.resumePlan);
+    // Only the notifier that owns automatic tracking starts a run by itself.
+    // A screen-scoped notifier still tracks when something asks it to, but it
+    // does not begin polling helpers merely by being watched.
+    if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     return initialState;
   }
 
@@ -220,31 +208,29 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
-      // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
-      // keep account-wide vote-tree sync state reusable across rounds.
+      // Preserve durable setup for background proofs and later signing.
+      // Only the round-scoped vote-tree cache is released on disposal.
       _isDisposed = true;
       _advanceSessionGeneration();
-      _snapshotBundlePrecomputes.clear();
-      _completedSnapshotBundlePrecomputes.clear();
-      _hotkeyEnsures.clear();
-      _shareTrackingTimer?.cancel();
-      for (final passHandle in _activeShareTrackingPassHandles.toList()) {
-        passHandle.cancel();
-        passHandle.dispose();
+      _backgroundDelegationProofPrecomputes.clear();
+      _cancelShareTrackingRetry();
+      for (final session in _activeRoundSessions.toList()) {
+        session.cancel();
+        session.dispose();
       }
-      _activeShareTrackingPassHandles.clear();
+      _activeRoundSessions.clear();
       _releaseAutomaticShareTracking();
       if (context == null) return;
       if (ownsSubmission) {
         debugPrint(
-          '[zcash] Voting: process-local state reset skipped '
+          '[zcash] Voting: session cache reset skipped '
           'round=${context.round.roundId} account=${context.accountUuid} '
           'reason=provider-dispose activeSubmission=true',
         );
         return;
       }
       unawaited(
-        _resetVotingSessionState(
+        _resetVotingSessionCaches(
           rust: rust,
           context: context,
           reason: 'provider-dispose',
@@ -301,7 +287,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (previousContext != null) {
       if (!_activeSubmissionOwnsContext(previousContext)) {
         unawaited(
-          _resetVotingSessionState(
+          _resetVotingSessionCaches(
             rust: ref.read(votingRustApiProvider),
             context: previousContext,
             reason: 'active-account-switch',
@@ -315,10 +301,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionAccountUuid = accountUuid;
     _sessionIsHardwareAccount = null;
     _currentContext = null;
-    _snapshotBundlePrecomputes.clear();
-    _completedSnapshotBundlePrecomputes.clear();
-    _hotkeyEnsures.clear();
-    _shareTrackingTimer?.cancel();
+    _backgroundDelegationProofPrecomputes.clear();
     if (!hadSessionAccount || _isDisposed) return;
 
     final generation = _sessionGeneration;
@@ -338,12 +321,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           isHardwareAccount: context.isHardwareAccount,
           config: context.config,
           round: context.round,
-          resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
           phase: _phaseForPlans(context.roundPlan),
         ),
       );
-      unawaited(_scheduleShareTracking(context, context.resumePlan));
+      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     } catch (error, stackTrace) {
       if (!_isCurrentGeneration(generation) ||
           _sessionAccountUuid != accountUuid) {
@@ -361,7 +343,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(_refreshEligibleWeightUnlocked).then((_) {
       final current = state.value;
       final error = current?.error;
-      if (error != null && !isVotingEligibilityErrorText(error.message)) {
+      if (error != null && !error.isEligibilityFailure) {
         throw error.cause ?? StateError(error.message);
       }
       return current?.eligibleWeightZatoshi;
@@ -384,6 +366,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (current == null) return;
     state = AsyncData(
       current.copyWith(
+        phase: current.phase == VotingSessionPhase.error
+            ? _phaseForPlans(current.roundPlan)
+            : current.phase,
         clearVoteSubmissionProgress: true,
         clearCurrentVoteKey: true,
         clearError: true,
@@ -391,75 +376,126 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<void> precomputeSnapshotBundles({required String accountUuid}) {
-    final key = _snapshotBundlePrecomputeKey(accountUuid);
-    final existing = _snapshotBundlePrecomputes[key];
-    if (existing != null) return existing;
-    if (_completedSnapshotBundlePrecomputes.contains(key)) {
-      debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
-        'round=$_roundId reason=already-completed',
-      );
-      return Future<void>.value();
+  Future<VotingSnapshotWarmupResult> precomputeSnapshotBundles({
+    required String accountUuid,
+  }) async {
+    final _VotingSessionContext context;
+    try {
+      context = await _loadContext(_roundId);
+    } catch (error) {
+      return isRetryableVotingError(error)
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'context-load-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'context-load-failed',
+              error: error,
+            );
+    }
+    if (!_isCurrentPrecomputeContext(context, accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     }
 
-    final precompute = _runSnapshotBundlePrecomputeForAccount(
-      accountUuid,
-      precomputeKey: key,
-    );
-    _snapshotBundlePrecomputes[key] = precompute;
-    void removeIfCurrent() {
-      if (identical(_snapshotBundlePrecomputes[key], precompute)) {
-        _snapshotBundlePrecomputes.remove(key);
+    final key = _snapshotBundlePrecomputeKey(context);
+    final result = await ref
+        .read(votingSnapshotWarmupProvider)
+        .runOrJoin(
+          key: key,
+          operation: () => _runSnapshotBundlePrecomputeForContext(
+            context,
+            precomputeKey: key,
+          ),
+        );
+    final bundleCount = result.bundleCount;
+    final pirEndpoint = result.pirEndpoint;
+    if (result.isReady &&
+        bundleCount != null &&
+        bundleCount > 0 &&
+        pirEndpoint != null &&
+        _isCurrentPrecomputeContext(context, accountUuid)) {
+      _startBackgroundDelegationProofPrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+        bundleCount: bundleCount,
+        precomputeKey: key,
+      );
+    }
+    return result;
+  }
+
+  Future<VotingSnapshotWarmupResult> _runSnapshotBundlePrecomputeForContext(
+    _VotingSessionContext context, {
+    required String precomputeKey,
+  }) async {
+    final delays = ref.read(votingSnapshotWarmupRetryDelaysProvider);
+    final coordinator = ref.read(votingSnapshotWarmupProvider);
+    for (var attempt = 0; ; attempt++) {
+      final releaseBackgroundWork = ref
+          .read(votingShareTrackingRegistryProvider)
+          .beginBackgroundWork(accountUuid: context.accountUuid);
+      if (releaseBackgroundWork == null) {
+        debugPrint(
+          '[zcash] Voting: snapshot bundle precompute skipped '
+          'round=$_roundId reason=wallet-mutation-in-progress',
+        );
+        return const VotingSnapshotWarmupResult.retryableMiss(
+          reason: 'wallet-mutation-in-progress',
+        );
+      }
+      final VotingSnapshotWarmupResult result;
+      try {
+        result = await _runRegisteredSnapshotBundlePrecomputeForContext(
+          context,
+        );
+      } finally {
+        releaseBackgroundWork();
+      }
+      final retryNow =
+          result.shouldRearm &&
+          result.reason != 'wallet-mutation-in-progress' &&
+          result.reason != 'wallet-sync-timeout' &&
+          !coordinator.isForegroundRequested(precomputeKey) &&
+          attempt < delays.length;
+      if (!retryNow) return result;
+
+      final delay = delays[attempt];
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute retry '
+        'round=${context.round.roundId} account=${context.accountUuid} '
+        'attempt=${attempt + 2}/${delays.length + 1} '
+        'reason=${result.reason} delayMs=${delay.inMilliseconds}',
+      );
+      await Future.any<void>([
+        Future<void>.delayed(delay),
+        _sessionInvalidated.future,
+        coordinator.foregroundRequested(precomputeKey),
+      ]);
+      if (coordinator.isForegroundRequested(precomputeKey)) return result;
+      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+        return const VotingSnapshotWarmupResult.stale(
+          reason: 'context-changed',
+        );
       }
     }
-
-    unawaited(
-      precompute.then<void>(
-        (_) => removeIfCurrent(),
-        onError: (Object _, StackTrace _) => removeIfCurrent(),
-      ),
-    );
-    return precompute;
   }
 
-  Future<void> _runSnapshotBundlePrecomputeForAccount(
-    String accountUuid, {
-    required String precomputeKey,
-  }) async {
-    final releaseBackgroundWork = ref
-        .read(votingShareTrackingRegistryProvider)
-        .beginBackgroundWork(accountUuid: accountUuid);
-    if (releaseBackgroundWork == null) {
-      debugPrint(
-        '[zcash] Voting: snapshot bundle precompute skipped '
-        'round=$_roundId reason=wallet-mutation-in-progress',
-      );
-      return;
+  Future<VotingSnapshotWarmupResult>
+  _runRegisteredSnapshotBundlePrecomputeForContext(
+    _VotingSessionContext context,
+  ) async {
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     }
-    try {
-      await _runRegisteredSnapshotBundlePrecomputeForAccount(
-        accountUuid,
-        precomputeKey: precomputeKey,
-      );
-    } finally {
-      releaseBackgroundWork();
-    }
-  }
-
-  Future<void> _runRegisteredSnapshotBundlePrecomputeForAccount(
-    String accountUuid, {
-    required String precomputeKey,
-  }) async {
-    final context = await _loadContext(_roundId);
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final current = state.value;
     if (current == null || !current.hasConfirmedVotingEligibility) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=eligibility-not-confirmed',
       );
-      return;
+      return const VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'eligibility-not-confirmed',
+      );
     }
     try {
       await _waitUntilWalletReadyForVoting(
@@ -467,7 +503,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         stopIfVotingBackgroundWorkQuiesced: true,
       );
     } on _StaleVotingSessionAction {
-      return;
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     } on _VotingBackgroundWorkQuiesced catch (e) {
       final readiness = e.readiness;
       if (readiness != null) {
@@ -481,7 +517,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-mutation-in-progress',
       );
-      return;
+      return VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'wallet-mutation-in-progress',
+        error: e,
+      );
     } on _VotingWalletSyncTimeout catch (e) {
       _setWalletSyncReadinessState(
         context: context,
@@ -492,22 +531,100 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: snapshot bundle precompute skipped '
         'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
       );
-      return;
+      return VotingSnapshotWarmupResult.retryableMiss(
+        reason: 'wallet-sync-timeout',
+        error: e,
+      );
     }
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    final pirEndpoint = await _resolvePirEndpoint(context);
-    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
-    if (pirEndpoint == null) return;
-    final completed = await _runSnapshotBundlePrecompute(
-      context: context,
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
+    }
+
+    final Uri pirEndpoint;
+    try {
+      pirEndpoint = await _resolvePirEndpointForWarmup(context);
+    } catch (error) {
+      final retryable = _isRetryableSnapshotWarmupError(error);
+      debugPrint(
+        '[zcash] Voting: snapshot bundle precompute missed '
+        'round=${context.round.roundId} stage=pir-resolution '
+        'retryable=$retryable error=$error',
+      );
+      return retryable
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'pir-resolution-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'pir-resolution-failed',
+              error: error,
+            );
+    }
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
+    }
+
+    final int bundleCount;
+    try {
+      bundleCount = await _runSnapshotBundlePrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+      );
+    } catch (error) {
+      final retryable = _isRetryableSnapshotWarmupError(error);
+      return retryable
+          ? VotingSnapshotWarmupResult.retryableMiss(
+              reason: 'snapshot-precompute-failed',
+              error: error,
+            )
+          : VotingSnapshotWarmupResult.terminalMiss(
+              reason: 'snapshot-precompute-failed',
+              error: error,
+            );
+    }
+    if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+      return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
+    }
+    return VotingSnapshotWarmupResult.ready(
+      bundleCount: bundleCount,
       pirEndpoint: pirEndpoint,
     );
-    if (completed && _isCurrentPrecomputeContext(context, accountUuid)) {
-      _completedSnapshotBundlePrecomputes.add(precomputeKey);
-    }
   }
 
+  /// Delegates this round's pending bundles with the account mnemonic.
+  ///
+  /// Software accounts only; Keystone accounts sign on the device and go
+  /// through [delegatePendingBundlesWithKeystoneSignatures].
   Future<void> delegatePendingBundles({String? mnemonic}) {
+    return _delegatePendingBundles(hardware: false, mnemonic: mnemonic);
+  }
+
+  /// Delegates this round's pending bundles with the signatures the Keystone
+  /// device already returned.
+  ///
+  /// The signatures are durable in the sidecar; the SDK loads the record for
+  /// each bundle and verifies it against the stored PCZT sighash.
+  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
+    return _delegatePendingBundles(hardware: true);
+  }
+
+  /// Runs the delegation round for whichever signer this account uses.
+  ///
+  /// The two entry points differ only in how a bundle is signed and in what
+  /// has to be true before signing can start: software needs the account
+  /// mnemonic, hardware needs a device signature for every pending bundle and
+  /// must never mint a fresh hotkey once those signatures exist. Everything
+  /// around that — preparation, the terminal check, PIR resolution, the round
+  /// itself, and the state it publishes — is one path.
+  ///
+  /// `hardware` is the entry point the caller used, not the account's kind.
+  /// The two are checked against each other so calling the wrong one for the
+  /// active account reports that mismatch rather than quietly signing the
+  /// other way.
+  Future<void> _delegatePendingBundles({
+    required bool hardware,
+    String? mnemonic,
+  }) {
     final secretGuard = mnemonic == null
         ? null
         : LinuxSecretOperationGuard(
@@ -521,16 +638,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
-      if (context.isHardwareAccount) {
+      if (hardware != context.isHardwareAccount) {
         _setError(
-          'Sign delegation bundles with Keystone before submitting.',
+          hardware
+              ? 'Keystone voting is only available for hardware accounts.'
+              : 'Sign delegation bundles with Keystone before submitting.',
           context: context,
         );
         return;
       }
-      var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationWork(plan, roundPlan) &&
+      if (_needsFreshDelegationPreparation(roundPlan) &&
           _needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
@@ -539,22 +657,61 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
         context = await _loadContext(_roundId);
-        plan = context.resumePlan;
         roundPlan = context.roundPlan;
       }
 
-      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
-      final pirEndpoint = current.pirEndpoint;
+      final delegationBundleIndexes = delegationBundleIndexesNeedingWork(
+        roundPlan,
+      );
+      final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
+      if (!hasPendingBundles) {
+        final terminal = terminalDelegationMessage(roundPlan);
+        if (terminal != null) {
+          _setError(terminal, context: context);
+          return;
+        }
+      }
+      final needsPir = _needsFreshDelegationPreparation(roundPlan);
+
+      // Hardware signing binds each signature to the hotkey that was current
+      // when the device signed, so the signatures have to be known before the
+      // hotkey is ensured.
+      final Map<int, rust_wire.KeystoneSignatureRecord> signatures = hardware
+          ? (hasPendingBundles
+                ? await _loadKeystoneSignatures(context)
+                : current.keystoneSignatures)
+          : const {};
+
+      var pirEndpoint = current.pirEndpoint;
+      if (needsPir && pirEndpoint == null) {
+        pirEndpoint = await _resolvePirEndpoint(context);
+        _throwIfContextStale(context, 'delegation-pir-resolution');
+        if (pirEndpoint != null) {
+          current = (state.value ?? current).copyWith(pirEndpoint: pirEndpoint);
+          _setStateForContext(context, current);
+        }
+      }
+
       if (hasPendingBundles) {
-        if (pirEndpoint == null) {
+        // PIR only matters because a bundle needs a proof built against it, so
+        // this is checked where there is a bundle to prove.
+        if (needsPir && pirEndpoint == null) {
           _setError('PIR endpoint has not been resolved.', context: context);
           return;
         }
-        // Software delegation proving still needs the account mnemonic in the
-        // current Rust API. Keystone signing uses a separate flow
-        // (`delegatePendingBundlesWithKeystoneSignatures`) and never reaches
-        // this branch.
-        if (mnemonic == null || mnemonic.isEmpty) {
+        if (hardware) {
+          for (final bundleIndex in delegationBundleIndexes) {
+            if (!signatures.containsKey(bundleIndex)) {
+              _setError(
+                'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
+                context: context,
+              );
+              return;
+            }
+          }
+        } else if (mnemonic == null || mnemonic.isEmpty) {
+          // Software delegation signs with the account seed at the wallet
+          // boundary; the SDK receives only the SpendAuth signature.
           _setError(
             'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.',
             context: context,
@@ -563,80 +720,80 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
-          resumePlan: plan,
           clearCurrentBundleIndex: true,
-          clearError: true,
+          // Hardware keeps any standing error until the round reports its own
+          // outcome; software clears it as the run starts.
+          clearError: !hardware,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         );
         _setStateForContext(context, nextState);
         current = nextState;
       }
       final storedHotkeySecret = hasPendingBundles
-          ? await _ensureHotkey(context)
+          ? await _ensureHotkey(
+              context,
+              // A device signature is bound to the hotkey it was made with, so
+              // once signatures exist a missing hotkey is a failure rather than
+              // a reason to generate one.
+              alreadyBound: hardware && signatures.isNotEmpty,
+            )
           : null;
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
       final rust = ref.read(votingRustApiProvider);
-      final completedBundleIndexes = await _confirmSubmittedDelegations(
-        context: context,
-        plan: plan,
-        roundPlan: roundPlan,
-        progress: progress,
-      );
-      if (completedBundleIndexes == null) return;
-      try {
-        completedBundleIndexes.addAll(
-          await _runDelegationBundleBatch(
+      final completedBundleIndexes = <int>{};
+      if (hasPendingBundles) {
+        await _awaitSnapshotBundlePrecomputeIfRunning(context);
+        _throwIfContextStale(context, 'delegation-proof');
+        // Main checked this immediately before the seed was used to prove and
+        // sign. That call site is now inside the SDK round, so the check moves
+        // to the last point this side of the boundary still owns.
+        secretGuard?.check();
+        final session = _openRoundSession(
+          rust,
+          context,
+          storedHotkeySecret: storedHotkeySecret,
+          pirServerUrls: _delegationPirTransportUrls(state.value ?? current),
+        );
+        try {
+          completedBundleIndexes.addAll(
+            await _runDelegationRound(
+              session: session,
+              context: context,
+              fallbackState: current,
+              signer: hardware
+                  ? const rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.keystoneStored,
+                      mnemonic: null,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    )
+                  : rust_session.ApiDelegationSignerInput(
+                      kind: rust_session.ApiDelegationSignerKind.mnemonic,
+                      mnemonic: mnemonic,
+                      keystoneSig: null,
+                      keystoneSighash: null,
+                    ),
+              progress: progress,
+              logLabel: hardware ? 'Keystone' : 'software',
+            ),
+          );
+        } on _StaleVotingSessionAction {
+          rethrow;
+        } catch (error, stackTrace) {
+          await _refreshDelegationPlansAfterBatchFailure(
             context: context,
             fallbackState: current,
-            bundleIndexes: plan.pendingDelegationBundleIndexes,
             progress: progress,
-            logLabel: 'software',
-            prove: (bundleIndex, publishProgress) async {
-              await _awaitSnapshotBundlePrecomputeIfRunning(context);
-              _throwIfContextStale(context, 'delegation-proof');
-              secretGuard?.check();
-              rust_wire.SignedDelegationPayloadView? signedPayload;
-              await for (final event
-                  in rust.buildProveAndSignDelegationPayloadWithProgress(
-                    ctx: _apiRoundContext(context),
-                    pirServerUrls: _delegationPirTransportUrls(
-                      state.value ?? current,
-                    ),
-                    mnemonic: mnemonic!,
-                    storedHotkeySecret: storedHotkeySecret!,
-                    bundleIndex: bundleIndex,
-                  )) {
-                _throwIfContextStale(context, 'delegation-proof-progress');
-                signedPayload = event.signedDelegationPayload ?? signedPayload;
-                publishProgress(
-                  VotingSessionProgress(
-                    phase: event.phase,
-                    bundleIndex: bundleIndex,
-                    proofProgress: _monotonicProofProgress(
-                      progress[bundleIndex]?.proofProgress,
-                      event.proofProgress,
-                    ),
-                  ),
-                );
-              }
-              return signedPayload ??
-                  (throw StateError(
-                    'Delegation proof completed without submission payload.',
-                  ));
-            },
-          ),
-        );
-      } on _StaleVotingSessionAction {
-        rethrow;
-      } catch (error, stackTrace) {
-        await _refreshDelegationPlansAfterBatchFailure(
-          context: context,
-          fallbackState: current,
-          progress: progress,
-        );
-        Error.throwWithStackTrace(error, stackTrace);
+          );
+          Error.throwWithStackTrace(error, stackTrace);
+        } finally {
+          _closeRoundSession(session);
+        }
       }
 
       final resumeTimer = Stopwatch()..start();
@@ -644,37 +801,80 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: loading resume plan after delegation '
         'round=${context.round.roundId}',
       );
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       debugPrint(
         '[zcash] Voting: resume plan after delegation loaded '
         'round=${context.round.roundId} '
-        'pendingDelegations=${refreshedPlan.pendingDelegationBundleIndexes.length} '
-        'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
+        'pendingDelegations='
+        '${delegationBundleIndexesNeedingWork(refreshedRoundPlan).length} '
+        'needsVotePolling=${refreshedRoundPlan.needsVotePolling} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
         'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
       final nextPhase =
-          refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
-          ? VotingSessionPhase.delegated
-          : VotingSessionPhase.readyToDelegate;
+          delegationBundleIndexesNeedingSigning(
+            refreshedRoundPlan,
+          ).where((index) => !completedBundleIndexes.contains(index)).isEmpty
+          ? ((state.value?.phase == VotingSessionPhase.castingVotes)
+                ? VotingSessionPhase.castingVotes
+                : VotingSessionPhase.delegated)
+          // Same reason as the guard above, for the other outcome: the run
+          // can cast votes while a sibling bundle still owes a signature, and
+          // announcing `readyToDelegate` then sent the step list back to the
+          // delegation row mid-ballot.
+          : _phaseWithoutBallotRegression(VotingSessionPhase.readyToDelegate);
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
           phase: nextPhase,
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           clearCurrentBundleIndex: true,
+          keystoneSignatures: hardware ? signatures : null,
+          clearKeystoneSigningRequest: hardware,
+          clearKeystoneScanError: hardware,
         ),
+      );
+      _noteTerminalDelegation(
+        context,
+        state.value ?? current,
+        refreshedRoundPlan,
       );
     }, cleanupProcessStateOnError: false);
   }
 
+  /// Records a delegation the SDK ended, without failing the round.
+  ///
+  /// A terminal bundle plans no further work, so nothing downstream will ever
+  /// raise it, and the user has to be told before they vote with a round that
+  /// cannot carry every bundle's weight. It must not become the session's
+  /// error, though: the submission job treats an error phase after delegation
+  /// as fatal and returns, so a round with one dead bundle and one healthy one
+  /// would never reach the ballot at all. That trades a silent bundle for an
+  /// unvotable round, which is worse.
+  ///
+  /// The round-wide case — a terminal bundle and nothing left to run — is
+  /// still an error, and is raised before any work is attempted.
+  void _noteTerminalDelegation(
+    _VotingSessionContext context,
+    VotingSessionState current,
+    rust_wire.RoundPlanView? roundPlan,
+  ) {
+    final terminal = terminalDelegationMessage(roundPlan);
+    _setStateForContext(
+      context,
+      current.copyWith(
+        terminalDelegationNotice: terminal,
+        clearTerminalDelegationNotice: terminal == null,
+      ),
+    );
+  }
+
   Future<void> prepareKeystoneSigning() {
-    return _enqueue(_prepareKeystoneSigningUnlocked);
+    return _enqueue(
+      _prepareKeystoneSigningUnlocked,
+      cleanupProcessStateOnError: false,
+    );
   }
 
   Future<void> handleKeystoneBatchSignatures(
@@ -736,7 +936,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       try {
-        final result = await rust.storeKeystoneSignaturesBatch(
+        // A conflicting tuple fails the whole batch with a typed error; a
+        // successful write needs no inspection.
+        await rust.storeKeystoneSignaturesBatch(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
@@ -754,12 +956,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
           ],
         );
-        if (result.conflictingBundleIndex != null) {
+      } on VotingRustException catch (error) {
+        if (error.kind ==
+            rust_wire.VotingErrorKindView.keystoneSignatureConflict) {
           reject(
             'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.',
           );
           return;
         }
+        reject(
+          'Could not save the Keystone signatures. Scan the same Keystone result again.',
+        );
+        return;
       } catch (error) {
         reject(
           'Could not save the Keystone signatures. Scan the same Keystone result again.',
@@ -791,7 +999,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
       await _prepareKeystoneSigningUnlocked();
-    });
+    }, cleanupProcessStateOnError: false);
   }
 
   Future<void> reportKeystoneScanError(String message) {
@@ -820,10 +1028,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
-      final plan = current.resumePlan ?? context.resumePlan;
+      final roundPlan = current.roundPlan ?? context.roundPlan;
       final signatures = await _loadKeystoneSignatures(context);
       final signedPrefixCount = resolvedKeystoneBundlePrefixCount(
-        plan: plan,
+        roundPlan: roundPlan,
         signatures: signatures,
       );
       if (signedPrefixCount <= 0) {
@@ -833,12 +1041,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      if (signedPrefixCount >= plan.bundleCount) {
+      if (signedPrefixCount >= roundPlanBundleCount(roundPlan)) {
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.readyToDelegate,
-            resumePlan: plan,
             keystoneSignatures: signatures,
             clearKeystoneSigningRequest: true,
             clearKeystoneScanError: true,
@@ -852,7 +1059,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       debugPrint(
         '[zcash] Voting: Keystone skipping remaining bundles '
         'round=${context.round.roundId} keepCount=$signedPrefixCount '
-        'bundleCount=${plan.bundleCount}',
+        'bundleCount=${roundPlanBundleCount(roundPlan)}',
       );
       await ref
           .read(votingRustApiProvider)
@@ -865,7 +1072,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final bundleSetup = await ref
           .read(votingRustApiProvider)
           .setupDelegationBundles(ctx: _apiRoundContext(context));
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final retainedSignatures = {
         for (final entry in signatures.entries)
@@ -875,7 +1081,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           eligibleWeightZatoshi: bundleSetup.eligibleWeight,
           privacyTrimDroppedValueZatoshi:
@@ -890,173 +1095,84 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  Future<void> delegatePendingBundlesWithKeystoneSignatures() {
+  /// The ballot intents for `draftVotes`, skipping every other listed proposal.
+  static List<rust_session.ApiBallotIntent> _ballotIntentsFor({
+    required List<VotingDraftVote> draftVotes,
+    List<int>? allProposalIds,
+  }) {
+    final draftVotesByProposal = {
+      for (final draftVote in draftVotes) draftVote.proposalId: draftVote,
+    };
+    final proposalIds = {
+      ...?allProposalIds,
+      ...draftVotesByProposal.keys,
+    }.toList()..sort();
+    return [
+      for (final proposalId in proposalIds)
+        rust_session.ApiBallotIntent(
+          proposalId: proposalId,
+          skipped: !draftVotesByProposal.containsKey(proposalId),
+          choice: draftVotesByProposal[proposalId]?.choice,
+        ),
+    ];
+  }
+
+  /// Makes the ballot durable before any delegation runs.
+  ///
+  /// The SDK plans a `Delegate` obligation only for a bundle that still has a
+  /// vote to cast, so a round whose intents are not yet durable has no
+  /// delegation work at all. Delegating first therefore did nothing, and the
+  /// cast that followed — which is what recorded the intents — was then
+  /// refused because the delegation it now required had already had its turn.
+  /// Recording the ballot first is what makes the two agree.
+  ///
+  /// Safe to repeat: `set_ballot_intents` replaces the stored decision for
+  /// each proposal and re-plans, and `castVotes` records the same intents
+  /// again so it stays correct when called on its own.
+  Future<void> recordBallotIntents({
+    required List<VotingDraftVote> draftVotes,
+    List<int>? allProposalIds,
+  }) {
     return _enqueue(() async {
-      var current = await future;
-      var context = await _loadContext(_roundId);
-      if (!context.isHardwareAccount) {
-        _setError(
-          'Keystone voting is only available for hardware accounts.',
-          context: context,
-        );
-        return;
-      }
-      var plan = context.resumePlan;
-      var roundPlan = context.roundPlan;
-      if (_needsFreshDelegationWork(plan, roundPlan) &&
-          _needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-        context = await _loadContext(_roundId);
-        plan = context.resumePlan;
-        roundPlan = context.roundPlan;
-      }
-      final progress = Map<int, VotingSessionProgress>.from(
-        current.delegationProgress,
+      final context = await _loadContext(_roundId);
+      // An empty ballot records nothing. `_ballotIntentsFor` marks every listed
+      // proposal without a draft vote as skipped, so recording here with no
+      // draft would overwrite stored choices rather than leave them alone.
+      if (draftVotes.isEmpty) return;
+      final intents = _ballotIntentsFor(
+        draftVotes: draftVotes,
+        allProposalIds: allProposalIds,
       );
-      final completedBundleIndexes = await _confirmSubmittedDelegations(
-        context: context,
-        plan: plan,
-        roundPlan: roundPlan,
-        progress: progress,
-      );
-      if (completedBundleIndexes == null) return;
-
-      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
-      final signatures = hasPendingBundles
-          ? await _loadKeystoneSignatures(context)
-          : current.keystoneSignatures;
-      final List<int>? storedHotkeySecret;
-      if (hasPendingBundles) {
-        storedHotkeySecret = await _ensureHotkey(
-          context,
-          alreadyBound: signatures.isNotEmpty,
-        );
-      } else {
-        storedHotkeySecret = null;
-      }
-      final pirEndpoint = current.pirEndpoint;
-      if (hasPendingBundles && pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
-      }
-
+      if (intents.isEmpty) return;
       final rust = ref.read(votingRustApiProvider);
-      for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
-        if (!signatures.containsKey(bundleIndex)) {
-          _setError(
-            'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
-            context: context,
-          );
-          return;
-        }
+      // Bundle rows must exist before a choice intent is recorded. The
+      // eligibility check reports voting weight without persisting a bundle
+      // plan, so a fresh round reaches here with none whenever nothing has
+      // run setup for it yet. The SDK can plan no vote work for a round in
+      // that state (it reports `needsBundleSetup`), so persist the plan
+      // first; `setupDelegationBundles` ensures the round row too, and is
+      // idempotent once the bundles exist.
+      if (roundPlanBundleCount(context.roundPlan) == 0) {
+        await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
+        _throwIfContextStale(context, 'record-ballot-intents-bundle-setup');
       }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.delegating,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
+      final session = _openRoundSession(rust, context);
       try {
-        completedBundleIndexes.addAll(
-          await _runDelegationBundleBatch(
-            context: context,
-            fallbackState: current,
-            bundleIndexes: plan.pendingDelegationBundleIndexes,
-            progress: progress,
-            logLabel: 'Keystone',
-            prove: (bundleIndex, publishProgress) async {
-              final signature = signatures[bundleIndex]!;
-              rust_wire.SignedDelegationPayloadView? signedPayload;
-              await for (final event
-                  in rust
-                      .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-                        ctx: _apiRoundContext(context),
-                        pirServerUrls: _delegationPirTransportUrls(
-                          state.value ?? current,
-                        ),
-                        storedHotkeySecret: storedHotkeySecret!,
-                        bundleIndex: bundleIndex,
-                        keystoneSig: signature.sig,
-                        keystoneSighash: signature.sighash,
-                      )) {
-                _throwIfContextStale(
-                  context,
-                  'keystone-delegation-proof-progress',
-                );
-                signedPayload = event.signedDelegationPayload ?? signedPayload;
-                publishProgress(
-                  VotingSessionProgress(
-                    phase: event.phase,
-                    bundleIndex: bundleIndex,
-                    proofProgress: _monotonicProofProgress(
-                      progress[bundleIndex]?.proofProgress,
-                      event.proofProgress,
-                    ),
-                  ),
-                );
-              }
-              final submission =
-                  signedPayload ??
-                  (throw StateError(
-                    'Delegation proof completed without submission payload.',
-                  ));
-              _verifyKeystoneDelegationSignature(
-                submission: submission,
-                signature: signature,
-                bundleIndex: bundleIndex,
-              );
-              return submission;
-            },
-          ),
+        final plan = await session.setBallotIntents(intents);
+        _throwIfContextStale(context, 'record-ballot-intents');
+        _setStateForContext(
+          context,
+          (state.value ?? await future).copyWith(roundPlan: plan),
         );
-      } on _StaleVotingSessionAction {
-        rethrow;
-      } catch (error, stackTrace) {
-        await _refreshDelegationPlansAfterBatchFailure(
-          context: context,
-          fallbackState: current,
-          progress: progress,
-        );
-        Error.throwWithStackTrace(error, stackTrace);
+      } finally {
+        _closeRoundSession(session);
       }
-
-      final refreshedPlan = await _loadResumePlan(context);
-      final refreshedRoundPlan = await _loadRoundPlan(context);
-      final nextPhase =
-          refreshedPlan.pendingDelegationBundleIndexes
-              .where((index) => !completedBundleIndexes.contains(index))
-              .isEmpty
-          ? VotingSessionPhase.delegated
-          : VotingSessionPhase.readyToDelegate;
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: nextPhase,
-          resumePlan: refreshedPlan,
-          roundPlan: refreshedRoundPlan,
-          delegationProgress: progress,
-          keystoneSignatures: signatures,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearCurrentBundleIndex: true,
-        ),
-      );
-    }, cleanupProcessStateOnError: false);
+    });
   }
 
   Future<void> castVotes({
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
     List<int>? allProposalIds,
-    Map<int, int>? proposalOptionCounts,
   }) {
     final operation = _enqueue(() async {
       final current = await future;
@@ -1066,207 +1182,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
         current.voteProgress,
       );
-      var plan = context.resumePlan;
-      var roundPlan = context.roundPlan;
-      final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
-      final effectiveDraftVotes = draftVotes;
-      final draftVotesByProposal = {
-        for (final draftVote in effectiveDraftVotes)
-          draftVote.proposalId: draftVote,
-      };
-      final intentProposalIds = {
-        ...?allProposalIds,
-        ...draftVotesByProposal.keys,
-      }.toList()..sort();
-      Future<bool> writeBallotIntents() async {
-        if (effectiveDraftVotes.isEmpty) return true;
-        // Write durable ballot intent before the cast loop so recovery can
-        // resume from the correct choice if the user quits mid-vote.
-        for (final proposalId in intentProposalIds) {
-          final draftVote = draftVotesByProposal[proposalId];
-          final numOptions =
-              draftVote?.numOptions ?? proposalOptionCounts?[proposalId];
-          if (numOptions == null) {
-            _setError(
-              'Voting proposal details are missing. Retry after the round reloads.',
-              cause: StateError(
-                'missing numOptions for proposal_id $proposalId',
-              ),
+      // An empty ballot must not reach `set_ballot_intents`: `_ballotIntentsFor`
+      // marks every listed proposal without a draft vote as skipped, so a
+      // recovery-only run would overwrite the stored choices it exists to
+      // resume. Fall through to a plain plan instead.
+      final intents = draftVotes.isEmpty
+          ? const <rust_session.ApiBallotIntent>[]
+          : _ballotIntentsFor(
+              draftVotes: draftVotes,
+              allProposalIds: allProposalIds,
             );
-            return false;
-          }
-          await ref
-              .read(votingRecoveryServiceProvider)
-              .setBallotIntent(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                proposalId: proposalId,
-                numOptions: numOptions,
-                skipped: draftVote == null,
-                choice: draftVote?.choice,
-              );
-        }
-        return true;
-      }
 
-      var confirmedSubmittedVotes = false;
-      final pendingVotePolling = _pendingVotePollingWork(roundPlan);
-      final pollingOutcomes = await _runBoundedBundleWork(
-        List<int>.generate(pendingVotePolling.length, (index) => index),
-        concurrency: _votingWorkConcurrency,
-        work: (index) async {
-          final work = pendingVotePolling[index];
-          final key = VotingVoteKey(
-            bundleIndex: work.bundleIndex,
-            proposalId: work.proposalId,
-          );
-          final txHash = work.txHash;
-          if (txHash == null) {
-            throw StateError(
-              'Missing submitted vote transaction hash for '
-              'bundle ${key.bundleIndex}, proposal ${key.proposalId}.',
-            );
-          }
-          final confirmation = await _awaitTxConfirmation(
-            api,
-            txHash,
-            context: context,
-          );
-          if (confirmation == null) {
-            throw _VoteConfirmationTimeout(key: key, txHash: txHash);
-          }
-          return _PolledVoteRecovery(
-            key: key,
-            txHash: txHash,
-            confirmation: confirmation,
-          );
-        },
-      );
-      final voteRecoveryFailures = <_VoteWaveFailure>[];
-      for (var index = 0; index < pendingVotePolling.length; index++) {
-        final outcome = pollingOutcomes[index]!;
-        final error = outcome.error;
-        if (error != null) {
-          final work = pendingVotePolling[index];
-          voteRecoveryFailures.add(
-            _VoteWaveFailure(
-              bundleIndex: work.bundleIndex,
-              proposalId: work.proposalId,
-              stage: 'recovery confirmation polling',
-              error: error,
-            ),
-          );
-          continue;
-        }
-        final polled = outcome.value!;
-        final key = polled.key;
-        final txHash = polled.txHash;
-        final confirmation = polled.confirmation;
-        if (confirmation.code != 0) {
-          voteRecoveryFailures.add(
-            _VoteWaveFailure(
-              bundleIndex: key.bundleIndex,
-              proposalId: key.proposalId,
-              stage: 'recovery confirmation',
-              error: StateError(
-                confirmation.log.isEmpty
-                    ? 'Vote commitment transaction failed.'
-                    : confirmation.log,
-              ),
-            ),
-          );
-          continue;
-        }
-        try {
-          await rust.confirmVoteSubmission(
-            dbPath: context.dbPath,
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-            bundleIndex: key.bundleIndex,
-            proposalId: key.proposalId,
-            txHash: txHash,
-            eventsJson: confirmation.eventsJson,
-          );
-        } catch (error) {
-          voteRecoveryFailures.add(
-            _VoteWaveFailure(
-              bundleIndex: key.bundleIndex,
-              proposalId: key.proposalId,
-              stage: 'recovery confirmation persistence',
-              error: error,
-            ),
-          );
-          continue;
-        }
-        progress[key] = VotingSessionProgress(
-          phase: 'confirmed',
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-          message: txHash,
-        );
-        confirmedSubmittedVotes = true;
-      }
-      if (confirmedSubmittedVotes) {
-        plan = await _loadResumePlan(context);
-        roundPlan = await _loadRoundPlan(context);
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            resumePlan: plan,
-            roundPlan: roundPlan,
-            voteProgress: progress,
-          ),
-        );
-      }
-      for (final failure in voteRecoveryFailures) {
-        if (failure.error is _StaleVotingSessionAction) throw failure.error;
-        final error = failure.error;
-        if (error is _VoteConfirmationTimeout) {
-          _setError(
-            'Vote commitment transaction ${error.txHash} for bundle '
-            '${error.key.bundleIndex}, proposal ${error.key.proposalId} is still '
-            'unconfirmed after repeated checks. Retry to resume confirmation '
-            'before continuing.',
-            context: context,
-          );
-          return;
-        }
-      }
-      if (voteRecoveryFailures.isNotEmpty) {
-        throw _VoteWaveBatchException(voteRecoveryFailures);
-      }
-      final recoveredVoteWork = _pendingRecoveredVoteWork(roundPlan);
-      final recoveredVoteKeys = {
-        for (final work in recoveredVoteWork) work.key,
-      };
-      final bundleIndexesByProposal = <int, List<int>>{
-        for (final draftVote in effectiveDraftVotes)
-          draftVote.proposalId:
-              _pendingVoteBundleIndexesForProposal(plan, draftVote.proposalId)
-                  .where(
-                    (bundleIndex) => !recoveredVoteKeys.contains(
-                      VotingVoteKey(
-                        bundleIndex: bundleIndex,
-                        proposalId: draftVote.proposalId,
-                      ),
-                    ),
-                  )
-                  .toList()
-                ..sort(),
-      };
-      final voteWork = [
-        for (final draftVote in effectiveDraftVotes)
-          _DraftVoteWork(
-            draftVote: draftVote,
-            bundleIndexes: bundleIndexesByProposal[draftVote.proposalId]!,
-          ),
-      ].where((work) => work.bundleIndexes.isNotEmpty).toList();
-      final List<int>? storedHotkeySecret;
-      if (voteWork.isEmpty) {
-        storedHotkeySecret = null;
-      } else {
+      List<int>? storedHotkeySecret;
+      if (draftVotes.isNotEmpty) {
         storedHotkeySecret = await _hotkeyForVoteCasting(context);
         if (storedHotkeySecret == null) {
           _setError(
@@ -1277,175 +1206,267 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           return;
         }
       }
-      if (!await writeBallotIntents()) {
-        return;
-      }
-      if (effectiveDraftVotes.isNotEmpty) {
-        // The immediate-share key is derived from durable ballot intents.
-        // Reload after writing them so a fresh cast uses the same stable key
-        // that recovery will derive after a restart.
-        roundPlan = await _loadRoundPlan(context);
-      }
-      final totalQuestions = recoveredVoteWork.length + voteWork.length;
-      final totalBundleTasks =
-          recoveredVoteWork.length +
-          voteWork.fold<int>(
-            0,
-            (total, work) => total + work.bundleIndexes.length,
-          );
-      final configuredHelperUrls = _configuredHelperTransportUrls(context);
-      final helperPreflight = totalBundleTasks == 0
-          ? rust_api.ApiVotingHelperPreflight(
-              configuredHelperUrls: configuredHelperUrls,
-              readyHelperUrls: const [],
-            )
-          : await rust.preflightVotingHelpers(
-              context: _helperDeliveryContextFor(rust, context),
-              configuredHelperUrls: configuredHelperUrls,
-            );
-      _throwIfContextStale(context, 'helper-preflight-finished');
+
+      var roundPlan = context.roundPlan ?? await _loadRoundPlan(context);
+      // Bundle tasks drive the smooth progress bar, which moves within a step
+      // the tally cannot see inside. The question counters come from the SDK's
+      // tally instead.
+      var totalBundleTasks = 0;
       var completedBundleTasks = 0;
-      var completedQuestions = 0;
-      final startTiming = _roundShareTiming(context, _nowSeconds());
-      _logVoteTiming(
-        'cast votes start '
-        'round=${context.round.roundId} bundleTasks=$totalBundleTasks '
-        'proposals=$totalQuestions '
-        'lastMoment=${startTiming.isLastMoment}',
-      );
-      for (final recoveredWork in recoveredVoteWork) {
-        final key = recoveredWork.key;
-        final voteTimer = Stopwatch()..start();
+      // Seeded from what the round already published. The delegation drive is
+      // a whole-round run that may have cast votes and reported a real tally
+      // before this one started, and restarting from nothing made "N of 37"
+      // collapse to nothing and climb again.
+      final carried = state.value ?? current;
+      rust_wire.RoundWorkTallyView? tally = carried.voteSubmissionTotalCount > 0
+          ? rust_wire.RoundWorkTallyView(
+              completedProposals: carried.voteSubmissionCompletedCount,
+              totalProposals: carried.voteSubmissionTotalCount,
+              remainingObligations: 0,
+            )
+          : null;
+      final allVoteKeys = <VotingVoteKey>{};
+      // An `advanceVoteBatch` step names only its first member's proposal, so
+      // the batch's other members are learned from the progress events it
+      // emits. Accumulating them here — the way the delegation run already
+      // does — keeps every member of a batch advancing together instead of
+      // stalling behind the one the step is named after.
+      final stepVoteKeys = <VotingVoteKey, Set<VotingVoteKey>>{};
+
+      void publishState({
+        int? currentBundleIndex,
+        VotingVoteKey? currentVoteKey,
+        List<VotingVoteKey> inFlightKeys = const [],
+      }) {
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.castingVotes,
-            currentBundleIndex: key.bundleIndex,
-            currentVoteKey: key,
-            voteSubmissionCompletedCount: completedQuestions,
-            voteSubmissionTotalCount: totalQuestions,
-            voteSubmissionProgress: _voteSubmissionProgress(
+            roundPlan: roundPlan,
+            voteProgress: Map<VotingVoteKey, VotingSessionProgress>.of(
+              progress,
+            ),
+            currentBundleIndex: currentBundleIndex,
+            currentVoteKey: currentVoteKey,
+            clearCurrentBundleIndex: currentBundleIndex == null,
+            clearCurrentVoteKey: currentVoteKey == null,
+            voteSubmissionCompletedCount: tally?.completedProposals ?? 0,
+            voteSubmissionTotalCount: tally?.totalProposals ?? 0,
+            voteSubmissionProgress: _aggregateVotePipelineProgress(
+              progress: progress,
+              voteKeys: inFlightKeys,
               completedBundleTasks: completedBundleTasks,
               totalBundleTasks: totalBundleTasks,
+              tally: tally,
             ),
           ),
         );
-        debugPrint(
-          '[zcash] Voting: recovering ${recoveredWork.logLabel} '
-          'round=${context.round.roundId} bundle=${key.bundleIndex} '
-          'proposal=${key.proposalId}',
-        );
-        final commitments = await rust.recoverVoteCommitment(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-        );
-        await _prepareCommitmentShares(
-          context,
-          commitments,
-          preflight: helperPreflight,
-        );
-        if (recoveredWork.kind == _RecoveredVoteWorkKind.submitVote) {
-          await _submitVoteCommitments(context, commitments);
-        } else {
-          final vcTreePosition = recoveredWork.vcTreePosition;
-          if (vcTreePosition == null) {
+      }
+
+      // The SDK owns proving, atomic persistence, helper planning, chain
+      // episodes, confirmation, and share delivery for every step. Dart
+      // drives the plan, projects progress, and keeps cancellation.
+      if (draftVotes.isNotEmpty) rust.warmVotingProvingCaches();
+      final session = _openRoundSession(
+        rust,
+        context,
+        storedHotkeySecret: storedHotkeySecret,
+      );
+      try {
+        // This is the ballot's durable write: the SDK commits every intent in
+        // one transaction before it plans, so recovery resumes from the
+        // correct choice if the user quits mid-vote.
+        roundPlan = intents.isEmpty
+            ? await session.plan()
+            : await session.setBallotIntents(intents);
+        _throwIfContextStale(context, 'vote-plan');
+        // A decision recorded before its proposal left the authenticated
+        // roster outlives that proposal, and the SDK withholds casting until
+        // the host clears it: the round's immediate helper share is derived
+        // from the complete set of choices, so a stale intent would make that
+        // set disagree with the roster. The plan reports only the ids that
+        // are still clearable.
+        if (roundPlan.unrosteredIntents.isNotEmpty) {
+          roundPlan = await session.clearBallotIntents(
+            roundPlan.unrosteredIntents.toList(growable: false),
+          );
+          _throwIfContextStale(context, 'vote-plan');
+          if (roundPlan.unrosteredIntents.isNotEmpty) {
+            // The SDK withholds every CastVote while an unrostered intent
+            // stands, so carrying on here would read as a cast that quietly
+            // did nothing. The planner reports only clearable ids, so this
+            // means the clear did not take.
             throw StateError(
-              'Missing vote tree position for submitted shares '
-              'bundle=${key.bundleIndex} proposal=${key.proposalId}.',
+              'Ballot intents for proposals outside the round roster could '
+              'not be cleared: ${roundPlan.unrosteredIntents.join(', ')}.',
             );
           }
         }
-        await _submitCommitmentShares(
-          context,
-          commitments,
-          configuredHelperUrls: helperPreflight.configuredHelperUrls,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: _voteSubmissionProgress(
-            completedBundleTasks: completedBundleTasks,
-            totalBundleTasks: totalBundleTasks,
-            currentBundleProgress: 0.95,
-          ),
+        final initialSteps = roundPlan.nextSteps.where(_isVoteStep).toList();
+        totalBundleTasks = initialSteps.length;
+        allVoteKeys.addAll(initialSteps.map(_voteKeyForStep));
+        final startTiming = _roundShareTiming(context, _nowSeconds());
+        _logVoteTiming(
+          'cast votes start '
+          'round=${context.round.roundId} bundleTasks=$totalBundleTasks '
+          'lastMoment=${startTiming.isLastMoment}',
         );
-        completedBundleTasks++;
-        completedQuestions++;
-        progress[key] = VotingSessionProgress(
-          phase: 'completed',
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-        );
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.castingVotes,
-            voteProgress: progress,
-            currentVoteKey: key,
-            voteSubmissionCompletedCount: completedQuestions,
-            voteSubmissionTotalCount: totalQuestions,
-            voteSubmissionProgress: _voteSubmissionProgress(
-              completedBundleTasks: completedBundleTasks,
-              totalBundleTasks: totalBundleTasks,
-            ),
-          ),
-        );
-        debugPrint(
-          '[zcash] Voting: recovered ${recoveredWork.logLabel} completed '
-          'round=${context.round.roundId} bundle=${key.bundleIndex} '
-          'proposal=${key.proposalId} '
-          'total=${formatElapsedSeconds(voteTimer.elapsed)}',
-        );
-      }
-      if (voteWork.isNotEmpty) {
-        late final int chainCompleted;
-        try {
-          chainCompleted = await _runVoteRoundChains(
-            context: context,
-            fallbackState: current,
-            voteWork: voteWork,
-            storedHotkeySecret: storedHotkeySecret!,
-            progress: progress,
-            completedBundleTasks: completedBundleTasks,
-            totalBundleTasks: totalBundleTasks,
-            completedQuestions: completedQuestions,
-            totalQuestions: totalQuestions,
-            helperPreflight: helperPreflight,
-          );
-        } catch (_) {
-          plan = await _loadResumePlan(context);
-          roundPlan = await _loadRoundPlan(context);
+        if (initialSteps.isNotEmpty) {
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(
-              resumePlan: plan,
+              phase: VotingSessionPhase.castingVotes,
               roundPlan: roundPlan,
               voteProgress: progress,
+              // The counters are left alone: whatever the round already
+              // published is still true, and this run's first plan refresh
+              // merges its own tally into it.
+              clearCurrentBundleIndex: true,
+              clearCurrentVoteKey: true,
             ),
           );
-          await _scheduleShareTracking(context, plan);
-          rethrow;
         }
-        completedBundleTasks += chainCompleted;
-        completedQuestions += voteWork.length;
-        plan = await _loadResumePlan(context);
+        // A failing bundle does not stop the others: the SDK skips its
+        // remaining obligations, runs the rest of the round, and reports every
+        // failure together so successful bundles keep their durable progress.
+        final report = await _runRound(
+          session,
+          context,
+          label: 'vote',
+          // "Question N of M" counts the choices the voter selected, so it
+          // must not renumber when a resume picks up less than all of them.
+          policy: const rust_session.ApiRoundDrivePolicy(
+            selectedChoiceProgress: true,
+          ),
+          onEvent: (event) {
+            // A refreshed plan carries no step: it is the whole round's
+            // remaining work, and it is what the counters read.
+            if (event.kind == rust_wire.RoundDriveEventKind.planRefreshed) {
+              final plan = event.plan;
+              if (plan == null) return;
+              // The tally is exact where counting steps is not: an atomic
+              // batch projects to one step carrying only its first proposal's
+              // id, so six proposals would read as one question here.
+              tally = _mergeTally(tally, event.tally);
+              final remaining = plan.nextSteps.where(_isVoteStep).toList();
+              completedBundleTasks = totalBundleTasks - remaining.length;
+              publishState();
+              return;
+            }
+            final step = event.step;
+            if (step == null || !_isVoteStep(step)) return;
+            final key = _voteKeyForStep(step);
+            final keys = stepVoteKeys.putIfAbsent(key, () => {key});
+            switch (event.kind) {
+              case rust_wire.RoundDriveEventKind.stepSelected:
+                publishState(
+                  currentBundleIndex: step.bundleIndex,
+                  currentVoteKey: key,
+                  inFlightKeys: [key],
+                );
+              case rust_wire.RoundDriveEventKind.stepProgress:
+                final update = event.progress;
+                if (update == null) return;
+                _applyVoteProgress(update, step, keys, progress);
+                publishState(
+                  currentBundleIndex: step.bundleIndex,
+                  currentVoteKey: key,
+                  inFlightKeys: keys.toList(growable: false),
+                );
+              case rust_wire.RoundDriveEventKind.stepFinished:
+                if (event.disposition ==
+                    rust_wire.RoundStepDispositionView.advanced) {
+                  for (final voteKey in keys) {
+                    _storeProgress(
+                      progress,
+                      voteKey,
+                      VotingSessionProgress(
+                        phase: VotingProgressPhase.completed,
+                        bundleIndex: voteKey.bundleIndex,
+                        proposalId: voteKey.proposalId,
+                        proofProgress: 1,
+                      ),
+                    );
+                  }
+                }
+                _logVoteTiming(
+                  'step ${step.kind.name} bundle=${step.bundleIndex} '
+                  'proposal=${step.proposalId} '
+                  'disposition=${event.disposition?.name}',
+                );
+                publishState();
+              default:
+                break;
+            }
+          },
+        );
+
+        final failures = [
+          for (final record in report.failures)
+            _VoteBundleFailure(
+              bundleIndex: record.bundleIndex ?? 0,
+              proposalId: record.step?.proposalId ?? 0,
+              error: _failureFromRecord(record),
+            ),
+        ];
+        for (final failure in failures) {
+          final key = VotingVoteKey(
+            bundleIndex: failure.bundleIndex,
+            proposalId: failure.proposalId,
+          );
+          final item = progress[key];
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: VotingProgressPhase.failed,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: item?.proofProgress,
+              message: failure.error.toString(),
+            ),
+          );
+        }
+        roundPlan = report.plan ?? roundPlan;
+        // The driver refreshes plan and tally after its final dispatch, so the
+        // report's tally is this run's authoritative end state — but it is
+        // still only this run's, so it merges rather than replaces.
+        tally = _mergeTally(tally, report.tally);
+        publishState();
+        if (failures.isNotEmpty) throw _VoteBundleBatchException(failures);
+      } on _StaleVotingSessionAction {
+        rethrow;
+      } catch (_) {
+        for (final key in allVoteKeys) {
+          final item = progress[key];
+          if (item != null && item.phase != VotingProgressPhase.completed) {
+            _storeProgress(
+              progress,
+              key,
+              VotingSessionProgress(
+                phase: VotingProgressPhase.failed,
+                bundleIndex: key.bundleIndex,
+                proposalId: key.proposalId,
+                proofProgress: item.proofProgress,
+                message: item.message,
+              ),
+            );
+          }
+        }
         roundPlan = await _loadRoundPlan(context);
         _setStateForContext(
           context,
           (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.castingVotes,
-            resumePlan: plan,
             roundPlan: roundPlan,
             voteProgress: progress,
-            voteSubmissionCompletedCount: completedQuestions,
-            voteSubmissionTotalCount: totalQuestions,
-            voteSubmissionProgress: _voteSubmissionProgress(
-              completedBundleTasks: completedBundleTasks,
-              totalBundleTasks: totalBundleTasks,
-            ),
           ),
         );
+        if (_ownsAutomaticShareTracking) {
+          unawaited(_startShareTracking(context));
+        }
+        rethrow;
+      } finally {
+        _closeRoundSession(session);
       }
 
       final resumeTimer = Stopwatch()..start();
@@ -1453,7 +1474,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: loading resume plan after vote flow '
         'round=${context.round.roundId}',
       );
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
       if (!hasBlockingWork) {
@@ -1462,31 +1482,607 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       debugPrint(
         '[zcash] Voting: resume plan after vote flow loaded '
         'round=${context.round.roundId} '
-        'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
-        'unconfirmedShares=${refreshedPlan.unconfirmedShareDelegations.length} '
+        'needsVotePolling=${refreshedRoundPlan.needsVotePolling} '
+        'unconfirmedShares=${refreshedRoundPlan.hasUnconfirmedShares} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
         'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: _phaseForPlans(refreshedRoundPlan),
-          resumePlan: refreshedPlan,
+          phase: _phaseWithoutBallotRegression(
+            _phaseForPlans(refreshedRoundPlan),
+          ),
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
-          voteSubmissionCompletedCount: completedQuestions,
-          voteSubmissionTotalCount: totalQuestions,
+          voteSubmissionCompletedCount: tally?.completedProposals ?? 0,
+          voteSubmissionTotalCount: tally?.totalProposals ?? 0,
           voteSubmissionProgress: _voteSubmissionProgress(
             completedBundleTasks: completedBundleTasks,
             totalBundleTasks: totalBundleTasks,
+            tally: tally,
           ),
           clearCurrentBundleIndex: true,
           clearCurrentVoteKey: true,
         ),
       );
-      await _scheduleShareTracking(context, refreshedPlan);
+      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
     }, cleanupProcessStateOnError: false);
     return operation;
+  }
+
+  static bool _isVoteStep(rust_wire.NextStepView step) =>
+      isVoteNextStepKind(step.kind);
+
+  static bool _isDelegationStep(rust_wire.NextStepView step) {
+    return switch (step.kind) {
+      rust_wire.NextStepKind.delegate ||
+      rust_wire.NextStepKind.advanceDelegation ||
+      rust_wire.NextStepKind.advanceImportedDelegation => true,
+      _ => false,
+    };
+  }
+
+  static VotingVoteKey _voteKeyForStep(rust_wire.NextStepView step) {
+    return VotingVoteKey(
+      bundleIndex: step.bundleIndex,
+      proposalId: step.proposalId,
+    );
+  }
+
+  /// Projects one SDK step progress event into the per-vote progress map.
+  ///
+  /// Phase labels stay the ones the UI already reads: proof stages while
+  /// proving, `submitting` once helper plans are durable, `submitted` or
+  /// `confirmed` after the chain episode, and `completed` after delivery.
+  void _applyVoteProgress(
+    rust_wire.RoundStepProgressView update,
+    rust_wire.NextStepView step,
+    Set<VotingVoteKey> stepKeys,
+    Map<VotingVoteKey, VotingSessionProgress> progress,
+  ) {
+    switch (update.kind) {
+      case rust_wire.RoundStepProgressKind.voteCommit:
+        final bundleIndex = update.bundleIndex;
+        final proposalId = update.proposalId;
+        final stage = update.voteCommitStage;
+        if (bundleIndex == null || proposalId == null || stage == null) return;
+        final key = VotingVoteKey(
+          bundleIndex: bundleIndex,
+          proposalId: proposalId,
+        );
+        stepKeys.add(key);
+        _storeProgress(
+          progress,
+          key,
+          VotingSessionProgress(
+            phase: _voteStagePhase(stage),
+            bundleIndex: bundleIndex,
+            proposalId: proposalId,
+            proofProgress:
+                update.proofProgress ??
+                switch (stage) {
+                  rust_wire.VoteCommitStageKind.proofStarting => 0.0,
+                  rust_wire.VoteCommitStageKind.sharePayloadsBuilding ||
+                  rust_wire.VoteCommitStageKind.signing => 1.0,
+                  rust_wire.VoteCommitStageKind.proofProgress => null,
+                },
+          ),
+        );
+      case rust_wire.RoundStepProgressKind.helperPlansPrepared:
+        for (final voteKey in update.voteKeys) {
+          final key = VotingVoteKey(
+            bundleIndex: voteKey.bundleIndex,
+            proposalId: voteKey.proposalId,
+          );
+          stepKeys.add(key);
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: VotingProgressPhase.submitting,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: 1,
+            ),
+          );
+        }
+      case rust_wire.RoundStepProgressKind.chainOutcome:
+        final chainOutcome = update.chainOutcome;
+        if (chainOutcome == null) return;
+        final confirmed =
+            chainOutcome.kind == rust_wire.ChainSubmissionOutcomeKind.confirmed;
+        for (final key in stepKeys.where(
+          (key) => key.bundleIndex == step.bundleIndex,
+        )) {
+          _storeProgress(
+            progress,
+            key,
+            VotingSessionProgress(
+              phase: confirmed
+                  ? VotingProgressPhase.confirmed
+                  : VotingProgressPhase.submitted,
+              bundleIndex: key.bundleIndex,
+              proposalId: key.proposalId,
+              proofProgress: 1,
+              message:
+                  chainOutcome.transactionHash ??
+                  chainOutcome.candidateTransactionHash,
+            ),
+          );
+        }
+      case rust_wire.RoundStepProgressKind.shareOutcome:
+        final delivery = update.shareDelivery;
+        if (delivery == null) return;
+        final key = VotingVoteKey(
+          bundleIndex: delivery.vote.bundleIndex,
+          proposalId: delivery.vote.proposalId,
+        );
+        stepKeys.add(key);
+        _storeProgress(
+          progress,
+          key,
+          VotingSessionProgress(
+            phase: VotingProgressPhase.completed,
+            bundleIndex: key.bundleIndex,
+            proposalId: key.proposalId,
+            proofProgress: 1,
+          ),
+        );
+      case rust_wire.RoundStepProgressKind.selected ||
+          rust_wire.RoundStepProgressKind.delegation ||
+          rust_wire.RoundStepProgressKind.delegateAndVoteBatchPersisted ||
+          rust_wire.RoundStepProgressKind.treeSynced ||
+          rust_wire.RoundStepProgressKind.shareConfirmed:
+        break;
+    }
+  }
+
+  static VotingProgressPhase _voteStagePhase(
+    rust_wire.VoteCommitStageKind stage,
+  ) {
+    return switch (stage) {
+      rust_wire.VoteCommitStageKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
+      rust_wire.VoteCommitStageKind.proofProgress =>
+        VotingProgressPhase.proofProgress,
+      rust_wire.VoteCommitStageKind.sharePayloadsBuilding =>
+        VotingProgressPhase.buildingSharePayloads,
+      rust_wire.VoteCommitStageKind.signing => VotingProgressPhase.signing,
+    };
+  }
+
+  static VotingProgressPhase _delegationPhase(
+    rust_wire.DelegationProgressKind kind,
+  ) {
+    return switch (kind) {
+      rust_wire.DelegationProgressKind.selectingNotes =>
+        VotingProgressPhase.selectingNotes,
+      rust_wire.DelegationProgressKind.pcztBuilding ||
+      rust_wire.DelegationProgressKind.pcztBuilt =>
+        VotingProgressPhase.buildingPczt,
+      rust_wire.DelegationProgressKind.proofStarting =>
+        VotingProgressPhase.buildingProof,
+      rust_wire.DelegationProgressKind.waitingForExistingProof =>
+        VotingProgressPhase.waitingForExistingProof,
+      rust_wire.DelegationProgressKind.proofProgress ||
+      rust_wire.DelegationProgressKind.proofComplete =>
+        VotingProgressPhase.proofProgress,
+      rust_wire.DelegationProgressKind.signingPayload =>
+        VotingProgressPhase.signingPayload,
+      rust_wire.DelegationProgressKind.payloadReady =>
+        VotingProgressPhase.payloadReady,
+    };
+  }
+
+  static double? _delegationPhaseProgress(
+    rust_wire.DelegationProgressKind kind,
+    double? proofProgress,
+  ) {
+    return switch (kind) {
+      rust_wire.DelegationProgressKind.proofStarting => 0.0,
+      rust_wire.DelegationProgressKind.proofProgress => proofProgress,
+      rust_wire.DelegationProgressKind.proofComplete ||
+      rust_wire.DelegationProgressKind.signingPayload => 1.0,
+      _ => null,
+    };
+  }
+
+  /// Opens an SDK round session for this account and round.
+  ///
+  /// Chain and helper traffic follow the wallet's network route inside Rust;
+  /// PIR and vote-tree traffic use the SDK's direct transport.
+  VotingRoundSession _openRoundSession(
+    VotingRustApi rust,
+    _VotingSessionContext context, {
+    List<int>? storedHotkeySecret,
+    List<String> pirServerUrls = const [],
+  }) {
+    final proposals = proposalsFromRound(context.round);
+    // One mapped fleet for the round. Chain, helper and vote-tree traffic all
+    // go to the configured API servers, but they stay separate fields because
+    // they are separate roles: sharing a value today is a deployment fact, not
+    // something the boundary should assert.
+    final servers = context.config.apiServers.all
+        .map(_transportUrl)
+        .toList(growable: false);
+    final start = context.round.ceremonyStart;
+    final end = context.round.voteEndTime;
+    final session = rust.openRoundSession(
+      ctx: _apiRoundContext(context),
+      binding: rust_session.ApiRoundSessionBinding(
+        chainEndpoints: servers,
+        configuredHelperUrls: servers,
+        voteTreeNodeUrls: servers,
+        pirServerUrls: pirServerUrls,
+        proposals: [
+          for (final proposal in proposals)
+            rust_session.ApiProposalRosterEntry(
+              proposalId: proposal.id,
+              numOptions: proposal.options.length,
+            ),
+        ],
+        ceremonyStartSeconds: start == null
+            ? null
+            : BigInt.from(_unixSeconds(start)),
+        voteEndTimeSeconds: end == null ? null : BigInt.from(_unixSeconds(end)),
+        maxProofConcurrency: _votingBatchProofConcurrency,
+      ),
+      storedHotkeySecret: storedHotkeySecret,
+      operationEpoch: BigInt.from(context.sessionGeneration),
+    );
+    _activeRoundSessions.add(session);
+    return session;
+  }
+
+  void _closeRoundSession(VotingRoundSession session) {
+    _activeRoundSessions.remove(session);
+    session.dispose();
+  }
+
+  /// Drives the round's delegation work through the SDK, publishing
+  /// per-bundle progress.
+  ///
+  /// The SDK owns the loop: it plans, overlaps bundles, isolates a failure to
+  /// its bundle, and stops when only this app can make progress. Dart reads
+  /// the event stream and keeps the UI state.
+  ///
+  /// Returns the bundles that completed. Failures the run isolated are raised
+  /// together, as the per-bundle batch the caller already handles, so a
+  /// healthy bundle keeps its durable progress.
+  Future<Set<int>> _runDelegationRound({
+    required VotingRoundSession session,
+    required _VotingSessionContext context,
+    required VotingSessionState fallbackState,
+    required rust_session.ApiDelegationSignerInput signer,
+    required Map<int, VotingSessionProgress> progress,
+    required String logLabel,
+  }) async {
+    final batchTimer = Stopwatch()..start();
+    final completed = <int>{};
+    var castingVotes = false;
+    var roundPlan = fallbackState.roundPlan;
+    rust_wire.RoundWorkTallyView? tally =
+        fallbackState.voteSubmissionTotalCount > 0
+        ? rust_wire.RoundWorkTallyView(
+            completedProposals: fallbackState.voteSubmissionCompletedCount,
+            totalProposals: fallbackState.voteSubmissionTotalCount,
+            remainingObligations: 0,
+          )
+        : null;
+    final voteProgress = Map<VotingVoteKey, VotingSessionProgress>.of(
+      fallbackState.voteProgress,
+    );
+    final stepVoteKeys = <VotingVoteKey, Set<VotingVoteKey>>{};
+
+    void publishVotes({VotingVoteKey? currentKey}) {
+      final total = tally?.totalProposals ?? 0;
+      final finished = tally?.completedProposals ?? 0;
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          phase: VotingSessionPhase.castingVotes,
+          roundPlan: roundPlan,
+          voteProgress: Map<VotingVoteKey, VotingSessionProgress>.of(
+            voteProgress,
+          ),
+          currentBundleIndex: currentKey?.bundleIndex,
+          currentVoteKey: currentKey,
+          clearCurrentBundleIndex: currentKey == null,
+          clearCurrentVoteKey: currentKey == null,
+          voteSubmissionCompletedCount: finished,
+          voteSubmissionTotalCount: total,
+          // A refresh that reports no baseline has not learned this run's
+          // obligations yet. Leaving the counters alone is right; clearing
+          // them dropped the ring back to nothing mid-ballot.
+          voteSubmissionProgress: total > 0 ? finished / total : null,
+        ),
+      );
+    }
+
+    void publishProgress(VotingSessionProgress update) {
+      final bundleIndex = update.bundleIndex;
+      if (bundleIndex == null) return;
+      _storeProgress(progress, bundleIndex, update);
+      _setStateForContext(
+        context,
+        (state.value ?? fallbackState).copyWith(
+          // A sibling delegation can finish after voting has begun. Keep the
+          // presentation on voting instead of bouncing between the two steps.
+          phase: castingVotes
+              ? VotingSessionPhase.castingVotes
+              : VotingSessionPhase.delegating,
+          delegationProgress: Map<int, VotingSessionProgress>.of(progress),
+          clearCurrentBundleIndex: true,
+        ),
+      );
+    }
+
+    final report = await _runRound(
+      session,
+      context,
+      signer: signer,
+      label: '$logLabel-delegation',
+      policy: const rust_session.ApiRoundDrivePolicy(
+        selectedChoiceProgress: true,
+      ),
+      onEvent: (event) {
+        // This is a whole-round drive, even though the caller starts it to
+        // delegate. Durable ballot intents let it cast votes and deliver
+        // shares in the same run, before castVotes() is ever called.
+        if (event.kind == rust_wire.RoundDriveEventKind.planRefreshed) {
+          roundPlan = event.plan ?? roundPlan;
+          tally = _mergeTally(tally, event.tally);
+          if (castingVotes) publishVotes();
+          return;
+        }
+        final step = event.step;
+        final bundleIndex = step?.bundleIndex;
+        if (bundleIndex == null) return;
+        if (_isVoteStep(step!)) {
+          castingVotes = true;
+          final key = _voteKeyForStep(step);
+          final keys = stepVoteKeys.putIfAbsent(key, () => {key});
+          switch (event.kind) {
+            case rust_wire.RoundDriveEventKind.stepProgress:
+              final update = event.progress;
+              if (update != null) {
+                _applyVoteProgress(update, step, keys, voteProgress);
+              }
+            case rust_wire.RoundDriveEventKind.stepFinished:
+              if (event.disposition ==
+                  rust_wire.RoundStepDispositionView.advanced) {
+                for (final voteKey in keys) {
+                  _storeProgress(
+                    voteProgress,
+                    voteKey,
+                    VotingSessionProgress(
+                      phase: VotingProgressPhase.completed,
+                      bundleIndex: voteKey.bundleIndex,
+                      proposalId: voteKey.proposalId,
+                      proofProgress: 1,
+                    ),
+                  );
+                }
+              }
+            default:
+              break;
+          }
+          publishVotes(currentKey: key);
+          return;
+        }
+        // Chain outcomes are attributed to a step, not just a bundle: a vote
+        // confirmation must never overwrite that bundle's delegation state.
+        if (!_isDelegationStep(step)) return;
+        switch (event.kind) {
+          case rust_wire.RoundDriveEventKind.stepProgress:
+            final update = event.progress;
+            if (update == null) return;
+            switch (update.kind) {
+              case rust_wire.RoundStepProgressKind.delegation:
+                final kind = update.delegationProgress;
+                if (kind == null) return;
+                publishProgress(
+                  VotingSessionProgress(
+                    phase: _delegationPhase(kind),
+                    bundleIndex: bundleIndex,
+                    proofProgress: _monotonicProofProgress(
+                      progress[bundleIndex]?.proofProgress,
+                      _delegationPhaseProgress(kind, update.proofProgress),
+                    ),
+                  ),
+                );
+              case rust_wire.RoundStepProgressKind.chainOutcome:
+                final chainOutcome = update.chainOutcome;
+                if (chainOutcome?.kind ==
+                    rust_wire.ChainSubmissionOutcomeKind.confirmed) {
+                  publishProgress(
+                    VotingSessionProgress(
+                      phase: VotingProgressPhase.confirmed,
+                      bundleIndex: bundleIndex,
+                      message: chainOutcome!.transactionHash,
+                    ),
+                  );
+                }
+              default:
+                break;
+            }
+          case rust_wire.RoundDriveEventKind.stepFinished:
+            if (event.disposition ==
+                rust_wire.RoundStepDispositionView.advanced) {
+              completed.add(bundleIndex);
+            }
+          default:
+            break;
+        }
+      },
+    );
+
+    if (castingVotes) {
+      roundPlan = report.plan ?? roundPlan;
+      tally = _mergeTally(tally, report.tally);
+      publishVotes();
+    }
+
+    // Unscoped failures are kept, not filtered: the SDK leaves `bundle_index`
+    // absent for a failure that belonged to no step — a plan it could not read,
+    // say — and that is a round-level failure, not an absence of one. Dropping
+    // it reported a delegation run that drove nothing as a success, and the
+    // vote run that followed then went looking for a delegation still pending
+    // with no signer to finish it.
+    final failures = [
+      for (final record in report.failures)
+        _DelegationBundleFailure(
+          bundleIndex: record.bundleIndex,
+          stage: 'step',
+          error: _failureFromRecord(record),
+        ),
+    ];
+    for (final failure in failures) {
+      final bundleIndex = failure.bundleIndex;
+      // A round-level failure belongs to no bundle, so there is no bundle whose
+      // progress it contradicts and none to paint as failed.
+      if (bundleIndex == null) continue;
+      completed.remove(bundleIndex);
+      publishProgress(
+        VotingSessionProgress(
+          phase: VotingProgressPhase.failed,
+          bundleIndex: bundleIndex,
+          message: failure.error.toString(),
+        ),
+      );
+    }
+    debugPrint(
+      '[zcash] Voting: $logLabel delegation run finished '
+      'round=${context.round.roundId} completed=${completed.length} '
+      'failed=${failures.length} '
+      'quiescence=${report.quiescence.kind.name} '
+      'elapsed=${formatElapsedSeconds(batchTimer.elapsed)}',
+    );
+    if (failures.isNotEmpty) throw _DelegationBundleBatchException(failures);
+    return completed;
+  }
+
+  /// The typed error a host raises for one isolated step failure.
+  ///
+  /// A record always names a step in practice; the SDK leaves it absent only
+  /// for a failure that belonged to no step, such as a plan it could not read.
+  static Object _failureFromRecord(
+    rust_wire.RoundStepFailureRecordView record,
+  ) {
+    final step = record.step;
+    return step == null
+        ? StateError(record.failure.message)
+        : VotingRoundStepFailure(step, record.failure);
+  }
+
+  /// Streams one SDK round run, forwarding every event and returning its
+  /// report.
+  ///
+  /// The run's own failures ride on the report; only a bridge error or a
+  /// stale session throws, so a caller decides what an isolated bundle means
+  /// for its flow.
+  Future<rust_wire.RoundRunReportView> _runRound(
+    VotingRoundSession session,
+    _VotingSessionContext context, {
+    required String label,
+    required void Function(rust_wire.RoundDriveEventView event) onEvent,
+    rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) async {
+    for (var run = 1; ; run++) {
+      final report = await _runRoundOnce(
+        session,
+        context,
+        label: label,
+        onEvent: onEvent,
+        signer: signer,
+        policy: policy,
+      );
+      final quiescence = report.quiescence;
+      switch (quiescence.kind) {
+        case rust_wire.RoundQuiescenceKind.cancelled:
+          _throwIfContextStale(context, '$label-run-cancelled');
+          throw const _ChainSubmissionCancelled();
+        case rust_wire.RoundQuiescenceKind.chainTerminal:
+        case rust_wire.RoundQuiescenceKind.persistedChainTerminal:
+          // A terminal delegation is reported to the user without failing the
+          // round — `_noteTerminalDelegation` reads it off the refreshed plan
+          // — so the round's remaining bundles are driven rather than dropped.
+          // A terminal bundle plans no further work, so the re-plan that
+          // decides this has already retired the step that ended this run.
+          //
+          // Every other terminal step still surfaces: nothing else would
+          // report it, and reading it as a finished round would lose a
+          // rejection entirely.
+          final terminalStep = quiescence.step;
+          final runPlan = report.plan;
+          if (terminalStep != null &&
+              _isDelegationStep(terminalStep) &&
+              // The work the run left behind for other bundles, read from the
+              // plan the driver itself was last working from. A round whose
+              // only remaining work belonged to the bundle that just ended has
+              // nothing to continue with, and its rejection is the round's
+              // outcome.
+              (runPlan?.nextSteps ?? const <rust_wire.NextStepView>[]).any(
+                (step) => step.bundleIndex != terminalStep.bundleIndex,
+              ) &&
+              // At most one continuation per bundle: a terminal bundle plans no
+              // further work, so a plan that keeps listing the step that just
+              // ended a run is not making progress and must surface.
+              run <= roundPlanBundleCount(runPlan)) {
+            continue;
+          }
+          throw VotingChainTerminalOutcome(
+            quiescence.step,
+            quiescence.chainOutcome,
+          );
+        case rust_wire.RoundQuiescenceKind.chainRecoveryStalled:
+          throw VotingChainPendingOutcome(
+            quiescence.step,
+            quiescence.chainOutcome,
+          );
+        default:
+          break;
+      }
+      return report;
+    }
+  }
+
+  /// Streams one SDK round run, forwarding every event and returning its
+  /// report.
+  Future<rust_wire.RoundRunReportView> _runRoundOnce(
+    VotingRoundSession session,
+    _VotingSessionContext context, {
+    required String label,
+    required void Function(rust_wire.RoundDriveEventView event) onEvent,
+    rust_session.ApiDelegationSignerInput? signer,
+    rust_session.ApiRoundDrivePolicy? policy,
+  }) async {
+    _throwIfContextStale(context, '$label-run');
+    rust_wire.RoundRunReportView? report;
+    await for (final event in session.runRound(
+      signer: signer,
+      policy: policy,
+    )) {
+      _throwIfContextStale(context, '$label-run-event');
+      final observed = event.event;
+      if (observed != null) onEvent(observed);
+      final error = event.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
+      final finished = event.report;
+      if (finished != null) report = finished;
+    }
+    if (report == null) {
+      throw StateError('Round run completed without a report.');
+    }
+    return report;
+  }
+
+  /// TEMPORARY diagnostic: the network the voting layer binds.
+  static String _loggedVotingNetwork(String networkName) {
+    debugPrint('[zcash] Voting: context network=$networkName');
+    return networkName;
   }
 
   Future<List<int>?> _hotkeyForVoteCasting(
@@ -1505,49 +2101,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context, {
     bool alreadyBound = false,
   }) {
-    final key = _hotkeyEnsureKey(context);
-    final inFlight = _hotkeyEnsures[key];
-    if (inFlight != null) return inFlight;
-
-    late final Future<List<int>> ensureFuture;
-    ensureFuture = _ensureHotkeyUncached(context, alreadyBound: alreadyBound)
-        .whenComplete(() {
-          if (identical(_hotkeyEnsures[key], ensureFuture)) {
-            _hotkeyEnsures.remove(key);
-          }
-        });
-    _hotkeyEnsures[key] = ensureFuture;
-    return ensureFuture;
-  }
-
-  Future<List<int>> _ensureHotkeyUncached(
-    _VotingSessionContext context, {
-    required bool alreadyBound,
-  }) async {
-    final existing = await _readStoredHotkey(context);
-    if (existing != null && existing.isNotEmpty) return existing;
-    if (alreadyBound || _hotkeyAlreadyBound(context)) {
-      throw const VotingHotkeyUnavailable('missing stored voting hotkey');
-    }
-
     final rust = ref.read(votingRustApiProvider);
-    final hotkey = await rust.generateVotingHotkey(network: context.network);
-    final storedAfterGeneration = await _readStoredHotkey(context);
-    if (storedAfterGeneration != null && storedAfterGeneration.isNotEmpty) {
-      return storedAfterGeneration;
-    }
-    await ref
+    return ref
         .read(votingHotkeyStoreProvider)
-        .writeHotkey(
+        .getOrCreate(
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
-          hotkey: hotkey,
+          generate: () => rust.generateVotingHotkey(network: context.network),
+          allowCreation: !(alreadyBound || _hotkeyAlreadyBound(context)),
         );
-    return hotkey;
-  }
-
-  static String _hotkeyEnsureKey(_VotingSessionContext context) {
-    return '${context.accountUuid}:${context.round.roundId}';
   }
 
   Future<List<int>?> _readStoredHotkey(_VotingSessionContext context) async {
@@ -1562,188 +2124,104 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _hotkeyAlreadyBound(_VotingSessionContext context) {
-    if (context.roundPlan?.hotkeyBound ?? false) return true;
-    final plan = context.resumePlan;
-    return plan.submittedDelegationBundleIndexes.isNotEmpty ||
-        plan.pendingVoteSubmissionKeys.isNotEmpty ||
-        plan.submittedVoteConfirmationKeys.isNotEmpty ||
-        plan.commitmentBundlesByKey.isNotEmpty ||
-        plan.shareDelegations.isNotEmpty;
-  }
-
-  Future<void> _prepareCommitmentShares(
-    _VotingSessionContext context,
-    rust_wire.SignedVoteCommitmentsView commitments, {
-    required rust_api.ApiVotingHelperPreflight preflight,
-  }) async {
-    if (preflight.configuredHelperUrls.isEmpty) {
-      throw StateError('No helpers configured for share submission.');
-    }
-    final rust = ref.read(votingRustApiProvider);
-    final timing = _roundShareTiming(context, _nowSeconds());
-    final proposalIds = proposalsFromRound(
-      context.round,
-    ).map((proposal) => proposal.id).toList(growable: false);
-    for (final commitment in commitments.commitments) {
-      await rust.prepareCommittedShareDelivery(
-        context: _helperDeliveryContextFor(rust, context),
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        preflight: preflight,
-        nowSeconds: BigInt.from(timing.nowSeconds),
-        voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
-        proposalIds: proposalIds,
-        lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
-      );
-      _throwIfContextStale(context, 'helper-share-planning-finished');
-    }
-  }
-
-  Future<void> _submitCommitmentShares(
-    _VotingSessionContext context,
-    rust_wire.SignedVoteCommitmentsView commitments, {
-    required List<String> configuredHelperUrls,
-    void Function(VotingSessionProgress progress)? publishProgress,
-    required int completedQuestions,
-    required int totalQuestions,
-    required double? voteSubmissionProgress,
-  }) async {
-    final rust = ref.read(votingRustApiProvider);
-    if (configuredHelperUrls.isEmpty) {
-      throw StateError("No helpers configured for share submission.");
-    }
-    final bundleProgressMessage = _bundleProgressMessage(
-      bundleIndex: commitments.bundleIndex,
-      bundleCount: context.resumePlan.bundleCount,
-    );
-
-    for (final commitment in commitments.commitments) {
-      if (publishProgress == null) {
-        _setShareSubmissionProgress(
-          context: context,
-          bundleIndex: commitments.bundleIndex,
-          proposalId: commitment.proposalId,
-          message: bundleProgressMessage,
-          completedQuestions: completedQuestions,
-          totalQuestions: totalQuestions,
-          voteSubmissionProgress: voteSubmissionProgress,
-        );
-      } else {
-        publishProgress(
-          VotingSessionProgress(
-            phase: "submitting_shares",
-            bundleIndex: commitments.bundleIndex,
-            proposalId: commitment.proposalId,
-            message: bundleProgressMessage,
-          ),
-        );
-      }
-
-      final report = await rust.submitPreparedSharesToHelpers(
-        context: _helperDeliveryContextFor(rust, context),
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        configuredHelperUrls: configuredHelperUrls,
-        nowSeconds: BigInt.from(_nowSeconds()),
-      );
-      _throwIfContextStale(context, "helper-share-delivery-finished");
-      if (report.legacyBestEffort) {
-        debugPrint(
-          "[zcash] Voting: resumed legacy helper delivery without an original complete plan "
-          "round=${context.round.roundId} bundle=${commitments.bundleIndex} "
-          "proposal=${commitment.proposalId}",
-        );
-      }
-      if (report.cancelled || report.pendingShareIndices.isNotEmpty) {
-        throw StateError(
-          "Helper-share delivery stopped with pending shares "
-          "${report.pendingShareIndices.join(", ")} for proposal "
-          "${commitment.proposalId}.",
-        );
-      }
-      final failedDeliveries = report.deliveries.where(
-        (delivery) =>
-            delivery.submission.acceptedUrls.isEmpty &&
-            delivery.submission.ambiguousUrls.isEmpty,
-      );
-      if (failedDeliveries.isNotEmpty) {
-        final failed = failedDeliveries.first;
-        throw StateError(
-          "No helper accepted share ${failed.shareIndex} for proposal "
-          "${commitment.proposalId}.",
-        );
-      }
-      for (final delivery in report.deliveries) {
-        final submission = delivery.submission;
-        if (submission.acceptedUrls.length < submission.targetCount) {
-          debugPrint(
-            "[zcash] Voting: share accepted by fewer helpers than planned "
-            "proposal=${commitment.proposalId} share=${delivery.shareIndex} "
-            "accepted=${submission.acceptedUrls.length}/${submission.targetCount} "
-            "ambiguous=${submission.ambiguousUrls.length}",
-          );
-        }
-      }
-    }
-  }
-
-  /// Syncs the round's vote tree, failing over across configured API servers.
-  ///
-  /// Failover resets round-global process state, so callers must never run two
-  /// of these concurrently — go through [_VoteTreeSyncCoalescer].
-  Future<int> _syncVoteTreeWithFailover({
-    required _VotingSessionContext context,
-    required String label,
-  }) async {
-    final nodeUrls = context.config.apiServers.all;
-    final rust = ref.read(votingRustApiProvider);
-    Object? lastError;
-    for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
-      final nodeUrl = nodeUrls[attempt];
-      try {
-        return await rust.syncVoteTree(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-          nodeUrl: _transportUrl(nodeUrl),
-        );
-      } catch (error) {
-        lastError = error;
-        if (attempt == nodeUrls.length - 1) {
-          rethrow;
-        }
-        await rust.resetVoteTree(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-        );
-        debugPrint(
-          '[zcash] Voting: vote tree sync retrying failover '
-          '$label from=$nodeUrl error=$error',
-        );
-      }
-    }
-    throw StateError('vote tree sync failover exited unexpectedly: $lastError');
-  }
-
-  String? _bundleProgressMessage({
-    required int bundleIndex,
-    required int bundleCount,
-  }) {
-    if (bundleCount <= 1) return null;
-    return '${bundleIndex + 1}/$bundleCount';
+    return context.roundPlan?.hotkeyBound ?? false;
   }
 
   double? _voteSubmissionProgress({
     required int completedBundleTasks,
     required int totalBundleTasks,
     double? currentBundleProgress,
+    rust_wire.RoundWorkTallyView? tally,
   }) {
+    return _submissionProgress(
+      tally: tally,
+      inFlightProgress: currentBundleProgress ?? 0,
+      completedBundleTasks: completedBundleTasks,
+      totalBundleTasks: totalBundleTasks,
+    );
+  }
+
+  /// How far through the ballot the bar should sit.
+  ///
+  /// The tally is the authority whenever the SDK sends one, because it counts
+  /// the same proposals the "question N of M" label counts. Counting steps
+  /// cannot: an atomic batch is one step carrying every proposal in it, and
+  /// the planner may collapse a round's casts into one at any refresh — so
+  /// `completedBundleTasks`, which subtracts a refreshed plan's step count
+  /// from the count the run started with, compares two different shapes and
+  /// lands on a number belonging to neither. A six-question ballot that
+  /// started as six casts and refreshed as one batch reported five of six
+  /// done and stayed there for the whole submission.
+  ///
+  /// Step counting survives only as the pre-tally fallback, covering the
+  /// window before the run's first plan refresh arrives.
+  static double? _submissionProgress({
+    required rust_wire.RoundWorkTallyView? tally,
+    required double inFlightProgress,
+    required int completedBundleTasks,
+    required int totalBundleTasks,
+  }) {
+    final total = tally?.totalProposals ?? 0;
+    if (total > 0) {
+      final completed = tally!.completedProposals.clamp(0, total);
+      // The in-flight step is credited with at most one more question. It may
+      // cover several — a batch does — but crediting it for more would
+      // overshoot the label, and the next refresh corrects it upward anyway.
+      final withinQuestion = inFlightProgress.clamp(0.0, 1.0) / total;
+      return ((completed / total) + withinQuestion).clamp(0.0, 1.0).toDouble();
+    }
     if (totalBundleTasks <= 0) return null;
-    final currentProgress = (currentBundleProgress ?? 0).clamp(0.0, 1.0);
-    return ((completedBundleTasks + currentProgress) / totalBundleTasks)
+    return ((completedBundleTasks + inFlightProgress.clamp(0.0, 1.0)) /
+            totalBundleTasks)
         .clamp(0.0, 1.0)
         .toDouble();
+  }
+
+  /// Stores an update for [key], holding the furthest point it has reached.
+  ///
+  /// The round driver re-dispatches a step after a repoll, so a bundle or vote
+  /// that already reached `payloadReady` can be told it is selecting notes
+  /// again. That is the driver retrying, not the voter losing ground, and
+  /// letting it through made the "N of M proved" counters and the progress
+  /// rings run backwards.
+  ///
+  /// `failed` is the one phase allowed to move a key backwards: a failure is
+  /// what the UI has to show. A later event still recovers the key, because
+  /// `failed` ranks below every working phase.
+  void _storeProgress<K>(
+    Map<K, VotingSessionProgress> progress,
+    K key,
+    VotingSessionProgress next,
+  ) {
+    progress[key] = _monotonicProgress(progress[key], next);
+  }
+
+  VotingSessionProgress _monotonicProgress(
+    VotingSessionProgress? previous,
+    VotingSessionProgress next,
+  ) {
+    if (previous == null) return next;
+    final failed = next.phase == VotingProgressPhase.failed;
+    // A key that recovers from a failure must not carry its failure text
+    // forward; anything else keeps the last thing it had to say, so a
+    // transaction hash survives the events that follow it.
+    final recovering = previous.phase == VotingProgressPhase.failed && !failed;
+    final message = next.message ?? (recovering ? null : previous.message);
+    final advances =
+        failed ||
+        voteProgressPhaseRank(next.phase) >=
+            voteProgressPhaseRank(previous.phase);
+    final held = advances ? next : previous;
+    return VotingSessionProgress(
+      phase: held.phase,
+      bundleIndex: next.bundleIndex ?? previous.bundleIndex,
+      proposalId: next.proposalId ?? previous.proposalId,
+      // A failure reports what it actually got to; everything else holds.
+      proofProgress: failed
+          ? next.proofProgress
+          : _monotonicProofProgress(previous.proofProgress, next.proofProgress),
+      message: message,
+    );
   }
 
   double? _monotonicProofProgress(double? previous, double? next) {
@@ -1758,705 +2236,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     debugPrint('[zcash] Voting: $message');
   }
 
-  void _setShareSubmissionProgress({
-    required _VotingSessionContext context,
-    required int bundleIndex,
-    required int proposalId,
-    required String? message,
-    required int completedQuestions,
-    required int totalQuestions,
-    required double? voteSubmissionProgress,
-  }) {
-    final current = state.value;
-    if (current == null) return;
-    final key = VotingVoteKey(bundleIndex: bundleIndex, proposalId: proposalId);
-    final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
-      current.voteProgress,
-    );
-    progress[key] = VotingSessionProgress(
-      phase: 'submitting_shares',
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      message: message,
-    );
-    final previousProgress = current.voteSubmissionProgress ?? 0;
-    final requestedProgress = voteSubmissionProgress ?? previousProgress;
-    final monotonicProgress = requestedProgress < previousProgress
-        ? previousProgress
-        : requestedProgress;
-    _setStateForContext(
-      context,
-      current.copyWith(
-        phase: VotingSessionPhase.castingVotes,
-        voteProgress: progress,
-        voteSubmissionCompletedCount: completedQuestions,
-        voteSubmissionTotalCount: totalQuestions,
-        voteSubmissionProgress: monotonicProgress,
-        clearCurrentBundleIndex: true,
-        clearCurrentVoteKey: true,
-      ),
-    );
-  }
-
-  /// Casts every pending vote for the round, running one serial chain per
-  /// delegation bundle with all bundles in flight at once.
-  ///
-  /// The serialization inside a bundle is a protocol requirement, not a
-  /// throttle. A cast vote spends the bundle's vote authority note: the proof
-  /// binds the current VAN leaf position and the current proposal-authority
-  /// mask, submission clears that proposal's bit, and confirmation appends the
-  /// replacement VAN leaf and advances the stored position. Proving two
-  /// proposals of one bundle against the same state yields the same
-  /// `van_nullifier`, so the second cast-vote transaction is a double spend.
-  /// Each step therefore waits for `submit -> confirm -> tree re-sync` before
-  /// the next proposal of the same bundle is proved.
-  ///
-  /// Different bundles own independent VAN chains, so they never wait on each
-  /// other. Witness materialization stays inside the serialized tree handoff;
-  /// only the CPU-heavy proof step is capped ([_votingWorkConcurrency]). A
-  /// bundle parked on a block confirmation holds no proof permit. Share
-  /// submission is dispatched off the chain because the VAN advance is already
-  /// durable by then.
-  ///
-  /// Returns the number of bundle tasks that completed through share
-  /// submission. Throws [_VoteWaveBatchException] if any task failed.
-  Future<int> _runVoteRoundChains({
-    required _VotingSessionContext context,
-    required VotingSessionState fallbackState,
-    required List<_DraftVoteWork> voteWork,
-    required List<int> storedHotkeySecret,
-    required Map<VotingVoteKey, VotingSessionProgress> progress,
-    required int completedBundleTasks,
-    required int totalBundleTasks,
-    required int completedQuestions,
-    required int totalQuestions,
-    required rust_api.ApiVotingHelperPreflight helperPreflight,
-  }) async {
-    // Transpose proposal -> bundles into bundle -> proposals. Proposal order
-    // within a bundle follows the draft order so a restart resumes the same
-    // chain it left off.
-    final draftsByBundle = <int, List<rust_wire.DraftVote>>{};
-    final voteKeys = <VotingVoteKey>[];
-    for (final work in voteWork) {
-      for (final bundleIndex in work.bundleIndexes) {
-        draftsByBundle
-            .putIfAbsent(bundleIndex, () => <rust_wire.DraftVote>[])
-            .add(work.draftVote);
-        voteKeys.add(
-          VotingVoteKey(
-            bundleIndex: bundleIndex,
-            proposalId: work.draftVote.proposalId,
-          ),
-        );
-      }
-    }
-    if (voteKeys.isEmpty) return 0;
-
-    final rust = ref.read(votingRustApiProvider);
-    // Idempotent and non-blocking: kicked off before the first tree sync so
-    // Halo2 keygen overlaps the network round trip instead of landing cold on
-    // the first proof.
-    rust.warmVotingProvingCaches();
-    final roundTimer = Stopwatch()..start();
-    final proofWallTimer = Stopwatch()..start();
-    final proofElapsed = <VotingVoteKey, Duration>{};
-    final failures = <_VoteWaveFailure>[];
-    final proofPool = _AsyncPermitPool(_votingWorkConcurrency);
-    // Cast-vote broadcasts stay one-at-a-time across all bundles; only the
-    // confirmation wait that follows them overlaps.
-    final broadcastPool = _AsyncPermitPool(1);
-    _VotingAlreadyStarted? votingAlreadyStartedAbort;
-    final sharePool = _AsyncPermitPool(_votingWorkConcurrency);
-    final shareOutcomeFutures =
-        <VotingVoteKey, Future<_BundleWorkOutcome<void>>>{};
-    var syncCount = 0;
-    final treeSync = _VoteTreeSyncCoalescer(() {
-      syncCount++;
-      return _syncVoteTreeWithFailover(
-        context: context,
-        label:
-            'round=${context.round.roundId} bundles=${draftsByBundle.length}',
-      );
-    });
-    var lastAggregateProgress =
-        _voteSubmissionProgress(
-          completedBundleTasks: completedBundleTasks,
-          totalBundleTasks: totalBundleTasks,
-        ) ??
-        0;
-
-    double? aggregateProgress() => _aggregateVotePipelineProgress(
-      progress: progress,
-      voteKeys: voteKeys,
-      completedBundleTasks: completedBundleTasks,
-      totalBundleTasks: totalBundleTasks,
-    );
-
-    void publish(VotingSessionProgress update) {
-      final bundleIndex = update.bundleIndex;
-      final proposalId = update.proposalId;
-      if (bundleIndex == null || proposalId == null) return;
-      final key = VotingVoteKey(
-        bundleIndex: bundleIndex,
-        proposalId: proposalId,
-      );
-      progress[key] = update;
-      final updatedProgress = aggregateProgress() ?? lastAggregateProgress;
-      if (updatedProgress > lastAggregateProgress) {
-        lastAggregateProgress = updatedProgress;
-      }
-      // A question counts as done only once every bundle finished it, because
-      // bundles now advance through the proposal list independently.
-      final completedChainQuestions = voteWork.where((work) {
-        return work.bundleIndexes.every(
-          (bundleIndex) =>
-              progress[VotingVoteKey(
-                    bundleIndex: bundleIndex,
-                    proposalId: work.draftVote.proposalId,
-                  )]
-                  ?.phase ==
-              'completed',
-        );
-      }).length;
-      _setStateForContext(
-        context,
-        (state.value ?? fallbackState).copyWith(
-          phase: VotingSessionPhase.castingVotes,
-          voteProgress: Map<VotingVoteKey, VotingSessionProgress>.of(progress),
-          voteSubmissionCompletedCount:
-              completedQuestions + completedChainQuestions,
-          voteSubmissionTotalCount: totalQuestions,
-          voteSubmissionProgress: lastAggregateProgress,
-          clearCurrentBundleIndex: true,
-          clearCurrentVoteKey: true,
-        ),
-      );
-    }
-
-    void recordFailure({
-      required VotingVoteKey key,
-      required String stage,
-      required Object error,
-    }) {
-      failures.add(
-        _VoteWaveFailure(
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-          stage: stage,
-          error: error,
-        ),
-      );
-      publish(
-        VotingSessionProgress(
-          phase: 'failed',
-          bundleIndex: key.bundleIndex,
-          proposalId: key.proposalId,
-          proofProgress: progress[key]?.proofProgress,
-          message: error.toString(),
-        ),
-      );
-    }
-
-    /// Runs one bundle's proposals in order. A failed step aborts the rest of
-    /// this bundle — the next proposal cannot be proved without the VAN
-    /// advance the failed step was supposed to produce — but leaves every other
-    /// bundle running.
-    Future<void> runBundleChain(
-      int bundleIndex,
-      List<rust_wire.DraftVote> drafts,
-    ) async {
-      // Attribute anything that escapes the per-stage handlers below.
-      // A swallowed error would leave `failures` empty and let the caller
-      // report a fully successful round.
-      VotingVoteKey? currentKey;
-      try {
-        for (final draft in drafts) {
-          final key = VotingVoteKey(
-            bundleIndex: bundleIndex,
-            proposalId: draft.proposalId,
-          );
-          currentKey = key;
-
-          final rust_wire.SignedVoteCommitmentsView commitments;
-          try {
-            _throwIfContextStale(context, 'vote-chain-sync');
-            // A sync that started before this call could predate this bundle's
-            // own previous confirmation, so the coalescer only hands back one
-            // that started after it.
-            final syncTimer = Stopwatch()..start();
-            final witness = await treeSync.freshAndUse((anchorHeight) async {
-              _logVoteTiming(
-                'bundle=$bundleIndex proposal=${draft.proposalId} '
-                'tree-sync elapsed=${formatElapsedSeconds(syncTimer.elapsed)} '
-                'anchorHeight=$anchorHeight',
-              );
-              return rust.generateVanWitness(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                bundleIndex: bundleIndex,
-                anchorHeight: anchorHeight,
-              );
-            });
-            // Re-evaluated per step: a long round can cross into the last-moment
-            // buffer part way through a bundle's chain.
-            final timedDraft = _draftVoteForCurrentShareMode(context, draft);
-            commitments = await proofPool.run(() async {
-              _throwIfContextStale(context, 'vote-chain-proof-start');
-              final timer = Stopwatch()..start();
-              try {
-                rust_wire.SignedVoteCommitmentsView? built;
-                await for (final event in rust.buildVoteCommitmentsWithProgress(
-                  dbPath: context.dbPath,
-                  accountUuid: context.accountUuid,
-                  network: context.network,
-                  roundId: context.round.roundId,
-                  bundleIndex: bundleIndex,
-                  storedHotkeySecret: storedHotkeySecret,
-                  vanWitness: witness,
-                  draftVotes: [timedDraft],
-                )) {
-                  _throwIfContextStale(context, 'vote-chain-proof-progress');
-                  final eventKey = VotingVoteKey(
-                    bundleIndex: event.bundleIndex ?? bundleIndex,
-                    proposalId: event.proposalId ?? draft.proposalId,
-                  );
-                  publish(
-                    VotingSessionProgress(
-                      phase: event.phase,
-                      bundleIndex: eventKey.bundleIndex,
-                      proposalId: eventKey.proposalId,
-                      proofProgress: _monotonicProofProgress(
-                        progress[eventKey]?.proofProgress,
-                        event.proofProgress,
-                      ),
-                    ),
-                  );
-                  built = event.commitments ?? built;
-                }
-                return built ??
-                    (throw StateError(
-                      'Vote proof completed without commitment payload.',
-                    ));
-              } finally {
-                proofElapsed[key] = timer.elapsed;
-                _logVoteTiming(
-                  'bundle=$bundleIndex proposal=${draft.proposalId} '
-                  'prove elapsed=${formatElapsedSeconds(timer.elapsed)}',
-                );
-              }
-            });
-          } catch (error) {
-            recordFailure(key: key, stage: 'proof', error: error);
-            return;
-          }
-
-          try {
-            await _prepareCommitmentShares(
-              context,
-              commitments,
-              preflight: helperPreflight,
-            );
-          } catch (error) {
-            recordFailure(
-              key: key,
-              stage: 'helper-share planning',
-              error: error,
-            );
-            return;
-          }
-
-          final Map<int, String> txHashes;
-          try {
-            _throwIfContextStale(context, 'vote-chain-submit');
-            final submitTimer = Stopwatch()..start();
-            txHashes = await broadcastPool.run(() async {
-              // The context can become stale while this bundle waits for the
-              // single broadcast permit. Revalidate after acquiring it so a
-              // queued bundle cannot perform an irreversible submission for
-              // an account or session that is no longer active.
-              _throwIfContextStale(context, 'vote-chain-submit-acquired');
-              final abort = votingAlreadyStartedAbort;
-              if (abort != null) throw abort;
-              try {
-                return await _submitVoteCommitmentsWithoutConfirmation(
-                  context,
-                  commitments,
-                );
-              } on _VotingAlreadyStarted catch (error) {
-                // Set the shared abort before releasing the single broadcast
-                // permit, so already queued bundle chains cannot submit after
-                // one of the round's voting nullifiers has already been spent.
-                votingAlreadyStartedAbort ??= error;
-                rethrow;
-              }
-            });
-            _logVoteTiming(
-              'bundle=$bundleIndex proposal=${key.proposalId} '
-              'submit elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
-            );
-            publish(
-              VotingSessionProgress(
-                phase: 'submitted',
-                bundleIndex: bundleIndex,
-                proposalId: key.proposalId,
-                proofProgress: 1,
-                message: txHashes[key.proposalId],
-              ),
-            );
-          } catch (error) {
-            recordFailure(key: key, stage: 'submission', error: error);
-            return;
-          }
-
-          final confirmations = <int, VotingTxConfirmation>{};
-          try {
-            final confirmTimer = Stopwatch()..start();
-            final api = ref.read(
-              votingApiClientProvider(context.config.apiServers),
-            );
-            for (final entry in txHashes.entries) {
-              final confirmation = await _awaitTxConfirmation(
-                api,
-                entry.value,
-                context: context,
-              );
-              if (confirmation == null) {
-                throw StateError(
-                  'Transaction ${entry.value} was not confirmed in time.',
-                );
-              }
-              if (confirmation.code != 0) {
-                throw StateError(
-                  confirmation.log.isEmpty
-                      ? 'Vote commitment transaction failed.'
-                      : confirmation.log,
-                );
-              }
-              confirmations[entry.key] = confirmation;
-            }
-            _logVoteTiming(
-              'bundle=$bundleIndex proposal=${key.proposalId} '
-              'confirm-wait elapsed=${formatElapsedSeconds(confirmTimer.elapsed)}',
-            );
-          } catch (error) {
-            recordFailure(key: key, stage: 'confirmation', error: error);
-            return;
-          }
-
-          try {
-            // Advances this bundle's stored VAN position, which is what unblocks
-            // the next proposal in this chain.
-            final persistTimer = Stopwatch()..start();
-            await _persistVoteConfirmations(
-              context,
-              bundleIndex: bundleIndex,
-              txHashes: txHashes,
-              confirmations: confirmations,
-            );
-            _logVoteTiming(
-              'bundle=$bundleIndex proposal=${key.proposalId} '
-              'confirm-persist elapsed=${formatElapsedSeconds(persistTimer.elapsed)}',
-            );
-            publish(
-              VotingSessionProgress(
-                phase: 'confirmed',
-                bundleIndex: bundleIndex,
-                proposalId: key.proposalId,
-                proofProgress: 1,
-                message: txHashes[key.proposalId],
-              ),
-            );
-          } catch (error) {
-            recordFailure(
-              key: key,
-              stage: 'confirmation persistence',
-              error: error,
-            );
-            return;
-          }
-
-          // Shares are off the chain: the VAN advance is durable, so the next
-          // proposal does not wait on helper-server delivery.
-          shareOutcomeFutures[key] = _captureBundleWork(
-            () => sharePool.run(() async {
-              final shareTimer = Stopwatch()..start();
-              await _submitCommitmentShares(
-                context,
-                commitments,
-                configuredHelperUrls: helperPreflight.configuredHelperUrls,
-                publishProgress: publish,
-                completedQuestions: completedQuestions,
-                totalQuestions: totalQuestions,
-                voteSubmissionProgress: aggregateProgress(),
-              );
-              _logVoteTiming(
-                'bundle=$bundleIndex proposal=${key.proposalId} '
-                'shares elapsed=${formatElapsedSeconds(shareTimer.elapsed)}',
-              );
-              publish(
-                VotingSessionProgress(
-                  phase: 'completed',
-                  bundleIndex: bundleIndex,
-                  proposalId: key.proposalId,
-                  proofProgress: 1,
-                ),
-              );
-            }),
-          );
-        }
-      } catch (error) {
-        failures.add(
-          _VoteWaveFailure(
-            bundleIndex: bundleIndex,
-            proposalId: currentKey?.proposalId ?? drafts.first.proposalId,
-            stage: 'chain',
-            error: error,
-          ),
-        );
-      }
-    }
-
-    await Future.wait([
-      for (final entry in draftsByBundle.entries)
-        _captureBundleWork(() => runBundleChain(entry.key, entry.value)),
-    ]);
-
-    final serialProofDuration = proofElapsed.values.fold<Duration>(
-      Duration.zero,
-      (total, elapsed) => total + elapsed,
-    );
-    _logVoteTiming(
-      'vote chains proof time '
-      'round=${context.round.roundId} proposals=${voteWork.length} '
-      'bundles=${draftsByBundle.length} tasks=${voteKeys.length} '
-      'treeSyncs=$syncCount concurrency=$_votingWorkConcurrency '
-      'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
-      'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
-    );
-
-    final shareOutcomes = <VotingVoteKey, _BundleWorkOutcome<void>>{};
-    await Future.wait(
-      shareOutcomeFutures.entries.map((entry) async {
-        shareOutcomes[entry.key] = await entry.value;
-      }),
-    );
-
-    var completed = 0;
-    for (final entry in shareOutcomes.entries) {
-      final outcome = entry.value;
-      if (outcome.error != null) {
-        recordFailure(key: entry.key, stage: 'shares', error: outcome.error!);
-        continue;
-      }
-      completed++;
-    }
-
-    if (failures.isNotEmpty) {
-      // A stale session is a control-flow signal, not a per-task failure; let
-      // it unwind on its own so the caller can drop the abandoned round.
-      for (final failure in failures) {
-        if (failure.error is _StaleVotingSessionAction) throw failure.error;
-        if (failure.error is _VotingAlreadyStarted) {
-          throw failure.error;
-        }
-      }
-      throw _VoteWaveBatchException(failures);
-    }
-    _logVoteTiming(
-      'vote chains completed '
-      'round=${context.round.roundId} proposals=${voteWork.length} '
-      'bundles=${draftsByBundle.length} tasks=$completed '
-      'elapsed=${formatElapsedSeconds(roundTimer.elapsed)}',
-    );
-    return completed;
-  }
-
   double? _aggregateVotePipelineProgress({
     required Map<VotingVoteKey, VotingSessionProgress> progress,
     required List<VotingVoteKey> voteKeys,
     required int completedBundleTasks,
     required int totalBundleTasks,
+    rust_wire.RoundWorkTallyView? tally,
   }) {
-    if (totalBundleTasks <= 0) return null;
     var pipelineProgress = 0.0;
     for (final key in voteKeys) {
       final item = progress[key];
       pipelineProgress += switch (item?.phase) {
-        'completed' => 1,
-        'submitting_shares' => 0.95,
-        'confirmed' => 0.95,
-        'submitted' => 0.85,
-        'failed' => 0,
+        VotingProgressPhase.completed => 1,
+        VotingProgressPhase.confirmed => 0.95,
+        VotingProgressPhase.submitting => 0.95,
+        VotingProgressPhase.submitted => 0.85,
+        VotingProgressPhase.failed => 0,
         _ => (item?.proofProgress ?? 0).clamp(0.0, 1.0) * 0.8,
       };
     }
-    return ((completedBundleTasks + pipelineProgress) / totalBundleTasks)
-        .clamp(0.0, 1.0)
-        .toDouble();
-  }
-
-  Future<Map<int, String>> _submitVoteCommitmentsWithoutConfirmation(
-    _VotingSessionContext context,
-    rust_wire.SignedVoteCommitmentsView commitments,
-  ) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
-    final rust = ref.read(votingRustApiProvider);
-    final txHashes = <int, String>{};
-    for (final commitment in commitments.commitments) {
-      final result = await api.submitVoteCommitment(
-        commitment: await _voteCommitmentRequestBody(
-          context,
-          rust,
-          commitment.wire,
-        ),
-      );
-      await _requireAcceptedVotingTransaction(
-        result,
-        waitForConfirmation: (txHash) => _awaitTxConfirmation(
-          api,
-          txHash,
-          context: context,
-          spentNullifierRecovery: true,
-        ),
-        rejectionMessage: 'Vote commitment transaction was rejected.',
-      );
-      if (result.txHash.isEmpty) {
-        throw StateError('Vote commitment response did not include tx_hash.');
-      }
-      await rust.markVoteSubmitted(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        txHash: result.txHash,
-      );
-      txHashes[commitment.proposalId] = result.txHash;
-    }
-    return txHashes;
-  }
-
-  Future<Map<int, BigInt>> _persistVoteConfirmations(
-    _VotingSessionContext context, {
-    required int bundleIndex,
-    required Map<int, String> txHashes,
-    required Map<int, VotingTxConfirmation> confirmations,
-  }) async {
-    final rust = ref.read(votingRustApiProvider);
-    final vcTreePositions = <int, BigInt>{};
-    for (final entry in txHashes.entries) {
-      final confirmation = confirmations[entry.key]!;
-      final result = await rust.confirmVoteSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: bundleIndex,
-        proposalId: entry.key,
-        txHash: entry.value,
-        eventsJson: confirmation.eventsJson,
-      );
-      vcTreePositions[entry.key] = result.vcTreePosition;
-    }
-    return vcTreePositions;
-  }
-
-  Future<Map<int, BigInt>> _submitVoteCommitments(
-    _VotingSessionContext context,
-    rust_wire.SignedVoteCommitmentsView commitments,
-  ) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
-    final rust = ref.read(votingRustApiProvider);
-    final vcTreePositions = <int, BigInt>{};
-    for (final commitment in commitments.commitments) {
-      debugPrint(
-        '[zcash] Voting: submitting cast-vote '
-        'round=${context.round.roundId} bundle=${commitments.bundleIndex} '
-        'proposal=${commitment.proposalId}',
-      );
-      final result = await api.submitVoteCommitment(
-        commitment: await _voteCommitmentRequestBody(
-          context,
-          rust,
-          commitment.wire,
-        ),
-      );
-      debugPrint(
-        '[zcash] Voting: cast-vote response '
-        'proposal=${commitment.proposalId} txHash=${result.txHash} '
-        'code=${result.code} log=${result.log}',
-      );
-      await _requireAcceptedVotingTransaction(
-        result,
-        waitForConfirmation: (txHash) => _awaitTxConfirmation(
-          api,
-          txHash,
-          context: context,
-          spentNullifierRecovery: true,
-        ),
-        rejectionMessage: 'Vote commitment transaction was rejected.',
-      );
-      if (result.txHash.isEmpty) {
-        throw StateError('Vote commitment response did not include tx_hash.');
-      }
-      await rust.markVoteSubmitted(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        txHash: result.txHash,
-      );
-
-      final confirmation = await _awaitTxConfirmation(
-        api,
-        result.txHash,
-        context: context,
-      );
-      if (confirmation == null) {
-        throw StateError(
-          'Transaction ${result.txHash} was not confirmed in time.',
-        );
-      }
-      if (confirmation.code != 0) {
-        throw StateError(
-          confirmation.log.isEmpty
-              ? 'Vote commitment transaction failed.'
-              : confirmation.log,
-        );
-      }
-
-      final voteConfirmation = await rust.confirmVoteSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: commitments.bundleIndex,
-        proposalId: commitment.proposalId,
-        txHash: result.txHash,
-        eventsJson: confirmation.eventsJson,
-      );
-      debugPrint(
-        '[zcash] Voting: cast-vote confirmed '
-        'proposal=${commitment.proposalId} vanPosition=${voteConfirmation.vanLeafPosition} '
-        'vcTreePosition=${voteConfirmation.vcTreePosition}',
-      );
-      vcTreePositions[commitment.proposalId] = voteConfirmation.vcTreePosition;
-    }
-    return vcTreePositions;
-  }
-
-  Future<Map<String, dynamic>> _voteCommitmentRequestBody(
-    _VotingSessionContext context,
-    VotingRustApi rust,
-    rust_wire.VoteCommitmentWire commitment,
-  ) async {
-    final body = await _wireJsonMap(
-      rust.voteCommitmentWireJson(commitment: commitment),
+    return _submissionProgress(
+      tally: tally,
+      inFlightProgress: pipelineProgress,
+      completedBundleTasks: completedBundleTasks,
+      totalBundleTasks: totalBundleTasks,
     );
-    // Serialization crosses the FFI boundary and may yield after the caller's
-    // earlier check. This is the final safe point before the irreversible POST.
-    _throwIfContextStale(context, 'vote-chain-submit-dispatch');
-    return body;
   }
 
   Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadKeystoneSignatures(
@@ -2472,87 +2276,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return {for (final record in records) record.bundleIndex: record};
   }
 
-  Future<Set<int>?> _confirmSubmittedDelegations({
-    required _VotingSessionContext context,
-    required VotingResumePlan plan,
-    required rust_wire.RoundPlanView? roundPlan,
-    required Map<int, VotingSessionProgress> progress,
-  }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
-    final rust = ref.read(votingRustApiProvider);
-    final completedBundleIndexes = <int>{};
-    final submittedDelegationsByBundle = <int, String>{};
-    for (final work
-        in roundPlan?.recoveredDelegationWork ??
-            const <rust_wire.DelegationRecoveryWorkView>[]) {
-      if (work.kind == 'poll_delegation' && work.txHash != null) {
-        submittedDelegationsByBundle[work.bundleIndex] = work.txHash!;
-      }
-    }
-    for (final record in plan.recoveryState.delegation) {
-      if (record.phase == VotingWorkflowPhase.submittedDelegation &&
-          record.txHash != null) {
-        submittedDelegationsByBundle.putIfAbsent(
-          record.bundleIndex,
-          () => record.txHash!,
-        );
-      }
-    }
-    for (final entry in submittedDelegationsByBundle.entries) {
-      final bundleIndex = entry.key;
-      final txHash = entry.value;
-      final confirmation = await _awaitTxConfirmation(
-        api,
-        txHash,
-        context: context,
-      );
-      if (confirmation == null) {
-        _setError(
-          'Delegation transaction $txHash for bundle $bundleIndex is still '
-          'unconfirmed after repeated checks. Retry to resume confirmation '
-          'before continuing.',
-          context: context,
-        );
-        return null;
-      }
-      if (confirmation.code != 0) {
-        throw StateError(
-          confirmation.log.isEmpty
-              ? 'Delegation transaction failed.'
-              : confirmation.log,
-        );
-      }
-      await rust.confirmDelegationSubmission(
-        dbPath: context.dbPath,
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
-        bundleIndex: bundleIndex,
-        txHash: txHash,
-        eventsJson: confirmation.eventsJson,
-      );
-      completedBundleIndexes.add(bundleIndex);
-      progress[bundleIndex] = VotingSessionProgress(
-        phase: 'confirmed',
-        bundleIndex: bundleIndex,
-        message: txHash,
-      );
-    }
-    return completedBundleIndexes;
-  }
-
   Future<void> _refreshDelegationPlansAfterBatchFailure({
     required _VotingSessionContext context,
     required VotingSessionState fallbackState,
     required Map<int, VotingSessionProgress> progress,
   }) async {
     try {
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       _throwIfContextStale(context, 'delegation-batch-failure-refresh');
       _setStateForContext(
         context,
         (state.value ?? fallbackState).copyWith(
-          resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           delegationProgress: Map<int, VotingSessionProgress>.of(progress),
           clearCurrentBundleIndex: true,
@@ -2570,407 +2304,449 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<Set<int>> _runDelegationBundleBatch({
-    required _VotingSessionContext context,
-    required VotingSessionState fallbackState,
-    required List<int> bundleIndexes,
-    required Map<int, VotingSessionProgress> progress,
-    required Future<rust_wire.SignedDelegationPayloadView> Function(
-      int bundleIndex,
-      void Function(VotingSessionProgress progress) publishProgress,
-    )
-    prove,
-    required String logLabel,
-  }) async {
-    final batchTimer = Stopwatch()..start();
-    final proofWallTimer = Stopwatch()..start();
-    final timers = <int, Stopwatch>{};
-    final proofElapsed = <int, Duration>{};
+  /// The tracking run in flight, if any.
+  ///
+  /// [startShareTracking] returns once a run is under way, because no product
+  /// caller waits for one — the round's shares are tracked for as long as the
+  /// round lives. This is how the code that genuinely needs the run's durable
+  /// effects waits for them: the destructive drain, and tests.
+  Future<void>? get shareTrackingRun => _shareTrackingRun;
 
-    void publishProgress(VotingSessionProgress update) {
-      final bundleIndex = update.bundleIndex;
-      if (bundleIndex == null) return;
-      progress[bundleIndex] = update;
-      _setStateForContext(
-        context,
-        (state.value ?? fallbackState).copyWith(
-          phase: VotingSessionPhase.delegating,
-          delegationProgress: Map<int, VotingSessionProgress>.of(progress),
-          clearCurrentBundleIndex: true,
-        ),
-      );
+  /// Starts background helper-share tracking for this round, if it is not
+  /// already running.
+  ///
+  /// Returns as soon as the run is under way. The SDK drives passes to
+  /// quiescence on the cadence each pass computes, so callers observe progress
+  /// through session state rather than by awaiting a pass. Idempotent: a
+  /// second call while a run is in flight is a no-op.
+  Future<void> startShareTracking() => _startShareTracking();
+
+  /// Whether the run in flight is still the one this round wants.
+  ///
+  /// A run whose context has been superseded — the account switched, the
+  /// generation advanced — has already been cancelled and is only unwinding.
+  /// Treating that as "tracking is running" is what would drop the next
+  /// round's start on the floor, because cancellation is cooperative and the
+  /// run is usually still in flight when its replacement is requested.
+  bool get _shareTrackingRunIsLive {
+    if (_shareTrackingRun == null) return false;
+    final running = _shareTrackingContext;
+    return running != null && _isCurrentContext(running);
+  }
+
+  /// [startShareTracking], reusing a context the caller already loaded.
+  Future<void> _startShareTracking([
+    _VotingSessionContext? knownContext,
+  ]) async {
+    if (_shareTrackingRunIsLive) {
+      // The live run's own snapshot predates this request. A cast that
+      // persisted new share rows behind it asks for tracking here and would
+      // otherwise get nothing: the run it collides with can finish as
+      // `AllConfirmed` on what it saw, leaving the new shares untracked until
+      // some later lifecycle event. Recording the request lets the finishing
+      // run honour it.
+      _shareTrackingRestartRequested = true;
+      return;
     }
+    if (_automaticShareTrackingStopped) return;
+    if (_isDisposed || !ref.mounted) return;
+    // A superseded run is settled by construction and has already been
+    // cancelled by whatever superseded it, so this waits out an unwind rather
+    // than an outage — and never has to handle a failure.
+    final unwinding = _shareTrackingRun;
+    if (unwinding != null) {
+      await unwinding;
+      if (_isDisposed || !ref.mounted) return;
+    }
+    // Only the notifier that owns automatic tracking may run it, and only
+    // after registering. Registration is what a destructive wallet operation
+    // drains through, so a run started anywhere else would be invisible to it
+    // — account deletion could clear the state a pass is still reading. This
+    // makes "every run is drainable" hold by construction rather than by every
+    // caller happening to pick the right provider.
+    if (!_ownsAutomaticShareTracking) return;
+    if (!_retainAutomaticShareTracking()) return;
 
-    final proofOutcomes = await _runBoundedBundleWork(
-      bundleIndexes,
-      concurrency: _votingWorkConcurrency,
-      work: (bundleIndex) async {
-        _throwIfContextStale(context, '$logLabel-proof-start');
-        final timer = Stopwatch()..start();
-        timers[bundleIndex] = timer;
-        debugPrint(
-          '[zcash] Voting: $logLabel delegation bundle start '
-          'round=${context.round.roundId} bundle=$bundleIndex',
-        );
-        try {
-          final submission = await prove(bundleIndex, publishProgress);
+    final current = await future;
+    if (_isDisposed || !ref.mounted) return;
+    // Callers inside this notifier already hold a context. Reloading it would
+    // add an await this method is often fired across — from a finished cast,
+    // or a rebuild — and the provider can be gone by the time it lands.
+    final context = knownContext ?? await _loadContext(_roundId);
+    if (_isDisposed || !ref.mounted) return;
+    if (_shareTrackingCancelled(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+    // Nothing to track: opening a session and driving passes would only ask
+    // helpers about shares the round has already confirmed.
+    //
+    // Read from live state first. A caller that supplies its own context is
+    // supplying identity, not a fresh plan: `castVotes` hands over the context
+    // it opened with, whose plan predates the votes it just cast and so
+    // reports no shares at all. Deciding from that would silently skip
+    // tracking exactly when a round has just created shares to track.
+    final plan = state.value?.roundPlan ?? context.roundPlan;
+    if (plan != null && !plan.hasUnconfirmedShares) {
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    // Re-checked after the awaits above: a concurrent caller may have started
+    // the run while this one was loading.
+    if (_shareTrackingRun != null) return;
+    _currentContext = context;
+    // A start supersedes any pending re-arm: the run it would have made is the
+    // one about to begin.
+    _cancelShareTrackingRetry();
+
+    final rust = ref.read(votingRustApiProvider);
+    final session = _openRoundSession(rust, context);
+    _shareTrackingSession = session;
+    _shareTrackingContext = context;
+    // The stored future is the settled one: a run's failure is handled here,
+    // so waiting for a run to finish — the drain, or a test — never has to
+    // handle it again, and a second listener can never turn it into an
+    // unhandled asynchronous error.
+    late final Future<void> run;
+    run = _runShareTracking(session, context, current)
+        .catchError((Object error, StackTrace stack) {
           debugPrint(
-            '[zcash] Voting: $logLabel delegation proof stream completed '
-            'round=${context.round.roundId} bundle=$bundleIndex '
-            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+            '[zcash] Voting: share tracking run failed '
+            'round=${context.round.roundId} error=$error\n$stack',
           );
-          return submission;
-        } finally {
-          proofElapsed[bundleIndex] = timer.elapsed;
-        }
-      },
-    );
-    final serialProofDuration = proofElapsed.values.fold<Duration>(
-      Duration.zero,
-      (total, elapsed) => total + elapsed,
-    );
-    debugPrint(
-      '[zcash] Voting: $logLabel delegation proof fan-in '
-      'round=${context.round.roundId} bundles=${bundleIndexes.length} '
-      'concurrency=$_votingWorkConcurrency '
-      'wall=${formatElapsedSeconds(proofWallTimer.elapsed)} '
-      'serialEquivalent=${formatElapsedSeconds(serialProofDuration)}',
-    );
+          // Surfaced only while a submission is waiting on it. A job that
+          // would otherwise poll forever has to learn that tracking gave up,
+          // but once the vote is cast and confirmed the shares deliver in the
+          // background: painting that round failed would report a successful
+          // vote as a failure over a helper outage the voter cannot act on.
+          if (!_activeSubmissionOwnsContext(context)) return;
+          _setError(_actionErrorMessage(error), cause: error, context: context);
+        })
+        .whenComplete(() {
+          // All three fields are cleared only by the run that set them, so a
+          // successor cannot be erased by its predecessor finishing late.
+          if (identical(_shareTrackingSession, session)) {
+            _shareTrackingSession = null;
+          }
+          if (identical(_shareTrackingContext, context)) {
+            _shareTrackingContext = null;
+          }
+          if (identical(_shareTrackingRun, run)) _shareTrackingRun = null;
+          _closeRoundSession(session);
+        });
+    _shareTrackingRun = run;
+  }
 
-    _throwIfContextStale(context, '$logLabel-proof-fan-in');
-    final failures = <_DelegationBundleFailure>[];
-    final submittedTxHashes = <int, String>{};
-
-    // Broadcasts remain serial because the vote server API does not expose an
-    // idempotency key. Persist each returned hash before starting the next one.
-    for (final bundleIndex in bundleIndexes) {
-      final proof = proofOutcomes[bundleIndex]!;
-      if (proof.error != null) {
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            message: proof.error.toString(),
-          ),
-        );
-        failures.add(
-          _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
-            stage: 'proof',
-            error: proof.error!,
-          ),
-        );
-        continue;
-      }
-      try {
-        _throwIfContextStale(context, '$logLabel-delegation-submit');
-        final txHash = await _submitDelegation(
-          context: context,
-          bundleIndex: bundleIndex,
-          submission: proof.value!,
-        );
-        submittedTxHashes[bundleIndex] = txHash;
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'submitted',
-            bundleIndex: bundleIndex,
-            message: txHash,
-          ),
-        );
-      } catch (error) {
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            message: error.toString(),
-          ),
-        );
-        failures.add(
-          _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
-            stage: 'submission',
-            error: error,
-          ),
-        );
-        if (error is _StaleVotingSessionAction ||
-            error is _VotingAlreadyStarted) {
-          break;
-        }
-      }
-    }
-
-    final confirmationOutcomes = await _runBoundedBundleWork(
-      submittedTxHashes.keys.toList(growable: false),
-      concurrency: _votingWorkConcurrency,
-      work: (bundleIndex) => _confirmDelegation(
-        context: context,
-        bundleIndex: bundleIndex,
-        txHash: submittedTxHashes[bundleIndex]!,
+  /// Consumes one tracking run, projecting its events into session state.
+  Future<void> _runShareTracking(
+    VotingRoundSession session,
+    _VotingSessionContext context,
+    VotingSessionState fallback,
+  ) async {
+    _setStateForContext(
+      context,
+      (state.value ?? fallback).copyWith(
+        phase: VotingSessionPhase.submittingShares,
+        // Same reason as the guard above: the live plan is the current one.
+        roundPlan: state.value?.roundPlan ?? context.roundPlan,
       ),
     );
-    final completed = <int>{};
-    for (final bundleIndex in submittedTxHashes.keys) {
-      final confirmation = confirmationOutcomes[bundleIndex]!;
-      if (confirmation.error != null) {
-        publishProgress(
-          VotingSessionProgress(
-            phase: 'failed',
-            bundleIndex: bundleIndex,
-            message: confirmation.error.toString(),
-          ),
-        );
-        failures.add(
-          _DelegationBundleFailure(
-            bundleIndex: bundleIndex,
-            stage: 'confirmation',
-            error: confirmation.error!,
-          ),
-        );
-        continue;
-      }
-      final result = confirmation.value!;
-      completed.add(bundleIndex);
-      publishProgress(
-        VotingSessionProgress(
-          phase: 'confirmed',
-          bundleIndex: bundleIndex,
-          message: result.txHash,
-        ),
+
+    rust_wire.ShareTrackingRunReportView? report;
+    await for (final event in session.runShareTracking(
+      policy: _shareTrackingPolicy,
+    )) {
+      // A backstop, not the stop mechanism. Every real stop path cancels the
+      // session directly and immediately — the registry drain on app lock,
+      // `_advanceSessionGeneration` on an account switch, provider dispose —
+      // and vote end is a boundary the SDK holds itself from the binding. This
+      // only catches a stop condition that became true with none of those
+      // firing, and it can do so no sooner than the next event.
+      if (_shareTrackingCancelled(context)) session.cancel();
+      final error = event.error;
+      if (error != null) throw votingRustExceptionFromStepError(error);
+      final observed = event.event;
+      if (observed != null) await _applyShareTrackingEvent(observed, context);
+      final finished = event.report;
+      if (finished != null) report = finished;
+    }
+    if (report == null) {
+      throw StateError('Share tracking run completed without a report.');
+    }
+
+    final quiescence = report.quiescence;
+    if (quiescence.kind == rust_wire.ShareTrackingQuiescenceKind.failing) {
+      // The driver already retried under its policy and gave up, so the fleet
+      // has been unreachable for a while. That is still a condition a later
+      // run can clear, so re-arm rather than leaving the round pinned but
+      // untracked until an app lifecycle event happens to restart it.
+      final failure = StateError(
+        quiescence.messages.isEmpty
+            ? 'Helper share tracking kept failing.'
+            : quiescence.messages.last,
       );
       debugPrint(
-        '[zcash] Voting: $logLabel delegation bundle completed '
-        'round=${context.round.roundId} bundle=$bundleIndex '
-        'leafIndex=${result.leafIndex} '
-        'total=${formatElapsedSeconds(timers[bundleIndex]!.elapsed)}',
+        '[zcash] Voting: share tracking run failing '
+        'round=${context.round.roundId} passes=${report.passes} '
+        'error=$failure',
       );
-    }
-
-    for (final failure in failures) {
-      if (failure.error is _StaleVotingSessionAction ||
-          failure.error is _VotingAlreadyStarted) {
-        throw failure.error;
-      }
-    }
-    if (failures.isNotEmpty) {
-      throw _DelegationBundleBatchException(failures);
-    }
-    debugPrint(
-      '[zcash] Voting: $logLabel delegation batch completed '
-      'round=${context.round.roundId} bundles=${bundleIndexes.length} '
-      'elapsed=${formatElapsedSeconds(batchTimer.elapsed)}',
-    );
-    return completed;
-  }
-
-  Future<String> _submitDelegation({
-    required _VotingSessionContext context,
-    required int bundleIndex,
-    required rust_wire.SignedDelegationPayloadView submission,
-  }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
-    final rust = ref.read(votingRustApiProvider);
-    final submitTimer = Stopwatch()..start();
-    debugPrint(
-      '[zcash] Voting: submitting delegation '
-      'round=${context.round.roundId} bundle=$bundleIndex',
-    );
-    final result = await api.submitDelegation(
-      submission: await _delegationRequestBody(context, rust, submission),
-    );
-    debugPrint(
-      '[zcash] Voting: delegation submit response '
-      'round=${context.round.roundId} bundle=$bundleIndex '
-      'txHash=${result.txHash} code=${result.code} '
-      'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
-    );
-    await _requireAcceptedVotingTransaction(
-      result,
-      waitForConfirmation: (txHash) => _awaitTxConfirmation(
-        api,
-        txHash,
-        context: context,
-        spentNullifierRecovery: true,
-      ),
-      rejectionMessage: 'Delegation transaction was rejected.',
-    );
-    await rust.markDelegationSubmitted(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-      bundleIndex: bundleIndex,
-      txHash: result.txHash,
-    );
-    debugPrint(
-      '[zcash] Voting: delegation tx hash stored '
-      'round=${context.round.roundId} bundle=$bundleIndex '
-      'txHash=${result.txHash}',
-    );
-    return result.txHash;
-  }
-
-  Future<Map<String, dynamic>> _delegationRequestBody(
-    _VotingSessionContext context,
-    VotingRustApi rust,
-    rust_wire.SignedDelegationPayloadView submission,
-  ) async {
-    final body = await _wireJsonMap(
-      rust.delegationSubmissionWireJson(submission: submission),
-    );
-    _throwIfContextStale(context, 'delegation-submit-dispatch');
-    return body;
-  }
-
-  Future<({String txHash, int leafIndex})> _confirmDelegation({
-    required _VotingSessionContext context,
-    required int bundleIndex,
-    required String txHash,
-  }) async {
-    final api = ref.read(votingApiClientProvider(context.config.apiServers));
-    final rust = ref.read(votingRustApiProvider);
-    final confirmation = await _awaitTxConfirmation(
-      api,
-      txHash,
-      context: context,
-    );
-    if (confirmation == null) {
-      throw StateError('Transaction $txHash was not confirmed in time.');
-    }
-    if (confirmation.code != 0) {
-      throw StateError(
-        confirmation.log.isEmpty
-            ? 'Delegation transaction failed.'
-            : confirmation.log,
-      );
-    }
-    final delegationConfirmation = await rust.confirmDelegationSubmission(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-      bundleIndex: bundleIndex,
-      txHash: txHash,
-      eventsJson: confirmation.eventsJson,
-    );
-    try {
-      await ref
-          .read(votingParticipationClientProvider)
-          .refreshLocal(_apiRoundContext(context));
-    } catch (_) {
-      // Confirmation is durable in Rust. A later prepare reconciles it again.
-      debugPrint('Voting participation local cache update deferred');
-    }
-    return (txHash: txHash, leafIndex: delegationConfirmation.vanLeafPosition);
-  }
-
-  Future<VotingTxConfirmation?> _awaitTxConfirmation(
-    VotingApiClient api,
-    String txHash, {
-    required _VotingSessionContext context,
-    bool spentNullifierRecovery = false,
-  }) async {
-    final settings = ref.read(votingTxConfirmationPollingProvider);
-    final attempts =
-        spentNullifierRecovery &&
-            settings.attempts > _spentNullifierRecoveryMaxAttempts
-        ? _spentNullifierRecoveryMaxAttempts
-        : settings.attempts;
-    final delay =
-        spentNullifierRecovery &&
-            settings.delay > _spentNullifierRecoveryMaxDelay
-        ? _spentNullifierRecoveryMaxDelay
-        : settings.delay;
-    final timer = Stopwatch()..start();
-    _logVoteTiming('tx confirmation wait start txHash=$txHash');
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      _throwIfContextStale(context, 'tx-confirmation');
-      final confirmation = await api.getTxConfirmation(txHash);
-      _throwIfContextStale(context, 'tx-confirmation-response');
-      if (confirmation != null) {
-        _logVoteTiming(
-          'tx confirmation found txHash=$txHash '
-          'attempt=${attempt + 1} code=${confirmation.code} '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+      _armShareTrackingRetry(context);
+      // Surfaced only while a submission is waiting on it, for the same reason
+      // the run's own failure channel is: a job that would otherwise poll
+      // forever has to learn tracking gave up, but once the vote is cast and
+      // confirmed the shares deliver in the background, and painting that
+      // round red would report a successful vote as a failure over a helper
+      // outage the voter cannot act on.
+      if (_activeSubmissionOwnsContext(context)) {
+        _setError(
+          _actionErrorMessage(failure),
+          cause: failure,
+          context: context,
         );
-        return confirmation;
       }
-      if (attempt + 1 < attempts) {
-        if (attempt == 0 || (attempt + 1) % 5 == 0) {
-          debugPrint(
-            '[zcash] Voting: waiting for tx confirmation '
-            'txHash=$txHash attempt=${attempt + 1}/$attempts',
-          );
-        }
-        await Future<void>.delayed(delay);
-        _throwIfContextStale(context, 'tx-confirmation-delay');
-      }
-    }
-    _logVoteTiming(
-      'tx confirmation wait timed out txHash=$txHash '
-      'elapsed=${formatElapsedSeconds(timer.elapsed)}',
-    );
-    return null;
-  }
-
-  Future<void> runShareTrackingPass() {
-    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
-      return Future.value();
-    }
-    final inFlight = _activeAutomaticShareTrackingPass;
-    if (inFlight != null) return inFlight;
-    if (_ownsAutomaticShareTracking && !_retainAutomaticShareTracking()) {
-      return Future.value();
+      return;
     }
 
-    late final Future<void> pass;
-    pass = _runShareTrackingPass().whenComplete(() {
-      _activeShareTrackingPasses.remove(pass);
-      if (identical(_activeAutomaticShareTrackingPass, pass)) {
-        _activeAutomaticShareTrackingPass = null;
-      }
-    });
-    _activeAutomaticShareTrackingPass = pass;
-    _activeShareTrackingPasses.add(pass);
-    return pass;
-  }
-
-  /// Runs an externally triggered pass unless this session just completed one.
-  ///
-  /// App-resume restoration and a visible proposal screen can independently
-  /// request the same refresh. In-flight work is already shared by
-  /// [runShareTrackingPass]; this also coalesces callers that arrive just after
-  /// that work settles. Timers and submission recovery continue to call
-  /// [runShareTrackingPass] directly so protocol deadlines are never delayed.
-  Future<void> runShareTrackingPassIfStale() {
-    if (_automaticShareTrackingStopped || _shareTrackingRoundClosed) {
-      return Future.value();
-    }
-    final inFlight = _activeAutomaticShareTrackingPass;
-    if (inFlight != null) return inFlight;
-
-    final context = _currentContext;
-    if (context != null) {
-      final key = VotingSessionKey(
-        accountUuid: context.accountUuid,
-        roundId: context.round.roundId,
+    if (quiescence.kind ==
+        rust_wire.ShareTrackingQuiescenceKind.alreadyDriving) {
+      // Another run holds this round and is still driving it. This one polled
+      // nothing, so its report is not evidence about the round: refreshing the
+      // plan off it, clearing drafts, or releasing the registration would all
+      // act on the holder's work as though this run had finished it. Leave the
+      // round to the holder.
+      debugPrint(
+        '[zcash] Voting: share tracking already driven elsewhere '
+        'round=${context.round.roundId}',
       );
-      final freshness = ref.read(votingShareTrackingTriggerFreshnessProvider);
-      if (ref
-          .read(votingShareTrackingRegistryProvider)
-          .hasFreshSuccessfulPass(key, freshness: freshness)) {
-        return Future.value();
-      }
+      _shareTrackingRetryStreak = 0;
+      return;
     }
-    return runShareTrackingPass();
+
+    if (report.unrecoverable.isNotEmpty) {
+      // These cannot be repaired by retrying; log once per run rather than
+      // spinning on them silently.
+      debugPrint(
+        '[zcash] Voting: ${report.unrecoverable.length} share(s) missing '
+        'recovery material round=${context.round.roundId}',
+      );
+    }
+    debugPrint(
+      '[zcash] Voting: share tracking run finished '
+      'round=${context.round.roundId} '
+      'quiescence=${report.quiescence.kind.name} passes=${report.passes} '
+      'confirmed=${report.confirmed.length}',
+    );
+
+    if (!_isCurrentContext(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+    final roundPlan = await _loadRoundPlan(context);
+    if (!hasBlockingRoundRecoveryWork(roundPlan)) {
+      await _clearPersistedDraftChoices(context);
+    }
+    _setStateForContext(
+      context,
+      (state.value ?? fallback).copyWith(
+        phase: _phaseWithoutBallotRegression(_phaseForPlans(roundPlan)),
+        roundPlan: roundPlan,
+      ),
+    );
+    if (!roundPlan.hasUnconfirmedShares ||
+        !shouldTrackPendingVotingShares(context.round)) {
+      // Nothing left to track, or a boundary no later run can cross — vote end
+      // above all. Release rather than pinning a notifier that will never
+      // track again.
+      _shareTrackingRetryStreak = 0;
+      _releaseAutomaticShareTracking();
+      return;
+    }
+    // A start this run made a no-op is honoured here, whatever this run's
+    // quiescence says. `AllConfirmed` and `NothingToTrack` describe what the
+    // run saw, not what the round owes now: a cast that persisted shares
+    // behind it asked for tracking and got nothing, and the plan reloaded
+    // above has just confirmed the round still owes those shares. Starting
+    // now rather than re-arming keeps the delivery inside this round's
+    // stagger instead of behind a backoff.
+    if (_shareTrackingRestartRequested) {
+      _shareTrackingRestartRequested = false;
+      _shareTrackingRetryStreak = 0;
+      // Started after this run's future settles, not from inside it: this code
+      // runs as part of the run, so the run is still live here and a start
+      // would only record another request. The stored future is the settled
+      // one, so waiting on it cannot fail.
+      final finishing = _shareTrackingRun ?? Future<void>.value();
+      unawaited(
+        finishing.then((_) {
+          if (_isDisposed || !ref.mounted) return null;
+          return _startShareTracking();
+        }),
+      );
+      return;
+    }
+    // Shares remain and the round is still live, so the run stopped short of
+    // its work. Only a budget a later run can be given again is re-armed here:
+    // a cancellation is deliberate and the restorer starts a fresh run on
+    // resume, and a clean quiescence means the run reached the end of what it
+    // was tracking.
+    if (quiescence.kind ==
+        rust_wire.ShareTrackingQuiescenceKind.passBudgetExhausted) {
+      _armShareTrackingRetry(context);
+    } else {
+      _shareTrackingRetryStreak = 0;
+    }
+  }
+
+  /// Re-arms tracking after a run stopped on a condition a later run could
+  /// clear.
+  ///
+  /// The SDK retries within a run, so reaching here means the condition
+  /// outlasted that: consecutive re-arms back off exponentially to a ceiling,
+  /// and never past the round's vote end, after which no run has anything left
+  /// to do.
+  void _armShareTrackingRetry(_VotingSessionContext context) {
+    _cancelShareTrackingRetry();
+    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) return;
+    if (!_ownsAutomaticShareTracking) return;
+    if (_shareTrackingCancelled(context)) {
+      _releaseAutomaticShareTrackingIfRoundExpired(context);
+      return;
+    }
+
+    final ceiling = ref.read(votingShareTrackingMaxRetryDelayProvider);
+    // The backoff is multiplicative, so a base of zero would double to zero
+    // forever and retry in a tight loop. Floor it: the point of the first
+    // delay is that the fleet has already been unreachable for longer than
+    // the SDK's own in-run retries, so there is nothing to gain from asking
+    // again immediately.
+    final configured = ref.read(votingShareTrackingFailureRetryDelayProvider);
+    final base = configured < _minShareTrackingRetryDelay
+        ? _minShareTrackingRetryDelay
+        : configured;
+    final streak = _shareTrackingRetryStreak;
+    _shareTrackingRetryStreak = streak + 1;
+    // The shift is clamped rather than the product checked: 2^16 times any
+    // plausible base stays far inside a 64-bit microsecond count, and the
+    // ceiling below caps the value long before the clamp is reached.
+    final backoff = Duration(
+      microseconds: base.inMicroseconds << (streak < 16 ? streak : 16),
+    );
+    var delay = backoff < ceiling ? backoff : ceiling;
+    final voteEnd = context.round.voteEndTime;
+    if (voteEnd != null) {
+      final remaining = voteEnd.difference(DateTime.now());
+      if (remaining.isNegative) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      if (remaining < delay) delay = remaining;
+    }
+
+    debugPrint(
+      '[zcash] Voting: re-arming share tracking in ${delay.inSeconds}s '
+      'round=${context.round.roundId} attempt=${streak + 1}',
+    );
+    _shareTrackingRetryTimer = Timer(delay, () {
+      _shareTrackingRetryTimer = null;
+      if (!_isCurrentContext(context)) return;
+      if (!shouldTrackPendingVotingShares(context.round)) {
+        _releaseAutomaticShareTracking();
+        return;
+      }
+      // The captured context is handed over rather than reloaded. Reloading it
+      // asks the voting fleet for round status, and the outage that armed this
+      // retry is usually that same fleet being unreachable — so the retry would
+      // fail on the condition it exists to wait out. The context was checked
+      // current a line above, and the retry is for the round it names.
+      //
+      // A start that fails anyway backs off again instead of ending here: the
+      // timer has already been cleared, so returning without re-arming would
+      // leave the round pinned and untracked until some later lifecycle event.
+      unawaited(
+        _startShareTracking(context).catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          debugPrint(
+            '[zcash] Voting: share tracking retry failed to start '
+            'round=${context.round.roundId} error=$error\n$stack',
+          );
+          _armShareTrackingRetry(context);
+        }),
+      );
+    });
+  }
+
+  void _cancelShareTrackingRetry() {
+    _shareTrackingRetryTimer?.cancel();
+    _shareTrackingRetryTimer = null;
+  }
+
+  /// Floor for the re-arm backoff, applied to the configured base delay.
+  ///
+  /// Guards the multiplicative backoff against a zero or negative base, which
+  /// would otherwise disable it entirely rather than shorten it.
+  static const _minShareTrackingRetryDelay = Duration(seconds: 1);
+
+  /// How this app paces a tracking run.
+  ///
+  /// The SDK caps a wait for a not-yet-due share at 30 seconds so a wallet
+  /// using tracking as a general heartbeat re-reads the world regularly. Vizor
+  /// has no use for that: a session's helper fleet and round timing are fixed
+  /// when it opens, and a configuration change rebuilds the session rather
+  /// than mutating it, so waking early can only re-read rows that have not
+  /// changed. A share's submit time can be up to 100 hours out, so the cap
+  /// would turn one wait into thousands of passes that each find nothing due.
+  ///
+  /// Waiting that long is safe because the wait is interruptible: the driver
+  /// wakes on cancellation or an epoch change rather than polling, so a long
+  /// wait costs nothing and ends as soon as Dart cancels the session.
+  ///
+  /// The pass still shortens any wait that would land past vote end, so this
+  /// is bounded by the round, not by this number.
+  static final _shareTrackingPolicy = rust_session.ApiShareTrackingDrivePolicy(
+    futureCheckMaxDelaySeconds: BigInt.from(
+      const Duration(hours: 120).inSeconds,
+    ),
+  );
+
+  /// Refreshes the plan after a pass so the UI reflects newly confirmed shares.
+  Future<void> _applyShareTrackingEvent(
+    rust_wire.ShareTrackingEventView event,
+    _VotingSessionContext context,
+  ) async {
+    if (event.kind != rust_wire.ShareTrackingEventKind.passFinished) return;
+    final pass = event.report;
+    // Only a durable confirmation changes what the UI shows mid-run. A
+    // resubmission leaves the share pending and looks identical, so it does
+    // not pay for a plan read.
+    if (pass == null || pass.confirmed.isEmpty) return;
+    if (!_isCurrentContext(context)) return;
+    // No state to update yet means a rebuild is in flight and will publish its
+    // own. Awaiting it here would stall the run's event stream — and with it
+    // the SDK side feeding that stream — on a provider rebuild.
+    final current = state.value;
+    if (current == null) return;
+    final roundPlan = await _loadRoundPlan(context);
+    if (!_isCurrentContext(context)) return;
+    _setStateForContext(
+      context,
+      (state.value ?? current).copyWith(
+        phase: VotingSessionPhase.submittingShares,
+        roundPlan: roundPlan,
+      ),
+    );
   }
 
   /// Reconciles the designated immediate share without reopening recovery.
   ///
   /// This is the one confirmation-only exception to the vote-end boundary:
   /// the helper may have confirmed the share before the deadline while the
-  /// last local tracking pass missed that transition. The crate polls the
-  /// configured helper quorum for the round and may persist other observed
-  /// confirmations along the way; success here depends only on the designated
-  /// immediate share. Because the round has ended, the pass never resubmits a
-  /// share or selects a new helper.
+  /// last tracking pass missed that transition. The SDK polls the configured
+  /// helper quorum for the round and may persist other observed confirmations
+  /// along the way; success here depends only on the designated immediate
+  /// share. Because the round has ended, it never resubmits a share or selects
+  /// a new helper.
   Future<bool> refreshImmediateShareConfirmation() async {
     var confirmed = false;
     await _enqueue(
@@ -2983,64 +2759,34 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (_isDisposed || !ref.mounted) return;
         final context = await _loadContext(_roundId);
         _currentContext = context;
-        var plan = await _loadResumePlan(context);
         var roundPlan = await _loadRoundPlan(context);
-        if (hasConfirmedImmediateShare(roundPlan, plan)) {
+        if (hasConfirmedImmediateShare(roundPlan)) {
           confirmed = true;
           return;
         }
 
-        final immediateKey = roundPlan.immediateShareKey;
-        if (immediateKey == null) return;
-        rust_wire.ShareDelegationRecordView? immediateShare;
-        for (final share in plan.shareDelegations) {
-          if (share.bundleIndex == immediateKey.bundleIndex &&
-              share.proposalId == immediateKey.proposalId &&
-              share.shareIndex == immediateKey.shareIndex) {
-            immediateShare = share;
-            break;
-          }
-        }
-        if (immediateShare == null || immediateShare.confirmed) return;
+        final immediateShare = roundPlan.immediateShareKey;
+        if (immediateShare == null) return;
         if (_finalConfirmationCheckCancelled(context)) return;
 
-        final configuredHelperUrls = _configuredHelperTransportUrls(context);
-
         final rust = ref.read(votingRustApiProvider);
-        final helperContext = _helperDeliveryContextFor(rust, context);
-        final passHandle = rust.beginShareTrackingPass(context: helperContext);
-        _activeShareTrackingPassHandles.add(passHandle);
-        final cancellationWatchdog = Timer.periodic(
-          _shareTrackingCancellationPollInterval,
-          (timer) {
-            if (!_finalConfirmationCheckCancelled(context)) return;
-            timer.cancel();
-            passHandle.cancel();
-          },
+        final session = _openRoundSession(rust, context);
+        _focusedConfirmationSession = session;
+        final check = session.confirmImmediateShare(
+          bundleIndex: immediateShare.bundleIndex,
+          proposalId: immediateShare.proposalId,
+          shareIndex: immediateShare.shareIndex,
         );
+        _focusedConfirmation = check.then<void>((_) {}, onError: (_, _) {});
         final bool helperConfirmed;
-        final focusedConfirmationDone = Completer<void>();
-        final focusedConfirmation = focusedConfirmationDone.future;
-        _activeShareTrackingPasses.add(focusedConfirmation);
         try {
-          final nowSeconds =
-              DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-          helperConfirmed = await rust.confirmShareWithHelpers(
-            passHandle: passHandle,
-            configuredHelperUrls: configuredHelperUrls,
-            bundleIndex: immediateShare.bundleIndex,
-            proposalId: immediateShare.proposalId,
-            shareIndex: immediateShare.shareIndex,
-            nowSeconds: BigInt.from(nowSeconds),
-          );
+          helperConfirmed = await check;
         } finally {
-          cancellationWatchdog.cancel();
-          _activeShareTrackingPassHandles.remove(passHandle);
-          passHandle.dispose();
-          if (!focusedConfirmationDone.isCompleted) {
-            focusedConfirmationDone.complete();
+          _focusedConfirmation = null;
+          if (identical(_focusedConfirmationSession, session)) {
+            _focusedConfirmationSession = null;
           }
-          _activeShareTrackingPasses.remove(focusedConfirmation);
+          _closeRoundSession(session);
         }
         if (!helperConfirmed || _finalConfirmationCheckCancelled(context)) {
           return;
@@ -3050,17 +2796,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // confirmation back into an expiry error if a follow-up read fails.
         confirmed = true;
         try {
-          plan = await _loadResumePlan(context);
           roundPlan = await _loadRoundPlan(context);
           _setStateForContext(
             context,
             (state.value ?? current).copyWith(
-              phase: _phaseForPlans(roundPlan),
-              resumePlan: plan,
+              phase: _phaseWithoutBallotRegression(_phaseForPlans(roundPlan)),
               roundPlan: roundPlan,
             ),
           );
-          if (plan.unconfirmedShareDelegations.isEmpty) {
+          if (!roundPlan.hasUnconfirmedShares) {
             _releaseAutomaticShareTracking();
           }
         } catch (error) {
@@ -3077,207 +2821,34 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return confirmed;
   }
 
-  Future<void> _runShareTrackingPass() {
-    return _enqueueShareTracking(() async {
-      _cancelShareTrackingSchedule();
-      if (_automaticShareTrackingStopped) return;
-      final current = await future;
-      if (_isDisposed || !ref.mounted) return;
-      final context = await _loadContext(_roundId);
-      if (_shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundClosed(context);
-        return;
-      }
-      _currentContext = context;
-      var plan = context.resumePlan;
-      var roundPlan = context.roundPlan;
-      if (ref.read(appSecurityProvider).requiresUnlock ||
-          !shouldTrackPendingVotingShares(context.round)) {
-        _setStateForContext(
-          context,
-          current.copyWith(
-            phase: _phaseForPlans(roundPlan),
-            resumePlan: plan,
-            roundPlan: roundPlan,
-          ),
-        );
-        _releaseAutomaticShareTracking();
-        return;
-      }
-      _setStateForContext(
-        context,
-        current.copyWith(
-          phase: VotingSessionPhase.submittingShares,
-          resumePlan: plan,
-          roundPlan: roundPlan,
-        ),
-      );
-
-      final rust = ref.read(votingRustApiProvider);
-      final configuredHelperUrls = _configuredHelperTransportUrls(context);
-      final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-      final voteEnd = context.round.voteEndTime;
-      final voteEndSeconds = voteEnd == null
-          ? null
-          : voteEnd.millisecondsSinceEpoch ~/ 1000;
-
-      // One crate call performs the whole pass: helper status polling, the
-      // two-distinct-helper confirmation quorum, overdue resubmission, and all
-      // durable writes. Dart no longer sees individual helper requests, so its
-      // stop conditions are pushed in by the watchdog below instead of being
-      // polled between them.
-      final helperContext = _helperDeliveryContextFor(rust, context);
-      final passHandle = rust.beginShareTrackingPass(context: helperContext);
-      _activeShareTrackingPassHandles.add(passHandle);
-      Timer? cancellationWatchdog;
-      final rust_api.ApiShareTrackingReport report;
-      try {
-        cancellationWatchdog = _watchShareTrackingCancellation(
-          context,
-          passHandle,
-        );
-        final unconfirmedShares = plan.unconfirmedShareDelegations;
-        final confirmationOnly =
-            unconfirmedShares.isNotEmpty &&
-            unconfirmedShares.every(
-              (share) => _unrecoverableShareGenerations.contains(
-                _shareGenerationKey(share),
-              ),
-            );
-        if (confirmationOnly) {
-          final confirmed = <rust_api.ApiShareKey>[];
-          var cancelled = false;
-          for (final share in unconfirmedShares) {
-            if (_shareTrackingCancelled(context)) {
-              cancelled = true;
-              break;
-            }
-            final didConfirm = await rust.confirmShareWithHelpers(
-              passHandle: passHandle,
-              configuredHelperUrls: configuredHelperUrls,
-              bundleIndex: share.bundleIndex,
-              proposalId: share.proposalId,
-              shareIndex: share.shareIndex,
-              nowSeconds: BigInt.from(nowSeconds),
-            );
-            if (didConfirm) {
-              confirmed.add(
-                rust_api.ApiShareKey(
-                  bundleIndex: share.bundleIndex,
-                  proposalId: share.proposalId,
-                  shareIndex: share.shareIndex,
-                ),
-              );
-            }
-          }
-          report = rust_api.ApiShareTrackingReport(
-            confirmed: confirmed,
-            resubmitted: const [],
-            ambiguous: const [],
-            unrecoverable: const [],
-            cancelled: cancelled,
-            nextDelaySeconds: null,
-          );
-        } else {
-          report = await rust.trackPendingShares(
-            passHandle: passHandle,
-            configuredHelperUrls: configuredHelperUrls,
-            nowSeconds: BigInt.from(nowSeconds),
-            voteEndTimeSeconds: voteEndSeconds == null
-                ? null
-                : BigInt.from(voteEndSeconds),
-          );
-        }
-      } finally {
-        cancellationWatchdog?.cancel();
-        _activeShareTrackingPassHandles.remove(passHandle);
-        passHandle.dispose();
-      }
-
-      final newlyUnrecoverable = report.unrecoverable.where((key) {
-        for (final share in plan.unconfirmedShareDelegations) {
-          if (share.bundleIndex == key.bundleIndex &&
-              share.proposalId == key.proposalId &&
-              share.shareIndex == key.shareIndex) {
-            return _unrecoverableShareGenerations.add(
-              _shareGenerationKey(share),
-            );
-          }
-        }
-        return false;
-      }).length;
-      if (newlyUnrecoverable > 0) {
-        // These cannot be repaired by retrying. Log each durable share
-        // generation once, then use confirmation-only checks on later passes.
-        debugPrint(
-          '[zcash] Voting: $newlyUnrecoverable share(s) missing '
-          'recovery material round=${context.round.roundId}',
-        );
-      }
-
-      if (report.cancelled || _shareTrackingCancelled(context)) {
-        _releaseAutomaticShareTrackingIfRoundClosed(context);
-        return;
-      }
-      final refreshedPlan = await _loadResumePlan(context);
-      final refreshedRoundPlan = await _loadRoundPlan(context);
-      final liveShareGenerations = refreshedPlan.unconfirmedShareDelegations
-          .map(_shareGenerationKey)
-          .toSet();
-      _unrecoverableShareGenerations.retainAll(liveShareGenerations);
-      final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
-      if (!hasBlockingWork) {
-        await _clearPersistedDraftChoices(context);
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: _phaseForPlans(refreshedRoundPlan),
-          resumePlan: refreshedPlan,
-          roundPlan: refreshedRoundPlan,
-        ),
-      );
-      await _scheduleShareTracking(context, refreshedPlan);
-      ref
-          .read(votingShareTrackingRegistryProvider)
-          .recordSuccessfulPass(
-            VotingSessionKey(
-              accountUuid: context.accountUuid,
-              roundId: context.round.roundId,
-            ),
-          );
-    });
-  }
-
-  static String _shareGenerationKey(rust_wire.ShareDelegationRecordView share) {
-    final nullifier = share.nullifier
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
-    return '${share.bundleIndex}:${share.proposalId}:${share.shareIndex}:'
-        '$nullifier';
-  }
-
+  /// Stops tracking and waits for the run to finish.
+  ///
+  /// Destructive wallet operations block on this: the run must be off the
+  /// sidecar before the account's state is cleared. Cancelling the session is
+  /// observed inside a pass as well as between passes, so this does not wait
+  /// out a tracking delay.
   Future<void> stopAndDrainShareTracking() async {
     _automaticShareTrackingStopped = true;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
+    // Before the drain loop, not after: a pending re-arm that fired mid-drain
+    // would start a run the caller has already stopped waiting for. A recorded
+    // restart goes the same way — the caller has stopped waiting for that run
+    // too.
+    _cancelShareTrackingRetry();
+    _shareTrackingRetryStreak = 0;
+    _shareTrackingRestartRequested = false;
     _advanceSessionGeneration();
-    // Stop the in-flight Rust pass now rather than waiting for the watchdog's
-    // next tick: destructive wallet operations block on this draining.
-    for (final passHandle in _activeShareTrackingPassHandles.toList()) {
-      passHandle.cancel();
-    }
+    _shareTrackingSession?.cancel();
+    _focusedConfirmationSession?.cancel();
     try {
-      while (_activeShareTrackingPasses.isNotEmpty) {
-        await Future.wait(
-          _activeShareTrackingPasses.map(
-            (pass) => pass.then<void>((_) {}, onError: (_, _) {}),
-          ),
-        );
+      // Both futures are settled by construction: a run handles its own
+      // failure and the focused check swallows its own. A destructive wallet
+      // operation needs them finished, not successful, so waiting here can
+      // never fail — and must never be able to, or a drain could leave the
+      // account's state half cleared.
+      while (_shareTrackingRun != null || _focusedConfirmation != null) {
+        await _shareTrackingRun;
+        await _focusedConfirmation;
       }
-    } catch (_) {
-      // The tracking action already logged its business error. Destructive
-      // wallet operations require the pass to finish, not to succeed.
     } finally {
       _releaseAutomaticShareTracking();
     }
@@ -3285,302 +2856,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void resumeShareTracking() {
     _automaticShareTrackingStopped = false;
-  }
-
-  Future<void> _scheduleShareTracking(
-    _VotingSessionContext context,
-    VotingResumePlan plan, {
-    DateTime? preservedFullPassAt,
-  }) async {
-    if (!_ownsAutomaticShareTracking) {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        plan.unconfirmedShareDelegations.isEmpty ||
-        !shouldTrackPendingVotingShares(context.round) ||
-        ref.read(appSecurityProvider).requiresUnlock) {
-      _shareTrackingTimer?.cancel();
-      _shareTrackingTimer = null;
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    if (!_isCurrentContext(context)) return;
-    if (!_retainAutomaticShareTracking()) return;
-    final scheduleEpoch = _cancelShareTrackingSchedule();
-    // The timer may outlive the action that loaded [context]. Capture the
-    // exact plan used for this schedule so a later round-deadline refresh does
-    // not fall back to an older snapshot and conclude that there are no shares
-    // left to track.
-    final scheduledContext = context.withResumePlan(plan);
-
-    // A status heartbeat is only an earlier observation point. Keep the
-    // protocol wake as an absolute instant so a slow/failed status request
-    // cannot restart its countdown and postpone helper/DB work.
-    final DateTime fullPassAt;
-    if (preservedFullPassAt != null) {
-      fullPassAt = preservedFullPassAt;
-    } else {
-      final delayCalculatedAt = DateTime.now();
-      final delaySeconds = await ref
-          .read(votingRustApiProvider)
-          .nextShareTrackingDelaySeconds(
-            shares: plan.unconfirmedShareDelegations,
-            nowSeconds: BigInt.from(
-              delayCalculatedAt.toUtc().millisecondsSinceEpoch ~/ 1000,
-            ),
-          );
-      if (!_isCurrentContext(context) ||
-          scheduleEpoch != _shareTrackingScheduleEpoch) {
-        return;
-      }
-      if (delaySeconds == null) {
-        _releaseAutomaticShareTracking();
-        return;
-      }
-      fullPassAt = delayCalculatedAt.add(
-        Duration(seconds: delaySeconds.toInt()),
-      );
-    }
-    // The status-only wake reads [_currentContext]. Publish the exact plan
-    // used for this schedule so its next rearm cannot fall back to the plan
-    // that existed before the preceding full pass completed.
-    _currentContext = scheduledContext;
-    final now = DateTime.now();
-    final remaining = scheduledContext.round.voteEndTime!.difference(now);
-    if (remaining <= Duration.zero) {
-      _armShareTrackingTimer(
-        scheduledContext,
-        Duration.zero,
-        scheduleEpoch,
-        _ShareTrackingWake.roundStatus,
-        fullPassAt,
-      );
-      return;
-    }
-    final untilFullPass = fullPassAt.difference(now);
-    final protocolDelay = untilFullPass.isNegative
-        ? Duration.zero
-        : untilFullPass;
-    var delay = protocolDelay;
-    var wake = _ShareTrackingWake.fullPass;
-    if (remaining <= delay) {
-      delay = remaining;
-      wake = _ShareTrackingWake.roundStatus;
-    }
-    final roundRefreshInterval = ref.read(
-      votingShareTrackingRoundRefreshIntervalProvider,
-    );
-    if (roundRefreshInterval > Duration.zero && roundRefreshInterval < delay) {
-      delay = roundRefreshInterval;
-      wake = _ShareTrackingWake.roundStatus;
-    }
-    _armShareTrackingTimer(
-      scheduledContext,
-      delay,
-      scheduleEpoch,
-      wake,
-      fullPassAt,
-    );
-  }
-
-  void _scheduleShareTrackingFailureRetry() {
-    if (_isDisposed ||
-        !_ownsAutomaticShareTracking ||
-        _automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        ref.read(appSecurityProvider).requiresUnlock) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final config = ref.read(votingConfigProvider).value;
-    if (config != null && !config.isRoundAuthenticated(_roundId)) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final context = _currentContext;
-    if (context == null ||
-        !_isCurrentContext(context) ||
-        !_retainAutomaticShareTracking()) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final configuredDelay = ref.read(
-      votingShareTrackingFailureRetryDelayProvider,
-    );
-    final delay = configuredDelay.isNegative ? Duration.zero : configuredDelay;
-    final scheduleEpoch = _cancelShareTrackingSchedule();
-    final now = DateTime.now();
-    final fullPassAt = now.add(delay);
-    final remaining = context.round.voteEndTime!.difference(now);
-    final crossesCachedDeadline =
-        remaining > Duration.zero && remaining <= delay;
-    final wake = remaining <= Duration.zero || crossesCachedDeadline
-        ? _ShareTrackingWake.roundStatus
-        : _ShareTrackingWake.fullPass;
-    _armShareTrackingTimer(
-      context,
-      crossesCachedDeadline ? remaining : delay,
-      scheduleEpoch,
-      wake,
-      fullPassAt,
-    );
-  }
-
-  int _cancelShareTrackingSchedule() {
-    final scheduleEpoch = ++_shareTrackingScheduleEpoch;
-    _shareTrackingTimer?.cancel();
-    _shareTrackingTimer = null;
-    return scheduleEpoch;
-  }
-
-  void _armShareTrackingTimer(
-    _VotingSessionContext context,
-    Duration delay,
-    int scheduleEpoch,
-    _ShareTrackingWake wake,
-    DateTime fullPassAt,
-  ) {
-    if (scheduleEpoch != _shareTrackingScheduleEpoch) return;
-    _shareTrackingTimer = Timer(delay, () {
-      _shareTrackingTimer = null;
-      if (scheduleEpoch != _shareTrackingScheduleEpoch ||
-          !_isCurrentContext(context)) {
-        return;
-      }
-      if (wake == _ShareTrackingWake.fullPass) {
-        unawaited(_runShareTrackingPassInBackground());
-      } else {
-        unawaited(_runShareTrackingRoundStatusRefreshInBackground(fullPassAt));
-      }
-    });
-  }
-
-  void _scheduleShareTrackingRoundStatusRetry(
-    _VotingSessionContext context,
-    DateTime fullPassAt,
-  ) {
-    if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        _isDisposed ||
-        !ref.mounted ||
-        !_isCurrentContext(context) ||
-        ref.read(appSecurityProvider).requiresUnlock ||
-        !_retainAutomaticShareTracking()) {
-      _releaseAutomaticShareTracking();
-      return;
-    }
-    final configuredDelay = ref.read(
-      votingShareTrackingFailureRetryDelayProvider,
-    );
-    final retryDelay = configuredDelay.isNegative
-        ? Duration.zero
-        : configuredDelay;
-    final now = DateTime.now();
-    final untilVoteEnd = context.round.voteEndTime!.difference(now);
-    final rawUntilFullPass = fullPassAt.difference(now);
-    final untilFullPass = rawUntilFullPass.isNegative
-        ? Duration.zero
-        : rawUntilFullPass;
-    var delay = retryDelay;
-    var wake = _ShareTrackingWake.roundStatus;
-    // Preserve the cached deadline as the hard round-status boundary, while
-    // allowing the already-planned full pass to win before that boundary.
-    if (untilVoteEnd > Duration.zero && untilVoteEnd < delay) {
-      delay = untilVoteEnd;
-    }
-    if (untilVoteEnd > Duration.zero &&
-        untilFullPass < untilVoteEnd &&
-        untilFullPass <= delay) {
-      delay = untilFullPass;
-      wake = _ShareTrackingWake.fullPass;
-    }
-    final retryEpoch = _cancelShareTrackingSchedule();
-    _armShareTrackingTimer(context, delay, retryEpoch, wake, fullPassAt);
-  }
-
-  Future<void> _runShareTrackingRoundStatusRefreshInBackground(
-    DateTime fullPassAt,
-  ) async {
-    await _enqueueShareTracking(() async {
-      _cancelShareTrackingSchedule();
-      final context = _currentContext;
-      if (context == null ||
-          _automaticShareTrackingStopped ||
-          _shareTrackingRoundClosed ||
-          _isDisposed ||
-          !ref.mounted ||
-          !_isCurrentContext(context) ||
-          ref.read(appSecurityProvider).requiresUnlock) {
-        return;
-      }
-      try {
-        final api = ref.read(
-          votingApiClientProvider(context.config.apiServers),
-        );
-        final round = VotingRoundDetails.fromStatus(
-          await api.getRoundStatus(context.round.roundId),
-        );
-        if (_automaticShareTrackingStopped ||
-            _isDisposed ||
-            !ref.mounted ||
-            !_isCurrentContext(context) ||
-            ref.read(appSecurityProvider).requiresUnlock) {
-          return;
-        }
-        final refreshedContext = context.withRound(round);
-        _currentContext = refreshedContext;
-        final current = state.value ?? VotingSessionState(roundId: _roundId);
-        _setStateForContext(refreshedContext, current.copyWith(round: round));
-        if (!shouldTrackPendingVotingShares(round)) {
-          _shareTrackingRoundClosed = true;
-          _releaseAutomaticShareTrackingIfRoundClosed(refreshedContext);
-          return;
-        }
-        await _scheduleShareTracking(
-          refreshedContext,
-          refreshedContext.resumePlan,
-          preservedFullPassAt: fullPassAt,
-        );
-      } catch (error, stackTrace) {
-        debugPrint(
-          '[zcash] Voting: share tracking round refresh failed '
-          'round=${context.round.roundId} error=$error\n$stackTrace',
-        );
-        _scheduleShareTrackingRoundStatusRetry(context, fullPassAt);
-      }
-    });
-  }
-
-  Future<void> _runShareTrackingPassInBackground() async {
-    try {
-      await runShareTrackingPass();
-    } catch (_) {
-      // The pass already logged the failure and scheduled its next retry.
-    }
-  }
-
-  /// Pushes Dart-owned stop conditions into the in-flight Rust pass.
-  ///
-  /// The pass runs to completion inside the crate, so app lock, round expiry,
-  /// session disposal, and context change can no longer be checked between
-  /// helper requests the way the old Dart loop did. This polls them for the
-  /// duration of the pass and cancels once, which keeps the stop conditions
-  /// and their ownership exactly where they were.
-  ///
-  /// Callers must cancel the returned timer when the pass settles.
-  Timer _watchShareTrackingCancellation(
-    _VotingSessionContext context,
-    VotingShareTrackingPassHandle passHandle,
-  ) {
-    return Timer.periodic(_shareTrackingCancellationPollInterval, (timer) {
-      if (!_shareTrackingCancelled(context)) return;
-      timer.cancel();
-      passHandle.cancel();
-    });
+    // A resume is new information — the app unlocked, the account came back —
+    // so the next attempt starts from the base delay rather than inheriting
+    // the backoff of an outage that may already be over.
+    _shareTrackingRetryStreak = 0;
   }
 
   bool _finalConfirmationCheckCancelled(_VotingSessionContext context) {
@@ -3592,10 +2871,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   bool _shareTrackingCancelled(_VotingSessionContext context) {
-    if (_automaticShareTrackingStopped ||
-        _shareTrackingRoundClosed ||
-        _isDisposed ||
-        !ref.mounted) {
+    if (_automaticShareTrackingStopped || _isDisposed || !ref.mounted) {
       return true;
     }
     return !_isCurrentContext(context) ||
@@ -3603,13 +2879,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         !shouldTrackPendingVotingShares(context.round);
   }
 
-  void _releaseAutomaticShareTrackingIfRoundClosed(
+  void _releaseAutomaticShareTrackingIfRoundExpired(
     _VotingSessionContext context,
   ) {
     if (!shouldTrackPendingVotingShares(context.round)) {
-      if (_ownsAutomaticShareTracking && !_isDisposed && ref.mounted) {
-        ref.invalidate(votingSessionProvider(_roundId));
-      }
       _releaseAutomaticShareTracking();
     }
   }
@@ -3644,7 +2917,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<bool> _runSnapshotBundlePrecompute({
+  Future<Uri> _resolvePirEndpointForWarmup(
+    _VotingSessionContext context,
+  ) async {
+    final currentEndpoint = state.value?.pirEndpoint;
+    if (currentEndpoint != null) return currentEndpoint;
+    try {
+      final resolution = await ref
+          .read(votingPirResolverProvider)
+          .resolve(
+            endpoints: context.config.pirEndpointUrls,
+            expectedSnapshotHeight: context.round.snapshotHeight,
+          );
+      return resolution.endpoint;
+    } on PirSnapshotNoMatchingEndpoint catch (error) {
+      _logPirSnapshotMismatch(context: context, error: error);
+      rethrow;
+    }
+  }
+
+  static bool _isRetryableSnapshotWarmupError(Object error) {
+    if (isRetryableVotingError(error)) return true;
+    if (error is! PirSnapshotNoMatchingEndpoint) return false;
+    return error.diagnostics.any((diagnostic) {
+      switch (diagnostic.status) {
+        case PirSnapshotEndpointStatus.behind:
+        case PirSnapshotEndpointStatus.timeoutOrNetworkError:
+          return true;
+        case PirSnapshotEndpointStatus.nonSuccessStatus:
+          final status = diagnostic.httpStatusCode;
+          return status == 408 ||
+              status == 429 ||
+              (status != null && status >= 500);
+        case PirSnapshotEndpointStatus.matched:
+        case PirSnapshotEndpointStatus.ahead:
+        case PirSnapshotEndpointStatus.missingHeight:
+        case PirSnapshotEndpointStatus.malformedJson:
+          return false;
+      }
+    });
+  }
+
+  Future<int> _runSnapshotBundlePrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
   }) async {
@@ -3653,9 +2967,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: snapshot bundle precompute start '
       'round=${context.round.roundId}',
     );
+    final rust = ref.read(votingRustApiProvider);
+    rust.warmVotingProvingCaches();
     try {
-      final rust = ref.read(votingRustApiProvider);
-      rust.warmVotingProvingCaches();
       final result = await rust.precomputeSnapshotBundles(
         ctx: _apiRoundContext(context),
         pirServerUrl: _transportUrl(pirEndpoint),
@@ -3674,20 +2988,66 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'cached=$cached fetched=$fetched '
         'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
-      return await _runBackgroundDelegationProofPrecompute(
-        context: context,
-        pirEndpoint: pirEndpoint,
-        bundleCount: result.bundleCount,
-      );
-    } catch (e) {
+      return result.bundleCount;
+    } catch (error) {
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute failed '
         'round=${context.round.roundId} '
-        'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
-        'reason=cache-miss',
+        'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$error '
+        'retryable=${_isRetryableSnapshotWarmupError(error)}',
       );
-      return false;
+      rethrow;
     }
+  }
+
+  /// Starts drainable, best-effort proof warm-up without extending the
+  /// foreground snapshot-readiness barrier.
+  void _startBackgroundDelegationProofPrecompute({
+    required _VotingSessionContext context,
+    required Uri pirEndpoint,
+    required int bundleCount,
+    required String precomputeKey,
+  }) {
+    if (_backgroundDelegationProofPrecomputes.containsKey(precomputeKey)) {
+      return;
+    }
+    final releaseBackgroundWork = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: context.accountUuid);
+    if (releaseBackgroundWork == null) {
+      debugPrint(
+        '[zcash] Voting: background delegation proof skipped '
+        'round=${context.round.roundId} reason=wallet-mutation-in-progress',
+      );
+      return;
+    }
+
+    late final Future<void> proofPrecompute;
+    proofPrecompute = () async {
+      try {
+        await _runBackgroundDelegationProofPrecompute(
+          context: context,
+          pirEndpoint: pirEndpoint,
+          bundleCount: bundleCount,
+        );
+      } catch (error) {
+        debugPrint(
+          '[zcash] Voting: background delegation proof pass failed '
+          'round=${context.round.roundId} error=$error '
+          'reason=foreground-fallback',
+        );
+      } finally {
+        if (identical(
+          _backgroundDelegationProofPrecomputes[precomputeKey],
+          proofPrecompute,
+        )) {
+          _backgroundDelegationProofPrecomputes.remove(precomputeKey);
+        }
+        releaseBackgroundWork();
+      }
+    }();
+    _backgroundDelegationProofPrecomputes[precomputeKey] = proofPrecompute;
+    unawaited(proofPrecompute);
   }
 
   Future<bool> _runBackgroundDelegationProofPrecompute({
@@ -3695,10 +3055,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required Uri pirEndpoint,
     required int bundleCount,
   }) async {
-    // Keystone must retain the original PCZT bytes for its QR signing request.
-    // The software path can persist ZKP1 now and reconstruct its signed payload
-    // from the stored setup fields later without retaining those bytes in Dart.
-    if (context.isHardwareAccount || bundleCount == 0) return true;
+    // The SDK retains the exact PCZT for the later Keystone signing request.
+    if (bundleCount == 0) return true;
     if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
       return false;
     }
@@ -3706,7 +3064,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final rust = ref.read(votingRustApiProvider);
     late final List<int> storedHotkeySecret;
     try {
-      storedHotkeySecret = await _ensureHotkey(context);
+      final signatures = context.isHardwareAccount
+          ? await _loadKeystoneSignatures(context)
+          : const <int, rust_wire.KeystoneSignatureRecord>{};
+      storedHotkeySecret = await _ensureHotkey(
+        context,
+        alreadyBound: signatures.isNotEmpty,
+      );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: background delegation proof skipped '
@@ -3727,49 +3091,56 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       pirServerUrls.add(_transportUrl(pirEndpoint));
     }
 
-    var allProofsReady = true;
-    for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++) {
-      if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
-        return false;
-      }
-      final timer = Stopwatch()..start();
-      debugPrint(
-        '[zcash] Voting: background delegation proof start '
-        'round=${context.round.roundId} bundle=$bundleIndex',
-      );
-      try {
-        final generated = await rust.precomputeDelegationProof(
-          ctx: _apiRoundContext(context),
-          pirServerUrls: pirServerUrls,
-          storedHotkeySecret: storedHotkeySecret,
-          bundleIndex: bundleIndex,
-        );
+    final outcomes = await _runBoundedBundleWork(
+      List<int>.generate(bundleCount, (bundleIndex) => bundleIndex),
+      concurrency: _votingWorkConcurrency,
+      work: (bundleIndex) async {
+        if (!_isCurrentPrecomputeContext(context, context.accountUuid)) {
+          throw const _StaleVotingSessionAction();
+        }
+        final timer = Stopwatch()..start();
         debugPrint(
-          '[zcash] Voting: background delegation proof completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'result=${generated ? 'generated' : 'reused'} '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          '[zcash] Voting: background delegation proof start '
+          'round=${context.round.roundId} bundle=$bundleIndex',
         );
-      } catch (e) {
-        debugPrint(
-          '[zcash] Voting: background delegation proof failed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
-          'reason=foreground-fallback',
-        );
-        allProofsReady = false;
-      }
-    }
-    return allProofsReady;
+        try {
+          final generated = await withVotingRetry(
+            policy: _delegationSetupRetryPolicy,
+            isCancelled: () =>
+                !_isCurrentPrecomputeContext(context, context.accountUuid),
+            operation: () => rust.precomputeDelegationProof(
+              ctx: _apiRoundContext(context),
+              pirServerUrls: pirServerUrls,
+              storedHotkeySecret: storedHotkeySecret,
+              bundleIndex: bundleIndex,
+            ),
+          );
+          debugPrint(
+            '[zcash] Voting: background delegation proof completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'result=${generated ? 'generated' : 'reused'} '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+          );
+        } catch (e) {
+          debugPrint(
+            '[zcash] Voting: background delegation proof failed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
+            'reason=foreground-fallback',
+          );
+          rethrow;
+        }
+      },
+    );
+    return outcomes.values.every((outcome) => outcome.error == null);
   }
 
   Future<void> _awaitSnapshotBundlePrecomputeIfRunning(
     _VotingSessionContext context,
   ) async {
-    final precompute =
-        _snapshotBundlePrecomputes[_snapshotBundlePrecomputeKey(
-          context.accountUuid,
-        )];
+    final precompute = ref
+        .read(votingSnapshotWarmupProvider)
+        .joinForForeground(_snapshotBundlePrecomputeKey(context));
     if (precompute == null) return;
 
     debugPrint(
@@ -3781,12 +3152,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   String _transportUrl(Uri logicalUrl) {
     return ref.read(votingEndpointMapperProvider).map(logicalUrl).toString();
-  }
-
-  List<String> _configuredHelperTransportUrls(_VotingSessionContext context) {
-    return context.config.apiServers.all
-        .map(_transportUrl)
-        .toList(growable: false);
   }
 
   List<String> _delegationPirTransportUrls(VotingSessionState session) {
@@ -3803,8 +3168,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return candidates;
   }
 
-  String _snapshotBundlePrecomputeKey(String accountUuid) {
-    return '$_roundId|$accountUuid|$_sessionGeneration';
+  String _snapshotBundlePrecomputeKey(_VotingSessionContext context) {
+    final layout = context.config.pirLayout;
+    return jsonEncode([
+      context.dbPath,
+      context.accountUuid,
+      context.network,
+      context.lightwalletdUrl,
+      context.round.roundId,
+      context.round.snapshotHeight,
+      context.round.sessionJson,
+      context.roundParams.voteRoundId,
+      base64UrlEncode(context.roundParams.eaPk),
+      base64UrlEncode(context.roundParams.ncRoot),
+      base64UrlEncode(context.roundParams.nullifierImtRoot),
+      context.config.sourceFingerprint,
+      context.config.trustedKeyFingerprint,
+      context.config.dynamicConfigFingerprint,
+      layout.pirDepth,
+      layout.tier0Layers,
+      layout.tier1Layers,
+      layout.polyLen,
+      for (final endpoint in context.config.pirEndpointUrls)
+        _transportUrl(endpoint),
+      context.isHardwareAccount,
+    ]);
   }
 
   static void _logPirSnapshotMismatch({
@@ -3815,78 +3203,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: PIR endpoint mismatch '
       'round=${context.round.roundId} '
       'expected=${error.expectedSnapshotHeight} '
-      'diagnostics=${_pirDiagnosticsLog(error.diagnostics)}',
+      'diagnostics=${pirSnapshotDiagnosticsLog(error.diagnostics)}',
     );
-  }
-
-  static String _pirSnapshotMismatchMessage(
-    PirSnapshotNoMatchingEndpoint error,
-  ) {
-    final diagnostics = error.diagnostics;
-    final expected = formatBlockHeight(error.expectedSnapshotHeight);
-    final reportedHeights = diagnostics
-        .map((diagnostic) => diagnostic.reportedHeight)
-        .nonNulls
-        .toSet();
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final highest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left > right ? left : right),
-      );
-      return 'Voting PIR data is not ready for this voting round yet. Expected '
-          'snapshot block $expected; PIR endpoints report $highest. Retry '
-          'once the PIR service catches up.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.ahead,
-        ) &&
-        reportedHeights.isNotEmpty) {
-      final lowest = formatBlockHeight(
-        reportedHeights.reduce((left, right) => left < right ? left : right),
-      );
-      return 'Configured PIR endpoints are ahead of this voting round snapshot. '
-          'Expected snapshot block $expected; endpoints report $lowest.';
-    }
-
-    if (diagnostics.isNotEmpty &&
-        diagnostics.every(
-          (diagnostic) =>
-              diagnostic.status ==
-              PirSnapshotEndpointStatus.timeoutOrNetworkError,
-        )) {
-      return "Couldn't reach any configured PIR endpoint. Check your network "
-          'connection and retry.';
-    }
-
-    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-        'block $expected. Diagnostics: ${_pirDiagnosticsLog(diagnostics)}.';
-  }
-
-  static String _pirDiagnosticsLog(
-    List<PirSnapshotEndpointDiagnostic> diagnostics,
-  ) {
-    if (diagnostics.isEmpty) return 'none';
-    return diagnostics.map(_pirDiagnosticLog).join('; ');
-  }
-
-  static String _pirDiagnosticLog(PirSnapshotEndpointDiagnostic diagnostic) {
-    final height = diagnostic.reportedHeight == null
-        ? ''
-        : ' height=${diagnostic.reportedHeight}';
-    final statusCode = diagnostic.httpStatusCode == null
-        ? ''
-        : ' http=${diagnostic.httpStatusCode}';
-    final message = diagnostic.message == null || diagnostic.message!.isEmpty
-        ? ''
-        : ' message=${diagnostic.message}';
-    return '${diagnostic.endpoint} status=${diagnostic.status.name}'
-        '$height$statusCode$message';
   }
 
   Future<void> _enqueue(
@@ -3911,9 +3229,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (e, st) {
         debugPrint('[zcash] Voting: session action failed: $e\n$st');
         if (cleanupProcessStateOnError) {
-          await _cleanupCurrentSessionState(reason: 'action-failed');
+          await _cleanupCurrentSessionCaches(reason: 'action-failed');
         }
-        if (publishError) _setError(_actionErrorMessage(e), cause: e);
+        if (publishError) {
+          _setError(
+            _actionErrorMessage(e),
+            cause: e,
+            isEligibilityFailure:
+                votingRustExceptionOf(e)?.isEligibilityFailure ?? false,
+          );
+        }
         onError?.call();
         if (propagateError) rethrow;
       } finally {
@@ -3924,16 +3249,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return next;
   }
 
-  Future<void> _enqueueShareTracking(Future<void> Function() action) {
-    return _enqueue(
-      action,
-      onError: _scheduleShareTrackingFailureRetry,
-      cleanupProcessStateOnError: false,
-      publishError: false,
-      propagateError: true,
-    );
-  }
-
   static String _actionErrorMessage(Object error) {
     return friendlyVotingErrorMessage(error);
   }
@@ -3942,14 +3257,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
   }
 
-  static bool _needsFreshDelegationWork(
-    VotingResumePlan plan,
+  static bool _needsFreshDelegationPreparation(
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
+    if (delegationBundleIndexesNeedingSigning(roundPlan).isNotEmpty) {
+      return true;
+    }
     if (roundPlan == null) return false;
-    return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
-        roundPlanNeedsDraftSetup(roundPlan);
+    return roundPlanNeedsDraftSetup(roundPlan) ||
+        roundPlan.recoveredDelegationWork.any(
+          (work) =>
+              work.kind == rust_wire.DelegationRecoveryWorkKindView.delegate,
+        );
   }
 
   Future<void> _prepareKeystoneSigningUnlocked() async {
@@ -3971,12 +3290,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context = await _loadContext(_roundId);
     }
 
-    var plan = current.resumePlan ?? context.resumePlan;
     var roundPlan = current.roundPlan ?? context.roundPlan;
     var signatures = await _loadKeystoneSignatures(context);
-    var unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
-        .where((bundleIndex) => !signatures.containsKey(bundleIndex))
-        .toList();
+    var unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
+      roundPlan,
+    ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
@@ -3989,7 +3307,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
           isHardwareAccount: true,
-          resumePlan: plan,
           keystoneSignatures: signatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -4009,7 +3326,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
         isHardwareAccount: true,
-        resumePlan: plan,
         keystoneSignatures: signatures,
         currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneSigningRequest: true,
@@ -4019,76 +3335,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
 
     final rust = ref.read(votingRustApiProvider);
-    late final List<rust_delegate.KeystoneSigningRequest> requests;
-    try {
-      requests = await rust.buildKeystoneDelegationRequests(
+    final requests = await withVotingRetry(
+      policy: _delegationSetupRetryPolicy,
+      isCancelled: () =>
+          !_isCurrentPrecomputeContext(context, context.accountUuid),
+      operation: () => rust.buildKeystoneDelegationRequests(
         ctx: _apiRoundContext(context),
         storedHotkeySecret: storedHotkeySecret,
         bundleIndices: unsignedBundleIndexes,
-      );
-    } catch (error) {
-      if (!_isKeystoneSetupOverwriteError(error)) rethrow;
-      debugPrint(
-        '[zcash] Voting: Keystone request detected stale bundle setup '
-        'round=${context.round.roundId} bundles=$unsignedBundleIndexes',
-      );
-      await _resetVotingSessionState(
-        rust: rust,
-        context: context,
-        reason: 'keystone-stale-setup',
-      );
-      await rust.setupDelegationBundles(ctx: _apiRoundContext(context));
-      plan = await _loadResumePlan(context);
-      roundPlan = await _loadRoundPlan(context);
-      signatures = await _loadKeystoneSignatures(context);
-      final maxBundleIndex = plan.bundleCount;
-      if (maxBundleIndex >= 0) {
-        signatures = {
-          for (final entry in signatures.entries)
-            if (entry.key >= 0 && entry.key < maxBundleIndex)
-              entry.key: entry.value,
-        };
-      }
-      unsignedBundleIndexes = plan.pendingDelegationBundleIndexes
-          .where((bundleIndex) => !signatures.containsKey(bundleIndex))
-          .toList();
-      if (unsignedBundleIndexes.isEmpty) {
-        _setStateForContext(
-          context,
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.readyToDelegate,
-            isHardwareAccount: true,
-            resumePlan: plan,
-            roundPlan: roundPlan,
-            keystoneSignatures: signatures,
-            clearKeystoneSigningRequest: true,
-            clearKeystoneScanError: true,
-            clearCurrentBundleIndex: true,
-            clearError: true,
-          ),
-        );
-        return;
-      }
-      _setStateForContext(
-        context,
-        (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.keystoneSigning,
-          isHardwareAccount: true,
-          resumePlan: plan,
-          roundPlan: roundPlan,
-          keystoneSignatures: signatures,
-          currentBundleIndex: unsignedBundleIndexes.first,
-          clearKeystoneSigningRequest: true,
-          clearKeystoneScanError: true,
-          clearError: true,
-        ),
-      );
-      requests = await rust.buildKeystoneDelegationRequests(
-        ctx: _apiRoundContext(context),
-        storedHotkeySecret: storedHotkeySecret,
-        bundleIndices: unsignedBundleIndexes,
-      );
-    }
+      ),
+    );
 
     if (requests.length != unsignedBundleIndexes.length ||
         !List.generate(
@@ -4106,7 +3362,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
         isHardwareAccount: true,
-        resumePlan: plan,
         roundPlan: roundPlan,
         eligibleWeightZatoshi: requests.first.eligibleWeightZatoshi,
         keystoneSigningRequests: requests,
@@ -4129,7 +3384,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: VotingSessionPhase.resolvingPir,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
         clearError: true,
@@ -4146,7 +3400,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       _setError(
-        _pirSnapshotMismatchMessage(e),
+        pirSnapshotMismatchMessage(
+          expectedSnapshotHeight: e.expectedSnapshotHeight,
+          diagnostics: e.diagnostics,
+          includeDiagnostics: true,
+        ),
         cause: e,
         pirDiagnostics: e.diagnostics,
         context: context,
@@ -4165,7 +3423,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         pirDiagnostics: resolution.diagnostics,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
       ),
@@ -4176,13 +3433,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final bundleSetup = await ref
         .read(votingRustApiProvider)
         .setupDelegationBundles(ctx: _apiRoundContext(context));
-    final refreshedPlan = await _loadResumePlan(context);
     final refreshedRoundPlan = await _loadRoundPlan(context);
     _setStateForContext(
       context,
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.readyToDelegate,
-        resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: bundleSetup.eligibleWeight,
         privacyTrimDroppedValueZatoshi:
@@ -4228,7 +3483,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           context.round.snapshotHeight,
         ),
       );
-      final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
       final successPhase = current.phase == VotingSessionPhase.error
           ? VotingSessionPhase.idle
@@ -4237,7 +3491,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: eligibility.isEligible ? successPhase : VotingSessionPhase.error,
         config: context.config,
         round: context.round,
-        resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: eligibility.eligibleWeightZatoshi,
         privacyTrimDroppedValueZatoshi:
@@ -4251,44 +3504,35 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? base
             : base.copyWith(
                 error: VotingSessionError(
-                  message: _minimumVotingEligibilityErrorMessage(
-                    eligibility: eligibility,
+                  message: minimumVotingEligibilityMessage(
                     snapshotHeight: context.round.snapshotHeight,
                   ),
+                  isEligibilityFailure: true,
                 ),
               ),
       );
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
-      final eligibilityError = isVotingEligibilityErrorText(message);
+      final eligibilityError =
+          votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.error,
           config: context.config,
           round: context.round,
-          resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
           privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
           isHardwareAccount: context.isHardwareAccount,
-          error: VotingSessionError(message: message, cause: error),
+          error: VotingSessionError(
+            message: message,
+            cause: error,
+            isEligibilityFailure: eligibilityError,
+          ),
         ),
       );
     }
-  }
-
-  String _minimumVotingEligibilityErrorMessage({
-    required rust_api.ApiVotingEligibility eligibility,
-    required int snapshotHeight,
-  }) {
-    return 'minimum voting eligibility requires at least one eligible voting '
-        'bundle with $_minimumVotingBundleWeightZatoshi zatoshi voting weight; '
-        'selected '
-        '${eligibility.distinctNoteCount} distinct notes across eligible '
-        'bundles with ${eligibility.eligibleWeightZatoshi} zatoshi eligible '
-        'bundle weight at '
-        'snapshot height $snapshotHeight';
   }
 
   Future<_VotingSessionContext> _loadContext(
@@ -4341,14 +3585,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
-    final resumePlan = await ref
-        .read(votingRecoveryServiceProvider)
-        .loadResumePlan(
-          dbPath: dbPath,
-          accountUuid: accountUuid,
-          roundId: round.roundId,
-        );
-    // Build a temporary context without roundPlan to derive proposalIds.
     final proposals = proposalsFromRound(round);
     final proposalIds = proposals.map((p) => p.id).toList();
     final roundPlan = await observeVotingHomeResult(
@@ -4377,12 +3613,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       dbPath: dbPath,
       accountUuid: accountUuid,
       isHardwareAccount: isHardwareAccount,
-      network: endpoint.networkName,
+      network: _loggedVotingNetwork(endpoint.networkName),
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
       round: round,
       roundParams: roundParams,
-      resumePlan: resumePlan,
       roundPlan: roundPlan,
     );
     return context;
@@ -4410,16 +3645,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         .call(accountUuid);
     _sessionIsHardwareAccount = isHardware;
     return isHardware;
-  }
-
-  Future<VotingResumePlan> _loadResumePlan(_VotingSessionContext context) {
-    return ref
-        .read(votingRecoveryServiceProvider)
-        .loadResumePlan(
-          dbPath: context.dbPath,
-          accountUuid: context.accountUuid,
-          roundId: context.round.roundId,
-        );
   }
 
   /// Loads the crate planner's round plan.
@@ -4540,7 +3765,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: phase,
         config: context.config,
         round: context.round,
-        resumePlan: context.resumePlan,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
         walletScannedHeight: readiness.scannedHeight,
@@ -4558,6 +3782,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     Object? cause,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
+    bool isEligibilityFailure = false,
   }) {
     if (!_canUpdateSessionUi(context)) return;
     final current = state.value ?? VotingSessionState(roundId: _roundId);
@@ -4568,6 +3793,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           message: message,
           cause: cause,
           pirDiagnostics: pirDiagnostics ?? const [],
+          isEligibilityFailure: isEligibilityFailure,
         ),
         pirDiagnostics: pirDiagnostics,
       ),
@@ -4586,8 +3812,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   bool _canUpdateSessionUi([_VotingSessionContext? context]) {
     if (_isDisposed) return false;
     final actionGeneration = _runningActionGeneration;
-    if (actionGeneration != null && actionGeneration != _sessionGeneration) {
-      _logStaleSessionUpdate('ui-action', actionGeneration);
+    if (_isRunningActionSuperseded) {
+      _logStaleSessionUpdate('ui-action', actionGeneration!);
       return false;
     }
     if (context == null) return true;
@@ -4596,6 +3822,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return false;
     }
     return true;
+  }
+
+  /// Whether the queued action currently running belongs to a superseded
+  /// generation.
+  ///
+  /// This is the one staleness question a context cannot answer, because it
+  /// applies before an action has loaded one. Everything else layers on
+  /// [_isCurrentGeneration]: [_isCurrentContext] adds the account the context
+  /// was loaded for, and [_isCurrentPrecomputeContext] adds the account its
+  /// caller expected. They are the same comparison at different points in an
+  /// action's life, not independent mechanisms.
+  bool get _isRunningActionSuperseded {
+    final actionGeneration = _runningActionGeneration;
+    return actionGeneration != null && actionGeneration != _sessionGeneration;
   }
 
   bool _isCurrentContext(_VotingSessionContext context) {
@@ -4655,6 +3895,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   void _advanceSessionGeneration() {
     _sessionGeneration++;
+    final operationEpoch = BigInt.from(_sessionGeneration);
+    for (final session in _activeRoundSessions.toList()) {
+      session.setOperationEpoch(operationEpoch);
+      session.cancel();
+    }
     if (!_sessionInvalidated.isCompleted) {
       _sessionInvalidated.complete();
     }
@@ -4662,10 +3907,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   void _throwIfActionStale() {
-    final actionGeneration = _runningActionGeneration;
-    if (actionGeneration != null && actionGeneration != _sessionGeneration) {
-      throw const _StaleVotingSessionAction();
-    }
+    if (_isRunningActionSuperseded) throw const _StaleVotingSessionAction();
   }
 
   void _throwIfContextStale(_VotingSessionContext context, String reason) {
@@ -4688,73 +3930,131 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  /// Clear process-local state for the current round after an action failure.
+  /// Clear cached vote-tree state for the current round after an action failure.
   ///
   /// The context is reloaded so cleanup follows the session account and DB path.
   /// If that lookup fails, cleanup is skipped because there is no safe key to
   /// clear.
-  Future<void> _cleanupCurrentSessionState({required String reason}) async {
+  Future<void> _cleanupCurrentSessionCaches({required String reason}) async {
     try {
       final context = await _loadContext(_roundId);
-      await _resetVotingSessionState(
+      await _resetVotingSessionCaches(
         rust: ref.read(votingRustApiProvider),
         context: context,
         reason: reason,
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local cleanup skipped '
+        '[zcash] Voting: session cache cleanup skipped '
         'round=$_roundId reason=$reason error=$e',
       );
     } finally {
-      if (_shareTrackingTimer == null && _activeShareTrackingPasses.isEmpty) {
-        _releaseAutomaticShareTracking();
-      }
+      if (_shareTrackingRun == null) _releaseAutomaticShareTracking();
     }
   }
 
   /// Clear round-scoped Rust voting caches for this session.
   ///
   /// Passing the round ID intentionally preserves the account-wide vote-tree
-  /// sync client while discarding prepared delegation PCZTs for abandoned work.
-  /// This cache reset does not abort in-flight proof or vote jobs.
-  static Future<void> _resetVotingSessionState({
+  /// sync client. Durable delegation setup remains available to in-flight proof
+  /// jobs and to the next signing request.
+  static Future<void> _resetVotingSessionCaches({
     required VotingRustApi rust,
     required _VotingSessionContext context,
     required String reason,
   }) async {
     try {
-      await rust.resetVotingSessionState(
+      await rust.resetVoteTree(
         dbPath: context.dbPath,
         accountUuid: context.accountUuid,
         roundId: context.round.roundId,
       );
       debugPrint(
-        '[zcash] Voting: process-local state reset '
+        '[zcash] Voting: session cache reset '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason',
       );
     } catch (e) {
       debugPrint(
-        '[zcash] Voting: process-local state reset failed '
+        '[zcash] Voting: session cache reset failed '
         'round=${context.round.roundId} account=${context.accountUuid} '
         'reason=$reason error=$e',
       );
     }
   }
 
-  static VotingSessionPhase _phaseForPlans(rust_wire.RoundPlanView? roundPlan) {
-    switch (roundPlan?.primaryAction) {
-      case 'done':
-        return VotingSessionPhase.done;
-      case 'delegate':
-        return VotingSessionPhase.readyToDelegate;
-      case 'vote':
-        return VotingSessionPhase.readyToVote;
-      case 'submit_shares':
-        return VotingSessionPhase.submittingShares;
+  /// Whether this phase means the round is at or past the ballot.
+  static bool _isBallotPhase(VotingSessionPhase phase) {
+    return phase == VotingSessionPhase.castingVotes ||
+        phase == VotingSessionPhase.submittingShares;
+  }
+
+  /// A phase to publish that cannot drag the submission back before the
+  /// ballot.
+  ///
+  /// The step list the voter watches is derived from this field, and several
+  /// writers legitimately report a pre-vote phase while a vote is already in
+  /// flight — a sibling bundle that still owes a delegation signature, a plan
+  /// refresh whose primary action is `delegate`, background share tracking
+  /// finishing. Publishing those moved the active step backwards mid-vote.
+  ///
+  /// Terminal and interactive phases still get through: an error has to be
+  /// shown, `done` is the end of the round, and Keystone signing drives the QR
+  /// panel.
+  VotingSessionPhase _phaseWithoutBallotRegression(VotingSessionPhase next) {
+    final current = state.value?.phase;
+    if (current == null || !_isBallotPhase(current)) return next;
+    if (_isBallotPhase(next) ||
+        next == VotingSessionPhase.done ||
+        next == VotingSessionPhase.error ||
+        next == VotingSessionPhase.keystoneSigning) {
+      return next;
     }
-    return VotingSessionPhase.idle;
+    return current;
+  }
+
+  /// Folds a run-scoped tally into what the round has already shown.
+  ///
+  /// `RoundWorkTallyView` measures one run against what *that run* started
+  /// owing. A round is often driven by two runs — the delegation drive casts
+  /// votes too — so the second run owes less than the first and would shrink
+  /// the denominator the voter is reading. The crate also recomputes the
+  /// finished count from scratch on each refresh, so it can fall mid-run.
+  /// Neither is progress the voter lost.
+  static rust_wire.RoundWorkTallyView _mergeTally(
+    rust_wire.RoundWorkTallyView? previous,
+    rust_wire.RoundWorkTallyView? next,
+  ) {
+    if (next == null) {
+      return previous ??
+          const rust_wire.RoundWorkTallyView(
+            completedProposals: 0,
+            totalProposals: 0,
+            remainingObligations: 0,
+          );
+    }
+    if (previous == null) return next;
+    return rust_wire.RoundWorkTallyView(
+      completedProposals: next.completedProposals > previous.completedProposals
+          ? next.completedProposals
+          : previous.completedProposals,
+      totalProposals: next.totalProposals > previous.totalProposals
+          ? next.totalProposals
+          : previous.totalProposals,
+      remainingObligations: next.remainingObligations,
+    );
+  }
+
+  static VotingSessionPhase _phaseForPlans(rust_wire.RoundPlanView? roundPlan) {
+    return switch (roundPlan?.primaryAction) {
+      rust_wire.RoundPlanActionKind.done => VotingSessionPhase.done,
+      rust_wire.RoundPlanActionKind.delegate =>
+        VotingSessionPhase.readyToDelegate,
+      rust_wire.RoundPlanActionKind.vote => VotingSessionPhase.readyToVote,
+      rust_wire.RoundPlanActionKind.submitShares =>
+        VotingSessionPhase.submittingShares,
+      rust_wire.RoundPlanActionKind.idle || null => VotingSessionPhase.idle,
+    };
   }
 
   Future<void> _clearPersistedDraftChoices(
@@ -4776,70 +4076,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'error=$error',
       );
     }
-  }
-
-  static Set<int> _pendingVoteBundleIndexesForProposal(
-    VotingResumePlan plan,
-    int proposalId,
-  ) {
-    final bundleCount = plan.bundleCount;
-    if (bundleCount == 0) return const {};
-    return {
-      for (var bundleIndex = 0; bundleIndex < bundleCount; bundleIndex++)
-        if (_shouldSubmitVoteBundle(
-          plan,
-          VotingVoteKey(bundleIndex: bundleIndex, proposalId: proposalId),
-        ))
-          bundleIndex,
-    };
-  }
-
-  static List<rust_wire.VoteRecoveryWorkView> _pendingVotePollingWork(
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
-    return [
-      for (final work
-          in roundPlan?.recoveredVoteWork ??
-              const <rust_wire.VoteRecoveryWorkView>[])
-        if (work.kind == 'poll_vote') work,
-    ];
-  }
-
-  static List<_RecoveredVoteWork> _pendingRecoveredVoteWork(
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
-    if (roundPlan == null) return const [];
-    return [
-      for (final work in roundPlan.recoveredVoteWork)
-        if (work.kind == 'submit_vote' || work.kind == 'submit_shares')
-          _RecoveredVoteWork(
-            kind: work.kind == 'submit_vote'
-                ? _RecoveredVoteWorkKind.submitVote
-                : _RecoveredVoteWorkKind.submitShares,
-            key: VotingVoteKey(
-              bundleIndex: work.bundleIndex,
-              proposalId: work.proposalId,
-            ),
-            vcTreePosition: work.vcTreePosition,
-            shareIndexes: work.shareIndexes.toSet(),
-          ),
-    ];
-  }
-
-  rust_wire.DraftVote _draftVoteForCurrentShareMode(
-    _VotingSessionContext context,
-    rust_wire.DraftVote draftVote,
-  ) {
-    if (draftVote.singleShare) return draftVote;
-    final timing = _roundShareTiming(context, _nowSeconds());
-    if (!timing.isLastMoment) return draftVote;
-    return rust_wire.DraftVote(
-      proposalId: draftVote.proposalId,
-      choice: draftVote.choice,
-      numOptions: draftVote.numOptions,
-      vcTreePosition: draftVote.vcTreePosition,
-      singleShare: true,
-    );
   }
 
   _RoundShareTiming _roundShareTiming(
@@ -4882,76 +4118,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   static int _unixSeconds(DateTime value) {
     return value.toUtc().millisecondsSinceEpoch ~/ 1000;
   }
-
-  static bool _shouldSubmitVoteBundle(
-    VotingResumePlan plan,
-    VotingVoteKey key,
-  ) {
-    final phase = plan.votePhasesByKey[key];
-    if (phase == VotingWorkflowPhase.confirmed ||
-        phase == VotingWorkflowPhase.submittedVote) {
-      return false;
-    }
-    return !plan.voteTxHashesByKey.containsKey(key);
-  }
-
-  static Future<Map<String, dynamic>> _wireJsonMap(
-    Future<String> wireJson,
-  ) async {
-    final decoded = jsonDecode(await wireJson);
-    if (decoded is Map<String, dynamic>) return decoded;
-    throw const FormatException('Rust voting wire JSON is not an object.');
-  }
-
-  static void _verifyKeystoneDelegationSignature({
-    required rust_wire.SignedDelegationPayloadView submission,
-    required rust_wire.KeystoneSignatureRecord signature,
-    required int bundleIndex,
-  }) {
-    final wire = submission.submission;
-    if (!_bytesEqual(_decodeBase64(wire.rk), signature.rk) ||
-        !_bytesEqual(_decodeBase64(wire.spendAuthSig), signature.sig)) {
-      throw StateError(
-        'Keystone signature did not match delegation bundle $bundleIndex.',
-      );
-    }
-  }
-
-  static List<int> _decodeBase64(String value) {
-    try {
-      return base64.decode(value);
-    } on FormatException catch (error) {
-      throw StateError(
-        'Invalid base64 payload from Rust delegation wire: $error',
-      );
-    }
-  }
-
-  static bool _bytesEqual(List<int> left, List<int> right) {
-    if (left.length != right.length) return false;
-    for (var i = 0; i < left.length; i++) {
-      if (left[i] != right[i]) return false;
-    }
-    return true;
-  }
-
-  static bool _isKeystoneSetupOverwriteError(Object error) {
-    final normalized = error
-        .toString()
-        .toLowerCase()
-        .replaceAll('_', ' ')
-        .replaceAll('-', ' ');
-    return normalized.contains('refusing to overwrite pczt sighash') ||
-        normalized.contains('refusing to overwrite pczt hash') ||
-        normalized.contains('refusing to overwrite padded note secrets');
-  }
-}
-
-class _DraftVoteWork {
-  const _DraftVoteWork({required this.draftVote, required this.bundleIndexes});
-
-  final rust_wire.DraftVote draftVote;
-  final List<int> bundleIndexes;
 }
 
 class _RoundShareTiming {
@@ -4968,30 +4134,10 @@ class _RoundShareTiming {
   final bool isLastMoment;
 }
 
-enum _RecoveredVoteWorkKind { submitVote, submitShares }
-
-class _RecoveredVoteWork {
-  const _RecoveredVoteWork({
-    required this.kind,
-    required this.key,
-    this.vcTreePosition,
-    this.shareIndexes,
-  });
-
-  final _RecoveredVoteWorkKind kind;
-  final VotingVoteKey key;
-  final BigInt? vcTreePosition;
-  final Set<int>? shareIndexes;
-
-  String get logLabel {
-    switch (kind) {
-      case _RecoveredVoteWorkKind.submitVote:
-        return 'committed cast-vote';
-      case _RecoveredVoteWorkKind.submitShares:
-        return 'confirmed vote shares';
-    }
-  }
-}
+/// Serializes vote-tree syncs and batches concurrent requesters onto one call.
+///
+/// Two guarantees matter to callers:
+///
 
 Future<Map<int, _BundleWorkOutcome<T>>> _runBoundedBundleWork<T>(
   List<int> bundleIndexes, {
@@ -5022,148 +4168,6 @@ Future<Map<int, _BundleWorkOutcome<T>>> _runBoundedBundleWork<T>(
   return outcomes;
 }
 
-Future<_BundleWorkOutcome<T>> _captureBundleWork<T>(
-  Future<T> Function() work,
-) async {
-  try {
-    return _BundleWorkOutcome.success(await work());
-  } catch (error, stackTrace) {
-    return _BundleWorkOutcome.failure(error, stackTrace);
-  }
-}
-
-/// Serializes vote-tree syncs and batches concurrent requesters onto one call.
-///
-/// Two guarantees matter to callers:
-///
-/// * **Protected handoff.** `_syncVoteTreeWithFailover` resets round-global
-///   process state when it fails over to another node, so the next sync cannot
-///   start until every caller served by the previous sync has materialized its
-///   witness.
-/// * **Never stale.** `freshAndUse()` only uses the result of a sync that
-///   *started after* the call. A bundle that just recorded a vote confirmation
-///   therefore cannot be handed an anchor height from a sync that predates its
-///   new VAN leaf. Requests arriving while a sync runs are batched into the
-///   next one, so N bundles finishing a proposal together cost one round trip.
-class _VoteTreeSyncCoalescer {
-  _VoteTreeSyncCoalescer(this._sync);
-
-  final Future<int> Function() _sync;
-  final Queue<_VoteTreeSyncRequestBase> _waiting =
-      Queue<_VoteTreeSyncRequestBase>();
-  bool _running = false;
-
-  Future<T> freshAndUse<T>(Future<T> Function(int anchorHeight) useTree) {
-    final request = _VoteTreeSyncRequest<T>(useTree);
-    _waiting.addLast(request);
-    // Deferred so every requester in this turn joins the same sync — bundles
-    // that finish a proposal together should cost one round trip, not N.
-    // Delaying the start can only add requesters ahead of it, so the
-    // "started after my call" guarantee still holds.
-    scheduleMicrotask(_pump);
-    return request.future;
-  }
-
-  void _pump() {
-    if (_running || _waiting.isEmpty) return;
-    _running = true;
-    // Everyone registered *before* this sync starts is served by it; anyone who
-    // registers after this point waits for the following run.
-    final batch = _waiting.toList(growable: false);
-    _waiting.clear();
-    Future<int> attempt;
-    try {
-      attempt = _sync();
-    } catch (error, stackTrace) {
-      // A synchronous throw would otherwise leave `_running` latched and hang
-      // every later requester instead of failing them.
-      attempt = Future<int>.error(error, stackTrace);
-    }
-    attempt
-        .then(
-          (anchorHeight) async {
-            await Future.wait([
-              for (final request in batch) request.completeWith(anchorHeight),
-            ]);
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            for (final request in batch) {
-              request.completeError(error, stackTrace);
-            }
-          },
-        )
-        .whenComplete(() {
-          _running = false;
-          scheduleMicrotask(_pump);
-        });
-  }
-}
-
-abstract interface class _VoteTreeSyncRequestBase {
-  Future<void> completeWith(int anchorHeight);
-
-  void completeError(Object error, StackTrace stackTrace);
-}
-
-class _VoteTreeSyncRequest<T> implements _VoteTreeSyncRequestBase {
-  _VoteTreeSyncRequest(this._useTree);
-
-  final Future<T> Function(int anchorHeight) _useTree;
-  final Completer<T> _completer = Completer<T>();
-
-  Future<T> get future => _completer.future;
-
-  @override
-  Future<void> completeWith(int anchorHeight) async {
-    try {
-      _completer.complete(await _useTree(anchorHeight));
-    } catch (error, stackTrace) {
-      _completer.completeError(error, stackTrace);
-    }
-  }
-
-  @override
-  void completeError(Object error, StackTrace stackTrace) {
-    _completer.completeError(error, stackTrace);
-  }
-}
-
-class _AsyncPermitPool {
-  _AsyncPermitPool(int concurrency)
-    : assert(concurrency > 0),
-      _availablePermits = concurrency;
-
-  int _availablePermits;
-  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
-
-  Future<T> run<T>(Future<T> Function() work) async {
-    await _acquire();
-    try {
-      return await work();
-    } finally {
-      _release();
-    }
-  }
-
-  Future<void> _acquire() {
-    if (_availablePermits > 0) {
-      _availablePermits--;
-      return Future<void>.value();
-    }
-    final waiter = Completer<void>();
-    _waiters.addLast(waiter);
-    return waiter.future;
-  }
-
-  void _release() {
-    if (_waiters.isNotEmpty) {
-      _waiters.removeFirst().complete();
-    } else {
-      _availablePermits++;
-    }
-  }
-}
-
 class _BundleWorkOutcome<T> {
   const _BundleWorkOutcome.success(this.value)
     : error = null,
@@ -5176,83 +4180,46 @@ class _BundleWorkOutcome<T> {
   final StackTrace? stackTrace;
 }
 
-class _DelegationBundleFailure {
-  const _DelegationBundleFailure({
-    required this.bundleIndex,
-    required this.stage,
-    required this.error,
-  });
-
-  final int bundleIndex;
-  final String stage;
-  final Object error;
-}
-
-class _DelegationBundleBatchException implements Exception {
-  const _DelegationBundleBatchException(this.failures);
-
-  final List<_DelegationBundleFailure> failures;
-
-  @override
-  String toString() {
-    final details = failures
-        .map(
-          (failure) =>
-              'bundle ${failure.bundleIndex + 1} ${failure.stage}: '
-              '${failure.error}',
-        )
-        .join('; ');
-    return 'Delegation bundle processing failed: $details';
+/// The bridge failure that best describes a batch of per-bundle failures.
+///
+/// An eligibility failure wins because it is round-wide rather than specific
+/// to the bundle that reported it first.
+VotingRustException? _representativeVotingRustException(
+  Iterable<Object> errors,
+) {
+  VotingRustException? first;
+  for (final error in errors) {
+    final rustError = votingRustExceptionOf(error);
+    if (rustError == null) continue;
+    if (rustError.isEligibilityFailure) return rustError;
+    first ??= rustError;
   }
+  return first;
 }
 
-class _VoteWaveFailure {
-  const _VoteWaveFailure({
+class _VoteBundleFailure {
+  const _VoteBundleFailure({
     required this.bundleIndex,
     required this.proposalId,
-    required this.stage,
     required this.error,
   });
 
   final int bundleIndex;
   final int proposalId;
-  final String stage;
   final Object error;
 }
 
-/// Stops queued broadcasts once a voting nullifier is already spent.
-class _VotingAlreadyStarted implements Exception {
-  const _VotingAlreadyStarted();
+class _VoteBundleBatchException
+    implements Exception, VotingRustExceptionSource {
+  const _VoteBundleBatchException(this.failures);
+
+  final List<_VoteBundleFailure> failures;
 
   @override
-  String toString() => _votingAlreadyStartedMessage;
-}
-
-/// Requires a voting transaction to be accepted or already present on-chain.
-///
-/// A spent-nullifier rejection means voting has started, but it does not prove
-/// which wallet submitted the accepted transaction. If the rejected response's
-/// hash resolves to a successful transaction, normal recovery continues.
-Future<void> _requireAcceptedVotingTransaction(
-  VotingTxResult result, {
-  required Future<VotingTxConfirmation?> Function(String txHash)
-  waitForConfirmation,
-  required String rejectionMessage,
-}) async {
-  if (result.code == 0) return;
-  if (_nullifierAlreadySpentPattern.hasMatch(result.log) &&
-      result.txHash.isNotEmpty) {
-    final confirmation = await waitForConfirmation(result.txHash);
-    if (confirmation?.code == 0) return;
-    throw const _VotingAlreadyStarted();
-  }
-  throw StateError(result.log.isEmpty ? rejectionMessage : result.log);
-}
-
-class _VoteWaveBatchException implements Exception {
-  const _VoteWaveBatchException(this.failures);
-
-  final List<_VoteWaveFailure> failures;
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
 
   @override
   String toString() {
@@ -5260,31 +4227,52 @@ class _VoteWaveBatchException implements Exception {
         .map(
           (failure) =>
               'bundle ${failure.bundleIndex + 1} '
-              'proposal ${failure.proposalId} ${failure.stage}: '
-              '${failure.error}',
+              'proposal ${failure.proposalId}: ${failure.error}',
         )
         .join('; ');
     return 'Vote casting failed: $details';
   }
 }
 
-class _PolledVoteRecovery {
-  const _PolledVoteRecovery({
-    required this.key,
-    required this.txHash,
-    required this.confirmation,
+class _DelegationBundleFailure {
+  const _DelegationBundleFailure({
+    required this.bundleIndex,
+    required this.stage,
+    required this.error,
   });
 
-  final VotingVoteKey key;
-  final String txHash;
-  final VotingTxConfirmation confirmation;
+  /// The bundle this failure belongs to, or null for a round-level failure the
+  /// SDK could attribute to no step.
+  final int? bundleIndex;
+  final String stage;
+  final Object error;
 }
 
-class _VoteConfirmationTimeout implements Exception {
-  const _VoteConfirmationTimeout({required this.key, required this.txHash});
+class _DelegationBundleBatchException
+    implements Exception, VotingRustExceptionSource {
+  const _DelegationBundleBatchException(this.failures);
 
-  final VotingVoteKey key;
-  final String txHash;
+  final List<_DelegationBundleFailure> failures;
+
+  @override
+  VotingRustException? get votingRustException =>
+      _representativeVotingRustException(
+        failures.map((failure) => failure.error),
+      );
+
+  @override
+  String toString() {
+    final details = failures
+        .map(
+          (failure) => switch (failure.bundleIndex) {
+            final int bundleIndex =>
+              'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}',
+            null => 'round ${failure.stage}: ${failure.error}',
+          },
+        )
+        .join('; ');
+    return 'Delegation bundle processing failed: $details';
+  }
 }
 
 class _VotingSessionContext {
@@ -5297,7 +4285,6 @@ class _VotingSessionContext {
   final rust_config.ResolvedVotingConfig config;
   final VotingRoundDetails round;
   final rust_wire.VotingRoundParams roundParams;
-  final VotingResumePlan resumePlan;
   final rust_wire.RoundPlanView? roundPlan;
 
   const _VotingSessionContext({
@@ -5310,47 +4297,96 @@ class _VotingSessionContext {
     required this.config,
     required this.round,
     required this.roundParams,
-    required this.resumePlan,
     this.roundPlan,
   });
-
-  _VotingSessionContext withResumePlan(VotingResumePlan resumePlan) {
-    return _VotingSessionContext(
-      sessionGeneration: sessionGeneration,
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      isHardwareAccount: isHardwareAccount,
-      network: network,
-      lightwalletdUrl: lightwalletdUrl,
-      config: config,
-      round: round,
-      roundParams: roundParams,
-      resumePlan: resumePlan,
-      roundPlan: roundPlan,
-    );
-  }
-
-  _VotingSessionContext withRound(VotingRoundDetails round) {
-    return _VotingSessionContext(
-      sessionGeneration: sessionGeneration,
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      isHardwareAccount: isHardwareAccount,
-      network: network,
-      lightwalletdUrl: lightwalletdUrl,
-      config: config,
-      round: round,
-      roundParams: roundParams,
-      resumePlan: resumePlan,
-      roundPlan: roundPlan,
-    );
-  }
 }
-
-enum _ShareTrackingWake { fullPass, roundStatus }
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
+}
+
+/// An SDK round step ended in a typed failure.
+class VotingRoundStepFailure implements Exception, VotingRustExceptionSource {
+  const VotingRoundStepFailure(this.step, this.failure);
+
+  final rust_wire.NextStepView step;
+  final rust_wire.RoundStepFailureView failure;
+
+  /// Eligibility is the one step-failure category the app presents as a
+  /// state of the account rather than an error of the action: it suppresses
+  /// retry and switches the round to its not-eligible copy. The step failure
+  /// carries only a kind and a message, so the classified view it exposes
+  /// carries no payload and the message builder falls back to naming the
+  /// round's snapshot block generically.
+  @override
+  VotingRustException? get votingRustException {
+    final kind = switch (failure.kind) {
+      rust_wire.RoundStepFailureKindView.insufficientEligibility =>
+        rust_wire.VotingErrorKindView.insufficientEligibility,
+      rust_wire.RoundStepFailureKindView.noSpendableNotes =>
+        rust_wire.VotingErrorKindView.noSpendableNotes,
+      _ => null,
+    };
+    if (kind == null) return null;
+    return VotingRustException(
+      rust_wire.VotingErrorView(
+        kind: kind,
+        retryable: false,
+        message: failure.message,
+      ),
+    );
+  }
+
+  @override
+  String toString() => failure.message;
+}
+
+/// The chain reported a terminal outcome for a step.
+///
+/// Terminal means the submission ended without a confirmation and the SDK
+/// plans no retry for it, so the diagnostic it carries is the only account of
+/// what happened.
+class VotingChainTerminalOutcome implements Exception {
+  const VotingChainTerminalOutcome(this.step, this.chainOutcome);
+
+  final rust_wire.NextStepView? step;
+  final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
+
+  @override
+  String toString() {
+    final diagnostic = chainOutcome?.diagnostic?.message;
+    if (diagnostic != null) return diagnostic;
+    return switch (chainOutcome?.kind) {
+      rust_wire.ChainSubmissionOutcomeKind.rejected =>
+        'Chain submission was rejected.',
+      rust_wire.ChainSubmissionOutcomeKind.submittedWithoutHash =>
+        'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.',
+      _ => 'Chain submission ended without a usable transaction.',
+    };
+  }
+}
+
+/// The chain step is still reconciling after the SDK's recovery pass.
+///
+/// Not terminal: running the round again later may still resolve it, which is
+/// why it is reported separately from a rejection.
+class VotingChainPendingOutcome implements Exception {
+  const VotingChainPendingOutcome(this.step, this.chainOutcome);
+
+  final rust_wire.NextStepView? step;
+  final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
+
+  @override
+  String toString() =>
+      chainOutcome?.diagnostic?.message ??
+      'Chain submission recovery is still pending.';
+}
+
+class _ChainSubmissionCancelled implements Exception {
+  const _ChainSubmissionCancelled();
+
+  @override
+  String toString() => 'Chain submission was cancelled.';
 }
 
 class _VotingBackgroundWorkQuiesced implements Exception {
@@ -5439,7 +4475,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
         final bundleSetup = await ref
             .read(votingRustApiProvider)
             .setupDelegationBundles(ctx: _apiRoundContext(context));
-        final refreshedPlan = await _loadResumePlan(context);
         final refreshedRoundPlan = await _loadRoundPlan(context);
         final successPhase = current.phase == VotingSessionPhase.error
             ? VotingSessionPhase.idle
@@ -5450,7 +4485,6 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             phase: successPhase,
             config: context.config,
             round: context.round,
-            resumePlan: refreshedPlan,
             roundPlan: refreshedRoundPlan,
             eligibleWeightZatoshi: bundleSetup.eligibleWeight,
             privacyTrimDroppedValueZatoshi:
@@ -5479,23 +4513,3 @@ final votingSubmissionSessionProvider = AsyncNotifierProvider.autoDispose
       VotingSessionState,
       VotingSessionKey
     >(VotingSubmissionSessionNotifier.new);
-
-@visibleForTesting
-final votingTxConfirmationPollingProvider =
-    Provider<VotingTxConfirmationPolling>((ref) {
-      return const VotingTxConfirmationPolling(
-        attempts: 45,
-        delay: Duration(seconds: 2),
-      );
-    });
-
-@visibleForTesting
-class VotingTxConfirmationPolling {
-  final int attempts;
-  final Duration delay;
-
-  const VotingTxConfirmationPolling({
-    required this.attempts,
-    required this.delay,
-  }) : assert(attempts > 0);
-}

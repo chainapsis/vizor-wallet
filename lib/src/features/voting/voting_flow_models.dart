@@ -5,10 +5,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_secure_store.dart';
 import '../../providers/voting/voting_state.dart';
-import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 
-const int _minProposalId = 1;
-const int _maxProposalId = 15;
+/// Inclusive bounds on an on-chain proposal id, mirroring the SDK's
+/// `MIN_PROPOSAL_ID` and `MAX_PROPOSAL_ID`.
+///
+/// Mirrored rather than read at parse time because this parser is synchronous
+/// and runs per proposal; a round trip into Rust to re-learn two constants
+/// would cost more than it is worth. The mirror is what makes them wrong when
+/// the SDK moves, so `voting_proposal_id_range_test.dart` asserts these equal
+/// the values the SDK actually enforces and fails the build when they drift.
+///
+/// They drifted once already: this held 15 while the SDK allowed 50, so a
+/// 37-question round failed to parse at proposal 16 with a `FormatException`
+/// the user could do nothing about.
+const int kMinProposalId = 1;
+const int kMaxProposalId = 50;
 const List<String> _forumUrlKeys = [
   'discussion_url',
   'discussionUrl',
@@ -100,6 +111,22 @@ class VotingSessionKey {
   int get hashCode => Object.hash(roundId, accountUuid);
 }
 
+/// One proposal choice the wallet is about to cast.
+///
+/// Durable ballot intent and the SDK roster carry everything else the cast
+/// needs; this is only what the user decided.
+class VotingDraftVote {
+  const VotingDraftVote({
+    required this.proposalId,
+    required this.choice,
+    required this.numOptions,
+  });
+
+  final int proposalId;
+  final int choice;
+  final int numOptions;
+}
+
 class VotingDraftState {
   const VotingDraftState({this.choices = const {}});
 
@@ -116,19 +143,14 @@ class VotingDraftState {
     return VotingDraftState(choices: nextChoices);
   }
 
-  List<rust_voting.DraftVote> toDraftVotes(
-    List<VotingProposalView> proposals, {
-    bool singleShare = false,
-  }) {
+  List<VotingDraftVote> toDraftVotes(List<VotingProposalView> proposals) {
     return [
       for (final proposal in proposals)
         if (choices[proposal.id] != null)
-          rust_voting.DraftVote(
+          VotingDraftVote(
             proposalId: proposal.id,
             choice: choices[proposal.id]!,
             numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: singleShare,
           ),
     ];
   }
@@ -513,9 +535,9 @@ int _proposalIdFromJson(Map<String, dynamic> json) {
   if (id == null) {
     throw const FormatException('Missing required int: id');
   }
-  if (id < _minProposalId || id > _maxProposalId) {
+  if (id < kMinProposalId || id > kMaxProposalId) {
     throw FormatException(
-      'id must be $_minProposalId..$_maxProposalId, got $id',
+      'id must be $kMinProposalId..$kMaxProposalId, got $id',
     );
   }
   return id;

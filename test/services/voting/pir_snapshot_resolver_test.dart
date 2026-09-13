@@ -1,29 +1,55 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_voting;
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/services/voting/voting_endpoint_mapper.dart';
 
-import 'fake_voting_http.dart';
-
-Uri? selectExactHeightEndpoint({
-  required List<PirSnapshotEndpointDiagnostic> diagnostics,
-  required int expectedSnapshotHeight,
-  required int matchIndex,
+/// Probing, height classification, and selection now run in Rust and are
+/// covered by `rust/src/api/voting.rs` unit tests. What is left on this side
+/// is the mapping: bridge shapes to Dart types, and a missing endpoint to the
+/// typed failure the delegation and warmup paths catch.
+rust_voting.PirSnapshotEndpointDiagnosticView diagnostic({
+  String endpoint = 'https://pir.example',
+  rust_voting.PirSnapshotEndpointStatusView status =
+      rust_voting.PirSnapshotEndpointStatusView.matched,
+  int? reportedHeight,
+  int? httpStatusCode,
+  String? message,
 }) {
-  final matches = diagnostics
-      .where(
-        (diagnostic) =>
-            diagnostic.status == PirSnapshotEndpointStatus.matched &&
-            diagnostic.reportedHeight == expectedSnapshotHeight,
-      )
-      .map((diagnostic) => diagnostic.endpoint)
-      .toList(growable: false);
-  return matches.isEmpty ? null : matches[matchIndex % matches.length];
+  return rust_voting.PirSnapshotEndpointDiagnosticView(
+    endpoint: endpoint,
+    status: status,
+    reportedHeight: reportedHeight == null
+        ? null
+        : BigInt.from(reportedHeight),
+    httpStatusCode: httpStatusCode,
+    message: message,
+  );
+}
+
+PirSnapshotResolver resolverReturning(
+  rust_api.ApiPirSnapshotResolution resolution, {
+  void Function(List<String> endpoints, BigInt height)? onCall,
+}) {
+  return PirSnapshotResolver(
+    resolveEndpoint:
+        ({
+          required List<String> endpoints,
+          required BigInt expectedSnapshotHeight,
+        }) async {
+          onCall?.call(endpoints, expectedSnapshotHeight);
+          return resolution;
+        },
+  );
 }
 
 void main() {
   test('empty endpoint list throws typed no-endpoints error', () async {
-    final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(),
-      selectEndpoint: selectExactHeightEndpoint,
+    // A round with no endpoints is misconfigured, which callers treat
+    // differently from a fleet that answered and did not match.
+    final resolver = resolverReturning(
+      const rust_api.ApiPirSnapshotResolution(diagnostics: []),
     );
 
     expect(
@@ -32,180 +58,151 @@ void main() {
     );
   });
 
-  test('matching endpoint is returned', () async {
-    final endpoint = Uri.parse('https://pir.example/snapshot');
-    final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          'https://pir.example/snapshot/root': {'height': 100},
-        },
+  test('resolved endpoint carries every diagnostic back', () async {
+    // The delegation path builds its PIR failover list from the matched
+    // diagnostics, so they must survive the call and not just the selection.
+    late List<String> requestedEndpoints;
+    late BigInt requestedHeight;
+    final resolver = resolverReturning(
+      rust_api.ApiPirSnapshotResolution(
+        endpoint: 'https://a.example',
+        diagnostics: [
+          diagnostic(endpoint: 'https://a.example', reportedHeight: 100),
+          diagnostic(
+            endpoint: 'https://b.example',
+            status: rust_voting.PirSnapshotEndpointStatusView.behind,
+            reportedHeight: 99,
+          ),
+        ],
       ),
-      selectEndpoint: selectExactHeightEndpoint,
+      onCall: (endpoints, height) {
+        requestedEndpoints = endpoints;
+        requestedHeight = height;
+      },
     );
 
-    final result = await resolver.resolve(
-      endpoints: [endpoint],
+    final resolution = await resolver.resolve(
+      endpoints: [Uri.parse('https://a.example'), Uri.parse('https://b.example')],
       expectedSnapshotHeight: 100,
     );
 
-    expect(result.endpoint, endpoint);
-    expect(result.diagnostics.single.status, PirSnapshotEndpointStatus.matched);
+    expect(requestedEndpoints, ['https://a.example', 'https://b.example']);
+    expect(requestedHeight, BigInt.from(100));
+    expect(resolution.endpoint, Uri.parse('https://a.example'));
+    expect(resolution.diagnostics, hasLength(2));
+    expect(resolution.diagnostics.first.matched, isTrue);
+    expect(resolution.diagnostics.last.matched, isFalse);
+    expect(resolution.diagnostics.last.reportedHeight, 99);
   });
 
-  test('ignores guessed height aliases', () async {
-    final endpoint = Uri.parse('https://pir.example/snapshot');
-    final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          'https://pir.example/snapshot/root': {
-            'root_height': 100,
-            'rootHeight': 100,
-            'snapshot_height': 100,
-            'snapshotHeight': 100,
-          },
-        },
+  test('no matching endpoint fails closed with its diagnostics', () async {
+    final resolver = resolverReturning(
+      rust_api.ApiPirSnapshotResolution(
+        diagnostics: [
+          diagnostic(
+            endpoint: 'https://a.example',
+            status: rust_voting.PirSnapshotEndpointStatusView.behind,
+            reportedHeight: 99,
+          ),
+        ],
       ),
-      selectEndpoint: selectExactHeightEndpoint,
     );
 
-    try {
-      await resolver.resolve(
-        endpoints: [endpoint],
+    await expectLater(
+      resolver.resolve(
+        endpoints: [Uri.parse('https://a.example')],
         expectedSnapshotHeight: 100,
-      );
-      fail('expected no matching endpoint');
-    } on PirSnapshotNoMatchingEndpoint catch (e) {
-      expect(
-        e.diagnostics.single.status,
-        PirSnapshotEndpointStatus.missingHeight,
-      );
-    }
-  });
-
-  test('non-height fields do not conflict with canonical height', () async {
-    final endpoint = Uri.parse('https://pir.example/snapshot');
-    final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          'https://pir.example/snapshot/root': {
-            'height': 100,
-            'snapshot_height': 101,
-          },
-        },
       ),
-      selectEndpoint: selectExactHeightEndpoint,
-    );
-
-    final result = await resolver.resolve(
-      endpoints: [endpoint],
-      expectedSnapshotHeight: 100,
-    );
-
-    expect(result.endpoint, endpoint);
-    expect(result.diagnostics.single.status, PirSnapshotEndpointStatus.matched);
-  });
-
-  test('non-integer height values are treated as malformed', () async {
-    final endpoints = [
-      Uri.parse('https://pir.example/fractional'),
-      Uri.parse('https://pir.example/negative'),
-      Uri.parse('https://pir.example/too-large'),
-    ];
-    final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          'https://pir.example/fractional/root': {'height': 100.5},
-          'https://pir.example/negative/root': {'height': -1},
-          'https://pir.example/too-large/root': {
-            'height': '18446744073709551616',
-          },
-        },
+      throwsA(
+        isA<PirSnapshotNoMatchingEndpoint>()
+            .having((e) => e.expectedSnapshotHeight, 'height', 100)
+            .having((e) => e.diagnostics, 'diagnostics', hasLength(1)),
       ),
-      selectEndpoint: selectExactHeightEndpoint,
     );
-
-    try {
-      await resolver.resolve(endpoints: endpoints, expectedSnapshotHeight: 100);
-      fail('expected no matching endpoint');
-    } on PirSnapshotNoMatchingEndpoint catch (e) {
-      expect(e.diagnostics.map((diagnostic) => diagnostic.status), [
-        PirSnapshotEndpointStatus.malformedJson,
-        PirSnapshotEndpointStatus.malformedJson,
-        PirSnapshotEndpointStatus.malformedJson,
-      ]);
-    }
   });
 
-  test(
-    'excludes behind ahead missing malformed non-200 and timeout endpoints',
-    () async {
-      final endpoints = [
-        Uri.parse('https://pir.example/behind'),
-        Uri.parse('https://pir.example/ahead'),
-        Uri.parse('https://pir.example/missing'),
-        Uri.parse('https://pir.example/malformed'),
-        Uri.parse('https://pir.example/non-200'),
-        Uri.parse('https://pir.example/timeout'),
-        Uri.parse('https://pir.example/match'),
-      ];
-      final resolver = PirSnapshotResolver(
-        httpClient: FakeVotingHttpClient(
-          responses: {
-            'https://pir.example/behind/root': {'height': 99},
-            'https://pir.example/ahead/root': {'height': 101},
-            'https://pir.example/missing/root': {'root': 'abc'},
-            'https://pir.example/malformed/root': '{',
-            'https://pir.example/non-200/root': textResponse(
-              'down',
-              statusCode: 500,
-            ),
-            'https://pir.example/timeout/root': timeoutResponse(),
-            'https://pir.example/match/root': {'height': 100},
-          },
+  test('every bridge status maps to its Dart status', () async {
+    // The status screen branches on `behind` specifically, so a silent
+    // mismapping here would change what the user is told to do.
+    const pairs = <rust_voting.PirSnapshotEndpointStatusView,
+        PirSnapshotEndpointStatus>{
+      rust_voting.PirSnapshotEndpointStatusView.matched:
+          PirSnapshotEndpointStatus.matched,
+      rust_voting.PirSnapshotEndpointStatusView.behind:
+          PirSnapshotEndpointStatus.behind,
+      rust_voting.PirSnapshotEndpointStatusView.ahead:
+          PirSnapshotEndpointStatus.ahead,
+      rust_voting.PirSnapshotEndpointStatusView.missingHeight:
+          PirSnapshotEndpointStatus.missingHeight,
+      rust_voting.PirSnapshotEndpointStatusView.malformedJson:
+          PirSnapshotEndpointStatus.malformedJson,
+      rust_voting.PirSnapshotEndpointStatusView.nonSuccessStatus:
+          PirSnapshotEndpointStatus.nonSuccessStatus,
+      rust_voting.PirSnapshotEndpointStatusView.timeoutOrNetworkError:
+          PirSnapshotEndpointStatus.timeoutOrNetworkError,
+    };
+
+    for (final entry in pairs.entries) {
+      final resolver = resolverReturning(
+        rust_api.ApiPirSnapshotResolution(
+          endpoint: 'https://a.example',
+          diagnostics: [
+            diagnostic(status: entry.key, reportedHeight: 100, httpStatusCode: 503),
+          ],
         ),
-        selectEndpoint: selectExactHeightEndpoint,
       );
 
-      final result = await resolver.resolve(
-        endpoints: endpoints,
+      final resolution = await resolver.resolve(
+        endpoints: [Uri.parse('https://a.example')],
         expectedSnapshotHeight: 100,
       );
 
-      expect(result.endpoint, endpoints.last);
-      expect(result.diagnostics.map((diagnostic) => diagnostic.status), [
-        PirSnapshotEndpointStatus.behind,
-        PirSnapshotEndpointStatus.ahead,
-        PirSnapshotEndpointStatus.missingHeight,
-        PirSnapshotEndpointStatus.malformedJson,
-        PirSnapshotEndpointStatus.nonSuccessStatus,
-        PirSnapshotEndpointStatus.timeoutOrNetworkError,
-        PirSnapshotEndpointStatus.matched,
-      ]);
-    },
-  );
+      expect(resolution.diagnostics.single.status, entry.value);
+      expect(resolution.diagnostics.single.httpStatusCode, 503);
+    }
+  });
 
-  test('all excluded throws typed no-match error with diagnostics', () async {
-    final endpoints = [
-      Uri.parse('https://pir.example/behind'),
-      Uri.parse('https://pir.example/ahead'),
-    ];
+  test('the regtest gateway rewrite is applied to probes only', () async {
+    // The probe has to reach the local gateway, but the round's configured
+    // identity is what the session state and the PIR failover list carry, so
+    // the rewrite must not leak into the result.
+    final mapper = VotingEndpointMapper(
+      isRegtest: true,
+      gatewayUrl: 'http://127.0.0.1:18232',
+    );
+    const logical = 'https://pir.vizor-vote.invalid';
+    final mapped = mapper.map(Uri.parse(logical)).toString();
+    expect(mapped, isNot(logical), reason: 'mapper must rewrite in regtest');
+
+    late List<String> probed;
     final resolver = PirSnapshotResolver(
-      httpClient: FakeVotingHttpClient(
-        responses: {
-          'https://pir.example/behind/root': {'height': 99},
-          'https://pir.example/ahead/root': {'height': 101},
-        },
-      ),
-      selectEndpoint: selectExactHeightEndpoint,
+      mapper: mapper,
+      resolveEndpoint:
+          ({
+            required List<String> endpoints,
+            required BigInt expectedSnapshotHeight,
+          }) async {
+            probed = endpoints;
+            return rust_api.ApiPirSnapshotResolution(
+              endpoint: endpoints.single,
+              diagnostics: [
+                rust_voting.PirSnapshotEndpointDiagnosticView(
+                  endpoint: endpoints.single,
+                  status: rust_voting.PirSnapshotEndpointStatusView.matched,
+                  reportedHeight: expectedSnapshotHeight,
+                ),
+              ],
+            );
+          },
     );
 
-    try {
-      await resolver.resolve(endpoints: endpoints, expectedSnapshotHeight: 100);
-      fail('expected no matching endpoint');
-    } on PirSnapshotNoMatchingEndpoint catch (e) {
-      expect(e.expectedSnapshotHeight, 100);
-      expect(e.diagnostics.length, 2);
-      expect(e.diagnostics.first.status, PirSnapshotEndpointStatus.behind);
-    }
+    final resolution = await resolver.resolve(
+      endpoints: [Uri.parse(logical)],
+      expectedSnapshotHeight: 100,
+    );
+
+    expect(probed, [mapped]);
+    expect(resolution.endpoint, Uri.parse(logical));
+    expect(resolution.diagnostics.single.endpoint, Uri.parse(logical));
   });
 }

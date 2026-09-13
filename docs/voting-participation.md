@@ -149,6 +149,30 @@ All asynchronous checking/persistence registers with the account deletion/reset
 drain before its first await. Account/network/source/lock changes cancel results;
 queued checks are serialized and concurrent checks for a round share one future.
 
+## Not enforced on the SDK round-session branch
+
+Discovery still runs and still records the exclusion set, but **bundle
+planning does not currently consult it.**
+
+`participation::filter_notes` used to run inside `participation::prepare_bundle`,
+which replaced the SDK's own bundle preparation. Once voting execution moved
+into the SDK round session, the SDK derives the note set itself:
+`delegate::prepare_delegation_bundle` (reached from
+`delegation_pipeline/proving.rs` while proving) re-plans from an unfiltered
+selection and then calls `require_bundle_notes` against the persisted rows.
+
+That makes partial filtering worse than none. A plan persisted from a filtered
+set fails the SDK's own check with `bundle_index N notes do not match persisted
+setup`, so filtering in `setup_delegation_bundles` alone would break delegation
+for precisely the wallets that have exclusions. The note set has to be derived
+identically everywhere, and one of those places is inside the pinned SDK.
+
+Re-enabling this needs the SDK to filter its own selection — a note-filter hook
+on `DelegationPipeline`/`prepare_delegation_bundle` — after which
+`setup_delegation_bundles`, `check_voting_eligibility`, and snapshot precompute
+can all filter again. `prepare_bundle` is kept as the reference for what that
+wiring looked like.
+
 ## Validation
 
 The JSON fixtures in `rust/tests/fixtures/voting-participation` contain public

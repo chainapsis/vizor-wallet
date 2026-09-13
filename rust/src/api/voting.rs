@@ -1,30 +1,20 @@
-use std::{
-    panic,
-    path::Path,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
-    time::Instant,
-};
+use std::{panic, path::Path, sync::Arc, time::Instant};
+
+use crate::frb_generated::StreamSink;
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
-use super::voting_helpers::{
-    delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
-    seed_from_mnemonic,
-};
-use crate::frb_generated::StreamSink;
+use super::voting_helpers::delegation_static_inputs;
 use crate::wallet::{
     keys,
-    voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
+    voting::{db, delegation, hotkey, network::voting_network, observability},
 };
-use secrecy::ExposeSecret;
 use zcash_voting::config;
 use zcash_voting::wire::{
     ConfigSwitchKind, DynamicConfigAttempt, PirLayout, ResolveVotingConfigOptions,
-    ResolvedVotingConfig, ResolvedVotingConfigSummary,
+    ResolvedVotingConfig, ResolvedVotingConfigSummary, VotingErrorView,
 };
+use zcash_voting::VotingError;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
@@ -68,92 +58,271 @@ pub fn evaluate_voting_participation(
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ApiPirSnapshotEndpointStatus {
-    Matched,
-    Behind,
-    Ahead,
-    MissingHeight,
-    MalformedJson,
-    NonSuccessStatus,
-    TimeoutOrNetworkError,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiPirSnapshotEndpointDiagnostic {
-    pub endpoint: String,
-    pub status: ApiPirSnapshotEndpointStatus,
-    pub reported_height: Option<u64>,
-    pub http_status_code: Option<u16>,
-    pub message: Option<String>,
-}
-
-impl From<ApiPirSnapshotEndpointDiagnostic>
-    for zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic
-{
-    fn from(diagnostic: ApiPirSnapshotEndpointDiagnostic) -> Self {
-        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as CoreStatus;
-        let status = match diagnostic.status {
-            ApiPirSnapshotEndpointStatus::Matched => CoreStatus::Matched,
-            ApiPirSnapshotEndpointStatus::Behind => CoreStatus::Behind,
-            ApiPirSnapshotEndpointStatus::Ahead => CoreStatus::Ahead,
-            ApiPirSnapshotEndpointStatus::MissingHeight => CoreStatus::MissingHeight,
-            ApiPirSnapshotEndpointStatus::MalformedJson => CoreStatus::MalformedJson,
-            ApiPirSnapshotEndpointStatus::NonSuccessStatus => CoreStatus::NonSuccessStatus,
-            ApiPirSnapshotEndpointStatus::TimeoutOrNetworkError => {
-                CoreStatus::TimeoutOrNetworkError
-            }
-        };
-        Self {
-            endpoint: diagnostic.endpoint,
-            status,
-            reported_height: diagnostic.reported_height,
-            http_status_code: diagnostic.http_status_code,
-            message: diagnostic.message,
-        }
-    }
-}
-
-/// Select an exact-height PIR endpoint using the SDK's snapshot policy.
+/// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
-/// Dart owns probing and diagnostics because it owns the routed HTTP client.
-/// The protocol decision about which diagnostics are eligible remains here.
-#[flutter_rust_bridge::frb(sync)]
-pub fn select_pir_snapshot_endpoint(
-    diagnostics: Vec<ApiPirSnapshotEndpointDiagnostic>,
+/// The full diagnostic set is part of the result, not debug output: the
+/// delegation path builds its PIR failover list from the endpoints that
+/// matched, and the status screen explains a failed resolution from the
+/// heights the endpoints reported.
+#[derive(Debug)]
+pub struct ApiPirSnapshotResolution {
+    /// `None` when every endpoint was probed and none matched the round.
+    pub endpoint: Option<String>,
+    pub diagnostics: Vec<zcash_voting::wire::PirSnapshotEndpointDiagnosticView>,
+}
+
+/// Probe every configured PIR endpoint and select one at the round's height.
+///
+/// Probing runs here rather than in Dart so the wallet has one PIR resolution
+/// path instead of a probe on one side of the bridge and the selection policy
+/// on the other. Traffic uses the routed transport, so the probe follows the
+/// same network route as the rest of the wallet's foreground voting traffic.
+///
+/// Returns `endpoint: None` when endpoints were probed but none served the
+/// round's snapshot height; that is a normal, recoverable outcome the caller
+/// reports from the diagnostics. An empty `endpoints` list is an error,
+/// because it means the round is misconfigured rather than the fleet behind.
+pub async fn resolve_pir_snapshot_endpoint(
+    endpoints: Vec<String>,
     expected_snapshot_height: u64,
-    match_index: u64,
-) -> Result<Option<String>, String> {
-    let diagnostics = diagnostics.into_iter().map(Into::into).collect::<Vec<_>>();
+) -> Result<ApiPirSnapshotResolution, VotingErrorView> {
+    if endpoints.is_empty() {
+        return Err(view(VotingError::InvalidInput {
+            message: "no PIR endpoints configured".to_string(),
+        }));
+    }
+
+    let transport = routed_transport();
+    let diagnostics = futures::future::join_all(endpoints.iter().map(|endpoint| {
+        probe_pir_snapshot_endpoint(transport.as_ref(), endpoint, expected_snapshot_height)
+    }))
+    .await;
+
     if zcash_voting::pir_snapshot::matching_pir_snapshot_endpoints(
         &diagnostics,
         expected_snapshot_height,
     )
     .is_empty()
     {
-        return Ok(None);
+        return Ok(ApiPirSnapshotResolution {
+            endpoint: None,
+            diagnostics: diagnostics.into_iter().map(Into::into).collect(),
+        });
     }
-    zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(
+
+    // The SDK keeps selection deterministic and leaves the randomness to its
+    // caller, so the spread across equally-valid endpoints is chosen here.
+    let match_index = u64::from_le_bytes(rand::random::<[u8; 8]>());
+    let resolution = zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(
         &diagnostics,
         expected_snapshot_height,
         match_index,
     )
-    .map(|resolution| Some(resolution.endpoint))
-    .map_err(|error| error.to_string())
+    .map_err(view)?;
+    Ok(ApiPirSnapshotResolution {
+        endpoint: Some(resolution.endpoint),
+        diagnostics: resolution.diagnostics.into_iter().map(Into::into).collect(),
+    })
 }
 
-// Shared phase labels emitted in streaming voting/delegation progress events.
-const PHASE_SELECTING_NOTES: &str = "selecting_notes";
-const PHASE_BUILDING_PCZT: &str = "building_pczt";
-const PHASE_BUILDING_PROOF: &str = "building_proof";
-const PHASE_PROOF_PROGRESS: &str = "proof_progress";
-const PHASE_SIGNING_PAYLOAD: &str = "signing_payload";
-const PHASE_PAYLOAD_READY: &str = "payload_ready";
-const PHASE_RESULT: &str = "result";
-const PHASE_DELEGATION_PROGRESS: &str = "delegation_progress";
-const PHASE_BUILDING_SHARE_PAYLOADS: &str = "building_share_payloads";
-const PHASE_SIGNING: &str = "signing";
-const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
+/// Probe one endpoint's `/root` and normalize the outcome into a diagnostic.
+///
+/// Retries once immediately on a failure another attempt could clear, matching
+/// the probe policy this replaced. Every failure becomes a diagnostic rather
+/// than an error: one unreachable endpoint must not fail a resolution another
+/// endpoint can satisfy.
+async fn probe_pir_snapshot_endpoint<T: zcash_voting::pir::Transport + ?Sized>(
+    transport: &T,
+    endpoint: &str,
+    expected_snapshot_height: u64,
+) -> zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+    let url = pir_snapshot_root_url(endpoint);
+    let mut attempt =
+        pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+    if attempt.retryable {
+        attempt =
+            pir_snapshot_probe_attempt(transport, &url, endpoint, expected_snapshot_height).await;
+    }
+    attempt.diagnostic
+}
+
+struct PirSnapshotProbeAttempt {
+    diagnostic: zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic,
+    retryable: bool,
+}
+
+async fn pir_snapshot_probe_attempt<T: zcash_voting::pir::Transport + ?Sized>(
+    transport: &T,
+    url: &str,
+    endpoint: &str,
+    expected_snapshot_height: u64,
+) -> PirSnapshotProbeAttempt {
+    use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+    // The transport's own deadline covers a PIR query, which is a much larger
+    // request than this probe; hold the probe to the wallet's own budget so a
+    // single dead endpoint cannot stall resolution behind it.
+    let response = match tokio::time::timeout(PIR_SNAPSHOT_PROBE_TIMEOUT, transport.get(url)).await
+    {
+        Err(_) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::TimeoutOrNetworkError,
+                    None,
+                    Some(format!(
+                        "no response within {}s",
+                        PIR_SNAPSHOT_PROBE_TIMEOUT.as_secs()
+                    )),
+                ),
+                retryable: true,
+            };
+        }
+        Ok(Err(error)) => {
+            let failure = zcash_voting::PirHttpFailure::from_error_chain(&error);
+            let http_status = failure.and_then(|failure| failure.http_status);
+            let status = match failure.map(|failure| failure.phase) {
+                Some(zcash_voting::PirHttpFailurePhase::Status) => Status::NonSuccessStatus,
+                _ => Status::TimeoutOrNetworkError,
+            };
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    status,
+                    http_status,
+                    Some(format!("{error:#}")),
+                ),
+                retryable: failure.map(|failure| failure.retryable()).unwrap_or(true),
+            };
+        }
+        Ok(Ok(response)) => response,
+    };
+
+    if response.status != 200 {
+        return PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::NonSuccessStatus,
+                Some(response.status),
+                Some(String::from_utf8_lossy(&response.body).into_owned()),
+            ),
+            retryable: matches!(response.status, 408 | 429 | 500..=599),
+        };
+    }
+
+    let root = match serde_json::from_slice::<serde_json::Value>(&response.body) {
+        Ok(serde_json::Value::Object(root)) => root,
+        Ok(_) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::MalformedJson,
+                    None,
+                    Some("root response is not a JSON object".to_string()),
+                ),
+                retryable: false,
+            };
+        }
+        Err(error) => {
+            return PirSnapshotProbeAttempt {
+                diagnostic: pir_snapshot_failure(
+                    endpoint,
+                    Status::MalformedJson,
+                    None,
+                    Some(error.to_string()),
+                ),
+                retryable: false,
+            };
+        }
+    };
+
+    // An absent height is a different signal from a corrupt one: the endpoint
+    // answered, it just does not publish a snapshot the round can use.
+    let Some(height) = root.get("height") else {
+        return PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::MissingHeight,
+                None,
+                Some("root response did not include height".to_string()),
+            ),
+            retryable: false,
+        };
+    };
+
+    match pir_snapshot_height_field(height) {
+        Some(height) => PirSnapshotProbeAttempt {
+            diagnostic: zcash_voting::pir_snapshot::classify_pir_snapshot_height(
+                endpoint,
+                expected_snapshot_height,
+                Some(height),
+            ),
+            retryable: false,
+        },
+        None => PirSnapshotProbeAttempt {
+            diagnostic: pir_snapshot_failure(
+                endpoint,
+                Status::MalformedJson,
+                None,
+                Some("root field \"height\" is not a valid u64 height".to_string()),
+            ),
+            retryable: false,
+        },
+    }
+}
+
+/// Deadline for one `/root` probe.
+const PIR_SNAPSHOT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Reads `/root.height`, which endpoints publish as a number or as a decimal
+/// string. Returns `None` for anything else, including a value out of u64
+/// range.
+fn pir_snapshot_height_field(value: &serde_json::Value) -> Option<u64> {
+    match value {
+        serde_json::Value::Number(number) => number.as_u64(),
+        serde_json::Value::String(text) => {
+            if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            text.parse::<u64>().ok()
+        }
+        _ => None,
+    }
+}
+
+/// Appends `root` to an endpoint URL, keeping any base path it already has.
+///
+/// Built structurally rather than by concatenation so an endpoint carrying a
+/// query string still probes `<path>/root?<query>` instead of a URL with the
+/// segment buried in the query.
+fn pir_snapshot_root_url(endpoint: &str) -> String {
+    let Ok(mut url) = url::Url::parse(endpoint) else {
+        return format!("{}/root", endpoint.trim_end_matches('/'));
+    };
+    match url.path_segments_mut() {
+        Ok(mut segments) => {
+            segments.pop_if_empty().push("root");
+        }
+        // Not a hierarchical URL, so it has no path to extend.
+        Err(_) => return format!("{}/root", endpoint.trim_end_matches('/')),
+    }
+    url.to_string()
+}
+
+fn pir_snapshot_failure(
+    endpoint: &str,
+    status: zcash_voting::pir_snapshot::PirSnapshotEndpointStatus,
+    http_status_code: Option<u16>,
+    message: Option<String>,
+) -> zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+    zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic {
+        endpoint: endpoint.to_string(),
+        status,
+        reported_height: None,
+        http_status_code,
+        message,
+    }
+}
 
 /// Prefix for coarse cast-vote stage timings (`log show` subsystem `frb_user`).
 const VOTING_VOTE_LOG: &str = "[VOTING_VOTE]";
@@ -185,43 +354,30 @@ pub fn is_last_moment(
 }
 
 // Fixed-width Keystone payload fields used by adapter regression tests.
+/// Inclusive bounds the vote circuit enforces on an on-chain proposal id.
+///
+/// Exposed so hosts can check their own copy against the SDK rather than
+/// discover a mismatch as a parse failure in front of a voter. Read from
+/// `zcash_voting` directly, so bumping the pinned SDK moves this with it.
+pub struct ApiProposalIdRange {
+    pub min: u32,
+    pub max: u32,
+}
+
+/// Returns the proposal id range the pinned SDK enforces.
+pub fn voting_proposal_id_range() -> ApiProposalIdRange {
+    ApiProposalIdRange {
+        min: zcash_voting::MIN_PROPOSAL_ID,
+        max: zcash_voting::MAX_PROPOSAL_ID,
+    }
+}
+
 #[cfg(test)]
 const KEYSTONE_SIG_LEN: usize = 64;
 #[cfg(test)]
 const KEYSTONE_SIGHASH_LEN: usize = 32;
 #[cfg(test)]
 const KEYSTONE_RK_LEN: usize = 32;
-
-// Log-friendly stream labels and sink-drop diagnostics.
-const DELEGATION_STREAM_CONTEXT: &str = "voting delegation";
-const VOTE_STREAM_CONTEXT: &str = "voting vote";
-const SINK_PROGRESS_NOT_DELIVERED: &str = "StreamSink closed, progress not delivered";
-const SINK_ERROR_NOT_DELIVERED: &str = "StreamSink closed before error delivery";
-const SINK_RESULT_NOT_DELIVERED: &str = "StreamSink closed before final result";
-
-#[derive(Clone, Debug, PartialEq)]
-/// Progress event emitted while building, proving, and signing a delegation payload.
-///
-/// A terminal `"result"` event carries `signed_delegation_payload`; earlier
-/// phase events only describe local preparation progress.
-pub struct ApiDelegationProofEvent {
-    pub phase: String,
-    pub proof_progress: Option<f64>,
-    pub signed_delegation_payload: Option<zcash_voting::wire::SignedDelegationPayloadView>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-/// Progress event emitted while building ZKP2 vote commitments.
-///
-/// A terminal `"result"` event carries the completed commitment set; earlier
-/// phase events include the active `(proposal_id, bundle_index)` pair.
-pub struct ApiVoteCommitEvent {
-    pub phase: String,
-    pub proposal_id: Option<u32>,
-    pub bundle_index: Option<u32>,
-    pub proof_progress: Option<f64>,
-    pub commitments: Option<zcash_voting::wire::SignedVoteCommitmentsView>,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 /// Shared delegation/voting round context passed across the FRB boundary.
@@ -333,10 +489,12 @@ pub struct ApiKeystoneSignatureInput {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Outcome of an idempotent Keystone signature batch write.
+///
+/// A tuple for a different signing context fails the whole batch with
+/// `VotingError::KeystoneSignatureConflict`, which names the bundle.
 pub struct ApiKeystoneSignatureBatchResult {
     pub inserted: u32,
     pub already_present: u32,
-    pub conflicting_bundle_index: Option<u32>,
 }
 
 /// One account and round with durable unconfirmed helper shares.
@@ -345,29 +503,6 @@ pub struct ApiPendingShareRound {
     pub account_uuid: String,
     pub round_id: String,
     pub session_json: Option<String>,
-}
-
-/// Returns the vote-chain delegation submission body as validated wire JSON.
-///
-/// Binary fields are base64-encoded here so Dart does not duplicate protocol
-/// field names or byte encoding rules.
-pub fn delegation_submission_wire_json(
-    submission: zcash_voting::wire::SignedDelegationPayloadView,
-) -> Result<String, String> {
-    catch(|| {
-        // Serialize validated delegation payload into chain wire JSON.
-        submission.submission.to_json().map_err(|e| e.to_string())
-    })
-}
-
-/// Returns the vote-chain cast-vote submission body as validated wire JSON.
-pub fn vote_commitment_wire_json(
-    commitment: zcash_voting::wire::VoteCommitmentWire,
-) -> Result<String, String> {
-    catch(|| {
-        // Serialize validated cast-vote commitment into chain wire JSON.
-        commitment.to_json().map_err(|e| e.to_string())
-    })
 }
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
@@ -401,537 +536,32 @@ pub fn trusted_voting_round_params_from_config(
     snapshot_height: u64,
     nc_root: Vec<u8>,
     nullifier_imt_root: Vec<u8>,
-) -> Result<zcash_voting::wire::VotingRoundParams, String> {
+) -> Result<zcash_voting::wire::VotingRoundParams, VotingErrorView> {
     catch(|| {
         resolved_config
             .trusted_voting_round_params(round_id, snapshot_height, nc_root, nullifier_imt_root)
-            .map_err(|e| e.to_string())
+            .map_err(|error| invalid_input(error.to_string()))
     })
 }
 
-fn share_record(
-    share: zcash_voting::wire::ShareDelegationRecordView,
-) -> zcash_voting::ShareDelegationRecord {
-    // Convert API view type into core share-tracking record shape.
-    zcash_voting::ShareDelegationRecord {
-        round_id: share.round_id,
-        bundle_index: share.bundle_index,
-        proposal_id: share.proposal_id,
-        share_index: share.share_index,
-        sent_to_urls: share.sent_to_urls,
-        ambiguous_urls: share.ambiguous_urls,
-        attempting_urls: Vec::new(),
-        target_count: share.target_count,
-        nullifier: share.nullifier,
-        confirmed: share.confirmed,
-        submit_at: share.submit_at,
-        created_at: share.created_at,
-    }
-}
-
-/// One helper share identified within its round.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ApiShareKey {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-}
-
-/// One share that reached a new helper during a tracking pass.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiResubmittedShare {
-    pub share: ApiShareKey,
-    pub server_url: String,
-}
-
-/// Definite and outcome-unknown results from one initial helper fan-out.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareSubmissionReport {
-    /// Helpers that definitively accepted the share.
-    pub accepted_urls: Vec<String>,
-    /// Helpers that may have accepted the share before the response failed.
-    pub ambiguous_urls: Vec<String>,
-    /// Desired number of definite helper placements.
-    pub target_count: u32,
-}
-
-/// One share processed by commitment-wide initial delivery.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareDeliveryOutcome {
-    pub share_index: u32,
-    pub submission: ApiShareSubmissionReport,
-}
-
-/// Commitment-wide helper delivery result.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareBatchDeliveryReport {
-    pub deliveries: Vec<ApiShareDeliveryOutcome>,
-    pub pending_share_indices: Vec<u32>,
-    pub cancelled: bool,
-    pub legacy_best_effort: bool,
-}
-
-impl TryFrom<zcash_voting::share_tracking::ShareSubmissionReport> for ApiShareSubmissionReport {
-    type Error = String;
-
-    fn try_from(
-        report: zcash_voting::share_tracking::ShareSubmissionReport,
-    ) -> Result<Self, Self::Error> {
-        Ok(Self {
-            accepted_urls: report.accepted_urls,
-            ambiguous_urls: report.ambiguous_urls,
-            target_count: u32::try_from(report.target_count).map_err(|_| {
-                format!(
-                    "share target count {} does not fit u32",
-                    report.target_count
-                )
-            })?,
-        })
-    }
-}
-
-/// What one helper share-tracking pass did.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareTrackingReport {
-    /// Shares durably confirmed by the crate's two-helper quorum.
-    pub confirmed: Vec<ApiShareKey>,
-    /// Shares that reached an additional helper during this pass.
-    pub resubmitted: Vec<ApiResubmittedShare>,
-    /// Outcome-unknown attempts retained durably during this pass.
-    pub ambiguous: Vec<ApiResubmittedShare>,
-    /// Shares whose recovery material is missing, so no retry can help.
-    pub unrecoverable: Vec<ApiShareKey>,
-    /// True when the pass stopped early because Dart cancelled it.
-    pub cancelled: bool,
-    /// Seconds until the next pass, or `None` when nothing is pending.
-    pub next_delay_seconds: Option<u64>,
-}
-
-/// Canonical helper fleet and readiness-ranked prefix for initial planning.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVotingHelperPreflight {
-    /// Complete configured helper fleet in canonical caller order.
-    pub configured_helper_urls: Vec<String>,
-    /// Ready helpers in the same relative order as the configured fleet.
-    pub ready_helper_urls: Vec<String>,
-}
-
-impl From<zcash_voting::share_tracking::ShareKey> for ApiShareKey {
-    fn from(key: zcash_voting::share_tracking::ShareKey) -> Self {
-        Self {
-            bundle_index: key.bundle_index,
-            proposal_id: key.proposal_id,
-            share_index: key.share_index,
-        }
-    }
-}
-
-/// Account-and-round-bound helper state shared by submission and recovery.
-///
-/// Health scores are local ordering hints for this voting workflow. Keeping
-/// them here prevents failures in one account or round from influencing
-/// another while still letting initial fan-out and later recovery share the
-/// same recent view of helper availability.
-#[flutter_rust_bridge::frb(opaque)]
-pub struct VotingHelperDeliveryContext {
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    health: zcash_voting::HelperHealth,
-    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
-}
-
-/// One account-and-round-bound cancellation handle for helper-share tracking.
-///
-/// Dart creates the opaque handle synchronously before dispatching the async
-/// pass. FRB retains the same handle while the call is queued or running, so an
-/// immediate destructive drain can cancel that exact pass without a
-/// process-wide operation registry.
-#[flutter_rust_bridge::frb(opaque)]
-pub struct VotingShareTrackingPassHandle {
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    health: zcash_voting::HelperHealth,
-    database: Arc<Mutex<Option<Arc<zcash_voting::round::VotingDb>>>>,
-    cancelled: AtomicBool,
-}
-
-impl VotingShareTrackingPassHandle {
-    /// Stops this tracking pass at its next cancellation check.
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
-    }
-}
-
-/// Process-wide helper transport, so connections and TLS sessions are reused.
-static HELPER_TRANSPORT: std::sync::OnceLock<
-    Arc<crate::wallet::voting::helper_transport::VotingHelperTransport>,
-> = std::sync::OnceLock::new();
-
-fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
-    let transport = HELPER_TRANSPORT
+/// Process-wide routed transport for helper and vote-chain traffic, so
+/// connections and TLS sessions are reused across sessions.
+pub(super) fn routed_transport(
+) -> Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>> {
+    static TRANSPORT: std::sync::OnceLock<
+        Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>,
+    > = std::sync::OnceLock::new();
+    TRANSPORT
         .get_or_init(|| {
-            Arc::new(crate::wallet::voting::helper_transport::VotingHelperTransport::new())
+            Arc::new(zcash_voting::HyperTransport::with_route(
+                crate::wallet::voting::route::VizorRoute::new(),
+            ))
         })
-        .clone();
-    zcash_voting::HelperClient::new(transport, health.clone())
+        .clone()
 }
 
-/// Creates helper delivery state for one account-and-round voting workflow.
-#[flutter_rust_bridge::frb(sync)]
-pub fn create_voting_helper_delivery_context(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> VotingHelperDeliveryContext {
-    VotingHelperDeliveryContext {
-        db_path,
-        account_uuid,
-        round_id,
-        health: zcash_voting::HelperHealth::default(),
-        database: Arc::new(Mutex::new(None)),
-    }
-}
-
-/// Creates one cancellable tracking-pass handle bound to its delivery context.
-#[flutter_rust_bridge::frb(sync)]
-pub fn begin_share_tracking_pass(
-    context: &VotingHelperDeliveryContext,
-) -> VotingShareTrackingPassHandle {
-    VotingShareTrackingPassHandle {
-        db_path: context.db_path.clone(),
-        account_uuid: context.account_uuid.clone(),
-        round_id: context.round_id.clone(),
-        health: context.health.clone(),
-        database: context.database.clone(),
-        cancelled: AtomicBool::new(false),
-    }
-}
-
-/// Canonicalizes and probes the complete configured helper fleet.
-///
-/// Validation happens before any request. The crate-owned helper client then
-/// enforces canonical identity, response bounds, JSON content type, and the
-/// progressive soft/hard readiness windows.
-pub async fn preflight_voting_helpers(
-    context: &VotingHelperDeliveryContext,
-    configured_helper_urls: Vec<String>,
-) -> Result<ApiVotingHelperPreflight, String> {
-    let client = helper_client(&context.health);
-    let preflight = client
-        .preflight_fleet(&configured_helper_urls)
-        .await
-        .map_err(|e| e.to_string())?;
-    let configured_helper_urls = preflight.configured_server_urls().to_vec();
-    let ready_helper_urls =
-        preflight.ranked_server_urls()[..preflight.ready_server_count()].to_vec();
-    Ok(ApiVotingHelperPreflight {
-        configured_helper_urls,
-        ready_helper_urls,
-    })
-}
-
-fn helper_delivery_db(
-    db_path: &str,
-    account_uuid: &str,
-    database: &Mutex<Option<Arc<zcash_voting::round::VotingDb>>>,
-) -> Result<Arc<zcash_voting::round::VotingDb>, String> {
-    let mut database = database
-        .lock()
-        .map_err(|_| "voting helper database lock poisoned".to_string())?;
-    if let Some(db) = database.as_ref() {
-        return Ok(db.clone());
-    }
-    let opened =
-        db::with_voting_sidecar_write_lock(db_path, || db::open_voting_db(db_path, account_uuid))?;
-    let opened = Arc::new(opened);
-    *database = Some(opened.clone());
-    Ok(opened)
-}
-
-/// Runs one confirm-or-retry pass over a round's unconfirmed helper shares.
-///
-/// This is the whole helper-facing workflow: the crate polls helpers, requires
-/// matching confirmation responses from two distinct configured helpers,
-/// persists confirmed shares, retries overdue shares against helpers that
-/// missed them, and persists delivery outcomes. Dart owns only the timer and
-/// cancellation triggers.
-///
-/// The sidecar write lock is held for the open (which may migrate) and then
-/// released. Holding it across the pass would block user-initiated voting
-/// writes for as long as helper polling takes; the writes this pass makes are
-/// short and self-contained, and the sidecar runs in WAL mode with a busy
-/// timeout.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails or a share record cannot be
-/// read or updated. Helper failures are not errors: they are scored and
-/// reported through the returned pass result.
-pub async fn track_pending_shares(
-    pass_handle: &VotingShareTrackingPassHandle,
-    configured_helper_urls: Vec<String>,
-    now_seconds: u64,
-    vote_end_time_seconds: Option<u64>,
-) -> Result<ApiShareTrackingReport, String> {
-    let cancel = || pass_handle.is_cancelled();
-
-    // Open under the sidecar lock so a concurrent opener cannot race schema
-    // migration, then run the network pass without holding it.
-    let db = helper_delivery_db(
-        &pass_handle.db_path,
-        &pass_handle.account_uuid,
-        &pass_handle.database,
-    )?;
-
-    let client = helper_client(&pass_handle.health);
-    let params = zcash_voting::share_tracking::ShareTrackingParams {
-        round_id: &pass_handle.round_id,
-        configured_server_urls: &configured_helper_urls,
-        now_seconds,
-        vote_end_time_seconds,
-        policy: zcash_voting::share::ShareTimingPolicy::default(),
-    };
-
-    let report = zcash_voting::share_tracking::track_pending_shares(&db, &params, &client, &cancel)
-        .await
-        .map_err(|e| format!("track_pending_shares failed: {e}"))?;
-
-    Ok(ApiShareTrackingReport {
-        confirmed: report
-            .confirmed
-            .into_iter()
-            .map(ApiShareKey::from)
-            .collect(),
-        resubmitted: report
-            .resubmitted
-            .into_iter()
-            .map(|entry| ApiResubmittedShare {
-                share: entry.share.into(),
-                server_url: entry.server_url,
-            })
-            .collect(),
-        ambiguous: report
-            .ambiguous
-            .into_iter()
-            .map(|entry| ApiResubmittedShare {
-                share: entry.share.into(),
-                server_url: entry.server_url,
-            })
-            .collect(),
-        unrecoverable: report
-            .unrecoverable
-            .into_iter()
-            .map(ApiShareKey::from)
-            .collect(),
-        cancelled: report.cancelled,
-        next_delay_seconds: report.next_delay_seconds,
-    })
-}
-
-/// Checks confirmation quorum for one known share without walking the round.
-///
-/// Foreground submission completion depends only on the designated immediate
-/// share. Using the full recovery pass for that gate makes completion latency
-/// scale with every proposal's delayed shares. This focused check polls at most
-/// four configured helpers concurrently, persists confirmation after two
-/// distinct helpers agree (or the sole helper in a one-helper fleet), and does
-/// not resubmit or otherwise mutate unrelated shares.
-pub async fn confirm_share_with_helpers(
-    pass_handle: &VotingShareTrackingPassHandle,
-    configured_helper_urls: Vec<String>,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    now_seconds: u64,
-) -> Result<bool, String> {
-    let db = helper_delivery_db(
-        &pass_handle.db_path,
-        &pass_handle.account_uuid,
-        &pass_handle.database,
-    )?;
-    let client = helper_client(&pass_handle.health);
-    let cancel = || pass_handle.is_cancelled();
-    let report = zcash_voting::share_tracking::confirm_pending_share(
-        &db,
-        &zcash_voting::share_tracking::ShareConfirmationParams {
-            round_id: &pass_handle.round_id,
-            share: zcash_voting::share_tracking::ShareKey {
-                bundle_index,
-                proposal_id,
-                share_index,
-            },
-            configured_server_urls: &configured_helper_urls,
-            now_seconds,
-        },
-        &client,
-        &cancel,
-    )
-    .await
-    .map_err(|e| format!("confirm_pending_share failed: {e}"))?;
-
-    Ok(report.confirmed)
-}
-
-/// Prepares and durably persists every helper-share placement for one vote.
-///
-/// Call this after the commitment has been persisted and before broadcasting
-/// it to the vote chain. Repeating the call after restart reuses the exact plan;
-/// it never starts helper network delivery.
-///
-/// # Errors
-///
-/// Returns an error without persisting a new plan if the helper fleet, proposal
-/// roster, ballot intent, or committed-vote generation is invalid, or if the
-/// database cannot be opened or updated.
-pub fn prepare_committed_share_delivery(
-    context: &VotingHelperDeliveryContext,
-    bundle_index: u32,
-    proposal_id: u32,
-    preflight: ApiVotingHelperPreflight,
-    now_seconds: u64,
-    vote_end_time_seconds: u64,
-    last_moment_buffer_seconds: Option<u64>,
-    proposal_ids: Vec<u32>,
-) -> Result<(), String> {
-    let db = helper_delivery_db(&context.db_path, &context.account_uuid, &context.database)?;
-    let committed = zcash_voting::vote::CommittedVote::recover(
-        &db,
-        &context.round_id,
-        bundle_index,
-        proposal_id,
-    )
-    .map_err(|e| format!("recover committed vote failed: {e}"))?;
-    let fleet = zcash_voting::HelperFleetPreflight::from_readiness(
-        &preflight.configured_helper_urls,
-        &preflight.ready_helper_urls,
-    )
-    .map_err(|e| format!("validate helper preflight failed: {e}"))?;
-    committed
-        .prepare_share_delivery(
-            &db,
-            zcash_voting::share_tracking::ShareDeliveryPlanningParams {
-                fleet: &fleet,
-                now_seconds,
-                vote_end_time_seconds,
-                last_moment_buffer_seconds,
-                proposal_ids: &proposal_ids,
-            },
-        )
-        .map_err(|e| format!("prepare_share_delivery failed: {e}"))?;
-    Ok(())
-}
-
-/// Submits every incomplete share from an existing durable delivery plan.
-///
-/// Call this only after chain confirmation has been persisted. The SDK rebuilds
-/// and validates every payload against the confirmed committed-vote generation
-/// before the first POST, enforces its process-wide concurrency ceiling, and
-/// journals each attempt before dispatch.
-///
-/// # Errors
-///
-/// Returns an error before network I/O if the plan is missing or incompatible,
-/// the confirmed committed-vote generation is invalid, or the configured fleet
-/// differs from the persisted plan. Helper refusals are scored and reported.
-pub async fn submit_prepared_shares_to_helpers(
-    context: &VotingHelperDeliveryContext,
-    bundle_index: u32,
-    proposal_id: u32,
-    configured_helper_urls: Vec<String>,
-    now_seconds: u64,
-) -> Result<ApiShareBatchDeliveryReport, String> {
-    // Initial submission is foreground cast work, not a tracking pass.
-    // Its lifecycle is owned by the submission action and must not be cancelled
-    // when an unrelated account drains background tracking.
-    let cancel = || false;
-
-    let client = helper_client(&context.health);
-    let db = helper_delivery_db(&context.db_path, &context.account_uuid, &context.database)?;
-    let committed = zcash_voting::vote::CommittedVote::recover(
-        &db,
-        &context.round_id,
-        bundle_index,
-        proposal_id,
-    )
-    .map_err(|e| format!("recover committed vote failed: {e}"))?;
-    let report = committed
-        .submit_prepared_shares(
-            &db,
-            &client,
-            zcash_voting::share_tracking::ShareDeliverySubmissionParams {
-                configured_server_urls: &configured_helper_urls,
-                now_seconds,
-            },
-            &cancel,
-        )
-        .await
-        .map_err(|e| format!("submit_prepared_shares failed: {e}"))?;
-    let deliveries = report
-        .deliveries
-        .into_iter()
-        .map(|delivery| {
-            Ok(ApiShareDeliveryOutcome {
-                share_index: delivery.share_index,
-                submission: delivery.submission.try_into()?,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(ApiShareBatchDeliveryReport {
-        deliveries,
-        pending_share_indices: report.pending_share_indices,
-        cancelled: report.cancelled,
-        legacy_best_effort: matches!(
-            report.placement_guarantee,
-            zcash_voting::share_tracking::SharePlacementGuarantee::LegacyBestEffort
-        ),
-    })
-}
-
-/// Return the next share-tracking delay in seconds using crate policy.
-///
-/// Vizor wakes the tracker when the next share reaches its status-check grace
-/// boundary. The SDK's default policy caps future waits for wallets that also
-/// use the tracking pass as a general heartbeat; Vizor refreshes round state
-/// separately with a lightweight heartbeat and whenever the voting UI becomes
-/// visible, so that cap would only cause redundant SQLite and helper passes.
-pub fn next_share_tracking_delay_seconds(
-    shares: Vec<zcash_voting::wire::ShareDelegationRecordView>,
-    now_seconds: u64,
-) -> Result<Option<u64>, String> {
-    catch(|| {
-        // Convert wire views into core records consumed by share policy.
-        let shares = shares.into_iter().map(share_record).collect::<Vec<_>>();
-        let mut policy = zcash_voting::share::ShareTimingPolicy::default();
-        let ready_delay = shares
-            .iter()
-            .any(|share| {
-                zcash_voting::share::policy::is_share_ready_for_status_check(
-                    share,
-                    now_seconds,
-                    policy,
-                )
-            })
-            .then_some(
-                policy
-                    .ready_poll_interval_seconds
-                    .max(policy.min_tracking_delay_seconds),
-            );
-        policy.future_check_max_delay_seconds = u64::MAX;
-        let next_delay =
-            zcash_voting::share::policy::next_tracking_delay_seconds(&shares, now_seconds, policy);
-        Ok(match (ready_delay, next_delay) {
-            (Some(ready), Some(next)) => Some(ready.min(next)),
-            (Some(ready), None) => Some(ready),
-            (None, next) => next,
-        })
-    })
+pub(super) fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
+    zcash_voting::HelperClient::new(routed_transport(), health.clone())
 }
 
 /// Generate opaque voting hotkey bytes for a local voting account.
@@ -939,132 +569,28 @@ pub fn next_share_tracking_delay_seconds(
 /// Vizor v2 uses the same random app-owned hotkey model for software and
 /// Keystone accounts. The app persists this random per-round hotkey in secure
 /// storage and reuses it for delegation setup and vote commitment signing.
-pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
+pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, VotingErrorView> {
     catch(|| {
         // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
-        let network = keys::parse_network(&network)?;
-        zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
-            .map_err(|e| format!("Voting hotkey generation failed: {e}"))
-            .map(|hotkey| {
-                // FRB returns owned bytes, so this copy cannot be zeroized by Rust
-                // after Dart receives it.
-                hotkey.stored_secret().to_vec()
-            })
+        let network = keys::parse_network(&network).map_err(invalid_input)?;
+        zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network)).map(|hotkey| {
+            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
+            // after Dart receives it.
+            hotkey.stored_secret().to_vec()
+        })
     })
 }
 
-impl From<DelegationProgress> for ApiDelegationProofEvent {
-    fn from(progress: DelegationProgress) -> Self {
-        // Normalize crate-specific progress into stable FRB phase labels.
-        match progress {
-            DelegationProgress::SelectingNotes => Self {
-                phase: PHASE_SELECTING_NOTES.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::PcztBuilding | DelegationProgress::PcztBuilt => Self {
-                phase: PHASE_BUILDING_PCZT.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofStarting => Self {
-                phase: PHASE_BUILDING_PROOF.to_string(),
-                proof_progress: Some(0.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofProgress(value) => Self {
-                phase: PHASE_PROOF_PROGRESS.to_string(),
-                proof_progress: Some(value),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::ProofComplete => Self {
-                phase: PHASE_PROOF_PROGRESS.to_string(),
-                proof_progress: Some(1.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::SigningPayload => Self {
-                phase: PHASE_SIGNING_PAYLOAD.to_string(),
-                proof_progress: Some(1.0),
-                signed_delegation_payload: None,
-            },
-            DelegationProgress::PayloadReady => Self {
-                phase: PHASE_PAYLOAD_READY.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-            _ => Self {
-                phase: PHASE_DELEGATION_PROGRESS.to_string(),
-                proof_progress: None,
-                signed_delegation_payload: None,
-            },
-        }
-    }
-}
-
-impl From<zcash_voting::vote::VoteCommitStage> for ApiVoteCommitEvent {
-    fn from(event: zcash_voting::vote::VoteCommitStage) -> Self {
-        // Normalize vote commit stage details into API progress events.
-        match event {
-            zcash_voting::vote::VoteCommitStage::ProofStarting {
-                proposal_id,
-                bundle_index,
-            } => Self {
-                phase: PHASE_BUILDING_PROOF.to_string(),
-                proposal_id: Some(proposal_id),
-                bundle_index: Some(bundle_index),
-                proof_progress: Some(0.0),
-                commitments: None,
-            },
-            zcash_voting::vote::VoteCommitStage::ProofProgress {
-                proposal_id,
-                bundle_index,
-                progress,
-            } => Self {
-                phase: PHASE_PROOF_PROGRESS.to_string(),
-                proposal_id: Some(proposal_id),
-                bundle_index: Some(bundle_index),
-                proof_progress: Some(progress),
-                commitments: None,
-            },
-            zcash_voting::vote::VoteCommitStage::SharePayloadsBuilding {
-                proposal_id,
-                bundle_index,
-            } => Self {
-                phase: PHASE_BUILDING_SHARE_PAYLOADS.to_string(),
-                proposal_id: Some(proposal_id),
-                bundle_index: Some(bundle_index),
-                proof_progress: Some(1.0),
-                commitments: None,
-            },
-            zcash_voting::vote::VoteCommitStage::Signing {
-                proposal_id,
-                bundle_index,
-            } => Self {
-                phase: PHASE_SIGNING.to_string(),
-                proposal_id: Some(proposal_id),
-                bundle_index: Some(bundle_index),
-                proof_progress: None,
-                commitments: None,
-            },
-            _ => Self {
-                phase: PHASE_VOTE_COMMIT_STAGE.to_string(),
-                proposal_id: None,
-                bundle_index: None,
-                proof_progress: None,
-                commitments: None,
-            },
-        }
-    }
-}
-
-/// Executes an API helper and converts Rust panics into string errors.
+/// Executes an API helper and converts Rust panics into typed errors.
 ///
-/// This preserves the existing `Result<T, String>` contract used by FRB entry
-/// points so callers receive a normal error instead of an unwind crossing FFI.
-fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
-    // Convert unwind payloads into stable string errors for FFI callers.
+/// Every FRB entry point returns `VotingErrorView` so Dart classifies failures
+/// by kind; a panic crossing this boundary becomes an `Internal` error instead
+/// of an unwind crossing FFI.
+fn catch<T>(
+    f: impl FnOnce() -> Result<T, VotingError> + panic::UnwindSafe,
+) -> Result<T, VotingErrorView> {
     match panic::catch_unwind(f) {
-        Ok(result) => result,
+        Ok(result) => result.map_err(VotingErrorView::from),
         Err(e) => {
             let msg = if let Some(s) = e.downcast_ref::<&str>() {
                 s.to_string()
@@ -1073,113 +599,65 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
             } else {
                 "Unknown panic".to_string()
             };
-            Err(format!("Rust panic: {msg}"))
+            Err(VotingErrorView::from(internal(format!(
+                "Rust panic: {msg}"
+            ))))
         }
     }
 }
 
-// Helper function to log when a sink is closed.
-// Log sink closure is non-fatal. Log so dropped listeners are visible in debug.
-fn log_sink_closed(context: &str, detail: &str) {
-    log::warn!("{context}: {detail}");
+fn invalid_input(message: impl Into<String>) -> VotingError {
+    VotingError::InvalidInput {
+        message: message.into(),
+    }
 }
 
-/// Emits the terminal `"result"` delegation event to a progress sink.
-///
-/// If signing failed, this forwards the error through `sink.add_error` and
-/// returns `Ok(())` so closed sinks do not fail the outer task.
-fn emit_signed_delegation_result(
-    sink: &StreamSink<ApiDelegationProofEvent>,
-    signed_result: Result<zcash_voting::wire::SignedDelegationPayloadView, String>,
-) -> Result<(), String> {
-    // Surface computation/signing errors through stream errors.
-    let signed = match signed_result {
-        Ok(signed) => signed,
-        Err(error) => {
-            if sink.add_error(error.clone()).is_err() {
-                log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_ERROR_NOT_DELIVERED);
-            }
-            return Ok(());
-        }
-    };
-
-    // Emit the terminal result event when a payload is available.
-    if sink
-        .add(ApiDelegationProofEvent {
-            phase: PHASE_RESULT.to_string(),
-            proof_progress: None,
-            signed_delegation_payload: Some(signed),
-        })
-        .is_err()
-    {
-        log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_RESULT_NOT_DELIVERED);
+fn internal(message: impl Into<String>) -> VotingError {
+    VotingError::Internal {
+        message: message.into(),
     }
-    Ok(())
 }
 
-fn emit_signed_vote_result(
-    sink: &StreamSink<ApiVoteCommitEvent>,
-    signed_result: Result<zcash_voting::wire::SignedVoteCommitmentsView, String>,
-) -> Result<(), String> {
-    // Surface computation/signing errors through stream errors.
-    let commitments = match signed_result {
-        Ok(commitments) => commitments,
-        Err(error) => {
-            if sink.add_error(error.clone()).is_err() {
-                log_sink_closed(VOTE_STREAM_CONTEXT, SINK_ERROR_NOT_DELIVERED);
-            }
-            return Ok(());
-        }
-    };
+/// Converts a typed error at the FRB boundary.
+fn view(error: VotingError) -> VotingErrorView {
+    VotingErrorView::from(error)
+}
 
-    // Emit the terminal result event when commitments are available.
-    if sink
-        .add(ApiVoteCommitEvent {
-            phase: PHASE_RESULT.to_string(),
-            proposal_id: None,
-            bundle_index: Some(commitments.bundle_index),
-            proof_progress: None,
-            commitments: Some(commitments),
-        })
-        .is_err()
-    {
-        log_sink_closed(VOTE_STREAM_CONTEXT, SINK_RESULT_NOT_DELIVERED);
-    }
-    Ok(())
+/// Round inputs for the SDK delegation pipeline, from the FRB round context.
+pub(super) fn delegation_static_inputs_for(
+    ctx: &ApiVotingRoundContext,
+) -> Result<delegation::RoundInputs, VotingError> {
+    round_inputs(ctx)
+}
+
+fn round_inputs(ctx: &ApiVotingRoundContext) -> Result<delegation::RoundInputs, VotingError> {
+    let (network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    Ok(delegation::RoundInputs {
+        db_path: ctx.db_path.clone(),
+        account_uuid: ctx.account_uuid.clone(),
+        lightwalletd_url: ctx.lightwalletd_url.clone(),
+        network,
+        round_params: ctx.round_params.clone(),
+        round_name: ctx.round_name.clone(),
+        session_json: ctx.session_json.clone(),
+        bundle_policy,
+    })
 }
 
 /// Select notes and persist bundle rows for the delegation pipeline.
 ///
-/// Reuses existing bundle rows for the same round/wallet, so callers can safely
-/// retry setup before proving a specific bundle.
-///
 /// # Errors
 ///
-/// Returns an error if bundle policy parsing, opening the sidecar DB, round
-/// initialization, note selection, or bundle layout persistence fails.
+/// Returns an error if bundle policy parsing, opening the sidecar DB, note
+/// selection, or bundle setup fails.
 pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
-) -> Result<ApiBundleLayout, String> {
-    // Resolve static network + bundle policy inputs and open the sidecar DB.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
-
-    // Select and persist reusable delegation bundles for this round/account.
-    let layout = delegation::setup_delegation_bundles(
-        &voting_db,
-        &ctx.db_path,
-        zcash_voting::delegate::ResolveDelegationLwdParams {
-            lightwalletd_url: &ctx.lightwalletd_url,
-            network: voting_network,
-            round_params: ctx.round_params,
-            round_name: &ctx.round_name,
-        },
-        ctx.session_json.as_deref(),
-        bundle_policy,
-    )
-    .await?;
-    Ok(layout.into())
+) -> Result<ApiBundleLayout, VotingErrorView> {
+    delegation::setup_delegation_bundles(round_inputs(&ctx).map_err(view)?)
+        .await
+        .map(Into::into)
+        .map_err(view)
 }
 
 /// Check whether the account has enough selected notes to vote in this round.
@@ -1194,23 +672,13 @@ pub async fn setup_delegation_bundles(
 /// selection, or eligibility calculation fails.
 pub async fn check_voting_eligibility(
     ctx: ApiVotingRoundContext,
-) -> Result<ApiVotingEligibility, String> {
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
-    let report = delegation::check_voting_eligibility(
-        &voting_db,
-        &ctx.db_path,
-        &ctx.lightwalletd_url,
-        voting_network,
-        ctx.round_params.vote_round_id.as_str(),
-        ctx.round_params.snapshot_height,
-        bundle_policy,
-    )
-    .await?;
+) -> Result<ApiVotingEligibility, VotingErrorView> {
+    let report = delegation::check_voting_eligibility(round_inputs(&ctx).map_err(view)?)
+        .await
+        .map_err(view)?;
     let eligibility = report.eligibility;
     let distinct_note_count = u32::try_from(eligibility.distinct_note_count)
-        .map_err(|_| "distinct note count does not fit in u32".to_string())?;
+        .map_err(|_| view(internal("distinct note count does not fit in u32")))?;
     Ok(ApiVotingEligibility {
         is_eligible: eligibility.is_eligible(),
         distinct_note_count,
@@ -1228,77 +696,16 @@ pub async fn check_voting_eligibility(
 pub async fn precompute_snapshot_bundles(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
-) -> Result<ApiSnapshotBundlePrecomputeResult, String> {
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+) -> Result<ApiSnapshotBundlePrecomputeResult, VotingErrorView> {
+    let pir_layout = ctx.pir_layout;
     delegation::precompute_snapshot_bundles(
-        &ctx.db_path,
-        &ctx.account_uuid,
+        round_inputs(&ctx).map_err(view)?,
         &pir_server_url,
-        ctx.pir_layout,
-        zcash_voting::delegate::ResolveDelegationLwdParams {
-            lightwalletd_url: &ctx.lightwalletd_url,
-            network: voting_network,
-            round_params: ctx.round_params,
-            round_name: &ctx.round_name,
-        },
-        ctx.session_json.as_deref(),
-        bundle_policy,
+        pir_layout,
     )
     .await
     .map(Into::into)
-}
-
-/// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
-///
-/// This is a background warm-up path. The normal proof path still fetches any
-/// missing PIR proofs if this was not run or did not complete in time.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution, hotkey validation, bundle
-/// preparation, or PIR precompute fails.
-pub async fn precompute_delegation_pir(
-    ctx: ApiVotingRoundContext,
-    pir_server_url: String,
-    stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
-    // Resolve static network and bundling policy inputs from round context.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-
-    let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Fetch lightwalletd-backed round inputs used for delegation bundle prep.
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-
-    // Assemble bundle preparation parameters for PIR precompute.
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
-    // Warm the PIR path by precomputing/caching delegation bundle artifacts.
-    delegation::precompute_delegation_pir(
-        &ctx.db_path,
-        &pir_server_url,
-        ctx.pir_layout,
-        prepare_params,
-    )
-    .await
-    .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
+    .map_err(view)
 }
 
 /// Generate and persist ZKP1 for one software delegation bundle without signing.
@@ -1318,34 +725,20 @@ pub async fn precompute_delegation_proof(
     pir_server_urls: Vec<String>,
     stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
-) -> Result<bool, String> {
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+) -> Result<bool, VotingErrorView> {
+    let inputs = round_inputs(&ctx).map_err(view)?;
     let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
+            .map_err(view)?;
     delegation::precompute_delegation_proof(
-        &ctx.db_path,
+        inputs,
         &pir_server_urls,
         ctx.pir_layout,
-        prepare_params,
+        voting_hotkey,
+        bundle_index,
     )
     .await
+    .map_err(view)
 }
 
 /// Kick off process-lifetime Halo2 proving-key warm-up for voting proofs.
@@ -1387,24 +780,10 @@ impl From<delegation::PirCacheWarmupOutcome> for ApiPirCacheWarmupResult {
     }
 }
 
-/// Warm the bundle-independent PIR proof cache for one account.
+/// Warm the bundle-independent PIR proof cache for one account and snapshot.
 ///
-/// Fetches and caches IMT non-membership proofs for the account's eligible
-/// notes at `snapshot_height` against whatever snapshot the PIR endpoint
-/// currently serves. Notes are planned with the same whale-protected default
-/// bundle policy round setup uses. The library prunes cache rows older than
-/// four weeks; `keep_roots` is accepted for FRB compatibility.
-///
-/// This is a background warm-up path: it needs no hotkey, no round rows, and
-/// no bundles, so it can run as soon as the wallet is scanned to the snapshot
-/// height. The delegation prove path reads the same cache and still fetches
-/// anything missing, so skipping or failing this call only costs latency.
-///
-/// # Errors
-///
-/// Returns an error if the network string is invalid, the sidecar cannot be
-/// opened, the wallet is not scanned to the snapshot height, note selection
-/// fails, the PIR handshake fails, or a fetched proof does not verify.
+/// `keep_roots` is accepted for FRB compatibility; the SDK prunes cache rows
+/// by age and does not take a keep list.
 pub async fn warm_pir_proof_cache(
     db_path: String,
     account_uuid: String,
@@ -1413,9 +792,10 @@ pub async fn warm_pir_proof_cache(
     snapshot_height: u64,
     pir_server_url: String,
     pir_layout: PirLayout,
-    keep_roots: Vec<Vec<u8>>,
-) -> Result<ApiPirCacheWarmupResult, String> {
-    let wallet_network = keys::parse_network(&network)?;
+    _keep_roots: Vec<Vec<u8>>,
+) -> Result<ApiPirCacheWarmupResult, VotingErrorView> {
+    let wallet_network =
+        keys::parse_network(&network).map_err(|message| view(invalid_input(message)))?;
     let network = voting_network(wallet_network);
     delegation::warm_pir_proof_cache(
         &db_path,
@@ -1425,77 +805,10 @@ pub async fn warm_pir_proof_cache(
         snapshot_height,
         &pir_server_url,
         pir_layout,
-        keep_roots,
     )
     .await
     .map(ApiPirCacheWarmupResult::from)
-}
-
-/// Streaming variant of `build_prove_and_sign_delegation_payload`.
-///
-/// Emits local preparation phase events while work progresses, then emits a
-/// final `"result"` event containing `SignedDelegationPayloadView`. The function
-/// returns `Ok(())` after the terminal event is queued. `pir_server_urls` must
-/// contain at least one endpoint that serves the round's exact snapshot; later
-/// entries are used only after retryable PIR transport failures.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before the stream work
-/// starts. Runtime delegation/proving errors are forwarded into the sink as
-/// stream errors.
-pub async fn build_prove_and_sign_delegation_payload_with_progress(
-    ctx: ApiVotingRoundContext,
-    pir_server_urls: Vec<String>,
-    mnemonic: String,
-    stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-    sink: StreamSink<ApiDelegationProofEvent>,
-) -> Result<(), String> {
-    // Resolve static delegation inputs and validate the app-owned stored hotkey.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let seed = seed_from_mnemonic(mnemonic)?;
-    let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Resolve lightwalletd inputs and assemble delegation prepare parameters.
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
-    // Stream local progress events and emit one final result/error event.
-    let sink = Arc::new(sink);
-    let progress_sink = sink.clone();
-    let signed_result = delegation::build_prove_and_sign_delegation_payload(
-        &ctx.db_path,
-        &pir_server_urls,
-        ctx.pir_layout,
-        &seed,
-        prepare_params,
-        move |event| {
-            if progress_sink.add(event.into()).is_err() {
-                log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
-            }
-        },
-    )
-    .await
-    .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
-    });
-    emit_signed_delegation_result(sink.as_ref(), signed_result)
+    .map_err(view)
 }
 
 /// Build and redact voting PCZTs that Keystone can sign in one or more batches.
@@ -1509,9 +822,11 @@ pub async fn build_keystone_delegation_requests(
     ctx: ApiVotingRoundContext,
     stored_hotkey_secret: Vec<u8>,
     bundle_indices: Vec<u32>,
-) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, String> {
+) -> Result<Vec<zcash_voting::wire::KeystoneSigningRequest>, VotingErrorView> {
     if bundle_indices.is_empty() {
-        return Err("Keystone delegation bundle indexes must not be empty".to_string());
+        return Err(view(invalid_input(
+            "Keystone delegation bundle indexes must not be empty",
+        )));
     }
     let unique_bundle_count = bundle_indices
         .iter()
@@ -1519,93 +834,41 @@ pub async fn build_keystone_delegation_requests(
         .collect::<std::collections::HashSet<_>>()
         .len();
     if unique_bundle_count != bundle_indices.len() {
-        return Err("Keystone delegation bundle indexes must be unique".to_string());
+        return Err(view(invalid_input(
+            "Keystone delegation bundle indexes must be unique",
+        )));
     }
-
-    // Resolve static round inputs and validate Keystone-provided hotkey bytes.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+    let inputs = round_inputs(&ctx).map_err(view)?;
     let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Resolve lightwalletd-backed round inputs and build request parameters.
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    let mut requests = Vec::with_capacity(bundle_indices.len());
-    for bundle_index in bundle_indices {
-        let prepare_params = prepare_delegation_bundle_params(
-            lwd.clone(),
-            ctx.session_json.as_deref(),
-            &ctx.account_uuid,
-            &voting_hotkey,
-            bundle_index,
-            bundle_policy,
-        );
-
-        // Keep the full PCZT in Rust-side state and return its signer view.
-        requests.push(
-            delegation::build_keystone_delegation_request(
-                &ctx.db_path,
-                &ctx.account_uuid,
-                prepare_params,
-            )
-            .await?,
-        );
-    }
-    Ok(requests)
-}
-
-/// Persist a Keystone signature for one delegation bundle.
-///
-/// # Errors
-///
-/// Returns an error if signature lengths are invalid, opening the voting DB
-/// fails, or persisting the signature record fails.
-pub fn store_keystone_signature(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    sig: Vec<u8>,
-    sighash: Vec<u8>,
-    rk: Vec<u8>,
-) -> Result<(), String> {
-    let result = store_keystone_signatures_batch(
-        db_path,
-        account_uuid,
-        round_id,
-        vec![ApiKeystoneSignatureInput {
-            bundle_index,
-            sig,
-            sighash,
-            rk,
-        }],
-    )?;
-    match result.conflicting_bundle_index {
-        Some(bundle_index) => Err(format!(
-            "Keystone signature conflict for bundle {bundle_index}"
-        )),
-        None => Ok(()),
-    }
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, inputs.network)
+            .map_err(view)?;
+    let pipeline = delegation::open_pipeline(&inputs, Some(voting_hotkey))
+        .await
+        .map_err(view)?;
+    tokio::task::spawn_blocking(move || {
+        bundle_indices
+            .into_iter()
+            .map(|bundle_index| pipeline.keystone_request(bundle_index))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await
+    .map_err(|error| view(internal(format!("Keystone request task failed: {error}"))))?
+    .map_err(view)
 }
 
 /// Atomically persist a batch of Keystone delegation signatures.
 ///
-/// Existing tuples for the same sighash and randomized key are accepted as
-/// idempotent retries, even when randomized signing produced different valid
-/// signature bytes. A tuple for a different signing context is a conflict, and
-/// any validation or database error rolls back the complete batch.
+/// The SDK checks each tuple against the bundle's current sighash and
+/// randomized key in the storage transaction, including idempotent retries.
+/// Missing or replaced setup returns `KeystoneSignatureConflict`. Existing
+/// matching tuples remain idempotent even when signature bytes differ, and any
+/// validation or database error rolls back the complete batch.
 pub fn store_keystone_signatures_batch(
     db_path: String,
     account_uuid: String,
     round_id: String,
     signatures: Vec<ApiKeystoneSignatureInput>,
-) -> Result<ApiKeystoneSignatureBatchResult, String> {
+) -> Result<ApiKeystoneSignatureBatchResult, VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let signatures = signatures
@@ -1617,21 +880,11 @@ pub fn store_keystone_signatures_batch(
                 rk: signature.rk,
             })
             .collect::<Vec<_>>();
-        match db.store_keystone_signatures_batch(&round_id, &signatures) {
-            Ok(result) => Ok(ApiKeystoneSignatureBatchResult {
-                inserted: result.inserted,
-                already_present: result.already_present,
-                conflicting_bundle_index: None,
-            }),
-            Err(zcash_voting::VotingError::KeystoneSignatureConflict { bundle_index }) => {
-                Ok(ApiKeystoneSignatureBatchResult {
-                    inserted: 0,
-                    already_present: 0,
-                    conflicting_bundle_index: Some(bundle_index),
-                })
-            }
-            Err(error) => Err(format!("store Keystone signature batch failed: {error}")),
-        }
+        let result = db.store_keystone_signatures_batch(&round_id, &signatures)?;
+        Ok(ApiKeystoneSignatureBatchResult {
+            inserted: result.inserted,
+            already_present: result.already_present,
+        })
     })
 }
 
@@ -1645,131 +898,11 @@ pub fn get_keystone_signatures(
     db_path: String,
     account_uuid: String,
     round_id: String,
-) -> Result<Vec<zcash_voting::wire::KeystoneSignatureRecord>, String> {
+) -> Result<Vec<zcash_voting::wire::KeystoneSignatureRecord>, VotingErrorView> {
     catch(|| {
         // Load all persisted Keystone signatures for this round.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.get_keystone_signatures(&round_id)
-            .map_err(|e| format!("get_keystone_signatures failed: {e}"))
-    })
-}
-
-/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
-/// `pir_server_urls` follows the same exact-snapshot failover contract.
-///
-/// # Errors
-///
-/// Returns an error if round input resolution fails before stream work starts.
-/// Runtime proving/signature errors are emitted through the sink.
-pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
-    ctx: ApiVotingRoundContext,
-    pir_server_urls: Vec<String>,
-    stored_hotkey_secret: Vec<u8>,
-    bundle_index: u32,
-    keystone_sig: Vec<u8>,
-    keystone_sighash: Vec<u8>,
-    sink: StreamSink<ApiDelegationProofEvent>,
-) -> Result<(), String> {
-    // Resolve static inputs and validate the persisted Keystone hotkey seed.
-    let (voting_network, bundle_policy) =
-        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let voting_hotkey =
-        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
-
-    // Resolve round inputs and build delegation preparation parameters.
-    let lwd = resolve_delegation_lwd_inputs(
-        &ctx.lightwalletd_url,
-        ctx.round_params,
-        &ctx.round_name,
-        voting_network,
-    )
-    .await?;
-    let prepare_params = prepare_delegation_bundle_params(
-        lwd,
-        ctx.session_json.as_deref(),
-        &ctx.account_uuid,
-        &voting_hotkey,
-        bundle_index,
-        bundle_policy,
-    );
-
-    // Stream local progress and emit the terminal signed payload or error.
-    let sink = Arc::new(sink);
-    let progress_sink = sink.clone();
-    let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
-        &ctx.db_path,
-        &pir_server_urls,
-        ctx.pir_layout,
-        &ctx.account_uuid,
-        prepare_params,
-        &keystone_sig,
-        &keystone_sighash,
-        move |event| {
-            if progress_sink.add(event.into()).is_err() {
-                log_sink_closed(DELEGATION_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
-            }
-        },
-    )
-    .await
-    .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
-    });
-    emit_signed_delegation_result(sink.as_ref(), signed_result)
-}
-
-/// Record a submitted delegation transaction hash for one bundle.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the bundle key is missing,
-/// or the stored hash conflicts with `tx_hash`.
-pub fn mark_delegation_submitted(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    tx_hash: String,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Persist submission hash for this round/bundle key.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
-                .map_err(|e| e.to_string())
-        })
-    })
-}
-
-/// Parse tx events and record a confirmed delegation submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-pub fn confirm_delegation_submission(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    tx_hash: String,
-    events_json: String,
-) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
-    catch(|| {
-        let events = parse_tx_events_json(&events_json)?;
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Parse tx events and persist confirmation details for this bundle.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::confirmation::confirm_delegation_submission(
-                &db,
-                &round_id,
-                bundle_index,
-                &tx_hash,
-                &events,
-            )
-            .map_err(|e| e.to_string())
-        })
     })
 }
 
@@ -1781,17 +914,18 @@ pub fn delete_skipped_bundles(
     account_uuid: String,
     round_id: String,
     keep_count: u32,
-) -> Result<u32, String> {
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         // Delete skipped bundle rows and downcast deleted count for FRB.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.delete_skipped_bundles(&round_id, keep_count)
             .and_then(|deleted| {
-                u32::try_from(deleted).map_err(|_| zcash_voting::VotingError::Internal {
-                    message: format!("deleted bundle count {deleted} does not fit in u32"),
+                u32::try_from(deleted).map_err(|_| {
+                    internal(format!(
+                        "deleted bundle count {deleted} does not fit in u32"
+                    ))
                 })
             })
-            .map_err(|e| format!("delete_skipped_bundles failed: {e}"))
     })
 }
 
@@ -1810,56 +944,17 @@ pub fn sync_vote_tree(
     account_uuid: String,
     round_id: String,
     node_url: String,
-) -> Result<u32, String> {
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         // Sync and cache vote tree state for this wallet/round.
         let started = Instant::now();
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
-            .map_err(|e| format!("sync_vote_tree failed: {e}"))?;
+        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)?;
         log::info!(
             "{VOTING_VOTE_LOG} sync-tree complete round={round_id} height={height} elapsed={:.3}s",
             started.elapsed().as_secs_f64()
         );
         Ok(height)
-    })
-}
-
-/// Generate a Vote Authority Note Merkle witness for a delegation bundle.
-///
-/// `anchor_height` is the vote-tree height where the witness should be anchored;
-/// callers must sync the same round before requesting the witness.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, `bundle_index` is out of
-/// range for the round, or witness generation fails.
-pub fn generate_van_witness(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    anchor_height: u32,
-) -> Result<zcash_voting::wire::VanWitness, String> {
-    catch(|| {
-        let started = Instant::now();
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-
-        // Validate bundle index against persisted bundle count first.
-        let bundle_count = db
-            .get_bundle_count(&round_id)
-            .map_err(|e| format!("get_bundle_count failed: {e}"))?;
-        zcash_voting::validate_bundle_index(bundle_count, bundle_index, "voting")
-            .map_err(|e| e.to_string())?;
-        let witness =
-            zcash_voting::precompute::van_witness(&db, &round_id, bundle_index, anchor_height)
-                .map_err(|e| format!("generate_van_witness failed: {e}"))?;
-        log::info!(
-            "{VOTING_VOTE_LOG} van-witness complete bundle={bundle_index} position={} elapsed={:.3}s",
-            witness.position,
-            started.elapsed().as_secs_f64()
-        );
-        Ok(witness)
     })
 }
 
@@ -1876,7 +971,7 @@ pub fn reset_vote_tree(
     db_path: String,
     account_uuid: String,
     round_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
 
@@ -1889,8 +984,7 @@ pub fn reset_vote_tree(
         } else {
             "round"
         };
-        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)
-            .map_err(|e| format!("reset vote tree failed: {e}"))?;
+        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)?;
         log::info!(
             "voting: reset vote-tree state \
              (account_uuid={}, scope={}, round_id={:?})",
@@ -1916,7 +1010,7 @@ pub fn reset_voting_session_state(
     db_path: String,
     account_uuid: String,
     round_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
 
@@ -1929,8 +1023,7 @@ pub fn reset_voting_session_state(
         } else {
             "round"
         };
-        zcash_voting::precompute::reset_voting_session_state(&db, scoped_round_id)
-            .map_err(|e| format!("reset voting session state failed: {e}"))?;
+        zcash_voting::precompute::reset_voting_session_state(&db, scoped_round_id)?;
         log::info!(
             "voting: reset process-local session state \
              (account_uuid={}, scope={}, round_id={:?})",
@@ -1950,13 +1043,14 @@ pub fn reset_voting_session_state(
 /// round-independent `pir_proof_cache` rows for the same wallet id — browse-
 /// only warm-up can persist those without ever creating a round. Use this only
 /// at account deletion boundaries, not for ordinary voting-session retries.
-pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Result<u32, String> {
+pub fn delete_voting_account_state(
+    db_path: String,
+    account_uuid: String,
+) -> Result<u32, VotingErrorView> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        crate::wallet::voting::participation::clear_account(&db)?;
-        let round_count = db
-            .clear_wallet_state()
-            .map_err(|e| format!("clear wallet voting state failed: {e}"))?;
+        crate::wallet::voting::participation::clear_account(&db).map_err(internal)?;
+        let round_count = db.clear_wallet_state()?;
 
         log::info!(
             "voting: deleted durable account state (account_uuid={}, rounds={})",
@@ -1967,260 +1061,39 @@ pub fn delete_voting_account_state(db_path: String, account_uuid: String) -> Res
     })
 }
 
-/// Lists account/round pairs with durable unconfirmed helper shares.
+/// List rounds with durable unconfirmed helper shares for the given accounts.
 ///
-/// The opaque session JSON is returned for caller-owned deadline checks. The
-/// sidecar is not created when the wallet has never persisted voting state.
+/// Accounts with no pending rounds contribute nothing. The result is sorted by
+/// account and round.
 pub fn list_pending_share_rounds(
     db_path: String,
     mut account_uuids: Vec<String>,
-) -> Result<Vec<ApiPendingShareRound>, String> {
-    catch(|| {
+) -> Result<Vec<ApiPendingShareRound>, VotingErrorView> {
+    account_uuids.retain(|account_uuid| !account_uuid.is_empty());
+    catch(move || {
         let sidecar_path =
             zcash_voting::storage::VotingDb::wallet_sidecar_path(Path::new(&db_path));
         if !sidecar_path.exists() {
             return Ok(Vec::new());
         }
-
-        account_uuids.retain(|account_uuid| !account_uuid.is_empty());
-        account_uuids.sort();
-        account_uuids.dedup();
-        let mut pending = Vec::new();
-        for account_uuid in account_uuids {
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            for round in zcash_voting::share::pending_rounds(&db)
-                .map_err(|e| format!("list pending voting share rounds failed: {e}"))?
-            {
-                pending.push(ApiPendingShareRound {
-                    account_uuid: account_uuid.clone(),
-                    round_id: round.round_id,
-                    session_json: round.session_json,
-                });
-            }
-        }
+        let Some(first) = account_uuids.first().cloned() else {
+            return Ok(Vec::new());
+        };
+        let db = db::open_voting_db(&db_path, &first)?;
+        let wallet_ids: Vec<&str> = account_uuids.iter().map(String::as_str).collect();
+        let mut pending = zcash_voting::share::pending_rounds_for_accounts(&db, &wallet_ids)?
+            .into_iter()
+            .map(|round| ApiPendingShareRound {
+                account_uuid: round.wallet_id,
+                round_id: round.round_id,
+                session_json: round.session_json,
+            })
+            .collect::<Vec<_>>();
         pending.sort_by(|left, right| {
             (&left.account_uuid, &left.round_id).cmp(&(&right.account_uuid, &right.round_id))
         });
         Ok(pending)
     })
-}
-
-/// Recover a committed but unsubmitted vote from persisted local recovery data.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, no matching commitment is
-/// recoverable, or wire conversion fails.
-pub fn recover_vote_commitment(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String> {
-    catch(|| {
-        // Recover persisted commitments and convert to public wire view.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::vote::recover_signed_commitments(&db, &round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("vote commitment recovery failed: {e}"))
-            .and_then(|commitments| {
-                zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-                    .map_err(|e| e.to_string())
-            })
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn build_vote_commitments_result<F>(
-    db_path: String,
-    account_uuid: String,
-    network: String,
-    round_id: String,
-    bundle_index: u32,
-    stored_hotkey_secret: Vec<u8>,
-    van_witness: zcash_voting::wire::VanWitness,
-    draft_votes: Vec<zcash_voting::wire::DraftVote>,
-    on_stage: F,
-) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String>
-where
-    F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
-{
-    // Parse network once and keep hotkey bytes in a secrecy wrapper.
-    let network = keys::parse_network(&network)?;
-    let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
-    let total_started = Instant::now();
-    let proposal_label = draft_votes
-        .iter()
-        .map(|draft| draft.proposal_id.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    log::info!("{VOTING_VOTE_LOG} bundle={bundle_index} prove-start proposals=[{proposal_label}]");
-
-    // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
-    let commitment_result = tokio::task::spawn_blocking(move || {
-        let reporter = zcash_voting::VoteCommitStageBridge::new(on_stage);
-        let voting_db = db::open_voting_db(&db_path, &account_uuid)?;
-        let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
-            stored_hotkey_secret.expose_secret(),
-            voting_network(network),
-        )
-        .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
-
-        let prepare_started = Instant::now();
-        let prepared = zcash_voting::vote::prepare_commit_batch(
-            &voting_db,
-            zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            zcash_voting::vote::VoteCommitBatch {
-                round_id: &round_id,
-                bundle_index,
-                drafts: &draft_votes,
-                witness: &van_witness,
-                stages: &reporter,
-            },
-        )
-        .map_err(|e| format!("vote commit batch preparation failed: {e}"))?;
-        log::info!(
-            "{VOTING_VOTE_LOG} bundle={bundle_index} prepare-batch elapsed={:.3}s",
-            prepare_started.elapsed().as_secs_f64()
-        );
-        let persist_started = Instant::now();
-        let persisted = db::with_voting_sidecar_write_lock(&db_path, || {
-            zcash_voting::vote::persist_prepared_commit_batch(&voting_db, prepared)
-                .map_err(|e| format!("vote commit batch persistence failed: {e}"))
-        })?;
-        log::info!(
-            "{VOTING_VOTE_LOG} bundle={bundle_index} persist-batch elapsed={:.3}s worker_total={:.3}s",
-            persist_started.elapsed().as_secs_f64(),
-            total_started.elapsed().as_secs_f64()
-        );
-        Ok(persisted)
-    })
-    .await
-    .map_err(|e| format!("vote commitment task failed: {e}"))
-    .and_then(|result| result);
-    let commitments = commitment_result?;
-
-    // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
-}
-
-#[allow(clippy::too_many_arguments)]
-/// Streaming variant of `build_vote_commitments`.
-///
-/// Emits per-proposal progress events, then a terminal `"result"` event carrying
-/// `SignedVoteCommitmentsView`.
-pub async fn build_vote_commitments_with_progress(
-    db_path: String,
-    account_uuid: String,
-    network: String,
-    round_id: String,
-    bundle_index: u32,
-    stored_hotkey_secret: Vec<u8>,
-    van_witness: zcash_voting::wire::VanWitness,
-    draft_votes: Vec<zcash_voting::wire::DraftVote>,
-    sink: StreamSink<ApiVoteCommitEvent>,
-) -> Result<(), String> {
-    // Bridge stage callbacks into stream events for UI progress updates.
-    let sink = Arc::new(sink);
-    let progress_sink = sink.clone();
-    let commitments = build_vote_commitments_result(
-        db_path,
-        account_uuid,
-        network,
-        round_id,
-        bundle_index,
-        stored_hotkey_secret,
-        van_witness,
-        draft_votes,
-        move |stage| {
-            if progress_sink.add(stage.into()).is_err() {
-                log_sink_closed(VOTE_STREAM_CONTEXT, SINK_PROGRESS_NOT_DELIVERED);
-            }
-        },
-    )
-    .await;
-
-    emit_signed_vote_result(sink.as_ref(), commitments)
-}
-
-/// Load the full recovery/share-tracking summary for one voting round.
-pub fn get_round_recovery_state(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-) -> Result<zcash_voting::wire::RoundRecoveryStateView, String> {
-    catch(|| {
-        // Load persisted round snapshot and expose wire-safe view fields.
-        let db = db::open_voting_db(&db_path, &account_uuid)?;
-        zcash_voting::recovery::round_snapshot(&db, &round_id)
-            .map(zcash_voting::wire::RoundRecoveryStateView::from)
-            .map_err(|e| format!("round_snapshot failed: {e}"))
-    })
-}
-
-/// Record a submitted cast-vote transaction hash for one bundle/proposal key.
-///
-/// Repeated calls are idempotent only for the same transaction hash.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the vote key is missing, or
-/// the stored hash conflicts with `tx_hash`.
-pub fn mark_vote_submitted(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: String,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Persist submission hash for this round/bundle/proposal key.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
-                .map_err(|e| e.to_string())
-        })
-    })
-}
-
-/// Parse tx events and record a confirmed vote submission.
-///
-/// # Errors
-///
-/// Returns an error if opening the voting DB fails, the event payload does not
-/// match the expected round/type shape, or confirmation state cannot be stored.
-pub fn confirm_vote_submission(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: String,
-    events_json: String,
-) -> Result<zcash_voting::wire::VoteConfirmation, String> {
-    catch(|| {
-        let events = parse_tx_events_json(&events_json)?;
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            // Parse tx events and persist vote confirmation fields.
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::confirmation::confirm_vote_submission(
-                &db,
-                &round_id,
-                bundle_index,
-                proposal_id,
-                &tx_hash,
-                &events,
-            )
-            .map_err(|e| e.to_string())
-        })
-    })
-}
-
-fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::TxEvent>, String> {
-    let events: Vec<zcash_voting::prelude::TxEvent> =
-        serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
-    Ok(events)
 }
 
 /// Compute the resumable voting-session plan for a round. The plan reports the
@@ -2230,43 +1103,12 @@ pub fn get_round_plan(
     account_uuid: String,
     round_id: String,
     proposal_ids: Vec<u32>,
-) -> Result<zcash_voting::wire::RoundPlanView, String> {
+) -> Result<zcash_voting::wire::RoundPlanView, VotingErrorView> {
     catch(|| {
         // Derive resumable next steps and convert to wire view.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
-            .map_err(|e| format!("resume_plan failed: {e}"))?;
-        zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
-    })
-}
-
-/// Persist (insert or replace) the voter's ballot intent for one proposal.
-/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
-/// `num_options` is the proposal's declared option count.
-pub fn set_ballot_intent(
-    db_path: String,
-    account_uuid: String,
-    round_id: String,
-    proposal_id: u32,
-    num_options: u32,
-    skipped: bool,
-    choice: Option<u32>,
-) -> Result<(), String> {
-    catch(|| {
-        db::with_voting_sidecar_write_lock(&db_path, || {
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            // `skipped` takes precedence; otherwise a concrete choice is required.
-            let decision = if skipped {
-                zcash_voting::session::Decision::Skipped
-            } else {
-                let c = choice.ok_or_else(|| {
-                    "set_ballot_intent: choice must be Some when skipped is false".to_string()
-                })?;
-                zcash_voting::session::Decision::Choice(c)
-            };
-            db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
-                .map_err(|e| format!("set_ballot_intent failed: {e}"))
-        })
+        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)?;
+        zcash_voting::wire::RoundPlanView::try_from(plan)
     })
 }
 
@@ -2325,10 +1167,16 @@ pub struct VotingConfigResolution {
 pub fn resolve_static_voting_config(
     source: String,
     static_bytes: Vec<u8>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, VotingErrorView> {
     config::resolve_static_voting_config(&source, &static_bytes)
         .map(|resolved| resolved.dynamic_config_urls)
-        .map_err(|error| error.to_string())
+        .map_err(config_error)
+}
+
+/// Config failures are input problems at this boundary: the wallet handed the
+/// resolver bytes it could not authenticate or decode.
+fn config_error(error: impl std::fmt::Display) -> VotingErrorView {
+    view(invalid_input(error.to_string()))
 }
 
 /// Resolve and authenticate voting config from wallet-fetched bytes.
@@ -2352,9 +1200,9 @@ pub fn resolve_voting_config_from_attempts(
     static_bytes: Vec<u8>,
     attempts: Vec<ApiDynamicConfigAttempt>,
     previous: Option<ResolvedVotingConfig>,
-) -> Result<VotingConfigResolution, String> {
-    let resolved_static = config::resolve_static_voting_config(&source, &static_bytes)
-        .map_err(|error| error.to_string())?;
+) -> Result<VotingConfigResolution, VotingErrorView> {
+    let resolved_static =
+        config::resolve_static_voting_config(&source, &static_bytes).map_err(config_error)?;
     let (next, skipped) = config::resolve_dynamic_voting_config_from_attempts(
         resolved_static,
         attempts
@@ -2363,7 +1211,7 @@ pub fn resolve_voting_config_from_attempts(
             .collect(),
         ResolveVotingConfigOptions::default(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(config_error)?;
 
     let switch_kind = config::decide_config_switch(
         previous.as_ref().map(ResolvedVotingConfigSummary::from),
@@ -2384,9 +1232,401 @@ pub fn resolve_voting_config_from_attempts(
     })
 }
 
+/// One SDK observability snapshot, flattened for codegen.
+///
+/// Mirrors [`crate::wallet::voting::observability::VotingObservabilitySnapshot`]
+/// rather than re-exporting the SDK's types: those are `#[non_exhaustive]` and
+/// nest `Vec`s of further structs, neither of which suits this surface.
+/// `rendered` is the SDK's own `Display`, so a Dart line and its os_log
+/// counterpart always say the same thing.
+pub struct ApiVotingObservability {
+    /// The Vizor call site that asked, not the SDK operation.
+    pub context: String,
+    pub operation: String,
+    pub round_id: Option<String>,
+    pub outcome: String,
+    pub elapsed_us: u64,
+    pub started_at_unix_us: u64,
+    pub rendered: String,
+    /// One entry per record that failed, was rejected, or may have been
+    /// dispatched, each carrying the SDK's stable `error_kind`. Empty on a
+    /// clean run. `rendered` cannot show these: it prints summaries, and a
+    /// summary has an outcome but no error category.
+    pub failures: Vec<String>,
+}
+
+/// Streams voting observability snapshots to Dart until the sink is closed.
+///
+/// Rust `log` records reach os_log, never the Flutter console, so a debugging
+/// aid that lives only in `log stream` is invisible where developers actually
+/// look. This is the second sink, not a replacement: os_log still receives
+/// every line whether or not Dart ever registers.
+///
+/// Registering twice replaces the previous sink and closes it. Collection
+/// itself stays governed by `VOTING_OBSERVABILITY_ENABLED`, so on a build with
+/// observability off this stream is simply silent.
+pub fn set_voting_observability_sink(sink: StreamSink<ApiVotingObservability>) {
+    observability::set_observer(Some(Box::new(move |context, observability| {
+        // A closed sink is the normal end of the stream, not an error worth
+        // failing voting work over.
+        let _ = sink.add(ApiVotingObservability {
+            context: context.to_string(),
+            operation: observability.operation.clone(),
+            round_id: observability.round_id.clone(),
+            outcome: observability.outcome.to_string(),
+            elapsed_us: observability.elapsed_us,
+            started_at_unix_us: observability.started_at_unix_us,
+            rendered: observability.to_string(),
+            failures: observability::failure_lines(observability),
+        });
+    })));
+}
+
+/// Stops streaming snapshots to Dart, closing any registered sink.
+pub fn clear_voting_observability_sink() {
+    observability::set_observer(None);
+}
+
 #[cfg(test)]
 mod tests {
+    /// Pins the SDK half of the proposal-id mirror.
+    ///
+    /// `kMinProposalId` / `kMaxProposalId` in
+    /// `lib/src/features/voting/voting_flow_models.dart` carry the same two
+    /// numbers, because the Dart parser is synchronous and cannot ask the SDK
+    /// per proposal. Dart unit tests fake the Rust API rather than loading the
+    /// native library, so they cannot read these constants either — this test
+    /// is what makes an SDK bump fail the build instead of surfacing as a
+    /// `FormatException` in front of a voter. Update both together.
+    #[test]
+    fn voting_proposal_id_range_matches_the_dart_mirror() {
+        let range = super::voting_proposal_id_range();
+        assert_eq!(
+            (range.min, range.max),
+            (1, 50),
+            "proposal id range moved; update kMinProposalId/kMaxProposalId in \
+             lib/src/features/voting/voting_flow_models.dart to match"
+        );
+    }
+
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// Transport that answers `/root` from a script, so the probe path can be
+    /// exercised end to end without a network.
+    struct ScriptedPirTransport {
+        responses: std::collections::HashMap<String, Vec<PirProbeAnswer>>,
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[derive(Clone)]
+    enum PirProbeAnswer {
+        Body(u16, String),
+        Failure(zcash_voting::PirHttpFailurePhase, Option<u16>),
+        Hang,
+    }
+
+    impl ScriptedPirTransport {
+        fn new(responses: &[(&str, Vec<PirProbeAnswer>)]) -> Self {
+            Self {
+                responses: responses
+                    .iter()
+                    .map(|(url, answers)| ((*url).to_string(), answers.clone()))
+                    .collect(),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn call_count(&self, url: &str) -> usize {
+            self.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|called| called.as_str() == url)
+                .count()
+        }
+    }
+
+    impl zcash_voting::pir::Transport for ScriptedPirTransport {
+        fn get<'a>(&'a self, url: &'a str) -> zcash_voting::pir::TransportFuture<'a> {
+            let attempt = self.call_count(url);
+            self.calls.lock().unwrap().push(url.to_string());
+            let answer = self
+                .responses
+                .get(url)
+                .map(|answers| answers[attempt.min(answers.len() - 1)].clone());
+            Box::pin(async move {
+                match answer {
+                    Some(PirProbeAnswer::Body(status, body)) => {
+                        Ok(zcash_voting::pir::TransportResponse {
+                            status,
+                            headers: Vec::new(),
+                            body: body.into_bytes(),
+                        })
+                    }
+                    Some(PirProbeAnswer::Failure(phase, http_status)) => {
+                        Err(anyhow::Error::new(zcash_voting::PirHttpFailure {
+                            phase,
+                            http_status,
+                        }))
+                    }
+                    Some(PirProbeAnswer::Hang) => {
+                        // Outlives the probe deadline without resolving.
+                        std::future::pending::<()>().await;
+                        unreachable!()
+                    }
+                    None => panic!("unscripted PIR probe for {url}"),
+                }
+            })
+        }
+
+        fn post<'a>(
+            &'a self,
+            _url: &'a str,
+            _body: Vec<u8>,
+        ) -> zcash_voting::pir::TransportFuture<'a> {
+            unimplemented!("PIR snapshot probing only issues GETs")
+        }
+    }
+
+    fn root_body(height: &str) -> PirProbeAnswer {
+        PirProbeAnswer::Body(200, format!("{{\"height\": {height}}}"))
+    }
+
+    async fn probe(
+        answer: PirProbeAnswer,
+        expected_snapshot_height: u64,
+    ) -> (
+        zcash_voting::pir_snapshot::PirSnapshotEndpointDiagnostic,
+        ScriptedPirTransport,
+    ) {
+        let transport = ScriptedPirTransport::new(&[("https://pir.example/root", vec![answer])]);
+        let diagnostic = probe_pir_snapshot_endpoint(
+            &transport,
+            "https://pir.example",
+            expected_snapshot_height,
+        )
+        .await;
+        (diagnostic, transport)
+    }
+
+    #[tokio::test]
+    async fn probing_classifies_a_served_height_against_the_round() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        for (served, expected, status) in [
+            ("123", 123, Status::Matched),
+            ("120", 123, Status::Behind),
+            ("125", 123, Status::Ahead),
+        ] {
+            let (diagnostic, _) = probe(root_body(served), expected).await;
+            assert_eq!(diagnostic.status, status, "served {served}");
+            assert_eq!(diagnostic.reported_height, Some(served.parse().unwrap()));
+            assert_eq!(diagnostic.endpoint, "https://pir.example");
+        }
+    }
+
+    #[tokio::test]
+    async fn probing_accepts_a_decimal_string_height_and_ignores_other_fields() {
+        // Endpoints publish the height both ways and carry identity fields the
+        // wallet does not read; neither may turn a healthy root into a miss.
+        let (diagnostic, _) = probe(
+            PirProbeAnswer::Body(
+                200,
+                r#"{"zcash_network": "main", "height": "123", "pir_depth": 4}"#.to_string(),
+            ),
+            123,
+        )
+        .await;
+        assert!(diagnostic.matched_at_height(123));
+    }
+
+    #[tokio::test]
+    async fn probing_separates_an_absent_height_from_a_corrupt_one() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        let (missing, _) = probe(
+            PirProbeAnswer::Body(200, r#"{"zcash_network": "main"}"#.to_string()),
+            123,
+        )
+        .await;
+        assert_eq!(missing.status, Status::MissingHeight);
+
+        for body in [
+            r#"{"height": "twelve"}"#,
+            r#"{"height": -1}"#,
+            "not json",
+            "[]",
+        ] {
+            let (diagnostic, _) = probe(PirProbeAnswer::Body(200, body.to_string()), 123).await;
+            assert_eq!(diagnostic.status, Status::MalformedJson, "{body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn probing_reports_a_non_success_status_with_its_code() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        let (diagnostic, _) = probe(PirProbeAnswer::Body(404, "gone".to_string()), 123).await;
+        assert_eq!(diagnostic.status, Status::NonSuccessStatus);
+        assert_eq!(diagnostic.http_status_code, Some(404));
+    }
+
+    #[tokio::test]
+    async fn probing_retries_once_when_another_attempt_could_clear_it() {
+        // A connect failure may be transient; a 404 is the endpoint's answer.
+        let transport = ScriptedPirTransport::new(&[(
+            "https://pir.example/root",
+            vec![
+                PirProbeAnswer::Failure(zcash_voting::PirHttpFailurePhase::Connect, None),
+                root_body("123"),
+            ],
+        )]);
+        let diagnostic = probe_pir_snapshot_endpoint(&transport, "https://pir.example", 123).await;
+        assert!(diagnostic.matched_at_height(123));
+        assert_eq!(transport.call_count("https://pir.example/root"), 2);
+
+        let (_, settled) = probe(PirProbeAnswer::Body(404, String::new()), 123).await;
+        assert_eq!(settled.call_count("https://pir.example/root"), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probing_gives_up_on_an_endpoint_that_never_answers() {
+        use zcash_voting::pir_snapshot::PirSnapshotEndpointStatus as Status;
+
+        // Without its own deadline the probe would inherit the transport's much
+        // larger PIR budget and stall resolution behind one dead endpoint.
+        let (diagnostic, transport) = probe(PirProbeAnswer::Hang, 123).await;
+        assert_eq!(diagnostic.status, Status::TimeoutOrNetworkError);
+        // Timed out twice: the first pass is retryable.
+        assert_eq!(transport.call_count("https://pir.example/root"), 2);
+    }
+
+    #[tokio::test]
+    async fn resolving_selects_only_an_endpoint_serving_the_round_height() {
+        let transport = ScriptedPirTransport::new(&[
+            ("https://behind.example/root", vec![root_body("120")]),
+            ("https://match.example/root", vec![root_body("123")]),
+            (
+                "https://down.example/root",
+                vec![PirProbeAnswer::Failure(
+                    zcash_voting::PirHttpFailurePhase::Connect,
+                    None,
+                )],
+            ),
+        ]);
+        let diagnostics = futures::future::join_all(
+            [
+                "https://behind.example",
+                "https://match.example",
+                "https://down.example",
+            ]
+            .iter()
+            .map(|endpoint| probe_pir_snapshot_endpoint(&transport, endpoint, 123)),
+        )
+        .await;
+
+        let resolution =
+            zcash_voting::pir_snapshot::select_pir_snapshot_endpoint(&diagnostics, 123, 0)
+                .expect("one endpoint serves the round");
+        assert_eq!(resolution.endpoint, "https://match.example");
+        // Every probe is reported, because the caller builds its PIR failover
+        // list and its error message from the full set.
+        assert_eq!(resolution.diagnostics.len(), 3);
+    }
+
+    #[test]
+    fn reads_root_height_as_number_or_decimal_string() {
+        // Endpoints publish the height both ways, so both must resolve to the
+        // same round rather than one of them reading as a corrupt root.
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!(123)),
+            Some(123)
+        );
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!("123")),
+            Some(123)
+        );
+        assert_eq!(
+            pir_snapshot_height_field(&serde_json::json!(u64::MAX.to_string())),
+            Some(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn rejects_root_heights_outside_the_unsigned_range() {
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("12a"),
+            serde_json::json!(""),
+            serde_json::json!("18446744073709551616"),
+            serde_json::json!(null),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(pir_snapshot_height_field(&value), None, "{value}");
+        }
+    }
+
+    #[test]
+    fn root_url_keeps_any_base_path_the_endpoint_carries() {
+        assert_eq!(
+            pir_snapshot_root_url("https://pir.example"),
+            "https://pir.example/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://pir.example/"),
+            "https://pir.example/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir/"),
+            "https://example.test/pir/root"
+        );
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir"),
+            "https://example.test/pir/root"
+        );
+        // A query belongs to the request, not to the path being extended.
+        assert_eq!(
+            pir_snapshot_root_url("https://example.test/pir?token=abc"),
+            "https://example.test/pir/root?token=abc"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolving_without_endpoints_is_an_error_not_an_empty_result() {
+        // A round with no configured endpoints is misconfigured; that must not
+        // read the same as a fleet that answered and is merely behind.
+        let error = resolve_pir_snapshot_endpoint(Vec::new(), 123)
+            .await
+            .expect_err("empty endpoint list must fail");
+        assert!(
+            error.message.contains("no PIR endpoints configured"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn classified_diagnostics_survive_the_bridge_conversion() {
+        // The delegation failover list and the status screen both read these
+        // back on the Dart side, so the crossing must not lose the status or
+        // the height the endpoint reported.
+        let core = zcash_voting::pir_snapshot::classify_pir_snapshot_height(
+            "https://pir.example",
+            123,
+            Some(120),
+        );
+        let view = zcash_voting::wire::PirSnapshotEndpointDiagnosticView::from(core.clone());
+        assert_eq!(view.endpoint, core.endpoint);
+        assert!(matches!(
+            view.status,
+            zcash_voting::wire::PirSnapshotEndpointStatusView::Behind
+        ));
+        assert_eq!(view.reported_height, Some(120));
+        assert_eq!(view.http_status_code, None);
+    }
     use crate::wallet::voting::test_support::{
         test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };
@@ -2395,15 +1635,91 @@ mod tests {
     use pasta_curves::group::{Group, GroupEncoding};
     use std::{
         io::{Read, Write},
-        net::{TcpListener, TcpStream},
+        net::TcpListener,
         thread,
     };
     use zcash_client_backend::proto::service::TreeState;
-    use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
+
+    /// Sets a bundle's delegation transaction hash directly.
+    ///
+    /// The SDK's writer for this is crate-private: only its chain-submission
+    /// lifecycle may record submissions. These fixtures set up durable state
+    /// for adapter tests, so they write the row the same way.
+    fn fixture_delegation_tx_hash(
+        db: &zcash_voting::round::VotingDb,
+        bundle_index: u32,
+        tx_hash: &str,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET delegation_tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![tx_hash, ROUND_ID, db.wallet_id(), i64::from(bundle_index)],
+        )
+        .unwrap();
+    }
+
+    /// Sets a vote's transaction hash directly. See `fixture_delegation_tx_hash`.
+    fn fixture_vote_tx_hash(
+        db: &zcash_voting::round::VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+        tx_hash: &str,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE votes SET tx_hash = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4 AND proposal_id = ?5",
+            rusqlite::params![
+                tx_hash,
+                ROUND_ID,
+                db.wallet_id(),
+                i64::from(bundle_index),
+                i64::from(proposal_id)
+            ],
+        )
+        .unwrap();
+    }
+
+    /// Sets a bundle's VAN leaf position directly. See `fixture_delegation_tx_hash`.
+    fn fixture_van_position(
+        db: &zcash_voting::round::VotingDb,
+        round_id: &str,
+        bundle_index: u32,
+        position: u32,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE bundles SET van_leaf_position = ?1
+             WHERE round_id = ?2 AND wallet_id = ?3 AND bundle_index = ?4",
+            rusqlite::params![
+                i64::from(position),
+                round_id,
+                db.wallet_id(),
+                i64::from(bundle_index)
+            ],
+        )
+        .unwrap();
+    }
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    fn delegation_submission_wire_json(
+        submission: zcash_voting::wire::SignedDelegationPayloadView,
+    ) -> Result<String, String> {
+        submission
+            .submission
+            .to_json()
+            .map_err(|error| error.to_string())
+    }
+
+    fn vote_commitment_wire_json(
+        commitment: zcash_voting::wire::VoteCommitmentWire,
+    ) -> Result<String, String> {
+        commitment.to_json().map_err(|error| error.to_string())
     }
 
     fn point_bytes(multiplier: u64) -> Vec<u8> {
@@ -2422,42 +1738,6 @@ mod tests {
         let mut effects = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
         effects[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
         effects
-    }
-
-    fn tx_events_json(events: Vec<TxEvent>) -> String {
-        serde_json::to_string(&events).unwrap()
-    }
-
-    fn delegate_event(round_id: &str, leaf_index: u32) -> TxEvent {
-        TxEvent {
-            event_type: "delegate_vote".to_string(),
-            attributes: vec![
-                TxEventAttribute {
-                    key: "vote_round_id".to_string(),
-                    value: round_id.to_string(),
-                },
-                TxEventAttribute {
-                    key: "leaf_index".to_string(),
-                    value: leaf_index.to_string(),
-                },
-            ],
-        }
-    }
-
-    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> TxEvent {
-        TxEvent {
-            event_type: "cast_vote".to_string(),
-            attributes: vec![
-                TxEventAttribute {
-                    key: "vote_round_id".to_string(),
-                    value: round_id.to_string(),
-                },
-                TxEventAttribute {
-                    key: "leaf_index".to_string(),
-                    value: format!("{van_position},{vc_tree_position}"),
-                },
-            ],
-        }
     }
 
     fn test_round_context(
@@ -2502,225 +1782,81 @@ mod tests {
         warm_voting_proving_caches();
     }
 
+    /// Opens a session over `db_path` the way Dart does for one activity.
+    fn test_session(
+        db_path: &std::path::Path,
+        account_uuid: &str,
+    ) -> super::super::voting_session::VotingRoundSession {
+        test_session_with_helpers(db_path, account_uuid, Vec::new())
+    }
+
+    fn test_session_with_helpers(
+        db_path: &std::path::Path,
+        account_uuid: &str,
+        helper_urls: Vec<String>,
+    ) -> super::super::voting_session::VotingRoundSession {
+        super::super::voting_session::open_voting_round_session(
+            test_round_context(db_path, "regtest", account_uuid),
+            super::super::voting_session::ApiRoundSessionBinding {
+                chain_endpoints: vec!["http://127.0.0.1:1".to_string()],
+                configured_helper_urls: helper_urls,
+                vote_tree_node_urls: Vec::new(),
+                pir_server_urls: Vec::new(),
+                proposals: vec![
+                    super::super::voting_session::ApiProposalRosterEntry {
+                        proposal_id: 7,
+                        num_options: 2,
+                    },
+                    super::super::voting_session::ApiProposalRosterEntry {
+                        proposal_id: 8,
+                        num_options: 2,
+                    },
+                ],
+                ceremony_start_seconds: None,
+                vote_end_time_seconds: None,
+                max_proof_concurrency: 3,
+            },
+            None,
+            1,
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn share_tracking_cancellation_is_scoped_and_bound_before_async_start() {
-        let first_context = create_voting_helper_delivery_context(
-            "db-1".to_string(),
-            "account-1".to_string(),
-            "round-1".to_string(),
-        );
-        let second_context = create_voting_helper_delivery_context(
-            "db-2".to_string(),
-            "account-2".to_string(),
-            "round-2".to_string(),
-        );
-        let first = begin_share_tracking_pass(&first_context);
-        let second = begin_share_tracking_pass(&second_context);
+    fn cancelling_one_session_leaves_another_running() {
+        // Background tracking and a foreground cast run on separate sessions
+        // for the same round, so a destructive drain that stops tracking must
+        // not abort the cast. Session-per-activity is what gives that; there
+        // is no second cancellation handle any more.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first_path = temp_dir.path().join("first.sqlite");
+        let second_path = temp_dir.path().join("second.sqlite");
+        let first = test_session(&first_path, "account-1");
+        let second = test_session(&second_path, "account-2");
 
         first.cancel();
 
         assert!(first.is_cancelled());
         assert!(!second.is_cancelled());
-        assert_eq!(first.account_uuid, "account-1");
-        assert_eq!(first.round_id, "round-1");
-        assert_eq!(second.account_uuid, "account-2");
-        assert_eq!(second.round_id, "round-2");
     }
 
     #[test]
-    fn helper_health_is_shared_within_a_context_and_isolated_between_contexts() {
-        let first_context = create_voting_helper_delivery_context(
-            "db-1".to_string(),
-            "account-1".to_string(),
-            "round-1".to_string(),
-        );
-        let second_context = create_voting_helper_delivery_context(
-            "db-2".to_string(),
-            "account-2".to_string(),
-            "round-2".to_string(),
-        );
+    fn helper_health_is_shared_within_a_session_and_isolated_between_sessions() {
+        // Health scores are ordering hints for one account and round. Initial
+        // delivery and the tracking that follows now run on one session, so a
+        // helper that failed during delivery is still deprioritised during
+        // tracking instead of being relearned.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first_path = temp_dir.path().join("first.sqlite");
+        let second_path = temp_dir.path().join("second.sqlite");
+        let first = test_session(&first_path, "account-1");
+        let second = test_session(&second_path, "account-2");
         let helper_url = "https://helper.example";
 
-        first_context.health.record_failure(helper_url, 100);
-        let first_handle = begin_share_tracking_pass(&first_context);
-        let second_handle = begin_share_tracking_pass(&second_context);
+        first.record_helper_failure_for_test(helper_url, 100);
 
-        assert_eq!(first_handle.health.failure_count(helper_url), 1);
-        assert_eq!(second_handle.health.failure_count(helper_url), 0);
-    }
-
-    #[tokio::test]
-    async fn helper_preflight_uses_the_production_transport() {
-        let helper = start_helper_readiness_server();
-        let context = create_voting_helper_delivery_context(
-            "unused.sqlite".to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-
-        let preflight = preflight_voting_helpers(&context, vec![helper.clone()])
-            .await
-            .unwrap();
-
-        assert_eq!(preflight.configured_helper_urls, vec![helper.clone()]);
-        assert_eq!(preflight.ready_helper_urls, vec![helper]);
-    }
-
-    #[tokio::test]
-    async fn prepared_delivery_survives_confirmation_and_restart_then_submits() {
-        let (helper, submitted_request) = start_share_submission_server();
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.set_ballot_intent(ROUND_ID, 7, zcash_voting::prelude::Decision::Choice(1), 2)
-            .unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 0);
-        let unconfirmed_snapshot: String = db
-            .conn()
-            .query_row(
-                "SELECT commitment_bundle_json FROM votes
-                 WHERE round_id = ?1 AND wallet_id = ?2
-                   AND bundle_index = 0 AND proposal_id = 7",
-                (ROUND_ID, TEST_ACCOUNT_UUID),
-                |row| row.get(0),
-            )
-            .unwrap();
-        drop(db);
-
-        let context = create_voting_helper_delivery_context(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-        prepare_committed_share_delivery(
-            &context,
-            0,
-            7,
-            ApiVotingHelperPreflight {
-                configured_helper_urls: vec![helper.clone()],
-                ready_helper_urls: vec![helper.clone()],
-            },
-            100,
-            1_000,
-            Some(100),
-            vec![7],
-        )
-        .unwrap();
-
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        let prepared_snapshot: String = db
-            .conn()
-            .query_row(
-                "SELECT commitment_bundle_json FROM helper_share_plans
-                 WHERE round_id = ?1 AND wallet_id = ?2
-                   AND bundle_index = 0 AND proposal_id = 7",
-                (ROUND_ID, TEST_ACCOUNT_UUID),
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(prepared_snapshot, unconfirmed_snapshot);
-        drop(db);
-
-        confirm_vote_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            7,
-            "vote-confirmed-tx".to_string(),
-            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
-        )
-        .unwrap();
-
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        let (confirmed_snapshot, synchronized_plan_snapshot): (String, String) = db
-            .conn()
-            .query_row(
-                "SELECT votes.commitment_bundle_json,
-                        helper_share_plans.commitment_bundle_json
-                   FROM votes
-                   JOIN helper_share_plans USING
-                        (round_id, wallet_id, bundle_index, proposal_id)
-                  WHERE votes.round_id = ?1 AND votes.wallet_id = ?2
-                    AND votes.bundle_index = 0 AND votes.proposal_id = 7",
-                (ROUND_ID, TEST_ACCOUNT_UUID),
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_ne!(confirmed_snapshot, unconfirmed_snapshot);
-        assert_eq!(synchronized_plan_snapshot, confirmed_snapshot);
-        drop(db);
-        drop(context);
-
-        let restarted_context = create_voting_helper_delivery_context(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-        let report =
-            submit_prepared_shares_to_helpers(&restarted_context, 0, 7, vec![helper.clone()], 200)
-                .await
-                .unwrap();
-
-        assert!(!report.cancelled);
-        assert!(!report.legacy_best_effort);
-        assert!(report.pending_share_indices.is_empty());
-        assert_eq!(report.deliveries.len(), 1);
-        assert_eq!(report.deliveries[0].share_index, 0);
-        assert_eq!(report.deliveries[0].submission.accepted_urls, vec![helper]);
-        let request = submitted_request.join().unwrap();
-        let body_start = request
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .unwrap()
-            + 4;
-        let body: serde_json::Value = serde_json::from_slice(&request[body_start..]).unwrap();
-        assert_eq!(body["tree_position"], 88);
-    }
-
-    #[tokio::test]
-    async fn prepared_submission_rejects_a_missing_plan_before_network() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        db.set_ballot_intent(ROUND_ID, 7, zcash_voting::prelude::Decision::Choice(1), 2)
-            .unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
-        drop(db);
-        let context = create_voting_helper_delivery_context(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-
-        let error = submit_prepared_shares_to_helpers(
-            &context,
-            0,
-            7,
-            vec!["http://127.0.0.1:1".to_string()],
-            200,
-        )
-        .await
-        .unwrap_err();
-
-        assert!(
-            error.contains("must be prepared before submission"),
-            "{error}"
-        );
+        assert_eq!(first.helper_failure_count_for_test(helper_url), 1);
+        assert_eq!(second.helper_failure_count_for_test(helper_url), 0);
     }
 
     #[tokio::test]
@@ -2765,22 +1901,12 @@ mod tests {
         .unwrap();
         drop(db);
 
-        let context = create_voting_helper_delivery_context(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        );
-        let handle = begin_share_tracking_pass(&context);
-        assert!(confirm_share_with_helpers(
-            &handle,
+        let session = test_session_with_helpers(
+            &db_path,
+            TEST_ACCOUNT_UUID,
             vec![first_helper, second_helper],
-            0,
-            7,
-            0,
-            100,
-        )
-        .await
-        .unwrap());
+        );
+        assert!(session.confirm_immediate_share(0, 7, 0).await.unwrap());
 
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
         assert!(zcash_voting::storage::queries::share_is_confirmed(
@@ -2792,15 +1918,18 @@ mod tests {
             0,
         )
         .unwrap());
-        assert!(!zcash_voting::storage::queries::share_is_confirmed(
-            &db.conn(),
-            ROUND_ID,
-            TEST_ACCOUNT_UUID,
-            0,
-            8,
-            0,
-        )
-        .unwrap());
+        assert!(
+            !zcash_voting::storage::queries::share_is_confirmed(
+                &db.conn(),
+                ROUND_ID,
+                TEST_ACCOUNT_UUID,
+                0,
+                8,
+                0,
+            )
+            .unwrap(),
+            "a focused confirmation must not walk the round's other shares",
+        );
     }
 
     #[test]
@@ -2877,6 +2006,12 @@ mod tests {
             privacy_trim_dropped_bundles: 1,
             privacy_trim_dropped_notes: 4,
             privacy_trim_dropped_value_zatoshi: 900,
+            // The SDK also reports the trailing bundles a round intentionally
+            // leaves out of its persisted prefix. Nothing surfaces those yet,
+            // so they are not on this boundary and are left at zero here.
+            skipped_suffix_bundles: 0,
+            skipped_suffix_notes: 0,
+            skipped_suffix_value_zatoshi: 0,
         });
 
         assert_eq!(api.bundle_count, 2);
@@ -3015,49 +2150,6 @@ mod tests {
     }
 
     #[test]
-    fn next_share_tracking_delay_uses_earliest_ready_or_future_wakeup() {
-        let ready = zcash_voting::wire::ShareDelegationRecordView {
-            round_id: ROUND_ID.to_string(),
-            bundle_index: 0,
-            proposal_id: 7,
-            share_index: 0,
-            sent_to_urls: vec!["https://helper.example".to_string()],
-            ambiguous_urls: vec![],
-            target_count: 1,
-            nullifier: vec![1; 32],
-            phase: "submitted_share".to_string(),
-            confirmed: false,
-            submit_at: 100,
-            created_at: 50,
-        };
-        let future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 1_000,
-            ..ready.clone()
-        };
-        let near_future = zcash_voting::wire::ShareDelegationRecordView {
-            submit_at: 115,
-            ..ready.clone()
-        };
-
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone()], 130).unwrap(),
-            Some(15)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![future.clone()], 120).unwrap(),
-            Some(890)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone(), future], 120).unwrap(),
-            Some(15)
-        );
-        assert_eq!(
-            next_share_tracking_delay_seconds(vec![ready.clone(), near_future], 120).unwrap(),
-            Some(5)
-        );
-    }
-
-    #[test]
     fn api_van_witness_preserves_core_fields() {
         let mut witness = vec![vec![0u8; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
         witness[0] = vec![1; 32];
@@ -3072,124 +2164,6 @@ mod tests {
         assert_eq!(api.auth_path[1], vec![2; 32]);
         assert_eq!(api.position, 7);
         assert_eq!(api.anchor_height, 123);
-    }
-
-    #[test]
-    fn api_delegation_proof_event_uses_stable_phase_names() {
-        assert_eq!(
-            ApiDelegationProofEvent::from(DelegationProgress::SelectingNotes).phase,
-            "selecting_notes"
-        );
-        assert_eq!(
-            ApiDelegationProofEvent::from(DelegationProgress::SigningPayload).phase,
-            "signing_payload"
-        );
-        let ready = ApiDelegationProofEvent::from(DelegationProgress::PayloadReady);
-        assert_eq!(ready.phase, "payload_ready");
-        assert_eq!(ready.proof_progress, None);
-        assert!(ready.signed_delegation_payload.is_none());
-
-        let proof = ApiDelegationProofEvent::from(DelegationProgress::ProofProgress(0.5));
-        assert_eq!(proof.phase, "proof_progress");
-        assert_eq!(proof.proof_progress, Some(0.5));
-
-        let result = ApiDelegationProofEvent {
-            phase: "result".to_string(),
-            proof_progress: None,
-            signed_delegation_payload: Some(zcash_voting::wire::SignedDelegationPayloadView {
-                pczt_bytes: vec![1],
-                status: "ready_for_submission".to_string(),
-                message: None,
-                submission: zcash_voting::wire::DelegationSubmissionWire {
-                    rk: "rk".to_string(),
-                    spend_auth_sig: "sig".to_string(),
-                    tx1_effects: "tx1-effects".to_string(),
-                    nf_signed: "nf".to_string(),
-                    cmx_new: "cmx".to_string(),
-                    gov_comm: "gov".to_string(),
-                    gov_nullifiers: vec!["nullifier".to_string()],
-                    proof: "proof".to_string(),
-                    vote_round_id: "round".to_string(),
-                },
-                eligible_weight_zatoshi: 10,
-                delegated_weight_zatoshi: 10,
-                bundle_count: 1,
-                bundle_index: 0,
-            }),
-        };
-        assert_eq!(result.phase, "result");
-        assert_eq!(
-            result.signed_delegation_payload.as_ref().unwrap().status,
-            "ready_for_submission"
-        );
-    }
-
-    #[test]
-    fn api_vote_commit_event_uses_stable_phase_names() {
-        let event = ApiVoteCommitEvent::from(zcash_voting::vote::VoteCommitStage::ProofStarting {
-            proposal_id: 1,
-            bundle_index: 2,
-        });
-
-        assert_eq!(event.phase, "building_proof");
-        assert_eq!(event.proposal_id, Some(1));
-        assert_eq!(event.bundle_index, Some(2));
-        assert_eq!(event.proof_progress, Some(0.0));
-        let proof = ApiVoteCommitEvent::from(zcash_voting::vote::VoteCommitStage::ProofProgress {
-            proposal_id: 1,
-            bundle_index: 2,
-            progress: 0.5,
-        });
-        assert_eq!(proof.phase, "proof_progress");
-        assert_eq!(proof.proof_progress, Some(0.5));
-
-        let result = ApiVoteCommitEvent {
-            phase: "result".to_string(),
-            proposal_id: None,
-            bundle_index: Some(2),
-            proof_progress: None,
-            commitments: Some(zcash_voting::wire::SignedVoteCommitmentsView {
-                bundle_index: 2,
-                commitments: vec![],
-            }),
-        };
-        assert_eq!(result.phase, "result");
-        assert_eq!(result.commitments.as_ref().unwrap().bundle_index, 2);
-    }
-
-    #[test]
-    fn api_signed_vote_commitments_preserve_public_wire_fields() {
-        let api = zcash_voting::wire::SignedVoteCommitmentsView::try_from(
-            zcash_voting::vote::SignedVoteCommitments {
-                bundle_index: 1,
-                commitments: vec![zcash_voting::vote::SignedVoteCommitment {
-                    proposal_id: 2,
-                    choice: 1,
-                    vote_round_id: ROUND_ID.to_string(),
-                    van_nullifier: [1; 32],
-                    vote_authority_note_new: [2; 32],
-                    vote_commitment: [3; 32],
-                    proof: vec![4; 10],
-                    encrypted_shares: vec![zcash_voting::WireEncryptedShare {
-                        c1: point_bytes(5),
-                        c2: point_bytes(6),
-                        share_index: 0,
-                    }],
-                    anchor_height: 100,
-                    shares_hash: [7; 32],
-                    share_comms: full_share_comms(),
-                    r_vpk: [10; 32],
-                    vote_auth_sig: [9; 64],
-                    commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
-                }],
-            },
-        )
-        .unwrap();
-
-        assert_eq!(api.bundle_index, 1);
-        assert_eq!(api.commitments[0].proposal_id, 2);
-        assert_eq!(api.commitments[0].wire.proposal_id, 2);
-        assert_eq!(api.commitments[0].wire.vote_auth_sig, b64(vec![9; 64]));
     }
 
     #[test]
@@ -3295,14 +2269,7 @@ mod tests {
             server,
         )
         .unwrap();
-        let witness = generate_van_witness(
-            db_path.to_str().unwrap().to_string(),
-            "wallet-api-witness".to_string(),
-            ROUND_ID.to_string(),
-            0,
-            height,
-        )
-        .unwrap();
+        let witness = zcash_voting::precompute::van_witness(&db, ROUND_ID, 0, height).unwrap();
 
         assert_eq!(witness.position, 0);
         assert_eq!(witness.anchor_height, 1);
@@ -3344,15 +2311,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = generate_van_witness(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            height,
-        )
-        .unwrap_err();
-        assert!(!err.is_empty());
+        assert!(zcash_voting::precompute::van_witness(&db, ROUND_ID, 0, height).is_err());
     }
 
     #[test]
@@ -3404,24 +2363,11 @@ mod tests {
         )
         .unwrap();
 
-        let round_one_err = generate_van_witness(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            round_one_height,
-        )
-        .unwrap_err();
-        assert!(!round_one_err.is_empty());
+        assert!(zcash_voting::precompute::van_witness(&db, ROUND_ID, 0, round_one_height).is_err());
 
-        let round_two_witness = generate_van_witness(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            OTHER_ROUND_ID.to_string(),
-            0,
-            round_two_height,
-        )
-        .unwrap();
+        let round_two_witness =
+            zcash_voting::precompute::van_witness(&db, OTHER_ROUND_ID, 0, round_two_height)
+                .unwrap();
         assert_eq!(round_two_witness.position, 0);
     }
 
@@ -3456,43 +2402,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = generate_van_witness(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            height,
-        )
-        .unwrap_err();
-        assert!(!err.is_empty());
-    }
-
-    #[test]
-    fn recover_vote_commitment_happy_path_returns_wire_commitment() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
-
-        let recovered = recover_vote_commitment(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            7,
-        )
-        .unwrap();
-
-        assert_eq!(recovered.bundle_index, 0);
-        assert_eq!(recovered.commitments.len(), 1);
-        assert_eq!(recovered.commitments[0].proposal_id, 7);
+        assert!(zcash_voting::precompute::van_witness(&db, ROUND_ID, 0, height).is_err());
     }
 
     #[test]
@@ -3509,8 +2419,7 @@ mod tests {
         .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
-        db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
-            .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-tx-0");
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(
             &conn,
@@ -3523,15 +2432,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        mark_vote_submitted(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            2,
-            "vote-tx-1-2".to_string(),
-        )
-        .unwrap();
+        fixture_vote_tx_hash(&db, 1, 2, "vote-tx-1-2");
         {
             let conn = db.conn();
             conn.execute(
@@ -3562,12 +2463,13 @@ mod tests {
         )
         .unwrap();
 
-        let state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
 
         assert_eq!(state.bundle_count, 2);
         assert_eq!(
@@ -3602,12 +2504,13 @@ mod tests {
                 },
             )
             .unwrap();
-        let confirmed_state = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            account_uuid.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let confirmed_state = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert!(confirmed_state.unconfirmed_share_delegations.is_empty());
     }
 
@@ -3740,6 +2643,24 @@ mod tests {
         );
     }
 
+    fn seed_keystone_signing_context(db_path: &std::path::Path) {
+        rusqlite::Connection::open(zcash_voting::storage::VotingDb::wallet_sidecar_path(
+            db_path,
+        ))
+        .unwrap()
+        .execute(
+            "UPDATE bundles SET pczt_sighash = ?1, rk = ?2
+             WHERE round_id = ?3 AND wallet_id = ?4 AND bundle_index = 0",
+            rusqlite::params![
+                vec![8u8; KEYSTONE_SIGHASH_LEN],
+                vec![9u8; KEYSTONE_RK_LEN],
+                ROUND_ID,
+                TEST_ACCOUNT_UUID
+            ],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn keystone_signature_round_trip_and_length_validation() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -3752,15 +2673,19 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
 
-        store_keystone_signature(
+        let signature = |sig_len: usize| ApiKeystoneSignatureInput {
+            bundle_index: 0,
+            sig: vec![7; sig_len],
+            sighash: vec![8; KEYSTONE_SIGHASH_LEN],
+            rk: vec![9; KEYSTONE_RK_LEN],
+        };
+        store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
-            0,
-            vec![7; KEYSTONE_SIG_LEN],
-            vec![8; KEYSTONE_SIGHASH_LEN],
-            vec![9; KEYSTONE_RK_LEN],
+            vec![signature(KEYSTONE_SIG_LEN)],
         )
         .unwrap();
         let records = get_keystone_signatures(
@@ -3774,17 +2699,14 @@ mod tests {
         assert_eq!(records[0].bundle_index, 0);
         assert_eq!(records[0].sig, vec![7; KEYSTONE_SIG_LEN]);
 
-        let err = store_keystone_signature(
+        let err = store_keystone_signatures_batch(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
             ROUND_ID.to_string(),
-            0,
-            vec![7; KEYSTONE_SIG_LEN - 1],
-            vec![8; KEYSTONE_SIGHASH_LEN],
-            vec![9; KEYSTONE_RK_LEN],
+            vec![signature(KEYSTONE_SIG_LEN - 1)],
         )
         .unwrap_err();
-        assert!(err.contains("sig must be exactly"));
+        assert!(err.message.contains("sig must be exactly"), "{err}");
     }
 
     #[test]
@@ -3799,6 +2721,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
         drop(db);
 
         let signature = ApiKeystoneSignatureInput {
@@ -3857,9 +2780,12 @@ mod tests {
                 ..signature
             }],
         )
-        .unwrap();
-        assert_eq!(conflict.conflicting_bundle_index, Some(0));
-        assert_eq!(conflict.inserted, 0);
+        .unwrap_err();
+        assert_eq!(
+            conflict.kind,
+            zcash_voting::wire::VotingErrorKindView::KeystoneSignatureConflict
+        );
+        assert_eq!(conflict.bundle_index, Some(0));
         let records = get_keystone_signatures(
             db_path.to_str().unwrap().to_string(),
             TEST_ACCOUNT_UUID.to_string(),
@@ -3881,6 +2807,7 @@ mod tests {
         )
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        seed_keystone_signing_context(&db_path);
         drop(db);
 
         let input = |bundle_index| ApiKeystoneSignatureInput {
@@ -3896,7 +2823,7 @@ mod tests {
             vec![input(0), input(99)],
         )
         .unwrap_err();
-        assert!(err.contains("bundle 99"));
+        assert!(err.message.contains("bundle 99"));
 
         let records = get_keystone_signatures(
             db_path.to_str().unwrap().to_string(),
@@ -3905,52 +2832,6 @@ mod tests {
         )
         .unwrap();
         assert!(records.is_empty());
-    }
-
-    #[test]
-    fn set_ballot_intent_persists_choice_and_skipped() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-
-        set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            3,
-            false,
-            Some(2),
-        )
-        .unwrap();
-        set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            2,
-            3,
-            true,
-            None,
-        )
-        .unwrap();
-
-        let err = set_ballot_intent(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            3,
-            3,
-            false,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.contains("choice must be Some"));
     }
 
     #[test]
@@ -3990,66 +2871,20 @@ mod tests {
         .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
-        mark_delegation_submitted(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            "delegation-submitted-tx".to_string(),
-        )
-        .unwrap();
+        fixture_delegation_tx_hash(&db, 0, "delegation-submitted-tx");
 
-        let snapshot = get_round_recovery_state(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-        )
-        .unwrap();
+        let snapshot = zcash_voting::wire::RoundRecoveryStateView::from(
+            zcash_voting::recovery::round_snapshot(
+                &db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap(),
+                ROUND_ID,
+            )
+            .unwrap(),
+        );
         assert_eq!(snapshot.delegation.len(), 1);
         assert_eq!(
             snapshot.delegation[0].tx_hash.as_deref(),
             Some("delegation-submitted-tx")
         );
-    }
-
-    #[test]
-    fn confirm_submission_apis_record_expected_confirmation_fields() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(
-            zcash_voting::Network::Regtest,
-            &test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
-        seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
-
-        let delegation = confirm_delegation_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            "delegate-confirmed-tx".to_string(),
-            tx_events_json(vec![delegate_event(ROUND_ID, 42)]),
-        )
-        .unwrap();
-        assert_eq!(delegation.tx_hash, "delegate-confirmed-tx");
-        assert_eq!(delegation.van_leaf_position, 42);
-
-        let vote = confirm_vote_submission(
-            db_path.to_str().unwrap().to_string(),
-            TEST_ACCOUNT_UUID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            7,
-            "vote-confirmed-tx".to_string(),
-            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
-        )
-        .unwrap();
-        assert_eq!(vote.tx_hash, "vote-confirmed-tx");
-        assert_eq!(vote.vc_tree_position, 88);
     }
 
     #[test]
@@ -4063,7 +2898,7 @@ mod tests {
             )))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -4078,7 +2913,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -4093,41 +2928,10 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("PIR server URL must not be empty"));
-    }
-
-    #[test]
-    fn precompute_delegation_pir_rejects_invalid_network_before_network_io() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(precompute_delegation_pir(
-                test_round_context(&db_path, "bogus", "wallet-1"),
-                "http://127.0.0.1:2".to_string(),
-                vec![9; 64],
-                0,
-            ))
-            .unwrap_err();
-
-        assert!(err.contains("Unknown network"));
-    }
-
-    #[test]
-    fn precompute_delegation_pir_rejects_invalid_hotkey_before_network_io() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(precompute_delegation_pir(
-                test_round_context(&db_path, "regtest", "wallet-1"),
-                "http://127.0.0.1:2".to_string(),
-                vec![9; 1],
-                0,
-            ))
-            .unwrap_err();
-
-        assert!(err.contains("Voting hotkey reconstruction failed"));
+        assert!(
+            err.message.contains("must not contain an empty URL"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -4144,7 +2948,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -4161,7 +2965,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Voting hotkey reconstruction failed"));
+        assert!(err.message.contains("Voting hotkey reconstruction failed"));
     }
 
     #[test]
@@ -4177,7 +2981,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Unknown network"));
+        assert!(err.message.contains("Unknown network"));
     }
 
     #[test]
@@ -4193,7 +2997,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("Voting hotkey reconstruction failed"));
+        assert!(err.message.contains("Voting hotkey reconstruction failed"));
     }
 
     #[test]
@@ -4209,7 +3013,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("must not be empty"));
+        assert!(err.message.contains("must not be empty"));
     }
 
     #[test]
@@ -4225,7 +3029,7 @@ mod tests {
             ))
             .unwrap_err();
 
-        assert!(err.contains("must be unique"));
+        assert!(err.message.contains("must be unique"));
     }
 
     #[test]
@@ -4456,78 +3260,6 @@ mod tests {
         url
     }
 
-    fn start_helper_readiness_server() -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let request = read_http_request(&mut stream);
-            let request = String::from_utf8_lossy(&request);
-            assert!(request
-                .lines()
-                .next()
-                .is_some_and(|line| line.contains("/shielded-vote/v1/status")));
-            write_json_response(&mut stream, r#"{"status":"ok"}"#);
-        });
-        url
-    }
-
-    fn start_share_submission_server() -> (String, thread::JoinHandle<Vec<u8>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let request = read_http_request(&mut stream);
-            let request_head = String::from_utf8_lossy(&request);
-            assert!(request_head
-                .lines()
-                .next()
-                .is_some_and(|line| line.contains("POST /shielded-vote/v1/shares")));
-            write_json_response(&mut stream, r#"{"status":"queued"}"#);
-            request
-        });
-        (url, handle)
-    }
-
-    fn read_http_request(stream: &mut TcpStream) -> Vec<u8> {
-        let mut request = Vec::new();
-        let mut expected_len = None;
-        loop {
-            let mut chunk = [0u8; 4096];
-            let read = stream.read(&mut chunk).unwrap();
-            assert!(read > 0, "HTTP request ended before its declared body");
-            request.extend_from_slice(&chunk[..read]);
-            if expected_len.is_none() {
-                if let Some(header_end) =
-                    request.windows(4).position(|window| window == b"\r\n\r\n")
-                {
-                    let headers = String::from_utf8_lossy(&request[..header_end]);
-                    let content_len = headers
-                        .lines()
-                        .find_map(|line| {
-                            let (name, value) = line.split_once(':')?;
-                            name.eq_ignore_ascii_case("content-length")
-                                .then(|| value.trim().parse::<usize>().unwrap())
-                        })
-                        .unwrap_or(0);
-                    expected_len = Some(header_end + 4 + content_len);
-                }
-            }
-            if expected_len.is_some_and(|expected| request.len() >= expected) {
-                return request;
-            }
-        }
-    }
-
-    fn write_json_response(stream: &mut TcpStream, body: &str) {
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-    }
-
     fn tree_response_body(
         path: &str,
         height: u32,
@@ -4635,7 +3367,6 @@ mod tests {
                 ],
             )
             .unwrap();
-        db.store_van_position(round_id, bundle_index, position)
-            .unwrap();
+        fixture_van_position(db, round_id, bundle_index, position);
     }
 }

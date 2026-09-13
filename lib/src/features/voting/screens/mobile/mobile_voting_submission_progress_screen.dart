@@ -21,6 +21,10 @@ const _titleHeight = 40.0;
 const _stepsHeight = 112.0;
 const _proofNoticeHeight = 75.0;
 
+/// How long the notice takes to fade between sentences, and the layout its
+/// height drives takes to settle. Matches the progress ring's own transition.
+const _noticeTransitionDuration = Duration(milliseconds: 220);
+
 const _referenceNoticeTop = 30.0;
 const _referenceStatusBadgeTop = 163.0;
 const _referenceTitleTop = 291.0;
@@ -46,17 +50,25 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
   const MobileVotingSubmissionProgressScreen({
     required this.activeStep,
     this.activeStepProgress,
+    this.activeStepDetail,
+    this.warning,
     super.key,
   });
 
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
+  final String? activeStepDetail;
+
+  /// See [VotingSubmissionProgressPresentation.warning].
+  final String? warning;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final warning = this.warning;
     final noticeStyle = AppTypography.bodyLarge.copyWith(
-      color: colors.text.accent,
+      // Same metrics either way, so the measured layout below is unaffected.
+      color: warning == null ? colors.text.accent : colors.text.destructive,
       fontWeight: FontWeight.w600,
     );
     final titleStyle = AppTypography.displayLarge.copyWith(
@@ -65,6 +77,11 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
     final proofNoticeStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.primary,
     );
+    // A warning outranks the step detail: it is persistent and actionable,
+    // while the detail is progress chatter the step list below repeats. The
+    // notice height is measured from this string, so the layout adapts.
+    final noticeText =
+        warning ?? activeStepDetail ?? 'Don’t leave this window.';
     return PopScope<void>(
       canPop: false,
       child: Scaffold(
@@ -92,7 +109,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                         final contentWidth =
                             constraints.maxWidth - AppSpacing.sm * 2;
                         final noticeHeight = _measureTextHeight(
-                          text: 'Don’t leave this window.',
+                          text: noticeText,
                           style: noticeStyle,
                           maxWidth: contentWidth,
                           textDirection: textDirection,
@@ -130,108 +147,112 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                           ),
                           paddedViewportHeight,
                         );
-                        final positions = _VotingSubmissionPositions.forHeight(
-                          contentHeight,
+                        return _AnimatedNoticeHeight(
                           noticeHeight: noticeHeight,
-                          titleHeight: titleHeight,
-                          proofNoticeHeight: proofNoticeHeight,
-                        );
-                        return SingleChildScrollView(
-                          key: const ValueKey(
-                            'mobile_voting_submission_progress_scroll_view',
-                          ),
-                          primary: false,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm,
-                              vertical: AppSpacing.s,
-                            ),
-                            child: SizedBox(
-                              height: contentHeight,
-                              child: Stack(
-                                key: const ValueKey(
-                                  'mobile_voting_submission_progress_content',
+                          builder: (context, animatedNoticeHeight) {
+                            final positions =
+                                _VotingSubmissionPositions.forHeight(
+                                  contentHeight,
+                                  noticeHeight: animatedNoticeHeight,
+                                  titleHeight: titleHeight,
+                                  proofNoticeHeight: proofNoticeHeight,
+                                );
+                            return SingleChildScrollView(
+                              key: const ValueKey(
+                                'mobile_voting_submission_progress_scroll_view',
+                              ),
+                              primary: false,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sm,
+                                  vertical: AppSpacing.s,
                                 ),
-                                fit: StackFit.expand,
-                                children: [
-                                  Positioned(
-                                    top: positions.noticeTop,
-                                    left: 0,
-                                    right: 0,
-                                    child: Text(
-                                      'Don’t leave this window.',
-                                      key: const ValueKey(
-                                        'mobile_voting_submission_notice',
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      style: noticeStyle,
+                                child: SizedBox(
+                                  height: contentHeight,
+                                  child: Stack(
+                                    key: const ValueKey(
+                                      'mobile_voting_submission_progress_content',
                                     ),
-                                  ),
-                                  Positioned(
-                                    top: positions.statusBadgeTop,
-                                    left: 0,
-                                    right: 0,
-                                    child: Center(
-                                      key: const ValueKey(
-                                        'mobile_voting_submission_badge',
-                                      ),
-                                      child: MobileTransactionProgressBadge(
-                                        phase: MobileTransactionProgressPhase
-                                            .inProgress,
-                                        inProgressCircleColor:
-                                            colors.background.inverse,
-                                        inProgressIconColor:
-                                            colors.icon.inverse,
-                                        progressIconKey: const ValueKey(
-                                          'mobile_voting_submission_loader',
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Positioned(
+                                        top: positions.noticeTop,
+                                        left: 0,
+                                        right: 0,
+                                        child: _CrossfadedNotice(
+                                          text: noticeText,
+                                          style: noticeStyle,
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: positions.titleTop,
-                                    left: 0,
-                                    right: 0,
-                                    child: Text(
-                                      'Submitting votes...',
-                                      key: const ValueKey(
-                                        'mobile_voting_submission_title',
+                                      Positioned(
+                                        top: positions.statusBadgeTop,
+                                        left: 0,
+                                        right: 0,
+                                        child: Center(
+                                          key: const ValueKey(
+                                            'mobile_voting_submission_badge',
+                                          ),
+                                          child: MobileTransactionProgressBadge(
+                                            phase:
+                                                MobileTransactionProgressPhase
+                                                    .inProgress,
+                                            inProgressCircleColor:
+                                                colors.background.inverse,
+                                            inProgressIconColor:
+                                                colors.icon.inverse,
+                                            progressIconKey: const ValueKey(
+                                              'mobile_voting_submission_loader',
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                      textAlign: TextAlign.center,
-                                      style: titleStyle,
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: positions.stepsTop,
-                                    left: 0,
-                                    right: 0,
-                                    child: _VotingSubmissionSteps(
-                                      key: const ValueKey(
-                                        'mobile_voting_submission_steps',
+                                      Positioned(
+                                        top: positions.titleTop,
+                                        left: 0,
+                                        right: 0,
+                                        child: Text(
+                                          'Submitting votes...',
+                                          key: const ValueKey(
+                                            'mobile_voting_submission_title',
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          style: titleStyle,
+                                        ),
                                       ),
-                                      activeStep: activeStep,
-                                      activeStepProgress: activeStepProgress,
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: positions.proofNoticeTop,
-                                    left: 33,
-                                    right: 33,
-                                    child: Text(
-                                      'Generating zero-knowledge proofs can take '
-                                      'about 60 seconds, closing now may lose '
-                                      'in-flight proof work.',
-                                      key: const ValueKey(
-                                        'mobile_voting_submission_proof_notice',
+                                      Positioned(
+                                        top: positions.stepsTop,
+                                        left: 0,
+                                        right: 0,
+                                        child: _VotingSubmissionSteps(
+                                          key: const ValueKey(
+                                            'mobile_voting_submission_steps',
+                                          ),
+                                          activeStep: activeStep,
+                                          activeStepProgress:
+                                              activeStepProgress,
+                                        ),
                                       ),
-                                      textAlign: TextAlign.center,
-                                      style: proofNoticeStyle,
-                                    ),
+                                      Positioned(
+                                        top: positions.proofNoticeTop,
+                                        left: 33,
+                                        right: 33,
+                                        child: Text(
+                                          'Generating zero-knowledge proofs can take '
+                                          'about 60 seconds, closing now may lose '
+                                          'in-flight proof work.',
+                                          key: const ValueKey(
+                                            'mobile_voting_submission_proof_notice',
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          style: proofNoticeStyle,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -240,6 +261,82 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Animates the layout the notice's own height drives.
+///
+/// The notice is the top line of a measured, absolutely positioned layout, so a
+/// one-line sentence becoming a two-line one moved the badge, the title and the
+/// step list with it. That landed as a jolt in the middle of the submission —
+/// the progress line changes several times — so the measured height is eased
+/// into instead. The first build is already at the measured value, so the
+/// Figma anchors are unaffected.
+class _AnimatedNoticeHeight extends ImplicitlyAnimatedWidget {
+  const _AnimatedNoticeHeight({
+    required this.noticeHeight,
+    required this.builder,
+  }) : super(duration: _noticeTransitionDuration, curve: Curves.easeOutCubic);
+
+  final double noticeHeight;
+  final Widget Function(BuildContext context, double noticeHeight) builder;
+
+  @override
+  AnimatedWidgetBaseState<_AnimatedNoticeHeight> createState() =>
+      _AnimatedNoticeHeightState();
+}
+
+class _AnimatedNoticeHeightState
+    extends AnimatedWidgetBaseState<_AnimatedNoticeHeight> {
+  Tween<double>? _noticeHeight;
+
+  @override
+  void forEachTween(TweenVisitor<dynamic> visitor) {
+    _noticeHeight =
+        visitor(
+              _noticeHeight,
+              widget.noticeHeight,
+              (value) => Tween<double>(begin: value as double),
+            )
+            as Tween<double>?;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(
+      context,
+      _noticeHeight?.evaluate(animation) ?? widget.noticeHeight,
+    );
+  }
+}
+
+/// The notice line, fading between sentences.
+///
+/// The line changes several times over a submission — proving, waiting for the
+/// chain, delivering — and each change is a change of subject, so it fades
+/// rather than swapping in place under the badge.
+class _CrossfadedNotice extends StatelessWidget {
+  const _CrossfadedNotice({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: _noticeTransitionDuration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      child: KeyedSubtree(
+        key: ValueKey<String>(text),
+        child: Text(
+          text,
+          key: const ValueKey('mobile_voting_submission_notice'),
+          textAlign: TextAlign.center,
+          style: style,
         ),
       ),
     );
@@ -388,7 +485,7 @@ class _VotingSubmissionSteps extends StatelessWidget {
   final double? activeStepProgress;
 
   static const _labels = <VotingSubmissionProgressStep, String>{
-    VotingSubmissionProgressStep.delegating: 'Delegating voting authority',
+    VotingSubmissionProgressStep.provingAuthority: 'Proving voting authority',
     VotingSubmissionProgressStep.castingVotes:
         'Casting votes and submitting shares',
     VotingSubmissionProgressStep.finalizing: 'Finalizing submission',

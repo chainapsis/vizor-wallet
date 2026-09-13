@@ -122,6 +122,7 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
+import 'src/rust/api/voting.dart' as rust_voting;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
@@ -129,11 +130,46 @@ import 'src/providers/payment_request_flow_provider.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
+StreamSubscription<rust_voting.ApiVotingObservability>?
+_votingObservabilitySubscription;
+
+/// Mirrors Rust voting observability into the Flutter console.
+///
+/// Rust `log` records reach os_log (subsystem `frb_user`) and never the
+/// `flutter run` console, so without this stream these reports are invisible
+/// exactly where a developer is already looking. os_log still receives every
+/// line: this is a second sink, not a replacement.
+///
+/// Registered unconditionally on purpose. Collection is governed on the Rust
+/// side by `VOTING_OBSERVABILITY_ENABLED`, so a build with it off simply
+/// yields a silent stream — keeping the enable decision in one place instead
+/// of splitting it across two languages.
+void _startVotingObservabilityLogging() {
+  unawaited(_votingObservabilitySubscription?.cancel());
+  _votingObservabilitySubscription = rust_voting
+      .setVotingObservabilitySink()
+      .listen(
+        (snapshot) {
+          log('voting-obs ${snapshot.context}: ${snapshot.rendered}');
+          // Failures are logged separately because the rendered report shows
+          // per-stage outcomes without an error category; these carry the
+          // SDK's stable `error_kind`, which is the reason a stage failed.
+          for (final failure in snapshot.failures) {
+            log('voting-obs ${snapshot.context}: FAILED $failure');
+          }
+        },
+        // The stream ending is normal at shutdown; a failure in a debugging
+        // aid must never take down the wallet runtime with it.
+        onError: (Object error) => log('voting-obs: stream failed: $error'),
+      );
+}
+
 Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SecureStorageDiagnostics.instance.initialize();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  _startVotingObservabilityLogging();
   log('runtime: applying network privacy policy');
   await initializeNetworkPrivacyRuntime();
   await rust_simple.configureFastTestnetMigration(

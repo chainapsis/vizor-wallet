@@ -10,15 +10,15 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
-voting-crypto-deps = { version = "=0.2.2" }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.0.0", default-features = false, features = ["circuit"] }
+voting-crypto-deps = { version = "=0.2.3" }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=1.2.0", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "=1.0.0" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=1.2.0" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "=1.0.0" }
-bls12_381 = { package = "zakura-bls12-381", version = "=1.0.0" }
+jubjub = { package = "zakura-jubjub", version = "=1.2.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=1.2.0" }
 rand_core = "0.6"
 
 # Key generation
@@ -85,14 +85,14 @@ tendermint-light-client-verifier = "0.40.4"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "=1.0.0"
+version = "=1.2.0"
 
 [dependencies.zcash_address]
 version = "0.13.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
@@ -104,7 +104,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = [
     "orchard",
     "transparent-inputs",
@@ -117,25 +117,24 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+version = "=4.0.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "=1.0.0"
+version = "=1.2.0"
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "=1.0.0"
+version = "=1.2.0"
 features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc2"
+version = "=0.1.0-rc3"
 features = [
     "orchard",
     "io-finalizer",
@@ -169,18 +168,28 @@ rusqlite = "0.37"
 # from a freshly built Orchard bundle (matches pczt's own end-to-end test).
 # Already in the dependency graph via zcash_client_backend.
 zcash_note_encryption = "0.4"
+# The scripted PIR probe transport builds the same typed failure the real
+# transport attaches, and pauses time so the probe deadline is exercised
+# without waiting on it. Both are already in the graph.
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+version = "=4.0.0"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.6.0"
-git = "https://github.com/valargroup/zcash_voting.git"
-tag = "v3.1.0-rc.16"
+version = "=0.6.1"
 default-features = false
 features = ["zakura"]
+
+[patch.crates-io]
+# Rejects impossible tree positions in chain submission, bounds exact-tree
+# recovery, and reports the bundles a round intentionally drops from its
+# selected suffix.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

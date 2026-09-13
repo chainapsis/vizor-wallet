@@ -1,25 +1,22 @@
-import 'dart:convert';
-import 'dart:math' as math;
-
-import 'voting_http.dart';
-import 'voting_models.dart';
-import 'voting_retry.dart';
+import '../../rust/api/voting.dart' as rust_api;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
+import 'voting_endpoint_mapper.dart';
+import 'voting_rust_exception.dart';
 
 /// Probe outcome for one configured PIR endpoint.
 ///
-/// Anything other than [matched] excludes the endpoint from selection. The
-/// caller still receives diagnostics so the UI can explain whether endpoints
-/// were stale, ahead of the expected snapshot, malformed, or unreachable.
-enum PirSnapshotEndpointStatus {
-  matched,
-  behind,
-  ahead,
-  missingHeight,
-  malformedJson,
-  nonSuccessStatus,
-  timeoutOrNetworkError,
-}
+/// The SDK's own classification, not a copy of it. Anything other than
+/// [PirSnapshotEndpointStatus.matched] excludes the endpoint from selection;
+/// callers still receive every diagnostic so the UI can explain whether
+/// endpoints were stale, ahead of the expected snapshot, malformed, or
+/// unreachable.
+typedef PirSnapshotEndpointStatus = rust_voting.PirSnapshotEndpointStatusView;
 
+/// One endpoint's probe result, with its address as a [Uri].
+///
+/// The only thing this adds over the SDK's diagnostic is the endpoint's type:
+/// the wire carries a `String`, and every caller here maps it back through
+/// [VotingEndpointMapper], which works in `Uri`.
 class PirSnapshotEndpointDiagnostic {
   final Uri endpoint;
   final PirSnapshotEndpointStatus status;
@@ -38,6 +35,7 @@ class PirSnapshotEndpointDiagnostic {
   bool get matched => status == PirSnapshotEndpointStatus.matched;
 }
 
+/// Selected endpoint plus a diagnostic for every endpoint probed.
 class PirSnapshotResolution {
   final Uri endpoint;
   final List<PirSnapshotEndpointDiagnostic> diagnostics;
@@ -48,6 +46,7 @@ class PirSnapshotResolution {
   });
 }
 
+/// No PIR endpoints were configured for the round.
 class PirSnapshotNoEndpoints implements Exception {
   const PirSnapshotNoEndpoints();
 
@@ -55,6 +54,7 @@ class PirSnapshotNoEndpoints implements Exception {
   String toString() => 'PirSnapshotNoEndpoints';
 }
 
+/// Endpoints were probed and none served the round's snapshot height.
 class PirSnapshotNoMatchingEndpoint implements Exception {
   final int expectedSnapshotHeight;
   final List<PirSnapshotEndpointDiagnostic> diagnostics;
@@ -67,58 +67,39 @@ class PirSnapshotNoMatchingEndpoint implements Exception {
   @override
   String toString() =>
       'PirSnapshotNoMatchingEndpoint(expectedSnapshotHeight: '
-      '$expectedSnapshotHeight, diagnostics: ${diagnostics.length})';
+      '$expectedSnapshotHeight, diagnostics: $diagnostics)';
 }
 
-/// Chooses an exact-height endpoint from completed probe diagnostics.
+/// Resolves the PIR endpoint that serves a round's snapshot height.
 ///
-/// The SDK owns this protocol policy. The resolver retains HTTP probing so it
-/// can use the wallet's routed client and expose transport diagnostics.
-typedef PirSnapshotEndpointSelector =
-    Uri? Function({
-      required List<PirSnapshotEndpointDiagnostic> diagnostics,
-      required int expectedSnapshotHeight,
-      required int matchIndex,
-    });
-
-/// Resolves a PIR endpoint whose snapshot root is exactly the expected height.
+/// Probing, height classification, and selection all happen in Rust; this
+/// type is the Dart-side seam so callers and tests keep one place to stub.
+/// The endpoint the wallet probes with is the same routed transport that
+/// carries the rest of foreground voting traffic.
 ///
-/// Exact matching is deliberate. A behind endpoint cannot answer for the round's
-/// required snapshot, and an ahead endpoint may reveal a different anonymity set
-/// than the one expected by the selected voting round. Optional `/root`
-/// identity fields such as `network_id` or `round_id` are not used for
-/// selection; the selected round data supplies the expected height.
+/// Callers pass logical endpoints and get logical endpoints back. The regtest
+/// gateway rewrite is applied to what is probed and undone on the way out, so
+/// the round's configured identity is what reaches the session state and the
+/// PIR failover list.
 class PirSnapshotResolver {
-  PirSnapshotResolver({
-    required VotingHttpClient httpClient,
-    required PirSnapshotEndpointSelector selectEndpoint,
-    math.Random? random,
-    Duration timeout = const Duration(seconds: 10),
-    VotingRetryPolicy? retryPolicy,
-    Future<void> Function(Duration delay)? delay,
-  }) : _httpClient = httpClient,
-       _selectEndpoint = selectEndpoint,
-       _random = random ?? math.Random.secure(),
-       _timeout = timeout,
-       _retryPolicy =
-           retryPolicy ??
-           VotingRetryPolicy.transientHttp(
-             name: 'voting-pir-probe',
-             delays: const [Duration.zero],
-           ),
-       _delay = delay ?? Future<void>.delayed;
+  const PirSnapshotResolver({
+    VotingEndpointMapper? mapper,
+    ResolvePirSnapshotEndpointFn? resolveEndpoint,
+  }) : _mapper = mapper,
+       _resolveEndpoint =
+           resolveEndpoint ?? rust_api.resolvePirSnapshotEndpoint;
 
-  final VotingHttpClient _httpClient;
-  final PirSnapshotEndpointSelector _selectEndpoint;
-  final math.Random _random;
-  final Duration _timeout;
-  final VotingRetryPolicy _retryPolicy;
-  final Future<void> Function(Duration delay) _delay;
+  final VotingEndpointMapper? _mapper;
+  final ResolvePirSnapshotEndpointFn _resolveEndpoint;
 
-  /// Probes all endpoints and randomly selects among exact-height matches.
+  Uri _transportUri(Uri logicalUrl) =>
+      _mapper == null ? logicalUrl : _mapper.map(logicalUrl);
+
+  /// Probes all endpoints and selects one serving [expectedSnapshotHeight].
   ///
-  /// The method fails closed when no endpoint matches, carrying diagnostics for
-  /// every endpoint that was considered.
+  /// Fails closed: an endpoint that cannot be reached or does not serve the
+  /// height is never selected. [PirSnapshotNoMatchingEndpoint] carries every
+  /// diagnostic so the caller can say which heights were on offer.
   Future<PirSnapshotResolution> resolve({
     required List<Uri> endpoints,
     required int expectedSnapshotHeight,
@@ -127,149 +108,61 @@ class PirSnapshotResolver {
       throw const PirSnapshotNoEndpoints();
     }
 
-    final diagnostics = await Future.wait(
-      endpoints.map(
-        (endpoint) => _probeEndpoint(
-          endpoint: endpoint,
-          expectedSnapshotHeight: expectedSnapshotHeight,
-        ),
-      ),
-    );
-    final endpoint = _selectEndpoint(
-      diagnostics: diagnostics,
-      expectedSnapshotHeight: expectedSnapshotHeight,
-      matchIndex: _random.nextInt(1 << 32),
-    );
+    final logicalByTransport = <String, Uri>{};
+    final transportUrls = <String>[];
+    for (final endpoint in endpoints) {
+      final transportUrl = _transportUri(endpoint).toString();
+      logicalByTransport[transportUrl] = endpoint;
+      transportUrls.add(transportUrl);
+    }
+
+    final rust_api.ApiPirSnapshotResolution resolution;
+    try {
+      resolution = await _resolveEndpoint(
+        endpoints: transportUrls,
+        expectedSnapshotHeight: BigInt.from(expectedSnapshotHeight),
+      );
+    } on rust_voting.VotingErrorView catch (error) {
+      throw VotingRustException(error);
+    }
+
+    Uri logical(String probed) =>
+        logicalByTransport[probed] ?? Uri.parse(probed);
+
+    final diagnostics = [
+      for (final diagnostic in resolution.diagnostics)
+        _diagnosticFrom(diagnostic, logical(diagnostic.endpoint)),
+    ];
+    final endpoint = resolution.endpoint;
     if (endpoint == null) {
       throw PirSnapshotNoMatchingEndpoint(
         expectedSnapshotHeight: expectedSnapshotHeight,
         diagnostics: diagnostics,
       );
     }
-
-    return PirSnapshotResolution(endpoint: endpoint, diagnostics: diagnostics);
+    return PirSnapshotResolution(
+      endpoint: logical(endpoint),
+      diagnostics: diagnostics,
+    );
   }
 
-  Future<PirSnapshotEndpointDiagnostic> _probeEndpoint({
-    required Uri endpoint,
-    required int expectedSnapshotHeight,
-  }) async {
-    try {
-      final rootUri = _rootUri(endpoint);
-      final response = await withVotingRetry(
-        policy: _retryPolicy,
-        delay: _delay,
-        operation: () async {
-          final response = await _httpClient.get(rootUri, timeout: _timeout);
-          if (response.statusCode != 200) {
-            final error = VotingHttpException(
-              uri: rootUri,
-              statusCode: response.statusCode,
-              body: response.bodyText,
-            );
-            if (isRetryableVotingError(error)) {
-              throw error;
-            }
-          }
-          return response;
-        },
-      );
-      if (response.statusCode != 200) {
-        return PirSnapshotEndpointDiagnostic(
-          endpoint: endpoint,
-          status: PirSnapshotEndpointStatus.nonSuccessStatus,
-          httpStatusCode: response.statusCode,
-          message: response.bodyText,
-        );
-      }
-      final decoded = jsonDecode(response.bodyText);
-      if (decoded is! Map) {
-        return PirSnapshotEndpointDiagnostic(
-          endpoint: endpoint,
-          status: PirSnapshotEndpointStatus.malformedJson,
-          message: 'root response is not a JSON object',
-        );
-      }
-      final height = _heightFromRoot(decoded);
-      if (height == null) {
-        return PirSnapshotEndpointDiagnostic(
-          endpoint: endpoint,
-          status: PirSnapshotEndpointStatus.missingHeight,
-          message: 'root response did not include height',
-        );
-      }
-      if (height < expectedSnapshotHeight) {
-        return PirSnapshotEndpointDiagnostic(
-          endpoint: endpoint,
-          status: PirSnapshotEndpointStatus.behind,
-          reportedHeight: height,
-        );
-      }
-      if (height > expectedSnapshotHeight) {
-        return PirSnapshotEndpointDiagnostic(
-          endpoint: endpoint,
-          status: PirSnapshotEndpointStatus.ahead,
-          reportedHeight: height,
-        );
-      }
-      return PirSnapshotEndpointDiagnostic(
-        endpoint: endpoint,
-        status: PirSnapshotEndpointStatus.matched,
-        reportedHeight: height,
-      );
-    } on VotingHttpException catch (e) {
-      return PirSnapshotEndpointDiagnostic(
-        endpoint: endpoint,
-        status: PirSnapshotEndpointStatus.nonSuccessStatus,
-        httpStatusCode: e.statusCode,
-        message: e.body,
-      );
-    } on FormatException catch (e) {
-      return PirSnapshotEndpointDiagnostic(
-        endpoint: endpoint,
-        status: PirSnapshotEndpointStatus.malformedJson,
-        message: e.message,
-      );
-    } catch (e) {
-      return PirSnapshotEndpointDiagnostic(
-        endpoint: endpoint,
-        status: PirSnapshotEndpointStatus.timeoutOrNetworkError,
-        message: e.toString(),
-      );
-    }
-  }
-
-  static Uri _rootUri(Uri endpoint) {
-    final pathSegments = endpoint.pathSegments
-        .where((segment) => segment.isNotEmpty)
-        .toList();
-    return endpoint.replace(pathSegments: [...pathSegments, 'root']);
-  }
-
-  static final _unsignedIntegerPattern = RegExp(r'^\d+$');
-  static final _maxU64 = BigInt.parse('18446744073709551615');
-
-  /// Returns `/root.height`, or null when the canonical height field is absent.
-  /// Throws [FormatException] when `height` is present but malformed.
-  static int? _heightFromRoot(Map<dynamic, dynamic> root) {
-    if (!root.containsKey('height')) return null;
-    return _parseRootHeightField(root['height']);
-  }
-
-  /// Parses `/root.height` as a JSON integer or decimal string in the unsigned
-  /// 64-bit range.
-  static int _parseRootHeightField(Object? value) {
-    if (value is int && value >= 0 && BigInt.from(value) <= _maxU64) {
-      return value;
-    }
-    if (value is String && _unsignedIntegerPattern.hasMatch(value)) {
-      final height = BigInt.parse(value);
-      if (height <= _maxU64) {
-        return int.parse(value);
-      }
-    }
-    throw const FormatException(
-      '/root field "height" is not a valid u64 height',
+  static PirSnapshotEndpointDiagnostic _diagnosticFrom(
+    rust_voting.PirSnapshotEndpointDiagnosticView diagnostic,
+    Uri endpoint,
+  ) {
+    return PirSnapshotEndpointDiagnostic(
+      endpoint: endpoint,
+      status: diagnostic.status,
+      reportedHeight: diagnostic.reportedHeight?.toInt(),
+      httpStatusCode: diagnostic.httpStatusCode,
+      message: diagnostic.message,
     );
   }
 }
+
+/// The bridge call [PirSnapshotResolver] drives, injectable for tests.
+typedef ResolvePirSnapshotEndpointFn =
+    Future<rust_api.ApiPirSnapshotResolution> Function({
+      required List<String> endpoints,
+      required BigInt expectedSnapshotHeight,
+    });
