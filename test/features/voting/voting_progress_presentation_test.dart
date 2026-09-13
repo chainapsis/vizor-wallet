@@ -247,9 +247,11 @@ void main() {
       expect(delivered.stage, VotingBallotStage.complete);
     });
 
-    test('counts the delivered questions of the bundle being delivered', () {
-      // Two questions in one bundle, one share batch landed: the line has to
-      // move as each batch finishes rather than waiting for the step.
+    test('counts a delivered question for the ring, not for the line', () {
+      // Two questions in one bundle, one share batch landed. The count feeds
+      // the ring and the round's own completion rule; the line stays the same
+      // sentence throughout, because a count of a stage this short spent its
+      // life mid-jump.
       final state = _ballotState(
         bundleCount: 1,
         voteStepBundles: const [0],
@@ -279,7 +281,7 @@ void main() {
       final delivering = votingBallotProgress(state);
       expect(delivering.stage, VotingBallotStage.delivering);
       expect(delivering.completedProposals, 1);
-      expect(delivering.detail, 'Responses for 1 of 2 questions delivered');
+      expect(delivering.detail, 'Delivering your responses');
     });
 
     test('uses concise casting copy while proving', () {
@@ -397,7 +399,7 @@ void main() {
         ),
       );
       expect(delivering.stage, VotingBallotStage.delivering);
-      expect(delivering.detail, 'Responses for 1 of 3 questions delivered');
+      expect(delivering.detail, 'Delivering your responses');
     });
 
     test('keeps a resumed run at the tally it inherited', () {
@@ -468,152 +470,6 @@ void main() {
       final proved = votingAuthorityProgress(state(1));
       expect(proved.provedBundles, 1);
       expect(proved.detail, 'Finalizing delegation — 1 of 1 bundles proved');
-    });
-  });
-
-  group('VotingBallotCountPacer', () {
-    VotingBallotProgress delivering(int completed, {int total = 37}) {
-      return VotingBallotProgress(
-        stage: VotingBallotStage.delivering,
-        provenProposals: total,
-        completedProposals: completed,
-        totalProposals: total,
-        fraction: completed / total,
-      );
-    }
-
-    /// Every count the pacer shows walking to [target], first frame included.
-    List<int> walk(VotingBallotCountPacer pacer, int target) {
-      final shown = <int>[pacer.pace(delivering(target)).completedProposals];
-      var frames = 0;
-      while (pacer.isCatchingUp && frames++ < 200) {
-        shown.add(pacer.pace(delivering(target)).completedProposals);
-      }
-      return shown;
-    }
-
-    test('walks up to a wave instead of landing on it', () {
-      // Shares go out 50 at a time, so a batch of questions finishes together
-      // and the reported count steps by twenty at once.
-      final shown = walk(VotingBallotCountPacer(), 20);
-      expect(shown.first, greaterThan(0));
-      expect(shown.first, lessThan(20));
-      expect(shown.last, 20);
-      // Enough frames to read as movement, few enough to keep up with a round
-      // that is already finishing.
-      expect(shown.length, inInclusiveRange(4, 16));
-      expect(shown, orderedEquals(shown.toList()..sort()));
-      expect(shown.every((count) => count <= 20), isTrue);
-    });
-
-    test('the line it yields reads from the count it is showing', () {
-      final pacer = VotingBallotCountPacer();
-      final first = pacer.pace(delivering(20));
-      expect(
-        first.detail,
-        'Responses for ${first.completedProposals} of 37 questions delivered',
-      );
-      // The rest of the projection is untouched: only the count is paced.
-      expect(first.stage, VotingBallotStage.delivering);
-      expect(first.totalProposals, 37);
-      expect(first.fraction, closeTo(20 / 37, 1e-9));
-    });
-
-    test('a settled count asks for no further frames', () {
-      final pacer = VotingBallotCountPacer();
-      walk(pacer, 5);
-      expect(pacer.isCatchingUp, isFalse);
-      expect(pacer.pace(delivering(5)).completedProposals, 5);
-      expect(pacer.isCatchingUp, isFalse);
-    });
-
-    const finished = VotingBallotProgress(
-      stage: VotingBallotStage.complete,
-      provenProposals: 37,
-      completedProposals: 37,
-      totalProposals: 37,
-      fraction: 1,
-    );
-
-    test('a ballot that finishes mid-walk keeps delivering until it lands', () {
-      // The submission job completes the moment the last share is accepted, so
-      // a fast delivery reported its whole count and completed within a frame
-      // or two of each other. Dropping the line there is the flash: the voter
-      // saw a count appear and vanish. The row ticks a few frames later.
-      final pacer = VotingBallotCountPacer();
-      pacer.pace(delivering(2));
-      final held = pacer.pace(finished);
-      expect(held.stage, VotingBallotStage.delivering);
-      expect(held.completedProposals, lessThan(37));
-      expect(pacer.isCatchingUp, isTrue);
-
-      var frames = 0;
-      var shown = held;
-      final delivered = <int>[];
-      while (pacer.isCatchingUp && frames++ < 60) {
-        if (shown.stage == VotingBallotStage.delivering) {
-          delivered.add(shown.completedProposals);
-        }
-        shown = pacer.pace(finished);
-      }
-      expect(shown.stage, VotingBallotStage.complete);
-      expect(shown.completedProposals, 37);
-      expect(frames, lessThan(pacer.maxCompletionHoldFrames));
-      // The finished count stands for a few frames before the row ticks:
-      // "37 of 37 delivered" is the one number worth reading, and ticking on
-      // the frame it lands is the one frame that never draws it.
-      expect(delivered.last, 37);
-      expect(
-        delivered.where((count) => count == 37).length,
-        greaterThanOrEqualTo(pacer.landedDwellFrames),
-      );
-    });
-
-    test('the completion hold is bounded', () {
-      // Whatever the walk does, a caller that waits for it — the status screen
-      // holds the confirmation hand-off — must not be made to wait forever.
-      const manyFinished = VotingBallotProgress(
-        stage: VotingBallotStage.complete,
-        provenProposals: 1000,
-        completedProposals: 1000,
-        totalProposals: 1000,
-        fraction: 1,
-      );
-      // A pacer that advances one question per frame cannot walk a thousand of
-      // them in three, and the hold is what stops it trying.
-      final pacer = VotingBallotCountPacer(
-        catchUpFraction: 0,
-        maxCompletionHoldFrames: 3,
-      );
-      pacer.pace(delivering(1000, total: 1000));
-      var frames = 0;
-      while (pacer.isCatchingUp && frames++ < 100) {
-        pacer.pace(manyFinished);
-      }
-      expect(frames, lessThanOrEqualTo(4));
-      expect(pacer.isCatchingUp, isFalse);
-    });
-
-    test('a round that arrives finished is not given a walk', () {
-      // A resume or a revisit never watched a delivery, so animating one would
-      // show this screen counting work it did not see.
-      final pacer = VotingBallotCountPacer();
-      final complete = pacer.pace(finished);
-      expect(complete.stage, VotingBallotStage.complete);
-      expect(complete.completedProposals, 37);
-      expect(pacer.isCatchingUp, isFalse);
-    });
-
-    test('reset starts the next attempt from the count it is given', () {
-      final pacer = VotingBallotCountPacer();
-      walk(pacer, 20);
-      pacer.reset();
-      // A retry reports fewer done than the attempt that failed had shown; the
-      // walk must not treat that as a count it has already passed.
-      final resumed = pacer.pace(delivering(8));
-      expect(resumed.completedProposals, lessThan(8));
-      expect(pacer.isCatchingUp, isTrue);
-      expect(walk(pacer, 8).last, 8);
     });
   });
 
@@ -725,7 +581,7 @@ void main() {
         ),
       );
       expect(back.ballot.stage, VotingBallotStage.delivering);
-      expect(back.ballot.detail, 'Responses for 1 of 3 questions delivered');
+      expect(back.ballot.detail, 'Delivering your responses');
       expect(back.ballot.fraction, 0.8);
     });
 

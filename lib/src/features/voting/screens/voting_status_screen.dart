@@ -162,16 +162,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// the ratchet here covers both form factors with one instance.
   final VotingProgressRatchet _progressRatchet = VotingProgressRatchet();
 
-  /// Paces the delivered count so a wave of shares does not land as one jump.
-  ///
-  /// Held beside the ratchet, and for the same reason: one instance covers the
-  /// desktop step list and the mobile screen this view hands a presentation to.
-  final VotingBallotCountPacer _ballotCountPacer = VotingBallotCountPacer();
-
-  /// Asks the pacer for its next step while it is behind. Cancelled the moment
-  /// it catches up, so a settled screen holds no timer.
-  Timer? _ballotCountTicker;
-
   /// The terminal-delegation notice from the last frame that had one to read.
   ///
   /// Held for the same reason as the ratchet: the session provider refreshes
@@ -186,41 +176,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   @override
-  void dispose() {
-    _ballotCountTicker?.cancel();
-    super.dispose();
-  }
-
-  /// One frame, with the ballot's delivered count paced for display.
-  ///
-  /// Called on every frame that has a projection to show, held marks included,
-  /// so the count the screen shows only ever comes from the pacer — reading the
-  /// raw mark on some frames would jump past the walk and back again.
-  VotingProgressView _paceBallotCount(VotingProgressView progress) {
-    final paced = progress.withBallot(_ballotCountPacer.pace(progress.ballot));
-    // Frames arrive only when something in the session changes, and a wave of
-    // deliveries is one change, so the walk needs its own frames.
-    if (_ballotCountPacer.isCatchingUp) {
-      _ballotCountTicker ??= Timer.periodic(kVotingBallotCountPaceInterval, (
-        _,
-      ) {
-        if (!mounted) return;
-        setState(() {});
-      });
-    } else {
-      _ballotCountTicker?.cancel();
-      _ballotCountTicker = null;
-    }
-    return paced;
-  }
-
-  void _resetBallotCountPacer() {
-    _ballotCountTicker?.cancel();
-    _ballotCountTicker = null;
-    _ballotCountPacer.reset();
-  }
-
-  @override
   void didUpdateWidget(covariant VotingStatusView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId == widget.roundId &&
@@ -229,7 +184,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     }
     _startScheduled = false;
     _progressRatchet.reset();
-    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     _jobKey = widget.accountUuid == null
         ? null
@@ -444,10 +398,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                 ? const VotingSubmissionProgressPresentation(
                     activeStep: VotingSubmissionProgressStep.provingAuthority,
                   )
-                : _submissionPresentation(
-                    _paceBallotCount(held),
-                    warning: _heldTerminalNotice,
-                  ),
+                : _submissionPresentation(held, warning: _heldTerminalNotice),
           );
         }
         return const VotingPaneLoading();
@@ -508,31 +459,22 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           state,
           completedSubmission: completedSubmission,
         );
-        final progress = _paceBallotCount(
-          _progressRatchet.advance(
-            step: votingSubmissionProgressStepFor(
-              phase: phase,
-              voteStepComplete:
-                  completedSubmission ||
-                  reportedBallot.stage == VotingBallotStage.complete,
-              submissionJobComplete: submissionJobComplete,
-              submissionJobInFlight: submissionJobInFlight,
-            ),
-            authority: votingAuthorityProgress(state),
-            ballot: reportedBallot,
+        final progress = _progressRatchet.advance(
+          step: votingSubmissionProgressStepFor(
+            phase: phase,
+            voteStepComplete:
+                completedSubmission ||
+                reportedBallot.stage == VotingBallotStage.complete,
+            submissionJobComplete: submissionJobComplete,
+            submissionJobInFlight: submissionJobInFlight,
           ),
+          authority: votingAuthorityProgress(state),
+          ballot: reportedBallot,
         );
         _heldTerminalNotice = state.terminalDelegationNotice;
         final ballot = progress.ballot;
         final voteSubmissionProgress = ballot.fraction;
-        // The job completes as the last share is accepted, which declares the
-        // ballot finished however far the delivered count has walked. Ticking
-        // the row then drops the line mid-walk, so completion waits the few
-        // frames the walk still owes — the same wait the hand-off makes.
-        final ballotCountSettling = _ballotCountPacer.isCatchingUp;
-        final voteStepComplete =
-            (completedSubmission || progress.ballotComplete) &&
-            !ballotCountSettling;
+        final voteStepComplete = completedSubmission || progress.ballotComplete;
         // The delegation row owns the ring only until the step list moves on.
         // Gating on the ratcheted step rather than on `phase == delegating`
         // keeps the proof reported while an unrelated writer — a wallet-sync
@@ -567,7 +509,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                   : _shareSubmissionDetail(state)),
           voteSubmissionProgress: voteSubmissionProgress,
           voteStepComplete: voteStepComplete,
-          ballotCountSettling: ballotCountSettling,
           delegationProgress: delegationProgress,
           delegationDetail: delegationDetail,
           completedSubmission: completedSubmission,
@@ -691,7 +632,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     // A retry starts the submission over, so the high-water mark from the
     // attempt that failed must not hold the new one forward.
     _progressRatchet.reset();
-    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key == null) {
@@ -704,7 +644,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
 
   void _clearError() {
     _progressRatchet.reset();
-    _resetBallotCountPacer();
     _heldTerminalNotice = null;
     final key = _selectedJobKey();
     if (key != null) {
@@ -718,32 +657,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (_confirmationNavigationScheduledFor == key) return;
     _confirmationNavigationScheduledFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _navigateWhenBallotCountSettles(key);
-    });
-  }
-
-  /// Leaves for the confirmation screen once the delivered count has caught up.
-  ///
-  /// The job completes the moment the last share is accepted, and leaving then
-  /// is what made the delivered line flash: the count appeared and the route
-  /// changed under it before it had walked anywhere. The pacer settles within a
-  /// bounded number of frames and asks for each of them, so this retries per
-  /// frame rather than waiting on a duration of its own.
-  void _navigateWhenBallotCountSettles(VotingSessionKey key) {
-    if (!mounted || !_canNavigateToConfirmation(key)) return;
-    if (_selectedJobKey() != key) {
-      if (_confirmationNavigationScheduledFor == key) {
-        _confirmationNavigationScheduledFor = null;
+      if (!mounted || !_canNavigateToConfirmation(key)) return;
+      if (_selectedJobKey() != key) {
+        if (_confirmationNavigationScheduledFor == key) {
+          _confirmationNavigationScheduledFor = null;
+        }
+        return;
       }
-      return;
-    }
-    if (_ballotCountPacer.isCatchingUp) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateWhenBallotCountSettles(key);
-      });
-      return;
-    }
-    _navigateToConfirmation(key);
+      _navigateToConfirmation(key);
+    });
   }
 
   void _navigateToConfirmation(VotingSessionKey key) {
@@ -860,7 +782,6 @@ class _StatusContent extends StatelessWidget {
     this.voteStepComplete,
     this.delegationProgress,
     this.delegationDetail,
-    this.ballotCountSettling = false,
     this.completedSubmission = false,
     this.submissionJobComplete = false,
     this.submissionJobInFlight = false,
@@ -895,11 +816,6 @@ class _StatusContent extends StatelessWidget {
   /// Null on the loading and error paths, which have no ratchet to read; the
   /// ring is the only signal there.
   final bool? voteStepComplete;
-
-  /// Whether the delivered count is still walking to the number the round
-  /// reported. While it is, the ballot row is not finished for display purposes
-  /// however finished the round itself is — see [voteStepComplete]'s caller.
-  final bool ballotCountSettling;
 
   final double? delegationProgress;
   final String? delegationDetail;
@@ -940,9 +856,8 @@ class _StatusContent extends StatelessWidget {
     }
     final terminalNotice = terminalDelegationNotice;
     final voteStepComplete =
-        (completedSubmission ||
-            (this.voteStepComplete ?? (voteSubmissionProgress ?? 0) >= 1)) &&
-        !ballotCountSettling;
+        completedSubmission ||
+        (this.voteStepComplete ?? (voteSubmissionProgress ?? 0) >= 1);
     final finalizingSubmission =
         submissionJobInFlight &&
         voteStepComplete &&
@@ -1618,19 +1533,16 @@ class _StepRow extends StatelessWidget {
                 ),
                 if (detail != null && detail!.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  // Keyed on the sentence with its numbers masked: the
-                  // delivered count replaces its own digits several times a
-                  // second, and crossfading those would smear the number.
-                  // Only a change of subject fades.
+                  // The line changes several times over a submission, and each
+                  // change is a change of subject rather than a number moving,
+                  // so it fades rather than swapping in place.
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 220),
                     switchInCurve: Curves.easeOutCubic,
                     switchOutCurve: Curves.easeOutCubic,
                     child: Text(
                       detail!,
-                      key: ValueKey<String>(
-                        detail!.replaceAll(RegExp(r'\d+'), '#'),
-                      ),
+                      key: ValueKey<String>(detail!),
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
                       ),

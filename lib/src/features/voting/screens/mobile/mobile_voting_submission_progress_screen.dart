@@ -313,12 +313,11 @@ class _AnimatedNoticeHeightState
   }
 }
 
-/// The notice line, fading between sentences but not between counts.
+/// The notice line, fading between sentences.
 ///
-/// "Responses for 3 of 37 questions delivered" replaces its own digits several
-/// times a second while shares land, and crossfading those would smear the
-/// number. The transition is keyed on the sentence with its numbers masked, so
-/// the count ticks in place and only a change of subject fades.
+/// The line changes several times over a submission — proving, waiting for the
+/// chain, delivering — and each change is a change of subject, so it fades
+/// rather than swapping in place under the badge.
 class _CrossfadedNotice extends StatelessWidget {
   const _CrossfadedNotice({required this.text, required this.style});
 
@@ -332,7 +331,7 @@ class _CrossfadedNotice extends StatelessWidget {
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeOutCubic,
       child: KeyedSubtree(
-        key: ValueKey<String>(_sentenceKey(text)),
+        key: ValueKey<String>(text),
         child: Text(
           text,
           key: const ValueKey('mobile_voting_submission_notice'),
@@ -342,10 +341,6 @@ class _CrossfadedNotice extends StatelessWidget {
       ),
     );
   }
-
-  static String _sentenceKey(String text) => text.replaceAll(_digits, '#');
-
-  static final RegExp _digits = RegExp(r'\d+');
 }
 
 double _measureTextHeight({
