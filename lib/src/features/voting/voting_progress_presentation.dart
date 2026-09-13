@@ -410,7 +410,7 @@ class VotingProgressView {
 }
 
 /// How often a screen should ask [VotingBallotCountPacer] for its next step.
-const Duration kVotingBallotCountPaceInterval = Duration(milliseconds: 45);
+const Duration kVotingBallotCountPaceInterval = Duration(milliseconds: 60);
 
 /// Walks the delivered count up to the number the projection reports.
 ///
@@ -427,50 +427,135 @@ const Duration kVotingBallotCountPaceInterval = Duration(milliseconds: 45);
 /// it from a plain periodic timer, and so widget tests pumping frames see the
 /// same walk a device does.
 class VotingBallotCountPacer {
-  VotingBallotCountPacer({this.catchUpFraction = 0.25});
+  VotingBallotCountPacer({
+    this.catchUpFraction = 0.18,
+    this.landedDwellFrames = 4,
+    this.maxCompletionHoldFrames = 24,
+  });
 
   /// How much of the remaining distance one step covers, at least one.
   ///
   /// An ease-out: the first step of a big jump is the largest, so a wave lands
-  /// visibly at once without the tail taking long enough to notice.
+  /// promptly and its tail is still short. A whole ballot's worth of questions
+  /// takes roughly twenty frames to walk at this rate, whatever the count — the
+  /// distance is covered proportionally, so 37 questions and 370 read the same.
   final double catchUpFraction;
 
-  int _shown = 0;
+  /// Frames the finished count is left standing before the ballot is reported
+  /// complete.
+  ///
+  /// Without it the row ticks on the very frame the count lands, so "37 of 37
+  /// questions delivered" — the one number the voter actually wants — is the
+  /// one number never drawn.
+  final int landedDwellFrames;
 
-  /// Whether the shown count is still behind the reported one, so the caller
-  /// owes another frame.
+  /// Frames a finished ballot may spend finishing its walk and dwelling on it.
+  ///
+  /// A cap, not a target: the walk converges on its own well inside this. It
+  /// exists so a caller that waits for the walk — the status screen holds the
+  /// confirmation hand-off and the row's checkmark — can never be made to wait
+  /// indefinitely.
+  final int maxCompletionHoldFrames;
+
+  int _shown = 0;
+  int _holdFrames = 0;
+  int _dwellFrames = 0;
+
+  /// Whether a count has been shown for a ballot that was mid-submission.
+  ///
+  /// Only such a ballot has a delivery to finish showing. A round that arrives
+  /// already complete — a resume, a revisit — never had one, and inventing a
+  /// walk for it would animate a delivery this screen did not watch.
+  bool _sawSubmission = false;
+
+  /// Whether the shown count is still behind the reported one, or standing on
+  /// it briefly, so the caller owes another frame.
   bool get isCatchingUp => _catchingUp;
   bool _catchingUp = false;
 
   /// Forgets the walk. The next [pace] starts from the count it is given.
   void reset() {
     _shown = 0;
+    _holdFrames = 0;
+    _dwellFrames = 0;
+    _sawSubmission = false;
     _catchingUp = false;
   }
 
   /// Folds one frame, returning the ballot the screen should show.
   VotingBallotProgress pace(VotingBallotProgress ballot) {
     final target = ballot.completedProposals;
-    // A finished ballot shows no count at all — its row ticks to a checkmark —
-    // so there is nothing left to walk towards and nothing to cut short.
-    // Anything below the mark is a new round or a retry, which the projection
-    // reached without passing through the counts already shown.
-    if (ballot.stage == VotingBallotStage.complete || target <= _shown) {
-      _shown = target;
-      _catchingUp = false;
-      return ballot;
+    final complete = ballot.stage == VotingBallotStage.complete;
+    // Noted before the early return below, because a delivery whose first frame
+    // reports nothing delivered yet — the usual one — has nothing to walk on
+    // that frame and is still the submission this screen is watching.
+    _sawSubmission |= !complete && _isSubmissionStage(ballot.stage);
+    if (ballot.totalProposals <= 0) return _settle(ballot, target);
+    if (complete) {
+      // A completion this screen never saw a submission for has no delivery to
+      // show, and one that has already had its frames must not hold the screen
+      // any longer.
+      if (!_sawSubmission || _holdFrames >= maxCompletionHoldFrames) {
+        return _settle(ballot, target);
+      }
+      _holdFrames += 1;
+      if (_shown < target) {
+        _stepTowards(target);
+      } else {
+        _dwellFrames += 1;
+      }
+      if (_shown >= target && _dwellFrames >= landedDwellFrames) {
+        return _settle(ballot, target);
+      }
+      _catchingUp = true;
+      // The last questions are still landing as far as the voter can see, so
+      // the row keeps delivering until they have. Reporting the completion here
+      // would drop the line mid-walk — the flash this walk exists to remove —
+      // and the row ticks a few frames later either way.
+      return _showing(ballot, VotingBallotStage.delivering);
     }
-    final remaining = target - _shown;
-    final step = (remaining * catchUpFraction).ceil();
-    _shown += step < 1 ? 1 : step;
+    // A mark at or below the one already shown is either nothing new or a new
+    // round or retry, which the projection reached without passing through the
+    // counts already shown.
+    if (target <= _shown) return _settle(ballot, target);
+    _stepTowards(target);
     _catchingUp = _shown < target;
+    return _showing(ballot, ballot.stage);
+  }
+
+  void _stepTowards(int target) {
+    final step = ((target - _shown) * catchUpFraction).ceil();
+    _shown += step < 1 ? 1 : step;
+    if (_shown > target) _shown = target;
+  }
+
+  VotingBallotProgress _settle(VotingBallotProgress ballot, int target) {
+    _shown = target;
+    _catchingUp = false;
+    return ballot;
+  }
+
+  VotingBallotProgress _showing(
+    VotingBallotProgress ballot,
+    VotingBallotStage stage,
+  ) {
     return VotingBallotProgress(
-      stage: ballot.stage,
+      stage: stage,
       provenProposals: ballot.provenProposals,
       completedProposals: _shown,
       totalProposals: ballot.totalProposals,
       fraction: ballot.fraction,
     );
+  }
+
+  static bool _isSubmissionStage(VotingBallotStage stage) {
+    return switch (stage) {
+      VotingBallotStage.confirming || VotingBallotStage.delivering => true,
+      VotingBallotStage.preparing ||
+      VotingBallotStage.proving ||
+      VotingBallotStage.submitting ||
+      VotingBallotStage.complete => false,
+    };
   }
 }
 

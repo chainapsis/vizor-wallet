@@ -527,20 +527,79 @@ void main() {
       expect(pacer.isCatchingUp, isFalse);
     });
 
-    test('a finished ballot is shown at once, not walked to', () {
-      // Its row ticks to a checkmark and drops the line, so there is no walk
-      // left to see — and nothing of the voter's is waiting on one.
+    const finished = VotingBallotProgress(
+      stage: VotingBallotStage.complete,
+      provenProposals: 37,
+      completedProposals: 37,
+      totalProposals: 37,
+      fraction: 1,
+    );
+
+    test('a ballot that finishes mid-walk keeps delivering until it lands', () {
+      // The submission job completes the moment the last share is accepted, so
+      // a fast delivery reported its whole count and completed within a frame
+      // or two of each other. Dropping the line there is the flash: the voter
+      // saw a count appear and vanish. The row ticks a few frames later.
       final pacer = VotingBallotCountPacer();
       pacer.pace(delivering(2));
-      final complete = pacer.pace(
-        const VotingBallotProgress(
-          stage: VotingBallotStage.complete,
-          provenProposals: 37,
-          completedProposals: 37,
-          totalProposals: 37,
-          fraction: 1,
-        ),
+      final held = pacer.pace(finished);
+      expect(held.stage, VotingBallotStage.delivering);
+      expect(held.completedProposals, lessThan(37));
+      expect(pacer.isCatchingUp, isTrue);
+
+      var frames = 0;
+      var shown = held;
+      final delivered = <int>[];
+      while (pacer.isCatchingUp && frames++ < 60) {
+        if (shown.stage == VotingBallotStage.delivering) {
+          delivered.add(shown.completedProposals);
+        }
+        shown = pacer.pace(finished);
+      }
+      expect(shown.stage, VotingBallotStage.complete);
+      expect(shown.completedProposals, 37);
+      expect(frames, lessThan(pacer.maxCompletionHoldFrames));
+      // The finished count stands for a few frames before the row ticks:
+      // "37 of 37 delivered" is the one number worth reading, and ticking on
+      // the frame it lands is the one frame that never draws it.
+      expect(delivered.last, 37);
+      expect(
+        delivered.where((count) => count == 37).length,
+        greaterThanOrEqualTo(pacer.landedDwellFrames),
       );
+    });
+
+    test('the completion hold is bounded', () {
+      // Whatever the walk does, a caller that waits for it — the status screen
+      // holds the confirmation hand-off — must not be made to wait forever.
+      const manyFinished = VotingBallotProgress(
+        stage: VotingBallotStage.complete,
+        provenProposals: 1000,
+        completedProposals: 1000,
+        totalProposals: 1000,
+        fraction: 1,
+      );
+      // A pacer that advances one question per frame cannot walk a thousand of
+      // them in three, and the hold is what stops it trying.
+      final pacer = VotingBallotCountPacer(
+        catchUpFraction: 0,
+        maxCompletionHoldFrames: 3,
+      );
+      pacer.pace(delivering(1000, total: 1000));
+      var frames = 0;
+      while (pacer.isCatchingUp && frames++ < 100) {
+        pacer.pace(manyFinished);
+      }
+      expect(frames, lessThanOrEqualTo(4));
+      expect(pacer.isCatchingUp, isFalse);
+    });
+
+    test('a round that arrives finished is not given a walk', () {
+      // A resume or a revisit never watched a delivery, so animating one would
+      // show this screen counting work it did not see.
+      final pacer = VotingBallotCountPacer();
+      final complete = pacer.pace(finished);
+      expect(complete.stage, VotingBallotStage.complete);
       expect(complete.completedProposals, 37);
       expect(pacer.isCatchingUp, isFalse);
     });

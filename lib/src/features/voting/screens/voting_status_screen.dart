@@ -525,7 +525,14 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         _heldTerminalNotice = state.terminalDelegationNotice;
         final ballot = progress.ballot;
         final voteSubmissionProgress = ballot.fraction;
-        final voteStepComplete = completedSubmission || progress.ballotComplete;
+        // The job completes as the last share is accepted, which declares the
+        // ballot finished however far the delivered count has walked. Ticking
+        // the row then drops the line mid-walk, so completion waits the few
+        // frames the walk still owes — the same wait the hand-off makes.
+        final ballotCountSettling = _ballotCountPacer.isCatchingUp;
+        final voteStepComplete =
+            (completedSubmission || progress.ballotComplete) &&
+            !ballotCountSettling;
         // The delegation row owns the ring only until the step list moves on.
         // Gating on the ratcheted step rather than on `phase == delegating`
         // keeps the proof reported while an unrelated writer — a wallet-sync
@@ -560,6 +567,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
                   : _shareSubmissionDetail(state)),
           voteSubmissionProgress: voteSubmissionProgress,
           voteStepComplete: voteStepComplete,
+          ballotCountSettling: ballotCountSettling,
           delegationProgress: delegationProgress,
           delegationDetail: delegationDetail,
           completedSubmission: completedSubmission,
@@ -710,15 +718,32 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (_confirmationNavigationScheduledFor == key) return;
     _confirmationNavigationScheduledFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_canNavigateToConfirmation(key)) return;
-      if (_selectedJobKey() != key) {
-        if (_confirmationNavigationScheduledFor == key) {
-          _confirmationNavigationScheduledFor = null;
-        }
-        return;
-      }
-      _navigateToConfirmation(key);
+      _navigateWhenBallotCountSettles(key);
     });
+  }
+
+  /// Leaves for the confirmation screen once the delivered count has caught up.
+  ///
+  /// The job completes the moment the last share is accepted, and leaving then
+  /// is what made the delivered line flash: the count appeared and the route
+  /// changed under it before it had walked anywhere. The pacer settles within a
+  /// bounded number of frames and asks for each of them, so this retries per
+  /// frame rather than waiting on a duration of its own.
+  void _navigateWhenBallotCountSettles(VotingSessionKey key) {
+    if (!mounted || !_canNavigateToConfirmation(key)) return;
+    if (_selectedJobKey() != key) {
+      if (_confirmationNavigationScheduledFor == key) {
+        _confirmationNavigationScheduledFor = null;
+      }
+      return;
+    }
+    if (_ballotCountPacer.isCatchingUp) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigateWhenBallotCountSettles(key);
+      });
+      return;
+    }
+    _navigateToConfirmation(key);
   }
 
   void _navigateToConfirmation(VotingSessionKey key) {
@@ -835,6 +860,7 @@ class _StatusContent extends StatelessWidget {
     this.voteStepComplete,
     this.delegationProgress,
     this.delegationDetail,
+    this.ballotCountSettling = false,
     this.completedSubmission = false,
     this.submissionJobComplete = false,
     this.submissionJobInFlight = false,
@@ -869,6 +895,11 @@ class _StatusContent extends StatelessWidget {
   /// Null on the loading and error paths, which have no ratchet to read; the
   /// ring is the only signal there.
   final bool? voteStepComplete;
+
+  /// Whether the delivered count is still walking to the number the round
+  /// reported. While it is, the ballot row is not finished for display purposes
+  /// however finished the round itself is — see [voteStepComplete]'s caller.
+  final bool ballotCountSettling;
 
   final double? delegationProgress;
   final String? delegationDetail;
@@ -909,8 +940,9 @@ class _StatusContent extends StatelessWidget {
     }
     final terminalNotice = terminalDelegationNotice;
     final voteStepComplete =
-        completedSubmission ||
-        (this.voteStepComplete ?? (voteSubmissionProgress ?? 0) >= 1);
+        (completedSubmission ||
+            (this.voteStepComplete ?? (voteSubmissionProgress ?? 0) >= 1)) &&
+        !ballotCountSettling;
     final finalizingSubmission =
         submissionJobInFlight &&
         voteStepComplete &&
@@ -1586,10 +1618,22 @@ class _StepRow extends StatelessWidget {
                 ),
                 if (detail != null && detail!.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    detail!,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.secondary,
+                  // Keyed on the sentence with its numbers masked: the
+                  // delivered count replaces its own digits several times a
+                  // second, and crossfading those would smear the number.
+                  // Only a change of subject fades.
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeOutCubic,
+                    child: Text(
+                      detail!,
+                      key: ValueKey<String>(
+                        detail!.replaceAll(RegExp(r'\d+'), '#'),
+                      ),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
                     ),
                   ),
                 ],

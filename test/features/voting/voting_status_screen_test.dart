@@ -487,6 +487,123 @@ void main() {
     expect(frames, lessThan(16));
   });
 
+  testWidgets('the confirmation hand-off waits for the count to land', (
+    tester,
+  ) async {
+    // The submission job completes the moment the last share is accepted, which
+    // for a fast delivery is a frame or two after the count first appears.
+    // Leaving for the confirmation screen then is what made the line flash.
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    late _CompletableVotingSubmissionJobNotifier job;
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(() {
+          job = _CompletableVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          );
+          return job;
+        }),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(
+            _roundId,
+            accountUuid: 'account-1',
+          ),
+        ),
+      ),
+    );
+
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: true,
+    );
+    final voteProgress = <VotingVoteKey, VotingSessionProgress>{
+      for (var proposalId = 1; proposalId <= 37; proposalId++)
+        VotingVoteKey(
+          bundleIndex: 0,
+          proposalId: proposalId,
+        ): VotingSessionProgress(
+          phase: VotingProgressPhase.confirmed,
+          bundleIndex: 0,
+          proposalId: proposalId,
+          proofProgress: 1,
+        ),
+    };
+    VotingSessionState delivered(int count) {
+      return VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.castingVotes,
+        roundPlan: plan,
+        voteProgress: voteProgress,
+        voteSubmissionCompletedCount: count,
+        voteSubmissionTotalCount: 37,
+      );
+    }
+
+    int? shownCount() {
+      final lines = tester.widgetList<Text>(
+        find.textContaining('questions delivered'),
+      );
+      if (lines.isEmpty) return null;
+      return int.parse(
+        RegExp(r'for (\d+) of').firstMatch(lines.first.data!)!.group(1)!,
+      );
+    }
+
+    updates.add(delivered(0));
+    await tester.pump();
+    await tester.pump();
+    expect(shownCount(), 0);
+
+    // Everything lands, and the job finishes with it.
+    updates.add(delivered(37));
+    job.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('submission confirmed route'), findsNothing);
+    expect(shownCount(), allOf(greaterThan(0), lessThan(37)));
+
+    // The route changes only once the count has arrived, and the counts on the
+    // way there were shown rather than skipped.
+    final counts = <int>{};
+    var frames = 0;
+    while (find.text('submission confirmed route').evaluate().isEmpty &&
+        frames++ < 60) {
+      final count = shownCount();
+      if (count != null) counts.add(count);
+      await tester.pump(kVotingBallotCountPaceInterval);
+    }
+    expect(find.text('submission confirmed route'), findsOneWidget);
+    expect(counts, contains(37));
+    expect(counts.length, greaterThan(4));
+  });
+
   testWidgets('status screen requires software account without mnemonic', (
     tester,
   ) async {
