@@ -61,8 +61,11 @@ class CrossChainPaymentFlowNotifier
     ref.listen(appSecurityProvider, (previous, next) {
       if (previous?.isUnlocked == true && !next.isUnlocked) {
         final request = state?.request;
+        // Only global requests survive locking; local editor sessions expire.
         // A newer request parked during lock wins over the visible card.
-        if (request != null && ref.read(paymentUriPrefillProvider) == null) {
+        if (request != null &&
+            state?.inputOrigin == null &&
+            ref.read(paymentUriPrefillProvider) == null) {
           ref.read(paymentUriPrefillProvider.notifier).set(request);
         }
         clear();

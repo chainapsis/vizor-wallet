@@ -483,6 +483,81 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
 
   for (final newerParked in [false, true]) {
     testWidgets(
+      'locking discards a visible local request (newer: $newerParked)',
+      (tester) async {
+        final harness = await _pump(
+          tester,
+          isMobile: isMobile,
+          controlledSecurity: true,
+        );
+        harness.container
+            .read(paymentRequestInputOriginProvider.notifier)
+            .set(
+              'request-25-usdc',
+              PaymentRequestInputOrigin(
+                chain: 'base',
+                isCurrent: () => true,
+                useAddress: (_) =>
+                    fail('Expired editor must not receive an address'),
+              ),
+            );
+        harness.present();
+        await tester.pumpAndSettle();
+        harness.provider.initial.complete(_pricing([_btc, _usdc]));
+        await tester.pumpAndSettle();
+        expect(find.text('Keep editing'), findsOneWidget);
+        expect(
+          harness.container.read(crossChainPaymentFlowProvider)?.inputOrigin,
+          isNotNull,
+        );
+        const newer = CrossChainPaymentRequest(
+          id: 'newer',
+          rawUri: 'bitcoin:bc1newer?amount=0.1',
+          address: 'bc1newer',
+          isEvm: false,
+          chain: 'btc',
+        );
+        if (newerParked) {
+          harness.container.read(paymentUriPrefillProvider.notifier).set(newer);
+        }
+        final security =
+            harness.container.read(appSecurityProvider.notifier)
+                as _ControlledSecurityNotifier;
+        security.setUnlocked(false);
+        await tester.pumpAndSettle();
+        expect(find.text('Payment request'), findsNothing);
+        expect(harness.container.read(crossChainPaymentFlowProvider), isNull);
+        expect(
+          harness.container.read(paymentUriPrefillProvider),
+          newerParked ? same(newer) : isNull,
+        );
+        security.setUnlocked(true);
+        final claimed = harness.container
+            .read(paymentUriPrefillProvider.notifier)
+            .takeIfFresh();
+        if (claimed.prefill != null) {
+          harness.container
+              .read(crossChainPaymentFlowProvider.notifier)
+              .present(claimed.prefill! as CrossChainPaymentRequest);
+        }
+        await tester.pumpAndSettle();
+        expect(
+          harness.container.read(crossChainPaymentFlowProvider)?.request,
+          newerParked ? same(newer) : isNull,
+        );
+        expect(
+          find.text('Payment request'),
+          newerParked ? findsOneWidget : findsNothing,
+        );
+        expect(find.text('Keep editing'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await harness.dispose(tester);
+      },
+    );
+  }
+
+  for (final newerParked in [false, true]) {
+    testWidgets(
       'locking during a quote preserves ${newerParked ? 'the newer parked request' : 'the visible request'} for unlock',
       (tester) async {
         final harness = await _readyHarness(
