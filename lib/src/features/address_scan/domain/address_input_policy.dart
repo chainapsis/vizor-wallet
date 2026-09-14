@@ -194,6 +194,8 @@ Future<AddressInputResult> resolveAddressInput(
     // Simple address URI families without a supported payment protocol. Query
     // parameters are never discarded to turn an unknown request into an address.
     final addressChain = switch (scheme) {
+      // The legacy eth alias carries an address, not an explicit chain.
+      'eth' => policy.network.isEvm ? policy.network.id : 'eth',
       'near' => 'near',
       'dogecoin' => 'doge',
       'tron' => 'tron',

@@ -54,6 +54,68 @@ CrossChainPaymentRequest ethereum(
 );
 
 void main() {
+  for (final context in [
+    AddressInputContext.pay,
+    AddressInputContext.swapRecipient,
+    AddressInputContext.swapRefund,
+    AddressInputContext.contact,
+  ]) {
+    test(
+      '$context accepts the eth address alias on selected EVM chains',
+      () async {
+        for (final network in [
+          AddressBookNetwork.ethereum,
+          AddressBookNetwork.base,
+        ]) {
+          for (final scheme in ['eth', 'ETH']) {
+            final result = await resolve(
+              '$scheme:$evm',
+              context,
+              network: network,
+            );
+            expect(result.kind, AddressInputResultKind.address);
+            expect(result.address, evm);
+          }
+        }
+      },
+    );
+    test(
+      '$context does not discard terms or chain IDs from eth aliases',
+      () async {
+        for (final input in [
+          'eth:$evm?value=1',
+          'eth:$evm@11155111',
+          'eth:$evm@8453',
+          'eth:$contract/transfer?address=$evm&uint256=1',
+          'eth:$evm#memo',
+          'eth://$evm',
+          'eth:invalid',
+        ]) {
+          expect(
+            (await resolve(
+              input,
+              context,
+              network: AddressBookNetwork.ethereum,
+            )).kind,
+            AddressInputResultKind.rejected,
+            reason: input,
+          );
+        }
+      },
+    );
+  }
+  test(
+    'eth aliases remain unavailable in Send and non-EVM address fields',
+    () async {
+      for (final context in AddressInputContext.values) {
+        expect(
+          (await resolve('eth:$evm', context)).kind,
+          AddressInputResultKind.rejected,
+        );
+      }
+    },
+  );
+
   test('Send rejects another chain before invoking either parser', () async {
     final result = await resolveAddressInput(
       'ethereum:$evm',
