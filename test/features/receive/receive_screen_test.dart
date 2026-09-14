@@ -1025,7 +1025,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey('request_amount_field')),
-      '0.5',
+      ',5',
     );
     await tester.pump();
 

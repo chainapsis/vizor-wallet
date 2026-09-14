@@ -15,6 +15,8 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -106,15 +108,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return 'Wait $minutes:$seconds to claim';
   }
 
-  static final _amountFormatter = TextInputFormatter.withFunction((
-    oldValue,
-    newValue,
-  ) {
-    final isNumericAmount = RegExp(
-      r'^(?:\d+(?:\.\d{0,8})?|\.\d{0,8})?$',
-    ).hasMatch(newValue.text);
-    return isNumericAmount ? newValue : oldValue;
-  });
+  static const _amountFormatters = [
+    CommaToDotInputFormatter(),
+    DecimalAmountInputFormatter(maxFractionDigits: 8),
+  ];
 
   final TextEditingController _amountController = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
@@ -2126,7 +2123,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         selectedArtwork: _selectedArtwork,
         amountController: _amountController,
         amountFocusNode: _amountFocusNode,
-        amountInputFormatters: [_amountFormatter],
+        amountInputFormatters: _amountFormatters,
         amountFiatText: amountFiatSupportingText,
         amountFiatLoading: amountFiatLoading,
         maxAmountText: _maxAmountText,
@@ -2664,7 +2661,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         amountController: _amountController,
         amountFocusNode: _amountFocusNode,
         amountEditorKey: const ValueKey('payment_link_amount_editor'),
-        amountInputFormatters: [_amountFormatter],
+        amountInputFormatters: _amountFormatters,
         onAmountChanged: _handleAmountChanged,
         supportingText: fiatText,
         supportingLoading: fiatLoading,

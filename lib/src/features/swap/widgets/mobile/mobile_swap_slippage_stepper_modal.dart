@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart' show InputDecoration, TextField;
-import 'package:flutter/services.dart'
-    show FilteringTextInputFormatter, TextEditingValue, TextInputFormatter;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
 /// 60px Young Serif value flanked by 60×50 minus/plus pills (0.1% steps within
@@ -158,16 +157,14 @@ class _MobileSwapSlippageStepperModalState
                                         decimal: true,
                                       ),
                                   inputFormatters: [
-                                    // The decimal-pad key follows the device
-                                    // locale; normalise a comma to the period
-                                    // the filter keeps.
+                                    // Normalize the locale separator before
+                                    // the shared decimal validator.
                                     const CommaToDotInputFormatter(),
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9.]'),
-                                    ),
                                     // Cap at two decimal places (1.55 ok,
                                     // 1.555 rejected).
-                                    const _TwoDecimalInputFormatter(),
+                                    const DecimalAmountInputFormatter(
+                                      maxFractionDigits: 2,
+                                    ),
                                   ],
                                   // Figma: 60px Young Serif Medium value.
                                   style: AppTypography.displayLarge.copyWith(
@@ -302,24 +299,5 @@ class _StepperButton extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Rejects any candidate with more than two decimal places (1.55 ok,
-/// 1.555 rejected) by restoring [oldValue] — the same rejection behavior as
-/// the composer amount fields, pinned to two fraction digits for slippage.
-class _TwoDecimalInputFormatter extends TextInputFormatter {
-  const _TwoDecimalInputFormatter();
-
-  static final _pattern = RegExp(r'^\d*(\.\d{0,2})?$');
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text;
-    if (text.isEmpty) return newValue;
-    return _pattern.hasMatch(text) ? newValue : oldValue;
   }
 }
