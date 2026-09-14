@@ -6,6 +6,9 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:widgetbook/widgetbook.dart';
+// The addon API does not expose the workbench key; see _PrimaryUseCase.
+// ignore: implementation_imports
+import 'package:widgetbook/src/workbench/use_case_builder.dart';
 
 import '../../src/core/theme/app_theme.dart';
 import 'wb_layout.dart';
@@ -75,11 +78,47 @@ class WbCompareLayoutsAddon extends WidgetbookAddon<bool> {
 
   @override
   Widget buildUseCase(BuildContext context, Widget child, bool setting) {
-    if (!setting) return child;
     // `maybeOf` so the addon can also be exercised outside a Widgetbook root.
     final state = WidgetbookState.maybeOf(context);
     if (state == null) return child;
-    return WbCompareLayoutsPanes(state: state, primary: child);
+    return WbCompareLayoutsPanes(
+      state: state,
+      enabled: setting,
+      primary: state.useCase == null ? child : const _PrimaryUseCase(),
+    );
+  }
+}
+
+// Widgetbook 3.22 keys its workbench by the entire URL, including addon
+// toggles. Preserve that lifecycle for real fixture changes, but not for
+// presentation-only compare/design controls. Both panes use the same rule.
+Uri _fixtureUri(WidgetbookState state) {
+  final params = Map<String, String>.from(state.uri.queryParameters)
+    ..remove('compare-layouts')
+    ..remove('design-status');
+  return state.uri.replace(queryParameters: params);
+}
+
+class _PrimaryUseCase extends StatelessWidget {
+  const _PrimaryUseCase();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = WidgetbookState.of(context);
+    return Stack(
+      children: [
+        // The public addon API cannot change the workbench's URI key. Reuse its
+        // builder here to retain knob clear/lock and integration notifications
+        // rather than duplicating that lifecycle. Guarded by real Widgetbook
+        // toggle/knob tests in wb_addon_state_test.dart.
+        // ignore: invalid_use_of_internal_member
+        UseCaseBuilder(
+          key: ValueKey(_fixtureUri(state)),
+          builder: (context) =>
+              WidgetbookState.of(context).useCase!.build(context),
+        ),
+      ],
+    );
   }
 }
 
@@ -96,6 +135,7 @@ class WbCompareLayoutsPanes extends StatefulWidget {
   const WbCompareLayoutsPanes({
     required this.state,
     required this.primary,
+    this.enabled = true,
     super.key,
   });
 
@@ -104,6 +144,8 @@ class WbCompareLayoutsPanes extends StatefulWidget {
 
   /// The use case as the outer addons handed it over.
   final Widget primary;
+
+  final bool enabled;
 
   @override
   State<WbCompareLayoutsPanes> createState() => _WbCompareLayoutsPanesState();
@@ -249,7 +291,7 @@ class _WbCompareLayoutsPanesState extends State<WbCompareLayoutsPanes> {
     final hasLayoutKnob =
         _sawLayoutKnob ?? knobGroup.containsKey(kWbLayoutKnobLabel);
     final useCase = state.useCase;
-    if (!hasLayoutKnob || useCase == null) return primary;
+    if (!widget.enabled || !hasLayoutKnob || useCase == null) return primary;
 
     final primaryLayout = wbCompareLayoutOf(knobGroup);
     final secondaryLayout = wbOtherLayout(primaryLayout);
@@ -258,7 +300,10 @@ class _WbCompareLayoutsPanesState extends State<WbCompareLayoutsPanes> {
       state: derived,
       // Like Workbench's URI-keyed primary, re-seed stateful fixtures when
       // knobs change. Caption-only rebuilds keep the same mounted subtree.
-      child: Builder(key: ValueKey(derived.uri), builder: useCase.builder),
+      child: Builder(
+        key: ValueKey(_fixtureUri(derived)),
+        builder: useCase.builder,
+      ),
     );
 
     final primaryPane = _pane(context, primaryLayout, primary);

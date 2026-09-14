@@ -9,7 +9,6 @@ import 'package:widgetbook/widgetbook.dart';
 
 import '../../src/core/theme/app_theme.dart';
 import '../../src/core/widgets/app_tooltip.dart';
-import '../widgetbook_app.dart';
 
 /// Sentinel `designLink` value marking a surface that deliberately has no
 /// Figma frame. Optionally carries `?note=<urlencoded>` with the reason.
@@ -63,38 +62,6 @@ String wbDesignStatusLabel(WbDesignStatus status) => switch (status) {
   WbDesignStatus.unmarked => 'Unmarked',
 };
 
-/// One-line design-coverage counter for `Widgetbook.header`.
-///
-/// Rendered in Widgetbook's own navigation chrome, outside `AppTheme`, so it
-/// only uses context-free typography and inherits its color.
-Widget wbDesignStatusHeader(List<WidgetbookNode> roots) {
-  var linked = 0;
-  var noFigma = 0;
-  var unmarked = 0;
-  for (final useCase in widgetbookUseCases(roots)) {
-    switch (wbDesignStatusOf(useCase.designLink)) {
-      case WbDesignStatus.linked:
-        linked++;
-      case WbDesignStatus.noFigma:
-        noFigma++;
-      case WbDesignStatus.unmarked:
-        unmarked++;
-    }
-  }
-
-  return Padding(
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.s,
-      vertical: AppSpacing.xs,
-    ),
-    child: Text(
-      'Figma $linked · No Figma $noFigma · Unmarked $unmarked',
-      key: const ValueKey('wb_design_status_header'),
-      style: AppTypography.labelSmall,
-    ),
-  );
-}
-
 /// Overlays every use case with its design-status chip.
 ///
 /// Registered after `ThemeAddon` so the chip can read `AppTheme` tokens.
@@ -115,19 +82,23 @@ class WbDesignStatusAddon extends WidgetbookAddon<bool> {
 
   @override
   Widget buildUseCase(BuildContext context, Widget child, bool setting) {
-    if (!setting) return child;
     // `maybeOf` so the addon can also be exercised outside a Widgetbook root.
     final designLink = WidgetbookState.maybeOf(context)?.useCase?.designLink;
-    return WbDesignStatusOverlay(designLink: designLink, child: child);
+    return WbDesignStatusOverlay(
+      enabled: setting,
+      designLink: designLink,
+      child: child,
+    );
   }
 }
 
 /// Stacks [WbDesignStatusChip] over [child] in the top-right corner.
-class WbDesignStatusOverlay extends StatelessWidget {
+class WbDesignStatusOverlay extends StatefulWidget {
   /// Creates the overlay.
   const WbDesignStatusOverlay({
     required this.child,
     this.designLink,
+    this.enabled = true,
     super.key,
   });
 
@@ -137,11 +108,24 @@ class WbDesignStatusOverlay extends StatelessWidget {
   /// The use case being annotated.
   final Widget child;
 
+  final bool enabled;
+
+  @override
+  State<WbDesignStatusOverlay> createState() => _WbDesignStatusOverlayState();
+}
+
+class _WbDesignStatusOverlayState extends State<WbDesignStatusOverlay> {
+  final _childKey = GlobalKey();
+
   @override
   Widget build(BuildContext context) {
     // Unmarked is every use case until Phase 5 links them, so it gets no chip
     // at all rather than a badge over each surface's top-right corner.
-    if (wbDesignStatusOf(designLink) == WbDesignStatus.unmarked) return child;
+    final child = KeyedSubtree(key: _childKey, child: widget.child);
+    if (!widget.enabled ||
+        wbDesignStatusOf(widget.designLink) == WbDesignStatus.unmarked) {
+      return child;
+    }
 
     // `Positioned` sizes the overlay to the chip alone, so hit-testing
     // anywhere else on the canvas still reaches the use case underneath.
@@ -151,7 +135,7 @@ class WbDesignStatusOverlay extends StatelessWidget {
         Positioned(
           top: AppSpacing.s,
           right: AppSpacing.s,
-          child: WbDesignStatusChip(designLink: designLink),
+          child: WbDesignStatusChip(designLink: widget.designLink),
         ),
       ],
     );

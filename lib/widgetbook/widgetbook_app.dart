@@ -15,8 +15,7 @@ import 'gallery/scanner_gallery.dart';
 import 'support/wb_compare_layouts.dart';
 import 'support/wb_design_status.dart';
 
-/// The Widgetbook navigation tree, shared by the app, the design-status
-/// header counter, and the handoff generator.
+/// The Widgetbook navigation tree, shared by the app and gallery tests.
 ///
 /// Every leaf lives in a `gallery/<feature>_gallery.dart` list; this file only
 /// names the folders. `homeActivityGalleryNodes` and

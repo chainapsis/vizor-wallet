@@ -196,44 +196,6 @@ void main() {
       expect(find.byKey(const ValueKey('wb_design_status_chip')), findsNothing);
     });
   });
-
-  group('wbDesignStatusHeader', () {
-    testWidgets('counts each status', (tester) async {
-      final roots = <WidgetbookNode>[
-        WidgetbookFolder(
-          name: 'Screens',
-          children: [
-            WidgetbookComponent(
-              name: 'Home',
-              useCases: [
-                WidgetbookUseCase(
-                  name: 'Linked',
-                  designLink: _figmaUrl,
-                  builder: (_) => const SizedBox.shrink(),
-                ),
-                WidgetbookUseCase(
-                  name: 'None',
-                  designLink: kWbNoFigma,
-                  builder: (_) => const SizedBox.shrink(),
-                ),
-                WidgetbookUseCase(
-                  name: 'Todo',
-                  builder: (_) => const SizedBox.shrink(),
-                ),
-                WidgetbookUseCase(
-                  name: 'Todo 2',
-                  builder: (_) => const SizedBox.shrink(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ];
-
-      await pumpUseCase(tester, (_) => wbDesignStatusHeader(roots));
-      expect(find.text('Figma 1 · No Figma 1 · Unmarked 2'), findsOneWidget);
-    });
-  });
 }
 
 Future<void> _pumpAddon(
