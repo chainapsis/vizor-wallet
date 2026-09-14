@@ -1602,7 +1602,9 @@ class _SendPreviewAccountNotifier extends AccountNotifier {
   @override
   Future<void> switchAccount(String uuid) async {
     final prev = state.value ?? initialState;
-    state = AsyncData(prev.copyWith(activeAccountUuid: uuid));
+    final address = await const _SendPreviewReceiveAddressService()
+        .loadShieldedAddress(accountUuid: uuid);
+    state = AsyncData(prev.copyWith(activeAccountUuid: uuid, activeAddress: address));
   }
 }
 
@@ -1649,7 +1651,11 @@ class _SendPreviewSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {}
 
   @override
-  Future<void> refreshAfterAccountSwitch() async {}
+  Future<void> refreshAfterAccountSwitch() async {
+    state = AsyncData(initialState.copyWith(
+      accountUuid: ref.read(accountProvider).requireValue.activeAccountUuid,
+    ));
+  }
 
   @override
   Future<void> refreshAfterProposalRelease(String accountUuid) async {}

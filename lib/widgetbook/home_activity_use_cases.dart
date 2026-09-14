@@ -406,6 +406,13 @@ NetworkPrivacyState _networkPrivacyState(HomeNetworkRoute network) {
 const _homeAccountUuid = 'home-gallery-account';
 const _homeKeystoneUuid = 'home-gallery-keystone-account';
 
+String _homeShieldedAddress(String uuid) => switch (uuid) {
+  _homeAccountUuid => 'u1widgetbookhomeaddress',
+  'home-gallery-account-2' => 'u1widgetbookhomeaddress2',
+  _homeKeystoneUuid => 'u1widgetbookkeystoneaddress',
+  _ => throw StateError('Unknown Home fixture account: $uuid'),
+};
+
 AccountState _homeAccountState(HomeAccountKind kind, {bool named = true}) {
   if (kind == HomeAccountKind.keystone) {
     return const AccountState(
@@ -908,7 +915,10 @@ class _HomeAccountNotifier extends AccountNotifier {
   @override
   Future<void> switchAccount(String uuid) async {
     final prev = state.value ?? initialState;
-    state = AsyncData(prev.copyWith(activeAccountUuid: uuid));
+    state = AsyncData(prev.copyWith(
+      activeAccountUuid: uuid,
+      activeAddress: _homeShieldedAddress(uuid),
+    ));
   }
 }
 
@@ -932,7 +942,12 @@ class _HomeSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {}
 
   @override
-  Future<void> refreshAfterAccountSwitch() async {}
+  Future<void> refreshAfterAccountSwitch() async {
+    // Reuse the selected fixture's synthetic balance/feed for the new account.
+    state = AsyncData(initialState.copyWith(
+      accountUuid: ref.read(accountProvider).requireValue.activeAccountUuid,
+    ));
+  }
 
   @override
   Future<WalletMutationSyncPause> pauseForWalletMutation({
@@ -1050,9 +1065,7 @@ class _HomeReceiveAddressService implements ReceiveAddressService {
     required String accountUuid,
     String? currentShieldedAddress,
   }) async {
-    return currentShieldedAddress?.isNotEmpty == true
-        ? currentShieldedAddress!
-        : 'u1widgetbookhomeaddress';
+    return _homeShieldedAddress(accountUuid);
   }
 
   @override

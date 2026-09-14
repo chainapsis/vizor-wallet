@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_sidebar.dart';
@@ -83,6 +86,95 @@ void main() {
     'Transaction detail': buildActivityTransactionStatusGalleryCase,
     'Swap detail': buildActivitySwapDetailScreenGalleryCase,
   };
+  for (final layout in WbLayout.values) {
+    testWidgets('${layout.name} Home switch updates address and scoped sync', (
+      tester,
+    ) async {
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await pumpUseCase(
+        tester,
+        buildHomeScreenGalleryCase,
+        knobs: {'Layout': wbLayoutLabel(layout)},
+      );
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final container = ProviderScope.containerOf(
+        tester.element(
+          find.byType(
+            layout == WbLayout.mobile ? MobileHomeScreen : HomeScreen,
+          ),
+        ),
+        listen: false,
+      );
+      final original = container.read(accountProvider).requireValue;
+      final first = original.activeAccountUuid!;
+      final second = original.accounts.firstWhere((a) => a.uuid != first).uuid;
+      Future<void> openMenu() async {
+        await tester.tap(
+          layout == WbLayout.mobile
+              ? find.text('Account Name').first
+              : find.byKey(const ValueKey('sidebar_accounts_button')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      Finder row(String uuid) => find.byKey(
+        ValueKey(
+          layout == WbLayout.mobile
+              ? 'account_row_$uuid'
+              : 'sidebar_account_popover_row_$uuid',
+        ),
+      );
+      final copyButton = find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == 'Copy shielded address',
+      );
+      await openMenu();
+      await tester.tap(row(second));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        container.read(accountProvider).requireValue.activeAddress,
+        'u1widgetbookhomeaddress2',
+      );
+      expect(container.read(syncProvider).requireValue.accountUuid, second);
+      if (layout == WbLayout.desktop) {
+        await tester.tap(copyButton);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(copied.last, 'u1widgetbookhomeaddress2');
+      }
+      await openMenu();
+      await tester.tap(find.descendant(of: row(first), matching: copyButton));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(copied.last, original.activeAddress);
+      await tester.tap(row(first));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        container.read(accountProvider).requireValue.activeAddress,
+        original.activeAddress,
+      );
+      expect(container.read(syncProvider).requireValue.accountUuid, first);
+      expect(tester.takeException(), isNull);
+      await disposeTree(tester);
+    });
+  }
   for (final surface in surfaces.entries) {
     if (const [
       'Home',
@@ -150,7 +242,7 @@ void main() {
                   ? (account.name == 'Savings'
                         ? kSendScreenFixtureOwnAccountAddress
                         : kSendScreenFixtureAddress)
-                  : 'u1widgetbookhomeaddress',
+                  : 'u1widgetbookhomeaddress2',
             );
           }
           expect(find.text('Shielded address copied'), findsOneWidget);
@@ -163,6 +255,29 @@ void main() {
           expect(copied.last, before.value!.activeAddress);
           expect(copied.length, before.value!.accounts.length);
           expect(container.read(accountProvider), same(before));
+          if (surface.key == 'Send') {
+            final savings = before.value!.accounts.firstWhere(
+              (a) => a.name == 'Savings',
+            );
+            await tester.tap(
+              find.byKey(const ValueKey('sidebar_accounts_button')),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+            await tester.tap(
+              find.byKey(
+                ValueKey('sidebar_account_popover_row_${savings.uuid}'),
+              ),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+            expect(
+              container.read(accountProvider).requireValue.activeAddress,
+              kSendScreenFixtureOwnAccountAddress,
+            );
+            expect(
+              container.read(syncProvider).requireValue.accountUuid,
+              savings.uuid,
+            );
+          }
           expect(tester.takeException(), isNull);
           await disposeTree(tester);
         },
