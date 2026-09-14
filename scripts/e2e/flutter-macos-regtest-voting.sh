@@ -11,22 +11,14 @@ VOTE_HOME="$STATE_DIR/vote-home"
 SHIM_DIR="$STATE_DIR/shims"
 
 VOTE_SDK_URL="https://github.com/valargroup/vote-sdk.git"
-# Must build a verifier whose circuit matches the one the wallet proves against.
-# A verifier built from a different circuit rejects every delegation with
-# "verify_proof failed: ConstraintSystemFailure": 6a10c073 (v1.4.0) pinned
-# voting-circuits 0.10.0, and ec173b3b — which this runner used to pin — is only
-# 0.10.3, so it failed every delegation.
-#
-# This rev pins voting-circuits 0.12.0-rc.1 / vote-commitment-tree 0.6.0; the
-# wallet resolves 0.12.0-rc.2 / 0.6.1. Those agree on the circuit: rc.2's
-# `src` is byte-identical to rc.1's — it only moves the coordinated Zakura
-# crypto package family from 1.0.0 to 1.2.0 — and rc.1 is the release that
-# carried the breaking verification-key change (50 proposal ids). No vote-sdk
-# revision pins rc.2 yet, so this is the closest verifier available.
-#
-# When the wallet's circuit crates move again, check voting-circuits' CHANGELOG
-# for a verification-key change before assuming this pin still matches.
-VOTE_SDK_REV="990fb1c3fbdbda9f4f459a5259551580c157c5dd"
+# vote-sdk v1.6.0 includes delegate-and-cast-vote-batch, required by the
+# wallet's zcash_voting 5.0.0. The previous 990fb1c3 pin lacked this route
+# and returned HTTP 404 for combined delegation and vote submissions.
+# Its voting-circuits 0.12.0 verifier is compatible with the wallet's 0.12.1:
+# 0.12.1 adds prepared proving without changing proofs or verifying keys.
+# Both resolve vote-commitment-tree 0.6.1 and voting-crypto-deps 0.2.3.
+# When updating either side, check both API and circuit compatibility.
+VOTE_SDK_REV="36f5d828fc5be42d9a80baa38d1145c5541b229e"
 PIR_URL="https://github.com/valargroup/vote-nullifier-pir.git"
 PIR_REV="20356d14f61a825ef28726f38270c37d604cc268"
 VOTE_SDK_DIR="$DEPS_DIR/vote-sdk-$VOTE_SDK_REV"
