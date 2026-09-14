@@ -734,7 +734,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                           color: context.colors.text.secondary,
                         ),
                       ),
-                    ] else
+                    ] else ...[
                       Text(
                         'Share this link with the intended recipient so they\n'
                         'can claim the Card using their Vizor app.',
@@ -743,6 +743,15 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                           color: context.colors.text.secondary,
                         ),
                       ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'You can copy this link again from Settings → My gift cards.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.secondary,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.lg),
                     if (waiting)
                       PaymentLinkDashedStatusPill(label: waitingStatusLabel)

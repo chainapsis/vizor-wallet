@@ -306,7 +306,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _amountController.clear();
     _messageController.clear();
     setState(() {
-      _selectedArtwork = PaymentLinkCardArtwork.gift;
+      _selectedArtwork = kAppFormFactor == AppFormFactor.desktop
+          ? PaymentLinkCardArtwork.values[Random().nextInt(
+              PaymentLinkCardArtwork.values.length,
+            )]
+          : PaymentLinkCardArtwork.gift;
       _maxFundingQuote = null;
       _maxFundingQuoteInProgress = false;
       _fundingQuote = null;

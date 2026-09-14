@@ -506,6 +506,12 @@ void main() {
       final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
       final max = find.byKey(const ValueKey('payment_link_max_button'));
       expect(find.textContaining('Use max:'), findsOneWidget);
+      expect(
+        tester
+            .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+            .artwork,
+        PaymentLinkCardArtwork.gift,
+      );
 
       for (final amount in ['0', '2']) {
         await tester.enterText(editor, amount);
