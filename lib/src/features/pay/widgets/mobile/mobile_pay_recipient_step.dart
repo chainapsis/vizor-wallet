@@ -40,6 +40,9 @@ class MobilePayRecipientStep extends StatefulWidget {
     required this.onSelectRecipient,
     required this.onAddToContacts,
     this.onReviewPaymentRequest,
+    this.onPaste,
+    this.pasteContext,
+    this.readPasteContext,
     super.key,
   });
 
@@ -59,6 +62,9 @@ class MobilePayRecipientStep extends StatefulWidget {
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
   final VoidCallback? onReviewPaymentRequest;
+  final Future<void> Function(String)? onPaste;
+  final Object? pasteContext;
+  final Object? Function()? readPasteContext;
 
   @override
   State<MobilePayRecipientStep> createState() => _MobilePayRecipientStepState();
@@ -331,6 +337,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           MobileTextField(
+            onPaste: widget.onPaste,
+            pasteContext: widget.pasteContext,
+            readPasteContext: widget.readPasteContext,
             key: const ValueKey('mobile_pay_recipient_field'),
             fieldKey: const ValueKey('mobile_pay_recipient_input'),
             controller: widget.controller,

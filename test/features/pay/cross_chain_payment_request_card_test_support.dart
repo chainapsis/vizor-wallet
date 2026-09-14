@@ -47,6 +47,8 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     VoidCallback? onCancel,
     VoidCallback? onRetry,
     VoidCallback? onEdit,
+    VoidCallback? onKeepEditing,
+    bool keepEditingAvailable = true,
     ValueChanged<String>? onNetworkSelected,
     String? selectedChain,
     String? availabilityMessage,
@@ -88,6 +90,8 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
                       onCancel: onCancel ?? () {},
                       onRetry: onRetry ?? () {},
                       onEdit: onEdit ?? () {},
+                      onKeepEditing: onKeepEditing,
+                      keepEditingAvailable: keepEditingAvailable,
                       onNetworkSelected: onNetworkSelected ?? (_) {},
                       selectedChain: selectedChain,
                       availabilityMessage: availabilityMessage,
@@ -182,6 +186,61 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     expect(continued, isTrue);
   });
 
+  testWidgets('Keep editing uses only the address even without an amount', (
+    tester,
+  ) async {
+    var keptEditing = 0;
+    var edited = 0;
+    await pump(
+      tester,
+      request: _request(includeAmount: false),
+      resolution: PaymentRequestResolution(asset: _baseUsdc),
+      onKeepEditing: () => keptEditing++,
+      onEdit: () => edited++,
+    );
+    expect(find.text('Keep editing'), findsOneWidget);
+    expect(find.text('Edit'), findsNothing);
+    expect(find.text('Enter amount'), findsOneWidget);
+    await tester.tap(find.byKey(_editKey));
+    expect(keptEditing, 1);
+    expect(edited, 0);
+    await _capture(tester, isMobile: isMobile, state: 'keep-editing-no-amount');
+  });
+
+  testWidgets('Keep editing does not depend on the asset catalogue', (
+    tester,
+  ) async {
+    var keptEditing = 0;
+    const assetError = 'This payment asset is not available in Vizor.';
+    for (final loading in [true, false]) {
+      await pump(
+        tester,
+        isLoading: loading,
+        resolution: const PaymentRequestResolution(message: assetError),
+        onKeepEditing: () => keptEditing++,
+      );
+      expect(find.text(assetError), loading ? findsNothing : findsOneWidget);
+      expect(_primary(tester).onPressed, isNull);
+      await tester.tap(find.byKey(_editKey));
+    }
+    expect(keptEditing, 2);
+  });
+
+  testWidgets('Keep editing is disabled for chain mismatch or preparing', (
+    tester,
+  ) async {
+    for (final preparing in [false, true]) {
+      await pump(
+        tester,
+        keepEditingAvailable: preparing,
+        isPreparingReview: preparing,
+        onKeepEditing: () => fail('Must not apply an unavailable address'),
+      );
+      expect(find.text('Keep editing'), findsOneWidget);
+      expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
+    }
+  });
+
   testWidgets(
     'missing prices hide the estimate and tiny costs never show zero',
     (tester) async {
@@ -209,6 +268,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
       onNetworkSelected: (chain) => selected = chain,
     );
     expect(find.text('Select network'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Selected by you'), findsNothing);
     expect(find.text('Network not specified'), findsOneWidget);
     expect(find.textContaining('25000000'), findsNothing);
@@ -351,7 +414,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
         unsupportedReason: reason,
       ),
       resolution: const PaymentRequestResolution(message: reason),
+      onKeepEditing: () =>
+          fail('Unsupported requests must not become addresses'),
     );
+    expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
     expect(find.text(reason), findsOneWidget);
     expect(find.text('Solana'), findsOneWidget);
     expect(find.text(uri), findsNothing);
@@ -413,7 +479,11 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
   ) async {
     await pump(tester, isLoading: true);
     expect(find.text('25'), findsOneWidget);
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking payment options…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Checking…'), findsOneWidget);
     expect(
       tester
@@ -440,6 +510,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     );
     expect(find.text('25'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+    expect(
+      find.text('Could not load payment assets. Try again.'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(_continueKey));
     expect(retried, 1);
     expect(continued, 0);
@@ -456,7 +530,11 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
       isPreparingReview: true,
       onCancel: () => cancelled = true,
     );
-    expect(find.text('Preparing payment review…'), findsOneWidget);
+    expect(find.text('Preparing payment review…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Preparing…'), findsOneWidget);
     expect(_primary(tester).onPressed, isNull);
     expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);

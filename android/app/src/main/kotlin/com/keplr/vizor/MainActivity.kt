@@ -391,28 +391,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun isSecretFreeIncomingUri(uri: String): Boolean {
         val data = runCatching { Uri.parse(uri) }.getOrNull() ?: return false
         val scheme = data.scheme?.lowercase() ?: return false
-        if (scheme == "zcash") return true
-        if (data.encodedFragment != null) return false
-        val allowedParameters = when (scheme) {
-            "bitcoin", "litecoin" -> setOf("amount", "label", "message")
-            "ethereum" -> setOf("value", "address", "uint256", "gas", "gasLimit", "gasPrice")
-            "solana" -> setOf("amount", "spl-token", "reference", "label", "message", "memo")
-            else -> return false
-        }
-        val payload = data.encodedSchemeSpecificPart ?: return false
-        val target = payload.substringBefore('?')
-        val transferTarget = when (scheme) {
-            "ethereum" -> Regex("(?:pay-)?0x[0-9a-fA-F]{40}(?:@[0-9]+)?(?:/transfer)?")
-            "solana" -> Regex("[1-9A-HJ-NP-Za-km-z]{32,44}")
-            else -> Regex("[a-zA-Z0-9]+")
-        }
-        if (!transferTarget.matches(target)) return false
-        // Android treats scheme:address as opaque, so queryParameterNames is
-        // unavailable. Decode only the keys, leaving the original URI intact.
-        val query = payload.substringAfter('?', "")
-        return query.isEmpty() || query.split('&').all {
-            Uri.decode(it.substringBefore('=')) in allowedParameters
-        }
+        return scheme == "zcash"
     }
 
     private fun incomingUriDigest(uri: String): String {
@@ -431,7 +410,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private val PAYMENT_REQUEST_SCHEMES =
-            setOf("zcash", "bitcoin", "litecoin", "ethereum", "solana")
+            setOf("zcash")
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"

@@ -14,9 +14,18 @@ import '../../../services/qr_scanner.dart' show QrScanner;
 /// Result of resolving a scanned QR payload — either an accepted address
 /// string or a rejection message to surface under the viewfinder.
 class MobileScanOutcome {
-  const MobileScanOutcome.accepted(this.address) : error = null;
-  const MobileScanOutcome.rejected(this.error) : address = null;
+  const MobileScanOutcome.accepted(this.address)
+    : error = null,
+      isIgnored = false;
+  const MobileScanOutcome.rejected(this.error)
+    : address = null,
+      isIgnored = false;
+  const MobileScanOutcome.ignored()
+    : address = null,
+      error = null,
+      isIgnored = true;
 
+  final bool isIgnored;
   final String? address;
   final String? error;
 
@@ -24,8 +33,8 @@ class MobileScanOutcome {
 }
 
 /// Resolves a raw scanned payload into a [MobileScanOutcome]. Callers
-/// own the validation semantics — the send flow checks the string is a
-/// Zcash address, the swap flow accepts any destination address.
+/// own the input policy: Send accepts Zcash and Swap accepts an address
+/// on the selected external network, without payment terms.
 typedef MobileScanResolver = Future<MobileScanOutcome> Function(String raw);
 
 /// Full-bleed mobile QR scanner — Figma `Mobile Scanner` (4484:58700 /
@@ -43,6 +52,7 @@ class MobileAddressScanView extends StatefulWidget {
     required this.resolve,
     required this.onScanned,
     required this.onClose,
+    this.validationContext,
     this.caption = 'Scan a Zcash QR code to continue',
     this.steadyHint = 'Keep the QR code steady and fully visible.',
     super.key,
@@ -50,6 +60,9 @@ class MobileAddressScanView extends StatefulWidget {
 
   /// Validates a scanned payload; see [MobileScanResolver].
   final MobileScanResolver resolve;
+
+  /// Snapshot of account/network/asset/draft identity used for validation.
+  final Object? validationContext;
 
   /// Called with the accepted address once [resolve] succeeds.
   final ValueChanged<String> onScanned;
@@ -76,6 +89,9 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
     detectionSpeed: QrScanner.detectionSpeed,
   );
   bool _validating = false;
+  bool _closed = false;
+  int _validationSession = 0;
+  Animation<double>? _routeAnimation;
   bool _restartCameraOnResume = false;
   String? _error;
 
@@ -83,6 +99,55 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _invalidateValidation() {
+    _validationSession++;
+    _validating = false;
+    _error = null;
+  }
+
+  void _routeStatusChanged(AnimationStatus status) {
+    if (mounted &&
+        (status == AnimationStatus.reverse ||
+            status == AnimationStatus.dismissed)) {
+      setState(_invalidateValidation);
+    }
+  }
+
+  bool _isCurrent(int session) {
+    if (!mounted || _closed || session != _validationSession) return false;
+    final route = ModalRoute.of(context);
+    final status = route?.animation?.status;
+    return (route?.isCurrent ?? true) &&
+        status != AnimationStatus.reverse &&
+        status != AnimationStatus.dismissed;
+  }
+
+  void _close() {
+    _closed = true;
+    _invalidateValidation();
+    widget.onClose();
+  }
+
+  @override
+  void didUpdateWidget(covariant MobileAddressScanView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.validationContext != widget.validationContext) {
+      _invalidateValidation();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _invalidateValidation();
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation != _routeAnimation) {
+      _routeAnimation?.removeStatusListener(_routeStatusChanged);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_routeStatusChanged);
+    }
   }
 
   @override
@@ -95,13 +160,15 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
 
   @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_routeStatusChanged);
+    _invalidateValidation();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_controller.dispose());
     super.dispose();
   }
 
   Future<void> _handleDetect(BarcodeCapture capture) async {
-    if (_validating || !mounted) return;
+    if (_validating || !_isCurrent(_validationSession)) return;
     final raw = capture.barcodes.isEmpty
         ? null
         : capture.barcodes.first.rawValue;
@@ -111,19 +178,20 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
       _validating = true;
       _error = null;
     });
+    final session = ++_validationSession;
     try {
       final outcome = await widget.resolve(raw);
-      if (!mounted) return;
+      if (!_isCurrent(session)) return;
       if (outcome.isAccepted) {
         widget.onScanned(outcome.address!);
         return;
       }
       setState(() {
         _validating = false;
-        _error = outcome.error ?? widget.steadyHint;
+        _error = outcome.isIgnored ? null : outcome.error ?? widget.steadyHint;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_isCurrent(session)) return;
       setState(() {
         _validating = false;
         _error = widget.steadyHint;
@@ -251,7 +319,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: widget.onClose,
+                          onTap: _close,
                           child: const SizedBox(
                             width: 44,
                             height: 44,

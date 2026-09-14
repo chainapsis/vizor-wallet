@@ -25,8 +25,9 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
     required this.onNetworkSelected,
     required this.onRetry,
     this.onEdit,
+    this.onKeepEditing,
+    this.keepEditingAvailable = true,
     this.isLoading = false,
-    this.loadingMessage = 'Checking payment options…',
     this.isPreparingReview = false,
     this.selectedChain,
     this.availabilityMessage,
@@ -44,8 +45,9 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
   final ValueChanged<String> onNetworkSelected;
   final VoidCallback onRetry;
   final VoidCallback? onEdit;
+  final VoidCallback? onKeepEditing;
+  final bool keepEditingAvailable;
   final bool isLoading;
-  final String loadingMessage;
   final bool isPreparingReview;
   final String? selectedChain;
   final String? availabilityMessage;
@@ -112,7 +114,9 @@ class _CrossChainPaymentRequestCardState
     final statusMessage =
         request.unsupportedReason ??
         widget.availabilityMessage ??
-        resolution.message;
+        (!widget.isLoading && !resolution.needsNetwork
+            ? resolution.message
+            : null);
     final canContinue =
         resolution.isReady &&
         !resolution.needsNetwork &&
@@ -179,18 +183,12 @@ class _CrossChainPaymentRequestCardState
             )
           else
             details,
-          if (widget.isLoading ||
-              widget.isPreparingReview ||
-              statusMessage != null) ...[
+          if (statusMessage != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Semantics(
               liveRegion: true,
               child: Text(
-                widget.isPreparingReview
-                    ? 'Preparing payment review…'
-                    : widget.isLoading
-                    ? widget.loadingMessage
-                    : statusMessage!,
+                statusMessage,
                 key: const ValueKey('cross_chain_payment_request_status'),
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,
@@ -224,16 +222,25 @@ class _CrossChainPaymentRequestCardState
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (widget.onEdit != null && hasAmount && resolution.isReady) ...[
+          if (widget.onKeepEditing != null ||
+              (widget.onEdit != null && hasAmount && resolution.isReady)) ...[
             const SizedBox(height: AppSpacing.xs),
             AppButton(
               key: const ValueKey('cross_chain_payment_request_edit'),
-              onPressed: widget.isLoading || widget.isPreparingReview
+              onPressed: widget.onKeepEditing != null
+                  ? widget.keepEditingAvailable &&
+                            !widget.isPreparingReview &&
+                            request.unsupportedReason == null
+                        ? widget.onKeepEditing
+                        : null
+                  : widget.isLoading || widget.isPreparingReview
                   ? null
                   : widget.onEdit,
               variant: AppButtonVariant.ghost,
               expand: true,
-              child: const Text('Edit'),
+              child: Text(
+                widget.onKeepEditing != null ? 'Keep editing' : 'Edit',
+              ),
             ),
           ],
         ],

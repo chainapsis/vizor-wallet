@@ -29,6 +29,9 @@ class PayRecipientStep extends StatelessWidget {
     required this.onOpenScanner,
     required this.onChooseRecipient,
     this.onReviewPaymentRequest,
+    this.onPaste,
+    this.pasteContext,
+    this.readPasteContext,
     super.key,
   });
 
@@ -51,6 +54,9 @@ class PayRecipientStep extends StatelessWidget {
   final ValueChanged<String> onAddressChanged;
   final VoidCallback onOpenScanner;
   final VoidCallback? onReviewPaymentRequest;
+  final Future<void> Function(String)? onPaste;
+  final Object? pasteContext;
+  final Object? Function()? readPasteContext;
 
   /// Row tap: select this exact recipient. The screen owns quote/review
   /// orchestration so the same selection contract works on desktop and mobile.
@@ -107,6 +113,9 @@ class PayRecipientStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppTextField(
+          onPaste: onPaste,
+          pasteContext: pasteContext,
+          readPasteContext: readPasteContext,
           key: const ValueKey('pay_recipient_search_field'),
           label: 'Recipient address',
           showLabel: false,

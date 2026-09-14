@@ -11,8 +11,7 @@
 
 namespace {
 
-constexpr const wchar_t* kPaymentRequestSchemes[] = {
-    L"zcash", L"bitcoin", L"litecoin", L"ethereum", L"solana"};
+constexpr const wchar_t* kPaymentRequestSchemes[] = {L"zcash"};
 
 std::wstring ProtocolKeyPath(const wchar_t* scheme) {
   return std::wstring(L"Software\\Classes\\") + scheme;
@@ -364,9 +363,8 @@ void RegisterPaymentProtocolHandlerIfUnclaimed(const wchar_t* scheme) {
   // Only claim the scheme at startup when nobody holds it, or when the handler
   // that holds it points at an executable that no longer exists. Registering on
   // every launch unconditionally would silently steal a payment URI handler
-  // back from another wallet (or Vizor channel) the user selected. The existing
-  // Zcash install hook registers unconditionally; new schemes respect an
-  // existing owner even at install.
+  // back from another wallet (or Vizor channel) the user selected. The explicit
+  // Zcash install hook retains its existing unconditional registration.
   std::wstring command;
   const DefaultCommandState state = ReadDefaultCommand(scheme, &command);
   // A read we could not complete says nothing about who owns the scheme, so
@@ -398,14 +396,7 @@ void RegisterPaymentProtocolHandlerIfUnclaimed(const wchar_t* scheme) {
 }  // namespace
 
 void RegisterPaymentProtocolHandlers() {
-  // Preserve Zcash's existing install/update association. Supporting additional
-  // payment networks does not opt the user out of their other wallet choices.
   RegisterPaymentProtocolHandler(L"zcash");
-  for (const wchar_t* scheme : kPaymentRequestSchemes) {
-    if (std::wstring(scheme) != L"zcash") {
-      RegisterPaymentProtocolHandlerIfUnclaimed(scheme);
-    }
-  }
 }
 
 void RegisterPaymentProtocolHandlersIfUnclaimed() {

@@ -63,7 +63,7 @@ static gboolean is_payment_uri(const gchar* value) {
     return FALSE;
   }
   static const gchar* prefixes[] = {
-      "zcash:", "bitcoin:", "litecoin:", "ethereum:", "solana:"};
+      "zcash:"};
   for (const gchar* prefix : prefixes) {
     if (g_ascii_strncasecmp(value, prefix, strlen(prefix)) == 0) {
       return TRUE;

@@ -234,6 +234,7 @@ class MobileAddressScanCard extends StatefulWidget {
     required this.onScanned,
     required this.onClose,
     this.controller,
+    this.validationContext,
     this.caption = 'Scan a Zcash QR code to continue',
     this.permissionTitle = 'Scan the address QR code',
     this.steadyHint = 'Keep the QR code steady and fully visible.',
@@ -247,6 +248,9 @@ class MobileAddressScanCard extends StatefulWidget {
 
   /// Validates a scanned payload; see [MobileScanResolver].
   final MobileScanResolver resolve;
+
+  /// Snapshot of account/network/asset/draft identity used for validation.
+  final Object? validationContext;
 
   /// Called with the accepted address once [resolve] succeeds.
   final ValueChanged<String> onScanned;
@@ -269,19 +273,80 @@ class MobileAddressScanCard extends StatefulWidget {
 
 class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
   bool _validating = false;
+  bool _closed = false;
+  int _validationSession = 0;
+  Animation<double>? _routeAnimation;
   int _scanResetToken = 0;
   String? _error;
 
+  void _invalidateValidation() {
+    _validationSession++;
+    _validating = false;
+    _scanResetToken++;
+    _error = null;
+  }
+
+  void _routeStatusChanged(AnimationStatus status) {
+    if (mounted &&
+        (status == AnimationStatus.reverse ||
+            status == AnimationStatus.dismissed)) {
+      setState(_invalidateValidation);
+    }
+  }
+
+  bool _isCurrent(int session) {
+    if (!mounted || _closed || session != _validationSession) return false;
+    final route = ModalRoute.of(context);
+    final status = route?.animation?.status;
+    return (route?.isCurrent ?? true) &&
+        status != AnimationStatus.reverse &&
+        status != AnimationStatus.dismissed;
+  }
+
+  void _close() {
+    _closed = true;
+    _invalidateValidation();
+    widget.onClose();
+  }
+
+  @override
+  void didUpdateWidget(covariant MobileAddressScanCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.validationContext != widget.validationContext) {
+      _invalidateValidation();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _invalidateValidation();
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation != _routeAnimation) {
+      _routeAnimation?.removeStatusListener(_routeStatusChanged);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_routeStatusChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _routeAnimation?.removeStatusListener(_routeStatusChanged);
+    _invalidateValidation();
+    super.dispose();
+  }
+
   Future<void> _handleScan(String raw) async {
-    if (_validating || !mounted) return;
+    if (_validating || !_isCurrent(_validationSession)) return;
     if (raw.trim().isEmpty) return;
     setState(() {
       _validating = true;
       _error = null;
     });
+    final session = ++_validationSession;
     try {
       final outcome = await widget.resolve(raw);
-      if (!mounted) return;
+      if (!_isCurrent(session)) return;
       if (outcome.isAccepted) {
         widget.onScanned(outcome.address!);
         return;
@@ -290,10 +355,10 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
         _validating = false;
         // Let PlainQrScannerView fire again for the next frame.
         _scanResetToken++;
-        _error = outcome.error ?? widget.steadyHint;
+        _error = outcome.isIgnored ? null : outcome.error ?? widget.steadyHint;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_isCurrent(session)) return;
       setState(() {
         _validating = false;
         _scanResetToken++;
@@ -311,7 +376,7 @@ class _MobileAddressScanCardState extends State<MobileAddressScanCard> {
       error: _error,
       unavailableDescription:
           'Address QR scanning needs a camera on this device.',
-      onClose: widget.onClose,
+      onClose: _close,
       cameraViewBuilder: (context, controller) => PlainQrScannerView(
         key: const ValueKey('mobile_address_scan_card_camera'),
         controller: controller,

@@ -19,7 +19,8 @@ void presentPaymentRequest(
         .read(paymentRequestFlowProvider.notifier)
         .present(request, source: source);
   } else if (request is CrossChainPaymentRequest) {
-    ref.read(paymentRequestFlowProvider.notifier).clear();
-    ref.read(crossChainPaymentFlowProvider.notifier).present(request);
+    if (ref.read(crossChainPaymentFlowProvider.notifier).present(request)) {
+      ref.read(paymentRequestFlowProvider.notifier).clear();
+    }
   }
 }

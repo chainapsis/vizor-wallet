@@ -1,3 +1,4 @@
+import '../../pay/providers/payment_request_input_origin_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -62,6 +63,8 @@ Future<bool> reviewPaymentRequestFromInput(
   WidgetRef ref,
   String raw, {
   bool Function()? isCurrent,
+  CrossChainPaymentRequest? resolvedCrossChainRequest,
+  PaymentRequestInputOrigin? inputOrigin,
 }) async {
   if (!isPaymentRequestUri(raw)) return false;
   final context = ref.context;
@@ -81,7 +84,13 @@ Future<bool> reviewPaymentRequestFromInput(
   FocusScope.of(context).unfocus();
   delegate?.addListener(onRouteChanged);
   try {
-    return await intakePaymentRequest(ref, raw, isCurrent: isActive);
+    return await intakePaymentRequest(
+      ref,
+      raw,
+      isCurrent: isActive,
+      resolvedCrossChainRequest: resolvedCrossChainRequest,
+      inputOrigin: inputOrigin,
+    );
   } catch (error) {
     if (!isActive()) return false;
     final message = switch (error) {

@@ -46,7 +46,10 @@ int? _verifyChecksum(String hrp, List<int> data) {
   return null;
 }
 
-({String hrp, List<int> data, int spec})? _bech32Decode(String bech) {
+({String hrp, List<int> data, int spec})? _bech32Decode(
+  String bech, {
+  int maxLength = 90,
+}) {
   for (final c in bech.codeUnits) {
     if (c < 33 || c > 126) return null;
   }
@@ -54,7 +57,7 @@ int? _verifyChecksum(String hrp, List<int> data) {
   final upper = bech.toUpperCase();
   if (bech != lower && bech != upper) return null; // mixed case
   final s = lower;
-  if (s.length > 90) return null;
+  if (s.length > maxLength) return null;
   final pos = s.lastIndexOf('1');
   if (pos < 1 || pos + 7 > s.length) return null;
   final hrp = s.substring(0, pos);
@@ -117,4 +120,29 @@ List<int>? _convertBits(List<int> data, int from, int to, {required bool pad}) {
   final expected = version == 0 ? _bech32Const : _bech32mConst;
   if (decoded.spec != expected) return null;
   return (version: version, program: program);
+}
+
+/// Decodes a checksummed Bech32 payload (not a SegWit witness program).
+/// Cardano CIP-19 explicitly removes BIP-173's 90-character limit.
+List<int>? decodeBech32Payload(String address, {required String hrp}) {
+  final decoded = _bech32Decode(address, maxLength: 1024);
+  if (decoded == null || decoded.hrp != hrp || decoded.spec != _bech32Const) {
+    return null;
+  }
+  return _convertBits(decoded.data, 5, 8, pad: false);
+}
+
+/// Litecoin MWEB addresses use Bech32 with a leading version word and two
+/// serialized 33-byte keys. They exceed BIP-173's normal 90-character limit.
+/// Mirrors Litecoin src/key_io.cpp DecodeDestination's MWEB branch.
+bool isLitecoinMainnetMwebAddress(String address) {
+  final decoded = _bech32Decode(address, maxLength: 1024);
+  if (decoded == null ||
+      decoded.hrp != 'ltcmweb' ||
+      decoded.spec != _bech32Const ||
+      decoded.data.isEmpty) {
+    return false;
+  }
+  final bytes = _convertBits(decoded.data.sublist(1), 5, 8, pad: false);
+  return bytes != null && bytes.length == 66;
 }

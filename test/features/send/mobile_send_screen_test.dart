@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
@@ -835,73 +836,74 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('rejected clipboard request remains editable and retries', (
-    tester,
-  ) async {
-    const raw = 'bitcoin:malformed?amount=oops';
-    final parsed = <String>[];
-    await tester.pumpWidget(
-      _app(
-        paymentParser: (value) async {
-          parsed.add(value);
-          if (value == raw) throw const CrossChainPaymentParseException();
-          return CrossChainPaymentRequest(
-            id: 'corrected',
-            rawUri: value,
-            address: 'bc1qinvoice',
-            isEvm: false,
-            chain: 'btc',
-          );
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async => call.method == 'Clipboard.getData'
-          ? <String, dynamic>{'text': raw}
-          : null,
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets(
+    'rejected clipboard request preserves the existing field and stays outside intake',
+    (tester) async {
+      const raw = 'bitcoin:malformed?amount=oops';
+      final parsed = <String>[];
+      await tester.pumpWidget(
+        _app(
+          paymentParser: (value) async {
+            parsed.add(value);
+            if (value == raw) throw const CrossChainPaymentParseException();
+            return CrossChainPaymentRequest(
+              id: 'corrected',
+              rawUri: value,
+              address: 'bc1qinvoice',
+              isEvm: false,
+              chain: 'btc',
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        null,
-      ),
-    );
-    final field = find.byKey(const ValueKey('mobile_send_address_field'));
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    final actions = find.byKey(
-      const ValueKey('mobile_send_address_action_slot'),
-    );
-    await tester.tap(
-      find.descendant(of: actions, matching: find.text('Paste')),
-    );
-    await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(MobileSendScreen)),
-    );
-    expect(find.text(raw), findsOneWidget);
-    expect(parsed, [raw]);
-    expect(container.read(paymentUriPrefillProvider), isNull);
-    const corrected = 'bitcoin:bc1qinvoice?amount=0.1';
-    await tester.enterText(
-      find.descendant(of: field, matching: find.byType(EditableText)),
-      corrected,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: actions, matching: find.text('Review')),
-    );
-    await tester.pumpAndSettle();
-    expect(parsed, [raw, corrected]);
-    expect(container.read(paymentUriPrefillProvider)!.id, 'corrected');
-    expect(tester.takeException(), isNull);
-  });
+        (call) async => call.method == 'Clipboard.getData'
+            ? <String, dynamic>{'text': raw}
+            : null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final field = find.byKey(const ValueKey('mobile_send_address_field'));
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      final actions = find.byKey(
+        const ValueKey('mobile_send_address_action_slot'),
+      );
+      await tester.tap(
+        find.descendant(of: actions, matching: find.text('Paste')),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      expect(find.text(raw), findsNothing);
+      expect(parsed, isEmpty);
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      const corrected = 'bitcoin:bc1qinvoice?amount=0.1';
+      await tester.enterText(
+        find.descendant(of: field, matching: find.byType(EditableText)),
+        corrected,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: actions, matching: find.text('Review')),
+      );
+      await tester.pumpAndSettle();
+      expect(parsed, isEmpty);
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final change in ['none', 'edit', 'leave', 'paste-edit']) {
     testWidgets(
-      'Send request intake respects input lifetime (change: $change)',
+      'Send rejects cross-chain requests without entering intake (change: $change)',
       (tester) async {
         final parsed = Completer<CrossChainPaymentRequest>();
         await tester.pumpWidget(_app(paymentParser: (_) => parsed.future));
@@ -971,13 +973,8 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        if (change == 'none') {
-          expect(container.read(paymentUriPrefillProvider)!.id, 'send-input');
-          expect(container.read(paymentRequestArrivalProvider), 1);
-        } else {
-          expect(container.read(paymentUriPrefillProvider), isNull);
-          expect(container.read(paymentRequestArrivalProvider), 0);
-        }
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(container.read(paymentRequestArrivalProvider), 0);
         if (change == 'edit' || change == 'paste-edit') {
           expect(find.text('bitcoin:new-draft'), findsOneWidget);
         }
@@ -990,6 +987,147 @@ void main() {
       },
     );
   }
+
+  for (final accepted in [true, false]) {
+    for (final change in ['edit', 'leave', 'leave-back']) {
+      testWidgets('late Send paste result is ignored ($accepted, $change)', (
+        tester,
+      ) async {
+        final validation = Completer<AddressValidationResult>();
+        await tester.pumpWidget(
+          _app(
+            initialRecipient: _shieldedAddress,
+            validateAddress: ({required address, required network}) async {
+              if (address == _texAddress) return validation.future;
+              return const AddressValidationResult(
+                isValid: true,
+                addressType: 'unified',
+                wrongNetwork: false,
+              );
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final field = tester.widget<MobileTextField>(
+          find.byKey(const ValueKey('mobile_send_address_field')),
+        );
+        final operation = field.onPaste!(_texAddress);
+        await tester.pump();
+        if (change == 'edit') {
+          await _enterAddress(tester, 'new recipient draft');
+        } else {
+          final router = GoRouter.of(
+            tester.element(find.byType(MobileSendScreen)),
+          );
+          unawaited(router.push('/home'));
+        }
+        await tester.pumpAndSettle();
+        if (change == 'leave-back') {
+          GoRouter.of(tester.element(find.text('home'))).pop();
+          await tester.pumpAndSettle();
+        }
+        validation.complete(
+          AddressValidationResult(
+            isValid: accepted,
+            addressType: 'tex',
+            wrongNetwork: !accepted,
+          ),
+        );
+        await operation;
+        await tester.pumpAndSettle();
+        if (change == 'edit') {
+          expect(field.controller.text, 'new recipient draft');
+        } else if (change == 'leave') {
+          expect(find.text('home'), findsOneWidget);
+        } else {
+          expect(field.controller.text, _shieldedAddress);
+        }
+        expect(
+          find.text(
+            'Only Zcash addresses and payment requests can be scanned here.',
+          ),
+          findsNothing,
+        );
+        expect(find.text('$kWrongNetworkAddressMessage.'), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  for (final outcome in ['request', 'address', 'rejected']) {
+    testWidgets('new arrival invalidates delayed Send input: $outcome', (
+      tester,
+    ) async {
+      final gate = Completer<AddressValidationResult>();
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          validateAddress: ({required address, required network}) async {
+            if (address == _texAddress) return gate.future;
+            return const AddressValidationResult(
+              isValid: true,
+              addressType: 'unified',
+              wrongNetwork: false,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = tester.widget<MobileTextField>(
+        find.byKey(const ValueKey('mobile_send_address_field')),
+      );
+      final original = field.controller.text;
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      final operation = field.onPaste!(
+        outcome == 'address' ? _texAddress : 'zcash:$_texAddress?amount=1',
+      );
+      await tester.pump();
+      await container
+          .read(paymentRequestIntakeProvider)
+          .receive('zcash:$_shieldedAddress?amount=2');
+      final newer = container.read(paymentUriPrefillProvider);
+      expect(newer, isNotNull);
+      gate.complete(
+        AddressValidationResult(
+          isValid: outcome != 'rejected',
+          addressType: 'tex',
+          wrongNetwork: outcome == 'rejected',
+        ),
+      );
+      await operation;
+      await tester.pumpAndSettle();
+      expect(container.read(paymentUriPrefillProvider), same(newer));
+      expect(container.read(paymentRequestArrivalProvider), 1);
+      expect(field.controller.text, original);
+      expect(find.textContaining('different Zcash network'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('rejected Send paste preserves recipient and request state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(initialRecipient: _shieldedAddress));
+    await tester.pumpAndSettle();
+    final field = tester.widget<MobileTextField>(
+      find.byKey(const ValueKey('mobile_send_address_field')),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    for (final raw in [
+      'bitcoin:recipient?amount=1',
+      'zcash:$_shieldedAddress?amount=oops',
+    ]) {
+      await field.onPaste!(raw);
+      await tester.pumpAndSettle();
+      expect(field.controller.text, _shieldedAddress);
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(container.read(paymentRequestArrivalProvider), 0);
+    }
+  });
 
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,
@@ -2732,40 +2870,33 @@ void main() {
   });
 
   // A QR the parser refuses still surrenders its address, and the composer
-  // takes it. The payer scanned a request whose terms are now gone, so the
-  // scan says what was left behind instead of pretending it was a plain
-  // address QR all along.
-  testWidgets('a downgraded scan fills the recipient and says what was lost', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        openScanner: (_, {required String networkName}) async =>
-            const SendScanAddress(
-              _shieldedAddress,
-              downgrade: SendScanDowngrade.multipleRecipients,
-            ),
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'a downgraded scan preserves the recipient and rejects lost terms',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          openScanner: (_, {required String networkName}) async =>
+              const SendScanAddress(
+                _shieldedAddress,
+                downgrade: SendScanDowngrade.multipleRecipients,
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Scan a QR Code'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Scan a QR Code'));
+      await tester.pumpAndSettle();
 
-    final editable = tester.widget<EditableText>(
-      find.descendant(
-        of: find.byKey(const ValueKey('mobile_send_address_field')),
-        matching: find.byType(EditableText),
-      ),
-    );
-    expect(editable.controller.text, _shieldedAddress);
-    expect(
-      find.text(
-        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
-      ),
-      findsOneWidget,
-    );
-  });
+      final editable = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_send_address_field')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(editable.controller.text, '');
+      expect(find.text('This payment request is not valid.'), findsOneWidget);
+    },
+  );
 
   testWidgets('a plain address scan says nothing', (tester) async {
     await tester.pumpWidget(

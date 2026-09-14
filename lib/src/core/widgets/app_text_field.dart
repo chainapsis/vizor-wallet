@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'validated_paste_region.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
 
@@ -49,6 +50,9 @@ class AppTextField extends StatefulWidget {
     this.clearButtonSemanticLabel = 'Clear text',
     this.onClear,
     this.onChanged,
+    this.onPaste,
+    this.pasteContext,
+    this.readPasteContext,
     this.onSubmitted,
     this.onTap,
     this.keyboardType,
@@ -112,6 +116,9 @@ class AppTextField extends StatefulWidget {
   final String clearButtonSemanticLabel;
   final VoidCallback? onClear;
   final ValueChanged<String>? onChanged;
+  final Future<void> Function(String candidate)? onPaste;
+  final Object? pasteContext;
+  final Object? Function()? readPasteContext;
   final ValueChanged<String>? onSubmitted;
   final VoidCallback? onTap;
   final TextInputType? keyboardType;
@@ -437,45 +444,52 @@ class _AppTextFieldState extends State<AppTextField> {
         inlineInputWidth +
         (inlineMeasuredInputText.isEmpty ? 0.0 : widget.inlineAffixGap);
 
-    final textField = TextField(
-      key: _textFieldRegionKey,
+    final textField = ValidatedPasteRegion(
       controller: _controller,
-      focusNode: _focusNode,
-      enabled: widget.enabled,
-      readOnly: widget.readOnly,
-      autofocus: widget.autofocus,
-      obscureText: widget.obscureText,
-      enableSuggestions: widget.enableSuggestions,
-      autocorrect: widget.autocorrect,
-      keyboardType: widget.keyboardType,
-      textInputAction: widget.textInputAction,
-      inputFormatters: widget.inputFormatters,
-      onChanged: widget.onChanged,
-      onSubmitted: widget.onSubmitted,
-      onTap: widget.onTap,
-      maxLines: _multiline ? null : 1,
-      minLines: _multiline ? null : 1,
-      expands: _multiline,
-      scrollController: widget.scrollController,
-      textAlignVertical: _multiline
-          ? TextAlignVertical.top
-          : TextAlignVertical.center,
-      style: valueStyle,
-      strutStyle: textStrutStyle,
-      cursorColor: colors.text.accent,
-      selectAllOnFocus: false,
-      // Single-line skips InputDecorator entirely: its internal baseline
-      // placement shifts the editable down by visual density / platform
-      // (4px on macOS), which breaks the Field spec's centered 16px line
-      // box. Without a decorator the editable is exactly the strut line,
-      // so the surrounding Row/Center math is deterministic. The hint is
-      // drawn by the overlay below with the same style and strut.
-      decoration: _multiline
-          ? InputDecoration.collapsed(
-              hintText: widget.hintText,
-              hintStyle: resolvedHintStyle,
-            )
-          : null,
+      onPaste: widget.enabled && !widget.readOnly ? widget.onPaste : null,
+      pasteContext: widget.pasteContext,
+      readPasteContext: widget.readPasteContext,
+      builder: (menuBuilder) => TextField(
+        contextMenuBuilder: menuBuilder,
+        key: _textFieldRegionKey,
+        controller: _controller,
+        focusNode: _focusNode,
+        enabled: widget.enabled,
+        readOnly: widget.readOnly,
+        autofocus: widget.autofocus,
+        obscureText: widget.obscureText,
+        enableSuggestions: widget.enableSuggestions,
+        autocorrect: widget.autocorrect,
+        keyboardType: widget.keyboardType,
+        textInputAction: widget.textInputAction,
+        inputFormatters: widget.inputFormatters,
+        onChanged: widget.onChanged,
+        onSubmitted: widget.onSubmitted,
+        onTap: widget.onTap,
+        maxLines: _multiline ? null : 1,
+        minLines: _multiline ? null : 1,
+        expands: _multiline,
+        scrollController: widget.scrollController,
+        textAlignVertical: _multiline
+            ? TextAlignVertical.top
+            : TextAlignVertical.center,
+        style: valueStyle,
+        strutStyle: textStrutStyle,
+        cursorColor: colors.text.accent,
+        selectAllOnFocus: false,
+        // Single-line skips InputDecorator entirely: its internal baseline
+        // placement shifts the editable down by visual density / platform
+        // (4px on macOS), which breaks the Field spec's centered 16px line
+        // box. Without a decorator the editable is exactly the strut line,
+        // so the surrounding Row/Center math is deterministic. The hint is
+        // drawn by the overlay below with the same style and strut.
+        decoration: _multiline
+            ? InputDecoration.collapsed(
+                hintText: widget.hintText,
+                hintStyle: resolvedHintStyle,
+              )
+            : null,
+      ),
     );
     final fieldInput = _multiline
         ? ScrollConfiguration(

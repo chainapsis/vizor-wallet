@@ -1,9 +1,14 @@
 @Tags(['mobile'])
 library;
 
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/present_payment_request.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -545,86 +550,94 @@ void main() {
     );
   });
 
-  testWidgets('newer review survives an older completion in the same editor', (
-    tester,
-  ) async {
-    final parses = [
-      Completer<CrossChainPaymentRequest>(),
-      Completer<CrossChainPaymentRequest>(),
-    ];
-    var calls = 0;
-    Future<CrossChainPaymentRequest> parser(String raw) =>
-        parses[calls++].future;
-    await _setNarrowMobileViewport(tester);
-    await tester.pumpWidget(
-      _app(
-        swapProvider: _MobileDelayedQuoteSwapProvider(),
-        paymentParser: parser,
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.bySemanticsLabel('Swap').last);
-    await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(MobileSwapScreen)),
-    );
-    container
-        .read(swapStateProvider.notifier)
-        .selectDirection(SwapDirection.zecToExternal);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Add recipient address'));
-    await tester.pumpAndSettle();
-    const raw = 'bitcoin:bc1qinvoice?amount=0.1';
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_destination_field')),
-      raw,
-    );
-    await tester.pumpAndSettle();
-    for (var i = 0; i < 2; i++) {
-      await tester.tap(
-        find.byKey(const ValueKey('swap_address_update_button')),
+  testWidgets(
+    'newer address validation survives an older completion in the same editor',
+    (tester) async {
+      final parses = [
+        Completer<CrossChainPaymentRequest>(),
+        Completer<CrossChainPaymentRequest>(),
+      ];
+      var calls = 0;
+      Future<CrossChainPaymentRequest> parser(String raw) =>
+          parses[calls++].future;
+      await _setNarrowMobileViewport(tester);
+      await tester.pumpWidget(
+        _app(
+          swapProvider: _MobileDelayedQuoteSwapProvider(),
+          paymentParser: parser,
+        ),
       );
       await tester.pumpAndSettle();
-    }
-    expect(calls, 2);
-    parses[0].complete(
-      const CrossChainPaymentRequest(
-        id: 'older',
-        rawUri: raw,
-        address: 'bc1qinvoice',
-        isEvm: false,
-        chain: 'btc',
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('swap_destination_field')),
-      findsOneWidget,
-    );
-    expect(container.read(paymentUriPrefillProvider), isNull);
-    parses[1].complete(
-      const CrossChainPaymentRequest(
-        id: 'newer',
-        rawUri: raw,
-        address: 'bc1qinvoice',
-        isEvm: false,
-        chain: 'btc',
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('swap_destination_field')), findsNothing);
-    expect(container.read(paymentUriPrefillProvider)!.id, 'newer');
-    expect(container.read(paymentRequestArrivalProvider), 1);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
+      await tester.tap(find.bySemanticsLabel('Swap').last);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSwapScreen)),
+      );
+      container
+          .read(swapStateProvider.notifier)
+          .selectDirection(SwapDirection.zecToExternal);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add recipient address'));
+      await tester.pumpAndSettle();
+      const raw = 'ethereum:0x1111111111111111111111111111111111111111@1';
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        raw,
+      );
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_address_update_button')),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(calls, 2);
+      parses[0].complete(
+        const CrossChainPaymentRequest(
+          id: 'older',
+          rawUri: raw,
+          address: '0x1111111111111111111111111111111111111111',
+          isEvm: true,
+          chainId: '1',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('swap_destination_field')),
+        findsOneWidget,
+      );
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      parses[1].complete(
+        const CrossChainPaymentRequest(
+          id: 'newer',
+          rawUri: raw,
+          address: '0x1111111111111111111111111111111111111111',
+          isEvm: true,
+          chainId: '1',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('swap_destination_field')),
+        findsNothing,
+      );
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(container.read(paymentRequestArrivalProvider), 0);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        '0x1111111111111111111111111111111111111111',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('rejected pasted request stays editable and can be retried', (
     tester,
   ) async {
     const rejected = 'bitcoin:malformed?amount=oops';
-    const corrected = 'bitcoin:bc1qinvoice?amount=0.1';
+    const corrected = 'ethereum:0x1111111111111111111111111111111111111111@1';
     final parsed = <String>[];
     final parseGate = Completer<void>();
     Future<CrossChainPaymentRequest> parser(String raw) async {
@@ -636,9 +649,9 @@ void main() {
       return CrossChainPaymentRequest(
         id: 'retry-input',
         rawUri: raw,
-        address: 'bc1qinvoice',
-        isEvm: false,
-        chain: 'btc',
+        address: '0x1111111111111111111111111111111111111111',
+        isEvm: true,
+        chainId: '1',
       );
     }
 
@@ -690,10 +703,7 @@ void main() {
       before.destinationText,
     );
     expect(container.read(swapStateProvider).amountText, before.amountText);
-    expect(
-      find.text(const CrossChainPaymentParseException().toString()),
-      findsOneWidget,
-    );
+    expect(find.text('This payment request is not valid.'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_destination_field')),
@@ -704,14 +714,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(parsed, [rejected, corrected]);
     expect(find.byKey(const ValueKey('swap_destination_field')), findsNothing);
-    expect(
-      (container.read(paymentUriPrefillProvider) as CrossChainPaymentRequest)
-          .rawUri,
-      corrected,
-    );
+    expect(container.read(paymentUriPrefillProvider), isNull);
     expect(
       container.read(swapStateProvider).destinationText,
-      before.destinationText,
+      '0x1111111111111111111111111111111111111111',
     );
     expect(container.read(swapStateProvider).amountText, before.amountText);
     expect(tester.takeException(), isNull);
@@ -729,9 +735,9 @@ void main() {
           return CrossChainPaymentRequest(
             id: 'retry-input',
             rawUri: raw,
-            address: 'bc1qinvoice',
-            isEvm: false,
-            chain: 'btc',
+            address: '0x1111111111111111111111111111111111111111',
+            isEvm: true,
+            chainId: '1',
           );
         }
 
@@ -756,7 +762,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.enterText(
           find.byKey(const ValueKey('swap_destination_field')),
-          'bitcoin:bc1qinvoice?amount=0.1',
+          'ethereum:0x1111111111111111111111111111111111111111@1',
         );
         await tester.pumpAndSettle();
         await tester.tap(
@@ -799,6 +805,199 @@ void main() {
     );
   }
 
+  for (final paste in [false, true]) {
+    for (final action in [
+      'keep',
+      'cancel',
+      'replace',
+      'zcash',
+      'context',
+      'route-keep',
+      'route-cancel',
+      'return-keep',
+      'return-cancel',
+    ]) {
+      testWidgets(
+        'payment ${paste ? 'paste' : 'QR'} restores editor with $action',
+        (tester) async {
+          const address = '0x1111111111111111111111111111111111111111';
+          const draft = '0x2222222222222222222222222222222222222222';
+          const raw = 'ethereum:$address@1?value=1';
+          await _setNarrowMobileViewport(tester);
+          await tester.pumpWidget(
+            _app(
+              swapProvider: _MobileDelayedQuoteSwapProvider(),
+              paymentParser: (raw) async => CrossChainPaymentRequest(
+                id: 'mobile-choice',
+                rawUri: raw,
+                address: address,
+                isEvm: true,
+                chainId: '1',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.bySemanticsLabel('Swap').last);
+          await tester.pumpAndSettle();
+          final container = ProviderScope.containerOf(
+            tester.element(find.byType(MobileSwapScreen)),
+          );
+          container
+              .read(swapStateProvider.notifier)
+              .selectDirection(SwapDirection.zecToExternal);
+          await tester.pumpAndSettle();
+          final before = container.read(swapStateProvider);
+          await tester.tap(find.text('Add recipient address'));
+          await tester.pumpAndSettle();
+          final field = find.byKey(const ValueKey('swap_destination_field'));
+          await tester.enterText(field, draft);
+          await tester.tap(
+            find.byKey(const ValueKey('swap_address_remember_toggle')),
+          );
+          if (paste) {
+            final textField = tester.widget<MobileTextField>(
+              find.byType(MobileTextField),
+            );
+            final controller = tester.widget<TextField>(field).controller!;
+            await textField.onPaste!(raw);
+            expect(controller.text, draft);
+          } else {
+            await tester.tap(
+              find.byKey(const ValueKey('swap_address_scan_button')),
+            );
+            await tester.pumpAndSettle();
+            final scanner = tester.widget<MobileAddressScanCard>(
+              find.byType(MobileAddressScanCard),
+            );
+            final resolved = await scanner.resolve(raw);
+            expect(resolved.isAccepted, isTrue);
+            scanner.onScanned(resolved.address!);
+          }
+          await tester.pumpAndSettle();
+          expect(
+            container.read(swapStateProvider).destinationText,
+            before.destinationText,
+          );
+          final pending =
+              container
+                      .read(paymentUriPrefillProvider.notifier)
+                      .takeIfFresh()
+                      .prefill!
+                  as CrossChainPaymentRequest;
+          final flow = container.read(crossChainPaymentFlowProvider.notifier);
+          flow.present(pending);
+          expect(flow.canUseAddressOnly, isTrue);
+          if (action.startsWith('route-') || action.startsWith('return-')) {
+            final screen = tester.state(find.byType(MobileSwapScreen));
+            final router = GoRouter.of(screen.context);
+            router.go('/home');
+            await tester.pumpAndSettle();
+            expect(screen.mounted, isTrue);
+            if (action.startsWith('return-')) {
+              router.go('/swap');
+              await tester.pumpAndSettle();
+              expect(tester.state(find.byType(MobileSwapScreen)), same(screen));
+            }
+            expect(flow.canUseAddressOnly, isFalse);
+            if (action.endsWith('-keep')) {
+              flow.useAddressOnly();
+            } else {
+              flow.dismiss();
+            }
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(
+                const ValueKey('swap_destination_field'),
+                skipOffstage: false,
+              ),
+              findsNothing,
+            );
+            expect(
+              container.read(swapStateProvider).destinationText,
+              before.destinationText,
+            );
+            expect(tester.takeException(), isNull);
+            return;
+          }
+          if (action == 'replace' || action == 'zcash' || action == 'context') {
+            if (action == 'zcash') {
+              presentPaymentRequest(
+                tester.state<ConsumerState>(find.byType(MobileSwapScreen)).ref,
+                const SendPrefillArgs(
+                  id: 'replacement-zcash',
+                  source: kPaymentUriPrefillSource,
+                  address: 'u1recipient',
+                ),
+              );
+              container.read(paymentRequestFlowProvider.notifier).clear();
+            } else {
+              flow.present(
+                CrossChainPaymentRequest(
+                  id: 'replacement',
+                  rawUri: raw,
+                  address: address,
+                  isEvm: true,
+                  chainId: '1',
+                ),
+              );
+              flow.dismiss();
+            }
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(const ValueKey('swap_destination_field')),
+              findsNothing,
+            );
+            if (action == 'context') {
+              container
+                  .read(swapStateProvider.notifier)
+                  .selectDirection(SwapDirection.externalToZec);
+              await tester.pumpAndSettle();
+              container
+                  .read(swapStateProvider.notifier)
+                  .selectDirection(SwapDirection.zecToExternal);
+              await tester.pumpAndSettle();
+            }
+            await tester.tap(find.text('Add recipient address'));
+          } else if (action == 'cancel') {
+            flow.dismiss();
+          } else {
+            flow.useAddressOnly();
+          }
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<TextField>(field).controller!.text,
+            action == 'context'
+                ? before.destinationText
+                : action == 'keep'
+                ? address
+                : draft,
+          );
+          expect(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_address_remember_checkbox')),
+              matching: find.byType(AppIcon),
+            ),
+            action == 'context' ? findsNothing : findsOneWidget,
+          );
+          expect(
+            container.read(swapStateProvider).destinationText,
+            before.destinationText,
+          );
+          expect(
+            container.read(swapStateProvider).amountText,
+            before.amountText,
+          );
+          expect(
+            container.read(swapStateProvider).externalAsset,
+            before.externalAsset,
+          );
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+      );
+    }
+  }
   testWidgets('QR scan returns to address editor before committing address', (
     tester,
   ) async {

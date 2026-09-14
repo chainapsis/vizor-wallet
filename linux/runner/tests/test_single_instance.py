@@ -150,11 +150,14 @@ def runner_tests():
     wait_for(lambda: events('payment-ready', primary.process.pid),
              'Dart payment URI readiness')
     assert [row[2] for row in events('payment-uri', primary.process.pid)] == [
-        'zcash:test-fixture', bitcoin_request, evm_request]
+        'zcash:test-fixture']
     passed('cold and forwarded links survive the wait for Dart readiness')
 
     warm_requests = (
         'zcash:warm-fixture',
+        'ZCASH:uppercase-fixture',
+    )
+    excluded_requests = (
         'litecoin:ltc1qfixture?amount=1.5',
         'solana:Payee?amount=25&spl-token=Mint&reference=Order',
         'BITCOIN:bc1quppercase?amount=2',
@@ -166,8 +169,11 @@ def runner_tests():
                              for row in events('payment-uri', primary.process.pid)),
                  'warm link forwarding')
     assert len(events('engine')) == 1
-    assert len(events('payment-uri', primary.process.pid)) == 7
-    passed('all payment schemes reach the primary without another engine')
+    for index, uri in enumerate(excluded_requests):
+        secondary = Runner(f'excluded-payment-link-{index}', args=(uri,))
+        secondary.wait()
+    assert len(events('payment-uri', primary.process.pid)) == 3
+    passed('only Zcash links reach the primary without another engine')
 
     # A different executable path models another extracted AppImage directory.
     shutil.copy2(OUTPUT / 'runner', OUTPUT / 'runner-copy')

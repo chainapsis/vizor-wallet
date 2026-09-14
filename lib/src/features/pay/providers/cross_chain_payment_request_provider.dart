@@ -1,3 +1,4 @@
+import 'payment_request_input_origin_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/swap_feature_config.dart';
@@ -34,12 +35,14 @@ class CrossChainPaymentFlowState {
   const CrossChainPaymentFlowState(
     this.request, {
     this.selectedChain,
+    this.inputOrigin,
     this.slippageBps,
     this.isPreparingReview = false,
     this.reviewError,
     this.isEditingSlippage = false,
   });
   final CrossChainPaymentRequest request;
+  final PaymentRequestInputOrigin? inputOrigin;
   final String? selectedChain;
   final int? slippageBps;
   final bool isPreparingReview;
@@ -58,8 +61,11 @@ class CrossChainPaymentFlowNotifier
     ref.listen(appSecurityProvider, (previous, next) {
       if (previous?.isUnlocked == true && !next.isUnlocked) {
         final request = state?.request;
+        // Only global requests survive locking; local editor sessions expire.
         // A newer request parked during lock wins over the visible card.
-        if (request != null && ref.read(paymentUriPrefillProvider) == null) {
+        if (request != null &&
+            state?.inputOrigin == null &&
+            ref.read(paymentUriPrefillProvider) == null) {
           ref.read(paymentUriPrefillProvider.notifier).set(request);
         }
         clear();
@@ -73,9 +79,18 @@ class CrossChainPaymentFlowNotifier
     return null;
   }
 
-  void present(CrossChainPaymentRequest request) {
+  bool present(CrossChainPaymentRequest request) {
+    final origin = ref
+        .read(paymentRequestInputOriginProvider.notifier)
+        .take(request.id);
+    if (origin != null && !origin.isCurrent()) return false;
     clear();
-    state = CrossChainPaymentFlowState(request);
+    state = CrossChainPaymentFlowState(
+      request,
+      inputOrigin: origin,
+      selectedChain: request.needsNetwork ? origin?.chain : null,
+    );
+    return true;
   }
 
   void chooseNetwork(String chain) {
@@ -90,6 +105,7 @@ class CrossChainPaymentFlowNotifier
     }
     state = CrossChainPaymentFlowState(
       current.request,
+      inputOrigin: current.inputOrigin,
       selectedChain: chain,
       slippageBps: current.slippageBps,
       isEditingSlippage: current.isEditingSlippage,
@@ -105,6 +121,7 @@ class CrossChainPaymentFlowNotifier
     }
     state = CrossChainPaymentFlowState(
       current.request,
+      inputOrigin: current.inputOrigin,
       selectedChain: current.selectedChain,
       slippageBps: current.slippageBps,
       reviewError: current.reviewError,
@@ -117,6 +134,7 @@ class CrossChainPaymentFlowNotifier
     if (current == null || current.isPreparingReview) return;
     state = CrossChainPaymentFlowState(
       current.request,
+      inputOrigin: current.inputOrigin,
       selectedChain: current.selectedChain,
       slippageBps: bps.clamp(10, 500),
     );
@@ -154,6 +172,7 @@ class CrossChainPaymentFlowNotifier
 
     final pending = CrossChainPaymentFlowState(
       current.request,
+      inputOrigin: current.inputOrigin,
       selectedChain: current.selectedChain,
       slippageBps: current.slippageBps,
       isPreparingReview: true,
@@ -174,6 +193,7 @@ class CrossChainPaymentFlowNotifier
     if (!ready) notifier.cancelReviewQuote();
     state = CrossChainPaymentFlowState(
       current.request,
+      inputOrigin: current.inputOrigin,
       selectedChain: current.selectedChain,
       slippageBps: current.slippageBps,
       reviewError: ready
@@ -183,6 +203,40 @@ class CrossChainPaymentFlowNotifier
                 'Payment review could not be prepared. Try again or edit the payment.',
     );
     return ready;
+  }
+
+  bool get canUseAddressOnly {
+    final current = state;
+    final origin = current?.inputOrigin;
+    if (current == null ||
+        origin == null ||
+        current.isPreparingReview ||
+        current.request.unsupportedReason != null ||
+        !origin.isCurrent()) {
+      return false;
+    }
+    final request = current.request;
+    final chain = request.isEvm
+        ? (request.chainId == null
+              ? current.selectedChain
+              : evmPaymentNetworks[request.chainId]?.chain)
+        : request.chain;
+    return chain == origin.chain;
+  }
+
+  void useAddressOnly() {
+    if (!canUseAddressOnly) return;
+    final current = state!;
+    clear();
+    if (current.inputOrigin!.isCurrent()) {
+      current.inputOrigin!.useAddress(current.request.address);
+    }
+  }
+
+  void dismiss() {
+    final origin = state?.inputOrigin;
+    clear();
+    if (origin?.isCurrent() == true) origin?.onCancel?.call();
   }
 
   void clear() {

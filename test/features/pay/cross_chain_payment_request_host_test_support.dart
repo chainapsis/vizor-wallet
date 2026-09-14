@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'package:zcash_wallet/src/features/pay/providers/payment_request_input_origin_provider.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/cross_chain_payment_request_host.dart';
@@ -67,6 +68,43 @@ final _btc = SwapAsset.live(
 void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadFigmaCompareFonts);
+  testWidgets(
+    'review from an address scanner applies the complete exact-out request',
+    (tester) async {
+      final harness = await _pump(tester, isMobile: isMobile);
+      final addresses = <String>[];
+      var cancellations = 0;
+      harness.container
+          .read(paymentRequestInputOriginProvider.notifier)
+          .set(
+            'request-25-usdc',
+            PaymentRequestInputOrigin(
+              chain: 'base',
+              isCurrent: () => true,
+              useAddress: addresses.add,
+              onCancel: () => cancellations++,
+            ),
+          );
+      harness.present();
+      await tester.pumpAndSettle();
+      harness.provider.initial.complete(_pricing([_btc, _usdc]));
+      await tester.pumpAndSettle();
+      expect(find.text('Keep editing'), findsOneWidget);
+      await tester.tap(find.byKey(_continueKey));
+      await tester.pumpAndSettle();
+      expect(harness.location, isMobile ? '/pay/review' : '/pay');
+      expect(harness.state.externalAsset, _usdc);
+      expect(harness.state.destinationText, _recipient);
+      expect(harness.state.quoteMode, SwapQuoteMode.exactOutput);
+      expect(harness.state.receiveAmountText, '25.000001');
+      expect(harness.state.reviewVisible, isTrue);
+      expect(addresses, isEmpty);
+      expect(cancellations, 0);
+      expect(tester.takeException(), isNull);
+      await harness.dispose(tester);
+    },
+  );
+
   testWidgets(
     'closing the slippage editor from above the router keeps the card',
     (tester) async {
@@ -445,6 +483,81 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
 
   for (final newerParked in [false, true]) {
     testWidgets(
+      'locking discards a visible local request (newer: $newerParked)',
+      (tester) async {
+        final harness = await _pump(
+          tester,
+          isMobile: isMobile,
+          controlledSecurity: true,
+        );
+        harness.container
+            .read(paymentRequestInputOriginProvider.notifier)
+            .set(
+              'request-25-usdc',
+              PaymentRequestInputOrigin(
+                chain: 'base',
+                isCurrent: () => true,
+                useAddress: (_) =>
+                    fail('Expired editor must not receive an address'),
+              ),
+            );
+        harness.present();
+        await tester.pumpAndSettle();
+        harness.provider.initial.complete(_pricing([_btc, _usdc]));
+        await tester.pumpAndSettle();
+        expect(find.text('Keep editing'), findsOneWidget);
+        expect(
+          harness.container.read(crossChainPaymentFlowProvider)?.inputOrigin,
+          isNotNull,
+        );
+        const newer = CrossChainPaymentRequest(
+          id: 'newer',
+          rawUri: 'bitcoin:bc1newer?amount=0.1',
+          address: 'bc1newer',
+          isEvm: false,
+          chain: 'btc',
+        );
+        if (newerParked) {
+          harness.container.read(paymentUriPrefillProvider.notifier).set(newer);
+        }
+        final security =
+            harness.container.read(appSecurityProvider.notifier)
+                as _ControlledSecurityNotifier;
+        security.setUnlocked(false);
+        await tester.pumpAndSettle();
+        expect(find.text('Payment request'), findsNothing);
+        expect(harness.container.read(crossChainPaymentFlowProvider), isNull);
+        expect(
+          harness.container.read(paymentUriPrefillProvider),
+          newerParked ? same(newer) : isNull,
+        );
+        security.setUnlocked(true);
+        final claimed = harness.container
+            .read(paymentUriPrefillProvider.notifier)
+            .takeIfFresh();
+        if (claimed.prefill != null) {
+          harness.container
+              .read(crossChainPaymentFlowProvider.notifier)
+              .present(claimed.prefill! as CrossChainPaymentRequest);
+        }
+        await tester.pumpAndSettle();
+        expect(
+          harness.container.read(crossChainPaymentFlowProvider)?.request,
+          newerParked ? same(newer) : isNull,
+        );
+        expect(
+          find.text('Payment request'),
+          newerParked ? findsOneWidget : findsNothing,
+        );
+        expect(find.text('Keep editing'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await harness.dispose(tester);
+      },
+    );
+  }
+
+  for (final newerParked in [false, true]) {
+    testWidgets(
       'locking during a quote preserves ${newerParked ? 'the newer parked request' : 'the visible request'} for unlock',
       (tester) async {
         final harness = await _readyHarness(
@@ -560,7 +673,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     );
     harness.present();
     await tester.pumpAndSettle();
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('payment_request_amount_skeleton')),
       findsOneWidget,
@@ -572,14 +689,22 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     // Even cached metadata does not enable review before the route is ready.
     harness.provider.initial.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(_primary(tester).onPressed, isNull);
     final privacy =
         harness.container.read(networkPrivacyProvider.notifier)
             as _NetworkPrivacyNotifier;
     privacy.setStatus(NetworkPrivacyConnectionStatus.connected);
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(harness.provider.pricingCalls, 2);
     harness.provider.refresh.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
@@ -618,7 +743,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     await tester.tap(find.byKey(_continueKey));
     await tester.pumpAndSettle();
     expect(privacy.retryCalls, 1);
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(harness.location, '/swap');
     privacy.setStatus(NetworkPrivacyConnectionStatus.connected);
     await tester.pumpAndSettle();
@@ -650,7 +779,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     expect(find.textContaining('not available in Vizor'), findsNothing);
     await tester.tap(find.byKey(_continueKey));
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     harness.provider.refresh.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
     expect(find.text('25.000001'), findsOneWidget);
@@ -674,7 +807,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     final refresh = notifier.refreshPaymentRequestAssets();
     harness.present();
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Estimated spend'), findsNothing);
     expect(_primary(tester).onPressed, isNull);
     expect(_composerValues(harness.state), original);
@@ -728,7 +865,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
       expect(harness.location, '/swap');
       expect(_primary(tester).onPressed, isNull);
       expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
-      expect(find.text('Preparing payment review…'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cross_chain_payment_request_status')),
+        findsNothing,
+      );
       expect(
         harness.container
             .read(crossChainPaymentFlowProvider)
@@ -924,7 +1065,7 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     await tester.pumpAndSettle();
     expect(
       find.text('Select the receiving network, then enter an amount.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(_primary(tester).onPressed, isNull);
     await _captureHost(

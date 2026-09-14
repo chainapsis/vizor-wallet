@@ -1,3 +1,4 @@
+import '../../features/pay/providers/payment_request_input_origin_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/pay/providers/cross_chain_payment_request_provider.dart';
@@ -28,13 +29,17 @@ class PaymentRequestIntake {
   Future<PaymentRequestIntakeResult> receive(
     String raw, {
     bool Function()? isCurrent,
+    CrossChainPaymentRequest? resolvedCrossChainRequest,
+    PaymentRequestInputOrigin? inputOrigin,
   }) async {
     final generation = ++_generation;
     final uri = raw.trim();
     try {
       final PaymentRequestDraft draft;
       if (isCrossChainPaymentUri(uri)) {
-        draft = await ref.read(crossChainPaymentParserProvider)(uri);
+        draft = resolvedCrossChainRequest?.rawUri == uri
+            ? resolvedCrossChainRequest!
+            : await ref.read(crossChainPaymentParserProvider)(uri);
       } else {
         final request = Zip321PaymentRequest.parse(uri);
         if (!request.isSupported) {
@@ -48,6 +53,9 @@ class PaymentRequestIntake {
       if (generation != _generation || isCurrent?.call() == false) {
         return PaymentRequestIntakeResult.ignored;
       }
+      ref
+          .read(paymentRequestInputOriginProvider.notifier)
+          .set(draft.id, inputOrigin);
       final replaced = ref.read(paymentUriPrefillProvider.notifier).set(draft);
       ref.read(paymentRequestArrivalProvider.notifier).arrived();
       return replaced
@@ -75,11 +83,18 @@ Future<bool> intakePaymentRequest(
   WidgetRef ref,
   String raw, {
   bool Function()? isCurrent,
+  CrossChainPaymentRequest? resolvedCrossChainRequest,
+  PaymentRequestInputOrigin? inputOrigin,
 }) async {
   if (!isPaymentRequestUri(raw)) return false;
   final result = await ref
       .read(paymentRequestIntakeProvider)
-      .receive(raw, isCurrent: isCurrent);
+      .receive(
+        raw,
+        isCurrent: isCurrent,
+        resolvedCrossChainRequest: resolvedCrossChainRequest,
+        inputOrigin: inputOrigin,
+      );
   if (result == PaymentRequestIntakeResult.ignored ||
       isCurrent?.call() == false) {
     return false;
