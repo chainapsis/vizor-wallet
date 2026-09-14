@@ -1267,7 +1267,7 @@ struct TransparentRefresh {
 }
 
 struct TransparentRefreshCompletion {
-    non_external_addresses: Vec<String>,
+    scope: transparent_receive_cache::RefreshScope,
     child_indices: Vec<u32>,
     next_sweep_offset: Option<usize>,
 }
@@ -1331,6 +1331,8 @@ async fn refresh_utxos(
             continue;
         }
         summary.matched_accounts += 1;
+        let planning_started = std::time::Instant::now();
+        let first_refresh = refreshes.len();
         let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
@@ -1423,7 +1425,7 @@ async fn refresh_utxos(
                 label,
                 account_uuid: account_uuid.clone(),
                 completion: Some(TransparentRefreshCompletion {
-                    non_external_addresses: Vec::new(),
+                    scope: transparent_receive_cache::RefreshScope::External,
                     child_indices: batch.child_indices,
                     next_sweep_offset: batch.next_sweep_offset,
                 }),
@@ -1434,19 +1436,49 @@ async fn refresh_utxos(
             .iter()
             .map(|address| address.address.as_str())
             .collect::<BTreeSet<_>>();
-        let mut internal_addresses = std::collections::HashSet::new();
-        let non_external_addresses: Vec<String> = db
+        let receivers = db
             .get_transparent_receivers(account_id, true, true)
-            .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
+            .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?;
+        if is_ledger {
+            let internal = receivers
+                .iter()
+                .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
+                .map(|(addr, meta)| {
+                    meta.address_index()
+                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let batches = transparent_receive_cache::plan_internal_utxo_refresh(
+                db_data_path,
+                network,
+                &account_uuid,
+                &internal,
+                TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
+                TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
+            )
+            .map_err(|e| SyncError::db(format!("internal UTXO plan: {e}")))?;
+            for batch in batches {
+                refreshes.push(TransparentRefresh {
+                    addresses: batch.addresses,
+                    start_height: block_height_from_u64(batch.start_height, "internal UTXO start")?,
+                    label: "transparent internal UTXOs".into(),
+                    account_uuid: account_uuid.clone(),
+                    completion: Some(TransparentRefreshCompletion {
+                        scope: transparent_receive_cache::RefreshScope::Internal,
+                        child_indices: batch.child_indices,
+                        next_sweep_offset: batch.next_sweep_offset,
+                    }),
+                });
+            }
+        }
+        let non_external_addresses: Vec<String> = receivers
             .into_iter()
-            .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
-            .map(|(addr, metadata)| {
-                let query_address = addr.encode(&query_network);
-                if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
-                    internal_addresses.insert(query_address.clone());
-                }
-                query_address
+            .filter(|(_, metadata)| {
+                metadata.scope() != Some(TransparentKeyScope::EXTERNAL)
+                    && !(is_ledger && metadata.scope() == Some(TransparentKeyScope::INTERNAL))
             })
+            .map(|(addr, _)| addr.encode(&query_network))
             .filter(|addr| !external_selected.contains(addr.as_str()))
             .collect();
 
@@ -1481,6 +1513,12 @@ async fn refresh_utxos(
                 account_uuid: account_uuid.clone(),
             });
         }
+        log::info!(
+            "transparent refresh plan: account={} rpc_count={} addresses={} elapsed_ms={}",
+            account_id.expose_uuid(), refreshes.len() - first_refresh,
+            refreshes[first_refresh..].iter().map(|r| r.addresses.len()).sum::<usize>(),
+            planning_started.elapsed().as_millis(),
+        );
     }
 
     let total_refreshes = refreshes.len() as u64;
@@ -1567,21 +1605,11 @@ fn update_transparent_refresh_cache_metadata(
         mark_transparent_receive_cache_dirty(db_data_path, &downloaded.refresh.account_uuid);
     }
     if let Some(completion) = downloaded.refresh.completion.as_ref() {
-        if !completion.non_external_addresses.is_empty() {
-            if let Err(error) = transparent_receive_cache::mark_non_external_utxo_refresh_complete(
-                db_data_path,
-                network,
-                &downloaded.refresh.account_uuid,
-                &completion.non_external_addresses,
-                u64::from(u32::from(tip_height)) + 1,
-            ) {
-                log::warn!("failed to mark internal UTXO lookup complete: {error}");
-            }
-        }
-        if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
+        if let Err(e) = transparent_receive_cache::mark_scoped_utxo_refresh_complete(
             db_data_path,
             network,
             &downloaded.refresh.account_uuid,
+            completion.scope,
             &completion.child_indices,
             u64::from(u32::from(tip_height)) + 1,
             completion.next_sweep_offset,
@@ -1746,6 +1774,8 @@ async fn download_transparent_outputs(
         }));
     }
 
+    let started = std::time::Instant::now();
+    let address_count = refresh.addresses.len();
     log::info!(
         "[{}] sync: refreshing {} for account {} from height {} ({} addresses)",
         elapsed(),
@@ -1774,6 +1804,7 @@ async fn download_transparent_outputs(
     };
 
     let mut outputs = Vec::new();
+    let mut response_bytes = 0usize;
     loop {
         let reply = tokio::select! {
             biased;
@@ -1790,6 +1821,7 @@ async fn download_transparent_outputs(
         let Some(reply) = reply else {
             break;
         };
+        response_bytes += prost::Message::encoded_len(&reply);
         let txid: [u8; 32] = reply
             .txid
             .try_into()
@@ -1822,6 +1854,11 @@ async fn download_transparent_outputs(
         );
     }
 
+    log::info!(
+        "transparent refresh: account={} scope={:?} addresses={} rpc_count=1 outputs={} response_bytes={} elapsed_ms={}",
+        refresh.account_uuid, refresh.completion.as_ref().map(|c| c.scope),
+        address_count, outputs.len(), response_bytes, started.elapsed().as_millis(),
+    );
     Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
 }
 
