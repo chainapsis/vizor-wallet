@@ -225,6 +225,12 @@ Hardware-wallet PCZT QR codes prioritize scan reliability over Figma parity.
 Use black-on-white square modules with an explicit quiet zone. Do not apply
 decorative QR treatments to codes that Keystone devices need to scan.
 
+## Widgetbook
+
+Before changing or reviewing Widgetbook galleries, fixtures, addons, or their
+tests, read [docs/widgetbook.md](docs/widgetbook.md) in full for run commands,
+gallery and fixture contracts, lane comparison, and scoped verification.
+
 ## UI Copy Conventions
 
 - **Sentence case is the project default for all user-facing strings**: button
