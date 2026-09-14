@@ -4388,6 +4388,66 @@ void main() {
     expect(swapProvider.requests.single.slippageBps, 125);
   });
 
+  testWidgets(
+    'custom slippage normalizes leading decimals without relaxing limits',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['0.555', '1234']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(sessionStore.savedPreferences?.slippageBps, 50);
+    },
+  );
+
   testWidgets('custom slippage outside range disables update', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore();

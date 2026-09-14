@@ -181,6 +181,66 @@ void main() {
     );
   });
 
+  testWidgets(
+    'slippage input normalizes leading decimals and keeps range checks',
+    (tester) async {
+      var submittedBps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppTheme(
+              data: AppThemeData.dark,
+              child: MobileSwapSlippageStepperModal(
+                slippageBps: 100,
+                onSubmitted: (value) => submittedBps = value,
+                onCancel: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final field = find.byKey(const ValueKey('mobile_swap_slippage_value'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      await tester.enterText(field, '0.555');
+      await tester.pump();
+      expect(controller.text, '0.5');
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pump();
+      expect(submittedBps, 50);
+      await tester.tap(find.byKey(const ValueKey('mobile_swap_slippage_plus')));
+      await tester.pump();
+      expect(controller.text, '0.6');
+    },
+  );
+
   testWidgets('slippage stepper changes by 0.1 percent per tap', (
     tester,
   ) async {
