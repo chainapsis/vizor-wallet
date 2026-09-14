@@ -26,12 +26,26 @@ enum _KeystoneBirthdaySubmitPhase { idle, stoppingSync, importing }
 typedef KeystoneBirthdayMetadataLoader =
     Future<ImportBirthdayMetadata> Function();
 
+typedef KeystoneBirthdayHeightEstimator =
+    Future<int> Function(
+      DateTime selectedDate,
+      ImportBirthdayMetadata? metadata,
+    );
+
 class KeystoneWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const KeystoneWalletBirthdayScreen({super.key, this.metadataLoader});
+  const KeystoneWalletBirthdayScreen({
+    super.key,
+    this.metadataLoader,
+    this.heightEstimator,
+  });
 
   /// Preview/test seam — production loads the metadata through Rust.
   @visibleForTesting
   final KeystoneBirthdayMetadataLoader? metadataLoader;
+
+  /// Preview/test seam — production estimates through Rust and lightwalletd.
+  @visibleForTesting
+  final KeystoneBirthdayHeightEstimator? heightEstimator;
 
   @override
   ConsumerState<KeystoneWalletBirthdayScreen> createState() =>
@@ -130,13 +144,14 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final estimatedHeight =
-          await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
-            selectedDate: date,
-            metadata: _metadata,
-          );
+      final estimator = widget.heightEstimator;
+      final estimatedHeight = estimator != null
+          ? await estimator(date, _metadata)
+          : await ImportBirthdayEstimator.estimateBirthdayHeight(
+              endpoint: ref.read(rpcEndpointProvider),
+              selectedDate: date,
+              metadata: _metadata,
+            );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
         _selectedDate = date;

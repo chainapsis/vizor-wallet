@@ -943,6 +943,25 @@ void main() {
     // Both options show this placeholder; it guards the field's presence, while
     // the distinguishing work is the error copy above plus the render sweep.
     expect(find.text('mm/dd/yyyy'), findsOne);
+    await tester.tap(find.text('mm/dd/yyyy'));
+    await tester.pump();
+    expect(find.text('September 2026'), findsOneWidget);
+    // The deterministic preview tip is September 1, so this is the enabled
+    // date at the calendar boundary; later September cells are disabled.
+    await tester.tap(find.text('1').first);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('keystone_birthday_submit_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(
+      find.text('Could not estimate the wallet birthday height.'),
+      findsNothing,
+    );
     await disposeTree(tester);
   });
 

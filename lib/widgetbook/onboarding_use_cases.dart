@@ -684,6 +684,7 @@ Widget keystoneWalletBirthdayFixture({required bool metadataLoaded}) {
               : () => Future<ImportBirthdayMetadata>.error(
                   StateError('Preview endpoint has no birthday metadata.'),
                 ),
+          heightEstimator: (_, _) async => 2_700_000,
         ),
       ),
     ),
