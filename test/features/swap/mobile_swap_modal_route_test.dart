@@ -806,7 +806,17 @@ void main() {
   }
 
   for (final paste in [false, true]) {
-    for (final action in ['keep', 'cancel', 'replace', 'zcash', 'context']) {
+    for (final action in [
+      'keep',
+      'cancel',
+      'replace',
+      'zcash',
+      'context',
+      'route-keep',
+      'route-cancel',
+      'return-keep',
+      'return-cancel',
+    ]) {
       testWidgets(
         'payment ${paste ? 'paste' : 'QR'} restores editor with $action',
         (tester) async {
@@ -877,6 +887,38 @@ void main() {
           final flow = container.read(crossChainPaymentFlowProvider.notifier);
           flow.present(pending);
           expect(flow.canUseAddressOnly, isTrue);
+          if (action.startsWith('route-') || action.startsWith('return-')) {
+            final screen = tester.state(find.byType(MobileSwapScreen));
+            final router = GoRouter.of(screen.context);
+            router.go('/home');
+            await tester.pumpAndSettle();
+            expect(screen.mounted, isTrue);
+            if (action.startsWith('return-')) {
+              router.go('/swap');
+              await tester.pumpAndSettle();
+              expect(tester.state(find.byType(MobileSwapScreen)), same(screen));
+            }
+            expect(flow.canUseAddressOnly, isFalse);
+            if (action.endsWith('-keep')) {
+              flow.useAddressOnly();
+            } else {
+              flow.dismiss();
+            }
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(
+                const ValueKey('swap_destination_field'),
+                skipOffstage: false,
+              ),
+              findsNothing,
+            );
+            expect(
+              container.read(swapStateProvider).destinationText,
+              before.destinationText,
+            );
+            expect(tester.takeException(), isNull);
+            return;
+          }
           if (action == 'replace' || action == 'zcash' || action == 'context') {
             if (action == 'zcash') {
               presentPaymentRequest(

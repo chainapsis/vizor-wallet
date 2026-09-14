@@ -70,6 +70,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   String? _addressEditorDraftText;
   bool _addressEditorDraftRemember = false;
   var _addressEditorGeneration = 0;
+  var _routeGeneration = 0;
+  GoRouterDelegate? _routerDelegate;
+  (Uri, ValueKey<String>)? _routeIdentity;
   AddressInputResult? _resolvedPaymentInput;
   ({String address, bool remember})? _addressRequestDraft;
 
@@ -85,11 +88,31 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final delegate = GoRouter.of(context).routerDelegate;
+    if (_routerDelegate != delegate) {
+      _routerDelegate?.removeListener(_onRouteChanged);
+      _routerDelegate = delegate;
+      _onRouteChanged();
+      delegate.addListener(_onRouteChanged);
+    }
     if (ModalRoute.isCurrentOf(context) == false) _addressEditorGeneration++;
+  }
+
+  void _onRouteChanged() {
+    final route = _routerDelegate!.state;
+    final identity = (route.uri, route.pageKey);
+    if (_routeIdentity != identity) {
+      _routeIdentity = identity;
+      _routeGeneration++;
+      // Indexed-stack branches stay mounted. Expire the session permanently,
+      // even if navigation later returns to the same Swap page.
+      _invalidateAddressEditorDraft();
+    }
   }
 
   @override
   void dispose() {
+    _routerDelegate?.removeListener(_onRouteChanged);
     _swapModal.dispose();
     super.dispose();
   }
@@ -185,10 +208,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final remember = _addressEditorDraftRemember;
     final contextKey = addressInputContextKey(ref, includeSwap: true);
     final arrival = ref.read(paymentRequestArrivalProvider);
+    final routeGeneration = _routeGeneration;
     _addressRequestDraft = (address: address, remember: remember);
     _closeSwapModal();
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted ||
+        routeGeneration != _routeGeneration ||
         _swapModal.value != null ||
         contextKey != addressInputContextKey(ref, includeSwap: true) ||
         arrival != ref.read(paymentRequestArrivalProvider)) {
