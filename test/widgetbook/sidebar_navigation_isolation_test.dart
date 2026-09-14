@@ -45,12 +45,17 @@ void main() {
     'Send': buildSendScreenGalleryCase,
     'Swap': buildSwapScreenGalleryCase,
     'Pay': buildPayScreenGalleryCase,
+    'Activity': buildActivityScreenGalleryCase,
+    'Transaction detail': buildActivityTransactionStatusGalleryCase,
+    'Swap detail': buildActivitySwapDetailScreenGalleryCase,
   };
   for (final surface in surfaces.entries) {
     for (final action in {
       'Pay': '/pay',
       'Vote': '/voting',
       'Sign out': '/unlock',
+      'Manage accounts': '/accounts',
+      'Add account': '/add-account',
     }.entries) {
       // Pay is current on Pay and intentionally disabled in Send's fixture.
       if ((surface.key == 'Pay' || surface.key == 'Send') &&
@@ -81,9 +86,25 @@ void main() {
           if (surface.key == 'Receive' || surface.key == 'Home') {
             expect(container.exists(swapStateProvider), isFalse);
           }
-          await tester.tap(
-            find.descendant(of: sidebar, matching: find.text(action.key)),
-          );
+          if (action.value == '/accounts' || action.value == '/add-account') {
+            await tester.tap(
+              find.byKey(const ValueKey('sidebar_accounts_button')),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+            await tester.tap(
+              find.byKey(
+                ValueKey(
+                  action.value == '/accounts'
+                      ? 'sidebar_accounts_manage'
+                      : 'sidebar_accounts_add',
+                ),
+              ),
+            );
+          } else {
+            await tester.tap(
+              find.descendant(of: sidebar, matching: find.text(action.key)),
+            );
+          }
           await tester.pumpAndSettle();
           expect(
             router.routerDelegate.currentConfiguration.uri.path,
@@ -91,6 +112,12 @@ void main() {
           );
           expect(find.byType(AppMainSidebar), findsNothing);
           expect(find.textContaining(action.value), findsWidgets);
+          expect(router.routerDelegate.currentConfiguration.error, isNull);
+          if (surface.key == 'Activity' ||
+              surface.key == 'Transaction detail' ||
+              surface.key == 'Swap detail') {
+            expect(find.text('Navigated to ${action.value}'), findsOneWidget);
+          }
           expect(container.read(accountProvider), same(accountBefore));
           if (surface.key == 'Receive' || surface.key == 'Home') {
             expect(container.exists(swapStateProvider), isFalse);
@@ -100,7 +127,10 @@ void main() {
             await tester.tap(find.text('Back to send preview'));
             await tester.pumpAndSettle();
             expect(find.byType(AppMainSidebar), findsOneWidget);
-            expect(router.routerDelegate.currentConfiguration.uri.path, '/send');
+            expect(
+              router.routerDelegate.currentConfiguration.uri.path,
+              '/send',
+            );
           }
           await disposeTree(tester);
         },

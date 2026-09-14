@@ -1798,14 +1798,7 @@ class _TxStatusDesktopHarnessState extends State<_TxStatusDesktopHarness> {
             explorerLauncher: (_) async => true,
           ),
         ),
-        for (final path in const [
-          '/home',
-          '/send',
-          '/receive',
-          '/swap',
-          '/activity',
-          '/settings',
-        ])
+        for (final path in wbSidebarPaths)
           GoRoute(path: path, builder: (_, _) => _HomeRoutePlaceholder(path)),
       ],
     );
@@ -1905,7 +1898,7 @@ class _ActivityExpandReviewMessageOnMountState
 
 List<GoRoute> _activityPlaceholderRoutes() {
   return [
-    for (final path in const ['/home', '/swap', '/settings', '/receive'])
+    for (final path in wbSidebarPaths.where((path) => path != '/activity'))
       GoRoute(path: path, builder: (_, _) => _HomeRoutePlaceholder(path)),
     GoRoute(
       path: '/activity/tx/:txid',
@@ -2696,7 +2689,7 @@ class _SwapDetailHarnessState extends State<_SwapDetailHarness> {
                   );
           },
         ),
-        for (final path in const ['/home', '/swap', '/settings', '/activity'])
+        for (final path in wbSidebarPaths)
           GoRoute(path: path, builder: (_, _) => _HomeRoutePlaceholder(path)),
       ],
     );
