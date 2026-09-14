@@ -1130,7 +1130,10 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   final VoidCallback? onCancel;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) =>
+      PaymentUriBusySurfaceHold(child: _buildContent(context, ref));
+
+  Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
     final readiness = ref.watch(ledgerAppReadinessStateProvider);

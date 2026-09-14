@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -69,7 +71,10 @@ class LedgerSigningModal extends ConsumerWidget {
   final int roundCount;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) =>
+      PaymentUriBusySurfaceHold(child: _buildContent(context, ref));
+
+  Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final networkName = ref.watch(
       rpcEndpointProvider.select((endpoint) => endpoint.networkName),

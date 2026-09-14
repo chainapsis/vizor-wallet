@@ -4013,6 +4013,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Approve on your Ledger'), findsOneWidget);
+      expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
       expect(find.text('Waiting for Ledger approval'), findsOneWidget);
       expect(find.text('Signing with Keystone'), findsNothing);
       expect(find.text('Signing with Ledger'), findsOneWidget);

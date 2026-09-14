@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -10,6 +11,52 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  testWidgets(
+    'parks payment requests across signing phases and releases on exit',
+    (tester) async {
+      final visible = ValueNotifier(true);
+      final phase = ValueNotifier(LedgerSigningModalPhase.awaitingDevice);
+      addTearDown(visible.dispose);
+      addTearDown(phase.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          ],
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: visible,
+                builder: (_, show, _) => show
+                    ? ValueListenableBuilder<LedgerSigningModalPhase>(
+                        valueListenable: phase,
+                        builder: (_, value, _) => LedgerSigningModal(
+                          phase: value,
+                          failure: null,
+                          onCancel: () {},
+                          onFailureAction: null,
+                        ),
+                      )
+                    : const SizedBox(),
+              ),
+            ),
+          ),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp)),
+      );
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      phase.value = LedgerSigningModalPhase.saving;
+      await tester.pump();
+      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      visible.value = false;
+      await tester.pump();
+      expect(container.read(paymentUriBusySurfaceProvider), 0);
+    },
+  );
+
   testWidgets('separates the Ledger signer from the Zcash device app', (
     tester,
   ) async {
