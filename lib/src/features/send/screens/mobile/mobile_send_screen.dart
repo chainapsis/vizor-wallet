@@ -122,6 +122,15 @@ typedef MobileSendFeeEstimator =
       String? memo,
     });
 
+typedef MobileSendMaxEstimator =
+    Future<rust_sync.SendMaxEstimateResult> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String toAddress,
+      String? memo,
+    });
+
 /// [networkName] is the network the wallet is actually on, not the build
 /// default: the scanner refuses an address that does not belong to it.
 typedef MobileSendScanner =
@@ -422,6 +431,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.loadWalletDbPath = getWalletDbPath,
     this.validateAddress,
     this.estimateFee,
+    this.estimateMax,
     this.prepareReview,
     this.discardPreparedReview,
     this.openScanner = showMobileSendScanSheet,
@@ -500,6 +510,9 @@ class MobileSendScreen extends ConsumerStatefulWidget {
 
   /// Preview/test seam for the direct Rust fee-estimation call.
   final MobileSendFeeEstimator? estimateFee;
+
+  /// Preview/test seam for the direct Rust maximum-send estimation call.
+  final MobileSendMaxEstimator? estimateMax;
 
   /// Preview/test seam for creating a deterministic in-memory review.
   final MobileSendReviewPreparer? prepareReview;
@@ -1333,7 +1346,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               if (!_isCurrentMaxRequest(seq, accountUuid, address, memo)) {
                 return null;
               }
-              return rust_sync.estimateSendMax(
+              return (widget.estimateMax ?? rust_sync.estimateSendMax)(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,

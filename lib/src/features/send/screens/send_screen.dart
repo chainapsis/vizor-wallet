@@ -63,6 +63,15 @@ typedef SendFeeEstimator =
       String? memo,
     });
 
+typedef SendMaxEstimator =
+    Future<rust_sync.SendMaxEstimateResult> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String toAddress,
+      String? memo,
+    });
+
 typedef SendReviewPreparer =
     Future<SendReviewArgs> Function({
       required String accountUuid,
@@ -83,6 +92,7 @@ class SendScreen extends ConsumerStatefulWidget {
     this.prefill,
     this.validateAddress,
     this.estimateFee,
+    this.estimateMax,
     this.prepareReview,
     this.discardPreparedReview,
   });
@@ -90,6 +100,7 @@ class SendScreen extends ConsumerStatefulWidget {
   final SendPrefillArgs? prefill;
   final SendAddressValidator? validateAddress;
   final SendFeeEstimator? estimateFee;
+  final SendMaxEstimator? estimateMax;
   final SendReviewPreparer? prepareReview;
   final SendPreparedReviewDiscarder? discardPreparedReview;
 
@@ -157,6 +168,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       prefill: prefill,
       validateAddress: widget.validateAddress,
       estimateFee: widget.estimateFee,
+      estimateMax: widget.estimateMax,
       prepareReview: widget.prepareReview,
       discardPreparedReview: widget.discardPreparedReview,
     );
@@ -175,6 +187,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     this.prefill,
     this.validateAddress,
     this.estimateFee,
+    this.estimateMax,
     this.prepareReview,
     this.discardPreparedReview,
   });
@@ -188,6 +201,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final SendPrefillArgs? prefill;
   final SendAddressValidator? validateAddress;
   final SendFeeEstimator? estimateFee;
+  final SendMaxEstimator? estimateMax;
   final SendReviewPreparer? prepareReview;
   final SendPreparedReviewDiscarder? discardPreparedReview;
 
@@ -799,7 +813,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
               final dbPath = await ref.read(sendWalletDbPathProvider).call();
               final endpoint = ref.read(rpcEndpointProvider);
               if (!mounted || !_isMaxMode || seq != _maxSeq) return null;
-              return rust_sync.estimateSendMax(
+              return (widget.estimateMax ?? rust_sync.estimateSendMax)(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,

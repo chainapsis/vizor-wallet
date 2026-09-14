@@ -537,6 +537,7 @@ Widget sendScreenFixture({
             prefill: prefill,
             validateAddress: _previewValidateAddress,
             estimateFee: _previewEstimateFee,
+            estimateMax: _previewEstimateMax,
             prepareReview: _previewPrepareReview,
             discardPreparedReview: (_) async {},
           ),
@@ -583,6 +584,18 @@ Future<BigInt> _previewEstimateFee({
   required BigInt amountZatoshi,
   String? memo,
 }) async => BigInt.from(1_000_000);
+
+Future<rust_sync.SendMaxEstimateResult> _previewEstimateMax({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+  String? memo,
+}) async => rust_sync.SendMaxEstimateResult(
+  amountZatoshi: BigInt.from(14_302_120_000),
+  feeZatoshi: BigInt.from(1_000_000),
+  needsSaplingParams: false,
+);
 
 Future<SendReviewArgs> _previewPrepareReview({
   required String accountUuid,
@@ -1267,6 +1280,7 @@ class _MobileSendFlowHarnessState extends State<_MobileSendFlowHarness> {
             loadWalletDbPath: () async => '/tmp/widgetbook-zcash-wallet.db',
             validateAddress: _previewMobileValidateAddress,
             estimateFee: widget.estimateFee ?? _previewEstimateFee,
+            estimateMax: _previewEstimateMax,
             prepareReview:
                 ({
                   required accountUuid,

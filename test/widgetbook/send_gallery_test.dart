@@ -1231,8 +1231,16 @@ void main() {
       _editableIn('send_address_field'),
       kSendScreenFixtureAddress,
     );
-    await tester.enterText(_editableIn('send_amount_field'), '12.5');
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Use Max'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<EditableText>(_editableIn('send_amount_field'))
+          .controller
+          .text,
+      '143.0212',
+    );
     await tester.tap(find.byKey(const ValueKey('send_review_button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
@@ -1279,11 +1287,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_send_amount_field')),
-      '0.5',
-    );
+    await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
     await tester.pumpAndSettle();
+    expect(find.text('143.0212'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
