@@ -1798,25 +1798,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  /// Casts every pending vote for the round, running one serial chain per
-  /// delegation bundle with all bundles in flight at once.
+  /// Casts pending votes in draft order within each delegation bundle.
   ///
-  /// The serialization inside a bundle is a protocol requirement, not a
-  /// throttle. A cast vote spends the bundle's vote authority note: the proof
-  /// binds the current VAN leaf position and the current proposal-authority
-  /// mask, submission clears that proposal's bit, and confirmation appends the
-  /// replacement VAN leaf and advances the stored position. Proving two
-  /// proposals of one bundle against the same state yields the same
-  /// `van_nullifier`, so the second cast-vote transaction is a double spend.
-  /// Each step therefore waits for `submit -> confirm -> tree re-sync` before
-  /// the next proposal of the same bundle is proved.
-  ///
-  /// Different bundles own independent VAN chains, so they never wait on each
-  /// other. Witness materialization stays inside the serialized tree handoff;
-  /// only the CPU-heavy proof step is capped ([_votingWorkConcurrency]). A
-  /// bundle parked on a block confirmation holds no proof permit. Share
-  /// submission is dispatched off the chain because the VAN advance is already
-  /// durable by then.
+  /// The next proposal needs a persisted confirmation and fresh tree witness;
+  /// proving two proposals against the same VAN state double-spends its
+  /// `van_nullifier`. Bundles progress concurrently through shared proof/share
+  /// pools, a serialized tree handoff, and a single broadcast permit.
+  /// Confirmation waits hold no proof permit. Share delivery runs separately
+  /// after the VAN advance is durable.
+  /// Cross-owner rules: `docs/contracts/domains/voting/vote-execution.md`.
   ///
   /// Returns the number of bundle tasks that completed through share
   /// submission. Throws [_VoteWaveBatchException] if any task failed.

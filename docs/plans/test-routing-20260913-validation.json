@@ -1,0 +1,176 @@
+{
+  "source_base_sha": "efbc2f3dea804a0a6b94a3a7f42af3feffc9f41b",
+  "verification": "Before/after in one owned source snapshot with an isolated Flutter SDK and offline dependencies; no model benchmark.",
+  "checks": {
+    "format": {
+      "command": [
+        "fvm",
+        "dart",
+        "format",
+        "--output=none",
+        "--set-exit-if-changed",
+        "test/features/receive/request_amount_widgets_test.dart",
+        "test/features/receive/request_amount_model_test.dart",
+        "test/features/receive/request_amount_sheet_test.dart",
+        "test/features/receive/request_qr_export_test.dart",
+        "test/features/receive/support/request_amount_test_support.dart"
+      ],
+      "exit_code": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "elapsed_seconds": 0.175
+    },
+    "analyze": {
+      "command": [
+        "fvm",
+        "flutter",
+        "analyze",
+        "--no-pub",
+        "test/features/receive/request_amount_widgets_test.dart",
+        "test/features/receive/request_amount_model_test.dart",
+        "test/features/receive/request_amount_sheet_test.dart",
+        "test/features/receive/request_qr_export_test.dart",
+        "test/features/receive/support/request_amount_test_support.dart"
+      ],
+      "exit_code": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "elapsed_seconds": 9.833
+    },
+    "before-desktop": {
+      "command": [
+        "fvm",
+        "flutter",
+        "test",
+        "--no-pub",
+        "--reporter",
+        "json",
+        "test/core/zcash/zip321_payment_request_builder_test.dart",
+        "test/features/receive/zec_request_draft_test.dart",
+        "test/features/receive/request_amount_widgets_test.dart"
+      ],
+      "exit_code": 0,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "bf0dcc5e8944f20d76d3afb26cf84fb0c93f31ba29456eaf097c9b9851ad0f66",
+      "elapsed_seconds": 28.151
+    },
+    "before-mobile": {
+      "command": [
+        "fvm",
+        "flutter",
+        "test",
+        "--no-pub",
+        "--reporter",
+        "json",
+        "--dart-define=VIZOR_FORM_FACTOR=mobile",
+        "test/core/zcash/zip321_payment_request_builder_test.dart",
+        "test/features/receive/zec_request_draft_test.dart",
+        "test/features/receive/request_amount_widgets_test.dart"
+      ],
+      "exit_code": 0,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "bf0dcc5e8944f20d76d3afb26cf84fb0c93f31ba29456eaf097c9b9851ad0f66",
+      "elapsed_seconds": 24.416
+    },
+    "after-desktop": {
+      "command": [
+        "fvm",
+        "flutter",
+        "test",
+        "--no-pub",
+        "--reporter",
+        "json",
+        "test/core/zcash/zip321_payment_request_builder_test.dart",
+        "test/features/receive/zec_request_draft_test.dart",
+        "test/features/receive/request_amount_widgets_test.dart",
+        "test/features/receive/request_amount_model_test.dart",
+        "test/features/receive/request_amount_sheet_test.dart",
+        "test/features/receive/request_qr_export_test.dart"
+      ],
+      "exit_code": 0,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "bf0dcc5e8944f20d76d3afb26cf84fb0c93f31ba29456eaf097c9b9851ad0f66",
+      "elapsed_seconds": 17.16
+    },
+    "after-mobile": {
+      "command": [
+        "fvm",
+        "flutter",
+        "test",
+        "--no-pub",
+        "--reporter",
+        "json",
+        "--dart-define=VIZOR_FORM_FACTOR=mobile",
+        "test/core/zcash/zip321_payment_request_builder_test.dart",
+        "test/features/receive/zec_request_draft_test.dart",
+        "test/features/receive/request_amount_widgets_test.dart",
+        "test/features/receive/request_amount_model_test.dart",
+        "test/features/receive/request_amount_sheet_test.dart",
+        "test/features/receive/request_qr_export_test.dart"
+      ],
+      "exit_code": 0,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "bf0dcc5e8944f20d76d3afb26cf84fb0c93f31ba29456eaf097c9b9851ad0f66",
+      "elapsed_seconds": 17.149
+    },
+    "mobile-screen": {
+      "command": [
+        "fvm",
+        "flutter",
+        "test",
+        "--no-pub",
+        "--reporter",
+        "json",
+        "--tags",
+        "mobile",
+        "--run-skipped",
+        "--dart-define=VIZOR_FORM_FACTOR=mobile",
+        "test/features/receive/mobile_receive_screen_test.dart"
+      ],
+      "exit_code": 0,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "test_name_result_skip_sha256": "24db8fda5190e8ab935fb26913f5426039e967b7f90025d6dddc1e5997eb9d51",
+      "elapsed_seconds": 16.365
+    }
+  },
+  "test_body_parity": {
+    "test_body_tokens_identical_after_helper_renames_and_formatting": true,
+    "tokens": 3823,
+    "split_test_cases": 44,
+    "groups": 6
+  },
+  "docs": {
+    "documents": 102,
+    "local_links": 635,
+    "graph_nodes": 106,
+    "graph_edges": 370,
+    "required_routes_verified": true
+  },
+  "verified_test_file_sha256": {
+    "test/features/receive/request_amount_widgets_test.dart": "728ff54e71d92607ece7c3bb61c85d6ec32a02b3967d2710e1abd6a5fbca26f8",
+    "test/features/receive/request_amount_model_test.dart": "09e76e4f5b5d26da014d8e0162a008e75506e77073bcaa9af61b7c02fc7d3905",
+    "test/features/receive/request_amount_sheet_test.dart": "cd7f5cb2e48395d1b890069149a20f4024e04a563c1d98e03162d7cf750ca877",
+    "test/features/receive/request_qr_export_test.dart": "970c7fd59f85ce9fbc807731ed576e9e3404f22d9dcd4c06c9c9c388ad1175ab",
+    "test/features/receive/support/request_amount_test_support.dart": "13c28304b323506993516e0af7ce365ad628c9e07edb894d2be77934042b8bef"
+  },
+  "integrity": {
+    "preexisting_paths_preserved_except_approved_edits": true,
+    "vizor_main_refs_unchanged": true,
+    "product_code_unchanged": true,
+    "owned_verification_resources_removed": true
+  }
+}

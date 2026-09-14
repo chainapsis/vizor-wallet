@@ -80,6 +80,9 @@ fvm flutter pub get
 The Flutter version is declared in `.fvmrc`. Always use `fvm flutter` and
 `fvm dart`; do not use an unpinned `flutter` or `dart` executable.
 
+Dependency versions come from `pubspec.yaml`, `pubspec.lock`, `rust/Cargo.toml`,
+and `rust/Cargo.lock`. Check compatible librustzcash versions before upgrades.
+
 Start the desktop app with:
 
 ```bash
@@ -95,6 +98,40 @@ fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
 For iOS wallet creation/import testing, `./clear-app.sh` removes the app,
 Keychain entries, and saved state from the booted simulator. This is destructive
 to that simulator's Vizor data; use it only with disposable test wallets.
+
+On macOS, Rust logs go to `os_log` subsystem `frb_user`, not the Flutter terminal:
+
+```bash
+log stream --predicate 'subsystem == "frb_user"' --level info
+```
+
+### Build and test environment
+
+- Keep form factor, chain network, endpoint, and deep-link origin distinct.
+  `VIZOR_FORM_FACTOR` selects UI tokens; it does not select a chain or storage.
+- [network_config.dart](lib/src/core/config/network_config.dart) owns
+  `ZCASH_DEFAULT_NETWORK` (`main`, `test`, `regtest`; default `main`) and the
+  secure-store service name. Resolve the randomized DB through
+  [wallet_paths.dart](lib/src/core/storage/wallet_paths.dart), not a hardcoded OS
+  directory or filename. `ZCASH_E2E_LIGHTWALLETD_URL` is a
+  [debug-only bootstrap override](lib/src/app_bootstrap.dart): it changes the
+  endpoint, not the network or wallet-state isolation.
+- `ZCASH_IRONWOOD_MASQUERADE` is a separate private-chain configuration that
+  presents a mainnet identity for hardware derivation and selects its own
+  secure-store service. Do not treat it as ordinary testnet. Configuration
+  behavior is pinned in [ironwood_masquerade_config_test.dart](test/core/config/ironwood_masquerade_config_test.dart).
+- Custom endpoints require HTTPS. The
+  [endpoint normalizer](lib/src/core/config/rpc_endpoint_config.dart) allows HTTP
+  only for recognized local hosts when `allowLocalHttp` is enabled, defaulting
+  to debug builds. Changing the endpoint does not override this validation.
+- [Regtest setup and cleanup](scripts/e2e/README.md#app-network-and-cleanup) and
+  the [iOS simulator lane](scripts/e2e/README.md#ios-simulator-lane) own test
+  isolation, device selection, and loopback rules. The iOS runner uses host
+  `127.0.0.1`; an Android emulator needs `10.0.2.2` and a separate runner.
+  Run these scenarios only when regtest/integration execution is requested.
+- [Deep-link origin](docs/contracts/references/navigation/deep-link-origin.md) owns the
+  Android/Dart define and separate iOS xcconfig setting. OS behavior and its
+  owning contracts are indexed in [UI and platform](docs/contracts/platforms/index.md).
 
 ## Making changes
 
@@ -178,13 +215,45 @@ If a contribution explicitly modifies a Figma file, read `FIGMA-AI-FIX.md`
 before doing so. Comparing code with Figma does not by itself authorize changes
 to the design file.
 
+### Contract maintenance
+
+Keep durable behavior rules in `docs/contracts/`. A contract should say when to
+read it, what the behavior must preserve, and where the implementation and
+focused verification live.
+
+- Describe the triggering condition, required outcome, and important exceptions.
+  Preserve ordering, ownership, failure, and recovery details that can change a
+  decision. For asynchronous work, identify where a condition must still hold.
+- Link stable source symbols and existing focused tests. Distinguish source
+  inspection from executable coverage; a test link does not mean it was run.
+- Update the owning contract when behavior changes or current code disproves it.
+  Keep shared rules in one owner and link them only for the relevant change.
+- Prefer short rules to implementation walkthroughs. Keep detailed setup and
+  validation procedures in their existing guides. Add a document or index when
+  it serves a distinct lookup need, not to fill a folder template.
+- Keep reasoning that matters at a particular code location in a local comment.
+  Remove a duplicate narrative only when its important reasoning remains in the
+  code or owning contract.
+
+Agents select the applicable contracts through [AGENTS.md](AGENTS.md) and retain
+those constraints in the current task context. The repository document remains
+the source of truth for later work.
+
 ## Testing
 
-Run the smallest relevant tests while developing and the complete applicable
-set before opening a pull request. In the PR description, list the exact
-commands run and any tests not run, with the reason.
+Use [Test execution](docs/contracts/guides/testing.md) for dependency preparation,
+focused reruns, and desktop/mobile test selection. The owning contract identifies
+the relevant test files. Run the smallest relevant tests while developing and the
+complete applicable set before opening a pull request. In the PR description,
+list the exact commands run and any tests not run, with the reason.
 
-### Baseline checks
+For documentation or ordinary comment edits, verify facts, links, and referenced
+symbols. Inspect comment diffs in context to confirm executable code is
+unchanged. These changes alone do not require application builds or runtime
+test suites. Comments used as annotations, compiler/codegen directives, or
+executable examples require checks for those affected behaviors.
+
+### Baseline checks for implementation changes
 
 For Dart or Flutter changes:
 
@@ -220,10 +289,12 @@ network calls.
 
 ### Integration and regtest checks
 
-Integration and regtest suites are slower and require additional services. Run
-the scenarios relevant to changes in synchronization, transaction lifecycle,
-endpoint failover, account import, shielding, migration, or native background
-execution.
+Integration and regtest suites are slower and require additional services.
+When regtest/integration execution is explicitly requested, select the scenarios
+relevant to changes in synchronization, transaction lifecycle, endpoint failover,
+account import, shielding, migration, or native background execution. Follow the
+[E2E guide](scripts/e2e/README.md#running-regtest-safely) for shared-state and
+platform-specific setup.
 
 Rust regtest suite:
 

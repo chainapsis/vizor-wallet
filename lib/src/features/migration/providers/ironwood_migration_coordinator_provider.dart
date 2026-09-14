@@ -20,17 +20,10 @@ import 'ironwood_migration_announcement_provider.dart';
 
 const _migrationStatusPollInterval = Duration(seconds: 15);
 
-/// Suspension threshold for the desktop ZIP 318 wallet-open epoch. The epoch
-/// restarts when either wall time outruns the monotonic clock by this much
-/// (machine sleep — the monotonic clock pauses while asleep) or refresh
-/// activity itself gaps past it with the process awake (wallet locked for a
-/// long stretch). Must stay well above [_migrationStatusPollInterval] so
-/// occlusion alone can never restart the epoch. On macOS and Linux sweep
-/// duration is exempt from the activity-gap signal, so a slow sweep needs no
-/// headroom here; Windows cannot grant that exemption (its monotonic clock
-/// runs through sleep, so a mid-sweep gap is indistinguishable from one), and
-/// a sweep stalled past this threshold there restarts the epoch — re-arming
-/// the on-open allowance rather than risking a missed sleep.
+/// Sleep/idle threshold for the desktop ZIP 318 wallet-open epoch.
+/// Must exceed [_migrationStatusPollInterval] so ordinary hidden-window polling
+/// preserves the epoch. Windows also counts long sweeps because its clock
+/// cannot distinguish them from sleep; see `_observeDesktopEpochActivity`.
 const kDesktopMigrationEpochSuspensionGap = Duration(minutes: 3);
 const _migrationAdvanceInterval = Duration(
   seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
@@ -43,14 +36,10 @@ const _migrationAdvanceInterval = Duration(
 /// Enforces ZIP 318's wallet-global, one-transfer fallback allowance for
 /// transfers that were already overdue when a desktop wallet-open epoch began.
 ///
-/// An epoch is continuous process activity, not window visibility. Desktop
-/// keeps sync and migration polling alive while every window is hidden
-/// (`canRunAppProcessWork`), so a transfer that becomes due while the app runs
-/// occluded or minimized must still broadcast at its scheduled height — it was
-/// not "overdue at open". The coordinator restarts the epoch only when process
-/// activity genuinely gapped (machine sleep, suspension, a long-locked wallet)
-/// or the wallet was reset; a restart re-arms the single on-open allowance and
-/// recaptures the wallet-wide overdue set.
+/// Window visibility does not define an epoch: transfers becoming due while
+/// the hidden process runs stay on schedule. Restarting after suspension or
+/// wallet reset re-arms the allowance and clears the captured overdue set.
+/// Cross-owner rules: `docs/contracts/domains/migration/desktop-scheduling.md`.
 class DesktopOpenMigrationFallbackGate {
   bool _available = true;
   int? _epochEntryHeight;
@@ -236,13 +225,9 @@ class IronwoodMigrationCoordinator
 
   final DateTime Function() _now;
 
-  /// Monotonic process clock. On macOS (mach_absolute_time) and Linux
-  /// (CLOCK_MONOTONIC) this pauses while the machine sleeps, so wall time
-  /// outrunning it is direct evidence of suspension — even when the sleep
-  /// began while a refresh sweep was in flight. On Windows the underlying
-  /// counter keeps running through sleep, so the divergence signal stays
-  /// silent there and a sleep is detected one sweep later by the idle-gap
-  /// signal instead (see `_observeDesktopEpochActivity`).
+  /// Process clock: macOS/Linux pause it during sleep; Windows keeps it running.
+  /// `_observeDesktopEpochActivity` uses that difference to select which gaps
+  /// count as suspension, including sleep during a refresh sweep.
   final Duration Function() _monotonicNow;
   Future<void>? _refreshOperation;
   bool _refreshPending = false;
@@ -770,28 +755,14 @@ class IronwoodMigrationCoordinator
     }
   }
 
-  /// Records a desktop process-activity observation and restarts the ZIP 318
-  /// wallet-open epoch when the observations prove a genuine suspension.
+  /// Restarts the desktop epoch when a gap reaches
+  /// [kDesktopMigrationEpochSuspensionGap].
   ///
-  /// Two independent signals are compared against
-  /// [kDesktopMigrationEpochSuspensionGap]:
-  ///
-  /// - Sleep: wall time advancing further than the monotonic clock since the
-  ///   last observation. Where the monotonic clock pauses across machine
-  ///   sleep (macOS, Linux — see [_monotonicNow]) the divergence measures
-  ///   suspension exactly — regardless of whether the sleep began between
-  ///   sweeps or mid-sweep, and immune to wall-clock corrections shrinking
-  ///   real gaps. On Windows both clocks advance through sleep, so this
-  ///   signal stays silent, so every Windows observation also treats a large
-  ///   monotonic gap as suspension before updating the activity baseline.
-  /// - Idle gap ([idleGapCounts] callers, plus every Windows observation):
-  ///   monotonic time since the last observation. Observations bound every
-  ///   sweep, so while the process is alive and unlocked they arrive at least
-  ///   every [_migrationStatusPollInterval]; a large gap means refreshes
-  ///   themselves stopped for a stretch — a wallet locked long enough that
-  ///   accrued transfers must be treated as overdue-at-open. Non-Windows
-  ///   platforms count this only at sweep start; Windows must also count it
-  ///   mid- and end-sweep because its monotonic clock cannot distinguish sleep.
+  /// Wall-minus-monotonic time detects macOS/Linux sleep, even mid-sweep.
+  /// [idleGapCounts] additionally counts monotonic gaps between refreshes;
+  /// excluding them mid/end-sweep keeps slow awake work in the same epoch.
+  /// Windows counts monotonic gaps at every observation because its clock runs
+  /// through sleep. This deliberately also treats long Windows sweeps as gaps.
   void _observeDesktopEpochActivity({required bool idleGapCounts}) {
     if (kAppFormFactor != AppFormFactor.desktop) return;
     final wallNow = _now();

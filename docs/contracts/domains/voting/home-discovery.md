@@ -1,4 +1,11 @@
-# Mobile Home voting discovery
+# Voting Home discovery
+
+Use when changing candidate discovery, card visibility, lazy loading, or refresh/failure behavior.
+
+Implementation: [`VotingHomeRefresh`](../../../../lib/src/providers/voting/voting_home_entry_provider.dart)
+and the [Home cache](../../../../lib/src/providers/voting/voting_home_cache_provider.dart).
+Verify refresh, failure, and stale-response behavior with
+[`voting_home_refresh_test.dart`](../../../../test/providers/voting/voting_home_refresh_test.dart).
 
 Home renders the last confirmed account-scoped display decision. Unknown rounds
 start hidden. A verified remaining eligible note set or an actionable local
@@ -22,25 +29,6 @@ The one-minute Home timer only reevaluates in-memory deadlines. It does not read
 snapshot files, schedule participation checks or poll discovery. Participation
 checks use route, lifecycle, sync and relevant provider-change events; unresolved
 checks still respect the participation backoff.
-
-## Build configuration
-
-`VIZOR_VOTING_DISCOVERY_URL` replaces the **entire** discovery endpoint URL.
-Its default is `https://functions.vizor.cash/v1/voting/discovery/prod`.
-Testnet uses the independent `VIZOR_VOTING_DISCOVERY_STAGE_URL` define, defaulting
-to `https://functions.vizor.cash/v1/voting/discovery/stage`.
-
-```sh
-fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile \
-  --dart-define=VIZOR_VOTING_DISCOVERY_URL=https://example.com/v1/voting/discovery/prod
-```
-
-The endpoint must use HTTPS (HTTP loopback is accepted for development). This
-setting does not change voting config or vote-server URLs. The request uses the
-shared network transport's Tor/direct routing policy, with a five-second timeout.
-No account identifier or eligibility is sent. Custom voting sources and mismatched
-network/source pairs retain direct discovery; an endpoint override does not opt
-them in. Prod and stage hints are scoped by both wallet network and config source.
 
 ## Refresh and failure behavior
 
@@ -67,14 +55,10 @@ them in. Prod and stage hints are scoped by both wallet network and config sourc
 Settings keeps its permanent Coinholder voting entry. Actual voting still uses
 live config authentication and eligibility checks, irrespective of Home hints.
 
-## Mobile regtest coverage
+- Unknown Home rounds start hidden. Only verified remaining eligibility or
+  actionable local recovery confirms visibility; an active round alone does not.
+  Preserve the last confirmed decision while checking, syncing, or failing. Settings stays
+  available regardless of Home visibility.
 
-`scripts/e2e/flutter-ios-regtest-mobile-voting.sh` verifies a confirmed visible
-Home card before voting, mines 20 additional Zcash blocks, and drives the real
-sync engine. The test rejects any false visibility-provider transition and
-checks the rendered card on every pumped frame, including at least one syncing
-frame. It requires a newer scanned height and sync completion, and no additional
-participation RPCs. Screenshots are saved as `home-during-resync.png` and
-`home-after-resync.png` under `.regtest-voting/logs/screenshots/`.
-The same flow then completes voting and checks that Home hides the card; the
-reinstall runner also includes this pre-vote resync check.
+- Bootstrap never waits for voting storage. Home renders before loading summaries;
+  its minute timer checks deadlines in memory without polling discovery/participation.

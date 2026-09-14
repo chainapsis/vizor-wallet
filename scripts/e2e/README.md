@@ -1,5 +1,79 @@
 # End-to-end tests
 
+## Running regtest safely
+
+Run regtest/integration scenarios only when explicitly requested. They are slow,
+reset shared Docker chain/wallet state, and must run serially when sharing the
+same stack. Docker Desktop / `docker compose` is required; `grpcurl` improves
+readiness checks, with TCP checks as the fallback. Use release builds for
+representative cryptographic performance; debug proving/scanning is much slower.
+
+macOS runners hide their app window by default. Set
+`VIZOR_E2E_HIDDEN_WINDOW=false` only when a visible window is needed to debug or
+verify the scenario.
+
+### App network and cleanup
+
+- Select regtest with `--dart-define=ZCASH_DEFAULT_NETWORK=regtest`; the old
+  `ZCASH_USE_E2E_STORAGE` path is not the storage switch. Secure storage and DB
+  names are network-scoped.
+- `ZCASH_E2E_LIGHTWALLETD_URL` only overrides the endpoint. Keep Rust API network
+  arguments consistent with `kZcashDefaultNetworkName`.
+- Cleanup must guard on
+  `kZcashDefaultNetworkName == ZcashNetwork.regtest.name`, stop Rust work, resolve
+  `getWalletDbName()` before deleting storage, and delete that DB plus its
+  `-shm`/`-wal` files. Do not turn test cleanup into a network-independent wipe.
+- True inbound mempool discovery uses external zcashd/lightwalletd funding.
+  Sending between two accounts in the same app does not prove that path.
+  To exercise it during active sync, pre-mine enough blocks and use the
+  debug-only Rust `ZCASH_E2E_SYNC_BATCH_SIZE` and
+  `ZCASH_E2E_SYNC_BATCH_DELAY_MS` environment overrides inline.
+
+### iOS simulator lane
+
+- The full runner is
+  [`flutter-ios-regtest-mobile-full.sh`](flutter-ios-regtest-mobile-full.sh);
+  per-scenario runners use `flutter-ios-regtest-mobile-*.sh`.
+- [`lib-mobile.sh`](lib-mobile.sh) normally injects `VIZOR_FORM_FACTOR=mobile`,
+  `ZCASH_DEFAULT_NETWORK=regtest`, and `ZCASH_E2E_LIGHTWALLETD_URL`.
+  Endpoint-failover scenarios deliberately omit the last define with
+  `E2E_SKIP_LWD_OVERRIDE=1` so bootstrap does not replace their proxy preset.
+- `SIMULATOR_UDID` wins; otherwise exactly one simulator must be booted. The
+  runner refuses to choose among multiple devices. Host loopback `127.0.0.1`
+  works on iOS Simulator; Android emulators would need `10.0.2.2` and a separate
+  runner.
+- Mobile tests share
+  [`mobile_regtest_flow.dart`](../../integration_test/support/mobile_regtest_flow.dart).
+  Keep its flow helpers separate from the desktop tests' per-file helpers.
+- Each mobile test invocation reinstalls the app. The DB container is disposable
+  while Keychain survives; call `cleanupE2eWalletState()` at both start and
+  teardown. Do not assume wallet reuse across invocations.
+- Gift Card tests also call `cleanupMobileE2ePaymentLinkClaimWallets()`. The
+  support directory contains claim wallets from multiple networks, so that sweep
+  must stay regtest-scoped. Clear a populated pasteboard in teardown too; it
+  outlives the app container.
+
+### Rust runners and local chain
+
+[`run-regtest-rust-tests.sh`](../../run-regtest-rust-tests.sh) tears down existing
+containers and resets `.regtest/` before running, then does a final down/reset
+by default. `--keep` skips the final cleanup for inspection. Logs remain in
+`.regtest-logs/regtest-rust-tests.log`, outside the reset directory. Sapling
+parameters remain cached in `~/.zcash-params`; override the location with
+`SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh`.
+
+For a single scenario, start with `scripts/regtest/up.sh`, then run from `rust/`:
+`cargo test --test regtest_receive_sync -- --ignored --nocapture --test-threads=1`.
+Other targets include `regtest_send`, `regtest_import`, and `regtest_multi_account`.
+Stop the stack with `scripts/regtest/down.sh`.
+
+[`scripts/regtest/`](../regtest) also provides `reset.sh` (destroys chain/volume
+state), `mine.sh <count>`, and
+`fund-wallet.sh <unified_address> <amount_zec> [confirmations]`. Source `lib.sh`
+from scripts; it is not a standalone command. Inspect the current scenario
+runners for coverage instead of assuming every desktop scenario has a mobile
+counterpart.
+
 ## Gift Cards
 
 The macOS regtest runners cover the Gift Card (payment-link) flows. They

@@ -559,25 +559,11 @@ func shouldClaimPendingMigrationPreparationRequest(
     && !deferredPassRunning && !mutationQuiesced && !notificationsDisabled
 }
 
-/// The runs a new tracking task would actually do work for: those still
-/// waiting for denomination confirmations whose foreground continuation has
-/// not been acknowledged yet.
-///
-/// The subtraction runs in this direction on purpose. The continued task is a
-/// single app-wide request that sweeps every account's manifest, skipping any
-/// run that is not waiting for confirmations. So a run that needs the
-/// foreground app (state `5`, needs-action, unreadable) never contributes work
-/// — and must never veto a *different* account's tracking either. Asking
-/// "which recorded scopes are not trackable" gave exactly that veto: one
-/// account parked in state `5` blocked confirmation tracking for every other
-/// account, permanently, because its scope is only cleared by the migration
-/// status screen.
-///
-/// Subtracting the other way keeps the property that guard was there for. Once
-/// a run's tracking has completed and marked its continuation ready, it drops
-/// out of this set, so the task is not re-armed to re-observe the same
-/// confirmed transactions and re-post the same notification while the DB waits
-/// for a foreground reconcile.
+/// Confirmation-trackable runs without a recorded foreground continuation.
+/// Subtract continuations from trackable scopes: a parked account must not
+/// block another account's tracking. Recorded scopes stay excluded so a
+/// completed wave is not tracked or notified again before foreground reconcile.
+/// See `docs/contracts/domains/migration/ios-confirmation.md`.
 func migrationPreparationPendingTrackableScopes(
   continuationScopes: Set<String>,
   confirmationTrackableScopes: Set<String>
@@ -607,23 +593,11 @@ final class MigrationPreparationCompletionLatch {
   }
 }
 
-/// The continuation scopes to record when the foreground claims a running
-/// tracking task.
-///
-/// A handoff must not park a run that the background task could still finish
-/// on its own. `foregroundContinuationEligibleScopes` accepts state `0`, so
-/// marking every eligible scope would record accounts that are merely still
-/// counting confirmations. In a multi-account task that is a stall: account A
-/// confirms, the user opens the app, and account B — mid-wave — is recorded as
-/// handed-off. `pendingTrackableScopes` then subtracts B so nothing re-arms,
-/// the launch guard drops queued tasks, and the tracking pass skips B. B only
-/// unsticks when the user switches to it and opens its migration screen.
-///
-/// So add only the runs that genuinely need the foreground — the eligible
-/// scopes that are *not* confirmation-trackable (states `2`, `3`, `5`, and
-/// unreadable inspections). Confirmed waves are not lost by this: they are
-/// recorded incrementally by `applyTrackingBatch` once their notification is
-/// submitted, and arrive here inside `existingScopes`.
+/// Preserves existing continuations and adds eligible, non-trackable scopes.
+/// Eligible includes mid-wave state `0`; recording that state would prevent
+/// its background tracking from re-arming when another account hands off.
+/// Confirmed waves are already in `existingScopes` after `applyTrackingBatch`
+/// submits their notifications.
 func migrationPreparationHandoffContinuationScopes(
   existingScopes: Set<String>,
   eligibleScopes: Set<String>,
@@ -634,23 +608,11 @@ func migrationPreparationHandoffContinuationScopes(
   )
 }
 
-/// Whether a foreground launch found any preparation run bound to the pending
-/// request.
-///
-/// Deliberately broader than what
-/// `migrationPreparationHandoffContinuationScopes` records, and it must stay
-/// that way. This answers "is there anything here at all", not "did we park
-/// anything". `handoffPendingRequestForForegroundLaunch` feeds it into
-/// `shouldMarkMigrationPreparationForegroundContinuation`, and a `false` there
-/// makes `shouldContinue` false, which **cancels the pending task request**.
-///
-/// Deriving it from the recorded set instead would do exactly that to the
-/// healthy case: a wallet whose only run is a mid-wave state `0` account
-/// records nothing (correctly — the read-only task can still finish it), the
-/// boolean would flip false, and because that run's resume target is
-/// `.continuedProcessing` rather than `.backgroundProcessing` the redirect
-/// branch does not catch it. The request would be cancelled on every cold
-/// launch, killing background tracking for a run that was fine.
+/// Whether any eligible run remains bound to the pending request.
+/// This is broader than the recorded handoff scopes: a healthy mid-wave run
+/// records no continuation but still needs its `.continuedProcessing` request.
+/// Deriving this from recorded scopes would cancel that request on cold launch;
+/// the `.backgroundProcessing` redirect cannot recover it.
 func migrationPreparationHandoffHasBoundPreparation(
   eligibleScopes: Set<String>
 ) -> Bool {
@@ -1019,13 +981,8 @@ final class BackgroundMigrationPreparationManager {
       let notificationsDisabled = self.stateLock.withPreparationLock {
         self.notificationAuthorization.isDisabled
       }
-      // Records only the runs that genuinely need the foreground, but reports
-      // "any eligible run exists". The boolean is deliberately broader than
-      // the recorded set: it gates `shouldContinue` below, and a `false` there
-      // cancels the pending request — which for a healthy mid-wave state `0`
-      // run (nothing to record, resume target `.continuedProcessing`, so the
-      // redirect branch above does not catch it) would kill background
-      // tracking on every cold launch.
+      // Existence is broader than recorded continuations; conflating them
+      // cancels healthy mid-wave tracking. See the handoff scope helpers.
       let hasBoundPreparation =
         hasPendingRequest && !notificationsDisabled
         && self.markForegroundContinuationsReadyForHandoff()
@@ -2667,20 +2624,10 @@ final class BackgroundMigrationPreparationManager {
     return scopes
   }
 
-  /// Whether a recorded foreground continuation should stop a new submission.
-  ///
-  /// Deliberately non-destructive. Clearing the scope here would submit the
-  /// task but also swallow the "come back to the app" signal: the migration
-  /// status screen reads that same scope through `runtimeState` to decide
-  /// whether to run its foreground `retry()`, and `startPreparation` can reach
-  /// this code before the screen ever reads it. So a run that is merely
-  /// waiting for confirmations stops blocking submission while its scope stays
-  /// recorded, and only the screen's explicit acknowledgement removes it.
-  ///
-  /// Account-scoped by construction: only the `network:account:run` keys that
-  /// inspect as state `0` right now are treated as non-blocking. States `2`,
-  /// `3`, `5`, and unreadable runs keep blocking, because those genuinely need
-  /// the foreground app rather than a read-only query pass.
+  /// Returns trackable scopes without an already-recorded continuation.
+  /// Does not clear recorded scopes: the status screen still needs them for
+  /// foreground reconciliation. Foreground-only or unreadable runs contribute
+  /// no tracking work and cannot veto another account's pending scope.
   private func pendingTrackableScopes() -> Set<String> {
     let trackable = confirmationTrackableScopes() ?? []
     return stateLock.withPreparationLock {
