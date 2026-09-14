@@ -16,11 +16,12 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use zakura_pir_enhance::client::record_in_row;
 use zakura_pir_enhance::{
-    apply_record, AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration,
-    EnhanceSession, GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
+    AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration, EnhanceSession,
+    GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
 };
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
+    EnhancePirWork, EnhancePirWrite,
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -98,9 +99,30 @@ impl EnhancePirSync {
         if self.endpoint.is_none() || self.deferred {
             return Ok(());
         }
-        let requests = db
-            .enhance_pir_requests()
-            .map_err(|error| SyncError::db(format!("enhance_pir_requests: {error}")))?;
+        let work = db
+            .enhance_pir_work()
+            .map_err(|error| SyncError::db(format!("enhance_pir_work: {error}")))?;
+        let mut rediscovery_count = 0usize;
+        let mut suspended_count = 0usize;
+        let requests = work
+            .into_iter()
+            .filter_map(|work| match work {
+                EnhancePirWork::Query(request) => Some(request),
+                EnhancePirWork::Rediscover(_) => {
+                    rediscovery_count += 1;
+                    None
+                }
+                EnhancePirWork::Suspended(_) => {
+                    suspended_count += 1;
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if rediscovery_count > 0 || suspended_count > 0 {
+            log::info!(
+                "sync: Enhance PIR has {rediscovery_count} rediscovery and {suspended_count} suspended durable work item(s)"
+            );
+        }
         if requests.is_empty() {
             return Ok(());
         }
@@ -191,24 +213,14 @@ impl EnhancePirSync {
                 let position = u64::from(request.position());
                 let slot = position as usize % RECORDS_PER_ROW;
                 let wire_record = record_in_row(&row, slot).map_err(client_protocol_error)?;
-                let result =
-                    with_wallet_db_write_lock("sync_engine.enhance_pir.apply_record", || {
-                        apply_record(db, request, &wire_record)
-                    })
-                    .map_err(|error| SyncError::db(format!("apply Enhance PIR record: {error}")))?;
-                let incoming = result.incoming;
-                let outgoing = result.outgoing;
-                stored += [incoming, outgoing]
-                    .into_iter()
-                    .filter(|result| *result == EnhancePirStoreResult::Stored)
-                    .count();
-                non_recoverable += [incoming, outgoing]
-                    .into_iter()
-                    .filter(|result| *result == EnhancePirStoreResult::NotRecoverable)
-                    .count();
-                if incoming == EnhancePirStoreResult::Rejected
-                    || outgoing == EnhancePirStoreResult::Rejected
-                {
+                let result = with_wallet_db_write_lock(
+                    "sync_engine.enhance_pir.apply_ironwood_enhance_record",
+                    || db.apply_ironwood_enhance_record(request, &wire_record),
+                )
+                .map_err(|error| SyncError::db(format!("apply Enhance PIR record: {error}")))?;
+                stored += usize::from(result == EnhancePirStoreResult::Stored);
+                non_recoverable += usize::from(result == EnhancePirStoreResult::NotRecoverable);
+                if result == EnhancePirStoreResult::Rejected {
                     return Err(SyncError::parse(
                         "Enhance PIR record failed wallet authentication",
                     )
