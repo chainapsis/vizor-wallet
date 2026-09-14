@@ -1054,6 +1054,58 @@ void main() {
     }
   }
 
+  for (final outcome in ['request', 'address', 'rejected']) {
+    testWidgets('new arrival invalidates delayed Send input: $outcome', (
+      tester,
+    ) async {
+      final gate = Completer<AddressValidationResult>();
+      await tester.pumpWidget(
+        _app(
+          initialRecipient: _shieldedAddress,
+          validateAddress: ({required address, required network}) async {
+            if (address == _texAddress) return gate.future;
+            return const AddressValidationResult(
+              isValid: true,
+              addressType: 'unified',
+              wrongNetwork: false,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = tester.widget<MobileTextField>(
+        find.byKey(const ValueKey('mobile_send_address_field')),
+      );
+      final original = field.controller.text;
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileSendScreen)),
+      );
+      final operation = field.onPaste!(
+        outcome == 'address' ? _texAddress : 'zcash:$_texAddress?amount=1',
+      );
+      await tester.pump();
+      await container
+          .read(paymentRequestIntakeProvider)
+          .receive('zcash:$_shieldedAddress?amount=2');
+      final newer = container.read(paymentUriPrefillProvider);
+      expect(newer, isNotNull);
+      gate.complete(
+        AddressValidationResult(
+          isValid: outcome != 'rejected',
+          addressType: 'tex',
+          wrongNetwork: outcome == 'rejected',
+        ),
+      );
+      await operation;
+      await tester.pumpAndSettle();
+      expect(container.read(paymentUriPrefillProvider), same(newer));
+      expect(container.read(paymentRequestArrivalProvider), 1);
+      expect(field.controller.text, original);
+      expect(find.textContaining('different Zcash network'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('rejected Send paste preserves recipient and request state', (
     tester,
   ) async {

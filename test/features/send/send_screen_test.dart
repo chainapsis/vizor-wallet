@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
@@ -49,6 +50,48 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+
+  for (final outcome in ['request', 'address', 'rejected']) {
+    testWidgets('new arrival invalidates delayed Send input: $outcome', (
+      tester,
+    ) async {
+      final gate = Completer<AddressValidationResult>();
+      rustApi.delayedAddressValidation = gate.future;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_sendHarness());
+      await tester.pumpAndSettle();
+      final field = tester.widget<AppTextField>(
+        find.byKey(const ValueKey('send_address_field')),
+      );
+      final original = field.controller!.text;
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SendScreen)),
+      );
+      final operation = field.onPaste!(
+        outcome == 'address' ? _texAddress : 'zcash:$_texAddress?amount=1',
+      );
+      await tester.pump();
+      await container
+          .read(paymentRequestIntakeProvider)
+          .receive('zcash:$_shieldedAddress?amount=2');
+      final newer = container.read(paymentUriPrefillProvider);
+      expect(newer, isNotNull);
+      gate.complete(
+        AddressValidationResult(
+          isValid: outcome != 'rejected',
+          addressType: 'tex',
+          wrongNetwork: outcome == 'rejected',
+        ),
+      );
+      await operation;
+      await tester.pumpAndSettle();
+      expect(container.read(paymentUriPrefillProvider), same(newer));
+      expect(container.read(paymentRequestArrivalProvider), 1);
+      expect(field.controller!.text, original);
+      expect(find.textContaining('different Zcash network'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final change in ['none', 'edit', 'leave']) {
     testWidgets(
@@ -1913,6 +1956,7 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 }
 
 class _RustApiFake implements RustLibApi {
+  Future<AddressValidationResult>? delayedAddressValidation;
   int discardCalls = 0;
 
   @override
@@ -1933,6 +1977,7 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    delayedAddressValidation = null;
     discardCalls = 0;
     lastValidateNetwork = null;
     proposeSendCalls = 0;
@@ -1950,6 +1995,9 @@ class _RustApiFake implements RustLibApi {
     required String network,
   }) async {
     lastValidateNetwork = network;
+    if (address == _texAddress && delayedAddressValidation != null) {
+      return delayedAddressValidation!;
+    }
     if (address == _otherNetworkAddress) {
       return const AddressValidationResult(
         isValid: false,

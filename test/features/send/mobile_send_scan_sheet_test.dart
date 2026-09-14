@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -166,6 +167,65 @@ void main() {
           .onComplete('zcash:request');
       await tester.pump();
       endpoint.changeNetwork();
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileAddressScanCard), findsNothing);
+      expect(results, [null]);
+      pending.complete(const MobileScanOutcome.accepted(_mainnetAddress));
+      await tester.pumpAndSettle();
+      expect(results, [null]);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'new payment request closes the Send scanner and discards pending result',
+    (tester) async {
+      final endpoint = _MutableRpcEndpoint();
+      final pending = Completer<MobileScanOutcome>();
+      final results = <Object?>[];
+      final controller = MobileScannerController(autoStart: false);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+            rpcEndpointProvider.overrideWith(() => endpoint),
+          ],
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () async {
+                      results.add(
+                        await showMobileSendScanSheet(
+                          context,
+                          networkName: 'main',
+                          controller: controller,
+                          resolve: (_) => pending.future,
+                        ),
+                      );
+                    },
+                    child: const Text('Open scanner'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open scanner'));
+      await tester.pumpAndSettle();
+      tester
+          .widget<PlainQrScannerView>(
+            find.byType(PlainQrScannerView, skipOffstage: false),
+          )
+          .onComplete('zcash:request');
+      await tester.pump();
+      ProviderScope.containerOf(
+        tester.element(find.byType(MobileAddressScanCard)),
+      ).read(paymentRequestArrivalProvider.notifier).arrived();
       await tester.pumpAndSettle();
       expect(find.byType(MobileAddressScanCard), findsNothing);
       expect(results, [null]);

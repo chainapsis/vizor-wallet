@@ -434,6 +434,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _memoController.text,
     ref.read(accountProvider).value?.activeAccountUuid,
     ref.read(rpcEndpointProvider).networkName,
+    ref.read(paymentRequestArrivalProvider),
   );
 
   void _inputContextChanged() {
@@ -502,6 +503,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _applyAddressInput(String raw) async {
     final epoch = ++_inputEpoch;
+    final arrival = ref.read(paymentRequestArrivalProvider);
     final sequence = _addressSeq;
     final input = _addressController.text;
     final amountSequence = _validateSeq;
@@ -512,6 +514,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     bool current() =>
         mounted &&
         epoch == _inputEpoch &&
+        arrival == ref.read(paymentRequestArrivalProvider) &&
         sequence == _addressSeq &&
         input == _addressController.text &&
         amountSequence == _validateSeq &&

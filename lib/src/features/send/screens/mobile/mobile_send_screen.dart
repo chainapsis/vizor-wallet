@@ -777,6 +777,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _phase,
     ref.read(accountProvider).value?.activeAccountUuid,
     ref.read(rpcEndpointProvider).networkName,
+    ref.read(paymentRequestArrivalProvider),
   );
 
   void _inputContextChanged() {
@@ -850,6 +851,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   bool Function() _captureInputSession() {
     final epoch = ++_inputEpoch;
+    final arrival = ref.read(paymentRequestArrivalProvider);
     final sequence = _addressSeq;
     final input = _addressController.text;
     final amountSequence = _validateSeq;
@@ -862,6 +864,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return () =>
         mounted &&
         epoch == _inputEpoch &&
+        arrival == ref.read(paymentRequestArrivalProvider) &&
         sequence == _addressSeq &&
         input == _addressController.text &&
         amountSequence == _validateSeq &&

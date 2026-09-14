@@ -1,3 +1,4 @@
+import '../../../../core/navigation/payment_request_intake.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -26,7 +27,7 @@ Future<SendScanResult?> showMobileSendScanSheet(
   MobileScannerController? controller,
   MobileScanResolver? resolve,
 }) {
-  (String, String?)? openingContext;
+  (String, String?, int)? openingContext;
   var closing = false;
   return showAppMobileSheet<SendScanResult>(
     context: context,
@@ -36,8 +37,9 @@ Future<SendScanResult?> showMobileSendScanSheet(
         final account = ref.watch(
           accountProvider.select((value) => value.value?.activeAccountUuid),
         );
-        openingContext ??= (networkName, account);
-        if (!closing && openingContext != (activeNetwork, account)) {
+        final arrival = ref.watch(paymentRequestArrivalProvider);
+        openingContext ??= (networkName, account, arrival);
+        if (!closing && openingContext != (activeNetwork, account, arrival)) {
           closing = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (sheetContext.mounted &&
@@ -52,7 +54,7 @@ Future<SendScanResult?> showMobileSendScanSheet(
                 resolveScannedZcashAddress(raw, networkName: activeNetwork);
         String? acceptedRaw;
         return MobileAddressScanCard(
-          validationContext: (activeNetwork, account),
+          validationContext: (activeNetwork, account, arrival),
           caption: 'Scan an address or payment request QR code',
           controller: controller,
           resolve: (raw) async {
