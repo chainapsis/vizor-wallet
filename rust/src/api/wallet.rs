@@ -935,6 +935,62 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
     })
 }
 
+/// Read an existing recovery candidate without migrations or file creation.
+pub fn inspect_wallet_for_recovery(
+    db_path: String,
+    network: String,
+) -> Result<Vec<AccountInfo>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        Ok(keys::inspect_wallet_for_recovery(&db_path, network)?
+            .into_iter()
+            .map(|a| AccountInfo {
+                uuid: a.uuid,
+                name: a.name,
+                unified_address: a.unified_address,
+                is_seed_anchor: a.is_seed_anchor,
+                is_hardware: a.is_hardware,
+            })
+            .collect())
+    })
+}
+
+/// Verify a software recovery secret against one account's full viewing key.
+pub fn verify_recovery_mnemonic(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    mnemonic: String,
+    bip39_passphrase: String,
+) -> Result<bool, String> {
+    catch(|| {
+        keys::verify_recovery_mnemonic(
+            &db_path,
+            keys::parse_network(&network)?,
+            &account_uuid,
+            &mnemonic,
+            &bip39_passphrase,
+        )
+    })
+}
+
+/// Verify a hardware recovery key independently obtained from the device.
+pub fn verify_recovery_hardware_key(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    ufvk: String,
+) -> Result<bool, String> {
+    catch(|| {
+        keys::verify_recovery_hardware_key(
+            &db_path,
+            keys::parse_network(&network)?,
+            &account_uuid,
+            &ufvk,
+        )
+    })
+}
+
 pub fn get_account_export_metadata(
     db_path: String,
     network: String,

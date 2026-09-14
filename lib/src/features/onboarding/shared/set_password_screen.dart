@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../app_bootstrap.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -164,7 +165,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           },
         );
 
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
         if (args.flow == SetPasswordFlow.importKeystone) {
           ref.read(keystoneOnboardingProvider.notifier).resetScan();
@@ -197,6 +198,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
             '$rollbackError\n$rollbackStack',
           );
         }
+      }
+      if (securityNotifier.requiresWalletSetupRecovery) {
+        await ref.read(appBootstrapRetryProvider)();
+        return;
       }
       log('SetPasswordScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;

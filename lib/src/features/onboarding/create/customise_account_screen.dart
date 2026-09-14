@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../app_bootstrap.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/theme/app_theme.dart';
@@ -152,7 +153,7 @@ class _CustomiseAccountScreenState
         await securityNotifier.preparePasswordSetup(pendingPassword);
         passwordPrepared = true;
         await createAccount();
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
         clearCustomisedAccountDraft(ref, args.flow);
         router.go('/home');
@@ -167,6 +168,10 @@ class _CustomiseAccountScreenState
             'password rollback failed: $rollbackError\n$rollbackStack',
           );
         }
+      }
+      if (securityNotifier.requiresWalletSetupRecovery) {
+        await ref.read(appBootstrapRetryProvider)();
+        return;
       }
       rethrow;
     }

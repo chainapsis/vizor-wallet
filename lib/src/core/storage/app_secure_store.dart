@@ -212,6 +212,12 @@ class AppSecureStore {
       return existing;
     }
 
+    return createWalletDbName();
+  }
+
+  /// Allocate a name only for an explicit new-wallet operation.
+  /// Startup and reads must never replace a missing pointer with a new name.
+  Future<String> createWalletDbName() async {
     final suffix = _randomHex(12);
     final dbName = 'zcash_wallet_$suffix.db';
     await writePlain(kWalletDbNameKey, dbName);
@@ -394,6 +400,20 @@ class AppSecureStore {
         _checkSessionGeneration(generation);
         return _mnemonicStorage.write(key: key, value: payload);
       });
+      final saved = await _runStorageOperation(
+        'read account mnemonic after write "$accountUuid"',
+        () {
+          _checkSessionGeneration(generation);
+          return _mnemonicStorage.read(key: key);
+        },
+      );
+      _checkSessionGeneration(generation);
+      if (saved != payload) {
+        throw const SecureStorageUnavailableException(
+          operation: 'verify saved account mnemonic',
+          cause: 'The stored recovery material did not match the write.',
+        );
+      }
     });
   }
 

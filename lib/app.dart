@@ -62,6 +62,7 @@ import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/storage_unavailable_screen.dart';
+import 'src/features/onboarding/wallet_recovery_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
@@ -361,6 +362,11 @@ String? appRedirect({
   required AppBootstrapState bootstrap,
   required GoRouterState state,
 }) {
+  if (bootstrap.walletRecovery != null) {
+    return state.matchedLocation == '/wallet-recovery'
+        ? null
+        : '/wallet-recovery';
+  }
   final walletAsync = ref.read(walletProvider);
   final security = ref.read(appSecurityProvider);
   final isStorageUnavailable = state.matchedLocation == '/storage-unavailable';
@@ -394,7 +400,7 @@ String? appRedirect({
     'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
   );
 
-  if (isStorageUnavailable) {
+  if (isStorageUnavailable || state.matchedLocation == '/wallet-recovery') {
     if (!hasWallet) return '/welcome';
     return requiresUnlock ? '/unlock' : '/home';
   }
@@ -436,6 +442,7 @@ List<RouteBase> appAuthRoutes(
   GoRoute(
     path: '/',
     redirect: (_, _) {
+      if (bootstrap.walletRecovery != null) return '/wallet-recovery';
       if (bootstrap.hasBlockingFailure) return '/storage-unavailable';
       final walletAsync = ref.read(walletProvider);
       final security = ref.read(appSecurityProvider);
@@ -451,6 +458,10 @@ List<RouteBase> appAuthRoutes(
   GoRoute(
     path: '/storage-unavailable',
     builder: (_, _) => const StorageUnavailableScreen(),
+  ),
+  GoRoute(
+    path: '/wallet-recovery',
+    builder: (_, _) => const WalletRecoveryScreen(),
   ),
   GoRoute(path: '/unlock', builder: (_, _) => unlockScreen),
   GoRoute(
