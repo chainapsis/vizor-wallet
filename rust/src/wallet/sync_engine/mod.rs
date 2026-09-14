@@ -1057,6 +1057,7 @@ async fn repair_anchor_root_mismatch_if_needed(
     db_data_path: &str,
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_data_path: &str,
     network: WalletNetwork,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
@@ -1159,6 +1160,8 @@ async fn repair_anchor_root_mismatch_if_needed(
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
+                ledger_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
+                    .map_err(|e| SyncError::db(format!("invalidate transparent refresh: {e}")))?;
                 match db.truncate_to_chain_state(repair_chain_state.clone()) {
                     Ok(()) => {}
                     Err(e) if is_commitment_tree_root_conflict(&e) => {
@@ -1457,7 +1460,16 @@ async fn refresh_utxos(
                 TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
                 TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
             )
-            .map_err(|e| SyncError::db(format!("internal UTXO plan: {e}")))?;
+            .unwrap_or_else(|e| {
+                // Like the existing external fallback, cache failure must not
+                // make wallet funds inaccessible. This exceptional path retains
+                // the pre-optimization complete snapshot and logs its cost.
+                log::warn!("transparent receive cache: failed to plan internal refresh for account {}; falling back to full internal refresh: {}", account_uuid, e);
+                vec![transparent_receive_cache::TransparentUtxoRefreshBatch {
+                    addresses: internal.iter().map(|(_, address)| address.clone()).collect(),
+                    child_indices: Vec::new(), start_height: 0, next_sweep_offset: None,
+                }]
+            });
             for batch in batches {
                 refreshes.push(TransparentRefresh {
                     addresses: batch.addresses,
@@ -1515,8 +1527,12 @@ async fn refresh_utxos(
         }
         log::info!(
             "transparent refresh plan: account={} rpc_count={} addresses={} elapsed_ms={}",
-            account_id.expose_uuid(), refreshes.len() - first_refresh,
-            refreshes[first_refresh..].iter().map(|r| r.addresses.len()).sum::<usize>(),
+            account_id.expose_uuid(),
+            refreshes.len() - first_refresh,
+            refreshes[first_refresh..]
+                .iter()
+                .map(|r| r.addresses.len())
+                .sum::<usize>(),
             planning_started.elapsed().as_millis(),
         );
     }
@@ -2005,7 +2021,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            ledger_discovery::truncate(db, height)
+            ledger_discovery::truncate(db_data_path, db, height)
         })
     })
 }
@@ -2576,7 +2592,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        ledger_discovery::truncate(&mut db, height)
+                        ledger_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2680,7 +2696,7 @@ async fn run_payment_link_claim_sync_once(
                 let fresh_tip =
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 truncate_wallet_with(requested, fresh_tip, |height| {
-                    ledger_discovery::truncate(&mut db, height)
+                    ledger_discovery::truncate(db_data_path, &mut db, height)
                 })?;
             }
         }
@@ -3351,6 +3367,7 @@ async fn run_sync_impl(
                     db_data_path,
                     &mut client,
                     &mut db,
+                    db_data_path,
                     network,
                     current_tip_height,
                     &mut anchor_root_repair_passes_this_run,
@@ -3688,7 +3705,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match ledger_discovery::truncate(&mut db, target) {
+                            match ledger_discovery::truncate(db_data_path, &mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -3699,7 +3716,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    ledger_discovery::truncate(&mut db, safe).map_err(|e| {
+                                    ledger_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"

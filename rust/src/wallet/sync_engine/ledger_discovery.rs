@@ -13,9 +13,8 @@ use zcash_client_backend::{
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
 use zcash_client_sqlite::AccountUuid;
-use zcash_keys::{
-    encoding::AddressCodec,
-    keys::{transparent::gap_limits::GapLimits, ReceiverRequirement::*, UnifiedAddressRequest},
+use zcash_keys::keys::{
+    transparent::gap_limits::GapLimits, ReceiverRequirement::*, UnifiedAddressRequest,
 };
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
@@ -96,11 +95,38 @@ pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result
 /// Invalidate first, so even a crash during rewind cannot retain a stale completion.
 /// Caller owns the wallet write lock, as for the original truncate operation.
 pub(crate) fn truncate(
+    db_path: &str,
     db: &mut WalletDatabase,
     height: BlockHeight,
 ) -> Result<BlockHeight, zcash_client_sqlite::error::SqliteClientError> {
     use zcash_client_backend::data_api::WalletWrite;
+    invalidate_for_rewind(db_path, db, height)?;
+    db.truncate_to_height(height)
+}
+
+pub(super) fn invalidate_for_rewind(
+    db_path: &str,
+    db: &mut WalletDatabase,
+    height: BlockHeight,
+) -> Result<(), zcash_client_sqlite::error::SqliteClientError> {
+    // Extension transactions permit DML only; initialize our schema on a
+    // separate connection before entering the wallet transaction.
+    let conn = rusqlite::Connection::open(db_path)?;
+    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ext_vizor_transparent_refresh_epoch (
+        id INTEGER PRIMARY KEY CHECK(id=0), epoch INTEGER NOT NULL)",
+        [],
+    )?;
+    drop(conn);
     db.transactionally_with_extension(|_, ext| {
+        // Commit invalidation before truncating. A crash or failed truncate may
+        // cause extra bounded queries, but must never leave stale query heights.
+        ext.execute(
+            "INSERT INTO ext_vizor_transparent_refresh_epoch(id,epoch) VALUES(0,1)
+             ON CONFLICT(id) DO UPDATE SET epoch=epoch+1",
+            [],
+        )?;
         let exists: bool = ext.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
             [TABLE],
@@ -113,8 +139,7 @@ pub(crate) fn truncate(
             )?;
         }
         Ok::<_, zcash_client_sqlite::error::SqliteClientError>(())
-    })?;
-    db.truncate_to_height(height)
+    })
 }
 
 fn ensure_table(db_path: &str) -> Result<(), SyncError> {
@@ -505,6 +530,7 @@ async fn store_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zcash_keys::encoding::AddressCodec;
     #[test]
     fn spent_addresses_extend_the_same_gap_as_funded_addresses() {
         let mut p = Progress::default();
@@ -653,6 +679,110 @@ mod tests {
             tx.txid(),
         )
     }
+    #[test]
+    fn rewind_invalidates_both_query_caches_even_after_discovery_anchor() {
+        use crate::wallet::transparent_receive_cache::{self as cache, RefreshScope};
+        let (_dir, path, id, mut db, _) = ledger_fixture();
+        let uuid = id.expose_uuid().to_string();
+        let external = vec![keys::ExternalTransparentAddress {
+            child_index: 0,
+            address: "external".into(),
+            has_received: false,
+        }];
+        let internal = vec![(0, "internal".into())];
+        let plan_external = || {
+            cache::plan_external_utxo_refresh(
+                &path,
+                WalletNetwork::Main,
+                &uuid,
+                &external,
+                0,
+                0,
+                20,
+                20,
+            )
+            .unwrap()
+        };
+        let plan_internal = || {
+            cache::plan_internal_utxo_refresh(&path, WalletNetwork::Main, &uuid, &internal, 20, 20)
+                .unwrap()
+        };
+        plan_external();
+        plan_internal();
+        for scope in [RefreshScope::External, RefreshScope::Internal] {
+            cache::mark_scoped_utxo_refresh_complete(
+                &path,
+                WalletNetwork::Main,
+                &uuid,
+                scope,
+                &[0],
+                2_600_001,
+                None,
+            )
+            .unwrap();
+        }
+        assert_eq!(plan_external()[0].start_height, 2_599_901);
+        assert_eq!(plan_internal()[0].start_height, 2_599_901);
+        // An early recovery anchor remains valid across this later rewind.
+        ensure_table(&path).unwrap();
+        for scope in [0, 1] {
+            save(
+                &path,
+                id,
+                scope,
+                Progress::default(),
+                2_500_000,
+                &[1; 32],
+                true,
+            )
+            .unwrap();
+        }
+        invalidate_for_rewind(&path, &mut db, BlockHeight::from_u32(2_550_000)).unwrap();
+        assert!(load(&path, id, 0).unwrap().is_some());
+        assert_eq!(plan_external()[0].start_height, 0);
+        assert_eq!(plan_internal()[0].start_height, 0);
+        // A subsequent successful batch can advance normally in the new epoch.
+        cache::mark_scoped_utxo_refresh_complete(
+            &path,
+            WalletNetwork::Main,
+            &uuid,
+            RefreshScope::Internal,
+            &[0],
+            2_550_001,
+            None,
+        )
+        .unwrap();
+        assert_eq!(plan_internal()[0].start_height, 2_549_901);
+    }
+
+    #[test]
+    fn candidate_query_matches_library_receivers_and_limits_each_scope() {
+        let (_dir, path, id, db, _) = ledger_fixture();
+        let receivers = db.get_transparent_receivers(id, true, false).unwrap();
+        for (code, scope) in [
+            (0, TransparentKeyScope::EXTERNAL),
+            (1, TransparentKeyScope::INTERNAL),
+        ] {
+            let mut expected = receivers
+                .iter()
+                .filter(|(_, m)| m.scope() == Some(scope))
+                .map(|(a, m)| {
+                    (
+                        m.address_index().unwrap().index(),
+                        a.encode(&WalletNetwork::Main),
+                    )
+                })
+                .filter(|(i, _)| *i >= 1)
+                .collect::<Vec<_>>();
+            expected.sort_by_key(|c| c.0);
+            expected.truncate(4);
+            assert_eq!(
+                next_candidates(&path, WalletNetwork::Main, id, code, 1, 4).unwrap(),
+                expected
+            );
+        }
+    }
+
     #[tokio::test]
     async fn discovers_spent_history_beyond_initial_gaps_and_runs_only_once() {
         use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
@@ -861,7 +991,7 @@ mod tests {
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
         assert!(is_ready(&path, id).unwrap());
         // Invalidation precedes the truncate, including when the wallet cannot rewind.
-        let _ = truncate(&mut db, BlockHeight::from_u32(2_599_999));
+        let _ = truncate(&path, &mut db, BlockHeight::from_u32(2_599_999));
         assert!(!is_ready(&path, id).unwrap());
         let conn = rusqlite::Connection::open(&path).unwrap();
         delete_account(&conn, id.expose_uuid().as_bytes()).unwrap();

@@ -466,6 +466,7 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
     let result = with_wallet_db_write_lock("sync.rewind_to_height", || {
         let mut db = open_wallet_db(db_path, network)?;
         crate::wallet::sync_engine::ledger_discovery::truncate(
+            db_path,
             &mut db,
             BlockHeight::from_u32(height as u32),
         )

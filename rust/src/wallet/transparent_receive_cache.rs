@@ -27,13 +27,15 @@ struct CacheRecord {
     network: String,
     dirty: bool,
     refreshed_scanned_height: Option<u64>,
-    external_addresses: Vec<CachedExternalAddress>,
+    external_addresses: Vec<CachedTransparentAddress>,
     #[serde(default)]
     utxo_sweep_next_offset: usize,
     #[serde(default)]
     utxo_checked_heights: Vec<CachedUtxoCheck>,
     #[serde(default)]
     internal: InternalUtxoCache,
+    #[serde(default)]
+    rewind_epoch: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,7 +51,7 @@ pub(crate) enum RefreshScope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct CachedExternalAddress {
+struct CachedTransparentAddress {
     child_index: u32,
     address: String,
     has_received: bool,
@@ -297,7 +299,7 @@ pub(crate) fn plan_external_utxo_refresh(
     record.utxo_checked_heights = preserved_utxo_checked_heights(&record, &discovery_addresses);
     record.external_addresses = cached_external_addresses;
 
-    let batches = external_utxo_refresh_batches(
+    let batches = scoped_utxo_refresh_batches(
         &discovery_addresses,
         &record.utxo_checked_heights,
         record.utxo_sweep_next_offset,
@@ -322,7 +324,7 @@ pub(crate) fn plan_internal_utxo_refresh(
         .unwrap_or_else(|| empty_record(network, None));
     let addresses = addresses
         .iter()
-        .map(|(child_index, address)| CachedExternalAddress {
+        .map(|(child_index, address)| CachedTransparentAddress {
             child_index: *child_index,
             address: address.clone(),
             has_received: false,
@@ -336,7 +338,7 @@ pub(crate) fn plan_internal_utxo_refresh(
         .internal
         .checked
         .retain(|c| known.contains(&c.child_index));
-    let batches = external_utxo_refresh_batches(
+    let batches = scoped_utxo_refresh_batches(
         &addresses,
         &record.internal.checked,
         record.internal.sweep_offset,
@@ -556,6 +558,10 @@ fn write_clean_addresses(
             external_addresses,
             utxo_sweep_next_offset,
             utxo_checked_heights,
+            rewind_epoch: existing
+                .as_ref()
+                .map(|r| r.rewind_epoch)
+                .unwrap_or_default(),
             internal: existing.map(|r| r.internal).unwrap_or_default(),
         },
     )
@@ -563,11 +569,11 @@ fn write_clean_addresses(
 
 fn all_external_addresses(
     addresses: &[keys::ExternalTransparentAddress],
-) -> Vec<CachedExternalAddress> {
+) -> Vec<CachedTransparentAddress> {
     let mut external_addresses = addresses
         .iter()
         .filter(|address| !address.address.is_empty())
-        .map(|address| CachedExternalAddress {
+        .map(|address| CachedTransparentAddress {
             child_index: address.child_index,
             address: address.address.clone(),
             has_received: address.has_received,
@@ -579,7 +585,7 @@ fn all_external_addresses(
 
 fn projected_external_addresses(
     addresses: &[keys::ExternalTransparentAddress],
-) -> Vec<CachedExternalAddress> {
+) -> Vec<CachedTransparentAddress> {
     let first_unused_index = addresses
         .iter()
         .filter(|address| !address.address.is_empty() && !address.has_received)
@@ -592,7 +598,7 @@ fn projected_external_addresses(
             !address.address.is_empty()
                 && (address.has_received || Some(address.child_index) == first_unused_index)
         })
-        .map(|address| CachedExternalAddress {
+        .map(|address| CachedTransparentAddress {
             child_index: address.child_index,
             address: address.address.clone(),
             has_received: address.has_received,
@@ -602,8 +608,8 @@ fn projected_external_addresses(
     external_addresses
 }
 
-fn external_utxo_refresh_batches(
-    addresses: &[CachedExternalAddress],
+fn scoped_utxo_refresh_batches(
+    addresses: &[CachedTransparentAddress],
     utxo_checked_heights: &[CachedUtxoCheck],
     utxo_sweep_next_offset: usize,
     account_birthday_height: u64,
@@ -665,7 +671,7 @@ fn external_utxo_refresh_batches(
 // already checked addresses back to height zero. Keep the sweep cursor on the
 // final request; the sync stores a downloaded group before publishing metadata.
 fn split_refresh_batches(
-    addresses: Vec<CachedExternalAddress>,
+    addresses: Vec<CachedTransparentAddress>,
     checked_heights: &BTreeMap<u32, u64>,
     birthday: u64,
     safety: u64,
@@ -685,7 +691,7 @@ fn split_refresh_batches(
 }
 
 fn refresh_batch(
-    addresses: Vec<CachedExternalAddress>,
+    addresses: Vec<CachedTransparentAddress>,
     checked_heights: &BTreeMap<u32, u64>,
     account_birthday_height: u64,
     safety_start_height: u64,
@@ -727,7 +733,7 @@ fn refresh_batch(
 
 fn preserved_utxo_checked_heights(
     record: &CacheRecord,
-    external_addresses: &[CachedExternalAddress],
+    external_addresses: &[CachedTransparentAddress],
 ) -> Vec<CachedUtxoCheck> {
     let known = external_addresses
         .iter()
@@ -757,6 +763,7 @@ fn empty_record(network: WalletNetwork, scanned_height: Option<u64>) -> CacheRec
         utxo_sweep_next_offset: 0,
         utxo_checked_heights: Vec::new(),
         internal: InternalUtxoCache::default(),
+        rewind_epoch: 0,
     }
 }
 
@@ -812,14 +819,45 @@ fn read_compatible_record(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<Option<CacheRecord>, String> {
-    let Some(record) = read_record(db_path, account_uuid)? else {
+    let Some(mut record) = read_record(db_path, account_uuid)? else {
         return Ok(None);
     };
     if record.version == CACHE_VERSION && record.network == network_cache_key(network) {
+        let epoch = rewind_epoch(db_path)?;
+        if epoch != record.rewind_epoch {
+            record.utxo_checked_heights.clear();
+            record.utxo_sweep_next_offset = 0;
+            record.internal = InternalUtxoCache::default();
+            record.rewind_epoch = epoch;
+        }
         Ok(Some(record))
     } else {
         Ok(None)
     }
+}
+
+fn rewind_epoch(db_path: &str) -> Result<u64, String> {
+    // Cache-only callers/tests can create the sidecar before the wallet exists.
+    if !Path::new(db_path).exists() {
+        return Ok(0);
+    }
+    let conn = crate::wallet::db::open_readonly_conn_with_timeout(
+        db_path,
+        Some(crate::wallet::db::READ_DB_BUSY_TIMEOUT),
+    )?;
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='ext_vizor_transparent_refresh_epoch')",
+        [], |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+    if !exists {
+        return Ok(0);
+    }
+    conn.query_row(
+        "SELECT COALESCE((SELECT epoch FROM ext_vizor_transparent_refresh_epoch WHERE id=0), 0)",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn read_record(db_path: &str, account_uuid: &str) -> Result<Option<CacheRecord>, String> {
