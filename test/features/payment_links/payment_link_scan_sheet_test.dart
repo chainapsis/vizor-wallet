@@ -30,7 +30,8 @@ void main() {
 
       _scan(tester, incomingLink.toUri().toString());
       _scan(tester, incomingLink.toUri().toString());
-      expect(accepted.single.address, incomingLink.address);
+      expect(accepted.single.hasSameCanonicalPayload(incomingLink), isTrue);
+      expect(accepted.single.knownAddress, isNull);
     },
   );
 

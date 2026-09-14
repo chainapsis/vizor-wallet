@@ -11,18 +11,15 @@ part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
 /// account and its scan range. Share-payload fields such as amount, label,
-/// timestamp, and presentation deliberately do not participate, so a corrected
-/// payload can reuse already-scanned state.
+/// address, timestamp, and presentation deliberately do not participate, so a
+/// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
       .convert(
-        utf8.encode(
-          '${link.network}:${link.address}:${link.mnemonic}:'
-          '${link.birthdayHeight}',
-        ),
+        utf8.encode('${link.network}:${link.mnemonic}:${link.birthdayHeight}'),
       )
       .toString();
   return paymentLinkClaimWalletDirectoryNameFor(

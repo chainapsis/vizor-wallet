@@ -634,6 +634,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    link = _resolveFixtureLinkMetadata(link);
     final destination = readClaimDestination?.call();
     preparedLinks.add(link);
     allowLongSyncCalls.add(allowLongSync);
@@ -664,6 +665,28 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
           (claimable
               ? PaymentLinkAvailability.available
               : PaymentLinkAvailability.noBalance),
+    );
+  }
+
+  VizorPaymentLink _resolveFixtureLinkMetadata(VizorPaymentLink link) {
+    if (link.knownAddress != null && link.knownCreatedAt != null) return link;
+    final fixtures = [
+      incomingLink,
+      secondIncomingLink,
+      otherAccountLink,
+      unknownOriginLink,
+    ];
+    for (final fixture in fixtures) {
+      if (fixture.hasSameCanonicalPayload(link)) {
+        return link.withResolvedMetadata(
+          address: fixture.address,
+          createdAt: fixture.createdAt,
+        );
+      }
+    }
+    return link.withResolvedMetadata(
+      address: 'u1resolvedpaymentlinkaddress',
+      createdAt: DateTime.utc(2026, 8, 6),
     );
   }
 

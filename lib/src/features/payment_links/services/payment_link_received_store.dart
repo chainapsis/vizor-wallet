@@ -841,9 +841,13 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       'A submitted Card must retain its claim submission timestamp.',
     );
   }
-  final claimLink = claimLinkRaw == null
+  final parsedClaimLink = claimLinkRaw == null
       ? null
       : VizorPaymentLink.parse(claimLinkRaw);
+  final claimLink = parsedClaimLink?.withResolvedMetadata(
+    address: address,
+    createdAt: createdAt,
+  );
   if (claimLink != null &&
       (claimLink.network != network ||
           claimLink.address != address ||
