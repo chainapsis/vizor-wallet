@@ -8,6 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 class GiftCardUsageEvidence {
   final String status;
+  final String? reason;
   final BigInt verifiedHeight;
   final List<String> spendingTxids;
   final BigInt spentHeight;
@@ -15,6 +16,7 @@ class GiftCardUsageEvidence {
 
   const GiftCardUsageEvidence({
     required this.status,
+    this.reason,
     required this.verifiedHeight,
     required this.spendingTxids,
     required this.spentHeight,
@@ -24,6 +26,7 @@ class GiftCardUsageEvidence {
   @override
   int get hashCode =>
       status.hashCode ^
+      reason.hashCode ^
       verifiedHeight.hashCode ^
       spendingTxids.hashCode ^
       spentHeight.hashCode ^
@@ -35,6 +38,7 @@ class GiftCardUsageEvidence {
       other is GiftCardUsageEvidence &&
           runtimeType == other.runtimeType &&
           status == other.status &&
+          reason == other.reason &&
           verifiedHeight == other.verifiedHeight &&
           spendingTxids == other.spendingTxids &&
           spentHeight == other.spentHeight &&

@@ -42,24 +42,43 @@ pub fn sync_gift_card_observers(
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn cancel_gift_card_observer_sync(db_path: String) {
+    tracking::cancel_lookups();
     super::sync::cancel_payment_link_claim_sync(format!("gift-card-observer:{db_path}"));
 }
 
-pub fn inspect_gift_card_usage(
+pub async fn inspect_gift_card_usage(
     db_path: String,
     account_uuid: String,
     funding_txids: String,
     expected_funding_zatoshi: u64,
+    lightwalletd_url: String,
 ) -> Result<GiftCardUsageEvidence, String> {
-    let _guard = tracking::OPERATIONS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    tracking::inspect(
-        &db_path,
-        &account_uuid,
-        &funding_txids,
-        expected_funding_zatoshi,
-    )
+    let epoch = tracking::lookup_epoch();
+    let mut evidence = {
+        let _guard = tracking::OPERATIONS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        tracking::inspect(
+            &db_path,
+            &account_uuid,
+            &funding_txids,
+            expected_funding_zatoshi,
+        )?
+    };
+    if evidence.reason.as_deref() == Some("fundingNotObserved") {
+        evidence.reason = Some(
+            tracking::cancellable_lookup(
+                epoch,
+                crate::wallet::sync_engine::gift_card_funding_reason(
+                    &lightwalletd_url,
+                    &funding_txids,
+                    evidence.verified_height,
+                ),
+            )
+            .await?,
+        );
+    }
+    Ok(evidence)
 }
 
 pub fn remove_gift_card_observer(

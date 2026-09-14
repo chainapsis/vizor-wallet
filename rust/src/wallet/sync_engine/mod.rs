@@ -46,6 +46,8 @@ use {
 
 mod block_source;
 mod enhance;
+mod gift_card_funding;
+pub(crate) use gift_card_funding::gift_card_funding_reason;
 mod error;
 mod lwd;
 pub(crate) mod mempool;

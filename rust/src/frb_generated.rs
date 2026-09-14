@@ -4510,7 +4510,7 @@ fn wire__crate__api__gift_card_tracking__inspect_gift_card_usage_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "inspect_gift_card_usage",
             port: Some(port_),
@@ -4530,17 +4530,23 @@ fn wire__crate__api__gift_card_tracking__inspect_gift_card_usage_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_funding_txids = <String>::sse_decode(&mut deserializer);
             let api_expected_funding_zatoshi = <u64>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::gift_card_tracking::inspect_gift_card_usage(
-                        api_db_path,
-                        api_account_uuid,
-                        api_funding_txids,
-                        api_expected_funding_zatoshi,
-                    )?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::gift_card_tracking::inspect_gift_card_usage(
+                            api_db_path,
+                            api_account_uuid,
+                            api_funding_txids,
+                            api_expected_funding_zatoshi,
+                            api_lightwalletd_url,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -9295,12 +9301,14 @@ impl SseDecode for crate::wallet::gift_card_tracking::GiftCardUsageEvidence {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_reason = <Option<String>>::sse_decode(deserializer);
         let mut var_verifiedHeight = <u64>::sse_decode(deserializer);
         let mut var_spendingTxids = <Vec<String>>::sse_decode(deserializer);
         let mut var_spentHeight = <u64>::sse_decode(deserializer);
         let mut var_canDelete = <bool>::sse_decode(deserializer);
         return crate::wallet::gift_card_tracking::GiftCardUsageEvidence {
             status: var_status,
+            reason: var_reason,
             verified_height: var_verifiedHeight,
             spending_txids: var_spendingTxids,
             spent_height: var_spentHeight,
@@ -14334,6 +14342,7 @@ impl flutter_rust_bridge::IntoDart for crate::wallet::gift_card_tracking::GiftCa
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.status.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
             self.verified_height.into_into_dart().into_dart(),
             self.spending_txids.into_into_dart().into_dart(),
             self.spent_height.into_into_dart().into_dart(),
@@ -17843,6 +17852,7 @@ impl SseEncode for crate::wallet::gift_card_tracking::GiftCardUsageEvidence {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.status, serializer);
+        <Option<String>>::sse_encode(self.reason, serializer);
         <u64>::sse_encode(self.verified_height, serializer);
         <Vec<String>>::sse_encode(self.spending_txids, serializer);
         <u64>::sse_encode(self.spent_height, serializer);

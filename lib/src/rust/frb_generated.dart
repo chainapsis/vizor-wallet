@@ -754,6 +754,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String fundingTxids,
     required BigInt expectedFundingZatoshi,
+    required String lightwalletdUrl,
   });
 
   bool crateApiVotingIsLastMoment({
@@ -5692,6 +5693,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String fundingTxids,
     required BigInt expectedFundingZatoshi,
+    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5701,6 +5703,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(fundingTxids, serializer);
           sse_encode_u_64(expectedFundingZatoshi, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5713,7 +5716,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiGiftCardTrackingInspectGiftCardUsageConstMeta,
-        argValues: [dbPath, accountUuid, fundingTxids, expectedFundingZatoshi],
+        argValues: [
+          dbPath,
+          accountUuid,
+          fundingTxids,
+          expectedFundingZatoshi,
+          lightwalletdUrl,
+        ],
         apiImpl: this,
       ),
     );
@@ -5727,6 +5736,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "fundingTxids",
           "expectedFundingZatoshi",
+          "lightwalletdUrl",
         ],
       );
 
@@ -10286,14 +10296,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   GiftCardUsageEvidence dco_decode_gift_card_usage_evidence(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return GiftCardUsageEvidence(
       status: dco_decode_String(arr[0]),
-      verifiedHeight: dco_decode_u_64(arr[1]),
-      spendingTxids: dco_decode_list_String(arr[2]),
-      spentHeight: dco_decode_u_64(arr[3]),
-      canDelete: dco_decode_bool(arr[4]),
+      reason: dco_decode_opt_String(arr[1]),
+      verifiedHeight: dco_decode_u_64(arr[2]),
+      spendingTxids: dco_decode_list_String(arr[3]),
+      spentHeight: dco_decode_u_64(arr[4]),
+      canDelete: dco_decode_bool(arr[5]),
     );
   }
 
@@ -14072,12 +14083,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_status = sse_decode_String(deserializer);
+    var var_reason = sse_decode_opt_String(deserializer);
     var var_verifiedHeight = sse_decode_u_64(deserializer);
     var var_spendingTxids = sse_decode_list_String(deserializer);
     var var_spentHeight = sse_decode_u_64(deserializer);
     var var_canDelete = sse_decode_bool(deserializer);
     return GiftCardUsageEvidence(
       status: var_status,
+      reason: var_reason,
       verifiedHeight: var_verifiedHeight,
       spendingTxids: var_spendingTxids,
       spentHeight: var_spentHeight,
@@ -18611,6 +18624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.status, serializer);
+    sse_encode_opt_String(self.reason, serializer);
     sse_encode_u_64(self.verifiedHeight, serializer);
     sse_encode_list_String(self.spendingTxids, serializer);
     sse_encode_u_64(self.spentHeight, serializer);

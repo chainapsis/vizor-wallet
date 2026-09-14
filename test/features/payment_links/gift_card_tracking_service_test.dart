@@ -31,6 +31,7 @@ class Backend implements GiftCardTrackingBackend {
   final ids = <String>{};
   Completer<void>? scan;
   bool used = false;
+  GiftCardUsageReason? reason;
   bool remaining = false;
   bool failRemove = false;
   bool failSync = false;
@@ -72,7 +73,12 @@ class Backend implements GiftCardTrackingBackend {
     }
     beforeInspect?.call();
     return GiftCardUsage(
-      status: used ? GiftCardUsageStatus.used : GiftCardUsageStatus.unused,
+      status: reason != null
+          ? GiftCardUsageStatus.unknown
+          : used
+          ? GiftCardUsageStatus.used
+          : GiftCardUsageStatus.unused,
+      reason: reason,
       accountUuid: card.usage.accountUuid,
       checkedAt: DateTime.utc(2026),
       verifiedHeight: 106,
@@ -145,6 +151,25 @@ void main() {
       },
     );
   });
+  test(
+    'pending reason survives failure and clears after funding is verified',
+    () async {
+      await seed(store);
+      backend.reason = GiftCardUsageReason.awaitingConfirmation;
+      await service.refresh();
+      expect((await store.load()).single.usage.reason, backend.reason);
+      backend.failInspect.add('card');
+      await service.refresh(force: true);
+      expect((await store.load()).single.usage.reason, backend.reason);
+      expect(failedAddresses, {'card'});
+      backend.failInspect.clear();
+      backend.reason = null;
+      await service.refresh(force: true);
+      final usage = (await store.load()).single.usage;
+      expect(usage.status, GiftCardUsageStatus.unused);
+      expect(usage.reason, isNull);
+    },
+  );
   test(
     'legacy cards load unknown and gain a durable observer lazily',
     () async {

@@ -187,22 +187,49 @@ class RustGiftCardTrackingBackend implements GiftCardTrackingBackend {
 
   @override
   Future<GiftCardUsage> inspect(PaymentLinkRecoveryRecord card) async {
-    final e = await rust.inspectGiftCardUsage(
-      dbPath: await _path(card.link.network),
-      accountUuid: card.usage.accountUuid!,
-      fundingTxids: card.fundingTxids!,
-      expectedFundingZatoshi:
-          card.link.amountZatoshi + card.claimFeeReserveZatoshi,
-    );
-    return GiftCardUsage(
-      status: GiftCardUsageStatus.values.byName(e.status),
-      accountUuid: card.usage.accountUuid,
-      checkedAt: DateTime.now().toUtc(),
-      verifiedHeight: e.verifiedHeight.toInt(),
-      spentHeight: e.spentHeight.toInt(),
-      spendingTxids: e.spendingTxids,
-      cleanupPending: e.canDelete,
-    );
+    final epoch = _cancelEpoch;
+    final path = await _path(card.link.network);
+    if (epoch != _cancelEpoch) throw StateError('Gift Card lookup cancelled');
+    _activePath = path;
+    try {
+      final e = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'Gift Card funding status',
+            action: (endpoint) {
+              if (epoch != _cancelEpoch) {
+                throw StateError('Gift Card lookup cancelled');
+              }
+              if (endpoint.networkName != card.link.network) {
+                throw StateError('Gift Card network changed');
+              }
+              return rust.inspectGiftCardUsage(
+                dbPath: path,
+                accountUuid: card.usage.accountUuid!,
+                fundingTxids: card.fundingTxids ?? '',
+                expectedFundingZatoshi:
+                    card.link.amountZatoshi + card.claimFeeReserveZatoshi,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              );
+            },
+          );
+      return GiftCardUsage(
+        status: GiftCardUsageStatus.values.byName(e.status),
+        reason: e.reason == null
+            ? null
+            : GiftCardUsageReason.values.byName(e.reason!),
+        accountUuid: card.usage.accountUuid,
+        checkedAt: DateTime.now().toUtc(),
+        verifiedHeight: e.verifiedHeight.toInt(),
+        spentHeight: e.spentHeight.toInt(),
+        spendingTxids: e.spendingTxids,
+        cleanupPending: e.canDelete,
+      );
+    } finally {
+      _activePath = null;
+      _cancelTimer?.cancel();
+      _cancelTimer = null;
+    }
   }
 
   @override

@@ -164,11 +164,12 @@ class GiftCardTrackingService {
                       !c.usage.cleaned &&
                       !failedAddresses.contains(c.link.address) &&
                       !c.usage.cleanupPending &&
-                      c.usage.accountUuid != null &&
-                      (c.fundingTxids?.isNotEmpty ?? false),
+                      c.usage.accountUuid != null,
                 )
                 .toList();
-            if (cards.isNotEmpty) await backend.sync(currentNetwork);
+            if (cards.any((c) => c.fundingTxids?.trim().isNotEmpty ?? false)) {
+              await backend.sync(currentNetwork);
+            }
             if (!_valid(epoch) || network() != currentNetwork) return;
             for (final card in cards) {
               if (!_valid(epoch) || network() != currentNetwork) return;

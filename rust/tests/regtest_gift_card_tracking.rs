@@ -59,13 +59,16 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
         .unwrap()
         .txid_hex;
     let inspect = |account: &String, funding: &String| {
-        tracking::inspect_gift_card_usage(
-            observer_path.clone(),
-            account.clone(),
-            funding.clone(),
-            50_010_000,
-        )
-        .unwrap()
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tracking::inspect_gift_card_usage(
+                observer_path.clone(),
+                account.clone(),
+                funding.clone(),
+                50_010_000,
+                LIGHTWALLETD_URL.into(),
+            ))
+            .unwrap()
     };
     assert_eq!(inspect(&uuid, &funding).status, "unused");
     assert_eq!(inspect(&other_uuid, &other_funding).status, "unused");
@@ -119,7 +122,15 @@ fn observer_reuses_empty_db_without_scanning_idle_gap() {
         .unwrap()
     };
     let inspect = |uuid: &str, funding: &str| {
-        tracking::inspect_gift_card_usage(path_str(&path), uuid.into(), funding.into(), 10_010_000)
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tracking::inspect_gift_card_usage(
+                path_str(&path),
+                uuid.into(),
+                funding.into(),
+                10_010_000,
+                LIGHTWALLETD_URL.into(),
+            ))
             .unwrap()
     };
     let (_receiver_dir, receiver) = create_wallet("Receiver");
