@@ -1,4 +1,10 @@
+import '../../../address_scan/widgets/payment_request_input.dart';
+import '../../../pay/providers/payment_request_input_origin_provider.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
+import '../../../../providers/rpc_endpoint_provider.dart';
 import 'dart:async';
+import '../../../address_scan/domain/address_input_policy.dart';
+import '../../../address_scan/domain/address_input_provider.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +14,6 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/mobile_tab_history.dart';
-import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -19,9 +24,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
-import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
-import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../models/swap_address_book_helpers.dart';
@@ -66,6 +69,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
   String? _addressEditorDraftText;
   bool _addressEditorDraftRemember = false;
   var _addressEditorGeneration = 0;
+  AddressInputResult? _resolvedPaymentInput;
 
   @override
   void initState() {
@@ -74,6 +78,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       if (!mounted) return;
       ref.read(swapStateProvider.notifier).prepareSwapComposer();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _addressEditorGeneration++;
   }
 
   @override
@@ -157,30 +167,79 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     _closeSwapModal();
   }
 
-  Future<void> _reviewPastedPaymentRequest(String raw) async {
-    if (!ref.read(swapStateProvider).direction.sendsZec) return;
+  Future<void> _showSwapPaymentRequest(String raw) async {
+    final resolved = _resolvedPaymentInput;
+    _resolvedPaymentInput = null;
+    if (resolved?.rawPaymentUri != raw || resolved?.crossChainRequest == null) {
+      return;
+    }
+    final swap = ref.read(swapStateProvider);
+    if (!swap.direction.sendsZec) return;
+    final address = _addressEditorDraftText ?? swap.destinationText;
+    final remember = _addressEditorDraftRemember;
+    final contextKey = addressInputContextKey(ref, includeSwap: true);
+    final arrival = ref.read(paymentRequestArrivalProvider);
+    _closeSwapModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted ||
+        _swapModal.value != null ||
+        contextKey != addressInputContextKey(ref, includeSwap: true) ||
+        arrival != ref.read(paymentRequestArrivalProvider)) {
+      return;
+    }
     final generation = _addressEditorGeneration;
     bool isCurrent() =>
         mounted &&
         generation == _addressEditorGeneration &&
-        _swapModal.value == _SwapModalSurface.addressEditor;
-    // Keep rejected input editable, and discard cancelled submissions before
-    // intake can publish them. Accepted cards are presented after the frame.
+        _swapModal.value == null &&
+        contextKey == addressInputContextKey(ref, includeSwap: true);
+    void restore(String address) {
+      _openAddressEditor(draftText: address, draftRemember: remember);
+    }
+
     final accepted = await reviewPaymentRequestFromInput(
       ref,
       raw,
+      resolvedCrossChainRequest: resolved!.crossChainRequest,
       isCurrent: isCurrent,
+      inputOrigin: PaymentRequestInputOrigin(
+        chain: swap.externalAsset.chainTicker,
+        isCurrent: isCurrent,
+        useAddress: restore,
+        onCancel: () => restore(address),
+      ),
     );
-    if (!accepted || !isCurrent()) return;
-    _closeSwapModal();
+    if (!accepted && isCurrent()) restore(address);
   }
 
-  Future<void> _reviewScannedPaymentRequest(String raw) async {
-    if (!ref.read(swapStateProvider).direction.sendsZec) return;
-    _closeSwapModal();
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    await reviewPaymentRequestFromInput(ref, raw);
+  Future<MobileScanOutcome> _resolveSwapInput(String raw) async {
+    final generation = _addressEditorGeneration;
+    final surface = _swapModal.value;
+    final contextKey = (
+      addressInputContextKey(ref, includeSwap: true),
+      ref.read(paymentRequestArrivalProvider),
+    );
+    final result = await resolveWalletAddressInput(
+      ref,
+      raw,
+      context: ref.read(swapStateProvider).direction.sendsZec
+          ? AddressInputContext.swapRecipient
+          : AddressInputContext.swapRefund,
+    );
+    if (!mounted ||
+        generation != _addressEditorGeneration ||
+        surface != _swapModal.value ||
+        contextKey !=
+            (
+              addressInputContextKey(ref, includeSwap: true),
+              ref.read(paymentRequestArrivalProvider),
+            )) {
+      return const MobileScanOutcome.ignored();
+    }
+    _resolvedPaymentInput = result;
+    return result.kind == AddressInputResultKind.rejected
+        ? MobileScanOutcome.rejected(result.reason!)
+        : MobileScanOutcome.accepted(result.address ?? result.rawPaymentUri!);
   }
 
   /// Content of the root modal route: re-renders on surface switches
@@ -207,6 +266,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onClose: _closeSwapModal,
               ),
               _SwapModalSurface.addressEditor => MobileSwapAddressEditModal(
+                onPaymentRequest: (raw) =>
+                    unawaited(_showSwapPaymentRequest(raw)),
+                onDraftCaptured: _captureAddressEditorDraft,
+                resolve: _resolveSwapInput,
+                readValidationContext: () => (
+                  addressInputContextKey(ref, includeSwap: true),
+                  _addressEditorGeneration,
+                ),
+                validationContext: (
+                  addressInputContextKey(ref, includeSwap: true),
+                  _addressEditorGeneration,
+                ),
                 state: swapState,
                 onChanged: () => _addressEditorGeneration++,
                 contacts:
@@ -214,10 +285,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 initialAddress: _addressEditorDraftText,
                 initialRememberAddress: _addressEditorDraftRemember,
                 onSubmitted: (value, remember) {
-                  if (isPaymentRequestUri(value)) {
-                    unawaited(_reviewPastedPaymentRequest(value));
-                    return;
-                  }
                   if (remember) {
                     unawaited(_rememberSwapAddress(value, swapState));
                   }
@@ -239,30 +306,19 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
               // surface as the other swap modals.
               _SwapModalSurface.addressScanner => MobileAddressScanCard(
                 caption: swapState.direction.sendsZec
-                    ? 'Scan an address or payment request QR code'
-                    : 'Scan a plain refund address QR code',
-                resolve: (raw) async {
-                  if (isPaymentRequestUri(raw)) {
-                    return swapState.direction.sendsZec
-                        ? MobileScanOutcome.accepted(raw.trim())
-                        : const MobileScanOutcome.rejected(
-                            paymentRequestRefundAddressMessage,
-                          );
-                  }
-                  final address = normalizeAddressScanPayload(raw);
-                  if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
+                    ? 'Scan a recipient address QR code'
+                    : 'Scan a refund address QR code',
+                validationContext: (
+                  addressInputContextKey(ref, includeSwap: true),
+                  _addressEditorGeneration,
+                ),
+                resolve: _resolveSwapInput,
                 onScanned: (value) {
                   if (isPaymentRequestUri(value)) {
-                    unawaited(_reviewScannedPaymentRequest(value));
-                    return;
+                    unawaited(_showSwapPaymentRequest(value));
+                  } else {
+                    _openAddressEditor(draftText: value);
                   }
-                  _openAddressEditor(draftText: value);
                 },
                 onClose: _openAddressEditor,
               ),
@@ -351,6 +407,26 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) {
+        setState(() => _addressEditorGeneration++);
+      },
+    );
+    ref.listen(rpcEndpointProvider.select((value) => value.networkName), (
+      _,
+      _,
+    ) {
+      setState(() => _addressEditorGeneration++);
+    });
+    ref.listen(
+      swapStateProvider.select(
+        (value) => (value.externalAsset, value.direction, value.payMode),
+      ),
+      (_, _) {
+        setState(() => _addressEditorGeneration++);
+      },
+    );
     ref.listen<String?>(
       accountProvider.select((value) => value.value?.activeAccountUuid),
       (previous, next) {
