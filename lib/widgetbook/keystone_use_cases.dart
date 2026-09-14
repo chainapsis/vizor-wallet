@@ -120,7 +120,9 @@ Widget buildMobileKeystoneSigningScannerUseCase(BuildContext context) {
 }
 
 Widget buildMobileKeystoneConnectUseCase(BuildContext context) {
-  return const _MobileKeystoneScreenFrame(child: MobileKeystoneIntroScreen());
+  return _MobileKeystoneScreenFrame(
+    child: MobileKeystoneIntroScreen(urlLauncher: (_) async {}),
+  );
 }
 
 Widget buildMobileKeystoneBirthdayUseCase(BuildContext context) {

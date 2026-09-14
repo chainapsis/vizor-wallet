@@ -10,6 +10,29 @@ import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 
+typedef VotingExternalUriLauncher = Future<void> Function(Uri uri);
+
+class VotingExternalUriLauncherScope extends InheritedWidget {
+  const VotingExternalUriLauncherScope({
+    required this.launcher,
+    required super.child,
+    super.key,
+  });
+
+  final VotingExternalUriLauncher launcher;
+
+  static VotingExternalUriLauncher? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<VotingExternalUriLauncherScope>()
+        ?.launcher;
+  }
+
+  @override
+  bool updateShouldNotify(VotingExternalUriLauncherScope oldWidget) {
+    return launcher != oldWidget.launcher;
+  }
+}
+
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
 
@@ -60,7 +83,10 @@ class VotingForumLinkButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppButton(
       onPressed: () {
-        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+        final launcher =
+            VotingExternalUriLauncherScope.maybeOf(context) ??
+            _launchVotingExternalUri;
+        unawaited(launcher(uri));
       },
       variant: AppButtonVariant.ghost,
       size: size,
@@ -77,6 +103,10 @@ class VotingForumLinkButton extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _launchVotingExternalUri(Uri uri) async {
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class VotingProposalMetadataRow extends StatelessWidget {

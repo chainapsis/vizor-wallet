@@ -613,7 +613,7 @@ Widget keystoneHowToConnectFixture() {
       builder: (_) => const KeystoneOnboardingShell(
         activeStep: KeystoneOnboardingStep.howToConnect,
         showPasswordStep: true,
-        child: KeystoneHowToConnectScreen(),
+        child: KeystoneHowToConnectScreen(onOpenFirmware: _noop),
       ),
     ),
   );
@@ -1628,6 +1628,7 @@ Widget keystoneScanHelpFixture({required bool visible}) {
           builder: (_) => Center(
             child: KeystoneScanHelpOverlay(
               visible: visible,
+              onOpenFirmware: _noop,
               child: const _KeystoneScanHelpAnchor(),
             ),
           ),

@@ -2237,6 +2237,8 @@ Widget _buildUtilityUseCase(String initialLocation, AccountState accountState) {
   );
 }
 
+Future<void> _noopAboutUrl(String _) async {}
+
 Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
     buildMobileHomeDefaultUseCase(context, votingVisible: false);
 
@@ -2832,7 +2834,10 @@ class _UtilityHarnessState extends State<_UtilityHarness> {
     _router = GoRouter(
       initialLocation: widget.initialLocation,
       routes: [
-        GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+        GoRoute(
+          path: '/about',
+          builder: (_, _) => AboutScreen(urlLauncher: _noopAboutUrl),
+        ),
         GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
         GoRoute(
           path: '/privacy',

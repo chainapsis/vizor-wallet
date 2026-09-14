@@ -901,6 +901,51 @@ void main() {
     await disposeTree(tester);
   });
 
+  testWidgets('Keystone firmware links stay active without opening a browser', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    for (final layout in [_desktop, _mobile]) {
+      await pumpUseCase(
+        tester,
+        buildOnboardingKeystoneIntroGalleryCase,
+        knobs: {'Layout': layout},
+      );
+      final firmwareButton = find.ancestor(
+        of: find.text('link'),
+        matching: find.byType(AppButton),
+      );
+      expect(tester.widget<AppButton>(firmwareButton).onPressed, isNotNull);
+      await tester.tap(find.text('link'));
+      await tester.pump();
+    }
+
+    await pumpUseCase(
+      tester,
+      buildOnboardingKeystoneScanHelpGalleryCase,
+      knobs: {'Visible': 'true'},
+    );
+    await tester.pump();
+    final scanHelpLink = find.byKey(
+      const ValueKey('keystone_firmware_link'),
+    );
+    expect(scanHelpLink, findsOne);
+    await tester.tap(scanHelpLink);
+    await tester.pump();
+
+    expect(platformCalls, isEmpty);
+    await disposeTree(tester);
+  });
+
   testWidgets('the desktop Keystone birthday step covers the metadata axis', (
     tester,
   ) async {

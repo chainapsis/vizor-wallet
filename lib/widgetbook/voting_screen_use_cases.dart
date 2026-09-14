@@ -839,6 +839,7 @@ Widget votingPollCardFixture({
   VotingPollCardEligibility eligibility = VotingPollCardEligibility.eligible,
   bool forumLink = true,
   bool emptyText = false,
+  VotingExternalUriLauncher launchExternalUri = _previewExternalUriNoop,
 }) {
   final round = VotingRoundView(
     roundId: _previewActiveRoundId,
@@ -864,27 +865,32 @@ Widget votingPollCardFixture({
         'forum_url': 'https://forum.zcashcommunity.com/t/nu7-scope',
     },
   );
-  return _votingPollsScreen(
-    layout: layout,
-    overrides: _votingPollListOverrides(
-      rounds: [round],
-      eligibility: (_) => switch (eligibility) {
-        VotingPollCardEligibility.ineligible => Future.value(
-          VotingPollEligibility.ineligible,
-        ),
-        VotingPollCardEligibility.checking =>
-          Completer<VotingPollEligibility>().future,
-        VotingPollCardEligibility.checkFailed => Future.error(
-          'the voting service did not answer the eligibility check.',
-          StackTrace.empty,
-        ),
-        _ => Future.value(VotingPollEligibility.eligible),
-      },
-      participationUnavailable: (_) =>
-          eligibility == VotingPollCardEligibility.alreadyUsed,
+  return VotingExternalUriLauncherScope(
+    launcher: launchExternalUri,
+    child: _votingPollsScreen(
+      layout: layout,
+      overrides: _votingPollListOverrides(
+        rounds: [round],
+        eligibility: (_) => switch (eligibility) {
+          VotingPollCardEligibility.ineligible => Future.value(
+            VotingPollEligibility.ineligible,
+          ),
+          VotingPollCardEligibility.checking =>
+            Completer<VotingPollEligibility>().future,
+          VotingPollCardEligibility.checkFailed => Future.error(
+            'the voting service did not answer the eligibility check.',
+            StackTrace.empty,
+          ),
+          _ => Future.value(VotingPollEligibility.eligible),
+        },
+        participationUnavailable: (_) =>
+            eligibility == VotingPollCardEligibility.alreadyUsed,
+      ),
     ),
   );
 }
+
+Future<void> _previewExternalUriNoop(Uri _) async {}
 
 Widget _votingPollsScreen({
   required WbLayout layout,

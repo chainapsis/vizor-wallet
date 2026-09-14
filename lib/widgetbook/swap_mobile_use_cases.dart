@@ -578,6 +578,7 @@ Widget swapMobileStatusFixture({
   SwapMobileStatusTab tab = SwapMobileStatusTab.progress,
   SwapMobileStatusRecipient recipient = SwapMobileStatusRecipient.contact,
   SwapMobileStatusDepositTx depositTx = SwapMobileStatusDepositTx.pending,
+  SwapExternalUriLauncher launchExternalUri = _swapMobileExternalUriNoop,
 }) {
   final knownContact = recipient == SwapMobileStatusRecipient.contact;
   final intent = _swapMobileStatusIntent(
@@ -638,10 +639,13 @@ Widget swapMobileStatusFixture({
         detailsExpanded: false,
         onTabChanged: (_) {},
         onToggleDetails: _swapMobileNoop,
+        launchExternalUri: launchExternalUri,
       ),
     ),
   );
 }
+
+Future<void> _swapMobileExternalUriNoop(Uri _) async {}
 
 // --- Mobile swap deposit timeout -------------------------------------------
 

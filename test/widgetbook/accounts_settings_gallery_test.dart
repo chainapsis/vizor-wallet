@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/account_name_policy.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/settings_pane_backdrop.dart';
 import 'package:zcash_wallet/widgetbook/accounts_settings_use_cases.dart';
 import 'package:zcash_wallet/widgetbook/gallery/pay_gallery.dart';
@@ -1956,6 +1957,53 @@ void main() {
       },
     );
     expect(find.text('Privacy Policy'), findsOneWidget);
+    await disposeTree(tester);
+  });
+
+  testWidgets('about links stay enabled without launching a browser', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    await pumpUseCase(
+      tester,
+      buildUtilityDocumentGalleryCase,
+      knobs: _desktopLayoutKnobs,
+    );
+    for (final label in ['Github', 'Website']) {
+      final button = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(AppButton),
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+      await tester.tap(find.text(label));
+      await tester.pump();
+    }
+
+    await pumpUseCase(
+      tester,
+      buildUtilityDocumentGalleryCase,
+      knobs: _mobileLayoutKnobs,
+    );
+    for (final label in ['Github', 'Website']) {
+      final button = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(GestureDetector),
+      );
+      expect(tester.widget<GestureDetector>(button).onTap, isNotNull);
+      await tester.tap(find.text(label));
+      await tester.pump();
+    }
+
+    expect(platformCalls, isEmpty);
     await disposeTree(tester);
   });
 

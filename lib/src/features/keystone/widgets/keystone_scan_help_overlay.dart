@@ -32,11 +32,13 @@ class KeystoneScanHelpOverlay extends StatefulWidget {
   const KeystoneScanHelpOverlay({
     required this.visible,
     required this.child,
+    this.onOpenFirmware = _openKeystoneFirmware,
     super.key,
   });
 
   final bool visible;
   final Widget child;
+  final VoidCallback onOpenFirmware;
 
   @override
   State<KeystoneScanHelpOverlay> createState() =>
@@ -123,7 +125,10 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
           targetAnchor: Alignment.centerRight,
           followerAnchor: Alignment.centerLeft,
           offset: const Offset(_tooltipGap, 0),
-          child: _KeystoneScanHelpTooltip(onDismiss: _dismiss),
+          child: _KeystoneScanHelpTooltip(
+            onDismiss: _dismiss,
+            onOpenFirmware: widget.onOpenFirmware,
+          ),
         ),
       ),
       child: CompositedTransformTarget(link: _layerLink, child: widget.child),
@@ -132,9 +137,13 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
 }
 
 class _KeystoneScanHelpTooltip extends StatelessWidget {
-  const _KeystoneScanHelpTooltip({required this.onDismiss});
+  const _KeystoneScanHelpTooltip({
+    required this.onDismiss,
+    required this.onOpenFirmware,
+  });
 
   final VoidCallback onDismiss;
+  final VoidCallback onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +232,7 @@ class _KeystoneScanHelpTooltip extends StatelessWidget {
                           key: const ValueKey('keystone_firmware_link'),
                           semanticLabel: 'Open Keystone firmware page',
                           link: true,
-                          onActivate: () => unawaited(_openKeystoneFirmware()),
+                          onActivate: onOpenFirmware,
                           builder: (context, focused) => Text(
                             'keyst.one/firmware',
                             style: AppTypography.bodyMediumStrong.copyWith(

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/widgetbook/gallery/voting_gallery.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
@@ -218,6 +219,28 @@ void main() {
         reason: '$eligibility',
       );
     }
+    await disposeTree(tester);
+  });
+
+  testWidgets('poll card routes its forum link through the preview launcher', (
+    tester,
+  ) async {
+    final launched = <Uri>[];
+    await pumpSettled(
+      tester,
+      (context) => votingPollCardFixture(
+        layout: wbCompiledLaneLayout,
+        launchExternalUri: (uri) async => launched.add(uri),
+      ),
+      const {},
+    );
+
+    await tester.tap(find.byType(VotingForumLinkButton));
+    await tester.pump();
+
+    expect(launched, [
+      Uri.parse('https://forum.zcashcommunity.com/t/nu7-scope'),
+    ]);
     await disposeTree(tester);
   });
 

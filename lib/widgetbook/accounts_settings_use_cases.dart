@@ -2269,7 +2269,7 @@ Widget _utilityDocumentScreen(String path, {required bool forceFullPane}) {
   return switch (path) {
     '/terms' => TermsScreen(forceFullPane: forceFullPane),
     '/privacy' => PrivacyPolicyScreen(forceFullPane: forceFullPane),
-    _ => const AboutScreen(),
+    _ => AboutScreen(urlLauncher: _noopAboutUrl),
   };
 }
 
@@ -2280,10 +2280,12 @@ Widget utilityMobileDocumentScreenFixture({required String path}) {
     builder: (_) => switch (path) {
       '/terms' => const MobileLegalScreen(title: 'Terms of Use'),
       '/privacy' => const MobileLegalScreen(title: 'Privacy Policy'),
-      _ => const MobileAboutScreen(),
+      _ => MobileAboutScreen(urlLauncher: _noopAboutUrl),
     },
   );
 }
+
+Future<void> _noopAboutUrl(String _) async {}
 
 // --- Mobile sub-screen plumbing ---------------------------------------------
 
