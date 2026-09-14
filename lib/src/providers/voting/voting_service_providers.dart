@@ -221,11 +221,118 @@ final votingWalletSyncPollIntervalProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 2);
 });
 
-/// Upper bound for waiting on wallet scan readiness before surfacing retryable
-/// session error state.
+/// Maximum time without observable sync progress before the voting wait is
+/// reported as stalled.
+///
+/// This is a no-progress threshold, not a wall-clock budget: a wallet that is
+/// legitimately hundreds of thousands of blocks behind keeps catching up for
+/// as long as it takes. Session-level waits keep polling past the threshold
+/// (stalled is a UI state, not a failure); only callers that own an automatic
+/// recovery path convert a stall into a retryable error.
 final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
   return const Duration(minutes: 3);
 });
+
+/// Raw sample of live sync-engine progress, read by the voting stall detector
+/// through [VotingWalletSyncProgressTracker].
+class VotingWalletSyncProgressSample {
+  const VotingWalletSyncProgressSample({
+    required this.percentage,
+    required this.scannedHeight,
+    required this.isSyncing,
+  });
+
+  final double percentage;
+  final int scannedHeight;
+
+  /// Whether the engine is actually running. Sync state is also republished
+  /// from a standing start when work *stops* — locking the wallet resets it
+  /// to zeroed values — so a sample from an idle engine describes no work.
+  final bool isSyncing;
+}
+
+/// Samples the sync engine's own progress.
+///
+/// This deliberately reads the engine rather than only the readiness
+/// checker's scanned height: that height is the contiguous scan frontier,
+/// which stays pinned while higher-priority ranges near the chain tip scan
+/// first, so frontier movement alone under-reports a healthy catch-up.
+///
+/// Returning null is safe: the stall detector then falls back to frontier
+/// movement only.
+final votingWalletSyncProgressSampleProvider =
+    Provider<VotingWalletSyncProgressSample? Function()>((ref) {
+      return () {
+        try {
+          final sync = ref.read(syncProvider).value;
+          if (sync == null) return null;
+          return VotingWalletSyncProgressSample(
+            percentage: sync.percentage,
+            scannedHeight: sync.scannedHeight,
+            isSyncing: sync.isSyncing,
+          );
+        } catch (_) {
+          return null;
+        }
+      };
+    });
+
+/// Decides whether successive sync samples represent real forward progress.
+///
+/// One tracker belongs to one wait; its marks must never outlive that wait,
+/// or a completed sync (percentage pinned at 1.0, height at the tip) would
+/// make every later sample unsatisfiable and fail a healthy backfill as
+/// stalled.
+///
+/// Within a wait, progress is movement past the high-water marks. A
+/// restarting sync replays old values — Dart resets the percentage to zero
+/// on every startSync, and the engine's pre-batch events re-emit a
+/// percentage computed from persisted state before any new work commits —
+/// so counting a re-rise to an already-reached value would let a wedged sync
+/// reset the stall budget forever.
+///
+/// A scanned height *below* the mark is different: it is the signature of a
+/// new scan epoch (an account added with an older birthday, a reorg rewind,
+/// an in-session reimport, a tail-repair pass), which is real work at a
+/// lower height range. The tracker rebases onto that epoch so its subsequent
+/// forward movement registers normally.
+class VotingWalletSyncProgressTracker {
+  double? _maxPercentage;
+  int? _maxScannedHeight;
+
+  bool observe(VotingWalletSyncProgressSample? sample) {
+    if (sample == null) return false;
+    final maxPercentage = _maxPercentage;
+    final maxScannedHeight = _maxScannedHeight;
+    if (maxPercentage == null || maxScannedHeight == null) {
+      _maxPercentage = sample.percentage;
+      _maxScannedHeight = sample.scannedHeight;
+      return false;
+    }
+    if (sample.scannedHeight < maxScannedHeight) {
+      // Only a running engine can start a new scan epoch. An idle engine
+      // reporting a lower height is a state reset, not work — locking the
+      // wallet republishes zeroed sync state while sync is cancelled — and
+      // rebasing onto it would both count the lock as progress and lower
+      // the percentage mark, letting later replays read as progress.
+      if (!sample.isSyncing) return false;
+      // New scan epoch (rescan from an older birthday, reorg rewind, tail
+      // repair): rebase both marks onto it. The rewind itself is engine
+      // activity, so it counts as progress.
+      _maxPercentage = sample.percentage;
+      _maxScannedHeight = sample.scannedHeight;
+      return true;
+    }
+    final advanced =
+        sample.percentage > maxPercentage ||
+        sample.scannedHeight > maxScannedHeight;
+    if (sample.percentage > maxPercentage) _maxPercentage = sample.percentage;
+    if (sample.scannedHeight > maxScannedHeight) {
+      _maxScannedHeight = sample.scannedHeight;
+    }
+    return advanced;
+  }
+}
 
 /// Checks whether wallet scan progress has reached a voting snapshot height.
 final votingWalletSyncReadinessCheckerProvider =

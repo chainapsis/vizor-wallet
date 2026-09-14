@@ -267,6 +267,11 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
+
+  /// Wallet sync has not advanced toward the round snapshot within the
+  /// no-progress threshold. A display state, not a failure: session-level
+  /// waits keep polling and clear this as soon as progress resumes.
+  final bool walletSyncStalled;
   final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
@@ -305,6 +310,7 @@ class VotingSessionState {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
+    this.walletSyncStalled = false,
     this.isHardwareAccount = false,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
@@ -378,6 +384,7 @@ class VotingSessionState {
     int? walletScannedHeight,
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
+    bool? walletSyncStalled,
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
@@ -422,6 +429,9 @@ class VotingSessionState {
       walletChainTipHeight: clearWalletSyncReadiness
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
+      walletSyncStalled: clearWalletSyncReadiness
+          ? false
+          : walletSyncStalled ?? this.walletSyncStalled,
       isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,
