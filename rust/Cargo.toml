@@ -81,6 +81,9 @@ prost13 = { package = "prost", version = "0.13" }
 tendermint = "0.40.4"
 tendermint-light-client-verifier = "0.40.4"
 
+# Standalone URI parsing only; this does not replace the Zakura wallet crates.
+payment_uri = { git = "https://github.com/zcash/librustzcash", rev = "330e4c0aa9e25199acdb93a56bf70126d0d3f2b9", features = ["json"] }
+
 # Zcash core. Package names are the Zakura forks; lib names stay upstream so
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]

@@ -664,7 +664,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
             ],
             if (request.hasRequesterDetails) ...[
               SizedBox(height: sectionGap),
-              _RequesterDetailsCard(
+              PaymentRequestRequesterDetailsCard(
                 requester: request.displayRequesterLabel,
                 note: request.displayNote,
                 expanded: _requesterExpanded,
@@ -690,7 +690,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
               ),
             // A request error belongs to the details card, so keep it close
             // to that surface and leave the full section gap before actions.
-            if (statusMessage != null) ...[
+            if (statusMessage != null && status.isError) ...[
               SizedBox(height: isMobile ? AppSpacing.xxs : AppSpacing.xs),
               _StatusMessage(
                 key: const ValueKey('payment_request_status'),
@@ -753,17 +753,18 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
   }
 }
 
-/// Off-chain metadata supplied by the payment link's requester.
+/// Off-chain metadata shared by ZEC and cross-chain payment request cards.
 ///
 /// The name remains visible as the collapsed summary. A requester note is
 /// progressive disclosure because it is context for the request, not content
 /// that will be included in the Zcash transaction.
-class _RequesterDetailsCard extends StatelessWidget {
-  const _RequesterDetailsCard({
+class PaymentRequestRequesterDetailsCard extends StatelessWidget {
+  const PaymentRequestRequesterDetailsCard({
     required this.requester,
     required this.note,
     required this.expanded,
     required this.onToggle,
+    super.key,
   });
 
   final String? requester;
@@ -1620,6 +1621,8 @@ class _Actions extends StatelessWidget {
 
   String get _primaryLabel => _checking
       ? 'Checking…'
+      : status == PaymentRequestStatus.syncing
+      ? 'Syncing…'
       : _recheckable
       ? 'Check again'
       : hasAmount

@@ -9,7 +9,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app_bootstrap.dart';
-import '../../features/send/models/send_prefill_args.dart';
+import 'payment_request_draft.dart';
 import '../../providers/migration_send_gate_provider.dart'
     show migrationSendGateProvider;
 import '../../providers/payment_uri_prefill_provider.dart';
@@ -22,7 +22,7 @@ class PaymentUriUnlockClaim {
 
   /// Present this as a payment-request card. Null when nothing was parked, or
   /// when the link cannot be shown.
-  final SendPrefillArgs? prefill;
+  final PaymentRequestDraft? prefill;
 
   /// Say this instead — the link was claimed but is not being delivered.
   /// Null when there is nothing to say (nothing was parked).

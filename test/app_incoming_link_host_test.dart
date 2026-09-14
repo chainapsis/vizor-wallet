@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
+import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -81,6 +83,15 @@ void main() {
           syncProvider.overrideWith(FakeSyncNotifier.new),
           paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
           incomingUriServiceProvider.overrideWithValue(incomingUris),
+          crossChainPaymentParserProvider.overrideWithValue(
+            (raw) async => CrossChainPaymentRequest(
+              id: raw,
+              rawUri: raw,
+              address: 'bc1recipient',
+              isEvm: false,
+              chain: 'btc',
+            ),
+          ),
         ],
         child: Consumer(
           builder: (context, ref, _) {
@@ -102,6 +113,40 @@ void main() {
     await tester.pumpAndSettle();
     return (container, router, incomingUris);
   }
+
+  testWidgets('ignored cross-chain OS request does not defer a Gift Card', (
+    tester,
+  ) async {
+    final (container, router, incomingUris) = await pumpHost(tester);
+    incomingUris.emit('bitcoin:bc1recipient?amount=0.01');
+    await tester.pumpAndSettle();
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
+    expect(container.read(paymentRequestFlowProvider), isNull);
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/payment-links',
+    );
+  });
+
+  testWidgets('cross-chain OS request preserves the active Zcash card', (
+    tester,
+  ) async {
+    final (container, _, incomingUris) = await pumpHost(tester);
+    incomingUris.emit('zcash:u1recipient?amount=0.5');
+    await tester.pumpAndSettle();
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    incomingUris.emit('bitcoin:bc1recipient?amount=0.01');
+    await tester.pumpAndSettle();
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    incomingUris.emit('zcash:u1newrecipient?amount=0.25');
+    await tester.pumpAndSettle();
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+  });
 
   testWidgets('one host routes each link kind to its own intake', (
     tester,

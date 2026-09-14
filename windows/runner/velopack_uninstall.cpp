@@ -215,12 +215,12 @@ void DeleteUserData() {
 }
 
 void BeforeUninstallHook(void* user_data, const char* app_version) {
-  UnregisterZcashProtocolHandler();
+  UnregisterPaymentProtocolHandlers();
   DeleteUserData();
 }
 
 void RegisterProtocolHook(void* user_data, const char* app_version) {
-  RegisterZcashProtocolHandler();
+  RegisterPaymentProtocolHandlers();
 }
 
 }  // namespace

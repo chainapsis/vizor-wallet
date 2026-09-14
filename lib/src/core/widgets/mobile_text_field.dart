@@ -4,6 +4,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
+import 'validated_paste_region.dart';
 
 /// The shared single-line mobile text field (Figma `_Modal Type` field
 /// 4755:84371 / 4755:85337): a flat `surface.input.primary` box sized by
@@ -23,6 +24,9 @@ class MobileTextField extends StatefulWidget {
     this.fieldKey,
     this.hintText,
     this.onChanged,
+    this.onPaste,
+    this.pasteContext,
+    this.readPasteContext,
     this.onSubmitted,
     this.textInputAction,
     this.keyboardType,
@@ -48,6 +52,9 @@ class MobileTextField extends StatefulWidget {
   final Key? fieldKey;
   final String? hintText;
   final ValueChanged<String>? onChanged;
+  final Future<void> Function(String candidate)? onPaste;
+  final Object? pasteContext;
+  final Object? Function()? readPasteContext;
   final ValueChanged<String>? onSubmitted;
   final TextInputAction? textInputAction;
   final TextInputType? keyboardType;
@@ -217,21 +224,28 @@ class _MobileTextFieldState extends State<MobileTextField> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: KeyedSubtree(
                   key: _textFieldRegionKey,
-                  child: TextField(
-                    key: widget.fieldKey,
+                  child: ValidatedPasteRegion(
                     controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    enabled: widget.enabled,
-                    onChanged: widget.onChanged,
-                    onSubmitted: widget.onSubmitted,
-                    textInputAction: widget.textInputAction,
-                    keyboardType: widget.keyboardType,
-                    inputFormatters: widget.inputFormatters,
-                    style: textStyle,
-                    cursorColor: colors.text.accent,
-                    decoration: InputDecoration.collapsed(
-                      hintText: widget.hintText,
-                      hintStyle: hintStyle,
+                    onPaste: widget.enabled ? widget.onPaste : null,
+                    pasteContext: widget.pasteContext,
+                    readPasteContext: widget.readPasteContext,
+                    builder: (menuBuilder) => TextField(
+                      contextMenuBuilder: menuBuilder,
+                      key: widget.fieldKey,
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      enabled: widget.enabled,
+                      onChanged: widget.onChanged,
+                      onSubmitted: widget.onSubmitted,
+                      textInputAction: widget.textInputAction,
+                      keyboardType: widget.keyboardType,
+                      inputFormatters: widget.inputFormatters,
+                      style: textStyle,
+                      cursorColor: colors.text.accent,
+                      decoration: InputDecoration.collapsed(
+                        hintText: widget.hintText,
+                        hintStyle: hintStyle,
+                      ),
                     ),
                   ),
                 ),

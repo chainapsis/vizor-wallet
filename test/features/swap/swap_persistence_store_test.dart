@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 
@@ -443,6 +444,78 @@ void main() {
       expect(accountTwo.slippageBps, 200);
     },
   );
+
+  for (final asset in [
+    SwapAsset.live(
+      assetId: 'eth-usdc',
+      symbol: 'USDC',
+      blockchain: 'eth',
+      decimals: 6,
+      contractAddress: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    ),
+    SwapAsset.live(
+      assetId: 'sol-usdc',
+      symbol: 'USDC',
+      blockchain: 'sol',
+      decimals: 6,
+      contractAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    ),
+    SwapAsset.live(
+      assetId: 'eth-native',
+      symbol: 'ETH',
+      blockchain: 'eth',
+      decimals: 18,
+    ),
+  ]) {
+    test(
+      'preserves ${asset.assetId} metadata through all asset stores',
+      () async {
+        final payStore = AppSecureStorePaySelectedAssetStore(secureStore);
+        await payStore.saveSelectedAsset(
+          accountUuid: 'account-1',
+          asset: asset,
+        );
+        await preferencesStore.savePreferences(
+          accountUuid: 'account-1',
+          preferences: SwapComposerPreferences(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: asset,
+            slippageBps: 100,
+          ),
+        );
+        await activityStore.saveRecords(
+          accountUuid: 'account-1',
+          records: [
+            SwapIntentRecord.fromIntent(
+              _minimalIntent(
+                id: 'payment',
+                accountUuid: 'account-1',
+              ).copyWith(externalAsset: asset),
+            ),
+          ],
+        );
+
+        final payAsset = await payStore.loadSelectedAsset(
+          accountUuid: 'account-1',
+        );
+        final preferences = await preferencesStore.loadPreferences(
+          accountUuid: 'account-1',
+        );
+        final activity = await activityStore.loadRecords(
+          accountUuid: 'account-1',
+        );
+        for (final restored in [
+          payAsset,
+          preferences?.externalAsset,
+          activity.single.externalAsset,
+        ]) {
+          expect(restored, isNotNull);
+          expect(restored!.assetId, asset.assetId);
+          expect(restored.contractAddress, asset.contractAddress);
+        }
+      },
+    );
+  }
 }
 
 SwapIntent _minimalIntent({required String id, required String accountUuid}) {

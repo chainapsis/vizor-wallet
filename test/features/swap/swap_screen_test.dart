@@ -1,3 +1,6 @@
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/present_payment_request.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 // The platform-interface fakes below stub path_provider / flutter_secure_storage
 // so the activity tab's tap-through to the tx-status route can resolve the
 // wallet DB path under test. These are transitive deps, hence the ignore.
@@ -17,6 +20,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -26,6 +30,10 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/payments/cross_chain_payment_request.dart';
+import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/features/address_book/contact_label_generator.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -70,6 +78,197 @@ import 'support/swap_activity_fixture_intents.dart';
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  testWidgets('Pay request paste cancels the previous recipient quote', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final provider = _DelayedQuoteSwapProvider();
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: provider,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('pay_recipient_search_field'));
+    const destination = '0x52908400098527886e0f7030069857d2e4169ee7';
+    await tester.enterText(field, destination);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+    );
+    expect(container.read(swapStateProvider).quoteLoading, isTrue);
+    const raw = 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=0.1';
+    await tester.enterText(field, raw);
+    await tester.pump();
+    provider.completeQuote();
+    await tester.pumpAndSettle();
+    expect(find.text(raw), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('review_pasted_payment_request')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('pay_review_step')), findsNothing);
+    final state = container.read(swapStateProvider);
+    expect(state.quoteLoading, isFalse);
+    expect(state.reviewVisible, isFalse);
+    expect(state.destinationText, destination);
+    expect(state.receiveAmountText, '25');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Pay preserves a newer arrival during presentation frame wait', (
+    tester,
+  ) async {
+    final parsed = Completer<CrossChainPaymentRequest>();
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        seedSwapActivityFixtures: false,
+        paymentParser: (_) => parsed.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '10',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+    );
+    const raw = 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=0.1';
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      raw,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('review_pasted_payment_request')),
+    );
+    await tester.pumpAndSettle();
+
+    parsed.complete(
+      const CrossChainPaymentRequest(
+        id: 'obsolete',
+        rawUri: raw,
+        address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+        isEvm: false,
+        chain: 'btc',
+      ),
+    );
+    // Finish resolution without delivering the presentation frame.
+    await tester.idle();
+    expect(container.read(paymentRequestArrivalProvider), 0);
+    const newer = CrossChainPaymentRequest(
+      id: 'newer-os-request',
+      rawUri: 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=2',
+      address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+      isEvm: false,
+      chain: 'btc',
+    );
+    await container
+        .read(paymentRequestIntakeProvider)
+        .receive(newer.rawUri, resolvedCrossChainRequest: newer);
+    final before = container.read(swapStateProvider);
+    await tester.pumpAndSettle();
+    expect(container.read(paymentUriPrefillProvider), same(newer));
+    expect(container.read(paymentRequestArrivalProvider), 1);
+    expect(
+      container.read(swapStateProvider).destinationText,
+      before.destinationText,
+    );
+    expect(
+      container.read(swapStateProvider).receiveAmountText,
+      before.receiveAmountText,
+    );
+    expect(find.text(raw), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final leaveStep in [false, true]) {
+    testWidgets(
+      'Pay discards a pending request after input or step changes (leaveStep: $leaveStep)',
+      (tester) async {
+        final parsed = Completer<CrossChainPaymentRequest>();
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+            seedSwapActivityFixtures: false,
+            paymentParser: (_) => parsed.future,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '10',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(PayScreen)),
+        );
+        const raw = 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=0.1';
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_recipient_search_field')),
+          raw,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('review_pasted_payment_request')),
+        );
+        await tester.pumpAndSettle();
+        if (leaveStep) {
+          await tester.tap(find.byKey(const ValueKey('pay_wizard_back_link')));
+        } else {
+          await tester.enterText(
+            find.byKey(const ValueKey('pay_recipient_search_field')),
+            'bitcoin:new-draft',
+          );
+        }
+        await tester.pumpAndSettle();
+        parsed.complete(
+          const CrossChainPaymentRequest(
+            id: 'obsolete',
+            rawUri: raw,
+            address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+            isEvm: false,
+            chain: 'btc',
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(container.read(paymentRequestArrivalProvider), 0);
+        if (leaveStep) {
+          expect(
+            find.byKey(const ValueKey('pay_amount_input')),
+            findsOneWidget,
+          );
+        } else {
+          expect(find.text('bitcoin:new-draft'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -864,6 +1063,100 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
   });
 
+  for (final hasAmount in [true, false]) {
+    testWidgets(
+      'payment request Pay entry ${hasAmount ? 'opens prepared review' : 'asks only for amount'}',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        const address = '0x52908400098527886e0f7030069857d2e4169ee7';
+        final provider = _FakeSwapProvider();
+        final router = GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _payRoute()],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          _routerHarness(
+            router,
+            swapProvider: provider,
+            seedSwapActivityFixtures: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+          listen: false,
+        );
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.preparePayFromShieldedZec();
+        notifier.updateDestination(address);
+        if (hasAmount) {
+          notifier.updateReceiveAmount('25');
+          await notifier.showReview();
+        }
+        router.go(
+          '/pay',
+          extra: PayComposerNavigationArgs(
+            preservePreparedComposer: true,
+            paymentRequestId: 'request-entry',
+            showPreparedReview: hasAmount,
+            reviewAfterAmount: !hasAmount,
+          ),
+        );
+        for (
+          var i = 0;
+          i < 5 && find.byType(PayScreen).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump();
+        }
+        expect(find.byType(PayScreen), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('pay_review_step')),
+          hasAmount ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('pay_amount_step')),
+          hasAmount ? findsNothing : findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('pay_recipient_step')), findsNothing);
+        await tester.pumpAndSettle();
+        expect(provider.requests, hasLength(hasAmount ? 1 : 0));
+        if (hasAmount) {
+          await tester.tap(find.text('Amount').first);
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '30',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        if (hasAmount) {
+          expect(
+            find.byKey(const ValueKey('pay_recipient_step')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          );
+          await tester.pumpAndSettle();
+        }
+        expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+        expect(find.byKey(const ValueKey('pay_recipient_step')), findsNothing);
+        expect(container.read(swapStateProvider).destinationText, address);
+        expect(container.read(swapStateProvider).receiveAmountText, '30');
+        expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+        expect(provider.requests.last.amountText, '30');
+        expect(provider.startedQuotes, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('Pay review uses the completed spendable snapshot during sync', (
     tester,
   ) async {
@@ -953,6 +1246,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
     await tester.pumpAndSettle();
 
+    // Abandon a possible URI prefix and select an existing contact.
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      's',
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '',
+    );
+    await tester.pumpAndSettle();
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     await tester.tap(find.text('Second'));
@@ -1013,7 +1317,7 @@ void main() {
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
-      assetId: 'saved-base-usdc',
+      assetId: 'live-base-usdc',
       symbol: 'USDC',
       blockchain: 'base',
       decimals: 6,
@@ -1105,70 +1409,79 @@ void main() {
     expect(container.read(paySelectedAssetProvider), liveBaseUsdc);
   });
 
-  testWidgets('Pay retry does not substitute an unsupported asset', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final savedBaseUsdc = SwapAsset.live(
-      assetId: 'removed-base-usdc',
-      symbol: 'USDC',
-      blockchain: 'base',
-      decimals: 6,
-    );
-    final swapProvider = _DeferredSupportedAssetsSwapProvider();
-    final router = GoRouter(
-      initialLocation: '/activity/swap/removed-pay?from=pay',
-      routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
-    );
-    final payIntent =
-        _persistedIntent(
-          id: 'removed-pay',
-          txHash: '',
-          status: SwapIntentStatus.expired,
-          nextAction: 'Start a fresh quote',
-        ).copyWith(
-          sellAmount: '1.5000 ZEC',
-          receiveEstimate: '100 USDC',
-          externalAsset: savedBaseUsdc,
-          payMode: true,
-        );
+  testWidgets(
+    'Pay retry does not substitute a same-symbol token with a different ID',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final savedBaseUsdc = SwapAsset.live(
+        assetId: 'removed-base-usdc',
+        symbol: 'USDC',
+        blockchain: 'base',
+        decimals: 6,
+      );
+      final swapProvider = _DeferredSupportedAssetsSwapProvider();
+      final router = GoRouter(
+        initialLocation: '/activity/swap/removed-pay?from=pay',
+        routes: [_swapRoute(), _payRoute(), _swapActivityRoute()],
+      );
+      final payIntent =
+          _persistedIntent(
+            id: 'removed-pay',
+            txHash: '',
+            status: SwapIntentStatus.expired,
+            nextAction: 'Start a fresh quote',
+          ).copyWith(
+            sellAmount: '1.5000 ZEC',
+            receiveEstimate: '100 USDC',
+            externalAsset: savedBaseUsdc,
+            payMode: true,
+          );
 
-    await tester.pumpWidget(
-      _routerHarness(
-        router,
-        swapProvider: swapProvider,
-        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
-        seedSwapActivityFixtures: false,
-      ),
-    );
-    await _pumpUntilPresent(tester, find.text('Restart swap'));
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          swapProvider: swapProvider,
+          sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await _pumpUntilPresent(tester, find.text('Restart swap'));
 
-    await tester.tap(find.text('Restart swap'));
-    await tester.pump();
-    swapProvider.completeSupportedAssets(const [SwapAsset.usdc]);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Restart swap'));
+      await tester.pump();
+      swapProvider.completeSupportedAssets([
+        SwapAsset.usdc,
+        SwapAsset.live(
+          assetId: 'different-base-usdc',
+          symbol: 'USDC',
+          blockchain: 'base',
+          decimals: 6,
+        ),
+      ]);
+      await tester.pumpAndSettle();
 
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(PayScreen)),
-      listen: false,
-    );
-    final state = container.read(swapStateProvider);
-    expect(state.externalAsset, savedBaseUsdc);
-    expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
-    expect(
-      state.externalAssetSupportError,
-      'USDC on Base is not currently supported.',
-    );
-    expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('pay_amount_continue_button')),
-          )
-          .onPressed,
-      isNull,
-    );
-  });
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+        listen: false,
+      );
+      final state = container.read(swapStateProvider);
+      expect(state.externalAsset, savedBaseUsdc);
+      expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
+      expect(
+        state.externalAssetSupportError,
+        'USDC on Base is not currently supported.',
+      );
+      expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('pay_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    },
+  );
 
   testWidgets('swap status summary shows the captured fiat from the mapper', (
     tester,
@@ -2583,6 +2896,747 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
+  });
+
+  for (final typing in [false, true]) {
+    testWidgets(
+      'Pay pasted payment request waits for review and preserves composer (typing: $typing)',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        final parsed = <String>[];
+        final router = GoRouter(initialLocation: '/pay', routes: [_payRoute()]);
+        await tester.pumpWidget(
+          _routerHarness(
+            router,
+            seedSwapActivityFixtures: false,
+            paymentParser: (raw) async {
+              parsed.add(raw);
+              return _crossChainInputFixture(raw);
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_amount_input')),
+          '25',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('pay_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        const destination = '0x52908400098527886e0f7030069857d2e4169ee7';
+        await tester.enterText(
+          find.byKey(const ValueKey('pay_recipient_search_field')),
+          destination,
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(PayScreen)),
+        );
+        final previous = container.read(swapStateProvider);
+        const raw =
+            'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=0.01&label=Coffee%20shop';
+        if (typing) {
+          final field = find.byKey(
+            const ValueKey('pay_recipient_search_field'),
+          );
+          await tester.enterText(field, '');
+          await tester.pump();
+          for (var length = 1; length <= raw.length; length++) {
+            await tester.enterText(field, raw.substring(0, length));
+            await tester.pump();
+            expect(
+              container.read(swapStateProvider).destinationText,
+              previous.destinationText,
+            );
+          }
+        } else {
+          await tester.enterText(
+            find.byKey(const ValueKey('pay_recipient_search_field')),
+            raw,
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(parsed, isEmpty);
+        expect(container.read(swapStateProvider).destinationText, destination);
+        expect(
+          find.byKey(const ValueKey('pay_select_recipient_button')),
+          findsNothing,
+        );
+        expect(find.text('Invalid EVM address'), findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey('review_pasted_payment_request')),
+        );
+        await tester.pumpAndSettle();
+        expect(parsed, [raw]);
+        expect(
+          (container.read(paymentUriPrefillProvider)
+                  as CrossChainPaymentRequest)
+              .rawUri,
+          raw,
+        );
+        final after = container.read(swapStateProvider);
+        expect(after.destinationText, previous.destinationText);
+        expect(after.externalAsset, previous.externalAsset);
+        expect(after.receiveAmountText, previous.receiveAmountText);
+        if (typing) {
+          final field = find.byKey(
+            const ValueKey('pay_recipient_search_field'),
+          );
+          await tester.enterText(field, 's');
+          await tester.pump();
+          const plain = '0x2222222222222222222222222222222222222222';
+          await tester.enterText(field, plain);
+          await tester.pumpAndSettle();
+          expect(container.read(swapStateProvider).destinationText, plain);
+          expect(find.text(plain), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'newer address validation survives an older completion in the same editor',
+    (tester) async {
+      final parses = [
+        Completer<CrossChainPaymentRequest>(),
+        Completer<CrossChainPaymentRequest>(),
+      ];
+      var calls = 0;
+      Future<CrossChainPaymentRequest> parser(String raw) =>
+          parses[calls++].future;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          paymentParser: parser,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+      );
+      container
+          .read(swapStateProvider.notifier)
+          .selectDirection(SwapDirection.zecToExternal);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+      await tester.pumpAndSettle();
+      const raw = 'ethereum:0x1111111111111111111111111111111111111111@1';
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        raw,
+      );
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_address_update_button')),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(calls, 2);
+      parses[0].complete(
+        const CrossChainPaymentRequest(
+          id: 'older',
+          rawUri: raw,
+          address: '0x1111111111111111111111111111111111111111',
+          isEvm: true,
+          chainId: '1',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('swap_destination_field')),
+        findsOneWidget,
+      );
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      parses[1].complete(
+        const CrossChainPaymentRequest(
+          id: 'newer',
+          rawUri: raw,
+          address: '0x1111111111111111111111111111111111111111',
+          isEvm: true,
+          chainId: '1',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('swap_destination_field')),
+        findsNothing,
+      );
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(container.read(paymentRequestArrivalProvider), 0);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        '0x1111111111111111111111111111111111111111',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('rejected pasted request stays editable and can be retried', (
+    tester,
+  ) async {
+    const rejected = 'bitcoin:malformed?amount=oops';
+    const corrected = 'ethereum:0x1111111111111111111111111111111111111111@1';
+    final parsed = <String>[];
+    final parseGate = Completer<void>();
+    Future<CrossChainPaymentRequest> parser(String raw) async {
+      parsed.add(raw);
+      if (raw == rejected) {
+        await parseGate.future;
+        throw const CrossChainPaymentParseException();
+      }
+      return CrossChainPaymentRequest(
+        id: 'retry-input',
+        rawUri: raw,
+        address: '0x1111111111111111111111111111111111111111',
+        isEvm: true,
+        chainId: '1',
+      );
+    }
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        paymentParser: parser,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    container
+        .read(swapStateProvider.notifier)
+        .selectDirection(SwapDirection.zecToExternal);
+    await tester.pumpAndSettle();
+    final before = container.read(swapStateProvider);
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      rejected,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+    parseGate.complete();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('swap_destination_field')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('swap_destination_field')),
+          )
+          .controller!
+          .text,
+      rejected,
+    );
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(
+      container.read(swapStateProvider).destinationText,
+      before.destinationText,
+    );
+    expect(container.read(swapStateProvider).amountText, before.amountText);
+    expect(find.text('This payment request is not valid.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      corrected,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+    expect(parsed, [rejected, corrected]);
+    expect(find.byKey(const ValueKey('swap_destination_field')), findsNothing);
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(
+      container.read(swapStateProvider).destinationText,
+      '0x1111111111111111111111111111111111111111',
+    );
+    expect(container.read(swapStateProvider).amountText, before.amountText);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  for (final reopen in [false, true]) {
+    testWidgets(
+      'late pasted request result respects editor changes (reopen: $reopen)',
+      (tester) async {
+        final parseGate = Completer<void>();
+        Future<CrossChainPaymentRequest> parser(String raw) async {
+          await parseGate.future;
+          return CrossChainPaymentRequest(
+            id: 'retry-input',
+            rawUri: raw,
+            address: '0x1111111111111111111111111111111111111111',
+            isEvm: true,
+            chainId: '1',
+          );
+        }
+
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(
+              initialLocation: '/swap',
+              routes: [_swapRoute(), _swapActivityRoute()],
+            ),
+            seedSwapActivityFixtures: false,
+            paymentParser: parser,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+        );
+        container
+            .read(swapStateProvider.notifier)
+            .selectDirection(SwapDirection.zecToExternal);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('swap_destination_field')),
+          'ethereum:0x1111111111111111111111111111111111111111@1',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('swap_address_update_button')),
+        );
+        await tester.pumpAndSettle();
+        if (reopen) {
+          await tester.tap(find.text('Cancel'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+          await tester.pumpAndSettle();
+        }
+        const nextDraft = 'bitcoin:another-request';
+        await tester.enterText(
+          find.byKey(const ValueKey('swap_destination_field')),
+          nextDraft,
+        );
+        await tester.pumpAndSettle();
+        parseGate.complete();
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('swap_destination_field')),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('swap_destination_field')),
+              )
+              .controller!
+              .text,
+          nextDraft,
+        );
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(container.read(paymentRequestArrivalProvider), 0);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
+  for (final action in ['keep', 'cancel', 'replace', 'zcash', 'context']) {
+    final differentChain = action == 'cancel';
+    testWidgets('Swap payment QR keeps composer until choice ($action)', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      const address = '0x1111111111111111111111111111111111111111';
+      const draft = '0x2222222222222222222222222222222222222222';
+      final raw = 'ethereum:$address@${differentChain ? '8453' : '1'}?value=1';
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          paymentParser: (raw) async => CrossChainPaymentRequest(
+            id: 'qr-choice',
+            rawUri: raw,
+            address: address,
+            isEvm: true,
+            chainId: differentChain ? '8453' : '1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+      );
+      container
+          .read(swapStateProvider.notifier)
+          .selectDirection(SwapDirection.zecToExternal);
+      await tester.pumpAndSettle();
+      final before = container.read(swapStateProvider);
+      await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_destination_field'));
+      await tester.enterText(field, draft);
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_remember_toggle')),
+      );
+      await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
+      await tester.pumpAndSettle();
+      final scanner = tester.widget<AddressQrScanModalContent>(
+        find.byType(AddressQrScanModalContent),
+      );
+      (scanner.cameraView! as PlainQrScannerView).onComplete(raw);
+      await tester.pumpAndSettle();
+      expect(find.byType(AddressQrScanModal), findsNothing);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      final pending =
+          container
+                  .read(paymentUriPrefillProvider.notifier)
+                  .takeIfFresh()
+                  .prefill!
+              as CrossChainPaymentRequest;
+      final flow = container.read(crossChainPaymentFlowProvider.notifier);
+      flow.present(pending);
+      expect(flow.canUseAddressOnly, !differentChain);
+      if (action == 'replace' || action == 'zcash' || action == 'context') {
+        if (action == 'zcash') {
+          presentPaymentRequest(
+            tester.state<ConsumerState>(find.byType(SwapScreen)).ref,
+            const SendPrefillArgs(
+              id: 'replacement-zcash',
+              source: kPaymentUriPrefillSource,
+              address: 'u1recipient',
+            ),
+          );
+          container.read(paymentRequestFlowProvider.notifier).clear();
+        } else {
+          flow.present(
+            CrossChainPaymentRequest(
+              id: 'replacement',
+              rawUri: raw,
+              address: address,
+              isEvm: true,
+              chainId: '1',
+            ),
+          );
+          flow.dismiss();
+        }
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('swap_destination_field')),
+          findsNothing,
+        );
+        if (action == 'context') {
+          container
+              .read(swapStateProvider.notifier)
+              .selectDirection(SwapDirection.externalToZec);
+          await tester.pumpAndSettle();
+          container
+              .read(swapStateProvider.notifier)
+              .selectDirection(SwapDirection.zecToExternal);
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+      } else if (action == 'cancel') {
+        flow.dismiss();
+      } else {
+        flow.useAddressOnly();
+      }
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        action == 'context'
+            ? before.destinationText
+            : action == 'keep'
+            ? address
+            : draft,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_address_remember_checkbox')),
+          matching: find.byType(AppIcon),
+        ),
+        action == 'context' ? findsNothing : findsOneWidget,
+      );
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      expect(container.read(swapStateProvider).amountText, before.amountText);
+      expect(
+        container.read(swapStateProvider).externalAsset,
+        before.externalAsset,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final scanner in [true, false]) {
+    testWidgets(
+      'Swap editor restores unsaved draft after ${scanner ? 'payment request' : 'contact picker'} cancellation',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(
+              initialLocation: '/swap',
+              routes: [_swapRoute(), _swapActivityRoute()],
+            ),
+            seedSwapActivityFixtures: false,
+            paymentParser: (raw) async => CrossChainPaymentRequest(
+              id: 'request',
+              rawUri: raw,
+              address: '0x1111111111111111111111111111111111111111',
+              isEvm: true,
+              chainId: '1',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+        );
+        container
+            .read(swapStateProvider.notifier)
+            .selectDirection(SwapDirection.zecToExternal);
+        await tester.pumpAndSettle();
+        final before = container.read(swapStateProvider);
+        await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+        await tester.pumpAndSettle();
+        const draft = '0x2222222222222222222222222222222222222222';
+        final field = find.byKey(const ValueKey('swap_destination_field'));
+        await tester.enterText(field, draft);
+        await tester.tap(
+          find.byKey(const ValueKey('swap_address_remember_toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              scanner
+                  ? 'swap_address_scan_button'
+                  : 'swap_address_contacts_button',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (scanner) {
+          final content = tester.widget<AddressQrScanModalContent>(
+            find.byType(AddressQrScanModalContent),
+          );
+          (content.cameraView! as PlainQrScannerView).onComplete(
+            'ethereum:0x1111111111111111111111111111111111111111@1?value=1',
+          );
+          await tester.pumpAndSettle();
+          final pending =
+              container
+                      .read(paymentUriPrefillProvider.notifier)
+                      .takeIfFresh()
+                      .prefill!
+                  as CrossChainPaymentRequest;
+          final flow = container.read(crossChainPaymentFlowProvider.notifier);
+          flow.present(pending);
+          flow.dismiss();
+        } else {
+          await tester.tap(find.bySemanticsLabel('Close contacts'));
+        }
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(field).controller!.text, draft);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('swap_address_remember_checkbox')),
+            matching: find.byType(AppIcon),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          container.read(swapStateProvider).destinationText,
+          before.destinationText,
+        );
+        expect(container.read(swapStateProvider).amountText, before.amountText);
+        expect(
+          container.read(swapStateProvider).externalAsset,
+          before.externalAsset,
+        );
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'Swap keyboard paste rejects testnet without replacing the draft',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const address = '0x1111111111111111111111111111111111111111';
+      const draft = '0x2222222222222222222222222222222222222222';
+      var clipboard = 'ethereum:$address@11155111';
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async =>
+            call.method == 'Clipboard.getData' ? {'text': clipboard} : null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          paymentParser: (raw) async => CrossChainPaymentRequest(
+            id: 'paste',
+            rawUri: raw,
+            address: address,
+            isEvm: true,
+            chainId: raw.split('@').last,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+      );
+      container
+          .read(swapStateProvider.notifier)
+          .selectDirection(SwapDirection.zecToExternal);
+      await tester.pumpAndSettle();
+      final before = container.read(swapStateProvider);
+      await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_destination_field'));
+      await tester.enterText(field, draft);
+      await tester.pumpAndSettle();
+      final controller = tester.widget<TextField>(field).controller!;
+      controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: draft.length,
+      );
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+      );
+      Actions.invoke(
+        tester.element(editable),
+        const PasteTextIntent(SelectionChangedCause.keyboard),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.text, draft);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      expect(container.read(swapStateProvider).amountText, before.amountText);
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(
+        find.text('This request uses a network that Vizor does not support.'),
+        findsOneWidget,
+      );
+      clipboard = 'ethereum:$address@1';
+      Actions.invoke(
+        tester.element(editable),
+        const PasteTextIntent(SelectionChangedCause.keyboard),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.text, address);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('swap_address_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(container.read(swapStateProvider).destinationText, address);
+      expect(container.read(swapStateProvider).amountText, before.amountText);
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('Swap refund input refuses payment requests and never parks one', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        paymentParser: (raw) async => _crossChainInputFixture(raw),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    container
+        .read(swapStateProvider.notifier)
+        .selectDirection(SwapDirection.externalToZec);
+    await tester.pumpAndSettle();
+    final previous = container.read(swapStateProvider).destinationText;
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    const raw = 'solana:Payee?amount=25&reference=Order';
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      raw,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Only wallet addresses can be used here. Scan payment requests in Pay.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_scan_button')));
+    await tester.pumpAndSettle();
+    final scanner = tester.widget<AddressQrScanModalContent>(
+      find.byType(AddressQrScanModalContent),
+    );
+    (scanner.cameraView! as PlainQrScannerView).onComplete(raw);
+    await tester.pumpAndSettle();
+    expect(find.byType(AddressQrScanModal), findsOneWidget);
+    expect(
+      find.text(
+        'Only wallet addresses can be used here. Scan payment requests in Pay.',
+      ),
+      findsOneWidget,
+    );
+    expect(container.read(paymentUriPrefillProvider), isNull);
+    expect(container.read(swapStateProvider).destinationText, previous);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('typed contact address shows the match line and names the chip', (
@@ -9506,6 +10560,7 @@ Widget _routerHarness(
   List<rust_sync.TransactionInfo> recentTransactions = const [],
   PayDepositTransactionLoader? payDepositTransactionLoader,
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
+  CrossChainPaymentParser? paymentParser,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -9514,6 +10569,8 @@ Widget _routerHarness(
       sessionStore ?? _FakeSwapPersistenceStore(initialIntents: fixtureIntents);
   return ProviderScope(
     overrides: [
+      if (paymentParser != null)
+        crossChainPaymentParserProvider.overrideWithValue(paymentParser),
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyState),
@@ -9618,8 +10675,18 @@ GoRoute _payRoute() {
     builder: (_, state) {
       final args = state.extra;
       return PayScreen(
+        key: args is PayComposerNavigationArgs && args.paymentRequestId != null
+            ? ValueKey(args.paymentRequestId)
+            : null,
         preservePreparedComposer:
             args is PayComposerNavigationArgs && args.preservePreparedComposer,
+        paymentRequestId: args is PayComposerNavigationArgs
+            ? args.paymentRequestId
+            : null,
+        showPreparedReview:
+            args is PayComposerNavigationArgs && args.showPreparedReview,
+        reviewAfterAmount:
+            args is PayComposerNavigationArgs && args.reviewAfterAmount,
       );
     },
   );
@@ -10371,3 +11438,12 @@ String _fieldText(WidgetTester tester, String keyValue) {
   );
   return editable.controller.text;
 }
+
+CrossChainPaymentRequest _crossChainInputFixture(String raw) =>
+    CrossChainPaymentRequest(
+      id: 'input-fixture',
+      rawUri: raw,
+      address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+      isEvm: false,
+      chain: 'btc',
+    );

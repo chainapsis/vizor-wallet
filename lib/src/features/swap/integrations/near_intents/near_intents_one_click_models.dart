@@ -6,6 +6,7 @@ class _OneClickToken {
     required this.decimals,
     required this.blockchain,
     required this.symbol,
+    this.contractAddress,
     this.price,
   });
 
@@ -15,6 +16,7 @@ class _OneClickToken {
       decimals: _int(json, 'decimals'),
       blockchain: _string(json, 'blockchain'),
       symbol: _string(json, 'symbol'),
+      contractAddress: _optionalString(json, 'contractAddress'),
       price: _optionalDouble(json, 'price'),
     );
   }
@@ -23,6 +25,7 @@ class _OneClickToken {
   final int decimals;
   final String blockchain;
   final String symbol;
+  final String? contractAddress;
   final double? price;
 }
 

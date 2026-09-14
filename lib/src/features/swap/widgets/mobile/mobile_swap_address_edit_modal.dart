@@ -1,8 +1,11 @@
+import 'dart:async';
+import '../../../address_scan/widgets/mobile_address_scan_view.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
@@ -31,6 +34,12 @@ class MobileSwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.onChanged,
+    this.resolve,
+    this.onPaymentRequest,
+    this.onDraftCaptured,
+    this.validationContext,
+    this.readValidationContext,
     this.contacts = const <AddressBookContact>[],
     this.initialAddress,
     this.initialRememberAddress = false,
@@ -42,6 +51,12 @@ class MobileSwapAddressEditModal extends StatefulWidget {
   final void Function(String value, bool remember) onScan;
   final void Function(String value, bool remember) onOpenContacts;
   final VoidCallback onCancel;
+  final VoidCallback? onChanged;
+  final MobileScanResolver? resolve;
+  final ValueChanged<String>? onPaymentRequest;
+  final void Function(String address, bool remember)? onDraftCaptured;
+  final Object? validationContext;
+  final Object? Function()? readValidationContext;
   final String? initialAddress;
   final bool initialRememberAddress;
 
@@ -59,6 +74,8 @@ class _MobileSwapAddressEditModalState
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
   var _rememberAddress = false;
+  int _inputGeneration = 0;
+  String? _inputError;
 
   @override
   void initState() {
@@ -75,6 +92,10 @@ class _MobileSwapAddressEditModalState
   @override
   void didUpdateWidget(covariant MobileSwapAddressEditModal oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.validationContext != widget.validationContext) {
+      _inputGeneration++;
+      _inputError = null;
+    }
     final oldAddressText =
         oldWidget.initialAddress ?? oldWidget.state.destinationText;
     final nextAddressText = _initialAddressText;
@@ -96,25 +117,65 @@ class _MobileSwapAddressEditModalState
     super.dispose();
   }
 
-  void _submit() {
-    // Guard the keyboard "done"/enter path the same way the primary button is
-    // gated, so a malformed address cannot be committed by pressing enter.
-    if (!_canSubmit) return;
-    widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+  void _submit() =>
+      unawaited(_resolveInput(_controller.text.trim(), submit: true));
+
+  Future<void> _resolveInput(String raw, {bool submit = false}) async {
+    final generation = ++_inputGeneration;
+    final before = _controller.value;
+    final route = ModalRoute.of(context);
+    final resolve = widget.resolve;
+    final outcome = raw.isEmpty
+        ? const MobileScanOutcome.accepted('')
+        : resolve == null
+        ? MobileScanOutcome.accepted(raw)
+        : await resolve(raw);
+    if (!mounted ||
+        generation != _inputGeneration ||
+        before != _controller.value ||
+        (route != null && !route.isCurrent) ||
+        outcome.isIgnored) {
+      return;
+    }
+    if (!outcome.isAccepted) {
+      setState(() => _inputError = outcome.error);
+      return;
+    }
+    if (isPaymentRequestUri(outcome.address!) &&
+        widget.onPaymentRequest != null) {
+      widget.onDraftCaptured?.call(_controller.text, _rememberAddress);
+      widget.onPaymentRequest!(outcome.address!);
+      return;
+    }
+    if (submit) {
+      if (resolve == null && !_canSubmit) return;
+      widget.onSubmitted(outcome.address!, _rememberAddress);
+    } else {
+      _controller.value = TextEditingValue(
+        text: outcome.address!,
+        selection: TextSelection.collapsed(offset: outcome.address!.length),
+      );
+      widget.onChanged?.call();
+      setState(() => _inputError = null);
+    }
   }
 
   String get _initialAddressText =>
       widget.initialAddress ?? widget.state.destinationText;
 
   void _toggleRemember() {
+    _inputGeneration++;
+    widget.onChanged?.call();
     setState(() => _rememberAddress = !_rememberAddress);
   }
 
   bool get _canSubmit => _formatError == null;
+  bool get _isPaymentRequest => isPaymentRequestUri(_controller.text);
 
   String? get _formatError {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
+    if (_isPaymentRequest) return null; // Resolved before paste or submit.
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
@@ -153,7 +214,7 @@ class _MobileSwapAddressEditModalState
     final rememberLabel = sendsZec
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
-    final formatError = _formatError;
+    final formatError = _inputError ?? _formatError;
     final matchedContact = _matchedContact;
 
     // MobileModalScaffold supplies the title, the pinned close button and the
@@ -173,13 +234,22 @@ class _MobileSwapAddressEditModalState
         children: [
           const SizedBox(height: AppSpacing.xs),
           MobileTextField(
+            onPaste: (raw) => _resolveInput(raw),
+            readPasteContext: () =>
+                (widget.readValidationContext?.call(), _inputGeneration),
+            pasteContext: (widget.validationContext, _inputGeneration),
             fieldKey: const ValueKey('swap_destination_field'),
             controller: _controller,
             focusNode: _focusNode,
             hintText: hint,
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _submit(),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              _inputGeneration++;
+              _inputError = null;
+              widget.onChanged?.call();
+              setState(() {});
+            },
             trailing: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
@@ -243,17 +313,19 @@ class _MobileSwapAddressEditModalState
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: 16),
-          _AddressRememberToggle(
-            selected: _rememberAddress,
-            label: rememberLabel,
-            onTap: _toggleRemember,
-          ),
+          if (!_isPaymentRequest)
+            _AddressRememberToggle(
+              selected: _rememberAddress,
+              label: rememberLabel,
+              onTap: _toggleRemember,
+            ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('swap_address_update_button'),
             expand: true,
+            constrainContent: true,
             onPressed: _canSubmit ? _submit : null,
-            child: const Text('Update'),
+            child: Text('Update', maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(height: 12),
           AppButton(

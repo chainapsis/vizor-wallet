@@ -1,4 +1,9 @@
+import '../../providers/payment_request_input_origin_provider.dart';
+import '../../../../providers/rpc_endpoint_provider.dart';
 import 'dart:async';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../address_scan/domain/address_input_policy.dart';
+import '../../../address_scan/domain/address_input_provider.dart';
 
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
@@ -8,10 +13,11 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/navigation/payment_request_intake.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../../address_scan/widgets/payment_request_input.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
@@ -35,9 +41,16 @@ enum _PayModalSurface { assetSelector, addressScanner, addContact, slippage }
 enum _MobilePayStep { amount, recipient }
 
 class MobilePayScreen extends ConsumerStatefulWidget {
-  const MobilePayScreen({this.preservePreparedComposer = false, super.key});
+  const MobilePayScreen({
+    this.preservePreparedComposer = false,
+    this.paymentRequestId,
+    this.reviewAfterAmount = false,
+    super.key,
+  });
 
   final bool preservePreparedComposer;
+  final String? paymentRequestId;
+  final bool reviewAfterAmount;
 
   @override
   ConsumerState<MobilePayScreen> createState() => _MobilePayScreenState();
@@ -52,7 +65,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   bool _modalRouteOpen = false;
   bool _reviewRequestInFlight = false;
   int _reviewRequestGeneration = 0;
+  bool _reviewAfterAmount = false;
   var _step = _MobilePayStep.amount;
+  String? _paymentRequestText;
+  var _paymentRequestGeneration = 0;
+  var _inputResolutionGeneration = 0;
+  AddressInputResult? _scannedPaymentResult;
 
   @override
   void initState() {
@@ -60,6 +78,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     _amountController = TextEditingController();
     _amountFocusNode = FocusNode(debugLabel: 'MobilePayAmount');
     _recipientController = TextEditingController();
+    _reviewAfterAmount =
+        widget.preservePreparedComposer &&
+        widget.paymentRequestId != null &&
+        widget.reviewAfterAmount;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final preparedState = ref.read(swapStateProvider);
@@ -68,6 +90,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       }
       setState(() => _step = _MobilePayStep.amount);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _paymentRequestGeneration++;
   }
 
   @override
@@ -127,15 +155,140 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   }
 
   void _handleAddressScanned(String value) {
+    if (isPaymentRequestUri(value)) {
+      final resolved = _scannedPaymentResult;
+      _scannedPaymentResult = null;
+      unawaited(_reviewInputPaymentRequest(value, resolved: resolved));
+      return;
+    }
     _handleAddressChanged(value);
     _closePayModal();
   }
 
   void _handleAddressChanged(String value) {
+    _paymentRequestGeneration++;
+    if (isPaymentRequestInputDraft(value)) {
+      setState(() => _paymentRequestText = value);
+      return;
+    }
+    if (_paymentRequestText != null) setState(() => _paymentRequestText = null);
     ref.read(swapStateProvider.notifier).updateDestination(value);
   }
 
+  Future<AddressInputResult?> _resolvePayInputResult(String raw) async {
+    final resolutionGeneration = ++_inputResolutionGeneration;
+    final generation = _paymentRequestGeneration;
+    final reviewGeneration = _reviewRequestGeneration;
+    final step = _step;
+    final surface = _payModal.value;
+    final input = _recipientController.value;
+    final contextKey = (
+      addressInputContextKey(ref, includeSwap: true),
+      ref.read(paymentRequestArrivalProvider),
+    );
+    final result = await resolveWalletAddressInput(
+      ref,
+      raw,
+      context: AddressInputContext.pay,
+    );
+    if (!mounted ||
+        resolutionGeneration != _inputResolutionGeneration ||
+        generation != _paymentRequestGeneration ||
+        reviewGeneration != _reviewRequestGeneration ||
+        step != _step ||
+        surface != _payModal.value ||
+        input != _recipientController.value ||
+        contextKey !=
+            (
+              addressInputContextKey(ref, includeSwap: true),
+              ref.read(paymentRequestArrivalProvider),
+            )) {
+      return null;
+    }
+    return result;
+  }
+
+  Future<MobileScanOutcome> _resolvePayInput(String raw) async {
+    final result = await _resolvePayInputResult(raw);
+    if (result == null) return const MobileScanOutcome.ignored();
+    _scannedPaymentResult = result;
+    return result.kind == AddressInputResultKind.rejected
+        ? MobileScanOutcome.rejected(result.reason)
+        : MobileScanOutcome.accepted(result.address ?? result.rawPaymentUri!);
+  }
+
+  Future<void> _pasteRecipient(String raw) async {
+    final result = await _resolvePayInputResult(raw);
+    if (!mounted || result == null) return;
+    if (result.kind == AddressInputResultKind.rejected) {
+      showAppToast(context, result.reason!, tone: AppToastTone.destructive);
+      return;
+    }
+    if (result.kind == AddressInputResultKind.paymentRequest) {
+      await _reviewInputPaymentRequest(result.rawPaymentUri!, resolved: result);
+    } else {
+      _handleAddressChanged(result.address!);
+      _syncController(_recipientController, result.address!);
+    }
+  }
+
+  Future<void> _reviewInputPaymentRequest(
+    String raw, {
+    AddressInputResult? resolved,
+  }) async {
+    final originChain = ref.read(swapStateProvider).externalAsset.chainTicker;
+    resolved ??= await _resolvePayInputResult(raw);
+    if (!mounted || resolved == null) return;
+    if (resolved.kind == AddressInputResultKind.rejected) {
+      showAppToast(context, resolved.reason!, tone: AppToastTone.destructive);
+      return;
+    }
+    if (resolved.kind == AddressInputResultKind.address) {
+      _handleAddressChanged(resolved.address!);
+      _syncController(_recipientController, resolved.address!);
+      _closePayModal();
+      return;
+    }
+    final generation = ++_paymentRequestGeneration;
+    final reviewGeneration = _reviewRequestGeneration;
+    final step = _step;
+    final input = _recipientController.text;
+    final contextKey = addressInputContextKey(ref, includeSwap: true);
+    bool isCurrent() =>
+        mounted &&
+        generation == _paymentRequestGeneration &&
+        reviewGeneration == _reviewRequestGeneration &&
+        step == _step &&
+        input == _recipientController.text &&
+        _payModal.value == null &&
+        contextKey == addressInputContextKey(ref, includeSwap: true);
+    // Only guard presentation: intake advances the arrival revision itself,
+    // while the input origin must remain valid for Keep editing afterward.
+    final arrival = ref.read(paymentRequestArrivalProvider);
+    _closePayModal();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!isCurrent() || arrival != ref.read(paymentRequestArrivalProvider)) {
+      return;
+    }
+    await reviewPaymentRequestFromInput(
+      ref,
+      resolved.rawPaymentUri!,
+      isCurrent: isCurrent,
+      resolvedCrossChainRequest: resolved.crossChainRequest,
+      inputOrigin: PaymentRequestInputOrigin(
+        chain: originChain,
+        isCurrent: isCurrent,
+        useAddress: (address) {
+          _handleAddressChanged(address);
+          _syncController(_recipientController, address);
+        },
+      ),
+    );
+  }
+
   void _chooseRecipient(PayRecipientSelection selection) {
+    _paymentRequestGeneration++;
+    setState(() => _paymentRequestText = null);
     final notifier = ref.read(swapStateProvider.notifier);
     final contactId = selection.contactId;
     if (contactId == null) {
@@ -159,15 +312,39 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     String profilePictureId,
   ) async {
     final address = ref.read(swapStateProvider).destinationText.trim();
+    final contextKey = addressInputContextKey(ref, includeSwap: true);
+    final generation = _paymentRequestGeneration;
+    final surface = _payModal.value;
+    bool isCurrent() =>
+        mounted &&
+        generation == _paymentRequestGeneration &&
+        surface == _payModal.value &&
+        contextKey == addressInputContextKey(ref, includeSwap: true) &&
+        address == ref.read(swapStateProvider).destinationText.trim();
+    final result = await resolveWalletAddressInput(
+      ref,
+      address,
+      context: AddressInputContext.contact,
+      network: network,
+    );
+    if (!mounted || !isCurrent()) return;
+    if (result.kind != AddressInputResultKind.address) {
+      showAppToast(
+        context,
+        result.reason ?? 'Invalid address',
+        tone: AppToastTone.destructive,
+      );
+      return;
+    }
     await ref
         .read(addressBookProvider.notifier)
         .addContact(
           label: label,
           network: network,
-          address: address,
+          address: result.address!,
           profilePictureId: profilePictureId,
         );
-    if (!mounted) return;
+    if (!mounted || !isCurrent()) return;
     _closePayModal();
   }
 
@@ -191,18 +368,16 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 onClose: _closePayModal,
               ),
               _PayModalSurface.addressScanner => MobileAddressScanCard(
-                caption: 'Scan the recipient address QR code',
+                caption: 'Scan an address or payment request QR code',
                 permissionTitle: 'Scan the recipient address',
                 steadyHint: 'Keep the QR code steady and fully visible.',
-                resolve: (raw) async {
-                  final address = normalizeAddressScanPayload(raw)?.trim();
-                  if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
-                    );
-                  }
-                  return MobileScanOutcome.accepted(address);
-                },
+                validationContext: (
+                  addressInputContextKey(ref, includeSwap: true),
+                  _paymentRequestGeneration,
+                  _reviewRequestGeneration,
+                  _step,
+                ),
+                resolve: _resolvePayInput,
                 onScanned: _handleAddressScanned,
                 onClose: _closePayModal,
               ),
@@ -265,12 +440,33 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     if (next.reviewVisible &&
         next.reviewQuote != null &&
         next.reviewAddressPlan != null) {
+      _reviewAfterAmount = false;
       await context.push('/pay/review', extra: selection);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) {
+        setState(() => _paymentRequestGeneration++);
+      },
+    );
+    ref.listen(rpcEndpointProvider.select((value) => value.networkName), (
+      _,
+      _,
+    ) {
+      setState(() => _paymentRequestGeneration++);
+    });
+    ref.listen(
+      swapStateProvider.select(
+        (value) => (value.externalAsset, value.direction, value.payMode),
+      ),
+      (_, _) {
+        setState(() => _paymentRequestGeneration++);
+      },
+    );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -281,7 +477,10 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
           ? swapState.receiveFiatText
           : swapState.receiveAmountText,
     );
-    _syncController(_recipientController, swapState.destinationText);
+    _syncController(
+      _recipientController,
+      _paymentRequestText ?? swapState.destinationText,
+    );
 
     final network = AddressBookNetwork.tryFromChainTicker(
       swapState.externalAsset.chainTicker,
@@ -355,8 +554,14 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     controller: _amountController,
                     focusNode: _amountFocusNode,
                     zecAvailableZatoshi: migrationSpendable,
-                    onAmountChanged: swapNotifier.updateReceiveAmount,
-                    onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
+                    onAmountChanged: (value) {
+                      _paymentRequestGeneration++;
+                      swapNotifier.updateReceiveAmount(value);
+                    },
+                    onFiatAmountChanged: (value) {
+                      _paymentRequestGeneration++;
+                      swapNotifier.updateReceiveAmountFiat(value);
+                    },
                     onToggleFiatInputMode: () => swapNotifier
                         .toggleFiatInputMode(SwapAmountInputSide.receive),
                     onOpenAssetSelector: () =>
@@ -365,13 +570,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     onOpenSlippage: () => _openModal(_PayModalSurface.slippage),
                     onContinue: () {
                       _amountFocusNode.unfocus();
-                      setState(() => _step = _MobilePayStep.recipient);
+                      if (_reviewAfterAmount && swapState.canReviewQuote) {
+                        unawaited(_openReview(effectiveSelection));
+                      } else {
+                        setState(() => _step = _MobilePayStep.recipient);
+                      }
                     },
                   ),
                   _MobilePayStep.recipient => MobilePayRecipientStep(
                     controller: _recipientController,
-                    typedAddress: swapState.destinationText,
-                    addressError: swapState.destinationAddressFormatError,
+                    typedAddress:
+                        _paymentRequestText ?? swapState.destinationText,
+                    addressError: swapState
+                        .copyWith(destinationText: _paymentRequestText)
+                        .destinationAddressFormatError,
                     quoteError:
                         swapState.externalAssetSupportError ??
                         swapState.quoteError,
@@ -384,6 +596,20 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     selectedContactId: swapState.userExternalContactId,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: _handleAddressChanged,
+                    onPaste: _pasteRecipient,
+                    readPasteContext: () => (
+                      addressInputContextKey(ref, includeSwap: true),
+                      _paymentRequestGeneration,
+                      _reviewRequestGeneration,
+                    ),
+                    pasteContext: (
+                      addressInputContextKey(ref, includeSwap: true),
+                      _paymentRequestGeneration,
+                      _reviewRequestGeneration,
+                    ),
+                    onReviewPaymentRequest: () => unawaited(
+                      _reviewInputPaymentRequest(_recipientController.text),
+                    ),
                     onOpenScanner: () =>
                         _openModal(_PayModalSurface.addressScanner),
                     onChooseRecipient: _chooseRecipient,

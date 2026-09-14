@@ -578,7 +578,7 @@ void main() {
 
     expect(await pending, isA<PaymentRequestReviewOvertaken>());
     expect(
-      container.read(paymentUriPrefillProvider)?.address,
+      (container.read(paymentUriPrefillProvider) as SendPrefillArgs?)?.address,
       'u1a',
       reason:
           'the unlock flow re-presents the parked request; without the park '
@@ -1496,7 +1496,7 @@ void main() {
         .read(paymentUriPrefillProvider.notifier)
         .takeIfFresh();
     expect(
-      claimed.prefill?.address,
+      (claimed.prefill as SendPrefillArgs?)?.address,
       'u1a',
       reason:
           'the unlock claim is what re-presents it, so the request has to be '
@@ -1520,7 +1520,7 @@ void main() {
     await pumpEventQueue();
 
     expect(
-      container.read(paymentUriPrefillProvider)?.address,
+      (container.read(paymentUriPrefillProvider) as SendPrefillArgs?)?.address,
       'u1newer',
       reason: 'latest link wins, the same answer the park gives everywhere',
     );

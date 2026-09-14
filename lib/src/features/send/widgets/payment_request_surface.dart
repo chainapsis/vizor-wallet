@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show BottomSheet, Material, MaterialType;
+import 'package:flutter/material.dart' show Material, MaterialType;
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
@@ -6,6 +6,7 @@ import '../../../core/layout/content_overlay_inset.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_modal_card.dart';
+import '../../../core/widgets/app_modal_overlay_scope.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import 'payment_request_card.dart';
 
@@ -112,7 +113,7 @@ class PaymentRequestSurface extends StatelessWidget {
       ),
     );
 
-    final modal = _ModalOverlayScope(
+    final modal = AppModalOverlayScope(
       child: _isMobile
           ? _mobileModal(context, card)
           : _desktopModal(context, card),
@@ -151,7 +152,7 @@ class PaymentRequestSurface extends StatelessWidget {
           minimum: const EdgeInsets.only(top: AppSpacing.base),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: _DraggablePaymentRequestSheet(
+            child: AppDraggableMobileSheet(
               key: cardKey,
               onDismiss: onCancel,
               child: MobileModalCard(
@@ -180,102 +181,6 @@ class PaymentRequestSurface extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The app-level host has no sheet route to supply drag motion or dismissal.
-/// Keep Flutter's bottom-sheet gesture thresholds and animate the inline card
-/// with the same controller. Keying this by request also prevents a closing
-/// animation from dismissing a replacement request.
-class _DraggablePaymentRequestSheet extends StatefulWidget {
-  const _DraggablePaymentRequestSheet({
-    required this.onDismiss,
-    required this.child,
-    super.key,
-  });
-
-  final VoidCallback onDismiss;
-  final Widget child;
-
-  @override
-  State<_DraggablePaymentRequestSheet> createState() =>
-      _DraggablePaymentRequestSheetState();
-}
-
-class _DraggablePaymentRequestSheetState
-    extends State<_DraggablePaymentRequestSheet>
-    with SingleTickerProviderStateMixin {
-  late final _controller = BottomSheet.createAnimationController(this)
-    ..value = 1;
-  late final _position = Tween<Offset>(
-    begin: const Offset(0, 1),
-    end: Offset.zero,
-  ).animate(_controller);
-  bool _closing = false;
-
-  void _dismiss() {
-    if (_closing) return;
-    setState(() => _closing = true);
-    _controller.reverse().then((_) {
-      if (mounted) widget.onDismiss();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _position,
-      child: IgnorePointer(
-        ignoring: _closing,
-        child: BottomSheet(
-          animationController: _controller,
-          onClosing: _dismiss,
-          showDragHandle: false,
-          backgroundColor: const Color(0x00000000),
-          elevation: 0,
-          builder: (_) => widget.child,
-        ),
-      ),
-    );
-  }
-}
-
-/// Gives the scrim-and-card branch an [Overlay] ancestor.
-///
-/// The live host mounts this surface from `MaterialApp.router`'s `builder`,
-/// above the `Router` — so there is no `Navigator`, and therefore no
-/// `Overlay`, anywhere above the card. The requester help tooltip needs one,
-/// for the same reason the card needs its transparent [Material].
-///
-/// Only the modal branch goes inside. The background stays where it was in
-/// the outer stack, so the app underneath is not re-parented.
-class _ModalOverlayScope extends StatefulWidget {
-  const _ModalOverlayScope({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ModalOverlayScope> createState() => _ModalOverlayScopeState();
-}
-
-class _ModalOverlayScopeState extends State<_ModalOverlayScope> {
-  // `initialEntries` is read once, so the entry has to read `widget.child`
-  // at build time and be told when a new request replaces it.
-  late final OverlayEntry _entry = OverlayEntry(builder: (_) => widget.child);
-
-  @override
-  void didUpdateWidget(covariant _ModalOverlayScope oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.child, widget.child)) _entry.markNeedsBuild();
-  }
-
-  @override
-  Widget build(BuildContext context) => Overlay(initialEntries: [_entry]);
 }
 
 /// The mobile sheet body: the app's shared modal chrome around the card.

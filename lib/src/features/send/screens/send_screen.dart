@@ -12,12 +12,14 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -35,6 +37,9 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../address_scan/widgets/payment_request_input.dart';
+import '../../address_scan/domain/address_input_policy.dart';
+import '../services/send_address_input.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
@@ -248,6 +253,31 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   int _addressSeq = 0;
+  int _inputEpoch = 0;
+  GoRouterDelegate? _inputRouter;
+  (Uri, Object)? _inputRouteStamp;
+
+  void _inputRouteChanged() {
+    final state = _inputRouter?.state;
+    final stamp = state == null ? null : (state.uri, state.pageKey);
+    if (_inputRouteStamp != stamp) {
+      _inputEpoch++;
+      _inputRouteStamp = stamp;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.maybeOf(context)?.routerDelegate;
+    if (_inputRouter != router) {
+      _inputRouter?.removeListener(_inputRouteChanged);
+      _inputRouter = router;
+      _inputRouter?.addListener(_inputRouteChanged);
+      _inputRouteChanged();
+    }
+  }
+
   int _maxSeq = 0;
   int _validateSeq = 0;
   String? _appliedPrefillFingerprint;
@@ -270,6 +300,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   void dispose() {
+    _inputEpoch++;
+    _inputRouter?.removeListener(_inputRouteChanged);
     _maxDebounceTimer?.cancel();
     _memoController.removeListener(_handleMemoChanged);
     _addressFocusNode.removeListener(_handleFieldVisualStateChanged);
@@ -290,6 +322,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     // Selection-only notification: tapping into the memo field must not drop
     // the ZIP-321 whitespace the link asked us to preserve.
     if (text == _lastMemoText) return;
+    _inputEpoch++;
     _lastMemoText = text;
     if (!_programmaticMemoEdit) {
       _preserveMemoWhitespace = false;
@@ -394,6 +427,29 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  Object get _pasteInputContext => (
+    _inputEpoch,
+    _addressSeq,
+    _validateSeq,
+    _memoController.text,
+    ref.read(accountProvider).value?.activeAccountUuid,
+    ref.read(rpcEndpointProvider).networkName,
+    ref.read(paymentRequestArrivalProvider),
+  );
+
+  void _inputContextChanged() {
+    _inputEpoch++;
+    _addressSeq++;
+    if (!mounted) return;
+    setState(() {
+      _addressType = '';
+      _addressWrongNetwork = false;
+    });
+    if (!isPaymentRequestUri(_addressController.text)) {
+      unawaited(_validateAddress());
+    }
+  }
+
   Future<void> _validateAddress() async {
     final seq = ++_addressSeq;
     final addr = _addressController.text.trim();
@@ -445,9 +501,72 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  Future<void> _applyAddressInput(String raw) async {
+    final epoch = ++_inputEpoch;
+    final arrival = ref.read(paymentRequestArrivalProvider);
+    final sequence = _addressSeq;
+    final input = _addressController.text;
+    final amountSequence = _validateSeq;
+    final memo = _memoController.text;
+    final account = widget.activeAccountUuid;
+    final network = ref.read(rpcEndpointProvider).networkName;
+    final route = ModalRoute.of(context);
+    bool current() =>
+        mounted &&
+        epoch == _inputEpoch &&
+        arrival == ref.read(paymentRequestArrivalProvider) &&
+        sequence == _addressSeq &&
+        input == _addressController.text &&
+        amountSequence == _validateSeq &&
+        memo == _memoController.text &&
+        account == widget.activeAccountUuid &&
+        network == ref.read(rpcEndpointProvider).networkName &&
+        (route?.isCurrent ?? true) &&
+        route?.animation?.status != AnimationStatus.reverse;
+    final result = await resolveSendAddressInput(raw, networkName: network);
+    if (!mounted || !current()) return;
+    switch (result.kind) {
+      case AddressInputResultKind.rejected:
+        showAppToast(
+          context,
+          result.reason!,
+          iconName: AppIcons.warning,
+          tone: AppToastTone.destructive,
+        );
+      case AddressInputResultKind.paymentRequest:
+        await reviewPaymentRequestFromInput(
+          ref,
+          result.rawPaymentUri!,
+          isCurrent: current,
+        );
+      case AddressInputResultKind.address:
+        final address = result.address!;
+        _addressController.value = TextEditingValue(
+          text: address,
+          selection: TextSelection.collapsed(offset: address.length),
+        );
+        _handleAddressChanged();
+    }
+  }
+
+  Future<void> _reviewInputPaymentRequest(String raw) =>
+      _applyAddressInput(raw);
+
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
+    if (isPaymentRequestUri(_addressController.text)) {
+      _validateSeq++;
+      _maxSeq++;
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+        _error = null;
+        _isResolvingMax = false;
+        _maxQuote = null;
+      });
+      return;
+    }
     setState(() {
       _addressType = '';
       _addressWrongNetwork = false;
@@ -1049,6 +1168,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(rpcEndpointProvider, (_, _) => _inputContextChanged());
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) => _inputContextChanged(),
+    );
+
     ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);
@@ -1133,14 +1258,19 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         matchedRecipientName = recipient.name;
       }
     }
-    final addressMessage = switch (_addressType) {
-      // A wrong-network address is well-formed, so "Invalid address" would
-      // send the user hunting for a typo that is not there.
-      'invalid' =>
-        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
-      'error' => 'Address validation failed',
-      _ => matchedRecipientName,
-    };
+    final isRequest = isPaymentRequestUri(_addressController.text);
+    final addressMessage = isRequest
+        ? 'Payment request detected.'
+        : switch (_addressType) {
+            // A wrong-network address is well-formed, so "Invalid address" would
+            // send the user hunting for a typo that is not there.
+            'invalid' =>
+              _addressWrongNetwork
+                  ? kWrongNetworkAddressMessage
+                  : 'Invalid address',
+            'error' => 'Address validation failed',
+            _ => matchedRecipientName,
+          };
     final addressMessageIcon = switch (_addressType) {
       'invalid' || 'error' => AppIcon(
         AppIcons.warning,
@@ -1278,18 +1408,37 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                             event.logicalKey ==
                                                 LogicalKeyboardKey
                                                     .numpadEnter)) {
-                                      onFieldSubmitted();
+                                      if (isRequest) {
+                                        unawaited(
+                                          _reviewInputPaymentRequest(
+                                            controller.text,
+                                          ),
+                                        );
+                                      } else {
+                                        onFieldSubmitted();
+                                      }
                                       return KeyEventResult.handled;
                                     }
                                     return KeyEventResult.ignored;
                                   },
                                   child: AppTextField(
                                     key: const ValueKey('send_address_field'),
+                                    onPaste: _applyAddressInput,
+                                    pasteContext: _pasteInputContext,
+                                    readPasteContext: () => _pasteInputContext,
                                     label: 'Send to',
                                     labelStyle: sendFieldLabelStyle,
                                     rightSlot: _SendContactsLabelButton(
-                                      label: 'Contacts',
-                                      onTap: _openContactPicker,
+                                      label: isRequest
+                                          ? 'Review request'
+                                          : 'Contacts',
+                                      onTap: isRequest
+                                          ? () => unawaited(
+                                              _reviewInputPaymentRequest(
+                                                controller.text,
+                                              ),
+                                            )
+                                          : _openContactPicker,
                                     ),
                                     tone: addressTone,
                                     borderColor:
@@ -1308,7 +1457,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     messageText: addressMessage,
                                     messageIcon: addressMessageIcon,
                                     onChanged: (_) => _handleAddressChanged(),
-                                    onSubmitted: (_) => onFieldSubmitted(),
+                                    onSubmitted: (raw) {
+                                      if (isRequest) {
+                                        unawaited(
+                                          _reviewInputPaymentRequest(raw),
+                                        );
+                                      } else {
+                                        onFieldSubmitted();
+                                      }
+                                    },
                                     keyboardType: TextInputType.text,
                                     showClearButton: true,
                                     onClear: () {

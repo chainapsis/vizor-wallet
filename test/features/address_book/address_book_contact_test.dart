@@ -78,7 +78,7 @@ void main() {
     );
     expect(
       addressBookQrScanTitle(AddressBookNetwork.binanceSmartChain),
-      'Scan Binance Smart Chain QR code',
+      'Scan BNB Chain QR code',
     );
   });
 }

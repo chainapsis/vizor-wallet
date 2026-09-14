@@ -2,12 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/navigation/payment_uri_drain_policy.dart';
-import '../features/send/models/send_prefill_args.dart';
+import '../core/navigation/payment_request_draft.dart';
 
-/// Holds a ZIP-321 payment-URI prefill that has been parsed from a `zcash:`
-/// link but not yet delivered.
+/// Holds a parsed Zcash or cross-chain payment request awaiting its card.
 ///
-/// This exists so the prefill survives the lock screen. A `zcash:` link opened
+/// This exists so the prefill survives the lock screen. A payment link opened
 /// while the wallet is locked routes to `/unlock` and parks the prefill here;
 /// the unlock flow then claims it (via [PaymentUriPrefillNotifier.takeIfFresh])
 /// and presents it as a card over the wallet it just unlocked, so the payment
@@ -23,7 +22,7 @@ import '../features/send/models/send_prefill_args.dart';
 /// Card is a bearer claim on funds held elsewhere, so it queues, never
 /// expires, and outlives a reset. Merging the two would have to pick one set
 /// of those answers and would be wrong for the other product.
-class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
+class PaymentUriPrefillNotifier extends Notifier<PaymentRequestDraft?> {
   /// A parked prefill older than this is treated as stale and dropped on the
   /// next unlock. Without it, a link opened then left parked (the user never
   /// unlocks) would fire as a payment on a much later, unrelated unlock.
@@ -32,7 +31,7 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
   DateTime? _parkedAtUtc;
 
   @override
-  SendPrefillArgs? build() => null;
+  PaymentRequestDraft? build() => null;
 
   /// How long the current prefill has been parked, or null when nothing is
   /// parked. The drain policy uses this to drop a prefill that outlived
@@ -50,7 +49,7 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
   /// caller can tell the user the earlier link was dropped. A duplicate
   /// delivery of the same link counts as a replacement too; the caller does
   /// not compare fingerprints.
-  bool set(SendPrefillArgs prefill) {
+  bool set(PaymentRequestDraft prefill) {
     final replacedParkedPrefill = state != null;
     _parkedAtUtc = DateTime.now().toUtc();
     state = prefill;
@@ -76,7 +75,7 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
   /// second is something to tell them about — the unlock flow shows
   /// `kPaymentUriExpiredMessage` for it, matching what the drain policy does
   /// with the same age on every other screen.
-  ({SendPrefillArgs? prefill, bool expired}) takeIfFresh() {
+  ({PaymentRequestDraft? prefill, bool expired}) takeIfFresh() {
     final prefill = state;
     final parkedAt = _parkedAtUtc;
     clear();
@@ -100,6 +99,6 @@ class PaymentUriPrefillNotifier extends Notifier<SendPrefillArgs?> {
 }
 
 final paymentUriPrefillProvider =
-    NotifierProvider<PaymentUriPrefillNotifier, SendPrefillArgs?>(
+    NotifierProvider<PaymentUriPrefillNotifier, PaymentRequestDraft?>(
       PaymentUriPrefillNotifier.new,
     );

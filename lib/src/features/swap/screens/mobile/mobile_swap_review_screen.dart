@@ -34,11 +34,13 @@ class MobileSwapReviewScreen extends ConsumerStatefulWidget {
   const MobileSwapReviewScreen({
     this.payMode = false,
     this.recipientSelection,
+    this.paymentRequestId,
     super.key,
   });
 
   final bool payMode;
   final PayRecipientSelection? recipientSelection;
+  final String? paymentRequestId;
 
   @override
   ConsumerState<MobileSwapReviewScreen> createState() =>
@@ -48,6 +50,7 @@ class MobileSwapReviewScreen extends ConsumerStatefulWidget {
 class _MobileSwapReviewScreenState
     extends ConsumerState<MobileSwapReviewScreen> {
   var _hadReviewState = false;
+  var _returningToComposer = false;
   var _startingIntent = false;
   var _startIntentInFlight = false;
   SwapState? _startingReviewSnapshot;
@@ -84,12 +87,21 @@ class _MobileSwapReviewScreenState
   }
 
   void _returnToSwap() {
+    _returningToComposer = true;
     ref.read(swapStateProvider.notifier).cancelReviewQuote();
     if (widget.payMode && context.canPop()) {
       context.pop();
       return;
     }
-    context.go(widget.payMode ? '/pay' : '/swap');
+    context.go(
+      widget.payMode ? '/pay' : '/swap',
+      extra: widget.payMode && widget.paymentRequestId != null
+          ? PayComposerNavigationArgs(
+              preservePreparedComposer: true,
+              paymentRequestId: widget.paymentRequestId,
+            )
+          : null,
+    );
   }
 
   void _ensureExpiryTicker(SwapQuote? quote) {
@@ -138,6 +150,7 @@ class _MobileSwapReviewScreenState
       if (!next.reviewVisible ||
           next.reviewQuote == null ||
           next.reviewAddressPlan == null) {
+        _returningToComposer = true;
         if (!widget.payMode) {
           context.go('/swap');
         } else if (context.canPop()) {
@@ -145,8 +158,9 @@ class _MobileSwapReviewScreenState
         } else {
           context.go(
             '/pay',
-            extra: const PayComposerNavigationArgs(
+            extra: PayComposerNavigationArgs(
               preservePreparedComposer: true,
+              paymentRequestId: widget.paymentRequestId,
             ),
           );
         }
@@ -273,9 +287,11 @@ class _MobileSwapReviewScreenState
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ?? const [];
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
-      if (!_hadReviewState || !_startingIntent) {
+      if (!_returningToComposer && (!_hadReviewState || !_startingIntent)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) context.go(widget.payMode ? '/pay' : '/swap');
+          if (!mounted || _returningToComposer) return;
+          if (ModalRoute.of(context)?.isCurrent != true) return;
+          _returnToSwap();
         });
       }
       return const SizedBox.shrink();

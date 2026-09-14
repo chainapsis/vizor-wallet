@@ -36,9 +36,20 @@ enum SwapActivityReturnTarget {
 }
 
 class PayComposerNavigationArgs {
-  const PayComposerNavigationArgs({required this.preservePreparedComposer});
+  const PayComposerNavigationArgs({
+    required this.preservePreparedComposer,
+    this.paymentRequestId,
+    this.showPreparedReview = false,
+    this.reviewAfterAmount = false,
+  });
 
   final bool preservePreparedComposer;
+  final String? paymentRequestId;
+  final bool showPreparedReview;
+
+  /// A request's missing amount may go straight to review once. Explicit
+  /// editing and returning from review must leave recipient selection reachable.
+  final bool reviewAfterAmount;
 }
 
 const swapActivityReturnQueryKey = 'from';

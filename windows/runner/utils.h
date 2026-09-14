@@ -14,7 +14,7 @@
 // up to this bound and let Dart explain; the bound exists only so a
 // pathological multi-megabyte payload still cannot travel. Matches
 // MAX_INCOMING_URI_BYTES on Android and maxIncomingUriBytes on iOS.
-constexpr size_t kMaxZcashUriBytes = 64 * 1024;
+constexpr size_t kMaxPaymentUriBytes = 64 * 1024;
 
 // Creates a console for the process, and redirects stdout and stderr to
 // it for both the runner and the Flutter library.
@@ -32,13 +32,13 @@ std::wstring Utf16FromUtf8(const std::string& utf8_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
-// Extracts zcash: payment URIs from command-line arguments.
-std::vector<std::string> GetZcashUriArguments(
+// Extracts payment request URIs from command-line arguments.
+std::vector<std::string> GetPaymentUriArguments(
     const std::vector<std::string>& arguments);
 
-// Returns whether |value| is a zcash: URI small enough to forward through the
+// Returns whether |value| is a supported payment URI small enough to forward through the
 // native launch-URI bridge.
-bool IsZcashUri(const std::string& value);
+bool IsPaymentUri(const std::string& value);
 
 // Returns whether |value| is a payment-URI payload the Dart side can actually
 // decode. Both entry points -- a cold-start argv URI and one forwarded from a

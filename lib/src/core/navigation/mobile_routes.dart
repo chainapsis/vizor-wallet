@@ -265,6 +265,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           child: MobileSwapReviewScreen(
             payMode: true,
             recipientSelection: extra is PayRecipientSelection ? extra : null,
+            paymentRequestId: extra is PayComposerNavigationArgs
+                ? extra.paymentRequestId
+                : null,
           ),
         );
       },
@@ -285,9 +288,19 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         return CupertinoPage(
           key: state.pageKey,
           child: MobilePayScreen(
+            key:
+                args is PayComposerNavigationArgs &&
+                    args.paymentRequestId != null
+                ? ValueKey(args.paymentRequestId)
+                : null,
             preservePreparedComposer:
                 args is PayComposerNavigationArgs &&
                 args.preservePreparedComposer,
+            reviewAfterAmount:
+                args is PayComposerNavigationArgs && args.reviewAfterAmount,
+            paymentRequestId: args is PayComposerNavigationArgs
+                ? args.paymentRequestId
+                : null,
           ),
         );
       },

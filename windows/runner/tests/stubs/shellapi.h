@@ -1,0 +1,3 @@
+#ifndef VIZOR_TEST_SHELLAPI_H_
+#define VIZOR_TEST_SHELLAPI_H_
+#endif

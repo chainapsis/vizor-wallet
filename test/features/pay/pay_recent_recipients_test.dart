@@ -379,7 +379,7 @@ void main() {
     });
 
     test('keeps only recipients from the selected rail', () {
-      const dogecoinAddress = 'DExampleDogecoinRecipient';
+      const dogecoinAddress = 'D597kHXGdkwkryF9oGhz9Bp1ypTpD1u99Z';
       final recents = payRecentRecipients(
         intents: [
           _intent(

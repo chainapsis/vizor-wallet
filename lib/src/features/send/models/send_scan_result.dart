@@ -8,8 +8,8 @@
 /// to give it. So the send scanners classify first and let the caller route:
 /// an address goes in the field, a request goes to the card.
 ///
-/// Only the send-context scanners do this. Address book, swap and pay scan for
-/// a destination, not for a payment to answer, so they stay address-only.
+/// Pay and Swap also preserve payment requests before address normalization.
+/// Address-only surfaces, such as the address book, keep their own semantics.
 library;
 
 import '../../../core/formatting/zec_amount.dart';
@@ -20,6 +20,13 @@ import 'send_prefill_args.dart';
 /// A scan the send flow accepted.
 sealed class SendScanResult {
   const SendScanResult();
+}
+
+/// A cross-chain request whose complete terms must reach the common intake.
+class SendScanPaymentUri extends SendScanResult {
+  const SendScanPaymentUri(this.rawUri);
+
+  final String rawUri;
 }
 
 /// Why a scanned ZIP-321 request came back as a bare recipient instead of a

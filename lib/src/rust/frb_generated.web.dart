@@ -8,6 +8,7 @@
 
 import 'api/keystone.dart';
 import 'api/network_privacy.dart';
+import 'api/payment_uri.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';

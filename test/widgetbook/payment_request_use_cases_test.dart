@@ -77,7 +77,8 @@ void main() {
 
     expect(
       find.text(
-        "Name supplied by the payment link. Vizor can't verify who sent it.",
+        'The requester provided this name. '
+        "It may differ from the recipient's name.",
       ),
       findsOneWidget,
     );
@@ -577,10 +578,6 @@ void main() {
         buildPaymentRequestInsufficientUseCase,
         'Not enough ZEC for this amount and the network fee (0.21 available)',
       ),
-      (
-        buildPaymentRequestSyncingUseCase,
-        'Wallet is still syncing — this will update when it finishes',
-      ),
     ]) {
       await _pumpUseCase(tester, builder);
 
@@ -693,8 +690,7 @@ void main() {
     }
   });
 
-  testWidgets('syncing is a pending line, not an error', (tester) async {
-    final colors = AppThemeData.light.colors;
+  testWidgets('syncing progress appears only in the button', (tester) async {
     const message =
         'Wallet is still syncing — this will update when it '
         'finishes';
@@ -706,12 +702,13 @@ void main() {
       await _pumpUseCase(tester, builder, size: size);
 
       expect(tester.takeException(), isNull);
-      // The copy promises the card will update itself, so the line stays
-      // quiet: secondary text and no warning glyph to act on.
-      expect(_statusColor(tester, message), colors.text.secondary);
-      expect(_statusIcons(tester), findsNothing);
-      // Review still cannot be pressed — that is `blocksContinue`'s job, not
-      // the tone's.
+      expect(find.text(message), findsNothing);
+      expect(
+        find.byKey(const ValueKey('payment_request_status')),
+        findsNothing,
+      );
+      expect(find.text('Syncing…'), findsOneWidget);
+      expect(find.text('Review'), findsNothing);
       expect(_button(tester, 'payment_request_continue').onPressed, isNull);
     }
 
@@ -719,36 +716,40 @@ void main() {
     expect(PaymentRequestStatus.syncing.isError, isFalse);
   });
 
-  testWidgets('a stalled sync keeps the quiet tone but a live button', (
-    tester,
-  ) async {
-    final colors = AppThemeData.light.colors;
-    const message = 'Still syncing — check again when the wallet is up to date';
+  testWidgets(
+    'a stalled sync offers retry without an informational status row',
+    (tester) async {
+      const message =
+          'Still syncing — check again when the wallet is up to date';
 
-    await _pumpUseCase(tester, buildPaymentRequestSyncStalledUseCase);
+      await _pumpUseCase(tester, buildPaymentRequestSyncStalledUseCase);
 
-    expect(tester.takeException(), isNull);
-    expect(find.text(message), findsOneWidget);
-    // Still not the user's fault, so still no warning glyph — but the card
-    // has stopped promising to update itself, so the next move is a button
-    // rather than a wait.
-    expect(_statusColor(tester, message), colors.text.secondary);
-    expect(_statusIcons(tester), findsNothing);
-    expect(find.text('Check again'), findsOneWidget);
-    expect(find.text('Review'), findsNothing);
-    expect(
-      _button(tester, 'payment_request_continue').onPressed,
-      isNotNull,
-      reason:
-          'the only status that blocks Review and still offers a live '
-          'primary: re-asking is the one thing that can change the answer',
-    );
+      expect(tester.takeException(), isNull);
+      expect(find.text(message), findsNothing);
+      // Still not the user's fault, so still no warning glyph — but the card
+      // has stopped promising to update itself, so the next move is a button
+      // rather than a wait.
+      expect(
+        find.byKey(const ValueKey('payment_request_status')),
+        findsNothing,
+      );
+      expect(_statusIcons(tester), findsNothing);
+      expect(find.text('Check again'), findsOneWidget);
+      expect(find.text('Review'), findsNothing);
+      expect(
+        _button(tester, 'payment_request_continue').onPressed,
+        isNotNull,
+        reason:
+            'the only status that blocks Review and still offers a live '
+            'primary: re-asking is the one thing that can change the answer',
+      );
 
-    expect(PaymentRequestStatus.syncStalled.blocksContinue, isTrue);
-    expect(PaymentRequestStatus.syncStalled.isError, isFalse);
-    expect(PaymentRequestStatus.syncStalled.offersRecheck, isTrue);
-    expect(PaymentRequestStatus.syncing.offersRecheck, isFalse);
-  });
+      expect(PaymentRequestStatus.syncStalled.blocksContinue, isTrue);
+      expect(PaymentRequestStatus.syncStalled.isError, isFalse);
+      expect(PaymentRequestStatus.syncStalled.offersRecheck, isTrue);
+      expect(PaymentRequestStatus.syncing.offersRecheck, isFalse);
+    },
+  );
 
   testWidgets('a failed check is its own status, not a bad address', (
     tester,

@@ -1,5 +1,6 @@
 pub mod keystone;
 pub mod network_privacy;
+pub mod payment_uri;
 pub mod secret;
 pub mod simple;
 pub mod sync;

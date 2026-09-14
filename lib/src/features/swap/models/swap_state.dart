@@ -73,6 +73,7 @@ class SwapState {
     this.depositSubmitting = false,
     this.selectedIntentId,
     this.payMode = false,
+    this.paymentRequestAssetId,
     this.userExternalContactId,
   });
 
@@ -113,6 +114,7 @@ class SwapState {
   final bool depositSubmitting;
   final String? selectedIntentId;
   final bool payMode;
+  final String? paymentRequestAssetId;
   final String? userExternalContactId;
 
   SwapIntent? get selectedIntentOrNull {
@@ -202,6 +204,10 @@ class SwapState {
   }
 
   bool get externalAssetIsSupported {
+    if ((paymentRequestAssetId ?? externalAsset.assetId) case final assetId?) {
+      return externalAsset.assetId == assetId &&
+          supportedExternalAssets.any((asset) => asset.assetId == assetId);
+    }
     for (final candidate in supportedExternalAssets) {
       if (candidate == externalAsset ||
           candidate.hasSameMarketAs(externalAsset)) {
@@ -319,6 +325,8 @@ class SwapState {
     bool? depositSubmitting,
     String? selectedIntentId,
     bool? payMode,
+    String? paymentRequestAssetId,
+    bool clearPaymentRequest = false,
     String? userExternalContactId,
     bool clearReview = false,
     bool clearQuoteError = false,
@@ -379,6 +387,9 @@ class SwapState {
           ? null
           : selectedIntentId ?? this.selectedIntentId,
       payMode: payMode ?? this.payMode,
+      paymentRequestAssetId: clearPaymentRequest
+          ? null
+          : paymentRequestAssetId ?? this.paymentRequestAssetId,
       userExternalContactId: clearUserExternalContactId
           ? null
           : userExternalContactId ?? this.userExternalContactId,

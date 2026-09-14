@@ -53,7 +53,7 @@
                     android:scheme="https"
                     android:host="${vizorDeeplinkHost}" />
             </intent-filter>
-            <!-- ZIP-321 payment links: zcash:<address>?amount=... open Vizor.
+            <!-- Only Zcash payment requests open Vizor from the OS.
                  Handled in MainActivity (com.zcash.wallet/payment_uri channel),
                  not Flutter's built-in deep linking. -->
             <intent-filter>

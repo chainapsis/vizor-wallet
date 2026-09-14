@@ -1184,7 +1184,7 @@ void main() {
     final bscUsdc = supported.singleWhere(
       (asset) => asset.symbol == 'USDC' && asset.chainTicker == 'bsc',
     );
-    expect(bscUsdc.chainLabel, 'Binance Smart Chain');
+    expect(bscUsdc.chainLabel, 'BNB Chain');
     expect(bscUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.png');
     expect(bscUsdc.chainIconKey, 'bsc');
     expect(bscUsdc.chainIconAsset, 'assets/swap/tokens/bnb.png');
@@ -1232,6 +1232,41 @@ void main() {
     expect(initial.externalPerZec[initialUsdc], closeTo(540.62, 0.001));
     expect(refreshed.externalPerZec[refreshedUsdc], closeTo(541.10, 0.001));
     expect(transport.requests, hasLength(2));
+  });
+
+  test('token list preserves ERC-20 contracts and SPL mint casing', () async {
+    const solanaMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', [
+        ..._tokensWithAdditionalAssets,
+        {
+          'assetId': 'nep141:sol-usdc.example',
+          'decimals': 6,
+          'blockchain': 'sol',
+          'symbol': 'USDC',
+          'contractAddress': solanaMint,
+        },
+      ]),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final supported = await provider.listSupportedExternalAssets();
+    final ethereumUsdc = supported.singleWhere(
+      (asset) => asset.assetId == 'nep141:usdc.example',
+    );
+    final solanaUsdc = supported.singleWhere(
+      (asset) => asset.assetId == 'nep141:sol-usdc.example',
+    );
+    final nativeSol = supported.singleWhere(
+      (asset) => asset.assetId == 'nep141:sol.omft.near',
+    );
+
+    // A live asset that reuses the static USDC display data must retain its
+    // on-chain identity just as a new chain variant does.
+    expect(ethereumUsdc.name, SwapAsset.usdc.name);
+    expect(ethereumUsdc.contractAddress, _ethereumUsdcContract);
+    expect(solanaUsdc.contractAddress, solanaMint);
+    expect(nativeSol.contractAddress, isNull);
   });
 
   test(
@@ -1555,6 +1590,13 @@ void main() {
         unorderedEquals(['nep141:usdc.example', 'nep141:eth-usdc.secondary']),
       );
       expect(ethUsdcVariants.first, isNot(ethUsdcVariants.last));
+      expect(
+        ethUsdcVariants.map((asset) => asset.contractAddress),
+        unorderedEquals([
+          _ethereumUsdcContract,
+          '0x1111111111111111111111111111111111111111',
+        ]),
+      );
       final secondaryEthUsdc = ethUsdcVariants.singleWhere(
         (asset) => asset.assetId == 'nep141:eth-usdc.secondary',
       );
@@ -1574,6 +1616,45 @@ void main() {
         transport.requests.last.body?['destinationAsset'],
         'nep141:eth-usdc.secondary',
       );
+    },
+  );
+
+  test(
+    'quote rejects an unlisted explicit asset id without substitution',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+      final unlistedUsdc = SwapAsset.live(
+        assetId: 'nep141:unlisted-usdc.example',
+        symbol: 'USDC',
+        blockchain: 'eth',
+        decimals: 6,
+        contractAddress: _ethereumUsdcContract,
+      );
+
+      await expectLater(
+        provider.quote(
+          SwapQuoteRequest(
+            direction: SwapDirection.zecToExternal,
+            externalAsset: unlistedUsdc,
+            sellAmount: 1.5,
+            sellAmountText: '1.5',
+            destination: '0xrecipient',
+            refundAddress: 'u1refund',
+          ),
+        ),
+        throwsA(
+          isA<OneClickApiException>().having(
+            (error) => error.operation,
+            'operation',
+            'quote',
+          ),
+        ),
+      );
+      expect(transport.requests, hasLength(1));
+      expect(transport.requests.single.method, 'GET');
     },
   );
 
@@ -2418,6 +2499,8 @@ void main() {
   );
 }
 
+const _ethereumUsdcContract = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+
 const _tokens = [
   {
     'assetId': 'nep141:zec.omft.near',
@@ -2430,6 +2513,7 @@ const _tokens = [
     'decimals': 6,
     'blockchain': 'eth',
     'symbol': 'USDC',
+    'contractAddress': _ethereumUsdcContract,
   },
   {
     'assetId': 'nep141:wrap.near',
@@ -2504,6 +2588,7 @@ const _tokensWithDuplicateEthUsdc = [
     'decimals': 6,
     'blockchain': 'eth',
     'symbol': 'USDC',
+    'contractAddress': '0x1111111111111111111111111111111111111111',
   },
 ];
 

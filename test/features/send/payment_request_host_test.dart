@@ -457,7 +457,8 @@ void main() {
 
     expect(
       find.text(
-        "Name supplied by the payment link. Vizor can't verify who sent it.",
+        'The requester provided this name. '
+        "It may differ from the recipient's name.",
       ),
       findsOneWidget,
     );
@@ -741,7 +742,7 @@ void main() {
 
     expect(
       find.text('Still syncing — check again when the wallet is up to date'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Check again'), findsOneWidget);
     expect(find.text('Review'), findsNothing);

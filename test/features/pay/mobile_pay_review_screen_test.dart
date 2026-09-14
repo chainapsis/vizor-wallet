@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
+import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -28,6 +30,73 @@ import '../../fakes/fake_sync_notifier.dart';
 const _recipient = '0x1111111111111111111111111111111111111111';
 
 void main() {
+  testWidgets(
+    'direct payment request review returns to an editable prepared Pay',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final router = GoRouter(
+        initialLocation: '/pay/review',
+        routes: [
+          GoRoute(
+            path: '/pay/review',
+            builder: (_, _) => const MobileSwapReviewScreen(
+              payMode: true,
+              paymentRequestId: 'request-review',
+            ),
+          ),
+          GoRoute(
+            path: '/pay',
+            builder: (_, state) {
+              final args = state.extra! as PayComposerNavigationArgs;
+              expect(args.showPreparedReview, isFalse);
+              expect(args.paymentRequestId, 'request-review');
+              return MobilePayScreen(
+                preservePreparedComposer: args.preservePreparedComposer,
+                paymentRequestId: args.paymentRequestId,
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        _app(router, quoteLifetime: const Duration(minutes: 5)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review Payment'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_pay_review_confirm_button')),
+        findsOneWidget,
+      );
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_pay_amount_step')),
+        findsOneWidget,
+      );
+      final input = tester.widget<TextField>(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+      );
+      expect(input.controller!.text, '10');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobilePayScreen)),
+        listen: false,
+      );
+      expect(container.read(swapStateProvider).destinationText, _recipient);
+      expect(container.read(swapStateProvider).reviewVisible, isFalse);
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '12',
+      );
+      await tester.pump();
+      expect(container.read(swapStateProvider).receiveAmountText, '12');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'payment review uses the completed spendable snapshot during sync',
     (tester) async {

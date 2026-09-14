@@ -207,7 +207,7 @@ void main() {
 
       final parked = container.read(paymentUriPrefillProvider);
       expect(
-        parked?.address,
+        (parked as SendPrefillArgs?)?.address,
         'u1secondlink',
         reason: 'latest wins: the second link must be the parked one',
       );

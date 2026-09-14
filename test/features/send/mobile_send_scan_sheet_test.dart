@@ -2,11 +2,16 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
@@ -56,6 +61,12 @@ class _RustApiFake implements RustLibApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _MutableRpcEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  void changeNetwork() => state = defaultRpcEndpointConfig('test');
+}
+
 void main() {
   testWidgets('scan sheet overlays the current page instead of replacing it', (
     tester,
@@ -64,31 +75,36 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: AppTheme(
-          data: AppThemeData.light,
-          child: Builder(
-            builder: (context) => Scaffold(
-              body: Stack(
-                children: [
-                  const Center(child: Text('Send page behind scanner')),
-                  Center(
-                    child: TextButton(
-                      onPressed: () {
-                        unawaited(
-                          showMobileSendScanSheet(
-                            context,
-                            networkName: kZcashDefaultNetworkName,
-                            controller: controller,
-                            resolve: (raw) async =>
-                                MobileScanOutcome.accepted(raw),
-                          ),
-                        );
-                      },
-                      child: const Text('Open scanner'),
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: Stack(
+                  children: [
+                    const Center(child: Text('Send page behind scanner')),
+                    Center(
+                      child: TextButton(
+                        onPressed: () {
+                          unawaited(
+                            showMobileSendScanSheet(
+                              context,
+                              networkName: kZcashDefaultNetworkName,
+                              controller: controller,
+                              resolve: (raw) async =>
+                                  MobileScanOutcome.accepted(raw),
+                            ),
+                          );
+                        },
+                        child: const Text('Open scanner'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -104,6 +120,122 @@ void main() {
     expect(find.text('Scan the address QR code'), findsOneWidget);
   });
 
+  testWidgets(
+    'network change closes the Send scanner and discards pending result',
+    (tester) async {
+      final endpoint = _MutableRpcEndpoint();
+      final pending = Completer<MobileScanOutcome>();
+      final results = <Object?>[];
+      final controller = MobileScannerController(autoStart: false);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+            rpcEndpointProvider.overrideWith(() => endpoint),
+          ],
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () async {
+                      results.add(
+                        await showMobileSendScanSheet(
+                          context,
+                          networkName: 'main',
+                          controller: controller,
+                          resolve: (_) => pending.future,
+                        ),
+                      );
+                    },
+                    child: const Text('Open scanner'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open scanner'));
+      await tester.pumpAndSettle();
+      tester
+          .widget<PlainQrScannerView>(
+            find.byType(PlainQrScannerView, skipOffstage: false),
+          )
+          .onComplete('zcash:request');
+      await tester.pump();
+      endpoint.changeNetwork();
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileAddressScanCard), findsNothing);
+      expect(results, [null]);
+      pending.complete(const MobileScanOutcome.accepted(_mainnetAddress));
+      await tester.pumpAndSettle();
+      expect(results, [null]);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'new payment request closes the Send scanner and discards pending result',
+    (tester) async {
+      final endpoint = _MutableRpcEndpoint();
+      final pending = Completer<MobileScanOutcome>();
+      final results = <Object?>[];
+      final controller = MobileScannerController(autoStart: false);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+            rpcEndpointProvider.overrideWith(() => endpoint),
+          ],
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () async {
+                      results.add(
+                        await showMobileSendScanSheet(
+                          context,
+                          networkName: 'main',
+                          controller: controller,
+                          resolve: (_) => pending.future,
+                        ),
+                      );
+                    },
+                    child: const Text('Open scanner'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open scanner'));
+      await tester.pumpAndSettle();
+      tester
+          .widget<PlainQrScannerView>(
+            find.byType(PlainQrScannerView, skipOffstage: false),
+          )
+          .onComplete('zcash:request');
+      await tester.pump();
+      ProviderScope.containerOf(
+        tester.element(find.byType(MobileAddressScanCard)),
+      ).read(paymentRequestArrivalProvider.notifier).arrived();
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileAddressScanCard), findsNothing);
+      expect(results, [null]);
+      pending.complete(const MobileScanOutcome.accepted(_mainnetAddress));
+      await tester.pumpAndSettle();
+      expect(results, [null]);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   group('the sheet\'s default resolver', () {
     late _RustApiFake rustApi;
 
@@ -112,6 +244,30 @@ void main() {
       RustLib.initMock(api: rustApi);
     });
     tearDownAll(RustLib.dispose);
+
+    test(
+      'rejects cross-chain payment requests without calling the Zcash validator',
+      () async {
+        rustApi.lastNetwork = null;
+        for (final raw in [
+          'bitcoin:bc1qinvoice?amount=0.01&label=Coffee%20shop',
+          'litecoin:ltc1qinvoice?amount=1.5',
+          'ethereum:0xToken@8453/transfer?address=0xPayee&uint256=25000000',
+          'solana:Payee?amount=25&spl-token=Mint&reference=Order',
+        ]) {
+          final outcome = await resolveScannedZcashAddress(
+            raw,
+            networkName: kZcashDefaultNetworkName,
+          );
+          expect(outcome.isAccepted, isFalse);
+          expect(
+            outcome.error,
+            'Only Zcash addresses and payment requests can be scanned here.',
+          );
+        }
+        expect(rustApi.lastNetwork, isNull);
+      },
+    );
 
     test('accepts an address this wallet can pay', () async {
       final outcome = await resolveScannedZcashAddress(
@@ -146,7 +302,10 @@ void main() {
       );
 
       expect(outcome.isAccepted, isFalse);
-      expect(outcome.error, "This QR code isn't a Zcash address.");
+      expect(
+        outcome.error,
+        'Only Zcash addresses and payment requests can be scanned here.',
+      );
     });
   });
 }

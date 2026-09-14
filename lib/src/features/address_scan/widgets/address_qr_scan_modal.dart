@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -14,6 +15,8 @@ import '../../../core/widgets/app_modal_card.dart' show appModalShadow;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../domain/address_scan_payload.dart';
+import 'payment_request_input.dart';
+import 'mobile_address_scan_view.dart' show MobileScanResolver;
 
 enum AddressQrCameraStatus { requesting, denied, active, loading, unavailable }
 
@@ -21,11 +24,21 @@ class AddressQrScanModal extends StatefulWidget {
   const AddressQrScanModal({
     required this.onAddressScanned,
     required this.onCancel,
+    this.onPaymentRequestScanned,
+    this.resolve,
+    this.validationContext,
+    this.isRefundAddress = false,
     super.key,
   });
 
   final ValueChanged<String> onAddressScanned;
   final VoidCallback onCancel;
+  final ValueChanged<String>? onPaymentRequestScanned;
+  final bool isRefundAddress;
+
+  /// When supplied, this resolver is authoritative; no legacy URI extraction runs.
+  final MobileScanResolver? resolve;
+  final Object? validationContext;
 
   @override
   State<AddressQrScanModal> createState() => _AddressQrScanModalState();
@@ -40,6 +53,10 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   bool _loadingCameras = false;
   bool _switchingCamera = false;
   bool _completed = false;
+  bool _validating = false;
+  bool _closed = false;
+  int _validationSession = 0;
+  Animation<double>? _routeAnimation;
   bool _restartCameraOnResume = false;
   int _scanResetToken = 0;
   String? _error;
@@ -57,6 +74,57 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
     unawaited(_loadCameras());
   }
 
+  void _invalidateValidation() {
+    _validationSession++;
+    _validating = false;
+    _scanResetToken++;
+    _error = null;
+  }
+
+  void _routeStatusChanged(AnimationStatus status) {
+    if (mounted &&
+        (status == AnimationStatus.reverse ||
+            status == AnimationStatus.dismissed)) {
+      setState(_invalidateValidation);
+    }
+  }
+
+  bool _isCurrent(int session) {
+    if (!mounted || _closed || session != _validationSession) return false;
+    final route = ModalRoute.of(context);
+    final status = route?.animation?.status;
+    return (route?.isCurrent ?? true) &&
+        status != AnimationStatus.reverse &&
+        status != AnimationStatus.dismissed;
+  }
+
+  void _cancel() {
+    _closed = true;
+    _invalidateValidation();
+    widget.onCancel();
+  }
+
+  @override
+  void didUpdateWidget(covariant AddressQrScanModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.validationContext != widget.validationContext) {
+      _invalidateValidation();
+      _completed = false;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _invalidateValidation();
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation != _routeAnimation) {
+      _routeAnimation?.removeStatusListener(_routeStatusChanged);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_routeStatusChanged);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
@@ -71,6 +139,8 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
 
   @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_routeStatusChanged);
+    _invalidateValidation();
     WidgetsBinding.instance.removeObserver(this);
     _camerasSubscription?.cancel();
     _controller.dispose();
@@ -226,8 +296,55 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
     }
   }
 
-  void _handleScanComplete(String value) {
-    if (_completed) return;
+  Future<void> _handleScanComplete(String value) async {
+    if (_completed || _validating || !_isCurrent(_validationSession)) return;
+    final resolver = widget.resolve;
+    if (resolver != null) {
+      final session = ++_validationSession;
+      setState(() {
+        _validating = true;
+        _error = null;
+      });
+      try {
+        final outcome = await resolver(value);
+        if (!_isCurrent(session)) return;
+        if (outcome.isAccepted) {
+          _completed = true;
+          widget.onAddressScanned(outcome.address!);
+          return;
+        }
+        setState(() {
+          _validating = false;
+          _scanResetToken++;
+          _error = outcome.isIgnored
+              ? null
+              : outcome.error ?? 'QR code did not include an address.';
+        });
+      } catch (_) {
+        if (!_isCurrent(session)) return;
+        setState(() {
+          _validating = false;
+          _scanResetToken++;
+          _error = 'QR code could not be read. Try again.';
+        });
+      }
+      return;
+    }
+    if (isPaymentRequestUri(value)) {
+      if (widget.isRefundAddress) {
+        setState(() {
+          _error = paymentRequestRefundAddressMessage;
+          _scanResetToken++;
+        });
+        return;
+      }
+      final onPaymentRequestScanned = widget.onPaymentRequestScanned;
+      if (onPaymentRequestScanned != null) {
+        _completed = true;
+        onPaymentRequestScanned(value.trim());
+        return;
+      }
+    }
     final normalized = normalizeAddressScanPayload(value);
     if (normalized == null || normalized.isEmpty) {
       setState(() {
@@ -270,7 +387,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
           onCameraTap: () => unawaited(_selectNextCamera()),
           onRetry: () =>
               unawaited(_retryCameraStart(openSettingsOnDenied: true)),
-          onCancel: widget.onCancel,
+          onCancel: _cancel,
           unavailableDescription: unavailableDescription,
           error: _error,
         );

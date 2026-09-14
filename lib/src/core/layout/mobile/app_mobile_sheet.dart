@@ -2,11 +2,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
-import 'package:flutter/material.dart' show Material, showModalBottomSheet;
+import 'package:flutter/material.dart'
+    show BottomSheet, Material, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_icon.dart';
 
 /// Shows a mobile modal as a floating card — the Figma modal base
@@ -98,6 +100,7 @@ class MobileModalCard extends StatelessWidget {
     required this.child,
     this.transparentBackground = false,
     this.margin,
+    this.onBack,
     super.key,
   });
 
@@ -110,6 +113,9 @@ class MobileModalCard extends StatelessWidget {
   /// Centered dialogs own their outer insets and pass [EdgeInsets.zero].
   /// Bottom sheets retain the default side and safe-area-aware bottom gaps.
   final EdgeInsets? margin;
+
+  /// A floating return action above the card for a nested sheet.
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +172,117 @@ class MobileModalCard extends StatelessWidget {
             right: sideMargin,
             bottom: bottomGap,
           ),
-      child: card,
+      child: onBack == null
+          ? card
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: AppButton(
+                    key: const ValueKey('mobile_modal_back_button'),
+                    variant: AppButtonVariant.secondary,
+                    minWidth: 44,
+                    height: 44,
+                    contentPadding: EdgeInsets.zero,
+                    enabledBackgroundColor: colors.background.base,
+                    onPressed: onBack,
+                    child: Semantics(
+                      label: 'Back',
+                      child: AppIcon(
+                        AppIcons.arrowBack,
+                        size: 20,
+                        color: colors.icon.accent,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Flexible(child: card),
+              ],
+            ),
+    );
+  }
+}
+
+/// Adds Flutter's drag motion and dismissal to a sheet rendered without a route.
+/// Key this by request identity so a closing sheet cannot close its replacement.
+class AppDraggableMobileSheet extends StatefulWidget {
+  const AppDraggableMobileSheet({
+    required this.onDismiss,
+    required this.child,
+    this.dismissRequested = false,
+    this.onClosing,
+    super.key,
+  });
+
+  final VoidCallback onDismiss;
+  final Widget child;
+  final bool dismissRequested;
+  final VoidCallback? onClosing;
+
+  @override
+  State<AppDraggableMobileSheet> createState() =>
+      _AppDraggableMobileSheetState();
+}
+
+class _AppDraggableMobileSheetState extends State<AppDraggableMobileSheet>
+    with SingleTickerProviderStateMixin {
+  late final _controller = BottomSheet.createAnimationController(this)
+    ..value = 1;
+  late final _position = Tween<Offset>(
+    begin: const Offset(0, 1),
+    end: Offset.zero,
+  ).animate(_controller);
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.dismissRequested) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.dismissRequested) _dismiss();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AppDraggableMobileSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.dismissRequested && !oldWidget.dismissRequested) _dismiss();
+  }
+
+  void _dismiss() {
+    if (_closing) return;
+    setState(() => _closing = true);
+    widget.onClosing?.call();
+    _controller.reverse().then((_) {
+      if (mounted) widget.onDismiss();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _position,
+      child: IgnorePointer(
+        ignoring: _closing,
+        child: BottomSheet(
+          animationController: _controller,
+          onClosing: _dismiss,
+          showDragHandle: false,
+          backgroundColor: const Color(0x00000000),
+          elevation: 0,
+          builder: (_) => widget.child,
+        ),
+      ),
     );
   }
 }

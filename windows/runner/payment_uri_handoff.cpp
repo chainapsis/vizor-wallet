@@ -43,7 +43,7 @@ bool IsVizorPrimaryWindow(HWND hwnd, UINT activation_message) {
 // is screened with the same rule the primary applies so a URI accepted here is
 // the same set accepted there.
 bool SendPaymentUri(HWND hwnd, const std::string& uri) {
-  if (!IsZcashUri(uri) || !IsDecodablePaymentUriPayload(uri)) {
+  if (!IsPaymentUri(uri) || !IsDecodablePaymentUriPayload(uri)) {
     return false;
   }
 
@@ -124,7 +124,7 @@ bool ForwardPaymentUrisToRunningInstance(const std::vector<std::string>& uris,
   }
 
   // The primary claims the single-instance lock before it creates its window,
-  // so a zcash: launch that arrives during startup finds no target on the
+  // so a payment URI launch that arrives during startup finds no target on the
   // first pass. Retry on the same schedule ActivateExistingInstance uses;
   // otherwise the secondary falls back to a bare activation, the window comes
   // to the front on someone else's screen, and the payment URI is lost.
@@ -166,7 +166,7 @@ bool TryReadPaymentUriCopyData(LPARAM lparam, std::string* uri) {
   const auto* copy_data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
   if (copy_data == nullptr || copy_data->dwData != kPaymentUriCopyDataId ||
       copy_data->lpData == nullptr || copy_data->cbData == 0 ||
-      copy_data->cbData > kMaxZcashUriBytes + 1) {
+      copy_data->cbData > kMaxPaymentUriBytes + 1) {
     return false;
   }
 
@@ -176,7 +176,7 @@ bool TryReadPaymentUriCopyData(LPARAM lparam, std::string* uri) {
   }
 
   std::string value(raw, copy_data->cbData - 1);
-  if (!IsZcashUri(value) || !IsDecodablePaymentUriPayload(value)) {
+  if (!IsPaymentUri(value) || !IsDecodablePaymentUriPayload(value)) {
     return false;
   }
 

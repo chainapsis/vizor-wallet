@@ -1,8 +1,12 @@
+import '../../../core/widgets/validated_paste_region.dart';
+import 'dart:async';
+import '../../address_scan/widgets/mobile_address_scan_view.dart';
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/navigation/payment_request_intake.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../address_book/models/address_book_contact.dart';
@@ -21,6 +25,14 @@ class SwapAddressEditModal extends StatefulWidget {
     required this.onScan,
     required this.onOpenContacts,
     required this.onCancel,
+    this.onChanged,
+    this.initialAddress,
+    this.initialRemember = false,
+    this.onDraftCaptured,
+    this.resolve,
+    this.onPaymentRequest,
+    this.validationContext,
+    this.readValidationContext,
     this.contacts = const <AddressBookContact>[],
     super.key,
   });
@@ -30,6 +42,14 @@ class SwapAddressEditModal extends StatefulWidget {
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
   final VoidCallback onCancel;
+  final VoidCallback? onChanged;
+  final String? initialAddress;
+  final bool initialRemember;
+  final SwapAddressSubmitCallback? onDraftCaptured;
+  final MobileScanResolver? resolve;
+  final ValueChanged<String>? onPaymentRequest;
+  final Object? validationContext;
+  final Object? Function()? readValidationContext;
 
   /// Saved contacts; when the entered address matches one, its name is shown
   /// under the field so the user knows the address is correct.
@@ -43,11 +63,16 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
   var _rememberAddress = false;
+  int _inputGeneration = 0;
+  String? _inputError;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.state.destinationText);
+    _controller = TextEditingController(
+      text: widget.initialAddress ?? widget.state.destinationText,
+    );
+    _rememberAddress = widget.initialRemember;
     _focusNode = FocusNode(debugLabel: 'SwapAddressModalField');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -58,6 +83,10 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   @override
   void didUpdateWidget(covariant SwapAddressEditModal oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.validationContext != widget.validationContext) {
+      _inputGeneration++;
+      _inputError = null;
+    }
     if (oldWidget.state.destinationText == widget.state.destinationText) {
       return;
     }
@@ -76,25 +105,70 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     super.dispose();
   }
 
-  void _submit() {
-    // Guard the keyboard "done"/enter path the same way the primary button
-    // is gated, so a malformed address cannot be committed by pressing
-    // enter.
-    if (!_canSubmit) return;
-    widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+  void _captureDraftAndOpen(VoidCallback open) {
+    _inputGeneration++;
+    widget.onDraftCaptured?.call(_controller.text, _rememberAddress);
+    open();
+  }
+
+  void _submit() =>
+      unawaited(_resolveInput(_controller.text.trim(), submit: true));
+
+  Future<void> _resolveInput(String raw, {bool submit = false}) async {
+    final generation = ++_inputGeneration;
+    final before = _controller.value;
+    final route = ModalRoute.of(context);
+    final resolve = widget.resolve;
+    final outcome = raw.isEmpty
+        ? const MobileScanOutcome.accepted('')
+        : resolve == null
+        ? MobileScanOutcome.accepted(raw)
+        : await resolve(raw);
+    if (!mounted ||
+        generation != _inputGeneration ||
+        before != _controller.value ||
+        (route != null && !route.isCurrent) ||
+        outcome.isIgnored) {
+      return;
+    }
+    if (!outcome.isAccepted) {
+      setState(() => _inputError = outcome.error);
+      return;
+    }
+    if (isPaymentRequestUri(outcome.address!) &&
+        widget.onPaymentRequest != null) {
+      widget.onDraftCaptured?.call(_controller.text, _rememberAddress);
+      widget.onPaymentRequest!(outcome.address!);
+      return;
+    }
+    if (submit) {
+      if (resolve == null && !_canSubmit) return;
+      widget.onSubmitted(outcome.address!, _rememberAddress);
+    } else {
+      _controller.value = TextEditingValue(
+        text: outcome.address!,
+        selection: TextSelection.collapsed(offset: outcome.address!.length),
+      );
+      widget.onChanged?.call();
+      setState(() => _inputError = null);
+    }
   }
 
   void _toggleRemember() {
+    _inputGeneration++;
+    widget.onChanged?.call();
     setState(() {
       _rememberAddress = !_rememberAddress;
     });
   }
 
   bool get _canSubmit => _formatError == null;
+  bool get _isPaymentRequest => isPaymentRequestUri(_controller.text);
 
   AddressFormatFinding? get _formatFinding {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return null;
+    if (_isPaymentRequest) return null; // Resolved before paste or submit.
     final network = AddressBookNetwork.tryFromChainTicker(
       widget.state.externalAsset.chainTicker,
     );
@@ -143,7 +217,9 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final rememberLabel = sendsZec
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
-    final formatFinding = _formatFinding;
+    final formatFinding = _inputError == null
+        ? _formatFinding
+        : AddressFormatFinding.error(_inputError!);
     final matchedContact = _matchedContact;
 
     return AppModalCard(
@@ -185,9 +261,19 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   focusNode: _focusNode,
                   hint: hint,
                   onSubmitted: (_) => _submit(),
-                  onChanged: (_) => setState(() {}),
-                  onScan: widget.onScan,
-                  onOpenContacts: widget.onOpenContacts,
+                  onPaste: (raw) => _resolveInput(raw),
+                  readPasteContext: () =>
+                      (widget.readValidationContext?.call(), _inputGeneration),
+                  pasteContext: (widget.validationContext, _inputGeneration),
+                  onChanged: (_) {
+                    _inputGeneration++;
+                    _inputError = null;
+                    widget.onChanged?.call();
+                    setState(() {});
+                  },
+                  onScan: () => _captureDraftAndOpen(widget.onScan),
+                  onOpenContacts: () =>
+                      _captureDraftAndOpen(widget.onOpenContacts),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 // The design reserves a 16dp message line under the field even
@@ -240,11 +326,12 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                 const SizedBox(height: AppSpacing.sm),
                 // Remembered addresses are auto-named (and auto-avatared)
                 // on save, so opting in needs no extra fields here.
-                _AddressRememberToggle(
-                  selected: _rememberAddress,
-                  label: rememberLabel,
-                  onTap: _toggleRemember,
-                ),
+                if (!_isPaymentRequest)
+                  _AddressRememberToggle(
+                    selected: _rememberAddress,
+                    label: rememberLabel,
+                    onTap: _toggleRemember,
+                  ),
               ],
             ),
           ),
@@ -272,6 +359,9 @@ class _AddressInputField extends StatelessWidget {
     required this.hint,
     required this.onSubmitted,
     required this.onChanged,
+    this.onPaste,
+    this.pasteContext,
+    this.readPasteContext,
     required this.onScan,
     required this.onOpenContacts,
   });
@@ -281,6 +371,9 @@ class _AddressInputField extends StatelessWidget {
   final String hint;
   final ValueChanged<String> onSubmitted;
   final ValueChanged<String> onChanged;
+  final Future<void> Function(String)? onPaste;
+  final Object? pasteContext;
+  final Object? Function()? readPasteContext;
   final VoidCallback onScan;
   final VoidCallback onOpenContacts;
 
@@ -298,24 +391,31 @@ class _AddressInputField extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-              child: TextField(
-                key: const ValueKey('swap_destination_field'),
+              child: ValidatedPasteRegion(
                 controller: controller,
-                focusNode: focusNode,
-                textInputAction: TextInputAction.done,
-                onSubmitted: onSubmitted,
-                onChanged: onChanged,
-                // Inputs/Field master: typed value Label M Medium, placeholder
-                // Label M Regular (Geist 14/16, -0.06).
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-                cursorColor: colors.text.accent,
-                decoration: InputDecoration.collapsed(
-                  hintText: hint,
-                  hintStyle: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: colors.text.muted,
+                onPaste: onPaste,
+                pasteContext: pasteContext,
+                readPasteContext: readPasteContext,
+                builder: (menuBuilder) => TextField(
+                  contextMenuBuilder: menuBuilder,
+                  key: const ValueKey('swap_destination_field'),
+                  controller: controller,
+                  focusNode: focusNode,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: onSubmitted,
+                  onChanged: onChanged,
+                  // Inputs/Field master: typed value Label M Medium, placeholder
+                  // Label M Regular (Geist 14/16, -0.06).
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                  cursorColor: colors.text.accent,
+                  decoration: InputDecoration.collapsed(
+                    hintText: hint,
+                    hintStyle: AppTypography.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: colors.text.muted,
+                    ),
                   ),
                 ),
               ),
