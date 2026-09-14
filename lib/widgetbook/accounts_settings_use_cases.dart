@@ -21,6 +21,7 @@ import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/security/password_policy.dart';
+import '../src/core/security/software_wallet_secret.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
@@ -39,6 +40,8 @@ import '../src/features/migration/models/ironwood_migration_phases.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
+import '../src/features/onboarding/mobile/mobile_passcode_screen.dart'
+    show kMobilePasscodeLength;
 import '../src/features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
@@ -731,6 +734,12 @@ class _AccountsPreviewAccountNotifier extends AccountNotifier {
 
   @override
   FutureOr<AccountState> build() => initialState;
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async =>
+      const SoftwareWalletSecret(mnemonic: settingsPreviewMnemonic24Words);
 
   @override
   Future<void> switchAccount(String uuid) async {
@@ -1714,6 +1723,28 @@ class _SettingsPreviewAppSecurityNotifier extends AppSecurityNotifier {
     isPasswordConfigured: false,
     isUnlocked: false,
   );
+
+  @override
+  Future<bool> confirmPassword(String password) async =>
+      _isPreviewPasscode(password);
+
+  @override
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!_isPreviewPasscode(currentPassword) ||
+        !_isPreviewPasscode(newPassword) ||
+        currentPassword == newPassword) {
+      return false;
+    }
+    state = state.copyWith(isPasswordConfigured: true, isUnlocked: true);
+    return true;
+  }
+
+  bool _isPreviewPasscode(String value) =>
+      value.length == kMobilePasscodeLength &&
+      value.codeUnits.every((codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39);
 }
 
 class _SettingsPreviewRpcEndpointNotifier extends RpcEndpointNotifier {
@@ -2194,6 +2225,7 @@ List<Override> _endpointLatencyOverrides(RpcEndpointLatencyState latency) {
 Widget settingsMobileChangePasscodeFixture() {
   return _mobileSubScreenFixture(
     path: '/settings/change-passcode',
+    withParentRoute: true,
     builder: (_) => const MobileChangePasscodeScreen(),
   );
 }
@@ -2261,6 +2293,7 @@ Widget _mobileSubScreenFixture({
   builder,
   BiometricUnlockState biometricState = BiometricUnlockState.initial,
   RpcEndpointConfig? rpcEndpointConfig,
+  bool withParentRoute = false,
   List<Override> overrides = const [],
 }) {
   return ProviderScope(
@@ -2283,9 +2316,18 @@ Widget _mobileSubScreenFixture({
       biometricUnlockProvider.overrideWith(
         () => _SettingsPreviewBiometricNotifier(biometricState),
       ),
+      appSecurityProvider.overrideWith(
+        () => _SettingsPreviewAppSecurityNotifier(
+          const AppSecurityState(isPasswordConfigured: true, isUnlocked: true),
+        ),
+      ),
       ...overrides,
     ],
-    child: _MobileSubScreenPreviewHarness(path: path, builder: builder),
+    child: _MobileSubScreenPreviewHarness(
+      path: path,
+      builder: builder,
+      withParentRoute: withParentRoute,
+    ),
   );
 }
 
@@ -2295,10 +2337,12 @@ class _MobileSubScreenPreviewHarness extends StatefulWidget {
   const _MobileSubScreenPreviewHarness({
     required this.path,
     required this.builder,
+    this.withParentRoute = false,
   });
 
   final String path;
   final Widget Function(SensitivePrivacyOverlayController controller) builder;
+  final bool withParentRoute;
 
   @override
   State<_MobileSubScreenPreviewHarness> createState() =>
@@ -2316,8 +2360,20 @@ class _MobileSubScreenPreviewHarnessState
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: widget.path,
+      initialLocation: widget.withParentRoute ? '/preview/screen' : widget.path,
       routes: [
+        if (widget.withParentRoute)
+          GoRoute(
+            path: '/preview',
+            builder: (_, _) =>
+                const _AccountsPreviewPlaceholder(label: '/preview'),
+            routes: [
+              GoRoute(
+                path: 'screen',
+                builder: (_, _) => widget.builder(_privacyController),
+              ),
+            ],
+          ),
         GoRoute(
           path: widget.path,
           builder: (_, _) => widget.builder(_privacyController),

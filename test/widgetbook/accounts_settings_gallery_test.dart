@@ -1720,6 +1720,23 @@ void main() {
     await disposeTree(tester);
   });
 
+  testWidgets('mobile passphrase gate reveals the in-memory fixture secret', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildSettingsPassphraseGalleryCase,
+      knobs: _mobileLayoutKnobs,
+    );
+    expect(find.text('Enter Passcode'), findsOneWidget);
+    for (final digit in '123456'.split('')) {
+      await tester.tap(find.bySemanticsLabel('Digit $digit'));
+    }
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('caution'), findsWidgets);
+    await disposeTree(tester);
+  });
+
   testWidgets('viewing key registers each layout\'s own knobs', (tester) async {
     final desktop = await pumpUseCase(
       tester,
@@ -1858,6 +1875,23 @@ void main() {
     );
     expect(find.text('Enter Passcode'), findsOneWidget);
     expect(find.text('Confirm your access'), findsOneWidget);
+
+    Future<void> enterPasscode(String value) async {
+      for (final digit in value.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    await enterPasscode('123456');
+    expect(find.text('Set New Passcode'), findsOneWidget);
+    await enterPasscode('654321');
+    expect(find.text('Confirm Passcode'), findsOneWidget);
+    await enterPasscode('654321');
+    // The complete keypad flow reaches the in-memory change handler without
+    // touching the platform AppSecureStore.
+    expect(find.text('Enter Passcode'), findsNothing);
+    expect(find.text('Navigated to /preview'), findsOneWidget);
     await disposeTree(tester);
   });
 
