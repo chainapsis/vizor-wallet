@@ -773,6 +773,8 @@ Widget sendReviewScreenFixture({
       screen: (_) => SendReviewScreen(
         args: args,
         proposalDisposer: (_) async => true,
+        // This review fixture has no PCZT preparation/signing simulation.
+        confirmationEnabled: !hardwareAccount,
       ),
     ),
   );

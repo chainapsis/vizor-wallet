@@ -60,6 +60,43 @@ const _mobileSendScreenStepAxes = <SendScreenMobileStep, List<String>>{
 // layout axis is driven by explicit query params rather than the compiled
 // lane, so both test lanes exercise the same combinations.
 void main() {
+  testWidgets(
+    'hardware review confirmation is disabled in every fixture flow',
+    (tester) async {
+      for (final flow in SendFlowKind.values) {
+        await pumpUseCase(
+          tester,
+          (_) => sendReviewScreenFixture(hardwareAccount: true, flowKind: flow),
+        );
+        await tester.pumpAndSettle();
+        final confirm = find.ancestor(
+          of: find.text('Confirm with Keystone'),
+          matching: find.byType(AppButton),
+        );
+        expect(tester.widget<AppButton>(confirm).onPressed, isNull);
+        await tester.tap(find.text('Confirm with Keystone'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('Confirm with Keystone'), findsOneWidget);
+        await disposeTree(tester);
+      }
+      await pumpUseCase(tester, (_) => sendReviewScreenFixture());
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.ancestor(
+                of: find.text('Confirm & send'),
+                matching: find.byType(AppButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await disposeTree(tester);
+    },
+  );
+
   testWidgets('mobile status exit returns home and can reopen the preview', (
     tester,
   ) async {

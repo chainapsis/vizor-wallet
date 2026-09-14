@@ -47,10 +47,15 @@ class SendReviewScreen extends ConsumerStatefulWidget {
     super.key,
     required this.args,
     this.proposalDisposer,
+    this.confirmationEnabled = true,
   });
 
   final SendReviewArgs args;
   final SendReviewProposalDisposer? proposalDisposer;
+
+  /// Hosts without transaction execution (for example previews) can disable
+  /// confirmation while retaining review and back navigation.
+  final bool confirmationEnabled;
 
   @override
   ConsumerState<SendReviewScreen> createState() => _SendReviewScreenState();
@@ -633,7 +638,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? AppIcons.qr
                             : AppIcons.donation,
                         onConfirm:
-                            _cancelling ||
+                            !widget.confirmationEnabled ||
+                                _cancelling ||
                                 (_proposalAbandoned && !_reviewRecoveryFailed)
                             ? null
                             : () => unawaited(_handleSend()),
@@ -665,7 +671,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? AppIcons.qr
                             : AppIcons.plane,
                         onConfirm:
-                            _cancelling ||
+                            !widget.confirmationEnabled ||
+                                _cancelling ||
                                 (_proposalAbandoned && !_reviewRecoveryFailed)
                             ? null
                             : () => unawaited(_handleSend()),
