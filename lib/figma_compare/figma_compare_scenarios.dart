@@ -16,6 +16,7 @@ import '../widgetbook/payment_request_use_cases.dart';
 import '../widgetbook/receive_use_cases.dart';
 import '../widgetbook/request_amount_use_cases.dart';
 import '../widgetbook/send_review_status_use_cases.dart';
+import '../widgetbook/send_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
@@ -52,6 +53,22 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-send-amount-contact',
+    description: 'Mobile amount screen resolving a saved contact (4479:47503)',
+    builder: buildMobileSendAmountContactUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-amount-own-account',
+    description: 'Mobile amount screen resolving a local account',
+    builder: buildMobileSendAmountOwnAccountUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-gift-card-keystone-loading',
     description: 'Shared Keystone signing loading',

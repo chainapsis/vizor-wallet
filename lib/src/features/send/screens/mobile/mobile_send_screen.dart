@@ -2597,6 +2597,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
+    final recipient = sendReviewRecipientFor(
+      contacts:
+          ref.watch(addressBookProvider).value?.contacts ??
+          const <AddressBookContact>[],
+      address: _addressController.text.trim(),
+      ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+    );
+    final recipientLabel = recipient is SendReviewContactRecipient
+        ? recipient.name
+        : _contactLabel;
+    final recipientPictureId = recipient is SendReviewContactRecipient
+        ? recipient.profilePictureId
+        : _contactPictureId;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
@@ -2677,7 +2690,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                     key: const ValueKey(
                                       'mobile_send_amount_recipient_picture',
                                     ),
-                                    profilePictureId: _contactPictureId ?? '',
+                                    profilePictureId: recipientPictureId ?? '',
                                     size: AppProfilePictureSize.navLarge,
                                   ),
                                   const SizedBox(width: AppSpacing.s),
@@ -2687,7 +2700,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                           MainAxisAlignment.center,
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
-                                      children: _contactLabel == null
+                                      children: recipientLabel == null
                                           ? [
                                               _RecipientLineText(
                                                 _truncateAddress(
@@ -2698,7 +2711,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                             ]
                                           : [
                                               _RecipientLineText(
-                                                _contactLabel!,
+                                                recipientLabel,
                                                 color: colors.text.accent,
                                               ),
                                               const SizedBox(
