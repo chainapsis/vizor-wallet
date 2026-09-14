@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
@@ -48,6 +49,75 @@ void main() {
   // The mobile shielding case installs the camera fake for its scanning
   // stage; nothing else in this file should inherit it.
   tearDown(WbFakeMobileScannerPlatform.reset);
+
+  testWidgets('Home failure settings opens an isolated destination', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildHomeScreenGalleryCase,
+      knobs: {
+        'Layout': wbLayoutLabel(WbLayout.desktop),
+        'Notice': homeNoticeLabel(HomeNoticeKind.syncFailureEndpointSettings),
+      },
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Navigated to /settings/endpoint'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await disposeTree(tester);
+  });
+
+  testWidgets('Home Tor Retry remains isolated and repeatable', (tester) async {
+    await pumpUseCase(
+      tester,
+      buildHomeScreenGalleryCase,
+      knobs: {
+        'Layout': wbLayoutLabel(WbLayout.desktop),
+          'Network': homeNetworkRouteLabel(HomeNetworkRoute.torBlocked),
+      },
+    );
+    await tester.pumpAndSettle();
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text('Retry'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await disposeTree(tester);
+  });
+
+  testWidgets('Home sync Retry clears only the preview failure', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildHomeScreenGalleryCase,
+      knobs: {
+        'Layout': wbLayoutLabel(WbLayout.desktop),
+        'Notice': homeNoticeLabel(HomeNoticeKind.syncFailure),
+      },
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(HomeScreen)),
+      listen: false,
+    );
+    final before = container.read(syncProvider).requireValue;
+    expect(find.text('Network connection lost.'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    final after = container.read(syncProvider).requireValue;
+    expect(after.failure, isNull);
+    expect(after.error, isNull);
+    expect(after.isSyncing, before.isSyncing);
+    expect(after.orchardBalance, before.orchardBalance);
+    expect(find.text('Network connection lost.'), findsNothing);
+    expect(find.text('Retry'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await disposeTree(tester);
+  });
 
   for (final layout in WbLayout.values) {
     testWidgets('${layout.name} Home content Pay avoids host services', (

@@ -915,6 +915,14 @@ class _HomeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => initialState;
 
+  // Retry only clears the fixture failure; never start Rust sync or polling.
+  @override
+  void startSync({int? latestTipHeight}) {
+    state = AsyncData(
+      (state.value ?? initialState).copyWith(clearFailure: true, clearError: true),
+    );
+  }
+
   @override
   Future<void> refreshAfterSend() async {}
 
