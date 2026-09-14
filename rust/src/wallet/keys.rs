@@ -35,7 +35,7 @@ pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
     "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
 const KEY_SOURCE_KEYSTONE: &str = "vizor.hardware.keystone.v1";
-const KEY_SOURCE_LEDGER: &str = "vizor.hardware.ledger.v1";
+pub(crate) const KEY_SOURCE_LEDGER: &str = "vizor.hardware.ledger.v1";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
@@ -78,7 +78,7 @@ impl HardwareSignerKind {
     }
 }
 
-fn hardware_signer_kind(source: &AccountSource) -> Option<HardwareSignerKind> {
+pub(crate) fn hardware_signer_kind(source: &AccountSource) -> Option<HardwareSignerKind> {
     match source.key_source() {
         Some(KEY_SOURCE_KEYSTONE) => Some(HardwareSignerKind::Keystone),
         Some(KEY_SOURCE_LEDGER) => Some(HardwareSignerKind::Ledger),
@@ -1017,6 +1017,7 @@ fn delete_account_rows(
     )
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
 
+    crate::wallet::sync_engine::ledger_discovery::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
     crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
         &tx,

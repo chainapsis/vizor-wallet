@@ -48,8 +48,7 @@ use {
 mod address_history;
 mod block_source;
 mod enhance;
-mod gift_card_funding;
-pub(crate) use gift_card_funding::gift_card_funding_reason;
+pub(crate) mod ledger_discovery;
 mod error;
 mod lwd;
 pub(crate) mod mempool;
@@ -2778,6 +2777,11 @@ async fn run_sync_impl(
         );
         return Ok(());
     }
+
+    // Recovery runs after import, under the existing sync lifetime. Once both
+    // scopes complete it performs no further address-history requests.
+    ledger_discovery::run(&mut client, &mut db, db_data_path, network, tip_height, &should_exit).await?;
+    if should_exit() { return Ok(()); }
 
     let active_utxo_progress = |completed, total| {
         progress_fn(preparation_progress_event(
