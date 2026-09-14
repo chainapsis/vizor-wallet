@@ -24,7 +24,10 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel, showProfilePictureSheet;
-import '../../../address_scan/domain/address_scan_payload.dart';
+import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/account_provider.dart';
+import '../../../address_scan/domain/address_input_policy.dart';
+import '../../../address_scan/domain/address_input_provider.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
@@ -969,16 +972,16 @@ class _ContactDraft {
   final String profilePictureId;
 }
 
-class _ContactEditSheet extends StatefulWidget {
+class _ContactEditSheet extends ConsumerStatefulWidget {
   const _ContactEditSheet({this.contact});
 
   final AddressBookContact? contact;
 
   @override
-  State<_ContactEditSheet> createState() => _ContactEditSheetState();
+  ConsumerState<_ContactEditSheet> createState() => _ContactEditSheetState();
 }
 
-class _ContactEditSheetState extends State<_ContactEditSheet> {
+class _ContactEditSheetState extends ConsumerState<_ContactEditSheet> {
   late final TextEditingController _labelController = TextEditingController(
     text: widget.contact?.label ?? '',
   );
@@ -989,6 +992,32 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       widget.contact?.network ?? AddressBookNetwork.zcash;
   late String _profilePictureId =
       widget.contact?.profilePictureId ?? kDefaultProfilePictureId;
+  int _contextRevision = 0;
+  int _inputRevision = 0;
+  String? _inputError;
+  Object get _inputKey =>
+      (_contextRevision, _inputRevision, _network, addressInputContextKey(ref));
+  bool _stillCurrent(Object key) =>
+      mounted &&
+      key == _inputKey &&
+      (ModalRoute.of(context)?.isCurrent ?? true);
+
+  Future<void> _pasteAddress(String raw) async {
+    final key = _inputKey;
+    final result = await resolveWalletAddressInput(
+      ref,
+      raw,
+      context: AddressInputContext.contact,
+      network: _network,
+    );
+    if (!mounted || !_stillCurrent(key)) return;
+    if (result.kind == AddressInputResultKind.address) {
+      _addressController.text = result.address!;
+    } else {
+      setState(() => _inputError = result.reason);
+    }
+  }
+
   final _labelFocus = FocusNode();
   final _addressFocus = FocusNode();
 
@@ -999,8 +1028,13 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     // focus and text, so rebuild whenever either changes.
     _labelFocus.addListener(_onFieldStateChanged);
     _addressFocus.addListener(_onFieldStateChanged);
-    _labelController.addListener(_onFieldStateChanged);
-    _addressController.addListener(_onFieldStateChanged);
+    _labelController.addListener(_onDraftChanged);
+    _addressController.addListener(_onDraftChanged);
+  }
+
+  void _onDraftChanged() {
+    _inputRevision++;
+    if (mounted) setState(() => _inputError = null);
   }
 
   void _onFieldStateChanged() {
@@ -1022,14 +1056,23 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     if (_labelController.text.trim().isEmpty) return false;
     final address = _addressController.text.trim();
     if (address.isEmpty) return false;
-    return addressFormatIssue(_network, address) == null;
+    return addressFormatIssue(
+          _network,
+          address,
+          zcashNetwork: ref.read(rpcEndpointProvider).network,
+        ) ==
+        null;
   }
 
   /// Live format error for the address field (null when empty or valid).
   String? get _addressError {
     final address = _addressController.text.trim();
     if (address.isEmpty) return null;
-    return addressFormatIssue(_network, address);
+    return addressFormatIssue(
+      _network,
+      address,
+      zcashNetwork: ref.read(rpcEndpointProvider).network,
+    );
   }
 
   Future<void> _pickNetwork() async {
@@ -1038,7 +1081,11 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       builder: (_) => _NetworkPickerSheet(selected: _network),
     );
     if (picked == null || !mounted) return;
-    setState(() => _network = picked);
+    setState(() {
+      _inputRevision++;
+      _inputError = null;
+      _network = picked;
+    });
   }
 
   Future<void> _pickAvatar() async {
@@ -1047,30 +1094,40 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       selectedId: _profilePictureId,
     );
     if (picked == null || !mounted) return;
-    setState(() => _profilePictureId = picked);
+    setState(() {
+      _inputRevision++;
+      _profilePictureId = picked;
+    });
   }
 
   Future<void> _scanAddress() async {
+    final key = _inputKey;
     final scanTitle = addressBookQrScanTitle(_network);
     final scanned = await showAppMobileSheet<String>(
       context: context,
       builder: (sheetContext) => MobileAddressScanCard(
         caption: scanTitle,
         permissionTitle: scanTitle,
+        validationContext: key,
         resolve: (raw) async {
-          final address = normalizeAddressScanPayload(raw);
-          if (address == null || address.isEmpty) {
-            return const MobileScanOutcome.rejected(
-              'QR code did not include an address.',
-            );
+          final result = await resolveWalletAddressInput(
+            ref,
+            raw,
+            context: AddressInputContext.contact,
+            network: _network,
+          );
+          if (!mounted || key != _inputKey) {
+            return const MobileScanOutcome.ignored();
           }
-          return MobileScanOutcome.accepted(address);
+          return result.kind == AddressInputResultKind.address
+              ? MobileScanOutcome.accepted(result.address!)
+              : MobileScanOutcome.rejected(result.reason ?? 'Invalid address');
         },
         onScanned: (value) => Navigator.of(sheetContext).pop(value),
         onClose: () => Navigator.of(sheetContext).pop(),
       ),
     );
-    if (scanned == null || !mounted) return;
+    if (scanned == null || !mounted || key != _inputKey) return;
     _addressController.text = scanned;
     _addressController.selection = TextSelection.collapsed(
       offset: scanned.length,
@@ -1087,13 +1144,25 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     _addressFocus.requestFocus();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_canSave) return;
+    final key = _inputKey;
+    final result = await resolveWalletAddressInput(
+      ref,
+      _addressController.text,
+      context: AddressInputContext.contact,
+      network: _network,
+    );
+    if (!mounted || !_stillCurrent(key)) return;
+    if (result.kind != AddressInputResultKind.address) {
+      setState(() => _inputError = result.reason);
+      return;
+    }
     Navigator.of(context).pop(
       _ContactDraft(
         label: _labelController.text.trim(),
         network: _network,
-        address: _addressController.text.trim(),
+        address: result.address!,
         profilePictureId: _profilePictureId,
       ),
     );
@@ -1118,6 +1187,22 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(rpcEndpointProvider.select((value) => value.networkName), (
+      _,
+      _,
+    ) {
+      _contextRevision++;
+    });
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) {
+        _contextRevision++;
+      },
+    );
+    ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    ref.watch(rpcEndpointProvider);
     final colors = context.colors;
     final isEdit = widget.contact != null;
     final media = MediaQuery.of(context);
@@ -1129,7 +1214,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
         (media.size.height - media.viewInsets.bottom - media.padding.top - 120)
             .clamp(240.0, 620.0)
             .toDouble();
-    final addressError = _addressError;
+    final addressError = _inputError ?? _addressError;
 
     final nameClear = (_labelFocus.hasFocus && _labelController.text.isNotEmpty)
         ? _fieldIcon(
@@ -1266,6 +1351,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 controller: _addressController,
                 focusNode: _addressFocus,
                 hintText: 'Add an address',
+                onPaste: _pasteAddress,
+                pasteContext: _inputKey,
+                readPasteContext: () => _inputKey,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _save(),
                 trailing: Padding(
@@ -1304,7 +1392,12 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 child: Text(isEdit ? 'Save contact' : 'Add contact'),
               ),
               const SizedBox(height: AppSpacing.s),
-              MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
+              MobileSheetCancel(
+                onTap: () {
+                  _inputRevision++;
+                  Navigator.of(context).pop();
+                },
+              ),
             ],
           ),
         ),

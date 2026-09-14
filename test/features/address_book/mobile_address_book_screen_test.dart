@@ -6,8 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
@@ -246,6 +250,22 @@ void main() {
     );
     await tester.pump();
     expect(save().onPressed, isNotNull);
+
+    final field = tester.widget<MobileTextField>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is MobileTextField &&
+            widget.fieldKey == const ValueKey('mobile_address_book_address'),
+      ),
+    );
+    await field.onPaste!('invalid pasted address');
+    await tester.pump();
+    expect(field.controller.text, '0x1234567890abcdef1234567890abcdef12345678');
+    expect(find.text('Invalid EVM address'), findsOneWidget);
+    await field.onPaste!('0x0000000000000000000000000000000000000001');
+    await tester.pump();
+    expect(field.controller.text, '0x0000000000000000000000000000000000000001');
+    expect(find.text('Invalid EVM address'), findsNothing);
   });
 }
 
@@ -270,7 +290,23 @@ Widget _harness(AddressBookRepository repo) {
   );
 
   return ProviderScope(
-    overrides: [addressBookRepositoryProvider.overrideWithValue(repo)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        AppBootstrapState(
+          initialLocation: '/address-book',
+          initialAccountState: const AccountState(),
+          initialSyncSnapshot: AppSyncSnapshot.empty,
+          network: 'main',
+          rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+          themeMode: ThemeMode.system,
+          privacyModeEnabled: false,
+          isPasswordConfigured: true,
+          isUnlocked: true,
+          passwordRotationRecoveryFailed: false,
+        ),
+      ),
+      addressBookRepositoryProvider.overrideWithValue(repo),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),

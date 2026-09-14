@@ -21,6 +21,13 @@ import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
 import '../../../core/widgets/app_tappable.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/config/network_config.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/account_provider.dart';
+import '../../address_scan/domain/address_input_policy.dart';
+import '../../address_scan/domain/address_input_provider.dart';
+import '../../address_scan/widgets/mobile_address_scan_view.dart'
+    show MobileScanOutcome;
 import '../../send/models/send_prefill_args.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../models/address_book_contact.dart';
@@ -57,11 +64,39 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   AddressBookContact? _editingContact;
   AddressBookContact? _removingContact;
   String? _submitError;
+  String? _addressInputError;
+
+  int _contextRevision = 0;
+  Object get _inputKey =>
+      (_contextRevision, _draft, _modal, addressInputContextKey(ref));
+
+  Future<void> _pasteAddress(String raw) async {
+    final draft = _draft;
+    if (draft == null) return;
+    final key = _inputKey;
+    final result = await resolveWalletAddressInput(
+      ref,
+      raw,
+      context: AddressInputContext.contact,
+      network: draft.network,
+    );
+    if (!mounted || key != _inputKey) return;
+    if (result.kind == AddressInputResultKind.address) {
+      setState(() {
+        _draft = draft.copyWith(address: result.address!);
+        _addressInputError = null;
+        _submitError = null;
+      });
+    } else {
+      setState(() => _addressInputError = result.reason);
+    }
+  }
 
   void _openAddContact() {
     setState(() {
       _modal = _AddressBookModalKind.addContact;
       _draft = _ContactDraft.empty();
+      _addressInputError = null;
       _editingContact = null;
       _removingContact = null;
       _submitError = null;
@@ -72,6 +107,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     setState(() {
       _modal = _AddressBookModalKind.editContact;
       _draft = _ContactDraft.fromContact(contact);
+      _addressInputError = null;
       _editingContact = contact;
       _removingContact = null;
       _submitError = null;
@@ -122,7 +158,10 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   }
 
   void _updateDraft(_ContactDraft draft) {
-    setState(() => _draft = draft);
+    setState(() {
+      _draft = draft;
+      _addressInputError = null;
+    });
   }
 
   void _selectAvatar(String profilePictureId) {
@@ -141,6 +180,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     if (draft == null) return;
     setState(() {
       _draft = draft.copyWith(network: network);
+      _addressInputError = null;
       _modal = _editingContact == null
           ? _AddressBookModalKind.addContact
           : _AddressBookModalKind.editContact;
@@ -171,6 +211,18 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   Future<void> _submitDraft() async {
     final draft = _draft;
     if (draft == null || !draft.isValid) return;
+    final key = _inputKey;
+    final result = await resolveWalletAddressInput(
+      ref,
+      draft.address,
+      context: AddressInputContext.contact,
+      network: draft.network,
+    );
+    if (!mounted || key != _inputKey) return;
+    if (result.kind != AddressInputResultKind.address) {
+      setState(() => _addressInputError = result.reason);
+      return;
+    }
     setState(() => _submitError = null);
 
     try {
@@ -180,7 +232,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         await notifier.addContact(
           label: draft.label,
           network: draft.network,
-          address: draft.address,
+          address: result.address!,
           profilePictureId: draft.profilePictureId,
         );
       } else {
@@ -188,7 +240,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           editing.id,
           label: draft.label,
           network: draft.network,
-          address: draft.address,
+          address: result.address!,
           profilePictureId: draft.profilePictureId,
         );
       }
@@ -235,6 +287,21 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(rpcEndpointProvider.select((value) => value.networkName), (
+      _,
+      _,
+    ) {
+      _contextRevision++;
+    });
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) {
+        _contextRevision++;
+      },
+    );
+    ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
     final contactsAsync = ref.watch(addressBookProvider);
     // Loading keeps the previous pane (or the empty state) so the toolbar and
     // content stay stable; an error replaces the pane content only.
@@ -303,6 +370,11 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           onAvatarPressed: _openAvatarPicker,
           onNetworkPressed: _openNetworkSelector,
           onScanAddress: _scanAddress,
+          onPasteAddress: _pasteAddress,
+          pasteContext: _inputKey,
+          readPasteContext: () => _inputKey,
+          addressInputError: _addressInputError,
+          zcashNetwork: ref.watch(rpcEndpointProvider).network,
           onCancel: _closeModal,
           onSubmit: _submitDraft,
         );
@@ -320,7 +392,26 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           onCancel: _returnToDraftForm,
         );
       case _AddressBookModalKind.addressScanner:
+        final key = _inputKey;
         return AddressQrScanModal(
+          validationContext: key,
+          resolve: (raw) async {
+            if (draft == null) return const MobileScanOutcome.ignored();
+            final result = await resolveWalletAddressInput(
+              ref,
+              raw,
+              context: AddressInputContext.contact,
+              network: draft.network,
+            );
+            if (!mounted || key != _inputKey) {
+              return const MobileScanOutcome.ignored();
+            }
+            return result.kind == AddressInputResultKind.address
+                ? MobileScanOutcome.accepted(result.address!)
+                : MobileScanOutcome.rejected(
+                    result.reason ?? 'Invalid address',
+                  );
+          },
           onAddressScanned: _selectScannedAddress,
           onCancel: _returnToDraftForm,
         );
@@ -1060,6 +1151,11 @@ class _ContactFormModal extends StatefulWidget {
     required this.onAvatarPressed,
     required this.onNetworkPressed,
     required this.onScanAddress,
+    required this.onPasteAddress,
+    required this.pasteContext,
+    required this.readPasteContext,
+    required this.addressInputError,
+    required this.zcashNetwork,
     required this.onCancel,
     required this.onSubmit,
   });
@@ -1071,6 +1167,11 @@ class _ContactFormModal extends StatefulWidget {
   final VoidCallback onAvatarPressed;
   final VoidCallback onNetworkPressed;
   final VoidCallback onScanAddress;
+  final Future<void> Function(String) onPasteAddress;
+  final Object pasteContext;
+  final Object Function() readPasteContext;
+  final String? addressInputError;
+  final ZcashNetwork zcashNetwork;
   final VoidCallback onCancel;
   final Future<void> Function() onSubmit;
 
@@ -1131,17 +1232,19 @@ class _ContactFormModalState extends State<_ContactFormModal> {
     final showAddressError =
         widget.draft.address.trim().isEmpty &&
         _addressController.text.trim().isNotEmpty;
-    // Soft check: surface a chain format finding without blocking save.
+    // Show format feedback while editing; final save uses the input policy.
     // Error severity (cannot be valid) renders destructive; warning severity
     // (valid but unusual, e.g. a bare NEAR top-level name) renders neutral.
     final addressFormatFinding = addressFormatCheck(
       widget.draft.network,
       widget.draft.address,
+      zcashNetwork: widget.zcashNetwork,
     );
-    final addressMessage = showAddressError
-        ? addressError
-        : addressFormatFinding?.message;
+    final addressMessage =
+        widget.addressInputError ??
+        (showAddressError ? addressError : addressFormatFinding?.message);
     final addressHasError =
+        widget.addressInputError != null ||
         showAddressError ||
         addressFormatFinding?.severity == AddressFormatSeverity.error;
 
@@ -1205,6 +1308,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
                   ? AppTextFieldTone.destructive
                   : AppTextFieldTone.neutral,
               onChanged: _emitAddress,
+              onPaste: widget.onPasteAddress,
+              pasteContext: widget.pasteContext,
+              readPasteContext: widget.readPasteContext,
               onSubmitted: (_) => widget.onSubmit(),
             ),
           ),

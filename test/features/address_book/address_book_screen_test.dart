@@ -19,8 +19,33 @@ import 'package:zcash_wallet/src/features/address_book/screens/address_book_scre
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart';
+import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
+
+Completer<AddressValidationResult>? _pendingValidation;
+
+class _ContactRustApi implements RustLibApi {
+  @override
+  Future<AddressValidationResult> crateApiSyncValidateAddress({
+    required String address,
+    required String network,
+  }) async => _pendingValidation != null
+      ? await _pendingValidation!.future
+      : AddressValidationResult(
+          isValid:
+              address == 't1Xo5ymWr1tAVRJyLPMFp7GVkA7Z8g3YDEk' ||
+              address.startsWith('tex1'),
+          addressType: 'transparent',
+          wrongNetwork: false,
+        );
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _ContactRustApi()));
+  tearDownAll(RustLib.dispose);
   testWidgets('does not show a loading spinner while contacts load', (
     tester,
   ) async {
@@ -64,7 +89,7 @@ void main() {
     );
     await tester.enterText(
       find.byKey(const ValueKey('address_book_contact_address_field')),
-      'u1alice',
+      't1Xo5ymWr1tAVRJyLPMFp7GVkA7Z8g3YDEk',
     );
     await tester.pump();
     await tester.tap(
@@ -74,10 +99,59 @@ void main() {
 
     expect(repo.contacts, hasLength(1));
     expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('u1alice'), findsOneWidget);
+    expect(repo.contacts.single.address, 't1Xo5ymWr1tAVRJyLPMFp7GVkA7Z8g3YDEk');
     expect(find.text('No contacts yet'), findsNothing);
     expect(find.text('Contacts'), findsOneWidget);
   });
+
+  testWidgets(
+    'rejected paste preserves the contact draft and late paste is ignored',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _addressBookHarness(_FakeAddressBookRepository()),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('address_book_add_contact_button')),
+      );
+      await tester.pumpAndSettle();
+      final finder = find.byKey(
+        const ValueKey('address_book_contact_address_field'),
+      );
+      await tester.enterText(finder, 'original draft');
+      await tester.pump();
+      var field = tester.widget<AppTextField>(finder);
+      await field.onPaste!(
+        'ethereum:0x1234567890abcdef1234567890abcdef12345678',
+      );
+      await tester.pump();
+      expect(
+        tester.widget<AppTextField>(finder).controller!.text,
+        'original draft',
+      );
+
+      _pendingValidation = Completer<AddressValidationResult>();
+      addTearDown(() => _pendingValidation = null);
+      field = tester.widget<AppTextField>(finder);
+      final pending = field.onPaste!('t1Xo5ymWr1tAVRJyLPMFp7GVkA7Z8g3YDEk');
+      await tester.enterText(finder, 'newer draft');
+      await tester.pump();
+      _pendingValidation!.complete(
+        const AddressValidationResult(
+          isValid: true,
+          addressType: 'transparent',
+          wrongNetwork: false,
+        ),
+      );
+      await pending;
+      await tester.pump();
+      expect(
+        tester.widget<AppTextField>(finder).controller!.text,
+        'newer draft',
+      );
+    },
+  );
 
   testWidgets('empty-state add button is a compact users-icon pill', (
     tester,
@@ -172,7 +246,7 @@ void main() {
     expect(repo.contacts.single.address, texAddress);
   });
 
-  testWidgets('warns about a malformed address but still allows saving', (
+  testWidgets('rejects a malformed manually entered address on save', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -210,7 +284,7 @@ void main() {
     await tester.pump();
 
     expect(find.text("Invalid EVM address"), findsOneWidget);
-    // Soft warning: the save button stays enabled.
+    // The final save boundary validates without changing the draft.
     expect(
       tester
           .widget<AppButton>(
@@ -225,8 +299,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(repo.contacts, hasLength(1));
-    expect(repo.contacts.single.address, '0xnope');
+    expect(repo.contacts, isEmpty);
+    expect(find.text('0xnope'), findsOneWidget);
   });
 
   testWidgets('warns about a bare NEAR top-level name but allows saving', (
