@@ -685,6 +685,8 @@ List<PaymentLinkRecoveryRecord> _replaceByAddress(
 Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
   return {
     'link': record.link.toUri().toString(),
+    'address': record.link.address,
+    'createdAt': record.link.createdAt.toUtc().toIso8601String(),
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
@@ -711,6 +713,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
   final linkRaw = value['link'];
+  final address = value['address'];
+  final createdAtRaw = value['createdAt'];
   final sourceAccountUuid = value['sourceAccountUuid'];
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
@@ -718,6 +722,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final submittedAtHeight = value['submittedAtHeight'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
+      (address != null && (address is! String || address.isEmpty)) ||
+      (createdAtRaw != null && createdAtRaw is! String) ||
       sourceAccountUuid is! String ||
       sourceAccountUuid.isEmpty ||
       stateRaw is! String ||
@@ -732,9 +738,17 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
   final updatedAt = DateTime.tryParse(updatedAtRaw);
+  final createdAt = createdAtRaw == null
+      ? null
+      : DateTime.tryParse(createdAtRaw as String);
   if (updatedAt == null) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record timestamp is invalid.',
+    );
+  }
+  if (createdAtRaw != null && createdAt == null) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record creation timestamp is invalid.',
     );
   }
   late final PaymentLinkRecoveryState state;
@@ -760,8 +774,33 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
 
+  final parsedLink = VizorPaymentLink.parse(linkRaw);
+  final addressMismatch =
+      parsedLink.knownAddress != null &&
+      address != null &&
+      parsedLink.knownAddress != address;
+  final createdAtMismatch =
+      parsedLink.knownCreatedAt != null &&
+      createdAt != null &&
+      parsedLink.knownCreatedAt != createdAt;
+  if (addressMismatch || createdAtMismatch) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record link metadata does not match its record.',
+    );
+  }
+  final resolvedAddress = (address as String?) ?? parsedLink.knownAddress;
+  final resolvedCreatedAt = createdAt ?? parsedLink.knownCreatedAt;
+  if (resolvedAddress == null || resolvedCreatedAt == null) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record link metadata is missing.',
+    );
+  }
+
   return PaymentLinkRecoveryRecord(
-    link: VizorPaymentLink.parse(linkRaw),
+    link: parsedLink.withResolvedMetadata(
+      address: resolvedAddress,
+      createdAt: resolvedCreatedAt,
+    ),
     claimFeeReserveZatoshi: reserve,
     sourceAccountUuid: sourceAccountUuid,
     state: state,

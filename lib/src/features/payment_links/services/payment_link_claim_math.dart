@@ -92,6 +92,33 @@ int paymentLinkFundingConfirmationCountForClaim({
 }
 
 @visibleForTesting
+DateTime? paymentLinkFundingCreatedAt({
+  required BigInt recipientAmountZatoshi,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedFunding = paymentLinkFundingAmountZatoshi(
+    recipientAmountZatoshi,
+  );
+  DateTime? createdAt;
+  for (final transaction in transactions) {
+    if (transaction.expiredUnmined ||
+        transaction.txKind != 'received' ||
+        BigInt.from(transaction.accountBalanceDelta) != expectedFunding ||
+        transaction.blockTime <= BigInt.zero) {
+      continue;
+    }
+    final candidate = DateTime.fromMillisecondsSinceEpoch(
+      transaction.blockTime.toInt() * Duration.millisecondsPerSecond,
+      isUtc: true,
+    );
+    if (createdAt == null || candidate.isBefore(createdAt)) {
+      createdAt = candidate;
+    }
+  }
+  return createdAt;
+}
+
+@visibleForTesting
 bool paymentLinkShouldWaitForFunding({
   required BigInt recipientAmountZatoshi,
   required BigInt totalZatoshi,
@@ -258,10 +285,10 @@ Future<bool> finalizeConfirmedPaymentLinkClaim({
 @visibleForTesting
 bool shouldRecreatePaymentLinkClaimWallet({
   required List<String> accountAddresses,
-  required String expectedAddress,
+  required String? expectedAddress,
 }) {
   return accountAddresses.length != 1 ||
-      accountAddresses.single != expectedAddress;
+      expectedAddress != null && accountAddresses.single != expectedAddress;
 }
 
 @visibleForTesting

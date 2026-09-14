@@ -1446,19 +1446,33 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   Future<void> _checkPaymentLink(VizorPaymentLink link) async {
     if (_operationInProgress) return;
-    if (ref
-        .read(paymentLinkClaimCoordinatorProvider)
-        .isSubmitting(link.address)) {
+    final knownAddress = link.knownAddress;
+    final matchingInFlight = _receivedCards
+        .where(
+          (record) =>
+              record.isClaimInFlight &&
+              record.claimLink?.hasSameCanonicalPayload(link) == true,
+        )
+        .firstOrNull;
+    final inFlightAddress = knownAddress ?? matchingInFlight?.address;
+    if (inFlightAddress != null &&
+        (matchingInFlight != null ||
+            ref
+                .read(paymentLinkClaimCoordinatorProvider)
+                .isSubmitting(inFlightAddress))) {
       setState(() {
-        _rememberReceivedLink(link);
+        if (knownAddress != null) _rememberReceivedLink(link);
         _setReceivedCardStatus(
-          link.address,
+          inFlightAddress,
           PaymentLinkReceivedStatus.receiving,
         );
         _activeCardsTab = PaymentLinkCardsTab.received;
         _page = PaymentLinksLocalPage.home;
       });
       if (kAppFormFactor == AppFormFactor.mobile) context.go('/home');
+      if (matchingInFlight != null) {
+        _showError(const PaymentLinkClaimInFlightException().toString());
+      }
       return;
     }
     setState(() {
@@ -1515,14 +1529,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           activeAccountUuid != session.destinationAccountUuid &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
-        _receivedLink = link;
+        _receivedLink = session.link;
         _handleClaimDestinationAccountChanged(activeAccountUuid);
         return;
       }
       if (session.waitingForFundingConfirmations) {
         setState(() {
           _receivedClaimSession = session;
-          _receivedLink = link;
+          _receivedLink = session.link;
           _longSyncLink = null;
           _retryLink = null;
           _receivedShowsBack = false;
@@ -1545,7 +1559,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
       setState(() {
         _receivedClaimSession = session;
-        _receivedLink = link;
+        _receivedLink = session.link;
         _longSyncLink = null;
         _retryLink = null;
         _receivedShowsBack = false;

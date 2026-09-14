@@ -63,16 +63,18 @@ void main() {
       expect(uri.host, VizorDeepLink.host);
       expect(uri.path, '/payment-links/open');
       expect(uri.query, isEmpty);
-      expect(uri.fragment, startsWith('v1='));
+      expect(uri.fragment, startsWith('v2='));
       expect(decoded.network, 'main');
-      expect(decoded.address, link.address);
+      expect(decoded.knownAddress, isNull);
       expect(decoded.amountZatoshi, BigInt.from(123456789));
       expect(decoded.mnemonic, link.mnemonic);
       expect(decoded.birthdayHeight, 3_456_789);
       expect(decoded.label, link.label);
-      expect(decoded.createdAt, link.createdAt);
+      expect(decoded.knownCreatedAt, isNull);
       expect(decoded.presentation?.artworkId, 'celebration_03');
       expect(decoded.presentation?.message, '축하해! 🎉');
+      expect(payload, isNot(contains('address')));
+      expect(payload, isNot(contains('createdAt')));
       expect(payload['presentation'], {
         'artworkId': 'celebration_03',
         'message': '축하해! 🎉',
@@ -97,8 +99,17 @@ void main() {
         isTrue,
       );
 
+      expect(
+        original.hasSameCanonicalPayload(
+          _link(
+            address: '${original.address}2',
+            createdAt: original.createdAt.add(const Duration(seconds: 1)),
+          ),
+        ),
+        isTrue,
+      );
+
       final changedPayloads = <String, VizorPaymentLink>{
-        'address': _link(address: '${original.address}2'),
         'amount': _link(amountZatoshi: original.amountZatoshi + BigInt.one),
         'mnemonic': _link(
           mnemonic:
@@ -106,9 +117,6 @@ void main() {
         ),
         'birthday': _link(birthdayHeight: original.birthdayHeight - 1),
         'label': _link(label: '${original.label} updated'),
-        'createdAt': _link(
-          createdAt: original.createdAt.add(const Duration(seconds: 1)),
-        ),
         'presentation': _link(
           presentation: const PaymentLinkPresentation(message: 'Updated'),
         ),
@@ -198,8 +206,35 @@ void main() {
 
       final decoded = VizorPaymentLink.parse(uppercaseLink);
 
-      expect(decoded.address, link.address);
+      expect(decoded.knownAddress, isNull);
       expect(decoded.mnemonic, link.mnemonic);
+    });
+
+    test('accepts legacy v1 links and validates their metadata', () {
+      final createdAt = DateTime.utc(2026, 6, 21, 12);
+      final payload = {
+        'v': 1,
+        'network': 'main',
+        'address': 'u1exampleaddress',
+        'amountZatoshi': '123456789',
+        'mnemonic':
+            'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+        'birthdayHeight': 3456789,
+        'label': 'Demo link',
+        'createdAt': createdAt.toIso8601String(),
+      };
+      final encoded = Uri(
+        scheme: VizorDeepLink.scheme,
+        host: VizorDeepLink.host,
+        path: VizorDeepLink.paymentLinkPath,
+        fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+      );
+
+      final decoded = VizorPaymentLink.parse(encoded.toString());
+
+      expect(decoded.address, 'u1exampleaddress');
+      expect(decoded.createdAt, createdAt);
+      expect(decoded.toUri().fragment, startsWith('v2='));
     });
 
     test('rejects malformed payloads', () {
@@ -228,7 +263,7 @@ void main() {
         scheme: VizorDeepLink.scheme,
         host: VizorDeepLink.host,
         path: VizorDeepLink.paymentLinkPath,
-        fragment: 'v1=eyJ2IjoyfQ==',
+        fragment: 'v2=eyJ2IjozfQ==',
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
@@ -269,20 +304,18 @@ void main() {
 
     test('rejects links without network', () {
       final payload = {
-        'v': 1,
-        'address': 'u1exampleaddress',
+        'v': 2,
         'amountZatoshi': '1',
         'mnemonic':
             'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
         'birthdayHeight': 1,
         'label': 'Demo link',
-        'createdAt': DateTime.utc(2026, 6, 21).toIso8601String(),
       };
       final encoded = Uri(
         scheme: VizorDeepLink.scheme,
         host: VizorDeepLink.host,
         path: VizorDeepLink.paymentLinkPath,
-        fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+        fragment: 'v2=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
       ).toString();
 
       expect(() => VizorPaymentLink.parse(encoded), throwsFormatException);
@@ -313,7 +346,7 @@ void main() {
 }
 
 Map<String, Object?> _decodePayload(Uri uri) {
-  final encoded = uri.fragment.substring('v1='.length);
+  final encoded = uri.fragment.substring('v2='.length);
   return jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(encoded))))
       as Map<String, Object?>;
 }

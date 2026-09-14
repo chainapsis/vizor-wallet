@@ -2435,8 +2435,11 @@ void main() {
 
     expect(operations.preparedLinks.single.address, secondIncomingLink.address);
     expect(
-      container.read(paymentLinkIntakeProvider).pendingLink?.address,
-      incomingLink.address,
+      container
+          .read(paymentLinkIntakeProvider)
+          .pendingLink
+          ?.hasSameCanonicalPayload(incomingLink),
+      isTrue,
     );
   });
 

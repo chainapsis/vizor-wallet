@@ -1057,6 +1057,34 @@ void main() {
     );
   });
 
+  test('claim creation time follows the matching funding block time', () {
+    final expectedFunding = paymentLinkFundingAmountZatoshi(
+      BigInt.from(100000),
+    );
+    final createdAt = paymentLinkFundingCreatedAt(
+      recipientAmountZatoshi: BigInt.from(100000),
+      transactions: [
+        _transaction(
+          txid: 'dust',
+          txKind: 'received',
+          accountBalanceDelta: 1,
+          blockTime: 1800000001,
+        ),
+        _transaction(
+          txid: 'funding',
+          txKind: 'received',
+          accountBalanceDelta: expectedFunding.toInt(),
+          blockTime: 1800000000,
+        ),
+      ],
+    );
+
+    expect(
+      createdAt,
+      DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+    );
+  });
+
   test(
     'claim waits while funding is pending or still in its initial window',
     () {
@@ -1604,6 +1632,13 @@ void main() {
       ),
       isFalse,
     );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1derived'],
+        expectedAddress: null,
+      ),
+      isFalse,
+    );
   });
 
   test('claim broadcast stops when the wallet locks', () {
@@ -1925,6 +1960,7 @@ rust_sync.TransactionInfo _transaction({
   int minedHeight = 0,
   bool expiredUnmined = false,
   int accountBalanceDelta = 1,
+  int blockTime = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -1932,7 +1968,7 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.zero,
-    blockTime: BigInt.zero,
+    blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,
     displayAmount: BigInt.one,
