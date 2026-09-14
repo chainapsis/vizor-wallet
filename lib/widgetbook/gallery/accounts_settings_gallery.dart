@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../accounts_settings_use_cases.dart';
+import '../donation_use_cases.dart';
+import 'pay_gallery.dart';
 import '../screen_use_cases.dart';
 import '../support/wb_layout.dart';
 import '../support/wb_state.dart';
@@ -170,6 +172,27 @@ final List<WidgetbookNode> accountsSettingsGalleryNodes = [
         ],
       ),
       WidgetbookComponent(
+        name: 'Donation',
+        useCases: [
+          WidgetbookUseCase(
+            name: 'Compose',
+            builder: buildDonationComposeGalleryCase,
+          ),
+          WidgetbookUseCase(
+            name: 'Screen',
+            builder: buildDonationScreenGalleryCase,
+          ),
+          WidgetbookUseCase(
+            name: 'Review',
+            builder: buildDonationReviewGalleryCase,
+          ),
+          WidgetbookUseCase(
+            name: 'Status',
+            builder: buildDonationStatusGalleryCase,
+          ),
+        ],
+      ),
+      WidgetbookComponent(
         name: 'Uninstall',
         useCases: [
           WidgetbookUseCase(
@@ -253,6 +276,19 @@ final List<WidgetbookNode> accountsSettingsGalleryNodes = [
               WidgetbookUseCase(
                 name: 'Playground',
                 builder: buildSettingsNewBadgeGalleryCase,
+              ),
+            ],
+          ),
+          WidgetbookComponent(
+            name: 'Donation recipient row',
+            useCases: [
+              WidgetbookUseCase(
+                name: 'Row',
+                builder: buildDonationRecipientRowGalleryCase,
+              ),
+              WidgetbookUseCase(
+                name: 'Vizor badge',
+                builder: buildDonationVizorBadgeUseCase,
               ),
             ],
           ),

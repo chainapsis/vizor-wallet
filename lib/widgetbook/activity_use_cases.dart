@@ -14,11 +14,11 @@ import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/widgets/activity_feed.dart';
 import '../src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'support/wb_layout.dart';
 
 Widget buildActivityPageUseCase(BuildContext context) {
-  return SizedBox(
-    width: 1080,
-    height: 720,
+  return WbDesktopWindowBox(
+    size: const Size(1080, 720),
     child: AppDesktopShell(
       sidebar: const _ActivityUseCaseSidebar(),
       pane: AppDesktopPane(
@@ -83,7 +83,7 @@ Widget buildActivityPageUseCase(BuildContext context) {
 }
 
 Widget buildCreatedGiftCardActivityDetailUseCase(BuildContext context) {
-  return _buildGiftCardActivityDetailUseCase(
+  return giftCardActivityDetailFixture(
     context,
     kind: GiftCardActivityKind.created,
     artwork: PaymentLinkCardArtwork.ruby,
@@ -91,21 +91,50 @@ Widget buildCreatedGiftCardActivityDetailUseCase(BuildContext context) {
 }
 
 Widget buildRedeemedGiftCardActivityDetailUseCase(BuildContext context) {
-  return _buildGiftCardActivityDetailUseCase(
+  return giftCardActivityDetailFixture(
     context,
     kind: GiftCardActivityKind.redeemed,
     artwork: PaymentLinkCardArtwork.crystal,
   );
 }
 
-Widget _buildGiftCardActivityDetailUseCase(
+/// Lifecycle phase the Gift Card detail reports, mirroring the receipt views.
+enum GiftCardActivityDetailStatus { inProgress, completed, failed }
+
+const _giftCardActivityDetailMessage =
+    'Hope this makes your day a little brighter!';
+
+/// Shared body of the Gift Card detail fixtures: both `build*UseCase` builders
+/// above each supply one parameter set while preserving their existing renders.
+Widget giftCardActivityDetailFixture(
   BuildContext context, {
   required GiftCardActivityKind kind,
   required PaymentLinkCardArtwork artwork,
+  GiftCardActivityDetailStatus status = GiftCardActivityDetailStatus.completed,
+  String? message = _giftCardActivityDetailMessage,
+  bool messageExpanded = false,
+  String? supportingText = r'$142.23',
 }) {
-  return SizedBox(
-    width: 1080,
-    height: 720,
+  final colors = context.colors;
+  final (statusText, statusIconName, statusColor) = switch (status) {
+    GiftCardActivityDetailStatus.inProgress => (
+      'In progress',
+      AppIcons.loader,
+      colors.text.secondary,
+    ),
+    GiftCardActivityDetailStatus.completed => (
+      'Completed',
+      AppIcons.checkCircle,
+      colors.text.positiveStrong,
+    ),
+    GiftCardActivityDetailStatus.failed => (
+      'Failed',
+      AppIcons.cancel,
+      colors.text.destructive,
+    ),
+  };
+  return WbDesktopWindowBox(
+    size: const Size(1080, 720),
     child: AppDesktopShell(
       sidebar: const _ActivityUseCaseSidebar(),
       pane: AppDesktopPane(
@@ -118,12 +147,15 @@ Widget _buildGiftCardActivityDetailUseCase(
           child: GiftCardActivityDetailView(
             kind: kind,
             artwork: artwork,
+            isInFlight: status == GiftCardActivityDetailStatus.inProgress,
+            isFailed: status == GiftCardActivityDetailStatus.failed,
             amountText: '4.45',
-            supportingText: r'$142.23',
-            statusText: 'Completed',
-            statusIconName: AppIcons.checkCircle,
-            statusColor: context.colors.text.positiveStrong,
-            message: 'Hope this makes your day a little brighter!',
+            supportingText: supportingText,
+            statusText: statusText,
+            statusIconName: statusIconName,
+            statusColor: statusColor,
+            message: message,
+            messageExpanded: messageExpanded,
             timestampText: '25 May, 13:30',
             txIdText: 'f154...8143',
             feeText: kind == GiftCardActivityKind.created

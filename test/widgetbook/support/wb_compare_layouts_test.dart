@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:widgetbook/widgetbook.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/widgetbook/gallery/home_activity_gallery.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_compare_layouts.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
 
@@ -264,7 +265,91 @@ void main() {
       expect(find.text('no layout knob'), findsOneWidget);
     });
 
+    testWidgets('a real gallery case compares without throwing', (
+      tester,
+    ) async {
+      await _pumpCompare(
+        tester,
+        setting: true,
+        layout: WbLayout.desktop,
+        builder: buildHomeScreenGalleryCase,
+        canvasSize: const Size(2400, 1400),
+      );
 
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(kWbCompareLayoutsKey), findsOneWidget);
+      expect(_captionFinder(WbLayout.desktop), findsOneWidget);
+      expect(_captionFinder(WbLayout.mobile), findsOneWidget);
+      await disposeTree(tester);
+    });
+
+    for (final layout in WbLayout.values) {
+      testWidgets('activity state updates both panes with primary $layout', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(2400, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final useCase = WidgetbookUseCase(
+          name: 'Playground',
+          builder: buildActivityScreenGalleryCase,
+        );
+        final root = WidgetbookRoot(
+          children: [
+            WidgetbookComponent(name: 'Activity', useCases: [useCase]),
+          ],
+        );
+        final state = WidgetbookState(
+          root: root,
+          path: useCase.path,
+          queryParams: {
+            'knobs': FieldCodec.encodeQueryGroup({
+              'Layout': wbLayoutLabel(layout),
+              'State': 'Rows',
+            }),
+          },
+        );
+        await _pumpPanes(tester, state);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(find.text('April 2025'), findsNWidgets(2));
+
+        // Keep the mounted compare tree, as the live workbench does. Only
+        // its URI-keyed primary is replaced by a knob change.
+        state.queryParams = {
+          'knobs': FieldCodec.encodeQueryGroup({
+            'Layout': wbLayoutLabel(layout),
+            'State': 'Failed to load',
+          }),
+        };
+        await _pumpPanes(tester, state);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(tester.takeException(), isNull);
+        expect(find.text('Activity could not be loaded.'), findsOneWidget);
+        expect(
+          find.text("Couldn't load activity. Try again in a moment."),
+          findsOneWidget,
+        );
+
+        state.queryParams = {
+          'knobs': FieldCodec.encodeQueryGroup({
+            'Layout': wbLayoutLabel(layout),
+            'State': 'Rows',
+          }),
+        };
+        await _pumpPanes(tester, state);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(tester.takeException(), isNull);
+        expect(find.text('April 2025'), findsNWidgets(2));
+        expect(find.text('Activity could not be loaded.'), findsNothing);
+        expect(
+          find.text("Couldn't load activity. Try again in a moment."),
+          findsNothing,
+        );
+        await disposeTree(tester);
+        state.dispose();
+      });
+    }
   });
 }
 
