@@ -6,6 +6,7 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:flutter/widgets.dart';
 
 import 'src/core/layout/app_layout.dart';
+import 'widgetbook/support/wb_fake_scanner_platform.dart';
 import 'widgetbook/widgetbook_app.dart';
 
 /// Widgetbook entry point.
@@ -23,6 +24,11 @@ import 'widgetbook/widgetbook_app.dart';
 /// opaque chrome is better for inspecting flat component previews.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Scanner-hosting fixtures render the real `MobileScanner` against a fake
+  // camera platform and a fake UR decoder; Widgetbook has neither a camera
+  // permission nor the Rust bridge.
+  WbFakeMobileScannerPlatform.install();
+  WbFakeUrScanRustApi.install();
   await initializeDesktopWindow();
   if (isDesktopLayoutPlatform) {
     await showDesktopWindow();
