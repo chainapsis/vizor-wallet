@@ -107,12 +107,17 @@ Widget receiveMobileFlowFixture({
         // escaping into Widgetbook's desktop-sized navigator.
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          home: MobileReceiveScreen(initialType: type),
+          home: MobileReceiveScreen(
+            initialType: type,
+            shareAddress: _ignoreSharedAddress,
+          ),
         ),
       ),
     ),
   );
 }
+
+Future<void> _ignoreSharedAddress(String address) async {}
 
 Widget buildReceiveMobileShieldedSheetUseCase(BuildContext context) {
   return const _ReceiveMobileSheetHarness(type: ReceiveAddressType.shielded);

@@ -2186,9 +2186,31 @@ Widget _buildMobileIronwoodMigrationUseCase({
         previewImmediatePlan: previewImmediatePlan,
         previewSurface: previewSurface,
         privateMigrationSupported: privateMigrationSupported,
+        openReleaseNotes: _ignoreMobileIronwoodReleaseNotes,
       ),
     ),
   );
+}
+
+Future<void> _ignoreMobileIronwoodReleaseNotes() async {}
+
+class _PreviewIronwoodMigrationAnnouncementStore
+    implements IronwoodMigrationAnnouncementStore {
+  final Set<String> _seen = <String>{};
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+  }) async => _seen.contains('$network|$accountUuid');
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+  }) async {
+    _seen.add('$network|$accountUuid');
+  }
 }
 
 Widget _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
@@ -2371,6 +2393,9 @@ Widget _buildDesktopHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
+      ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
+        _PreviewIronwoodMigrationAnnouncementStore(),
+      ),
     ],
     child: const _DesktopHomeHarness(),
   );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' show CircularProgressIndicator;
+import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:widgetbook/widgetbook.dart';
@@ -256,6 +257,41 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('request_sheet_back')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('request_amount_input')), findsOneWidget);
+    await disposeTree(tester);
+  });
+
+  testWidgets('the mobile screen share action stays inside Widgetbook', (
+    tester,
+  ) async {
+    final shareCalls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/share'),
+      (call) async {
+        shareCalls.add(call);
+        return 'dev.fluttercommunity.plus/share/success';
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('dev.fluttercommunity.plus/share'),
+        null,
+      ),
+    );
+
+    await _pumpSettled(
+      tester,
+      buildReceiveScreenGalleryCase,
+      knobs: {
+        ..._mobileLane,
+        'Address': receiveMobileAddressCaseLabel(
+          ReceiveMobileAddressCase.loaded,
+        ),
+      },
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_share')));
+    await tester.pump();
+
+    expect(shareCalls, isEmpty);
     await disposeTree(tester);
   });
 

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart' show CircularProgressIndicator;
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter/services.dart'
+    show FontLoader, MethodCall, MethodChannel, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/widgetbook/gallery/migration_gallery.dart';
 import 'package:zcash_wallet/widgetbook/migration_use_cases.dart';
-import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
 import 'package:zcash_wallet/widgetbook/widgetbook_app.dart';
 
@@ -305,6 +309,61 @@ void main() {
       // One of the two options is always the off-lane home screen.
       tolerateOverflow: true,
     );
+    await _drainFixtureTimers(tester);
+  });
+
+  testWidgets('desktop home announcement persists only in preview memory', (
+    tester,
+  ) async {
+    final errors = await _pumpCollectingErrors(
+      tester,
+      buildMigrationHomeAnnouncementGalleryCase,
+      knobs: _desktopLayout,
+    );
+    expect(errors, isEmpty);
+
+    final overlayFinder = find.byKey(
+      const ValueKey('ironwood_migration_announcement_overlay'),
+    );
+    final container = ProviderScope.containerOf(tester.element(overlayFinder));
+    final store = container.read(ironwoodMigrationAnnouncementStoreProvider);
+    expect(
+      store,
+      isNot(isA<SharedPreferencesIronwoodMigrationAnnouncementStore>()),
+    );
+
+    tester.widget<AppPaneModalOverlay>(overlayFinder).onDismiss();
+    await tester.pump();
+    expect(overlayFinder, findsNothing);
+    await _drainFixtureTimers(tester);
+  });
+
+  testWidgets('mobile intro release note stays inside Widgetbook', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final errors = await _pumpCollectingErrors(
+      tester,
+      buildMigrationFlowGalleryCase,
+      knobs: {
+        ..._mobileLayout,
+        'Step': migrationMobileStepCaseLabel(MigrationMobileStepCase.intro),
+      },
+    );
+    expect(errors, isEmpty);
+
+    await tester.tap(find.text('Official release note'));
+    await tester.pump();
+    expect(platformCalls, isEmpty);
     await _drainFixtureTimers(tester);
   });
 
