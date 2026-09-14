@@ -285,27 +285,14 @@ async fn run_with<R: DiscoveryRpc>(
                     })
                 })
                 .map_err(|e| SyncError::db(e.to_string()))?;
-                let receivers = db
-                    .get_transparent_receivers(id, true, false)
-                    .map_err(|e| SyncError::db(e.to_string()))?;
-                let mut candidates = receivers
-                    .into_iter()
-                    .filter_map(|(addr, meta)| {
-                        if meta.scope() == Some(scope) {
-                            meta.address_index().map(|i| {
-                                (
-                                    i.index(),
-                                    addr.encode(&super::transparent_utxo_query_network(network)),
-                                )
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .filter(|(i, _)| *i >= progress.next_index)
-                    .collect::<Vec<_>>();
-                candidates.sort_by_key(|c| c.0);
-                candidates.truncate(progress.batch_size(gap));
+                let candidates = next_candidates(
+                    db_path,
+                    network,
+                    id,
+                    scope_code,
+                    progress.next_index,
+                    progress.batch_size(gap),
+                )?;
                 if candidates.first().map(|c| c.0) != Some(progress.next_index) {
                     return Err(SyncError::db(
                         "Ledger discovery candidate range is incomplete",
@@ -328,8 +315,15 @@ async fn run_with<R: DiscoveryRpc>(
                     if index != progress.next_index {
                         return Err(SyncError::db("Ledger discovery candidate index skipped"));
                     }
-                    let Some(used) =
-                        store_history(&mut history, db, network, scan_tip, should_exit).await?
+                    let Some(used) = store_history(
+                        &mut history,
+                        db,
+                        network,
+                        scan_tip,
+                        (id, scope_code, index),
+                        should_exit,
+                    )
+                    .await?
                     else {
                         return Ok(());
                     };
@@ -420,19 +414,74 @@ async fn run_with<R: DiscoveryRpc>(
     Ok(())
 }
 
+// Read only the next bounded child-index range, rather than decoding every
+// registered receiver again for each four-address batch.
+fn next_candidates(
+    db_path: &str,
+    network: WalletNetwork,
+    id: AccountUuid,
+    scope: u32,
+    next_index: u32,
+    limit: usize,
+) -> Result<Vec<(u32, String)>, SyncError> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT a.transparent_child_index, a.cached_transparent_receiver_address
+         FROM addresses a JOIN accounts acct ON acct.id=a.account_id
+         WHERE acct.uuid=?1 AND a.key_scope=?2 AND a.transparent_child_index>=?3
+           AND a.cached_transparent_receiver_address IS NOT NULL
+         ORDER BY a.transparent_child_index LIMIT ?4",
+        )
+        .map_err(|e| SyncError::db(e.to_string()))?;
+    let rows = stmt
+        .query_map(
+            params![
+                id.expose_uuid().as_bytes().as_slice(),
+                scope,
+                next_index,
+                limit
+            ],
+            |r| Ok((r.get::<_, u32>(0)?, r.get::<_, String>(1)?)),
+        )
+        .map_err(|e| SyncError::db(e.to_string()))?;
+    rows.map(|r| {
+        let (index, address) = r.map_err(|e| SyncError::db(e.to_string()))?;
+        super::transparent_address_for_query(
+            &address,
+            network,
+            super::transparent_utxo_query_network(network),
+        )
+        .map(|a| (index, a))
+        .map_err(SyncError::parse)
+    })
+    .collect()
+}
+
 async fn store_history(
     history: &mut History,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     tip: u32,
+    context: (AccountUuid, u32, u32),
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<bool>, SyncError> {
-    let mut used = false;
+    let started = std::time::Instant::now();
+    let mut transactions = 0usize;
+    let mut response_bytes = 0usize;
     loop {
         let raw = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(None), r = history.next() => r.transpose()? };
         let Some(raw) = raw else {
-            return Ok(Some(used));
+            log::info!(
+                "ledger discovery history: account={} scope={} index={} rpc_count=1 transactions={} response_bytes={} elapsed_ms={}",
+                context.0.expose_uuid(), context.1, context.2, transactions,
+                response_bytes,
+                started.elapsed().as_millis()
+            );
+            return Ok(Some(transactions > 0));
         };
+        response_bytes += prost::Message::encoded_len(&raw);
         let height = u32::try_from(raw.height)
             .ok()
             .filter(|h| *h > 0 && *h <= tip)
@@ -449,7 +498,7 @@ async fn store_history(
             decrypt_and_store_transaction(&network, db, &tx, Some(BlockHeight::from_u32(height)))
         })
         .map_err(|e| SyncError::db(format!("Ledger history store: {e}")))?;
-        used = true;
+        transactions += 1;
     }
 }
 
