@@ -1,3 +1,4 @@
+import '../../../providers/app_security_provider.dart';
 import '../../address_scan/widgets/payment_request_input.dart';
 import '../../pay/providers/payment_request_input_origin_provider.dart';
 import '../../../core/navigation/payment_request_intake.dart';
@@ -66,6 +67,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   _SwapModalSurface? _swapModal;
   var _addressEditorGeneration = 0;
   AddressInputResult? _resolvedPaymentInput;
+  ({String address, bool remember})? _addressRequestDraft;
   String? _addressEditorDraft;
   bool _addressEditorRemember = false;
 
@@ -103,6 +105,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         _swapModal != _SwapModalSurface.contactPicker) {
       _addressEditorDraft = null;
       _addressEditorRemember = false;
+    }
+    if (_addressRequestDraft case final saved?) {
+      _addressEditorDraft = saved.address;
+      _addressEditorRemember = saved.remember;
+      _addressRequestDraft = null;
     }
     _addressEditorGeneration++;
     setState(() => _swapModal = _SwapModalSurface.addressEditor);
@@ -144,6 +151,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     final remember = _addressEditorRemember;
     final contextKey = addressInputContextKey(ref, includeSwap: true);
     final arrival = ref.read(paymentRequestArrivalProvider);
+    _addressRequestDraft = (address: address, remember: remember);
     _closeSwapModal();
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted ||
@@ -159,6 +167,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         _swapModal == null &&
         contextKey == addressInputContextKey(ref, includeSwap: true);
     void restore(String address) {
+      _addressRequestDraft = null;
       _addressEditorGeneration++;
       setState(() {
         _addressEditorDraft = address;
@@ -176,10 +185,14 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         chain: swap.externalAsset.chainTicker,
         isCurrent: isCurrent,
         useAddress: restore,
-        onCancel: () => restore(address),
+        onCancel: _openAddressEditor,
       ),
     );
-    if (!accepted && isCurrent()) restore(address);
+    if (!accepted &&
+        isCurrent() &&
+        arrival == ref.read(paymentRequestArrivalProvider)) {
+      restore(address);
+    }
   }
 
   Future<MobileScanOutcome> _resolveSwapInput(String raw) async {
@@ -269,26 +282,40 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     }
   }
 
+  void _invalidateAddressEditorDraft() {
+    _addressRequestDraft = null;
+    _addressEditorGeneration++;
+    _addressEditorDraft = null;
+    _addressEditorRemember = false;
+    _resolvedPaymentInput = null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen(appSecurityProvider.select((value) => value.isUnlocked), (
+      _,
+      unlocked,
+    ) {
+      if (!unlocked) setState(_invalidateAddressEditorDraft);
+    });
     ref.listen(
       accountProvider.select((value) => value.value?.activeAccountUuid),
       (_, _) {
-        setState(() => _addressEditorGeneration++);
+        setState(_invalidateAddressEditorDraft);
       },
     );
     ref.listen(rpcEndpointProvider.select((value) => value.networkName), (
       _,
       _,
     ) {
-      setState(() => _addressEditorGeneration++);
+      setState(_invalidateAddressEditorDraft);
     });
     ref.listen(
       swapStateProvider.select(
         (value) => (value.externalAsset, value.direction, value.payMode),
       ),
       (_, _) {
-        setState(() => _addressEditorGeneration++);
+        setState(_invalidateAddressEditorDraft);
       },
     );
     ref.listen<String?>(

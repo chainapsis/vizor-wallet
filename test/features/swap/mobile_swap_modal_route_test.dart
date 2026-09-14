@@ -1,6 +1,10 @@
 @Tags(['mobile'])
 library;
 
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/present_payment_request.dart';
+import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -802,9 +806,9 @@ void main() {
   }
 
   for (final paste in [false, true]) {
-    for (final cancel in [false, true]) {
+    for (final action in ['keep', 'cancel', 'replace', 'zcash', 'context']) {
       testWidgets(
-        'payment ${paste ? 'paste' : 'QR'} restores editor with ${cancel ? 'previous draft' : 'address only'}',
+        'payment ${paste ? 'paste' : 'QR'} restores editor with $action',
         (tester) async {
           const address = '0x1111111111111111111111111111111111111111';
           const draft = '0x2222222222222222222222222222222222222222';
@@ -837,6 +841,9 @@ void main() {
           await tester.pumpAndSettle();
           final field = find.byKey(const ValueKey('swap_destination_field'));
           await tester.enterText(field, draft);
+          await tester.tap(
+            find.byKey(const ValueKey('swap_address_remember_toggle')),
+          );
           if (paste) {
             final textField = tester.widget<MobileTextField>(
               find.byType(MobileTextField),
@@ -870,7 +877,46 @@ void main() {
           final flow = container.read(crossChainPaymentFlowProvider.notifier);
           flow.present(pending);
           expect(flow.canUseAddressOnly, isTrue);
-          if (cancel) {
+          if (action == 'replace' || action == 'zcash' || action == 'context') {
+            if (action == 'zcash') {
+              presentPaymentRequest(
+                tester.state<ConsumerState>(find.byType(MobileSwapScreen)).ref,
+                const SendPrefillArgs(
+                  id: 'replacement-zcash',
+                  source: kPaymentUriPrefillSource,
+                  address: 'u1recipient',
+                ),
+              );
+              container.read(paymentRequestFlowProvider.notifier).clear();
+            } else {
+              flow.present(
+                CrossChainPaymentRequest(
+                  id: 'replacement',
+                  rawUri: raw,
+                  address: address,
+                  isEvm: true,
+                  chainId: '1',
+                ),
+              );
+              flow.dismiss();
+            }
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(const ValueKey('swap_destination_field')),
+              findsNothing,
+            );
+            if (action == 'context') {
+              container
+                  .read(swapStateProvider.notifier)
+                  .selectDirection(SwapDirection.externalToZec);
+              await tester.pumpAndSettle();
+              container
+                  .read(swapStateProvider.notifier)
+                  .selectDirection(SwapDirection.zecToExternal);
+              await tester.pumpAndSettle();
+            }
+            await tester.tap(find.text('Add recipient address'));
+          } else if (action == 'cancel') {
             flow.dismiss();
           } else {
             flow.useAddressOnly();
@@ -878,7 +924,18 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             tester.widget<TextField>(field).controller!.text,
-            cancel ? draft : address,
+            action == 'context'
+                ? before.destinationText
+                : action == 'keep'
+                ? address
+                : draft,
+          );
+          expect(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_address_remember_checkbox')),
+              matching: find.byType(AppIcon),
+            ),
+            action == 'context' ? findsNothing : findsOneWidget,
           );
           expect(
             container.read(swapStateProvider).destinationText,
