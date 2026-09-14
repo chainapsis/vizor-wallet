@@ -179,6 +179,29 @@ void main() {
     expect(launchedUrls, [expected]);
   });
 
+  testWidgets('tx id uses the injected explorer launcher', (tester) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+    final hostLaunches = <String>[];
+    final previewLaunches = <Uri>[];
+    _mockUrlLauncher(tester, hostLaunches);
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        explorerLauncher: (uri) async {
+          previewLaunches.add(uri);
+          return true;
+        },
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+    await tester.tap(find.text(truncatedTxid(_txid)));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(previewLaunches.single.path, contains(_txid));
+    expect(hostLaunches, isEmpty);
+  });
+
   testWidgets('TEX recipient stays distinct on status screens', (tester) async {
     rustApi.executeResult = _executeResult(status: 'broadcasted');
 
@@ -928,6 +951,7 @@ Widget _harness(
   KeystoneBroadcastArgs? keystone,
   bool isHardware = false,
   SendStatusBroadcastRunner? broadcastRunner,
+  ZcashExplorerLauncher? explorerLauncher,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -940,6 +964,7 @@ Widget _harness(
           args: args,
           keystone: keystone,
           broadcastRunner: broadcastRunner,
+          explorerLauncher: explorerLauncher,
         ),
       ),
     ],

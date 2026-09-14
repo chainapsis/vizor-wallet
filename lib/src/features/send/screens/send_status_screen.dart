@@ -47,10 +47,12 @@ class SendStatusScreen extends ConsumerStatefulWidget {
     required this.args,
     this.keystone,
     this.broadcastRunner,
+    this.explorerLauncher,
   });
 
   final SendReviewArgs args;
   final KeystoneBroadcastArgs? keystone;
+  final ZcashExplorerLauncher? explorerLauncher;
 
   /// The software send's missing-mnemonic branch is `!Platform.isMacOS`, so a
   /// macOS test host cannot reach it through the real runner.
@@ -213,6 +215,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       txidHex: txid,
       txidOrder: ZcashExplorerTxidOrder.display,
       customTemplate: ref.read(zcashExplorerProvider),
+      launcher: widget.explorerLauncher,
     );
     if (launched || !mounted) return;
     _copyTransactionHash();
