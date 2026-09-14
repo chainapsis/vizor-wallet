@@ -239,6 +239,9 @@ Widget _sendScreenScope({
     // bounce the error preview back to a spinner (and leave a timer running).
     retry: (_, _) => null,
     overrides: [
+      sendPreviousTransactionCountLoaderProvider.overrideWithValue(
+        ({required network, required accountUuid, required address}) async => 0,
+      ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState, privacyMode: privacyMode),
       ),
@@ -299,10 +302,12 @@ class _SendScreenRouterHarness extends StatefulWidget {
   const _SendScreenRouterHarness({
     required this.screen,
     this.simulateResult = false,
+    this.standaloneReview = false,
   });
 
   final WidgetBuilder screen;
   final bool simulateResult;
+  final bool standaloneReview;
 
   @override
   State<_SendScreenRouterHarness> createState() =>
@@ -316,12 +321,18 @@ class _SendScreenRouterHarnessState extends State<_SendScreenRouterHarness> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: '/send',
+      initialLocation: widget.standaloneReview ? '/send/review' : '/send',
       routes: [
-        GoRoute(path: '/send', builder: (context, _) => widget.screen(context)),
+        GoRoute(
+          path: '/send',
+          builder: (context, _) => widget.standaloneReview
+              ? wbSidebarDestination('/send')
+              : widget.screen(context),
+        ),
         GoRoute(
           path: '/send/review',
           builder: (context, state) {
+            if (widget.standaloneReview) return widget.screen(context);
             final args = state.extra! as SendReviewArgs;
             return sendReviewContentFixture(
               amountText: ZecAmount.fromZatoshi(
@@ -384,6 +395,7 @@ class _SendScreenRouterHarnessState extends State<_SendScreenRouterHarness> {
           '/send/status',
           '/send/keystone/scan',
           '/unlock',
+          '/donation',
         ])
           GoRoute(
             path: path,
@@ -782,6 +794,7 @@ Widget sendReviewScreenFixture({
         // This review fixture has no PCZT preparation/signing simulation.
         confirmationEnabled: !hardwareAccount,
       ),
+      standaloneReview: true,
     ),
   );
 }
@@ -907,10 +920,9 @@ String sendVerifyOverlayAddressFor({
 /// The real [SendVerifyAddressOverlay] as the review and status screens
 /// present it — over the pane, in its own scrim.
 ///
-/// The contact's "N previous transactions" sub-line stays absent: its count
-/// comes from a private provider that opens the wallet DB, so the preview's
-/// failed read simply omits the line. The counted variants are on the
-/// `Verify address > Desktop modal` case instead.
+/// The contact's "N previous transactions" sub-line stays absent: the scope
+/// supplies a deterministic zero without opening the wallet DB. Counted
+/// variants are on the `Verify address > Desktop modal` case instead.
 Widget sendVerifyAddressOverlayFixture({
   SendVerifyOverlayRecipient recipient = SendVerifyOverlayRecipient.address,
   bool shielded = true,

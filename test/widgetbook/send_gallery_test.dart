@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_verify_address_overlay.dart';
 import 'package:widgetbook/widgetbook.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -60,6 +64,79 @@ const _mobileSendScreenStepAxes = <SendScreenMobileStep, List<String>>{
 // layout axis is driven by explicit query params rather than the compiled
 // lane, so both test lanes exercise the same combinations.
 void main() {
+  for (final flow in SendFlowKind.values) {
+    for (final action in [
+      flow == SendFlowKind.donation ? 'Support Vizor' : 'Cancel',
+    ]) {
+      testWidgets('standalone ${flow.name} review exits through $action', (
+        tester,
+      ) async {
+        await pumpUseCase(
+          tester,
+          buildSendReviewScreenGalleryCase,
+          knobs: {'Flow': sendReviewScreenFlowLabel(flow)},
+        );
+        await tester.pumpAndSettle();
+        final router = GoRouter.of(
+          tester.element(find.byType(SendReviewScreen)),
+        );
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          '/send/review',
+        );
+        await tester.tap(find.text(action));
+        await tester.pumpAndSettle();
+        final destination = flow == SendFlowKind.donation
+            ? '/donation'
+            : '/send';
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          destination,
+        );
+        expect(router.routerDelegate.currentConfiguration.error, isNull);
+        expect(find.byType(SendReviewScreen), findsNothing);
+        expect(find.textContaining(destination), findsWidgets);
+        expect(tester.takeException(), isNull);
+        await disposeTree(tester);
+      });
+    }
+  }
+
+  testWidgets('saved contact overlay uses isolated history lookup', (
+    tester,
+  ) async {
+    for (final shielded in [true, false]) {
+      await pumpUseCase(
+        tester,
+        (_) => sendVerifyAddressOverlayFixture(
+          recipient: SendVerifyOverlayRecipient.contact,
+          shielded: shielded,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final overlay = find.byType(SendVerifyAddressOverlay);
+      final container = ProviderScope.containerOf(
+        tester.element(overlay),
+        listen: false,
+      );
+      expect(
+        container.exists(sendPreviousTransactionCountLoaderProvider),
+        isTrue,
+      );
+      final widget = tester.widget<SendVerifyAddressOverlay>(overlay);
+      expect(
+        await container.read(sendPreviousTransactionCountLoaderProvider)(
+          network: 'mainnet',
+          accountUuid: widget.accountUuid,
+          address: widget.address,
+        ),
+        0,
+      );
+      expect(find.text('Blue Door Coffee'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await disposeTree(tester);
+    }
+  });
   testWidgets(
     'hardware review confirmation is disabled in every fixture flow',
     (tester) async {

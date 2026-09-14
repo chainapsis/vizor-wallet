@@ -32,6 +32,31 @@ class _PreviousTransactionCountRequest {
   int get hashCode => Object.hash(accountUuid, address);
 }
 
+typedef SendPreviousTransactionCountLoader =
+    Future<int> Function({
+      required String network,
+      required String accountUuid,
+      required String address,
+    });
+
+/// Loads recipient history; previews can replace the wallet-backed lookup.
+final sendPreviousTransactionCountLoaderProvider =
+    Provider<SendPreviousTransactionCountLoader>((ref) {
+      return ({
+        required network,
+        required accountUuid,
+        required address,
+      }) async {
+        final dbPath = await getWalletDbPath();
+        return rust_sync.getPreviousTransactionCountForAddress(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+          address: address,
+        );
+      };
+    });
+
 final _previousTransactionCountForAddressProvider = FutureProvider.autoDispose
     .family<int, _PreviousTransactionCountRequest>((ref, request) async {
       final address = request.address.trim();
@@ -39,9 +64,7 @@ final _previousTransactionCountForAddressProvider = FutureProvider.autoDispose
 
       try {
         final network = ref.watch(rpcEndpointProvider).networkName;
-        final dbPath = await getWalletDbPath();
-        return rust_sync.getPreviousTransactionCountForAddress(
-          dbPath: dbPath,
+        return await ref.watch(sendPreviousTransactionCountLoaderProvider)(
           network: network,
           accountUuid: request.accountUuid,
           address: address,
