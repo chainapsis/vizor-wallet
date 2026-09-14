@@ -38,6 +38,7 @@ import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
         resolveSendReviewRoutePayload,
+        sendReviewRouteLocation,
         resolveSendStatusRoutePayload,
         SendFlowKind,
         SendStatusRoutePayloadObserver,
@@ -2312,7 +2313,9 @@ Widget _harness(
   String initialLocation = '/send/review',
 }) {
   final router = GoRouter(
-    initialLocation: initialLocation,
+    initialLocation: initialLocation == '/send/review'
+        ? sendReviewRouteLocation(args.sendFlowId) : initialLocation,
+    initialExtra: args,
     refreshListenable: routerRefresh,
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
@@ -2324,7 +2327,7 @@ Widget _harness(
       GoRoute(
         path: '/send/review',
         builder: (context, state) => switch (resolveSendReviewRoutePayload(
-          routePayload: state.extra,
+          routePayload: state.extra ?? (state.uri.queryParameters['flow'] == null ? args : null),
           retainedPayload: ProviderScope.containerOf(
             context,
           ).read(sendStatusRoutePayloadProvider),
