@@ -500,6 +500,74 @@ void main() {
     },
   );
 
+  testWidgets('Pay preserves a newer arrival during presentation frame wait', (
+    tester,
+  ) async {
+    final parsed = Completer<CrossChainPaymentRequest>();
+    await _setMobileViewport(tester, const Size(393, 852));
+    await tester.pumpWidget(_app(paymentParser: (_) => parsed.future));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_amount_input')),
+      '10',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobilePayScreen)),
+    );
+    const raw = 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=0.1';
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_pay_recipient_input')),
+      raw,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('review_pasted_payment_request')),
+    );
+    await tester.pumpAndSettle();
+
+    parsed.complete(
+      const CrossChainPaymentRequest(
+        id: 'obsolete',
+        rawUri: raw,
+        address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+        isEvm: false,
+        chain: 'btc',
+      ),
+    );
+    // Finish resolution without delivering the presentation frame.
+    await tester.idle();
+    expect(container.read(paymentRequestArrivalProvider), 0);
+    const newer = CrossChainPaymentRequest(
+      id: 'newer-os-request',
+      rawUri: 'bitcoin:1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo?amount=2',
+      address: '1FsSia9rv4NeEwvJ2GvXrX7LyxYspbN2mo',
+      isEvm: false,
+      chain: 'btc',
+    );
+    await container
+        .read(paymentRequestIntakeProvider)
+        .receive(newer.rawUri, resolvedCrossChainRequest: newer);
+    final before = container.read(swapStateProvider);
+    await tester.pumpAndSettle();
+    expect(container.read(paymentUriPrefillProvider), same(newer));
+    expect(container.read(paymentRequestArrivalProvider), 1);
+    expect(
+      container.read(swapStateProvider).destinationText,
+      before.destinationText,
+    );
+    expect(
+      container.read(swapStateProvider).receiveAmountText,
+      before.receiveAmountText,
+    );
+    expect(find.text(raw), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final leaveStep in [false, true]) {
     testWidgets(
       'Pay discards a pending request after input or step changes (leaveStep: $leaveStep)',

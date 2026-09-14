@@ -262,9 +262,14 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         input == _recipientController.text &&
         _payModal.value == null &&
         contextKey == addressInputContextKey(ref, includeSwap: true);
+    // Only guard presentation: intake advances the arrival revision itself,
+    // while the input origin must remain valid for Keep editing afterward.
+    final arrival = ref.read(paymentRequestArrivalProvider);
     _closePayModal();
     await WidgetsBinding.instance.endOfFrame;
-    if (!isCurrent()) return;
+    if (!isCurrent() || arrival != ref.read(paymentRequestArrivalProvider)) {
+      return;
+    }
     await reviewPaymentRequestFromInput(
       ref,
       resolved.rawPaymentUri!,
