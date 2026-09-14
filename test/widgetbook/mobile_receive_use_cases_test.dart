@@ -142,13 +142,29 @@ void main() {
     expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Publicly visible'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
+    final sheet = find.byType(ReceiveAddressInfoSheet);
+    final firstItem = find.byKey(const ValueKey('receive_address_info_item_0'));
+    final secondItem = find.byKey(
+      const ValueKey('receive_address_info_item_1'),
+    );
+    final lastItem = find.byKey(const ValueKey('receive_address_info_item_3'));
+    final closeButton = find.byKey(
+      const ValueKey('receive_address_info_close'),
+    );
+    expect(tester.getSize(sheet).width, 361);
+    expect(tester.getBottomLeft(sheet).dy, 820);
+    expect(tester.getSize(closeButton), const Size(329, 50));
     expect(
-      tester.getSize(find.byType(ReceiveAddressInfoSheet)),
-      const Size(361, 479),
+      tester.getTopLeft(secondItem).dy - tester.getBottomLeft(firstItem).dy,
+      moreOrLessEquals(8, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(find.byType(ReceiveAddressInfoSheet)),
-      const Offset(16, 341),
+      tester.getTopLeft(closeButton).dy - tester.getBottomLeft(lastItem).dy,
+      moreOrLessEquals(24, epsilon: 0.1),
+    );
+    expect(
+      tester.getBottomLeft(sheet).dy - tester.getBottomLeft(closeButton).dy,
+      moreOrLessEquals(32, epsilon: 0.1),
     );
   });
 }
