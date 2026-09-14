@@ -378,6 +378,42 @@ fn import_ufvk_account(
     Ok((account_id.expose_uuid().to_string(), ua.encode(&network)))
 }
 
+/// Idempotent, seed-free registration for the isolated Gift Card observer DB.
+/// The caller serializes all observer DB operations, including scans.
+pub(crate) fn register_gift_card_observer(
+    db_path: &str,
+    network: WalletNetwork,
+    mnemonic: &[u8],
+    expected_address: &str,
+    birthday_height: u64,
+) -> Result<String, String> {
+    if birthday_height == 0 || birthday_height > u32::MAX as u64 {
+        return Err("Invalid Gift Card birthday".into());
+    }
+    let seed = mnemonic_bytes_to_seed(mnemonic)?;
+    let ufvk = software_account_ufvk(network, &seed, 0)?;
+    let (address, _) = ufvk.default_address(shielded_address_request())
+        .map_err(|e| e.to_string())?;
+    if address.encode(&network) != expected_address {
+        return Err("Gift Card address does not match its recovery phrase".into());
+    }
+    drop(seed);
+    ensure_db_migrated_once(db_path, network)?;
+    let mut db = open_wallet_db_for_mutation(db_path, network)?;
+    if let Some(account) = db.get_account_for_ufvk(&ufvk).map_err(|e| e.to_string())? {
+        if !matches!(account.purpose(), AccountPurpose::ViewOnly) {
+            return Err("Gift Card observer must be view-only".into());
+        }
+        return Ok(account.id().expose_uuid().to_string());
+    }
+    let account = db.import_account_ufvk(
+        "Gift Card observer", &ufvk,
+        &make_birthday(network, Some(birthday_height)),
+        AccountPurpose::ViewOnly, None,
+    ).map_err(|e| e.to_string())?;
+    Ok(account.id().expose_uuid().to_string())
+}
+
 /// Add an additional account (from a different seed) to the wallet database.
 /// Uses import_account_ufvk with AccountPurpose::Spending so that accounts from
 /// different seeds can coexist in the same DB (create_account enforces single-seed).
