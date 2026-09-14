@@ -422,6 +422,34 @@ void main() {
       });
     }
 
+    for (final lateFailure in [false, true]) {
+      test(
+        'slow price cannot block claim or replace fallback: $lateFailure',
+        () async {
+          final priceGate = Completer<ZecMarketData?>();
+          marketData.pending = priceGate;
+          api.poolFixture = true;
+          api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+          final submission = service.claimPreparedLink(_claimSession());
+          final failed = expectLater(submission, throwsStateError);
+          // Claim preparation must start while the price request is unresolved.
+          await api.estimateStarted.future.timeout(const Duration(seconds: 3));
+          expect(priceGate.isCompleted, isFalse);
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          if (lateFailure) {
+            priceGate.completeError(StateError('late price failure'));
+          } else {
+            priceGate.complete(const ZecMarketData(usdPrice: 200));
+          }
+          await Future<void>.delayed(Duration.zero);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          api.estimateGate!.completeError(StateError('preparation failed'));
+          await failed;
+        },
+      );
+    }
+
     test('disabled pricing keeps enclosed fiat without a request', () async {
       pricingEnabled = false;
       container.invalidate(swapFeatureEnabledProvider);
@@ -2119,11 +2147,13 @@ class _ClaimDestinationRpcNotifier extends RpcEndpointNotifier {
 class _ClaimMarketDataSource implements ZecMarketDataSource {
   double? price;
   bool throwOnFetch = false;
+  Completer<ZecMarketData?>? pending;
   int calls = 0;
 
   @override
   Future<ZecMarketData?> fetchMarketData() async {
     calls++;
+    if (pending != null) return pending!.future;
     if (throwOnFetch) throw StateError('price unavailable');
     return price == null ? null : ZecMarketData(usdPrice: price!);
   }

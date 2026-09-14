@@ -40,6 +40,9 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
+// Optional display pricing must not inherit transport retries or Tor bootstrap
+// waits. After this deadline the claim proceeds with the enclosed fiat value.
+const _paymentLinkClaimPriceTimeout = Duration(seconds: 1);
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
@@ -1201,7 +1204,8 @@ class PaymentLinkService implements PaymentLinkOperations {
       try {
         final marketData = await _ref
             .read(zecMarketDataSourceProvider)
-            .fetchMarketData();
+            .fetchMarketData()
+            .timeout(_paymentLinkClaimPriceTimeout);
         claimFiatSnapshot = PaymentLinkFiatSnapshot.capture(
           amountZatoshi: session.link.amountZatoshi,
           zecUsdUnitPrice: marketData?.usdPrice,
