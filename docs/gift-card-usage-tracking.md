@@ -33,8 +33,10 @@ list and desktop creation completion screens; the mobile completion screen
 keeps only the original sharing guidance; sharing and activity detail retain their
 original presentation. List rows show a short status before the copy/QR actions,
 with a reserved slot for a checking spinner or a per-card error icon. Error
-details are available by hover or tap. Narrow mobile rows place the status
-below the amount/date to preserve the details and 44-pixel action targets.
+details are available by hover or tap. Mobile rows place the date and usage status on one line when they fit,
+with a middle-dot separator. Narrow rows or larger text place the status
+below the date, aligned to its start; row height grows with content while
+copy/QR actions retain 44-pixel targets.
 Activity detail does not request observation. No observer
 timer runs globally.
 

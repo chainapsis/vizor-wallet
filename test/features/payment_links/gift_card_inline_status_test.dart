@@ -28,7 +28,11 @@ void main() {
           ],
         );
         addTearDown(container.dispose);
-        const status = GiftCardUsageStatusView(address: 'card', inline: true);
+        final status = GiftCardUsageStatusView(
+          address: 'card',
+          inline: true,
+          dateText: mobile ? 'September 14' : null,
+        );
         final row = mobile
             ? PaymentLinkCardListMobileRow(
                 thumbnail: const SizedBox(),
@@ -37,7 +41,7 @@ void main() {
                 showLinkActions: true,
                 onCopyLink: _noop,
                 onShowQr: _noop,
-                usageStatus: status,
+                metadata: status,
               )
             : PaymentLinkCardListRow(
                 thumbnail: const SizedBox(),
@@ -80,12 +84,18 @@ void main() {
         notifier.update(true, false);
         await tester.pump(const Duration(milliseconds: 100));
         expect(icon(AppIcons.loader), findsOneWidget);
-        expect(tester.getRect(copy), original);
+        expect(
+          mobile ? tester.getRect(copy).left : tester.getRect(copy),
+          mobile ? original.left : original,
+        );
         notifier.update(false, false, {'card'});
         await tester.pump();
         expect(icon(AppIcons.loader), findsNothing);
         expect(icon(AppIcons.warningCircle), findsOneWidget);
-        expect(tester.getRect(copy), original);
+        expect(
+          mobile ? tester.getRect(copy).left : tester.getRect(copy),
+          mobile ? original.left : original,
+        );
         await tester.tap(find.text('Unused'));
         await tester.pump(const Duration(milliseconds: 500));
         expect(find.text('Card use: Unused. Update failed'), findsOneWidget);
@@ -101,7 +111,10 @@ void main() {
         expect(find.text('Used'), findsOneWidget);
         expect(icon(AppIcons.loader), findsNothing);
         expect(icon(AppIcons.warningCircle), findsNothing);
-        expect(tester.getRect(copy), original);
+        expect(
+          mobile ? tester.getRect(copy).left : tester.getRect(copy),
+          mobile ? original.left : original,
+        );
         notifier.update(false, false);
         for (final reason in [null, GiftCardUsageReason.awaitingConfirmation]) {
           usage = GiftCardUsage(reason: reason);
@@ -111,7 +124,10 @@ void main() {
             find.text(usage.label),
           );
           expect(paragraph.didExceedMaxLines, isFalse);
-          expect(tester.getRect(copy), original);
+          expect(
+            mobile ? tester.getRect(copy).left : tester.getRect(copy),
+            mobile ? original.left : original,
+          );
         }
         notifier.update(true, false);
         await tester.pump();
@@ -169,49 +185,85 @@ void main() {
     },
   );
 
-  for (final width in [288.0, 358.0, 440.0]) {
-    testWidgets('mobile row preserves card details and tap targets at $width', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AppTheme(
-            data: AppThemeData.dark,
-            child: Scaffold(
-              body: Center(
-                child: SizedBox(
-                  width: width,
-                  child: PaymentLinkCardListMobileRow(
-                    thumbnail: const SizedBox(),
-                    amountText: '0.25 ZEC',
-                    dateText: 'September 14',
-                    showLinkActions: true,
-                    onCopyLink: _noop,
-                    onShowQr: _noop,
-                    usageStatus: const Text('Unused'),
+  for (final (width, scale) in [
+    (288.0, 1.0),
+    (361.0, 1.0),
+    (440.0, 1.0),
+    (288.0, 1.5),
+    (361.0, 2.0),
+  ]) {
+    testWidgets(
+      'mobile metadata wraps without losing details at $width / $scale',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              giftCardUsageProvider('card').overrideWith(
+                (ref) async =>
+                    const GiftCardUsage(status: GiftCardUsageStatus.unused),
+              ),
+            ],
+            child: MaterialApp(
+              home: AppTheme(
+                data: AppThemeData.dark,
+                child: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: Scaffold(
+                    body: Center(
+                      child: SizedBox(
+                        width: width,
+                        child: PaymentLinkCardListMobileRow(
+                          thumbnail: const SizedBox(),
+                          amountText: '0.25 ZEC',
+                          dateText: 'September 14',
+                          showLinkActions: true,
+                          onCopyLink: _noop,
+                          onShowQr: _noop,
+                          metadata: const GiftCardUsageStatusView(
+                            address: 'card',
+                            inline: true,
+                            dateText: 'September 14',
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      for (final text in ['0.25 ZEC', 'September 14']) {
-        expect(
-          tester
-              .renderObject<RenderParagraph>(find.text(text))
-              .didExceedMaxLines,
-          isFalse,
         );
-      }
-      for (final key in [
-        'payment_link_mobile_card_copy_action',
-        'payment_link_mobile_card_qr_action',
-      ]) {
-        expect(tester.getSize(find.byKey(ValueKey(key))), const Size(44, 44));
-      }
-      expect(tester.takeException(), isNull);
-    });
+        await tester.pumpAndSettle();
+        for (final text in ['0.25 ZEC', 'September 14', 'Unused']) {
+          expect(
+            tester
+                .renderObject<RenderParagraph>(find.text(text))
+                .didExceedMaxLines,
+            isFalse,
+          );
+        }
+        final date = tester.getRect(find.text('September 14'));
+        final usage = tester.getRect(find.text('Unused'));
+        if (width == 440 && scale == 1) {
+          expect(usage.top, date.top);
+          expect(find.text(' · '), findsOneWidget);
+          expect(
+            tester.getSize(find.byType(PaymentLinkCardListMobileRow)).height,
+            lessThan(108),
+          );
+        } else if (width == 288 || scale > 1) {
+          expect(usage.top, greaterThanOrEqualTo(date.bottom));
+          expect(usage.left, date.left);
+          expect(find.text(' · '), findsNothing);
+        }
+        for (final key in [
+          'payment_link_mobile_card_copy_action',
+          'payment_link_mobile_card_qr_action',
+        ]) {
+          expect(tester.getSize(find.byKey(ValueKey(key))), const Size(44, 44));
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 }

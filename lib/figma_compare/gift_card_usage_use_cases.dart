@@ -92,9 +92,10 @@ Widget _list({bool mobile = false, bool checking = false}) {
               showLinkActions: true,
               onCopyLink: _noop,
               onShowQr: _noop,
-              usageStatus: GiftCardUsageStatusView(
+              metadata: GiftCardUsageStatusView(
                 address: address,
                 inline: true,
+                dateText: 'September 14',
               ),
             )
           else
