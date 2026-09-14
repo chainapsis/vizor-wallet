@@ -19,13 +19,11 @@ class PaymentLinkShareSheet extends StatefulWidget {
     required this.onShareError,
     required this.onCopyLink,
     required this.onClose,
-    this.usageStatus,
     super.key,
   });
 
   final PaymentLinkCardArtwork artwork;
   final String link;
-  final Widget? usageStatus;
   final Future<void> Function(Uint8List png, Rect origin) onShare;
   final VoidCallback onShareError;
   final Future<void> Function() onCopyLink;
@@ -93,7 +91,6 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
                 ),
               ),
             ),
-            if (widget.usageStatus != null) widget.usageStatus!,
             const SizedBox(height: AppSpacing.md),
             AppButton(
               key: _shareButtonKey,

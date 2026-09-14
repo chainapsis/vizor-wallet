@@ -957,7 +957,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
     required this.onSaveQr,
     required this.onCopyLink,
     this.shareCardKey,
-    this.usageStatus,
     this.saveLabel = 'Save QR code',
     this.copyLabel = 'Copy link',
     super.key,
@@ -969,7 +968,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
   final VoidCallback? onSaveQr;
   final VoidCallback? onCopyLink;
   final Key? shareCardKey;
-  final Widget? usageStatus;
   final String saveLabel;
   final String copyLabel;
 
@@ -995,7 +993,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
                 key: shareCardKey,
                 child: PaymentLinkQrShareCard(artwork: artwork, qrData: qrData),
               ),
-              ?usageStatus,
               const SizedBox(height: AppSpacing.lg),
               AppButton(
                 key: const ValueKey('payment_link_save_qr_button'),

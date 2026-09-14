@@ -2490,10 +2490,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               record.link.presentation?.artworkId,
             ),
             link: record.link.toUri().toString(),
-            usageStatus: GiftCardUsageStatusView(
-              address: record.link.address,
-              showCheckedAt: true,
-            ),
             onShare: (png, origin) =>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
@@ -2525,10 +2521,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final copying = _copyingLinkAddresses.contains(record.link.address);
     return PaymentLinkShareQrDesktopView(
       shareCardKey: _shareQrCardKey,
-      usageStatus: GiftCardUsageStatusView(
-        address: record.link.address,
-        showCheckedAt: true,
-      ),
       artwork: PaymentLinkCardArtwork.fromProtocolId(
         record.link.presentation?.artworkId,
       ),

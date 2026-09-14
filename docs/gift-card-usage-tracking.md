@@ -11,7 +11,10 @@ present usage records fail validation. Receiver claim records are unchanged.
 cleanup. A durable recovery draft is also the registration intent. Creation
 attempts registration before funding; observation failure leaves that intent
 retryable without causing another funding send. Related visible screens request
-refreshes, coalesced with a 30-second cooldown. No observer timer runs globally.
+refreshes, coalesced with a 30-second cooldown. Usage is displayed on the card
+list and creation completion screens; sharing and activity detail retain their
+original presentation. Activity detail does not request observation. No observer
+timer runs globally.
 
 A wallet-instance/network-scoped `gift_card_tracking_*` directory contains one
 multi-account observer DB. Accounts use UFVKs with `AccountPurpose::ViewOnly`;

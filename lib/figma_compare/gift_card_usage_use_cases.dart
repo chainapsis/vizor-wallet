@@ -7,7 +7,6 @@ import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import '../src/features/payment_links/models/gift_card_usage.dart';
 import '../src/features/payment_links/providers/gift_card_tracking_provider.dart';
-import '../src/features/payment_links/services/gift_card_tracking_service.dart';
 import '../src/features/payment_links/widgets/gift_card_usage_status.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
@@ -16,13 +15,6 @@ import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 void _noop() {}
 
 // Capture-only fixtures: no wallet, storage, keys or network are accessed.
-class _CaptureTracker implements GiftCardTrackingService {
-  @override
-  Future<void> refresh({bool force = false}) async {}
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 class _CaptureState extends GiftCardTrackingStateNotifier {
   @override
   GiftCardTrackingState build() =>
@@ -31,7 +23,6 @@ class _CaptureState extends GiftCardTrackingStateNotifier {
 
 Widget _fixture(Widget child) => ProviderScope(
   overrides: [
-    giftCardTrackingServiceProvider.overrideWithValue(_CaptureTracker()),
     giftCardTrackingStateProvider.overrideWith(_CaptureState.new),
     giftCardUsageProvider.overrideWith((ref, address) async {
       final status = switch (address) {
@@ -120,10 +111,6 @@ Widget buildGiftCardUsageShareCapture(BuildContext context) => _fixture(
   const PaymentLinkShareQrDesktopView(
     artwork: PaymentLinkCardArtwork.ruby,
     qrData: 'https://example.invalid/gift-card-preview',
-    usageStatus: GiftCardUsageStatusView(
-      address: 'unused',
-      showCheckedAt: true,
-    ),
     onBack: _noop,
     onSaveQr: _noop,
     onCopyLink: _noop,
@@ -135,7 +122,6 @@ Widget buildGiftCardUsageActivityCapture(BuildContext context) => _fixture(
     child: GiftCardActivityDetailView(
       kind: GiftCardActivityKind.created,
       artwork: PaymentLinkCardArtwork.ruby,
-      cardAddress: 'used',
       amountText: '0.25',
       statusText: 'Completed',
       statusIconName: AppIcons.checkCircle,
