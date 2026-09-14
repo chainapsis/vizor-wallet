@@ -19,8 +19,8 @@ use zcash_voting::round::BundleLayout;
 use zcash_voting::selection::select_notes_with_wallet_db;
 pub use zcash_voting::VotingEligibilityReport;
 use zcash_voting::{
-    BundlePolicy, DelegationPipeline, HyperTransport, NoopProgressReporter, PirFleet, VotingError,
-    VotingHotkey, WalletDbOpener,
+    BundlePolicy, DelegationPipeline, NoopProgressReporter, VotingError, VotingHotkey,
+    WalletDbOpener,
 };
 
 use crate::wallet::db::WalletDatabase;
@@ -29,6 +29,7 @@ use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
 
 use super::db::open_voting_db;
+use super::network_clients::pir_fleet;
 use super::observability;
 use super::transport::fetch_snapshot_tree_state;
 
@@ -110,19 +111,6 @@ pub async fn open_pipeline(
         hotkey,
         inputs.bundle_policy,
         inputs.session_json.as_deref(),
-    )
-    .map(Arc::new)
-}
-
-/// PIR fleet over the wallet's policy-aware HTTP transport.
-pub fn pir_fleet(
-    pir_server_urls: &[String],
-    pir_layout: PirLayout,
-) -> Result<Arc<PirFleet>, VotingError> {
-    PirFleet::new(
-        pir_server_urls,
-        pir_layout,
-        Arc::new(HyperTransport::with_route(super::route::VizorRoute::new())),
     )
     .map(Arc::new)
 }

@@ -2,6 +2,7 @@ pub mod db;
 pub mod delegation;
 pub mod hotkey;
 pub mod network;
+pub(crate) mod network_clients;
 pub mod observability;
 pub mod participation;
 pub(crate) mod route;

@@ -27,7 +27,8 @@ This document focuses on what Vizor's integration is responsible for.
 | `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `signer.rs` | The wallet seed boundary. Implements the crate's `SpendAuthSigner` over the account mnemonic: verifies the seed fingerprint, derives and randomizes the SpendAuth key, and returns only the detached signature. |
 | `delegation.rs` | Opens the crate's `DelegationPipeline` for an account and round (wallet DB opener, lightwalletd inputs, hotkey, bundle policy) and wraps the stage calls the FRB boundary still exposes: bundle setup, eligibility, snapshot PIR precompute, background proof, Keystone requests, and PIR cache warm-up. |
-| `route.rs` | `VizorRoute`, the request executor behind every routed SDK transport. Tor requests go through the wallet's Tor client and fail closed while Tor is selected but unusable; direct requests use the crate's `DirectRoute`. Chain, helper, and PIR traffic use it. Vote-tree sync still uses the crate's direct transport and remains a separate routing gap. |
+| `network_clients.rs` | The only construction boundary for voting SDK network clients. Injects one shared routed transport into chain, helper, PIR, pre-sync tree, and the round executor's separate tree slot. |
+| `route.rs` | `VizorRoute`, the request executor behind every routed SDK transport. Tor requests go through the wallet's Tor client and fail closed while Tor is selected but unusable; direct requests use the crate's `DirectRoute`. Chain, helper, PIR, and vote-tree traffic use it through `network_clients.rs`. |
 | `transport.rs` | Fetches the voting snapshot anchor over the process route policy (`open_lwd_channel` + `anchor_tree_state_with_retry_on`) so delegation inputs never dial lightwalletd directly. This module owns the route decision and *dial* retry; the crate owns the *RPC* retry. |
 | `../../api/voting_session.rs` | `VotingRoundSession`, the opaque FRB handle over `zcash_voting::RoundExecutor`. One session binds the sidecar, account, round, proposal roster, routed transports, and hotkey; Dart records ballot intents, reads the plan, and advances steps. |
 | `../../api/voting.rs` | The remaining stage-level FRB boundary: hotkey generation, delegation preparation, Keystone signature storage, vote-tree warm-up, share tracking passes, recovery reads, resets, and config resolution. |
@@ -103,7 +104,7 @@ fields for abandoned round work. Do not use it for best-effort vote-tree warmup
 failover while the user may still be signing or submitting.
 
 Vote-tree sync and reset are owned by the crate
-(`zcash_voting::precompute::{sync_vote_tree, reset_vote_tree}`); Vizor does not
+(`zcash_voting::precompute::{sync_vote_tree_with, reset_vote_tree}`); Vizor does not
 maintain its own tree-sync registry.
 
 Account-wide reset runs when switching away from the active account, removing an
@@ -306,3 +307,35 @@ stay in `zcash_voting::wire` while serialization helpers and conversions that
 pull richer crate internals (`VotingError`, payload transforms) live in
 `zcash_voting::wire_codec`. Call sites import canonical structs from
 `zcash_voting::wire::*`.
+
+## Network route invariants
+
+All foreground voting traffic follows the selected wallet route. SDK default
+clients connect directly: `RoundExecutor::with_transport` configures only the
+chain, not the tree. Construct network clients through `network_clients.rs`;
+never call SDK default constructors or the unconfigured tree-sync convenience
+function at a service call site. Pre-sync and executor tree sync use the same
+process-wide transport Arc because the SDK keys incremental tree clients by
+transport identity. Resolve the route per request, including after settings
+changes; an unavailable selected Tor route must never fall back to direct.
+
+| Entry | Construction / transport |
+| --- | --- |
+| Discovery, config, round status, participation | Dart `NetworkHttpClient` |
+| Snapshot anchor | `transport::fetch_snapshot_tree_state`, routed lightwalletd |
+| PIR endpoint resolution | `network_clients::routed_transport` |
+| PIR warm-up and delegation proofs | `network_clients::pir_fleet` |
+| Chain submission | `network_clients::round_executor` |
+| Helper preflight, delivery, confirmation | `network_clients::helper_client` |
+| Tree pre-sync | `network_clients::sync_vote_tree` |
+| Tree sync during cast | Executor built with `with_tree_transport` in the factory |
+
+`cargo test --lib` includes real socket-blocking tests for the service wiring,
+a route-switch/cache test, and `sdk_network_construction_stays_in_the_factory`.
+The source guard is supplemental (not a Rust semantic analyzer); aliases or
+future SDK APIs still require review. SDK upgrades must audit newly introduced
+network roles and add them to this table and the service tests.
+
+The app-wide intentional exceptions are iOS background migration's pinned
+transport and links opened by external apps. Neither grants foreground voting
+an exception. Local update proxies forward remote downloads through Tor.

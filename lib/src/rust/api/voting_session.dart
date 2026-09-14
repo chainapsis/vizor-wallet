@@ -17,8 +17,8 @@ import 'voting.dart';
 /// Opens a session bound to `ctx`'s account and round.
 ///
 /// `stored_hotkey_secret` is required only for sessions that cast votes.
-/// Chain and helper traffic use the wallet's network route; PIR and vote-tree
-/// traffic use the SDK's direct transport.
+/// Chain, helper, PIR, and vote-tree traffic use the wallet's network route
+/// through the shared voting client factory.
 ///
 /// Synchronous on purpose for now: opening the sidecar can run schema
 /// migrations, which would be better off the Dart isolate that draws the UI,

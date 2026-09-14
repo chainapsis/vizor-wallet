@@ -1,7 +1,7 @@
 //! Round session: the FRB surface over `zcash_voting::RoundExecutor`.
 //!
 //! One session binds the sidecar, the account, the round, its proposal
-//! roster, the routed chain and helper transports, and (when votes may be
+//! roster, routed chain/helper/tree transports, and (when votes may be
 //! cast) the voting hotkey. Dart records ballot decisions, reads the plan,
 //! and advances steps; the SDK owns step interpretation, proving threads,
 //! chain episodes, confirmation, and helper-share delivery. Dart keeps only
@@ -18,10 +18,9 @@ use zcash_voting::wire::{
 use zcash_voting::{
     BallotIntent, ChainAdvancePolicy, ChainSubmissionClientConfig, ChainSubmissionControl,
     DelegationStepInputs, FailureIsolation, HelperHealth, ProgressBaseline, ProposalRosterEntry,
-    RoundBinding, RoundDrivePolicy, RoundDriveReporterBridge, RoundDriver, RoundExecutor,
-    RoundHostContext, RoundHostSourceBridge, ShareTrackingDrivePolicy, ShareTrackingDriver,
-    ShareTrackingHostContext, ShareTrackingHostSourceBridge, ShareTrackingReporterBridge,
-    VotingErrorView,
+    RoundBinding, RoundDrivePolicy, RoundDriveReporterBridge, RoundDriver, RoundHostContext,
+    RoundHostSourceBridge, ShareTrackingDrivePolicy, ShareTrackingDriver, ShareTrackingHostContext,
+    ShareTrackingHostSourceBridge, ShareTrackingReporterBridge, VotingErrorView,
 };
 use zeroize::Zeroizing;
 
@@ -30,13 +29,9 @@ use crate::wallet::voting::delegation::{self, RoundInputs, VizorDelegationPipeli
 use crate::wallet::voting::signer::SeedSpendAuthSigner;
 use crate::wallet::voting::{db, hotkey, observability};
 
-use super::voting::{
-    delegation_static_inputs_for, helper_client, routed_transport, ApiVotingRoundContext,
-};
+use super::voting::{delegation_static_inputs_for, ApiVotingRoundContext};
 use super::voting_helpers::seed_from_mnemonic;
-
-type RoutedExecutor =
-    RoundExecutor<Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>>;
+use crate::wallet::voting::network_clients::{helper_client, round_executor, RoutedExecutor};
 
 /// One proposal from the authenticated round configuration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,8 +236,8 @@ pub struct VotingRoundSession {
 /// Opens a session bound to `ctx`'s account and round.
 ///
 /// `stored_hotkey_secret` is required only for sessions that cast votes.
-/// Chain and helper traffic use the wallet's network route; PIR and vote-tree
-/// traffic use the SDK's direct transport.
+/// Chain, helper, PIR, and vote-tree traffic use the wallet's network route
+/// through the shared voting client factory.
 ///
 /// Synchronous on purpose for now: opening the sidecar can run schema
 /// migrations, which would be better off the Dart isolate that draws the UI,
@@ -265,11 +260,10 @@ pub fn open_voting_round_session(
     let database =
         db::open_voting_db(&ctx.db_path, &ctx.account_uuid).map_err(VotingErrorView::from)?;
     let health = HelperHealth::default();
-    let executor = RoundExecutor::with_transport(
+    let executor = round_executor(
         Arc::clone(&database),
-        routed_transport(),
         ChainSubmissionClientConfig::for_network(inputs.network, binding.chain_endpoints.clone()),
-        helper_client(&health),
+        &health,
     )
     .map_err(|failure| {
         VotingErrorView::from(zcash_voting::VotingError::InvalidInput {
@@ -694,8 +688,11 @@ impl VotingRoundSession {
                 DelegationSigner::Keystone(KeystoneSignatureSource::Provided { sig, sighash })
             }
         };
-        let pir = delegation::pir_fleet(&self.binding.pir_server_urls, self.pir_layout)
-            .map_err(VotingErrorView::from)?;
+        let pir = crate::wallet::voting::network_clients::pir_fleet(
+            &self.binding.pir_server_urls,
+            self.pir_layout,
+        )
+        .map_err(VotingErrorView::from)?;
         let driver = self.pipeline().await?;
         Ok(Some(DelegationStepInputs {
             driver,
@@ -792,6 +789,205 @@ fn internal(message: String) -> VotingErrorView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn session_tree_and_chain_requests_fail_closed_without_presync() {
+        use crate::wallet::voting::test_support::{
+            test_api_round_params, test_note_info, ROUND_ID,
+        };
+        use zcash_voting::session::{Decision, NextStep};
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("wallet.sqlite");
+        let network = zcash_voting::Network::Regtest;
+        let mut round_params = test_api_round_params();
+        round_params.snapshot_height = 500;
+        let database = db::open_voting_db(path.to_str().unwrap(), "route-test").unwrap();
+        database.init_round(network, &round_params, None).unwrap();
+        database
+            .ensure_bundles(ROUND_ID, &[test_note_info(0)])
+            .unwrap();
+        let target = zcash_voting::VotingHotkey::from_stored_secret(&[0x21; 64], network)
+            .unwrap()
+            .delegation_target();
+        let (rho_signed, van_comm_rand) = {
+            use zcash_voting::backend::pasta_curves::{group::ff::PrimeField, pallas};
+            (
+                pallas::Base::from(5u64).to_repr(),
+                pallas::Base::from(9u64).to_repr(),
+            )
+        };
+        let rseed_output = [0x47u8; 32];
+        // The output note's rho is the spend's nullifier, so the commitment is
+        // derived from the value stored as `nf_signed` below.
+        let nf_signed = {
+            use zcash_voting::backend::pasta_curves::{group::ff::PrimeField, pallas};
+            pallas::Base::from(11u64).to_repr()
+        };
+        let address =
+            orchard::Address::from_raw_address_bytes(target.raw_orchard_address()).unwrap();
+        let rho = orchard::note::Rho::from_bytes(&nf_signed).unwrap();
+        let rseed = orchard::note::RandomSeed::from_bytes(rseed_output, &rho).unwrap();
+        let note = orchard::Note::from_parts(
+            address,
+            orchard::value::NoteValue::ZERO,
+            rho,
+            rseed,
+            orchard::note::NoteVersion::V3,
+        )
+        .unwrap();
+        let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+        let cmx_new = cmx.to_bytes();
+        let van_commitment = {
+            let (g_d_x, pk_d_x) = zcash_voting::action::derive_hotkey_x_coords_from_raw_address(
+                target.raw_orchard_address(),
+            )
+            .unwrap();
+            zcash_voting::governance::construct_van(
+                &g_d_x,
+                &pk_d_x,
+                zcash_voting::governance::BALLOT_DIVISOR,
+                &hex::decode(ROUND_ID).unwrap(),
+                &van_comm_rand,
+            )
+            .unwrap()
+        };
+        zcash_voting::storage::queries::store_delegation_data(
+            &database.conn(),
+            ROUND_ID,
+            &database.wallet_id(),
+            0,
+            &van_comm_rand,
+            &[],
+            &rho_signed,
+            &[],
+            &nf_signed,
+            &cmx_new,
+            &[0x45; 32],
+            &[0x46; 32],
+            &rseed_output,
+            &van_commitment,
+            zcash_voting::governance::BALLOT_DIVISOR,
+            0,
+            &[],
+            &[0x49; 32],
+            &{
+                let mut bytes = vec![0; zcash_voting::tx1::TX1_EFFECTS_LEN];
+                bytes[0] = zcash_voting::tx1::TX1_EFFECTS_VERSION;
+                bytes
+            },
+        )
+        .unwrap();
+        database.conn().execute("UPDATE bundles SET delegation_tx_hash = 'dtx', van_leaf_position = 7 WHERE round_id = ?1 AND wallet_id = ?2", rusqlite::params![ROUND_ID, database.wallet_id()]).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let session = open_voting_round_session(
+            ApiVotingRoundContext {
+                db_path: path.to_str().unwrap().to_string(),
+                account_uuid: "route-test".into(),
+                network: "regtest".into(),
+                lightwalletd_url: "http://127.0.0.1:1".into(),
+                round_params,
+                round_name: "Route test".into(),
+                session_json: None,
+                max_real_notes_per_bundle: None,
+                pir_layout: zcash_voting::config::PirLayout {
+                    pir_depth: 19,
+                    tier0_layers: 12,
+                    tier1_layers: 7,
+                    poly_len: 4096,
+                },
+            },
+            ApiRoundSessionBinding {
+                chain_endpoints: vec![url.clone()],
+                configured_helper_urls: vec![url.clone()],
+                vote_tree_node_urls: vec![url.clone()],
+                pir_server_urls: vec![],
+                proposals: vec![ApiProposalRosterEntry {
+                    proposal_id: 1,
+                    num_options: 2,
+                }],
+                ceremony_start_seconds: Some(0),
+                vote_end_time_seconds: Some(100_000),
+                max_proof_concurrency: 1,
+            },
+            Some(vec![0x21; 64]),
+            1,
+        )
+        .unwrap();
+        session
+            .executor
+            .set_ballot_intents(&[BallotIntent {
+                proposal_id: 1,
+                decision: Decision::Choice(0),
+            }])
+            .unwrap();
+        let cast = NextStep::CastVote {
+            bundle_index: 0,
+            proposal_id: 1,
+            choice: 0,
+        };
+        assert_eq!(
+            session.executor.plan().unwrap().next_steps.first(),
+            Some(&cast)
+        );
+        let host = RoundHostContext {
+            configured_helper_urls: vec![url.clone()],
+            now_seconds: 10,
+            ceremony_start_seconds: Some(0),
+            vote_end_time_seconds: Some(100_000),
+            vote_tree_node_urls: vec![url],
+            delegation: None,
+            chain_policy: ChainAdvancePolicy::default(),
+            max_proof_concurrency: 1,
+        };
+        crate::network_privacy::begin_tor_enable();
+        crate::network_privacy::fail_tor_enable();
+        let host_source = RoundHostSourceBridge::new(move || host.clone());
+        let report = RoundDriver::new(&session.executor)
+            .with_policy(RoundDrivePolicy {
+                max_dispatches: 1,
+                ..RoundDrivePolicy::default()
+            })
+            .run(
+                &host_source,
+                &session.control,
+                &RoundDriveReporterBridge::new(|_| {}),
+            )
+            .await;
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.failure.message.contains("vote tree sync")),
+            "{report:?}"
+        );
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+
+        // An imported submitted delegation goes straight to the SDK chain client
+        // without signing. Exercise that client's wiring on the same session.
+        database.conn().execute("UPDATE bundles SET note_identity_hashes_blob = NULL, dummy_nullifiers = NULL, rho_signed = NULL, padded_note_data = NULL, nf_signed = NULL, cmx_new = NULL, alpha = NULL, rseed_signed = NULL, rseed_output = NULL, rk = NULL, gov_nullifiers_blob = NULL, padded_note_secrets = NULL, pczt_sighash = NULL, tx1_effects = NULL, note_positions_blob = NULL, van_leaf_position = NULL, delegation_tx_hash = ?1 WHERE round_id = ?2 AND wallet_id = ?3", rusqlite::params!["ab".repeat(32), ROUND_ID, database.wallet_id()]).unwrap();
+        let report = RoundDriver::new(&session.executor)
+            .with_policy(RoundDrivePolicy {
+                max_dispatches: 1,
+                ..RoundDrivePolicy::default()
+            })
+            .run(
+                &host_source,
+                &session.control,
+                &RoundDriveReporterBridge::new(|_| {}),
+            )
+            .await;
+        assert!(!report.failures.is_empty(), "{report:?}");
+        assert!(
+            report.failures.iter().any(|record| record.failure.kind
+                == zcash_voting::RoundStepFailureKind::Transport
+                && record.failure.message.contains("Tor connection failed")),
+            "{report:?}"
+        );
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+    }
 
     fn policy(input: ApiRoundDrivePolicy) -> RoundDrivePolicy {
         round_drive_policy(Some(input))

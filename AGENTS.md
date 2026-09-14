@@ -574,6 +574,14 @@ process memory, applied by the Dart layer at startup and by the settings
 toggle; every foreground lightwalletd and HTTP path goes through the
 policy-aware openers and fails closed while Tor is starting or broken.
 
+- **Voting SDK network clients are constructed only in**
+  `rust/src/wallet/voting/network_clients.rs`. Chain, helper, PIR, and
+  vote-tree are separate transport roles; injecting a chain transport does
+  not configure the tree. Both tree pre-sync and the round executor must use
+  the same shared routed transport. When upgrading the SDK, audit new
+  network-capable entry points and extend the routing table and service tests
+  in `rust/src/wallet/voting/README.md`. The Rust suite includes a supplemental
+  constructor guard; it does not replace checking actual network behavior.
 - **iOS background migration transport is pinned direct**
   (`open_background_direct_lwd_channel`), bypassing the route policy as a
   product decision. A background pass never brings Tor up or borrows the

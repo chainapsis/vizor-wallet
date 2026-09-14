@@ -1697,8 +1697,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   /// Opens an SDK round session for this account and round.
   ///
-  /// Chain, helper, and PIR traffic follow the wallet's network route inside Rust.
-  /// Vote-tree traffic still uses the SDK's direct transport.
+  /// Chain, helper, PIR, and vote-tree traffic follow the wallet's network
+  /// route through the shared Rust voting client factory.
   VotingRoundSession _openRoundSession(
     VotingRustApi rust,
     _VotingSessionContext context, {

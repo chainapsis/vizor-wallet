@@ -1,10 +1,13 @@
-use std::{panic, path::Path, sync::Arc, time::Instant};
+#[cfg(test)]
+use std::sync::Arc;
+use std::{panic, path::Path, time::Instant};
 
 use crate::frb_generated::StreamSink;
 
 #[cfg(test)]
 use super::voting_helpers::bundle_policy;
 use super::voting_helpers::delegation_static_inputs;
+use crate::wallet::voting::network_clients::{self, routed_transport};
 use crate::wallet::{
     keys,
     voting::{db, delegation, hotkey, network::voting_network, observability},
@@ -544,26 +547,6 @@ pub fn trusted_voting_round_params_from_config(
     })
 }
 
-/// Process-wide routed transport for helper and vote-chain traffic, so
-/// connections and TLS sessions are reused across sessions.
-pub(super) fn routed_transport(
-) -> Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>> {
-    static TRANSPORT: std::sync::OnceLock<
-        Arc<zcash_voting::HyperTransport<crate::wallet::voting::route::VizorRoute>>,
-    > = std::sync::OnceLock::new();
-    TRANSPORT
-        .get_or_init(|| {
-            Arc::new(zcash_voting::HyperTransport::with_route(
-                crate::wallet::voting::route::VizorRoute::new(),
-            ))
-        })
-        .clone()
-}
-
-pub(super) fn helper_client(health: &zcash_voting::HelperHealth) -> zcash_voting::HelperClient {
-    zcash_voting::HelperClient::new(routed_transport(), health.clone())
-}
-
 /// Generate opaque voting hotkey bytes for a local voting account.
 ///
 /// Vizor v2 uses the same random app-owned hotkey model for software and
@@ -949,7 +932,7 @@ pub fn sync_vote_tree(
         // Sync and cache vote tree state for this wallet/round.
         let started = Instant::now();
         let db = db::open_voting_db(&db_path, &account_uuid)?;
-        let height = zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)?;
+        let height = network_clients::sync_vote_tree(&db, &round_id, &node_url)?;
         log::info!(
             "{VOTING_VOTE_LOG} sync-tree complete round={round_id} height={height} elapsed={:.3}s",
             started.elapsed().as_secs_f64()
@@ -1861,6 +1844,7 @@ mod tests {
 
     #[tokio::test]
     async fn focused_share_confirmation_persists_quorum_without_walking_round() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let first_helper = start_share_status_server();
         let second_helper = start_share_status_server();
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2231,7 +2215,50 @@ mod tests {
     }
 
     #[test]
+    fn presync_tree_rechecks_route_and_reuses_cache_after_tor_failure() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("wallet.sqlite");
+        let db = db::open_voting_db(path.to_str().unwrap(), "tree-route").unwrap();
+        // The same shared Arc must survive across pre-sync and round executors.
+        assert!(Arc::ptr_eq(
+            &network_clients::routed_transport(),
+            &network_clients::routed_transport()
+        ));
+        let server = start_tree_server(1, vec![fp_one_base64()], 4);
+        let call = || {
+            sync_vote_tree(
+                path.to_str().unwrap().to_string(),
+                "tree-route".into(),
+                ROUND_ID.into(),
+                server.clone(),
+            )
+        };
+        assert_eq!(call().unwrap(), 1);
+        let blocked = TcpListener::bind("127.0.0.1:0").unwrap();
+        blocked.set_nonblocking(true).unwrap();
+        crate::network_privacy::begin_tor_enable();
+        crate::network_privacy::fail_tor_enable();
+        assert!(sync_vote_tree(
+            path.to_str().unwrap().into(),
+            "tree-route".into(),
+            ROUND_ID.into(),
+            format!("http://{}", blocked.local_addr().unwrap())
+        )
+        .is_err());
+        assert!(matches!(blocked.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+        crate::network_privacy::disable_tor();
+        // Only /latest is needed after recovery: a second tree client would
+        // redownload the block range and exceed the server's request budget.
+        assert_eq!(call().unwrap(), 1);
+        assert!(
+            zcash_voting::precompute::cached_vote_tree_rounds(&db).contains(&ROUND_ID.to_string())
+        );
+    }
+
+    #[test]
     fn sync_vote_tree_api_happy_path_accepts_empty_tree() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let server = start_tree_server(0, vec![], 1);
@@ -2249,6 +2276,7 @@ mod tests {
 
     #[test]
     fn generate_van_witness_api_happy_path_after_sync() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
@@ -2282,6 +2310,7 @@ mod tests {
 
     #[test]
     fn reset_voting_session_state_with_round_drops_target_tree_sync() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-round-reset";
@@ -2316,6 +2345,7 @@ mod tests {
 
     #[test]
     fn reset_voting_session_state_with_round_keeps_other_round_tree_sync() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         const OTHER_ROUND_ID: &str =
             "0000000000000000000000000000000000000000000000000000000000000002";
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2373,6 +2403,7 @@ mod tests {
 
     #[test]
     fn reset_voting_session_state_without_round_drops_tree_sync() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-account-reset";

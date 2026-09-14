@@ -10,9 +10,37 @@ import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `helper_client`, `internal`, `invalid_input`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `routed_transport`, `view`
+// These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `internal`, `invalid_input`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PirSnapshotProbeAttempt`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+
+/// Supplies the disposable local chain anchor for regtest integration tests.
+/// This does not change mainnet/testnet trust or verification rules.
+Future<void> configureRegtestVotingParticipation({
+  required String chainId,
+  required String validatorHash,
+}) => RustLib.instance.api.crateApiVotingConfigureRegtestVotingParticipation(
+  chainId: chainId,
+  validatorHash: validatorHash,
+);
+
+/// UFVK-only preparation for read-only participation discovery (also Keystone).
+Future<String> prepareVotingParticipation({
+  required ApiVotingRoundContext ctx,
+}) => RustLib.instance.api.crateApiVotingPrepareVotingParticipation(ctx: ctx);
+
+/// Verify consensus/storage evidence and evaluate the remaining snapshot notes.
+Future<String> evaluateVotingParticipation({
+  required ApiVotingRoundContext ctx,
+  required String fingerprint,
+  required String evidence,
+  required PlatformInt64 nowSeconds,
+}) => RustLib.instance.api.crateApiVotingEvaluateVotingParticipation(
+  ctx: ctx,
+  fingerprint: fingerprint,
+  evidence: evidence,
+  nowSeconds: nowSeconds,
+);
 
 /// Probe every configured PIR endpoint and select one at the round's height.
 ///
@@ -651,34 +679,6 @@ class ApiPirCacheWarmupResult {
           servedRoot == other.servedRoot &&
           prunedCount == other.prunedCount;
 }
-
-/// Supplies the disposable local chain anchor for regtest integration tests.
-/// This does not change mainnet/testnet trust or verification rules.
-Future<void> configureRegtestVotingParticipation({
-  required String chainId,
-  required String validatorHash,
-}) => RustLib.instance.api.crateApiVotingConfigureRegtestVotingParticipation(
-  chainId: chainId,
-  validatorHash: validatorHash,
-);
-
-/// UFVK-only preparation for read-only participation discovery (also Keystone).
-Future<String> prepareVotingParticipation({
-  required ApiVotingRoundContext ctx,
-}) => RustLib.instance.api.crateApiVotingPrepareVotingParticipation(ctx: ctx);
-
-/// Verify consensus/storage evidence and evaluate the remaining snapshot notes.
-Future<String> evaluateVotingParticipation({
-  required ApiVotingRoundContext ctx,
-  required String fingerprint,
-  required String evidence,
-  required PlatformInt64 nowSeconds,
-}) => RustLib.instance.api.crateApiVotingEvaluateVotingParticipation(
-  ctx: ctx,
-  fingerprint: fingerprint,
-  evidence: evidence,
-  nowSeconds: nowSeconds,
-);
 
 /// Selected PIR endpoint plus a diagnostic for every endpoint probed.
 ///
