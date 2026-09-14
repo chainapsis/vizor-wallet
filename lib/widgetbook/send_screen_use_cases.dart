@@ -50,6 +50,11 @@ import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import 'support/wb_layout.dart';
 import 'send_review_status_use_cases.dart';
+import 'send_use_cases.dart'
+    show
+        kMobileSendSaplingAddress,
+        kMobileSendUnifiedAddress,
+        kMobileSendWrongNetworkAddress;
 
 // --- Shared preview data ----------------------------------------------------
 
@@ -708,11 +713,6 @@ class _SendComposeActionOnMountState extends State<_SendComposeActionOnMount> {
 // --- Desktop send review ----------------------------------------------------
 
 /// The real [SendReviewScreen] in its desktop shell.
-///
-/// Known noise: `dispose` releases the proposal through Rust, which no
-/// widgetbook or test binary links, so leaving the case logs three failed
-/// `discardProposal` attempts. Removing it needs an injectable discard on the
-/// production screen.
 Widget sendReviewScreenFixture({
   SendFlowKind flowKind = SendFlowKind.send,
   bool hardwareAccount = false,
@@ -756,7 +756,10 @@ Widget sendReviewScreenFixture({
   return _sendScreenScope(
     accountState: accountState,
     child: _SendScreenRouterHarness(
-      screen: (_) => SendReviewScreen(args: args),
+      screen: (_) => SendReviewScreen(
+        args: args,
+        proposalDisposer: (_) async => true,
+      ),
     ),
   );
 }
@@ -1351,20 +1354,25 @@ Future<rust_sync.AddressValidationResult> _previewMobileValidateAddress({
   required String address,
   required String network,
 }) async {
-  if (address.startsWith('utest1') || address.startsWith('ztestsapling')) {
+  if (address == kMobileSendWrongNetworkAddress) {
     return const rust_sync.AddressValidationResult(
       isValid: false,
       addressType: '',
       wrongNetwork: true,
     );
   }
-  final type = switch (address) {
-    _ when address.startsWith('t1') => 'transparent',
-    _ when address.startsWith('tex1') => 'tex',
-    _ when address.startsWith('zs1') => 'sapling',
-    _ when address.startsWith('u1') => 'unified',
-    _ => null,
+  const addressTypes = {
+    kSendScreenFixtureAddress: 'unified',
+    kSendScreenFixtureContactAddress: 'unified',
+    kSendScreenFixtureOwnAccountAddress: 'unified',
+    kMobileSendUnifiedAddress: 'unified',
+    kMobileSendSaplingAddress: 'sapling',
+    kSendScreenFixtureTransparentAddress: 'transparent',
+    kSendScreenFixtureTransparentContactAddress: 'transparent',
+    kSendScreenFixtureTransparentOwnAccountAddress: 'transparent',
+    kSendScreenFixtureTexAddress: 'tex',
   };
+  final type = addressTypes[address];
   return rust_sync.AddressValidationResult(
     isValid: type != null,
     addressType: type ?? '',

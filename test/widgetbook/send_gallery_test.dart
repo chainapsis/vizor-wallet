@@ -1261,6 +1261,19 @@ void main() {
     );
     await tester.enterText(
       find.byKey(const ValueKey('mobile_send_address_input')),
+      'u1garbage',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_send_continue')))
+          .onPressed,
+      isNull,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_address_input')),
       kSendScreenFixtureAddress,
     );
     await tester.pumpAndSettle();
