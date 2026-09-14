@@ -36,6 +36,7 @@ import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
+import '../widgets/gift_card_usage_status.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_archive_header.dart';
 import '../widgets/payment_link_card_flip.dart';
@@ -2041,7 +2042,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GiftCardTrackingScope(child: _buildContent(context));
+
+  Widget _buildContent(BuildContext context) {
     ref.listen<String?>(
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
@@ -2423,17 +2427,23 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final actionsEnabled = state.canUseLink && !_operationInProgress;
     final copyEnabled =
         actionsEnabled && !_copyingLinkAddresses.contains(record.link.address);
-    return PaymentLinkCardListRow(
-      key: ValueKey('payment_link_recovery_${record.link.address}'),
-      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
-      dateText: _formatCardDate(record.link.createdAt),
-      statusText: state.canUseLink ? null : state.statusText,
-      onAction: null,
-      showLinkActions: state.canUseLink,
-      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
-      onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
-      showLoader: state.showLoader,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PaymentLinkCardListRow(
+          key: ValueKey('payment_link_recovery_${record.link.address}'),
+          thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
+          amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+          dateText: _formatCardDate(record.link.createdAt),
+          statusText: state.canUseLink ? null : state.statusText,
+          onAction: null,
+          showLinkActions: state.canUseLink,
+          onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+          onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
+          showLoader: state.showLoader,
+        ),
+        GiftCardUsageStatusView(address: record.link.address),
+      ],
     );
   }
 
@@ -2442,16 +2452,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final actionsEnabled = state.canUseLink && !_operationInProgress;
     final copyEnabled =
         actionsEnabled && !_copyingLinkAddresses.contains(record.link.address);
-    return PaymentLinkCardListMobileRow(
-      key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
-      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
-      dateText: _formatCardDate(record.link.createdAt),
-      statusText: state.canUseLink ? null : state.statusText,
-      showLinkActions: state.canUseLink,
-      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
-      onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
-      showLoader: state.showLoader,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PaymentLinkCardListMobileRow(
+          key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
+          thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
+          amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+          dateText: _formatCardDate(record.link.createdAt),
+          statusText: state.canUseLink ? null : state.statusText,
+          showLinkActions: state.canUseLink,
+          onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+          onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
+          showLoader: state.showLoader,
+        ),
+        GiftCardUsageStatusView(address: record.link.address),
+      ],
     );
   }
 
@@ -2474,6 +2490,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               record.link.presentation?.artworkId,
             ),
             link: record.link.toUri().toString(),
+            usageStatus: GiftCardUsageStatusView(
+              address: record.link.address,
+              showCheckedAt: true,
+            ),
             onShare: (png, origin) =>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
@@ -2505,6 +2525,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final copying = _copyingLinkAddresses.contains(record.link.address);
     return PaymentLinkShareQrDesktopView(
       shareCardKey: _shareQrCardKey,
+      usageStatus: GiftCardUsageStatusView(
+        address: record.link.address,
+        showCheckedAt: true,
+      ),
       artwork: PaymentLinkCardArtwork.fromProtocolId(
         record.link.presentation?.artworkId,
       ),
@@ -2820,6 +2844,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
+      usageStatus: GiftCardUsageStatusView(
+        address: link.address,
+        showCheckedAt: true,
+      ),
       decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress || copying

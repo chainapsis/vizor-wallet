@@ -18,6 +18,7 @@ class GiftCardActivityMetadata {
     required this.artworkId,
     required this.message,
     this.isClaimInFlight = false,
+    this.cardAddress,
     this.stableId,
     this.activityTimestamp,
     this.displayPool,
@@ -27,6 +28,7 @@ class GiftCardActivityMetadata {
          kind != GiftCardActivityKind.created || claimFeeReserveZatoshi != null,
        );
 
+  final String? cardAddress;
   final GiftCardActivityKind kind;
   final BigInt amountZatoshi;
   final String? artworkId;
@@ -71,6 +73,7 @@ class GiftCardActivityIndex {
       for (final txid in _splitTxids(record.fundingTxids)) {
         createdMetadata[txid] = GiftCardActivityMetadata(
           kind: GiftCardActivityKind.created,
+          cardAddress: record.link.address,
           amountZatoshi: record.link.amountZatoshi,
           artworkId: record.link.presentation?.artworkId,
           message: record.link.presentation?.message,

@@ -520,6 +520,7 @@ class _ActivityTransactionStatusScreenState
     );
     return GiftCardActivityDetailView(
       kind: giftCard.kind,
+      cardAddress: giftCard.cardAddress,
       isInFlight: isInFlight,
       isFailed: isFailed,
       artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),

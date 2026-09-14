@@ -918,6 +918,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.onCopy,
     this.onCardTap,
     this.decoration,
+    this.usageStatus,
     this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
     this.waitingHeading = kPaymentLinkAlmostReadyHeading,
     this.waitingDescription =
@@ -931,6 +932,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
 
   final PaymentLinkReadyMobileState state;
   final Widget card;
+  final Widget? usageStatus;
   final VoidCallback onHome;
   final VoidCallback? onCopy;
   final VoidCallback? onCardTap;
@@ -982,6 +984,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
         minStageHeight:
             _readyStatusTop +
             _readyStatusAllowance +
+            (usageStatus == null ? 0 : 64) +
             AppSpacing.md +
             _buttonHeight +
             _bottomInset,
@@ -1019,6 +1022,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      ?usageStatus,
                       Text(
                         ready
                             ? 'Share this link with the intended recipient so '

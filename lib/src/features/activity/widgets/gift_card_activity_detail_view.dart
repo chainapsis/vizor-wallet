@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../payment_links/widgets/gift_card_usage_status.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_list_row.dart';
@@ -23,6 +24,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
     required this.feeText,
     required this.onTxIdPressed,
     this.isInFlight = false,
+    this.cardAddress,
     this.isFailed = false,
     this.supportingText,
     this.message,
@@ -31,6 +33,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
     super.key,
   });
 
+  final String? cardAddress;
   final GiftCardActivityKind kind;
   final bool isInFlight;
   final bool isFailed;
@@ -99,6 +102,13 @@ class GiftCardActivityDetailView extends StatelessWidget {
                         valueColor: statusColor,
                         leadingIconName: statusIconName,
                       ),
+                      if (cardAddress != null)
+                        GiftCardTrackingScope(
+                          child: GiftCardUsageStatusView(
+                            address: cardAddress!,
+                            showCheckedAt: true,
+                          ),
+                        ),
                       if (hasMessage)
                         ReviewMemoRows(
                           memoText: messageText,
