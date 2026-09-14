@@ -27,15 +27,42 @@ enum _KeystoneShieldPhase {
   failed,
 }
 
+/// The shield transaction the overlay shows to the device once preparation
+/// succeeded.
+class KeystoneShieldPreparedPczt {
+  const KeystoneShieldPreparedPczt({
+    required this.urParts,
+    required this.pcztWithProofs,
+    required this.saplingParams,
+    required this.needsSaplingParams,
+  });
+
+  final List<String> urParts;
+  final List<int> pcztWithProofs;
+  final SaplingParamsStatus saplingParams;
+  final bool needsSaplingParams;
+}
+
+/// Prepares the shield PCZT; null means preparation stopped without an error
+/// (the user declined the proving-parameters download). Injectable so previews
+/// and widget tests can avoid the Rust FFI.
+typedef KeystoneShieldPcztPreparer =
+    Future<KeystoneShieldPreparedPczt?> Function();
+
 class KeystoneShieldSigningOverlay extends ConsumerStatefulWidget {
   const KeystoneShieldSigningOverlay({
     required this.onCancel,
     required this.onComplete,
+    this.preparePczt,
     super.key,
   });
 
   final VoidCallback onCancel;
   final VoidCallback onComplete;
+
+  /// Preview/test seam — production prepares the PCZT through Rust.
+  @visibleForTesting
+  final KeystoneShieldPcztPreparer? preparePczt;
 
   @override
   ConsumerState<KeystoneShieldSigningOverlay> createState() =>
@@ -109,64 +136,15 @@ class _KeystoneShieldSigningOverlayState
 
   Future<void> _preparePczt() async {
     try {
-      final accountUuid = ref.read(walletProvider).value?.activeAccountUuid;
-      if (accountUuid == null) {
-        throw Exception('No active account.');
-      }
-
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      final shieldPczt = await rust_sync.createShieldTransparentPczt(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
-
-      var saplingParams = await loadSaplingParamsStatus();
-      if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
-        final confirmed = await _showDownloadPrompt();
-        if (!confirmed) {
-          if (!mounted) return;
-          setState(() {
-            _phase = _KeystoneShieldPhase.failed;
-            _error =
-                'Shielding was cancelled before proving parameters were downloaded.';
-          });
-          return;
-        }
-
-        await downloadMissingSaplingParams(
-          saplingParams,
-          log: (message) => log('KeystoneShieldConfirm: $message'),
-        );
-        saplingParams = await loadSaplingParamsStatus();
-      }
-
-      final pcztWithProofs = await rust_sync.addProofsToPczt(
-        pcztBytes: shieldPczt.pcztBytes,
-        spendParamsPath: shieldPczt.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: shieldPczt.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      );
-      final redactedPczt = await rust_sync.redactPcztForSigner(
-        pcztBytes: shieldPczt.pcztBytes,
-      );
-      final urParts = await rust_keystone.encodePcztUrParts(
-        pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
-      );
-
+      final prepared = await (widget.preparePczt ?? _prepareShieldPczt)();
+      if (prepared == null) return;
       if (!mounted) return;
       setState(() {
         _phase = _KeystoneShieldPhase.ready;
-        _pcztWithProofs = pcztWithProofs;
-        _saplingParams = saplingParams;
-        _needsSaplingParams = shieldPczt.needsSaplingParams;
-        _urParts = urParts;
+        _pcztWithProofs = prepared.pcztWithProofs;
+        _saplingParams = prepared.saplingParams;
+        _needsSaplingParams = prepared.needsSaplingParams;
+        _urParts = prepared.urParts;
       });
     } catch (e, st) {
       log('KeystoneShieldConfirm._preparePczt: ERROR: $e\n$st');
@@ -176,6 +154,66 @@ class _KeystoneShieldSigningOverlayState
         _error = _friendlyError(e);
       });
     }
+  }
+
+  Future<KeystoneShieldPreparedPczt?> _prepareShieldPczt() async {
+    final accountUuid = ref.read(walletProvider).value?.activeAccountUuid;
+    if (accountUuid == null) {
+      throw Exception('No active account.');
+    }
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final shieldPczt = await rust_sync.createShieldTransparentPczt(
+      dbPath: dbPath,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+
+    var saplingParams = await loadSaplingParamsStatus();
+    if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
+      final confirmed = await _showDownloadPrompt();
+      if (!confirmed) {
+        if (!mounted) return null;
+        setState(() {
+          _phase = _KeystoneShieldPhase.failed;
+          _error =
+              'Shielding was cancelled before proving parameters were downloaded.';
+        });
+        return null;
+      }
+
+      await downloadMissingSaplingParams(
+        saplingParams,
+        log: (message) => log('KeystoneShieldConfirm: $message'),
+      );
+      saplingParams = await loadSaplingParamsStatus();
+    }
+
+    final pcztWithProofs = await rust_sync.addProofsToPczt(
+      pcztBytes: shieldPczt.pcztBytes,
+      spendParamsPath: shieldPczt.needsSaplingParams
+          ? saplingParams.spendPath
+          : null,
+      outputParamsPath: shieldPczt.needsSaplingParams
+          ? saplingParams.outputPath
+          : null,
+    );
+    final redactedPczt = await rust_sync.redactPcztForSigner(
+      pcztBytes: shieldPczt.pcztBytes,
+    );
+    final urParts = await rust_keystone.encodePcztUrParts(
+      pcztBytes: redactedPczt,
+      maxFragmentLen: BigInt.from(140),
+    );
+
+    return KeystoneShieldPreparedPczt(
+      urParts: urParts,
+      pcztWithProofs: pcztWithProofs,
+      saplingParams: saplingParams,
+      needsSaplingParams: shieldPczt.needsSaplingParams,
+    );
   }
 
   Future<void> _getSignature() async {

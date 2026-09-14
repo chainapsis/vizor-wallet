@@ -10,7 +10,9 @@ import '../../../services/qr_scanner.dart';
 import 'keystone_onboarding_flow.dart';
 
 class KeystoneScanQrScreen extends ConsumerStatefulWidget {
-  const KeystoneScanQrScreen({super.key});
+  const KeystoneScanQrScreen({this.openCameraSettings, super.key});
+
+  final KeystoneCameraSettingsOpener? openCameraSettings;
 
   @override
   ConsumerState<KeystoneScanQrScreen> createState() =>
@@ -84,6 +86,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
         },
         onDecodeError: _handleDecodeError,
         onComplete: _handleScanComplete,
+        openCameraSettings: widget.openCameraSettings,
       ),
     );
   }
@@ -96,6 +99,7 @@ class _ScanQrLayout extends StatelessWidget {
     required this.onProgress,
     required this.onDecodeError,
     required this.onComplete,
+    required this.openCameraSettings,
   });
 
   static const double _contentAreaWidth = 420;
@@ -108,6 +112,7 @@ class _ScanQrLayout extends StatelessWidget {
   final ValueChanged<int> onProgress;
   final ValueChanged<Object> onDecodeError;
   final ValueChanged<ScanResult> onComplete;
+  final KeystoneCameraSettingsOpener? openCameraSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +139,7 @@ class _ScanQrLayout extends StatelessWidget {
                       onProgress: onProgress,
                       onDecodeError: onDecodeError,
                       onComplete: onComplete,
+                      openCameraSettings: openCameraSettings,
                       decodingLabel: 'Reading accounts...',
                       unavailableMessage:
                           'Keystone import uses camera QR scanning only. Connect a camera and try again.',

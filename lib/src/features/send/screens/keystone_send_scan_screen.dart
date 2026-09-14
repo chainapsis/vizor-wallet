@@ -39,10 +39,12 @@ class KeystoneSendScanArgs {
 class KeystoneSendScanScreen extends ConsumerStatefulWidget {
   const KeystoneSendScanScreen({
     this.args = const KeystoneSendScanArgs(),
+    this.openCameraSettings,
     super.key,
   });
 
   final KeystoneSendScanArgs args;
+  final KeystoneCameraSettingsOpener? openCameraSettings;
 
   @override
   ConsumerState<KeystoneSendScanScreen> createState() =>
@@ -169,6 +171,7 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
                         onDecodeError: _handleDecodeError,
                         onComplete: (result) =>
                             unawaited(_handleScanComplete(result)),
+                        openCameraSettings: widget.openCameraSettings,
                         decodingLabel: 'Reading signature...',
                         unavailableMessage:
                             'Keystone signing uses camera QR scanning only. Connect a camera and try again.',

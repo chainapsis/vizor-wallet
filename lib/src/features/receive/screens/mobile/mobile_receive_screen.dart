@@ -25,6 +25,12 @@ import '../../widgets/receive_address_widgets.dart';
 const _renewShieldedAddressErrorMessage =
     "We couldn't refresh your shielded address. Try again, or use your current one.";
 
+typedef MobileReceiveShareAddress = Future<void> Function(String address);
+
+Future<void> _shareAddressExternally(String address) async {
+  await SharePlus.instance.share(ShareParams(text: address));
+}
+
 bool _shouldRefreshTransparentAddressAfterSyncUpdate(
   SyncState previous,
   SyncState next,
@@ -43,10 +49,12 @@ bool _shouldRefreshTransparentAddressAfterSyncUpdate(
 class MobileReceiveScreen extends ConsumerStatefulWidget {
   const MobileReceiveScreen({
     this.initialType = ReceiveAddressType.shielded,
+    this.shareAddress = _shareAddressExternally,
     super.key,
   });
 
   final ReceiveAddressType initialType;
+  final MobileReceiveShareAddress shareAddress;
 
   @override
   ConsumerState<MobileReceiveScreen> createState() =>
@@ -195,7 +203,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   void _shareAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    unawaited(SharePlus.instance.share(ShareParams(text: address)));
+    unawaited(widget.shareAddress(address));
   }
 
   void _openRequest() {

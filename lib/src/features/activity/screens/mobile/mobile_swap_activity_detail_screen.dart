@@ -23,12 +23,14 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
     required this.swapIntentId,
     this.returnTarget = SwapActivityReturnTarget.activity,
     this.autoSignZecDeposit = false,
+    this.launchExternalUri,
     super.key,
   });
 
   final String swapIntentId;
   final SwapActivityReturnTarget returnTarget;
   final bool autoSignZecDeposit;
+  final Future<void> Function(Uri uri)? launchExternalUri;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,6 +69,7 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
                   returnTarget: returnTarget,
                   autoSignZecDeposit: autoSignZecDeposit,
                   layout: SwapActivityDetailLayout.mobile,
+                  launchExternalUri: launchExternalUri,
                 ),
               ),
             ],

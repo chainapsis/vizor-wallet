@@ -92,6 +92,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     if (_modalRouteOpen) return;
     _modalRouteOpen = true;
     final appTheme = context.appTheme;
+    final providerContainer = ProviderScope.containerOf(context);
     unawaited(
       showGeneralDialog<void>(
         context: context,
@@ -100,8 +101,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         barrierLabel: 'Dismiss',
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) =>
-            AppTheme(data: appTheme, child: _buildPayModal()),
+        pageBuilder:
+            (_, _, _) => UncontrolledProviderScope(
+              container: providerContainer,
+              child: AppTheme(data: appTheme, child: _buildPayModal()),
+            ),
       ).whenComplete(() {
         _modalRouteOpen = false;
         if (mounted) setState(() => _payModal.value = null);
@@ -210,12 +214,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                 network == null
                     ? const SizedBox.shrink()
                     : MobilePayAddContactCard(
-                        network: network,
-                        address: swapState.destinationText.trim(),
-                        onCancel: _closePayModal,
-                        onSave: (label, profilePictureId) =>
-                            _saveContact(network, label, profilePictureId),
-                      ),
+                      network: network,
+                      address: swapState.destinationText.trim(),
+                      onCancel: _closePayModal,
+                      onSave:
+                          (label, profilePictureId) =>
+                              _saveContact(network, label, profilePictureId),
+                    ),
               _PayModalSurface.slippage => MobileSwapSlippageStepperModal(
                 slippageBps: swapState.slippageBps,
                 paymentMode: true,
@@ -234,10 +239,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               bottom: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: content),
-                ],
+                children: [const Spacer(), MobileModalCard(child: content)],
               ),
             );
           },
@@ -291,29 +293,33 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         addressBook.isLoading && !addressBook.hasValue;
     final allContacts =
         addressBook.value?.contacts ?? const <AddressBookContact>[];
-    final contacts = network == null
-        ? const <AddressBookContact>[]
-        : payCompatibleContacts(allContacts, network);
-    final records = activeAccountUuid == null
-        ? const <SwapIntentRecord>[]
-        : ref.watch(swapActivityRecordsProvider(activeAccountUuid)).value ??
-              const <SwapIntentRecord>[];
-    final recents = network == null
-        ? const <PayRecentRecipient>[]
-        : payRecentRecipients(
-            intents: swapIntentsFromRecords(records),
-            network: network,
-            contacts: contacts,
-          );
+    final contacts =
+        network == null
+            ? const <AddressBookContact>[]
+            : payCompatibleContacts(allContacts, network);
+    final records =
+        activeAccountUuid == null
+            ? const <SwapIntentRecord>[]
+            : ref.watch(swapActivityRecordsProvider(activeAccountUuid)).value ??
+                const <SwapIntentRecord>[];
+    final recents =
+        network == null
+            ? const <PayRecentRecipient>[]
+            : payRecentRecipients(
+              intents: swapIntentsFromRecords(records),
+              network: network,
+              contacts: contacts,
+            );
     final effectiveSelection = resolvePayRecipientSelection(
       contacts,
       swapState.destinationText,
-      explicitSelection: swapState.userExternalContactId == null
-          ? null
-          : PayRecipientSelection(
-              address: swapState.destinationText,
-              contactId: swapState.userExternalContactId,
-            ),
+      explicitSelection:
+          swapState.userExternalContactId == null
+              ? null
+              : PayRecipientSelection(
+                address: swapState.destinationText,
+                contactId: swapState.userExternalContactId,
+              ),
     );
 
     void back() {
@@ -357,10 +363,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     zecAvailableZatoshi: migrationSpendable,
                     onAmountChanged: swapNotifier.updateReceiveAmount,
                     onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
-                    onToggleFiatInputMode: () => swapNotifier
-                        .toggleFiatInputMode(SwapAmountInputSide.receive),
-                    onOpenAssetSelector: () =>
-                        _openModal(_PayModalSurface.assetSelector),
+                    onToggleFiatInputMode:
+                        () => swapNotifier.toggleFiatInputMode(
+                          SwapAmountInputSide.receive,
+                        ),
+                    onOpenAssetSelector:
+                        () => _openModal(_PayModalSurface.assetSelector),
                     slippageLabel: formatSwapSlippage(swapState.slippageBps),
                     onOpenSlippage: () => _openModal(_PayModalSurface.slippage),
                     onContinue: () {
@@ -384,13 +392,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     selectedContactId: swapState.userExternalContactId,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: _handleAddressChanged,
-                    onOpenScanner: () =>
-                        _openModal(_PayModalSurface.addressScanner),
+                    onOpenScanner:
+                        () => _openModal(_PayModalSurface.addressScanner),
                     onChooseRecipient: _chooseRecipient,
-                    onSelectRecipient: () =>
-                        unawaited(_reviewRecipient(effectiveSelection)),
-                    onAddToContacts: () =>
-                        _openModal(_PayModalSurface.addContact),
+                    onSelectRecipient:
+                        () => unawaited(_reviewRecipient(effectiveSelection)),
+                    onAddToContacts:
+                        () => _openModal(_PayModalSurface.addContact),
                   ),
                 },
               ),

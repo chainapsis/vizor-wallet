@@ -50,8 +50,35 @@ class MobileKeystoneShieldResult {
   final String? message;
 }
 
+/// The shield transaction the screen shows to the device once preparation
+/// succeeded. [addProofs] stays deferred because production shows the QR
+/// first and proves while the device scans it.
+class MobileKeystoneShieldPreparedPczt {
+  const MobileKeystoneShieldPreparedPczt({
+    required this.urParts,
+    required this.saplingParams,
+    required this.needsSaplingParams,
+    required this.addProofs,
+  });
+
+  final List<String> urParts;
+  final SaplingParamsStatus saplingParams;
+  final bool needsSaplingParams;
+  final Future<Uint8List> Function() addProofs;
+}
+
+/// Prepares the shield PCZT; null means preparation stopped without an error
+/// (the user declined the proving-parameters download). Injectable so previews
+/// and widget tests can avoid the Rust FFI.
+typedef MobileKeystoneShieldPcztPreparer =
+    Future<MobileKeystoneShieldPreparedPczt?> Function();
+
 class MobileKeystoneShieldScreen extends ConsumerStatefulWidget {
-  const MobileKeystoneShieldScreen({super.key});
+  const MobileKeystoneShieldScreen({super.key, this.preparePczt});
+
+  /// Preview/test seam — production prepares the PCZT through Rust.
+  @visibleForTesting
+  final MobileKeystoneShieldPcztPreparer? preparePczt;
 
   @override
   ConsumerState<MobileKeystoneShieldScreen> createState() =>
@@ -102,56 +129,18 @@ class _MobileKeystoneShieldScreenState
 
   Future<void> _preparePczt() async {
     try {
-      final accountUuid = activeShieldingAccountUuid(ref);
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      final shieldPczt = await rust_sync.createShieldTransparentPczt(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
-
-      var saplingParams = await loadSaplingParamsStatus();
-      if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
-        final confirmed = await _confirmSaplingParamsDownload();
-        if (!confirmed) {
-          if (!mounted) return;
-          context.pop();
-          return;
-        }
-        await downloadMissingSaplingParams(
-          saplingParams,
-          log: (message) => log('MobileKeystoneShield: $message'),
-        );
-        saplingParams = await loadSaplingParamsStatus();
-      }
-
-      final redactedPczt = await rust_sync.redactPcztForSigner(
-        pcztBytes: shieldPczt.pcztBytes,
-      );
-      final urParts = await rust_keystone.encodePcztUrParts(
-        pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(140),
-      );
+      final prepared = await (widget.preparePczt ?? _prepareShieldPczt)();
+      if (prepared == null) return;
 
       if (!mounted) return;
       setState(() {
         _stage = _ShieldSignStage.showQr;
-        _saplingParams = saplingParams;
-        _needsSaplingParams = shieldPczt.needsSaplingParams;
-        _urParts = urParts;
+        _saplingParams = prepared.saplingParams;
+        _needsSaplingParams = prepared.needsSaplingParams;
+        _urParts = prepared.urParts;
       });
 
-      final pcztWithProofs = await rust_sync.addProofsToPczt(
-        pcztBytes: shieldPczt.pcztBytes,
-        spendParamsPath: shieldPczt.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: shieldPczt.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      );
+      final pcztWithProofs = await prepared.addProofs();
       if (!mounted) return;
       setState(() => _pcztWithProofs = pcztWithProofs);
     } catch (e, st) {
@@ -165,6 +154,56 @@ class _MobileKeystoneShieldScreenState
         _error = _friendlyError(e);
       });
     }
+  }
+
+  Future<MobileKeystoneShieldPreparedPczt?> _prepareShieldPczt() async {
+    final accountUuid = activeShieldingAccountUuid(ref);
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final shieldPczt = await rust_sync.createShieldTransparentPczt(
+      dbPath: dbPath,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+
+    var saplingParams = await loadSaplingParamsStatus();
+    if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
+      final confirmed = await _confirmSaplingParamsDownload();
+      if (!confirmed) {
+        if (!mounted) return null;
+        context.pop();
+        return null;
+      }
+      await downloadMissingSaplingParams(
+        saplingParams,
+        log: (message) => log('MobileKeystoneShield: $message'),
+      );
+      saplingParams = await loadSaplingParamsStatus();
+    }
+
+    final redactedPczt = await rust_sync.redactPcztForSigner(
+      pcztBytes: shieldPczt.pcztBytes,
+    );
+    final urParts = await rust_keystone.encodePcztUrParts(
+      pcztBytes: redactedPczt,
+      maxFragmentLen: BigInt.from(140),
+    );
+
+    return MobileKeystoneShieldPreparedPczt(
+      urParts: urParts,
+      saplingParams: saplingParams,
+      needsSaplingParams: shieldPczt.needsSaplingParams,
+      addProofs: () => rust_sync.addProofsToPczt(
+        pcztBytes: shieldPczt.pcztBytes,
+        spendParamsPath: shieldPczt.needsSaplingParams
+            ? saplingParams.spendPath
+            : null,
+        outputParamsPath: shieldPczt.needsSaplingParams
+            ? saplingParams.outputPath
+            : null,
+      ),
+    );
   }
 
   Future<bool> _confirmSaplingParamsDownload() async {
