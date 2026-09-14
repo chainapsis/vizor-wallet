@@ -37,6 +37,8 @@ class KeystoneQrScannerControls {
   final Future<void> Function() focusCenter;
 }
 
+typedef KeystoneCameraSettingsOpener = Future<bool> Function();
+
 class KeystoneQrScannerCard extends StatefulWidget {
   const KeystoneQrScannerCard({
     required this.expectedUrType,
@@ -53,6 +55,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
     this.showScanOverlay = true,
     this.showScanProgress = true,
     this.onControlsReady,
+    this.openCameraSettings,
     super.key,
   });
 
@@ -85,6 +88,10 @@ class KeystoneQrScannerCard extends StatefulWidget {
   /// Exposes torch and center-focus actions without leaking the scanner
   /// controller. A full-screen parent can wire these into its own chrome.
   final ValueChanged<KeystoneQrScannerControls>? onControlsReady;
+
+  /// Overrides the native camera-settings action for isolated previews/tests.
+  /// Production callers use [CameraPermissionSettings.open].
+  final KeystoneCameraSettingsOpener? openCameraSettings;
 
   @override
   State<KeystoneQrScannerCard> createState() => _KeystoneQrScannerCardState();
@@ -352,7 +359,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
 
   Future<void> _openCameraSettings() async {
     _restartCameraOnResume = true;
-    final opened = await CameraPermissionSettings.open();
+    final opened =
+        await (widget.openCameraSettings?.call() ??
+            CameraPermissionSettings.open());
     if (!opened) {
       _restartCameraOnResume = false;
       log('KeystoneQrScannerCard: failed to open camera permission settings');

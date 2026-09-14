@@ -199,6 +199,7 @@ Widget keystoneScannerCardFixture({
         onProgress: _ignoreProgress,
         onDecodeError: _ignoreDecodeError,
         onComplete: _ignoreScanResult,
+        openCameraSettings: _handlePreviewCameraSettings,
         decodingLabel: 'Reading accounts...',
         unavailableMessage:
             'Keystone import uses camera QR scanning only. Connect a camera '
@@ -207,6 +208,11 @@ Widget keystoneScannerCardFixture({
     ),
   );
 }
+
+/// Handles the settings action without leaving Widgetbook or opening a native
+/// system surface. Returning true keeps the production widget on its normal
+/// successful-action path.
+Future<bool> _handlePreviewCameraSettings() async => true;
 
 class _ScannerCardCenter extends StatelessWidget {
   const _ScannerCardCenter({required this.child});

@@ -2,7 +2,8 @@
 // camera / UR fakes, and every knob option reaches a different screen.
 
 import 'package:flutter/material.dart' show Material, MaterialApp;
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter/services.dart'
+    show FontLoader, MethodChannel, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -48,6 +49,19 @@ void main() {
     });
 
     testWidgets('the denied camera offers the allow action', (tester) async {
+      const cameraSettingsChannel = MethodChannel(
+        'com.zcash.wallet/camera_permission',
+      );
+      var nativeSettingsCalls = 0;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(cameraSettingsChannel, (call) async {
+        nativeSettingsCalls++;
+        return true;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(cameraSettingsChannel, null),
+      );
+
       await _pumpScanner(
         tester,
         buildScannerKeystoneCardGalleryCase,
@@ -56,6 +70,10 @@ void main() {
 
       expect(find.text("You've denied the Camera access"), findsOneWidget);
       expect(find.text('Allow camera'), findsOneWidget);
+      await tester.tap(find.text('Allow camera'));
+      await tester.pump();
+      await tester.pump();
+      expect(nativeSettingsCalls, 0);
 
       await disposeTree(tester);
     });
