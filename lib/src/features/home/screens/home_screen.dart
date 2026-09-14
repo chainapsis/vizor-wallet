@@ -160,7 +160,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      final result = await shieldTransparentSoftwareBalance(
+      final result = await ref.read(transparentShieldingRunnerProvider)(
         ref: ref,
         accountUuid: accountUuid,
         logContext: 'HomeScreen',

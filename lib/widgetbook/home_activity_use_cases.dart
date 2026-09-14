@@ -282,6 +282,10 @@ List<Override> _homeOverrides({
         );
   return [
     appLayoutProvider.overrideWith(_HomeNoOpLayoutNotifier.new),
+    transparentShieldingRunnerProvider.overrideWithValue(
+      ({required ref, required accountUuid, logContext = 'Preview'}) async =>
+          _homeShieldPendingResult,
+    ),
     appBootstrapProvider.overrideWithValue(
       _homeBootstrap(
         accountState,

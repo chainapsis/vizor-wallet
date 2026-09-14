@@ -44,6 +44,31 @@ void main() {
   // stage; nothing else in this file should inherit it.
   tearDown(WbFakeMobileScannerPlatform.reset);
 
+  testWidgets('both Home shield actions use the isolated preview runner', (
+    tester,
+  ) async {
+    for (final layout in WbLayout.values) {
+      await pumpUseCase(
+        tester,
+        buildHomeScreenGalleryCase,
+        knobs: {
+          'Layout': wbLayoutLabel(layout),
+          'Balance': homeBalanceLabel(HomeBalanceAmount.fundedTransparent),
+        },
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        layout == WbLayout.mobile
+            ? find.byKey(const ValueKey('mobile_home_shield_balance_button'))
+            : find.byKey(const ValueKey('home_shield_balance_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(shieldBalancePendingBroadcastMessage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await disposeTree(tester);
+    }
+  });
+
   // Named rather than implied by the compiled lane, so a mobile-lane run of
   // this file would still sweep the layout the case name says.
   final desktopLayout = {'Layout': wbLayoutLabel(WbLayout.desktop)};

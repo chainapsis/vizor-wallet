@@ -19,6 +19,18 @@ import '../../../rust/api/sync.dart' as rust_sync;
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
 
+typedef TransparentShieldingRunner =
+    Future<rust_sync.ShieldTransparentResult> Function({
+      required WidgetRef ref,
+      required String accountUuid,
+      String logContext,
+    });
+
+/// Defaults to the wallet service; previews override the whole operation.
+final transparentShieldingRunnerProvider = Provider<TransparentShieldingRunner>(
+  (ref) => shieldTransparentSoftwareBalance,
+);
+
 String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
 ) {
