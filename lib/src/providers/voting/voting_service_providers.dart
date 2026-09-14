@@ -136,9 +136,48 @@ final votingHotkeyStoreProvider = Provider<VotingHotkeyStore>((ref) {
   return AppSecureStore.instance.votingHotkeys;
 });
 
+/// Memoizes the wallet DB path for voting callers.
+///
+/// Resolving it hits the application support directory (with a mkdir) and
+/// reads the DB name from secure storage, and voting resolves it per round
+/// refresh, tree sync, session start, and readiness poll.
+///
+/// The resolved name changes only when a wallet reset clears the stored DB
+/// name, so [clear] must be called there — see [walletDbPathCacheProvider]'s
+/// use in the wallet mutation guard. A failed resolve is not cached.
+class VotingWalletDbPathCache {
+  VotingWalletDbPathCache({Future<String> Function()? resolver})
+    : _resolver = resolver ?? getWalletDbPath;
+
+  final Future<String> Function() _resolver;
+  Future<String>? _pending;
+
+  Future<String> resolve() async {
+    final cached = _pending;
+    if (cached != null) return cached;
+    final pending = _resolver();
+    _pending = pending;
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_pending, pending)) _pending = null;
+      rethrow;
+    }
+  }
+
+  void clear() => _pending = null;
+}
+
+/// Cache instance behind [votingWalletDbPathProvider]. Exposed so wallet
+/// reset can invalidate it; a stale path would point at a deleted DB.
+final walletDbPathCacheProvider = Provider<VotingWalletDbPathCache>((ref) {
+  return VotingWalletDbPathCache();
+});
+
 /// Test seam for wallet DB path resolution.
 final votingWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
-  return getWalletDbPath;
+  final cache = ref.watch(walletDbPathCacheProvider);
+  return cache.resolve;
 });
 
 /// Test seam for active account lookup.

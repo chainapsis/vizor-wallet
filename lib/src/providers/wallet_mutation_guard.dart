@@ -7,6 +7,7 @@ import '../features/migration/services/ironwood_migration_background_credential_
 import '../core/storage/linux_keyring_coordinator.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
+import 'voting/voting_service_providers.dart';
 import 'voting/voting_share_tracking_registry_provider.dart';
 
 /// Pauses foreground sync around a wallet mutation.
@@ -176,7 +177,10 @@ Future<void> runWithSyncPausedForWalletReset(
       try {
         await resetWallet();
       } finally {
+        // Reset mints a new DB name; every cached path must be dropped or
+        // the next resolve returns the deleted wallet's path.
         syncNotifier.clearCachedWalletDbPath();
+        ref.read(walletDbPathCacheProvider).clear();
       }
     },
     onStoppingSync: onStoppingSync,
