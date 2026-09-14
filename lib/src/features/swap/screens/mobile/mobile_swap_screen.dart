@@ -89,6 +89,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     // same convention as showAppMobileSheet). Surface switches (editor
     // → scanner → contacts → editor) swap content inside the open
     // route instead of re-navigating.
+    final providerContainer = ProviderScope.containerOf(context);
+    final appTheme = context.appTheme;
     unawaited(
       showGeneralDialog<void>(
         context: context,
@@ -97,7 +99,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         barrierLabel: 'Dismiss',
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => _buildSwapModal(),
+        // Root dialogs are outside a nested ProviderScope in Widgetbook and
+        // other embedded hosts. Keep the invoking screen's container explicit
+        // while preserving the root-dialog presentation in the app shell.
+        pageBuilder:
+            (_, _, _) => UncontrolledProviderScope(
+              container: providerContainer,
+              child: AppTheme(data: appTheme, child: _buildSwapModal()),
+            ),
       ).whenComplete(() {
         _modalRouteOpen = false;
         if (mounted) {
@@ -315,9 +324,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
-    final zecAvailableText = ZecAmount.fromZatoshi(
-      migrationSpendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final zecAvailableText =
+        ZecAmount.fromZatoshi(
+          migrationSpendable,
+        ).pretty(denomStyle: ZecDenomStyle.upper).toString();
 
     void openReview() {
       unawaited(() async {
@@ -354,14 +364,14 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 // that returns to the tab the user came from (the Swap tab is
                 // an indexedStack root with no navigator history, Home on a
                 // cold start). Figma 4686:101421 / filled frames.
-                backIcon: keyboardOpen
-                    ? AppIcons.cross
-                    : AppIcons.chevronBackward,
-                onBack: keyboardOpen
-                    ? () => FocusManager.instance.primaryFocus?.unfocus()
-                    : () => context.go(
-                        resolveMobileBackPath(ref, currentPath: '/swap'),
-                      ),
+                backIcon:
+                    keyboardOpen ? AppIcons.cross : AppIcons.chevronBackward,
+                onBack:
+                    keyboardOpen
+                        ? () => FocusManager.instance.primaryFocus?.unfocus()
+                        : () => context.go(
+                          resolveMobileBackPath(ref, currentPath: '/swap'),
+                        ),
                 trailing: const SwapNearIntentsAttribution(alignEnd: true),
               ),
               Expanded(
@@ -387,16 +397,17 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                             swapNotifier.updateReceiveAmountFiat,
                         onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
                         onToggleDirection: swapNotifier.toggleDirection,
-                        onOpenExternalAssetPicker: () =>
-                            _openModal(_SwapModalSurface.assetSelector),
+                        onOpenExternalAssetPicker:
+                            () => _openModal(_SwapModalSurface.assetSelector),
                         onOpenDestinationAddress: _openAddressEditor,
                         onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                         zecAvailableText: zecAvailableText,
-                        destinationContactName: swapDestinationContactFor(
-                          swapState,
-                          ref.watch(addressBookProvider).value?.contacts ??
-                              const [],
-                        )?.label,
+                        destinationContactName:
+                            swapDestinationContactFor(
+                              swapState,
+                              ref.watch(addressBookProvider).value?.contacts ??
+                                  const [],
+                            )?.label,
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Row(
@@ -404,11 +415,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           AppButton(
                             key: const ValueKey('swap_settings_button'),
                             variant: AppButtonVariant.secondary,
-                            onPressed: swapState.quoteLoading
-                                ? null
-                                : () => _openModal(
-                                    _SwapModalSurface.slippageSettings,
-                                  ),
+                            onPressed:
+                                swapState.quoteLoading
+                                    ? null
+                                    : () => _openModal(
+                                      _SwapModalSurface.slippageSettings,
+                                    ),
                             trailing: const AppIcon(AppIcons.cog),
                             child: Text(
                               formatSwapSlippage(swapState.slippageBps),
@@ -486,21 +498,23 @@ class _MobileSwapReviewButton extends StatelessWidget {
     final destinationFormatError = state.destinationAddressFormatError;
     final balanceExceeded = _balanceExceeded;
     final canReview = state.canReviewQuote && !balanceExceeded;
-    final onPressed = needsDestinationAddress
-        ? onOpenDestinationAddress
-        : canReview
-        ? onReviewQuote
-        : null;
-    final label = needsDestinationAddress
-        ? (state.direction.sendsZec
-              ? 'Add recipient address'
-              : 'Add refund address')
-        : destinationFormatError ??
-              (balanceExceeded
-                  ? 'Not enough ZEC'
-                  : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+    final onPressed =
+        needsDestinationAddress
+            ? onOpenDestinationAddress
+            : canReview
+            ? onReviewQuote
+            : null;
+    final label =
+        needsDestinationAddress
+            ? (state.direction.sendsZec
+                ? 'Add recipient address'
+                : 'Add refund address')
+            : destinationFormatError ??
+                (balanceExceeded
+                    ? 'Not enough ZEC'
+                    : state.quoteLoading
+                    ? 'Getting quote'
+                    : 'Continue to review');
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),
