@@ -5,6 +5,7 @@ import '../../../core/crypto/base58check.dart';
 import '../../../core/crypto/bech32.dart';
 import '../../../core/crypto/keccak256.dart';
 import 'address_book_contact.dart';
+import 'external_address_network_validator.dart';
 
 /// Severity of an address-format finding.
 ///
@@ -40,8 +41,9 @@ class AddressFormatFinding {
 /// reads "Invalid EVM address" rather than "Invalid Base address".
 ///
 /// Scope: EVM family (0x + 40 hex, with EIP-55 checksum enforced on mixed-case
-/// input), Bitcoin, Solana, NEAR, and Zcash. Every other network passes
-/// through unchecked. Zcash transparent addresses are fully Base58Check
+/// input), Bitcoin, Litecoin, Dogecoin, Dash, Bitcoin Cash, TON, Cardano,
+/// Solana, NEAR, and Zcash. Other networks pass through unchecked. External
+/// chains accept mainnet only when the encoding identifies a network. Zcash transparent addresses are fully Base58Check
 /// verified; unified/Sapling addresses use a best-effort prefix/charset check
 /// restricted to the active [zcashNetwork] (defaults to the build's network),
 /// so a testnet address is rejected on mainnet and vice versa, with the
@@ -70,6 +72,17 @@ AddressFormatFinding? addressFormatCheck(
       return _isBitcoinAddress(trimmed)
           ? null
           : const AddressFormatFinding.error('Invalid Bitcoin address');
+    case AddressBookNetwork.litecoin:
+    case AddressBookNetwork.dogecoin:
+    case AddressBookNetwork.dash:
+    case AddressBookNetwork.bitcoinCash:
+    case AddressBookNetwork.ton:
+    case AddressBookNetwork.cardano:
+      return isMainnetExternalAddress(network, trimmed)
+          ? null
+          : AddressFormatFinding.error(
+              'Invalid mainnet ${network.label} address',
+            );
     case AddressBookNetwork.solana:
       return _isSolanaAddress(trimmed)
           ? null
@@ -148,7 +161,12 @@ bool _isEip55Checksummed(String body) {
 
 bool _isBitcoinAddress(String value) {
   // Legacy P2PKH/P2SH: base58 format gate + base58check (double-SHA256) checksum.
-  if (_btcLegacy.hasMatch(value)) return base58CheckDecode(value) != null;
+  if (_btcLegacy.hasMatch(value)) {
+    final payload = base58CheckDecode(value);
+    return payload != null &&
+        payload.length == 21 &&
+        (payload.first == 0 || payload.first == 5);
+  }
   // Native SegWit (bech32/bech32m): full checksum verification.
   if (value.toLowerCase().startsWith('bc1')) {
     return decodeSegwitAddress(value) != null;
@@ -167,6 +185,12 @@ bool _isSolanaAddress(String value) {
 }
 
 AddressFormatFinding? _nearFinding(String value) {
+  // Named testnet accounts are explicit; implicit accounts have no network bit.
+  if (value == 'testnet' || value.endsWith('.testnet')) {
+    return const AddressFormatFinding.error(
+      'Testnet NEAR addresses are not supported',
+    );
+  }
   if (_nearImplicit.hasMatch(value)) return null;
   if (_nearEthImplicit.hasMatch(value)) return null;
   final isNamed =
