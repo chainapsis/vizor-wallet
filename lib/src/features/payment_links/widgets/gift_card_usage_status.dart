@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/app_security_provider.dart';
 import '../models/gift_card_usage.dart';
 import '../providers/gift_card_tracking_provider.dart';
@@ -57,10 +59,12 @@ class GiftCardUsageStatusView extends ConsumerWidget {
   const GiftCardUsageStatusView({
     required this.address,
     this.showCheckedAt = false,
+    this.inline = false,
     super.key,
   });
   final String address;
   final bool showCheckedAt;
+  final bool inline;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usage =
@@ -74,6 +78,54 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         : state.failedFor(address)
         ? ' · Update failed'
         : '';
+    if (inline) {
+      final checking = !usage.cleaned && state.checking;
+      final failed = !usage.cleaned && !checking && state.failedFor(address);
+      final description =
+          'Card use: ${usage.label}'
+          '${checking
+              ? '. Checking'
+              : failed
+              ? '. Update failed'
+              : ''}';
+      return AppTooltip(
+        message: description,
+        tapToShow: true,
+        excludeFromSemantics: true,
+        child: Semantics(
+          label: description,
+          excludeSemantics: true,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  usage.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              // Reserve the indicator slot so labels and actions stay fixed.
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: checking || failed
+                    ? AppIcon(
+                        checking ? AppIcons.loader : AppIcons.warningCircle,
+                        size: 16,
+                        color: context.colors.icon.regular,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final checked = usage.checkedAt?.toLocal();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),

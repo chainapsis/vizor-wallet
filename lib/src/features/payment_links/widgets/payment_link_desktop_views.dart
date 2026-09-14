@@ -1025,6 +1025,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
+    this.usageStatus,
     this.actionLabel,
     this.onAction,
     this.showCopyIcon = false,
@@ -1040,6 +1041,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
+  final Widget? usageStatus;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -1072,6 +1074,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
               children: [
                 Text(
                   amountText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: context.colors.text.primary,
                   ),
@@ -1087,6 +1091,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
                   ),
                 Text(
                   dateText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -1101,6 +1107,10 @@ class PaymentLinkCardListRow extends StatelessWidget {
               enabled: onSecondaryAction != null,
             ),
             const SizedBox(width: AppSpacing.s),
+          ],
+          if (usageStatus != null) ...[
+            SizedBox(width: 112, child: usageStatus),
+            const SizedBox(width: AppSpacing.xs),
           ],
           if (showLinkActions)
             Row(

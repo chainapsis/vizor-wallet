@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
@@ -67,6 +69,11 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        // These tests exercise funding and navigation with fake operations.
+        // Observer behavior has its own controlled service and widget tests.
+        giftCardTrackingServiceProvider.overrideWithValue(
+          _IdleGiftCardTracker(),
+        ),
         appBootstrapProvider.overrideWithValue(appBootstrap),
         if (pricingEnabled != null)
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
@@ -941,4 +948,12 @@ RenderEditable findRenderEditable(RenderObject root) {
     found ??= findRenderEditable(child);
   });
   return found!;
+}
+
+class _IdleGiftCardTracker implements GiftCardTrackingService {
+  @override
+  Future<void> refresh({bool force = false}) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

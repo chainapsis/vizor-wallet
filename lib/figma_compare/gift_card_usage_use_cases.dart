@@ -21,9 +21,16 @@ class _CaptureState extends GiftCardTrackingStateNotifier {
       const GiftCardTrackingState(failedAddresses: {'failed'});
 }
 
-Widget _fixture(Widget child) => ProviderScope(
+class _CaptureCheckingState extends GiftCardTrackingStateNotifier {
+  @override
+  GiftCardTrackingState build() => const GiftCardTrackingState(checking: true);
+}
+
+Widget _fixture(Widget child, {bool checking = false}) => ProviderScope(
   overrides: [
-    giftCardTrackingStateProvider.overrideWith(_CaptureState.new),
+    giftCardTrackingStateProvider.overrideWith(
+      checking ? _CaptureCheckingState.new : _CaptureState.new,
+    ),
     giftCardUsageProvider.overrideWith((ref, address) async {
       final status = switch (address) {
         'unknown' => GiftCardUsageStatus.unknown,
@@ -52,41 +59,72 @@ const _card = PaymentLinkGiftCard(
   showCaret: false,
 );
 
-Widget buildGiftCardUsageListCapture(BuildContext context) => _fixture(
-  PaymentLinkCardsDesktopView(
-    onBack: _noop,
-    onCreate: _noop,
-    onRedeem: _noop,
-    sections: [
-      PaymentLinkCardsSection(
-        label: 'Pending',
-        cards: [
-          for (final address in [
-            'unknown',
-            'unused',
-            'detected',
-            'used',
-            'failed',
-          ])
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PaymentLinkCardListRow(
-                  thumbnail: const FittedBox(child: _card),
-                  amountText: '0.25 ZEC',
-                  dateText: 'September 14',
-                  showLinkActions: true,
-                  onCopyLink: _noop,
-                  onShowQr: _noop,
-                ),
-                GiftCardUsageStatusView(address: address),
-              ],
+Widget buildGiftCardUsageListCapture(BuildContext context) => _list();
+Widget buildGiftCardUsageCheckingCapture(BuildContext context) =>
+    _list(checking: true);
+Widget buildMobileGiftCardUsageListCapture(BuildContext context) =>
+    _list(mobile: true);
+Widget buildMobileGiftCardUsageCheckingCapture(BuildContext context) =>
+    _list(mobile: true, checking: true);
+
+Widget _list({bool mobile = false, bool checking = false}) {
+  final sections = [
+    PaymentLinkCardsSection(
+      label: 'Pending',
+      cards: [
+        for (final address in [
+          'unknown',
+          'unused',
+          'detected',
+          'used',
+          'failed',
+        ])
+          if (mobile)
+            PaymentLinkCardListMobileRow(
+              thumbnail: const FittedBox(child: _card),
+              amountText: '0.25 ZEC',
+              dateText: 'September 14',
+              showLinkActions: true,
+              onCopyLink: _noop,
+              onShowQr: _noop,
+              usageStatus: GiftCardUsageStatusView(
+                address: address,
+                inline: true,
+              ),
+            )
+          else
+            PaymentLinkCardListRow(
+              thumbnail: const FittedBox(child: _card),
+              amountText: '0.25 ZEC',
+              dateText: 'September 14',
+              showLinkActions: true,
+              onCopyLink: _noop,
+              onShowQr: _noop,
+              usageStatus: GiftCardUsageStatusView(
+                address: address,
+                inline: true,
+              ),
             ),
-        ],
-      ),
-    ],
-  ),
-);
+      ],
+    ),
+  ];
+  return _fixture(
+    mobile
+        ? PaymentLinkCardsMobileView(
+            sections: sections,
+            onBack: _noop,
+            onCreate: _noop,
+            onRedeem: _noop,
+          )
+        : PaymentLinkCardsDesktopView(
+            sections: sections,
+            onBack: _noop,
+            onCreate: _noop,
+            onRedeem: _noop,
+          ),
+    checking: checking,
+  );
+}
 
 Widget buildGiftCardUsageReadyCapture(BuildContext context) => _fixture(
   const PaymentLinkReadyMobileView(

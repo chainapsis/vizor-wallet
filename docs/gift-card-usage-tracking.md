@@ -13,7 +13,11 @@ attempts registration before funding; observation failure leaves that intent
 retryable without causing another funding send. Related visible screens request
 refreshes, coalesced with a 30-second cooldown. Usage is displayed on the card
 list and creation completion screens; sharing and activity detail retain their
-original presentation. Activity detail does not request observation. No observer
+original presentation. List rows show a short status before the copy/QR actions,
+with a reserved slot for a checking spinner or a per-card error icon. Error
+details are available by hover or tap. Narrow mobile rows place the status
+below the amount/date to preserve the details and 44-pixel action targets.
+Activity detail does not request observation. No observer
 timer runs globally.
 
 A wallet-instance/network-scoped `gift_card_tracking_*` directory contains one

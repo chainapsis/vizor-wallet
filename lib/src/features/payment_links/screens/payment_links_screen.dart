@@ -2427,23 +2427,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final actionsEnabled = state.canUseLink && !_operationInProgress;
     final copyEnabled =
         actionsEnabled && !_copyingLinkAddresses.contains(record.link.address);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PaymentLinkCardListRow(
-          key: ValueKey('payment_link_recovery_${record.link.address}'),
-          thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-          amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
-          dateText: _formatCardDate(record.link.createdAt),
-          statusText: state.canUseLink ? null : state.statusText,
-          onAction: null,
-          showLinkActions: state.canUseLink,
-          onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
-          onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
-          showLoader: state.showLoader,
-        ),
-        GiftCardUsageStatusView(address: record.link.address),
-      ],
+    return PaymentLinkCardListRow(
+      key: ValueKey('payment_link_recovery_${record.link.address}'),
+      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
+      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      dateText: _formatCardDate(record.link.createdAt),
+      statusText: state.canUseLink ? null : state.statusText,
+      onAction: null,
+      showLinkActions: state.canUseLink,
+      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+      onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
+      showLoader: state.showLoader,
+      usageStatus: state.canUseLink
+          ? GiftCardUsageStatusView(address: record.link.address, inline: true)
+          : null,
     );
   }
 
@@ -2452,22 +2449,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final actionsEnabled = state.canUseLink && !_operationInProgress;
     final copyEnabled =
         actionsEnabled && !_copyingLinkAddresses.contains(record.link.address);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PaymentLinkCardListMobileRow(
-          key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
-          thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-          amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
-          dateText: _formatCardDate(record.link.createdAt),
-          statusText: state.canUseLink ? null : state.statusText,
-          showLinkActions: state.canUseLink,
-          onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
-          onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
-          showLoader: state.showLoader,
-        ),
-        GiftCardUsageStatusView(address: record.link.address),
-      ],
+    return PaymentLinkCardListMobileRow(
+      key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
+      thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
+      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      dateText: _formatCardDate(record.link.createdAt),
+      statusText: state.canUseLink ? null : state.statusText,
+      showLinkActions: state.canUseLink,
+      onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
+      onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
+      showLoader: state.showLoader,
+      usageStatus: state.canUseLink
+          ? GiftCardUsageStatusView(address: record.link.address, inline: true)
+          : null,
     );
   }
 

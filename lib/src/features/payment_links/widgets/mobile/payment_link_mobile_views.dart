@@ -485,6 +485,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
+    this.usageStatus,
     this.actionLabel,
     this.onAction,
     this.showLoader = false,
@@ -497,6 +498,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
+  final Widget? usageStatus;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -509,10 +511,24 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
   final VoidCallback? onShowQr;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => _buildRow(
+      context,
+      stackUsage:
+          usageStatus != null &&
+          constraints.maxWidth <
+              280 + MediaQuery.textScalerOf(context).scale(120),
+    ),
+  );
+
+  Widget _buildRow(BuildContext context, {required bool stackUsage}) {
     final colors = context.colors;
     return SizedBox(
-      height: actionLabel == null ? 64 : 88,
+      height: stackUsage
+          ? 88
+          : actionLabel == null
+          ? 64
+          : 88,
       child: Row(
         children: [
           ClipRRect(
@@ -550,10 +566,19 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
                     color: colors.text.secondary,
                   ),
                 ),
+                if (stackUsage)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                    child: SizedBox(width: 104, child: usageStatus),
+                  ),
               ],
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
+          if (usageStatus != null && !stackUsage) ...[
+            SizedBox(width: 104, child: usageStatus),
+            const SizedBox(width: AppSpacing.xs),
+          ],
           if (showLinkActions) ...[
             _MobileCardLinkAction(
               key: const ValueKey('payment_link_mobile_card_copy_action'),
