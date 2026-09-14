@@ -1,9 +1,4 @@
-// ignore_for_file: depend_on_referenced_packages
-// widgetbook is a dev-only dependency; see `widgetbook.dart` for the
-// production-boundary justification.
-
 import 'package:flutter/material.dart';
-import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
@@ -31,7 +26,7 @@ Widget buildButtonMatrixUseCase(BuildContext context) {
         size: size,
         leading: leading,
         trailing: trailing,
-        child: Text(_labelForSize(size)),
+        child: Text(buttonFixtureLabelForSize(size)),
       ),
     );
   }
@@ -96,36 +91,18 @@ Widget buildButtonMatrixUseCase(BuildContext context) {
   );
 }
 
-/// Interactive playground — every widget parameter exposed as a knob so the
-/// hover / pressed / focus / disabled states can be exercised on a live
-/// instance, and the label/icons can be tweaked without editing code.
-Widget buildButtonInteractiveUseCase(BuildContext context) {
-  final variant = context.knobs.object.dropdown<AppButtonVariant>(
-    label: 'Variant',
-    options: AppButtonVariant.values,
-    initialOption: AppButtonVariant.primary,
-    labelBuilder: (v) => v.name,
-  );
-  final size = context.knobs.object.segmented<AppButtonSize>(
-    label: 'Size',
-    options: AppButtonSize.values,
-    initialOption: AppButtonSize.large,
-    labelBuilder: (s) => s.name,
-  );
-  final enabled = context.knobs.boolean(label: 'Enabled', initialValue: true);
-  final showLeading = context.knobs.boolean(
-    label: 'Leading icon',
-    initialValue: true,
-  );
-  final showTrailing = context.knobs.boolean(
-    label: 'Trailing icon',
-    initialValue: true,
-  );
-  final label = context.knobs.string(
-    label: 'Label',
-    initialValue: 'Create New Wallet',
-  );
-
+/// One button on the plain component ground, behind the gallery playground.
+/// The defaults are the Figma component sheet's render, so adding a knob
+/// never moves them.
+Widget buttonSingleFixture(
+  BuildContext context, {
+  required AppButtonVariant variant,
+  required AppButtonSize size,
+  bool enabled = true,
+  bool leadingIcon = true,
+  bool trailingIcon = true,
+  String? label,
+}) {
   return ColoredBox(
     color: context.colors.background.ground,
     child: Center(
@@ -133,35 +110,15 @@ Widget buildButtonInteractiveUseCase(BuildContext context) {
         onPressed: enabled ? () {} : null,
         variant: variant,
         size: size,
-        leading: showLeading ? const Icon(Icons.add) : null,
-        trailing: showTrailing ? const Icon(Icons.arrow_forward) : null,
-        child: Text(label),
+        leading: leadingIcon ? const Icon(Icons.add) : null,
+        trailing: trailingIcon ? const Icon(Icons.arrow_forward) : null,
+        child: Text(label ?? buttonFixtureLabelForSize(size)),
       ),
     ),
   );
 }
 
-Widget _buildSingle(
-  BuildContext context, {
-  required AppButtonVariant variant,
-  required AppButtonSize size,
-}) {
-  return ColoredBox(
-    color: context.colors.background.ground,
-    child: Center(
-      child: AppButton(
-        onPressed: () {},
-        variant: variant,
-        size: size,
-        leading: const Icon(Icons.add),
-        trailing: const Icon(Icons.arrow_forward),
-        child: Text(_labelForSize(size)),
-      ),
-    ),
-  );
-}
-
-String _labelForSize(AppButtonSize size) {
+String buttonFixtureLabelForSize(AppButtonSize size) {
   return switch (size) {
     AppButtonSize.large => 'Create New Wallet',
     AppButtonSize.mediumLarge => 'Add to contacts',
@@ -169,78 +126,3 @@ String _labelForSize(AppButtonSize size) {
     AppButtonSize.small => 'Copy',
   };
 }
-
-// Individual use cases — one per (variant × size) so each can be deep-linked
-// and captured as a snapshot.
-Widget buildButtonPrimaryLargeUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.primary,
-  size: AppButtonSize.large,
-);
-
-Widget buildButtonPrimaryMediumUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.primary,
-  size: AppButtonSize.medium,
-);
-
-Widget buildButtonPrimarySmallUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.primary,
-  size: AppButtonSize.small,
-);
-
-Widget buildButtonSecondaryLargeUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.secondary,
-  size: AppButtonSize.large,
-);
-
-Widget buildButtonSecondaryMediumUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.secondary,
-  size: AppButtonSize.medium,
-);
-
-Widget buildButtonSecondarySmallUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.secondary,
-  size: AppButtonSize.small,
-);
-
-Widget buildButtonGhostLargeUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.ghost,
-  size: AppButtonSize.large,
-);
-
-Widget buildButtonGhostMediumUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.ghost,
-  size: AppButtonSize.medium,
-);
-
-Widget buildButtonGhostSmallUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.ghost,
-  size: AppButtonSize.small,
-);
-
-Widget buildButtonDestructiveLargeUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.destructive,
-  size: AppButtonSize.large,
-);
-
-Widget buildButtonDestructiveMediumUseCase(BuildContext context) =>
-    _buildSingle(
-      context,
-      variant: AppButtonVariant.destructive,
-      size: AppButtonSize.medium,
-    );
-
-Widget buildButtonDestructiveSmallUseCase(BuildContext context) => _buildSingle(
-  context,
-  variant: AppButtonVariant.destructive,
-  size: AppButtonSize.small,
-);

@@ -46,7 +46,6 @@ import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_
 import '../src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
-import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import '../src/features/onboarding/import/import_split_view.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
@@ -86,6 +85,7 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+import 'support/wb_layout.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -210,27 +210,29 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
 }
 
 Widget buildImportCustomiseAccountUseCase(BuildContext context) {
-  return ColoredBox(
-    color: context.colors.macosUtility.window,
-    child: ProviderScope(
-      overrides: [
-        accountProvider.overrideWith(
-          () => _PreviewAccountNotifier(const AccountState()),
-        ),
-      ],
-      child: ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.customiseAccount,
-        showPasswordStep: true,
-        child: CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(
-            setupArgs: SetPasswordScreenArgs.importWallet(
-              mnemonic: _previewMnemonic,
-              birthdayHeight: 2500000,
-            ),
-            pendingPassword: 'PreviewPassword1!',
+  return WbDesktopWindowBox(
+    child: ColoredBox(
+      color: context.colors.macosUtility.window,
+      child: ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(
+            () => _PreviewAccountNotifier(const AccountState()),
           ),
-          random: Random(1234),
-          onFinish: (_, _) async {},
+        ],
+        child: ImportOnboardingShell(
+          activeStep: ImportOnboardingStep.customiseAccount,
+          showPasswordStep: true,
+          child: CustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.importWallet(
+                mnemonic: _previewMnemonic,
+                birthdayHeight: 2500000,
+              ),
+              pendingPassword: 'PreviewPassword1!',
+            ),
+            random: Random(1234),
+            onFinish: (_, _) async {},
+          ),
         ),
       ),
     ),
@@ -245,34 +247,8 @@ Widget buildUnlockLoginUseCase(BuildContext context) {
 }
 
 Widget buildIronwoodMigrationPrivacyLockUseCase(BuildContext context) {
-  return const ProviderScope(child: IronwoodMigrationVirtualUnlockScreen());
-}
-
-Widget buildLostPasswordCountdownUseCase(BuildContext context) {
-  return ProviderScope(
-    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
-    child: IgnorePointer(
-      child: LostPasswordScreen(
-        initialCountdownSeconds: 3,
-        countdownEnabled: false,
-        onBack: () {},
-        onReset: () async {},
-      ),
-    ),
-  );
-}
-
-Widget buildLostPasswordEnabledUseCase(BuildContext context) {
-  return ProviderScope(
-    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
-    child: IgnorePointer(
-      child: LostPasswordScreen(
-        initialCountdownSeconds: 0,
-        countdownEnabled: false,
-        onBack: () {},
-        onReset: () async {},
-      ),
-    ),
+  return const ProviderScope(
+    child: WbDesktopWindowBox(child: IronwoodMigrationVirtualUnlockScreen()),
   );
 }
 
@@ -347,19 +323,21 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
 }
 
 Widget buildImportSecretPassphraseUseCase(BuildContext context) {
-  return ColoredBox(
-    color: context.colors.background.window,
-    child: ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      ],
-      child: ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.secretPassphrase,
-        showPasswordStep: false,
-        child: ImportSecretPassphraseScreen(
-          wordListOverride: _previewImportWordList,
-          mnemonicValidatorOverride: _previewMnemonicValidator,
-          useEnvironmentPrivacySignals: false,
+  return WbDesktopWindowBox(
+    child: ColoredBox(
+      color: context.colors.background.window,
+      child: ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+        child: ImportOnboardingShell(
+          activeStep: ImportOnboardingStep.secretPassphrase,
+          showPasswordStep: false,
+          child: ImportSecretPassphraseScreen(
+            wordListOverride: _previewImportWordList,
+            mnemonicValidatorOverride: _previewMnemonicValidator,
+            useEnvironmentPrivacySignals: false,
+          ),
         ),
       ),
     ),
@@ -367,23 +345,25 @@ Widget buildImportSecretPassphraseUseCase(BuildContext context) {
 }
 
 Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
-  return ColoredBox(
-    color: context.colors.background.window,
-    child: ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      ],
-      child: ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.secretPassphrase,
-        showPasswordStep: false,
-        child: ImportSecretPassphraseScreen(
-          args: const ImportSecretPassphraseArgs(
-            mnemonic: _previewMnemonic,
-            bip39Passphrase: 'My BIP39 passphrase',
+  return WbDesktopWindowBox(
+    child: ColoredBox(
+      color: context.colors.background.window,
+      child: ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+        child: ImportOnboardingShell(
+          activeStep: ImportOnboardingStep.secretPassphrase,
+          showPasswordStep: false,
+          child: ImportSecretPassphraseScreen(
+            args: const ImportSecretPassphraseArgs(
+              mnemonic: _previewMnemonic,
+              bip39Passphrase: 'My BIP39 passphrase',
+            ),
+            wordListOverride: _previewImportWordList,
+            mnemonicValidatorOverride: _previewMnemonicValidator,
+            useEnvironmentPrivacySignals: false,
           ),
-          wordListOverride: _previewImportWordList,
-          mnemonicValidatorOverride: _previewMnemonicValidator,
-          useEnvironmentPrivacySignals: false,
         ),
       ),
     ),
@@ -391,22 +371,24 @@ Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
 }
 
 Widget buildImportSecretPassphraseInvalidWordUseCase(BuildContext context) {
-  return ColoredBox(
-    color: context.colors.background.window,
-    child: ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      ],
-      child: ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.secretPassphrase,
-        showPasswordStep: false,
-        child: ImportSecretPassphraseScreen(
-          args: const ImportSecretPassphraseArgs(
-            mnemonic: _previewInvalidImportMnemonic,
+  return WbDesktopWindowBox(
+    child: ColoredBox(
+      color: context.colors.background.window,
+      child: ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+        child: ImportOnboardingShell(
+          activeStep: ImportOnboardingStep.secretPassphrase,
+          showPasswordStep: false,
+          child: ImportSecretPassphraseScreen(
+            args: const ImportSecretPassphraseArgs(
+              mnemonic: _previewInvalidImportMnemonic,
+            ),
+            wordListOverride: _previewImportWordList,
+            mnemonicValidatorOverride: _previewMnemonicValidator,
+            useEnvironmentPrivacySignals: false,
           ),
-          wordListOverride: _previewImportWordList,
-          mnemonicValidatorOverride: _previewMnemonicValidator,
-          useEnvironmentPrivacySignals: false,
         ),
       ),
     ),
@@ -414,24 +396,26 @@ Widget buildImportSecretPassphraseInvalidWordUseCase(BuildContext context) {
 }
 
 Widget buildImportSecretPassphraseModalUseCase(BuildContext context) {
-  return ColoredBox(
-    color: context.colors.background.window,
-    child: ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      ],
-      child: ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.secretPassphrase,
-        showPasswordStep: false,
-        child: ImportSecretPassphraseScreen(
-          args: const ImportSecretPassphraseArgs(
-            mnemonic: _previewMnemonic,
-            bip39Passphrase: 'My BIP39 passphrase',
+  return WbDesktopWindowBox(
+    child: ColoredBox(
+      color: context.colors.background.window,
+      child: ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+        child: ImportOnboardingShell(
+          activeStep: ImportOnboardingStep.secretPassphrase,
+          showPasswordStep: false,
+          child: ImportSecretPassphraseScreen(
+            args: const ImportSecretPassphraseArgs(
+              mnemonic: _previewMnemonic,
+              bip39Passphrase: 'My BIP39 passphrase',
+            ),
+            wordListOverride: _previewImportWordList,
+            mnemonicValidatorOverride: _previewMnemonicValidator,
+            initialBip39PassphraseModalOpen: true,
+            useEnvironmentPrivacySignals: false,
           ),
-          wordListOverride: _previewImportWordList,
-          mnemonicValidatorOverride: _previewMnemonicValidator,
-          initialBip39PassphraseModalOpen: true,
-          useEnvironmentPrivacySignals: false,
         ),
       ),
     ),
@@ -1225,10 +1209,6 @@ Widget buildMobileAccountsActiveMigrationRemoveAccountUseCase(
   );
 }
 
-Widget buildMobileAccountsManyUseCase(BuildContext context) {
-  return _buildMobileAccountsUseCase(_accountsManyState);
-}
-
 Widget buildMobileHomeDefaultUseCase(
   BuildContext context, {
   bool votingVisible = true,
@@ -1240,18 +1220,6 @@ Widget buildMobileHomeDefaultUseCase(
       orchardBalance: BigInt.from(14312000000),
       recentTransactions: [_homeTx(1), _homeTx(2)],
     ),
-  );
-}
-
-Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
-  final transactions = _previewGiftCardActivityTransactions();
-  return _buildMobileHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14312000000),
-      recentTransactions: transactions,
-    ),
-    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -1302,21 +1270,6 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
       ),
     ),
   );
-}
-
-List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
-  return [
-    _giftCardActivityTx(
-      txidHex: 'preview-gift-card-redeemed',
-      kind: 'received',
-      seconds: 1800000011,
-    ),
-    _giftCardActivityTx(
-      txidHex: 'preview-gift-card-created',
-      kind: 'sent',
-      seconds: 1800000010,
-    ),
-  ];
 }
 
 GiftCardActivityIndex _previewGiftCardActivityIndex() {
@@ -1400,24 +1353,10 @@ Widget buildMobileHomeIronwoodMigrationInProgressUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileHomeNoActivityUseCase(BuildContext context) {
-  return _buildMobileHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(orchardBalance: BigInt.from(14312000000)),
-  );
-}
-
 Widget buildMobileHomeNoBalanceUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
     syncState: _homeSyncedState(),
-  );
-}
-
-Widget buildMobileHomeNoBalanceKeystoneUseCase(BuildContext context) {
-  return _buildMobileHomeUseCase(
-    accountState: _homeKeystoneState,
-    syncState: _homeSyncedState(accountUuid: _homeKeystoneAccountUuid),
   );
 }
 
@@ -1467,18 +1406,6 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
     zecUsdPrice: 1200.12 / 143.23,
-  );
-}
-
-Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
-  return _buildDesktopHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14_323_000_000),
-      recentTransactions: _previewGiftCardActivityTransactions(),
-    ),
-    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
-    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -2167,37 +2094,40 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
   // Production only knows the round split and message count once the request
   // is encoded, so the loading state carries neither.
   final loading = state == MobileIronwoodKeystoneSigningViewState.loading;
-  return SizedBox(
-    width: 393,
-    height: 852,
-    child: MediaQuery(
-      data: const MediaQueryData(
-        size: Size(393, 852),
-        viewPadding: EdgeInsets.only(top: 55),
-      ),
-      child: MobileIronwoodKeystoneSigningView(
-        state: state,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        // A multi-round request: the badge and the per-round transaction count
-        // are the states that need previewing.
-        signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
-        signingMessageCountLabel: loading
-            ? null
-            : multiRound
-            ? 'Signs 26 of 51 transactions'
-            : 'Signs 51 transactions',
-        // Mid-scan so the viewfinder-width progress bar and its numeric
-        // readout are visible in the scanner preview.
-        scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
-            ? 0.42
-            : null,
-        qrCode: const _KeystoneMigrationQrPreview(),
-        camera: const _KeystoneMigrationCameraPreview(),
-        onNext: () {},
-        onCancel: () {},
-        onToggleFlashlight: () {},
-        onShowRequestQr: () {},
-        onShowScanHelp: () {},
+  return WbScaleDownBox(
+    size: const Size(393, 852),
+    child: SizedBox(
+      width: 393,
+      height: 852,
+      child: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(393, 852),
+          viewPadding: EdgeInsets.only(top: 55),
+        ),
+        child: MobileIronwoodKeystoneSigningView(
+          state: state,
+          round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+          // A multi-round request: the badge and the per-round transaction count
+          // are the states that need previewing.
+          signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
+          signingMessageCountLabel: loading
+              ? null
+              : multiRound
+              ? 'Signs 26 of 51 transactions'
+              : 'Signs 51 transactions',
+          // Mid-scan so the viewfinder-width progress bar and its numeric
+          // readout are visible in the scanner preview.
+          scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
+              ? 0.42
+              : null,
+          qrCode: const _KeystoneMigrationQrPreview(),
+          camera: const _KeystoneMigrationCameraPreview(),
+          onNext: () {},
+          onCancel: () {},
+          onToggleFlashlight: () {},
+          onShowRequestQr: () {},
+          onShowScanHelp: () {},
+        ),
       ),
     ),
   );
@@ -2532,13 +2462,16 @@ Widget _buildMobileAccountsUseCase(
       ),
     ],
     child: Center(
-      child: SizedBox(
-        width: 393,
-        height: 852,
-        child: _MobileAccountsHarness(
-          initialSheetAccountUuid: initialSheetAccountUuid,
-          initialSheet: initialSheet,
-          initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+      child: WbScaleDownBox(
+        size: const Size(393, 852),
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: _MobileAccountsHarness(
+            initialSheetAccountUuid: initialSheetAccountUuid,
+            initialSheet: initialSheet,
+            initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
+          ),
         ),
       ),
     ),
@@ -2736,9 +2669,11 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -2791,9 +2726,11 @@ class _SettingsSubScreenHarnessState extends State<_SettingsSubScreenHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -2868,9 +2805,11 @@ class _SettingsHarnessState extends State<_SettingsHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -2935,7 +2874,7 @@ class _UtilityHarnessState extends State<_UtilityHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return Router.withConfig(config: _router);
+    return WbDesktopWindowBox(child: Router.withConfig(config: _router));
   }
 }
 
@@ -3188,9 +3127,11 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3451,9 +3392,11 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3508,9 +3451,11 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3572,9 +3517,11 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3621,9 +3568,11 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
   Widget build(BuildContext context) {
     // Mirror the app-level `_DesktopOpaqueWindowBackground` underlay so
     // transparent shells (backdrop screens) don't show Widgetbook chrome.
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3786,7 +3735,10 @@ class _MobilePreviewFrame extends StatelessWidget {
     );
     if (!constrainToDesignSize) return frame;
     return Center(
-      child: SizedBox.fromSize(size: size, child: frame),
+      child: WbScaleDownBox(
+        size: size,
+        child: SizedBox.fromSize(size: size, child: frame),
+      ),
     );
   }
 }
@@ -3960,22 +3912,6 @@ AccountState _ironwoodMigrationAccountState({bool isHardware = false}) {
     activeAddress: _accountsDesignState.activeAddress,
   );
 }
-
-const _homeKeystoneAccountUuid = 'preview-keystone-account';
-
-final _homeKeystoneState = AccountState(
-  accounts: const [
-    AccountInfo(
-      uuid: _homeKeystoneAccountUuid,
-      name: 'Keystone Vault',
-      order: 0,
-      isHardware: true,
-      profilePictureId: 'pfp-02',
-    ),
-  ],
-  activeAccountUuid: _homeKeystoneAccountUuid,
-  activeAddress: 'u1widgetbookkeystoneaddress',
-);
 
 const _mobileHomeTabItems = [
   AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),

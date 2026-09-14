@@ -260,19 +260,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
               ),
             ],
           ),
-          WidgetbookComponent(
-            name: 'Lost Password',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Countdown',
-                builder: buildLostPasswordCountdownUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Enabled',
-                builder: buildLostPasswordEnabledUseCase,
-              ),
-            ],
-          ),
         ],
       ),
       WidgetbookFolder(
@@ -285,22 +272,12 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Default',
                 builder: buildMobileHomeDefaultUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Gift Cards',
-                builder: buildMobileHomeGiftCardsUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'No activity',
-                builder: buildMobileHomeNoActivityUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'No balance',
                 builder: buildMobileHomeNoBalanceUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'No balance keystone',
-                builder: buildMobileHomeNoBalanceKeystoneUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Importing',
                 builder: buildMobileHomeImportingUseCase,
@@ -308,15 +285,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
               WidgetbookUseCase(
                 name: 'Accounts modal',
                 builder: buildMobileHomeAccountsModalUseCase,
-              ),
-            ],
-          ),
-          WidgetbookComponent(
-            name: 'Desktop',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Gift Cards',
-                builder: buildDesktopHomeGiftCardsUseCase,
               ),
             ],
           ),
@@ -577,10 +545,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
               WidgetbookUseCase(
                 name: 'Remove account during migration',
                 builder: buildMobileAccountsActiveMigrationRemoveAccountUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Many accounts',
-                builder: buildMobileAccountsManyUseCase,
               ),
             ],
           ),
@@ -2011,58 +1975,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
         name: 'Button',
         useCases: [
           WidgetbookUseCase(name: 'Matrix', builder: buildButtonMatrixUseCase),
-          WidgetbookUseCase(
-            name: 'Interactive',
-            builder: buildButtonInteractiveUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Primary / Large',
-            builder: buildButtonPrimaryLargeUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Primary / Medium',
-            builder: buildButtonPrimaryMediumUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Primary / Small',
-            builder: buildButtonPrimarySmallUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Secondary / Large',
-            builder: buildButtonSecondaryLargeUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Secondary / Medium',
-            builder: buildButtonSecondaryMediumUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Secondary / Small',
-            builder: buildButtonSecondarySmallUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Ghost / Large',
-            builder: buildButtonGhostLargeUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Ghost / Medium',
-            builder: buildButtonGhostMediumUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Ghost / Small',
-            builder: buildButtonGhostSmallUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Destructive / Large',
-            builder: buildButtonDestructiveLargeUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Destructive / Medium',
-            builder: buildButtonDestructiveMediumUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Destructive / Small',
-            builder: buildButtonDestructiveSmallUseCase,
-          ),
         ],
       ),
       WidgetbookComponent(
@@ -2125,10 +2037,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
           WidgetbookUseCase(
             name: 'Gallery',
             builder: buildTextFieldGalleryUseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Interactive',
-            builder: buildTextFieldInteractiveUseCase,
           ),
         ],
       ),
