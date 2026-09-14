@@ -1,0 +1,219 @@
+import 'dart:async';
+
+import '../models/gift_card_usage.dart';
+import 'payment_link_recovery_store.dart';
+
+/// A narrow observer-only boundary, independently replaceable in tests.
+abstract interface class GiftCardTrackingBackend {
+  Future<String> register(PaymentLinkRecoveryRecord card);
+  Future<void> sync(String network);
+  Future<List<String>> accounts(String network);
+  Future<GiftCardUsage> inspect(PaymentLinkRecoveryRecord card);
+  Future<void> remove(String network, String accountUuid);
+  void cancel();
+}
+
+/// One owner serializes registration, scans and deletion. Durable card records
+/// are the registration intents; an interrupted import is repaired idempotently.
+class GiftCardTrackingService {
+  GiftCardTrackingService({
+    required this.store,
+    required this.backend,
+    required this.network,
+    required this.allowed,
+    required this.onState,
+    DateTime Function()? now,
+  }) : now = now ?? DateTime.now;
+
+  final PaymentLinkRecoveryStore store;
+  final GiftCardTrackingBackend backend;
+  final String Function() network;
+  final bool Function() allowed;
+  final void Function(bool checking, bool failed) onState;
+  final DateTime Function() now;
+  Future<void> _tail = Future.value();
+  Future<void>? _refresh;
+  int _epoch = 0;
+  bool _quiesced = false;
+  DateTime? _lastSync;
+  String? _lastNetwork;
+
+  bool _valid(int epoch) => epoch == _epoch && !_quiesced && allowed();
+
+  Future<void> _enqueue(Future<void> Function(int epoch) work) {
+    final epoch = _epoch;
+    final result = _tail.then((_) async {
+      if (_valid(epoch)) await work(epoch);
+    });
+    _tail = result.then<void>((_) {}, onError: (_, _) {});
+    return result;
+  }
+
+  Future<void> register(PaymentLinkRecoveryRecord card) =>
+      _enqueue((epoch) async {
+        final records = await store.load();
+        if (!_valid(epoch)) return;
+        final current = records
+            .where((c) => c.link.hasSameCanonicalPayload(card.link))
+            .firstOrNull;
+        if (current == null ||
+            current.link.network != network() ||
+            current.usage.cleaned ||
+            current.usage.cleanupPending) {
+          return;
+        }
+        final uuid = await backend.register(current);
+        if (!_valid(epoch)) return;
+        await store.updateUsage(
+          expected: current,
+          usage: current.usage.withAccount(uuid),
+        );
+        _lastSync = null;
+      });
+
+  Future<void> refresh({bool force = false}) {
+    final existing = _refresh;
+    if (existing != null) return existing;
+    late final Future<void> result;
+    result =
+        _enqueue((epoch) async {
+          final currentNetwork = network();
+          if (!force &&
+              _lastNetwork == currentNetwork &&
+              _lastSync != null &&
+              now().difference(_lastSync!) < const Duration(seconds: 30)) {
+            return;
+          }
+          onState(true, false);
+          var failed = false;
+          try {
+            var cards = (await store.load())
+                .where(
+                  (c) => c.link.network == currentNetwork && !c.usage.cleaned,
+                )
+                .toList();
+            if (!_valid(epoch)) return;
+            final knownAccounts = (await backend.accounts(
+              currentNetwork,
+            )).toSet();
+            for (final card in cards) {
+              if (!_valid(epoch) || network() != currentNetwork) return;
+              // Recover deletion after a crash without recreating the removed account.
+              if (card.usage.cleanupPending) {
+                await backend.remove(currentNetwork, card.usage.accountUuid!);
+                if (!_valid(epoch)) return;
+                await store.updateUsage(
+                  expected: card,
+                  usage: card.usage.afterCleanup(),
+                );
+                continue;
+              }
+              if (knownAccounts.contains(card.usage.accountUuid)) continue;
+              final uuid = await backend.register(card);
+              if (!_valid(epoch)) return;
+              if (card.usage.accountUuid != uuid) {
+                await store.updateUsage(
+                  expected: card,
+                  usage: card.usage.withAccount(uuid),
+                );
+              }
+            }
+            if (!_valid(epoch)) return;
+            final retained = (await store.load())
+                .where(
+                  (c) => c.link.network == currentNetwork && !c.usage.cleaned,
+                )
+                .map((c) => c.usage.accountUuid)
+                .whereType<String>()
+                .toSet();
+            final registered = await backend.accounts(currentNetwork);
+            for (final uuid in registered) {
+              if (!_valid(epoch)) return;
+              if (!retained.contains(uuid)) {
+                await backend.remove(currentNetwork, uuid);
+              }
+            }
+            if (!_valid(epoch)) return;
+            cards = (await store.load())
+                .where(
+                  (c) =>
+                      c.link.network == currentNetwork &&
+                      !c.usage.cleaned &&
+                      !c.usage.cleanupPending &&
+                      c.usage.accountUuid != null &&
+                      (c.fundingTxids?.isNotEmpty ?? false),
+                )
+                .toList();
+            if (cards.isEmpty) return;
+            await backend.sync(currentNetwork);
+            if (!_valid(epoch) || network() != currentNetwork) return;
+            for (final card in cards) {
+              final observation = await backend.inspect(card);
+              if (!_valid(epoch)) return;
+              // No history is not proof of a reorg or a failed broadcast. Preserve
+              // the prior snapshot but do not claim it was freshly verified.
+              if (observation.status == GiftCardUsageStatus.unknown &&
+                  card.usage.status != GiftCardUsageStatus.unknown) {
+                continue;
+              }
+              final saved = await store.updateUsage(
+                expected: card,
+                usage: observation,
+              );
+              if (!_valid(epoch)) return;
+              if (saved && observation.cleanupPending) {
+                await backend.remove(currentNetwork, observation.accountUuid!);
+                if (!_valid(epoch)) return;
+                await store.updateUsage(
+                  expected: card.copyWith(
+                    state: card.state,
+                    updatedAt: card.updatedAt,
+                    usage: observation,
+                  ),
+                  usage: observation.afterCleanup(),
+                );
+              }
+            }
+            _lastNetwork = currentNetwork;
+            _lastSync = now();
+          } catch (_) {
+            failed = true;
+            rethrow;
+          } finally {
+            if (_valid(epoch)) onState(false, failed);
+          }
+        }).whenComplete(() {
+          if (identical(_refresh, result)) _refresh = null;
+        });
+    _refresh = result;
+    return result;
+  }
+
+  void pause() {
+    _epoch++;
+    _lastSync = null;
+    backend.cancel();
+    onState(false, false);
+  }
+
+  Future<void> quiesceAndDrain() async {
+    _quiesced = true;
+    pause();
+    // Also cover cancellation arriving just before the native worker registers
+    // its scan token. Never delete a DB until its worker has actually exited.
+    final timer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => backend.cancel(),
+    );
+    try {
+      await _tail;
+    } finally {
+      timer.cancel();
+    }
+  }
+
+  void resume() {
+    _quiesced = false;
+    _lastSync = null;
+  }
+}
