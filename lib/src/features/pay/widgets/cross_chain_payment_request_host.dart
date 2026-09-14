@@ -162,9 +162,6 @@ class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
             : resolution.estimateZecAmount(swap.indicativeExternalPerZec),
         selectedChain: flow.selectedChain,
         isLoading: loading,
-        loadingMessage: connectingTor
-            ? 'Connecting to Tor…'
-            : 'Checking payment options…',
         isPreparingReview: flow.isPreparingReview,
         availabilityMessage: availability,
         isMobile: mobile,

@@ -742,7 +742,7 @@ void main() {
 
     expect(
       find.text('Still syncing — check again when the wallet is up to date'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Check again'), findsOneWidget);
     expect(find.text('Review'), findsNothing);

@@ -26,7 +26,6 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
     required this.onRetry,
     this.onEdit,
     this.isLoading = false,
-    this.loadingMessage = 'Checking payment options…',
     this.isPreparingReview = false,
     this.selectedChain,
     this.availabilityMessage,
@@ -45,7 +44,6 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
   final VoidCallback onRetry;
   final VoidCallback? onEdit;
   final bool isLoading;
-  final String loadingMessage;
   final bool isPreparingReview;
   final String? selectedChain;
   final String? availabilityMessage;
@@ -112,7 +110,9 @@ class _CrossChainPaymentRequestCardState
     final statusMessage =
         request.unsupportedReason ??
         widget.availabilityMessage ??
-        resolution.message;
+        (!widget.isLoading && !resolution.needsNetwork
+            ? resolution.message
+            : null);
     final canContinue =
         resolution.isReady &&
         !resolution.needsNetwork &&
@@ -179,18 +179,12 @@ class _CrossChainPaymentRequestCardState
             )
           else
             details,
-          if (widget.isLoading ||
-              widget.isPreparingReview ||
-              statusMessage != null) ...[
+          if (statusMessage != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Semantics(
               liveRegion: true,
               child: Text(
-                widget.isPreparingReview
-                    ? 'Preparing payment review…'
-                    : widget.isLoading
-                    ? widget.loadingMessage
-                    : statusMessage!,
+                statusMessage,
                 key: const ValueKey('cross_chain_payment_request_status'),
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,

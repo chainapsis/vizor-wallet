@@ -560,7 +560,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     );
     harness.present();
     await tester.pumpAndSettle();
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('payment_request_amount_skeleton')),
       findsOneWidget,
@@ -572,14 +576,22 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     // Even cached metadata does not enable review before the route is ready.
     harness.provider.initial.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(_primary(tester).onPressed, isNull);
     final privacy =
         harness.container.read(networkPrivacyProvider.notifier)
             as _NetworkPrivacyNotifier;
     privacy.setStatus(NetworkPrivacyConnectionStatus.connected);
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(harness.provider.pricingCalls, 2);
     harness.provider.refresh.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
@@ -618,7 +630,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     await tester.tap(find.byKey(_continueKey));
     await tester.pumpAndSettle();
     expect(privacy.retryCalls, 1);
-    expect(find.text('Connecting to Tor…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(harness.location, '/swap');
     privacy.setStatus(NetworkPrivacyConnectionStatus.connected);
     await tester.pumpAndSettle();
@@ -650,7 +666,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     expect(find.textContaining('not available in Vizor'), findsNothing);
     await tester.tap(find.byKey(_continueKey));
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     harness.provider.refresh.complete(_pricing([_btc, _usdc]));
     await tester.pumpAndSettle();
     expect(find.text('25.000001'), findsOneWidget);
@@ -674,7 +694,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     final refresh = notifier.refreshPaymentRequestAssets();
     harness.present();
     await tester.pumpAndSettle();
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Estimated spend'), findsNothing);
     expect(_primary(tester).onPressed, isNull);
     expect(_composerValues(harness.state), original);
@@ -728,7 +752,11 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
       expect(harness.location, '/swap');
       expect(_primary(tester).onPressed, isNull);
       expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
-      expect(find.text('Preparing payment review…'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cross_chain_payment_request_status')),
+        findsNothing,
+      );
       expect(
         harness.container
             .read(crossChainPaymentFlowProvider)
@@ -924,7 +952,7 @@ void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
     await tester.pumpAndSettle();
     expect(
       find.text('Select the receiving network, then enter an amount.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(_primary(tester).onPressed, isNull);
     await _captureHost(

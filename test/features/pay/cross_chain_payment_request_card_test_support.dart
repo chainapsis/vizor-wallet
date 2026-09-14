@@ -209,6 +209,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
       onNetworkSelected: (chain) => selected = chain,
     );
     expect(find.text('Select network'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Selected by you'), findsNothing);
     expect(find.text('Network not specified'), findsOneWidget);
     expect(find.textContaining('25000000'), findsNothing);
@@ -413,7 +417,11 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
   ) async {
     await pump(tester, isLoading: true);
     expect(find.text('25'), findsOneWidget);
-    expect(find.text('Checking payment options…'), findsOneWidget);
+    expect(find.text('Checking payment options…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Checking…'), findsOneWidget);
     expect(
       tester
@@ -440,6 +448,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     );
     expect(find.text('25'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+    expect(
+      find.text('Could not load payment assets. Try again.'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(_continueKey));
     expect(retried, 1);
     expect(continued, 0);
@@ -456,7 +468,11 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
       isPreparingReview: true,
       onCancel: () => cancelled = true,
     );
-    expect(find.text('Preparing payment review…'), findsOneWidget);
+    expect(find.text('Preparing payment review…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('cross_chain_payment_request_status')),
+      findsNothing,
+    );
     expect(find.text('Preparing…'), findsOneWidget);
     expect(_primary(tester).onPressed, isNull);
     expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);

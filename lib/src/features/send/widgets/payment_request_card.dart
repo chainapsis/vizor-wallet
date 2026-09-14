@@ -690,7 +690,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
               ),
             // A request error belongs to the details card, so keep it close
             // to that surface and leave the full section gap before actions.
-            if (statusMessage != null) ...[
+            if (statusMessage != null && status.isError) ...[
               SizedBox(height: isMobile ? AppSpacing.xxs : AppSpacing.xs),
               _StatusMessage(
                 key: const ValueKey('payment_request_status'),
@@ -1621,6 +1621,8 @@ class _Actions extends StatelessWidget {
 
   String get _primaryLabel => _checking
       ? 'Checking…'
+      : status == PaymentRequestStatus.syncing
+      ? 'Syncing…'
       : _recheckable
       ? 'Check again'
       : hasAmount
