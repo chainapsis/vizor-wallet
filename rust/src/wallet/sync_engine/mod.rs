@@ -2354,6 +2354,19 @@ pub async fn run_payment_link_claim_sync(
     Err(last_error)
 }
 
+// Account removal retains blocks, so update_chain_tip can recreate work before
+// the remaining accounts' birthdays. Normalize immediately before every range
+// selection, including after tip refreshes, rewinds, and scan-generated hints.
+fn payment_link_scan_ranges(
+    db: &WalletDatabase,
+    db_data_path: &str,
+) -> Result<Vec<ScanRange>, SyncError> {
+    keys::prune_orphaned_scan_ranges(db_data_path)
+        .map_err(|error| SyncError::db(format!("payment-link prune scan ranges: {error}")))?;
+    db.suggest_scan_ranges()
+        .map_err(|error| SyncError::db(format!("payment-link suggest_scan_ranges: {error}")))
+}
+
 async fn run_payment_link_claim_sync_once(
     db_data_path: &str,
     lightwalletd_url: &str,
@@ -2402,9 +2415,7 @@ async fn run_payment_link_claim_sync_once(
             return Ok(());
         }
 
-        let ranges = db
-            .suggest_scan_ranges()
-            .map_err(|error| SyncError::db(format!("payment-link suggest_scan_ranges: {error}")))?;
+        let ranges = payment_link_scan_ranges(&db, db_data_path)?;
         let next_range = ranges
             .iter()
             .find(|range| is_pending_scan_range(range))
@@ -4250,6 +4261,79 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::{Barrier, Notify, Semaphore};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
+
+    #[test]
+    fn payment_link_scan_ranges_skip_idle_history_and_preserve_older_observers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("observer.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let register = |birthday| {
+            let phrase = keys::generate_mnemonic();
+            let seed = keys::mnemonic_to_seed(&phrase).unwrap();
+            let address = keys::derive_software_address(network, &seed, 0).unwrap();
+            keys::register_gift_card_observer(path, network, phrase.as_bytes(), &address, birthday)
+                .unwrap()
+        };
+        let first = register(2_000_000);
+        let mut db = open_db(path, network).unwrap();
+        db.update_chain_tip(block_height(2_000_100)).unwrap();
+        // Model persisted scan metadata without a network or production wallet.
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO blocks (height, hash, time, sapling_tree)
+             VALUES (2000100, zeroblob(32), 0, X'000000');
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+             VALUES (2000000, 2000101, 10);",
+        )
+        .unwrap();
+        drop(conn);
+        drop(db);
+        crate::wallet::gift_card_tracking::remove(path, network, &first).unwrap();
+        let db = open_db(path, network).unwrap();
+        assert!(db.get_account_ids().unwrap().is_empty());
+        drop(db);
+        assert!(std::path::Path::new(path).exists());
+
+        register(2_400_000);
+        let mut db = open_db(path, network).unwrap();
+        // Both the initial tip and a later refreshed tip recreate idle work.
+        for tip in [2_500_000, 2_500_010] {
+            db.update_chain_tip(block_height(tip)).unwrap();
+            assert!(db
+                .suggest_scan_ranges()
+                .unwrap()
+                .iter()
+                .any(|r| is_pending_scan_range(r) && r.block_range().start < block_height(2_400_000)));
+            let ranges = payment_link_scan_ranges(&db, path).unwrap();
+            let pending: Vec<_> = ranges.iter().filter(|r| is_pending_scan_range(r)).collect();
+            assert!(!pending.is_empty());
+            assert!(pending
+                .iter()
+                .all(|r| r.block_range().start >= block_height(2_400_000)));
+            assert!(pending
+                .iter()
+                .any(|r| r.block_range().contains(&block_height(2_400_000))));
+            assert!(pending
+                .iter()
+                .any(|r| r.block_range().contains(&block_height(tip))));
+        }
+        drop(db);
+        // A recovered older card must still get its birthday-to-tip history.
+        register(2_200_000);
+        let mut db = open_db(path, network).unwrap();
+        db.update_chain_tip(block_height(2_500_020)).unwrap();
+        let ranges = payment_link_scan_ranges(&db, path).unwrap();
+        assert!(ranges
+            .iter()
+            .filter(|r| is_pending_scan_range(r))
+            .all(|r| r.block_range().start >= block_height(2_200_000)));
+        assert!(ranges
+            .iter()
+            .any(|r| is_pending_scan_range(r) && r.block_range().contains(&block_height(2_200_000))));
+        assert_eq!(db.get_account_ids().unwrap().len(), 2);
+    }
 
     struct DropSignal {
         dropped: Arc<AtomicBool>,

@@ -27,6 +27,14 @@ idempotent. Older imported birthdays are handled by the library's pending scan
 ranges. Existing registrations are reused. Inert/expired drafts removed by the
 funding reconciler leave observer accounts that the next refresh retires.
 
+Removing the final observer retains the DB. Before each isolated scan-range
+selection, the engine demotes ranges before the earliest remaining account
+birthday to Ignored. This also runs after tip refreshes and rewinds, which can
+recreate old ranges from retained block metadata. A later card therefore does
+not scan the idle gap; an older recovered card still keeps its required history.
+Existing DBs receive this queue repair on their next scan without a schema
+migration or deletion of saved usage evidence.
+
 The Rust observer API owns an operation lock separate from the main wallet. It
 reuses the isolated shielded scan engine with retransmission disabled, with its
 own cancellation ID. Claim wallets retain their separate paths and owners.
