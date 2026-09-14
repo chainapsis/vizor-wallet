@@ -763,7 +763,7 @@ String votingSubmitProgressLabel(VotingSubmissionProgressCase progress) {
 
 String votingSubmitStepLabel(VotingSubmissionProgressStep step) {
   return switch (step) {
-    VotingSubmissionProgressStep.delegating => 'Delegating',
+    VotingSubmissionProgressStep.provingAuthority => 'Proving authority',
     VotingSubmissionProgressStep.castingVotes => 'Casting votes',
     VotingSubmissionProgressStep.finalizing => 'Finalizing',
   };

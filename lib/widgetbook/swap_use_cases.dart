@@ -1421,6 +1421,7 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       steps: widget.steps,
       details: widget.details,
       showTabs: widget.showTabs,
+      launchExternalUri: (_) async {},
       onTabChanged:
           widget.showTabs
               ? (tab) {
@@ -2431,10 +2432,12 @@ class _SwapScreenHarnessState extends State<_SwapScreenHarness> {
                       ? MobileSwapActivityDetailScreen(
                         swapIntentId: state.pathParameters['swapId'] ?? '',
                         returnTarget: SwapActivityReturnTarget.swap,
+                        launchExternalUri: (_) async {},
                       )
                       : SwapActivityDetailScreen(
                         swapIntentId: state.pathParameters['swapId'] ?? '',
                         returnTarget: SwapActivityReturnTarget.swap,
+                        launchExternalUri: (_) async {},
                       ),
         ),
         for (final path in _exitRoutes)

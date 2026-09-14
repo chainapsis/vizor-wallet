@@ -177,6 +177,7 @@ Widget keystoneSigningModalFixture({
         onPrimary: showPrimary ? _noop : null,
         secondaryLabel: showSecondary ? 'Cancel' : null,
         onSecondary: showSecondary ? _noop : null,
+        onOpenFirmware: _noop,
       ),
     ),
   );

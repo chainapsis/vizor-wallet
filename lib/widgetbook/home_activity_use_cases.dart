@@ -647,7 +647,13 @@ class _HomeDesktopHarnessState extends State<_HomeDesktopHarness> {
     _router = GoRouter(
       initialLocation: '/home',
       routes: [
-        GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => HomeScreen(
+            transactionDetailLoader: (_, _) async => null,
+            releaseNotesLauncher: () async {},
+          ),
+        ),
         for (final path in const [
           '/send',
           '/receive',
@@ -771,7 +777,10 @@ class _HomeMobileBodyState extends State<_HomeMobileBody> {
   }
 
   @override
-  Widget build(BuildContext context) => const MobileHomeScreen();
+  Widget build(BuildContext context) => MobileHomeScreen(
+    transactionDetailLoader: (_, _) async => null,
+    releaseNotesLauncher: () async {},
+  );
 }
 
 const _homeMobileTabItems = [
@@ -2666,8 +2675,14 @@ class _SwapDetailHarnessState extends State<_SwapDetailHarness> {
           builder: (_, state) {
             final intentId = state.pathParameters['intentId']!;
             return mobile
-                ? MobileSwapActivityDetailScreen(swapIntentId: intentId)
-                : SwapActivityDetailScreen(swapIntentId: intentId);
+                ? MobileSwapActivityDetailScreen(
+                    swapIntentId: intentId,
+                    launchExternalUri: (_) async {},
+                  )
+                : SwapActivityDetailScreen(
+                    swapIntentId: intentId,
+                    launchExternalUri: (_) async {},
+                  );
           },
         ),
         for (final path in const ['/home', '/swap', '/settings', '/activity'])

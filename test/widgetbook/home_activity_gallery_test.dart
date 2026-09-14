@@ -9,7 +9,11 @@ import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
+import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -76,6 +80,27 @@ void main() {
       label: 'Layout',
       optionLabels: WbLayout.values.map(wbLayoutLabel).toList(),
     );
+  });
+
+  testWidgets('home activity rows inject a wallet-DB-free detail loader', (
+    tester,
+  ) async {
+    await pumpUseCase(tester, buildHomeScreenGalleryCase, knobs: desktopLayout);
+    expect(
+      tester
+          .widget<HomeScreen>(find.byType(HomeScreen))
+          .transactionDetailLoader,
+      isNotNull,
+    );
+
+    await pumpUseCase(tester, buildHomeScreenGalleryCase, knobs: mobileLayout);
+    expect(
+      tester
+          .widget<MobileHomeScreen>(find.byType(MobileHomeScreen))
+          .transactionDetailLoader,
+      isNotNull,
+    );
+    await disposeTree(tester);
   });
 
   testWidgets('home registers a different knob set per layout', (tester) async {
@@ -897,6 +922,39 @@ void main() {
     await tester.tap(find.text('Tx ID'));
     await tester.pump();
     expect(tester.takeException(), isNull);
+    await disposeTree(tester);
+  });
+
+  testWidgets('swap detail previews keep explorer launches in memory', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildActivitySwapDetailScreenGalleryCase,
+      knobs: {...desktopLayout, 'Status': 'Complete'},
+    );
+    expect(
+      tester
+          .widget<SwapActivityDetailScreen>(
+            find.byType(SwapActivityDetailScreen),
+          )
+          .launchExternalUri,
+      isNotNull,
+    );
+
+    await pumpUseCase(
+      tester,
+      buildActivitySwapDetailScreenGalleryCase,
+      knobs: {...mobileLayout, 'Status': 'Complete'},
+    );
+    expect(
+      tester
+          .widget<MobileSwapActivityDetailScreen>(
+            find.byType(MobileSwapActivityDetailScreen),
+          )
+          .launchExternalUri,
+      isNotNull,
+    );
     await disposeTree(tester);
   });
 

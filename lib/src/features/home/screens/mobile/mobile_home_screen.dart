@@ -55,12 +55,25 @@ import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
 
+typedef MobileHomeTransactionDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      rust_sync.TransactionInfo transaction,
+      String accountUuid,
+    );
+
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
 /// `Home Default` (4394:88353), `Home NO Activity NO Balance`
 /// (4394:90024), and `Importing` (4394:88886).
 class MobileHomeScreen extends ConsumerWidget {
-  const MobileHomeScreen({super.key});
+  const MobileHomeScreen({
+    super.key,
+    this.transactionDetailLoader,
+    this.releaseNotesLauncher,
+  });
+
+  final MobileHomeTransactionDetailLoader? transactionDetailLoader;
+  final Future<void> Function()? releaseNotesLauncher;
 
   static const _recentActivityLimit = 10;
 
@@ -109,6 +122,7 @@ class MobileHomeScreen extends ConsumerWidget {
                             activeAccountUuid: activeAccountUuid,
                             privacyModeEnabled: privacyModeEnabled,
                             ironwoodMigrationCta: ironwoodMigrationCta,
+                            transactionDetailLoader: transactionDetailLoader,
                             onTogglePrivacyMode: () =>
                                 ref.read(privacyModeProvider.notifier).toggle(),
                           ),
@@ -118,7 +132,9 @@ class MobileHomeScreen extends ConsumerWidget {
             ),
           ),
           const _SyncKeepAwakePromptHost(),
-          const _IronwoodMigrationAnnouncementHost(),
+          _IronwoodMigrationAnnouncementHost(
+            releaseNotesLauncher: releaseNotesLauncher,
+          ),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -427,7 +443,9 @@ class _IronwoodMigrationAttentionHostState
 enum _IronwoodAnnouncementAction { startMigration }
 
 class _IronwoodMigrationAnnouncementHost extends ConsumerStatefulWidget {
-  const _IronwoodMigrationAnnouncementHost();
+  const _IronwoodMigrationAnnouncementHost({this.releaseNotesLauncher});
+
+  final Future<void> Function()? releaseNotesLauncher;
 
   @override
   ConsumerState<_IronwoodMigrationAnnouncementHost> createState() =>
@@ -476,7 +494,9 @@ class _IronwoodMigrationAnnouncementHostState
           onStartMigration: () => Navigator.of(
             sheetContext,
           ).pop(_IronwoodAnnouncementAction.startMigration),
-          onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
+          onOpenReleaseNotes: () => unawaited(
+            (widget.releaseNotesLauncher ?? _openReleaseNotes)(),
+          ),
         ),
       );
       if (!mounted) return;
@@ -804,6 +824,7 @@ class _HomeContent extends ConsumerStatefulWidget {
     required this.activeAccountUuid,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
+    required this.transactionDetailLoader,
     required this.onTogglePrivacyMode,
   });
 
@@ -811,6 +832,7 @@ class _HomeContent extends ConsumerStatefulWidget {
   final String? activeAccountUuid;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final MobileHomeTransactionDetailLoader? transactionDetailLoader;
   final VoidCallback onTogglePrivacyMode;
 
   @override
@@ -831,15 +853,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
     rust_sync.TransactionDetail? detail;
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      detail = await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
+      final loader = widget.transactionDetailLoader;
+      if (loader != null) {
+        detail = await loader(transaction, accountUuid);
+      } else {
+        final dbPath = await getWalletDbPath();
+        final endpoint = ref.read(rpcEndpointProvider);
+        detail = await rust_sync.getTransactionDetail(
+          dbPath: dbPath,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          txidHex: transaction.txidHex,
+          txKind: transaction.txKind,
+        );
+      }
     } catch (e, st) {
       log('MobileHome: transaction detail load failed: $e\n$st');
     }

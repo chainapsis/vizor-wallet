@@ -39,6 +39,7 @@ import '../src/providers/voting/voting_round_visibility_provider.dart';
 import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_service_providers.dart';
 import '../src/providers/voting/voting_session_provider.dart';
+import '../src/providers/voting/voting_snapshot_warmup_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/services/voting/pir_snapshot_resolver.dart';
@@ -520,7 +521,10 @@ VotingSessionState _statusSessionState({
         : null,
     delegationProgress: step == VotingStatusStepCase.delegating
         ? const {
-            0: VotingSessionProgress(phase: 'proving', proofProgress: 0.45),
+            0: VotingSessionProgress(
+              phase: VotingProgressPhase.proofProgress,
+              proofProgress: 0.45,
+            ),
           }
         : const {},
     // Casting and share submission share one step row, so the share step
@@ -586,12 +590,11 @@ Widget votingKeystoneSigningPanelFixture({
         accountUuid: _previewAccountUuid,
         phase: VotingSessionPhase.keystoneSigning,
         round: _previewRoundDetails,
-        roundPlan: _incompleteRoundPlan,
+        roundPlan: _keystoneRoundPlan,
         isHardwareAccount: true,
         eligibleWeightZatoshi: _previewVotingPowerZatoshi,
         keystoneSigningRequests: [_previewKeystoneSigningRequest(skipAction)],
         // A signed prefix is what earns the Skip action.
-        resumePlan: skipAction ? _previewKeystoneResumePlan : null,
         keystoneSignatures: skipAction
             ? {0: _previewKeystoneSignature}
             : const {},
@@ -658,31 +661,6 @@ final _previewKeystoneSignature = rust_wire.KeystoneSignatureRecord(
   rk: Uint8List(32),
 );
 
-final _previewKeystoneResumePlan = VotingResumePlan(
-  recoveryState: rust_wire.RoundRecoveryStateView(
-    roundId: _previewRoundId,
-    bundleCount: 3,
-    delegation: const [],
-    votes: const [],
-    commitmentBundles: const [],
-    shares: const [],
-    shareDelegations: const [],
-    unconfirmedShareDelegations: const [],
-  ),
-  pendingDelegationBundleIndexes: const [1, 2],
-  delegationPhasesByIndex: const {},
-  submittedDelegationBundleIndexes: const [],
-  votesByKey: const {},
-  votePhasesByKey: const {},
-  voteTxHashesByKey: const {},
-  commitmentBundlesByKey: const {},
-  pendingVoteSubmissionKeys: const [],
-  submittedVoteConfirmationKeys: const [],
-  incompleteVoteRecoveryKeys: const [],
-  shareDelegations: const [],
-  unconfirmedShareDelegations: const [],
-);
-
 const _previewVotingKeystoneUr =
     'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
@@ -709,16 +687,18 @@ Widget _votingStatusScreen({
     ],
     builder: (context) => layout == WbLayout.desktop
         ? _desktopWindow(
-            const VotingStatusScreen(
+            VotingStatusScreen(
               roundId: _previewRoundId,
               accountUuid: _previewAccountUuid,
+              onOpenKeystoneFirmware: () {},
             ),
           )
         : WbFrame(
             layout: layout,
-            child: const MobileVotingStatusScreen(
+            child: MobileVotingStatusScreen(
               roundId: _previewRoundId,
               accountUuid: _previewAccountUuid,
+              onOpenKeystoneFirmware: () {},
             ),
           ),
   );
@@ -1547,7 +1527,9 @@ class _PreviewVotingSessionNotifier extends VotingSessionNotifier {
   }
 
   @override
-  Future<void> precomputeSnapshotBundles({required String accountUuid}) async {}
+  Future<VotingSnapshotWarmupResult> precomputeSnapshotBundles({
+    required String accountUuid,
+  }) async => const VotingSnapshotWarmupResult.ready();
 }
 
 class _PreviewVotingSubmissionSessionNotifier
@@ -1578,7 +1560,9 @@ class _PreviewVotingSubmissionSessionNotifier
   }
 
   @override
-  Future<void> precomputeSnapshotBundles({required String accountUuid}) async {}
+  Future<VotingSnapshotWarmupResult> precomputeSnapshotBundles({
+    required String accountUuid,
+  }) async => const VotingSnapshotWarmupResult.ready();
 }
 
 class _PreviewVotingDraftNotifier extends VotingDraftNotifier {
@@ -1741,7 +1725,7 @@ const _previewRoundId = 'snack-governance-active';
 const _previewVoteKey = VotingVoteKey(bundleIndex: 0, proposalId: 1);
 final _previewShareProgress = {
   _previewVoteKey: const VotingSessionProgress(
-    phase: 'submitting_shares',
+    phase: VotingProgressPhase.submitting,
     message: 'Delivering share 3 of 5 to helper servers',
   ),
 };
@@ -1928,13 +1912,23 @@ final _previewResultsVotingConfig = rust_config.ResolvedVotingConfig(
 
 final _completedRoundPlan = _roundPlan(completed: true);
 final _incompleteRoundPlan = _roundPlan(completed: false);
+final _keystoneRoundPlan = _previewRoundPlan(
+  primaryAction: rust_wire.RoundPlanActionKind.delegate,
+  delegationStatuses: [
+    for (var index = 0; index < 3; index++)
+      rust_wire.DelegationStatusView(
+        bundleIndex: index,
+        phase: rust_wire.WorkflowPhaseView.prepared,
+        terminal: false,
+      ),
+  ],
+  delegationBundlesNeedingWork: Uint32List.fromList(const [0, 1, 2]),
+  delegationBundlesNeedingSigning: Uint32List.fromList(const [0, 1, 2]),
+  needsDelegationSigning: true,
+);
 
 /// A submitted vote the detail and results screens can display.
-final _votedRoundPlan = rust_wire.RoundPlanView(
-  roundId: _previewRoundId,
-  pendingRecovery: false,
-  blockingRecovery: false,
-  blockingShareWork: false,
+final _votedRoundPlan = _previewRoundPlan(
   hotkeyBound: true,
   completedVoteArtifact: true,
   completedForDisplay: true,
@@ -1945,55 +1939,89 @@ final _votedRoundPlan = rust_wire.RoundPlanView(
     ],
     votedAt: BigInt.from(1787313600),
   ),
-  needsDraftSetup: false,
-  primaryAction: 'none',
-  nextSteps: const [],
-  delegationStatuses: const [],
-  recoveredDelegationWork: const [],
-  recoveredVoteWork: const [],
-  openProposals: Uint32List(0),
+  primaryAction: rust_wire.RoundPlanActionKind.done,
   immediateShareConfirmed: true,
   allDecided: true,
 );
 
 /// Local progress the app has to finish before it accepts another vote.
-final _recoveringRoundPlan = rust_wire.RoundPlanView(
-  roundId: _previewRoundId,
+final _recoveringRoundPlan = _previewRoundPlan(
   pendingRecovery: true,
   blockingRecovery: true,
-  blockingShareWork: false,
   hotkeyBound: true,
   completedVoteArtifact: true,
   completedForDisplay: false,
-  needsDraftSetup: false,
-  primaryAction: 'vote',
-  nextSteps: const [],
-  delegationStatuses: const [],
-  recoveredDelegationWork: const [],
-  recoveredVoteWork: const [],
-  openProposals: Uint32List(0),
+  primaryAction: rust_wire.RoundPlanActionKind.vote,
   immediateShareConfirmed: false,
   allDecided: false,
 );
 
 rust_wire.RoundPlanView _roundPlan({required bool completed}) {
-  return rust_wire.RoundPlanView(
-    roundId: _previewRoundId,
-    pendingRecovery: false,
-    blockingRecovery: false,
-    blockingShareWork: false,
+  return _previewRoundPlan(
     hotkeyBound: completed,
     completedVoteArtifact: completed,
     completedForDisplay: completed,
-    needsDraftSetup: false,
-    primaryAction: completed ? 'none' : 'submit',
+    primaryAction: completed
+        ? rust_wire.RoundPlanActionKind.done
+        : rust_wire.RoundPlanActionKind.idle,
+    immediateShareConfirmed: completed,
+    allDecided: completed,
+  );
+}
+
+rust_wire.RoundPlanView _previewRoundPlan({
+  bool pendingRecovery = false,
+  bool blockingRecovery = false,
+  bool blockingShareWork = false,
+  bool hasUnconfirmedShares = false,
+  bool hotkeyBound = false,
+  bool completedVoteArtifact = false,
+  bool completedForDisplay = false,
+  rust_wire.CompletedVoteDisplayView? completedVoteDisplay,
+  bool needsDraftSetup = false,
+  bool needsBundleSetup = false,
+  bool needsDelegationSigning = false,
+  bool hasInFlightDelegation = false,
+  Uint32List? delegationBundlesNeedingWork,
+  Uint32List? delegationBundlesNeedingSigning,
+  bool needsVotePolling = false,
+  bool hasRemainingVoteOrShareWork = false,
+  bool hasRecoverableVoteOrShareWork = false,
+  rust_wire.RoundPlanActionKind primaryAction =
+      rust_wire.RoundPlanActionKind.idle,
+  List<rust_wire.DelegationStatusView> delegationStatuses = const [],
+  bool immediateShareConfirmed = false,
+  bool allDecided = false,
+}) {
+  return rust_wire.RoundPlanView(
+    roundId: _previewRoundId,
+    pendingRecovery: pendingRecovery,
+    blockingRecovery: blockingRecovery,
+    blockingShareWork: blockingShareWork,
+    hasUnconfirmedShares: hasUnconfirmedShares,
+    hotkeyBound: hotkeyBound,
+    completedVoteArtifact: completedVoteArtifact,
+    completedForDisplay: completedForDisplay,
+    completedVoteDisplay: completedVoteDisplay,
+    needsDraftSetup: needsDraftSetup,
+    needsBundleSetup: needsBundleSetup,
+    needsDelegationSigning: needsDelegationSigning,
+    hasInFlightDelegation: hasInFlightDelegation,
+    delegationBundlesNeedingWork: delegationBundlesNeedingWork ?? Uint32List(0),
+    delegationBundlesNeedingSigning:
+        delegationBundlesNeedingSigning ?? Uint32List(0),
+    needsVotePolling: needsVotePolling,
+    hasRemainingVoteOrShareWork: hasRemainingVoteOrShareWork,
+    hasRecoverableVoteOrShareWork: hasRecoverableVoteOrShareWork,
+    primaryAction: primaryAction,
     nextSteps: const [],
-    delegationStatuses: const [],
+    delegationStatuses: delegationStatuses,
     recoveredDelegationWork: const [],
     recoveredVoteWork: const [],
     openProposals: Uint32List(0),
-    immediateShareConfirmed: completed,
-    allDecided: completed,
+    unrosteredIntents: Uint32List(0),
+    immediateShareConfirmed: immediateShareConfirmed,
+    allDecided: allDecided,
   );
 }
 

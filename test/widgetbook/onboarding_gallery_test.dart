@@ -956,9 +956,7 @@ void main() {
       knobs: {'Visible': 'true'},
     );
     await tester.pump();
-    final scanHelpLink = find.byKey(
-      const ValueKey('keystone_firmware_link'),
-    );
+    final scanHelpLink = find.byKey(const ValueKey('keystone_firmware_link'));
     expect(scanHelpLink, findsOne);
     await tester.tap(scanHelpLink);
     await tester.pump();
@@ -1167,6 +1165,37 @@ void main() {
       optionLabels: const ['false', 'true'],
       otherKnobs: {'Layout': _desktop},
     );
+  });
+
+  testWidgets('the Keystone signing firmware link stays in Widgetbook', (
+    tester,
+  ) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    await pumpUseCase(
+      tester,
+      buildOnboardingKeystoneSigningGalleryCase,
+      knobs: {
+        'Layout': _desktop,
+        'Phase': onboardingKeystoneSigningModalPhaseLabel(
+          KeystoneSigningModalPhase.ready,
+        ),
+      },
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('keystone_firmware_link')));
+    await tester.pump();
+    expect(platformCalls, isEmpty);
+    await disposeTree(tester);
   });
 
   testWidgets('previously unregistered import fixtures are now reachable', (

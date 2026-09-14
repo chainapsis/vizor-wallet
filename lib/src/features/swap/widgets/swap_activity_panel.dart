@@ -47,6 +47,7 @@ class SwapActivityDetailSurface extends ConsumerStatefulWidget {
     this.returnTarget,
     this.autoSignZecDeposit = false,
     this.layout = SwapActivityDetailLayout.desktop,
+    this.launchExternalUri,
     super.key,
   });
 
@@ -54,6 +55,7 @@ class SwapActivityDetailSurface extends ConsumerStatefulWidget {
   final SwapActivityReturnTarget? returnTarget;
   final bool autoSignZecDeposit;
   final SwapActivityDetailLayout layout;
+  final SwapExternalUriLauncher? launchExternalUri;
 
   @override
   ConsumerState<SwapActivityDetailSurface> createState() =>
@@ -419,6 +421,7 @@ class _SwapActivityDetailSurfaceState
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
             onShowPayRecipientAddress: _showPayRecipientAddress,
+            launchExternalUri: widget.launchExternalUri,
           );
 
     return Stack(
@@ -542,6 +545,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.launchExternalUri,
     super.key,
   });
 
@@ -559,6 +563,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final bool intentIsHardware;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final SwapExternalUriLauncher? launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
@@ -576,6 +581,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
       onShowPayRecipientAddress: onShowPayRecipientAddress,
+      launchExternalUri: launchExternalUri,
     );
     final isDepositPage = swapActivityShowsDepositPage(
       intent,
@@ -629,6 +635,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.launchExternalUri,
   });
 
   final SwapState state;
@@ -645,6 +652,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final bool intentIsHardware;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final SwapExternalUriLauncher? launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
@@ -699,6 +707,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
         intent: intent,
         layout: layout,
         onShowPayRecipientAddress: onShowPayRecipientAddress,
+        launchExternalUri: launchExternalUri,
       ),
     };
 
@@ -732,12 +741,14 @@ class _SwapStatusForIntent extends ConsumerStatefulWidget {
     required this.intent,
     this.layout = SwapActivityDetailLayout.desktop,
     this.onShowPayRecipientAddress,
+    this.launchExternalUri,
   });
 
   final SwapIntent intent;
   final SwapActivityDetailLayout layout;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final SwapExternalUriLauncher? launchExternalUri;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -843,6 +854,8 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       final recipientFullAddress = mobileSwapStatusRecipientFullAddress(intent);
       return MobileSwapStatusContent(
         presentation: presentation,
+        launchExternalUri:
+            widget.launchExternalUri ?? _launchActivityExternalUri,
         paymentHeader:
             presentation.paymentMode && payStatus != null && hasRecipient
             ? MobilePayStatusHeader(
@@ -914,7 +927,9 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         onOpenExplorer: txIdUri == null
             ? null
             : () => unawaited(
-                launchUrl(txIdUri, mode: LaunchMode.externalApplication),
+                (widget.launchExternalUri ?? _launchActivityExternalUri)(
+                  txIdUri,
+                ),
               ),
       );
     }
@@ -947,7 +962,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       },
       onCopy: (text) =>
           copyTextWithToast(context, text: text, toastMessage: 'Copied'),
+      launchExternalUri: widget.launchExternalUri ?? _launchActivityExternalUri,
     );
+  }
+}
+
+Future<void> _launchActivityExternalUri(Uri uri) async {
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    // Opening the system browser is best effort; the row still exposes the ID.
   }
 }
 

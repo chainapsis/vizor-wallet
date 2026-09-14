@@ -1267,6 +1267,7 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
           createdGiftCard,
           _homeTx(3),
         ],
+        transactionDetailLoader: (_) async => null,
       ),
     ),
   );
@@ -3103,7 +3104,13 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
     _router = GoRouter(
       initialLocation: '/home',
       routes: [
-        GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => HomeScreen(
+            transactionDetailLoader: (_, _) async => null,
+            releaseNotesLauncher: () async {},
+          ),
+        ),
         GoRoute(
           path: '/send',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
@@ -3190,7 +3197,10 @@ class _MobileHomeBodyState extends State<_MobileHomeBody> {
 
   @override
   Widget build(BuildContext context) {
-    return const MobileHomeScreen();
+    return MobileHomeScreen(
+      transactionDetailLoader: (_, _) async => null,
+      releaseNotesLauncher: () async {},
+    );
   }
 }
 
@@ -3370,6 +3380,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 'ur:zcash-sign-request/preview-immediate-transaction',
               ],
               previewStartScanning: widget.previewImmediateKeystoneScanner,
+              onOpenFirmware: () {},
             );
           },
         ),
@@ -3396,6 +3407,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             previewUrParts: const [
               'ur:zcash-sign-request/preview-private-split-1',
             ],
+            onOpenFirmware: () {},
           ),
         ),
         GoRoute(
@@ -5257,8 +5269,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       routes: [
         GoRoute(
           path: '/activity',
-          builder: (_, _) =>
-              MobileActivityScreen(historyLoader: (_) async => _history),
+          builder: (_, _) => MobileActivityScreen(
+            historyLoader: (_) async => _history,
+            transactionDetailLoader: (_) async => null,
+          ),
         ),
         GoRoute(
           path: '/activity/tx/:txid',
@@ -5275,6 +5289,7 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
                   ),
               historyLoader: (_) async => _history,
               detailLoader: (_, _) async => null,
+              explorerLauncher: (_) async => true,
             );
           },
         ),

@@ -12,7 +12,9 @@ import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
 class KeystoneVotingScanScreen extends ConsumerStatefulWidget {
-  const KeystoneVotingScanScreen({super.key});
+  const KeystoneVotingScanScreen({this.openCameraSettings, super.key});
+
+  final KeystoneCameraSettingsOpener? openCameraSettings;
 
   @override
   ConsumerState<KeystoneVotingScanScreen> createState() =>
@@ -123,6 +125,7 @@ class _KeystoneVotingScanScreenState
                         },
                         onDecodeError: _handleDecodeError,
                         onComplete: _handleScanComplete,
+                        openCameraSettings: widget.openCameraSettings,
                         decodingLabel: 'Reading signature...',
                         unavailableMessage:
                             'Keystone voting uses camera QR scanning only. Connect a camera and try again.',

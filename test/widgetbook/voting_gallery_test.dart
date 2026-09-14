@@ -68,7 +68,7 @@ void main() {
     tester,
   ) async {
     final useCases = widgetbookUseCases(votingGalleryNodes).toList();
-    expect(useCases.length, 23);
+    expect(useCases.length, 22);
 
     for (final useCase in useCases) {
       await pumpUseCase(tester, useCase.builder);
@@ -1186,7 +1186,7 @@ void main() {
     // 'Step default' is the passthrough: each step keeps the determinacy the
     // screen gives it in production, finalizing included.
     const perStep = <VotingSubmissionProgressStep, String>{
-      VotingSubmissionProgressStep.delegating: '25%',
+      VotingSubmissionProgressStep.provingAuthority: '25%',
       VotingSubmissionProgressStep.castingVotes: '60%',
       VotingSubmissionProgressStep.finalizing: 'Unknown',
     };
@@ -1393,10 +1393,7 @@ void main() {
       knobs: {'Layout': wbLayoutLabel(other)},
     );
     expect(tester.takeException(), isNull);
-    expect(
-      find.byKey(const ValueKey('wb_lane_only_notice')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('wb_lane_only_notice')), findsOneWidget);
     await disposeTree(tester);
   });
 
@@ -1610,7 +1607,7 @@ void main() {
       await pumpStatus({
         'Step': votingStatusStepLabel(VotingStatusStepCase.castingVotes),
       });
-      expect(find.text('Question 2/4'), findsOneWidget);
+      expect(find.text('Casting votes and submitting shares'), findsOneWidget);
       await pumpStatus({
         'Account': votingStatusAccountLabel(VotingStatusAccountCase.keystone),
       });

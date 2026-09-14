@@ -213,6 +213,7 @@ Widget keystoneScannerCardFixture({
 /// system surface. Returning true keeps the production widget on its normal
 /// successful-action path.
 Future<bool> _handlePreviewCameraSettings() async => true;
+void _ignorePreviewFirmware() {}
 
 class _ScannerCardCenter extends StatelessWidget {
   const _ScannerCardCenter({required this.child});
@@ -252,7 +253,9 @@ Widget keystoneOnboardingScanScreenFixture({
           child: const KeystoneOnboardingShell(
             activeStep: KeystoneOnboardingStep.scanQrCode,
             showPasswordStep: true,
-            child: KeystoneScanQrScreen(),
+            child: KeystoneScanQrScreen(
+              openCameraSettings: _handlePreviewCameraSettings,
+            ),
           ),
         ),
       ),
@@ -289,7 +292,10 @@ Widget keystoneSendScanScreenFixture({
         stubPaths: _kScannerSidebarRoutes,
         builder: (_) => _ScannerMountDriver(
           urPart: _sendScanPart(scan, args),
-          child: KeystoneSendScanScreen(args: args),
+          child: KeystoneSendScanScreen(
+            args: args,
+            openCameraSettings: _handlePreviewCameraSettings,
+          ),
         ),
       ),
     ),
@@ -326,7 +332,9 @@ Widget keystoneVotingScanScreenFixture({
           // A completed voting scan pops the route, so the completing part is
           // not offered here; the two partial outcomes are.
           urPart: _screenScanPart(scan, _kBatchResultUrType),
-          child: const KeystoneVotingScanScreen(),
+          child: const KeystoneVotingScanScreen(
+            openCameraSettings: _handlePreviewCameraSettings,
+          ),
         ),
       ),
     ),
@@ -360,6 +368,8 @@ Widget migrationKeystoneScanFixture({
         previewRequest: _migrationScanRequest(),
         previewUrParts: _kMigrationUrParts,
         previewStartScanning: true,
+        openCameraSettings: _handlePreviewCameraSettings,
+        onOpenFirmware: _ignorePreviewFirmware,
       ),
     ScannerMigrationStepCase.immediate =>
       MobileIronwoodMigrationKeystoneImmediateSignScreen(
@@ -367,6 +377,8 @@ Widget migrationKeystoneScanFixture({
         previewRequest: _migrationScanRequest(),
         previewUrParts: _kMigrationUrParts,
         previewStartScanning: true,
+        openCameraSettings: _handlePreviewCameraSettings,
+        onOpenFirmware: _ignorePreviewFirmware,
       ),
   };
 

@@ -163,41 +163,51 @@ class _MigrationKeystoneSignHarnessState
           approvedSchedule: const [],
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
       (WbLayout.mobile, MigrationKeystoneSignStep.combined) =>
         MobileIronwoodMigrationKeystoneCombinedSignScreen(
           approvedSchedule: const [],
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
       (WbLayout.desktop, MigrationKeystoneSignStep.immediate) =>
         IronwoodMigrationKeystoneImmediateSignScreen(
           approvedPlan: _previewImmediatePlan(),
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
       (WbLayout.mobile, MigrationKeystoneSignStep.immediate) =>
         MobileIronwoodMigrationKeystoneImmediateSignScreen(
           approvedPlan: _previewImmediatePlan(),
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
       // The desktop denomination and batch screens take no preview request, so
       // a Request QR there would need a real Rust prepare; they stay on the
       // preparing spinner instead.
       (WbLayout.desktop, MigrationKeystoneSignStep.denomination) =>
-        const IronwoodMigrationKeystoneDenominationSignScreen(),
+        const IronwoodMigrationKeystoneDenominationSignScreen(
+          onOpenFirmware: _noopReleaseNotes,
+        ),
       (WbLayout.mobile, MigrationKeystoneSignStep.denomination) =>
         MobileIronwoodMigrationKeystoneDenominationSignScreen(
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
       (WbLayout.desktop, MigrationKeystoneSignStep.batch) =>
-        const IronwoodMigrationKeystoneBatchSignScreen(),
+        const IronwoodMigrationKeystoneBatchSignScreen(
+          onOpenFirmware: _noopReleaseNotes,
+        ),
       (WbLayout.mobile, MigrationKeystoneSignStep.batch) =>
         MobileIronwoodMigrationKeystoneBatchSignScreen(
           previewRequest: request,
           previewUrParts: urParts,
+          onOpenFirmware: _noopReleaseNotes,
         ),
     };
   }

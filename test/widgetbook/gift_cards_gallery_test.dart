@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -9,6 +10,8 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_wizard_chrome.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/widgetbook/gallery/gift_cards_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gift_cards_screen_use_cases.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
@@ -532,6 +535,46 @@ void main() {
           .toList(),
       canvasSize: const Size(393, 1000),
     );
+  });
+
+  testWidgets('activity and detail interactions stay inside Widgetbook', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    await pumpUseCase(
+      tester,
+      buildGiftCardsActivityGalleryCase,
+      knobs: {
+        'Stage': giftCardsActivityStageLabel(GiftCardsActivityStage.created),
+      },
+      canvasSize: const Size(393, 1000),
+    );
+    await _settleFixture(tester);
+    await tester.tap(find.byType(ActivityFeedRow).first);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MobileTransactionStatusScreen), findsOneWidget);
+
+    await pumpUseCase(
+      tester,
+      buildGiftCardsDetailGalleryCase,
+      knobs: {'Stage': giftCardsDetailStageLabel(GiftCardsDetailStage.created)},
+      canvasSize: const Size(393, 1000),
+    );
+    await _settleFixture(tester);
+    await tester.tap(find.text('Tx ID'));
+    await tester.pump();
+    expect(platformCalls, isEmpty);
+    await disposeTree(tester);
   });
 
   testWidgets('how it works covers both lanes and both presentations', (

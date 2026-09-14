@@ -315,6 +315,16 @@ void main() {
   testWidgets('desktop home announcement persists only in preview memory', (
     tester,
   ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final platformCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
     final errors = await _pumpCollectingErrors(
       tester,
       buildMigrationHomeAnnouncementGalleryCase,
@@ -331,6 +341,10 @@ void main() {
       store,
       isNot(isA<SharedPreferencesIronwoodMigrationAnnouncementStore>()),
     );
+
+    await tester.tap(find.text('Official Release Note'));
+    await tester.pump();
+    expect(platformCalls, isEmpty);
 
     tester.widget<AppPaneModalOverlay>(overlayFinder).onDismiss();
     await tester.pump();

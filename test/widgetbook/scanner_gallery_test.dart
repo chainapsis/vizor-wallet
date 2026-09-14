@@ -21,6 +21,39 @@ void main() {
   setUpAll(WbFakeUrScanRustApi.install);
   tearDown(WbFakeMobileScannerPlatform.reset);
 
+  testWidgets('screen-level camera settings stay inside Widgetbook', (
+    tester,
+  ) async {
+    const cameraSettingsChannel = MethodChannel(
+      'com.zcash.wallet/camera_permission',
+    );
+    var nativeSettingsCalls = 0;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(cameraSettingsChannel, (call) async {
+      nativeSettingsCalls++;
+      return true;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(cameraSettingsChannel, null),
+    );
+
+    for (final builder in <WidgetBuilder>[
+      buildScannerKeystoneOnboardingGalleryCase,
+      buildScannerKeystoneSendGalleryCase,
+      buildScannerKeystoneVotingGalleryCase,
+    ]) {
+      await _pumpScanner(
+        tester,
+        builder,
+        knobs: const {kScannerCameraKnob: 'Access denied'},
+      );
+      await tester.tap(find.text('Allow camera'));
+      await tester.pump();
+      expect(nativeSettingsCalls, 0, reason: '$builder');
+      await disposeTree(tester);
+    }
+  });
+
   group('Keystone scanner card', () {
     testWidgets('renders the live feed at its defaults', (tester) async {
       await _pumpScanner(tester, buildScannerKeystoneCardGalleryCase);

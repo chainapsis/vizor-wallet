@@ -24,6 +24,7 @@ class KeystoneSigningModal extends StatelessWidget {
     required this.secondaryLabel,
     required this.onSecondary,
     this.qrSize = _desktopPcztQrSize,
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -38,6 +39,7 @@ class KeystoneSigningModal extends StatelessWidget {
   final String? secondaryLabel;
   final VoidCallback? onSecondary;
   final double qrSize;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +102,7 @@ class KeystoneSigningModal extends StatelessWidget {
                   visible:
                       phase == KeystoneSigningModalPhase.ready &&
                       urParts.isNotEmpty,
+                  onOpenFirmware: onOpenFirmware,
                   child: KeystonePcztQrStage(
                     phase: switch (phase) {
                       KeystoneSigningModalPhase.preparing =>

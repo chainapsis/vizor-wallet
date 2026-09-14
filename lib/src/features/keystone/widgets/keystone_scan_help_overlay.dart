@@ -32,13 +32,13 @@ class KeystoneScanHelpOverlay extends StatefulWidget {
   const KeystoneScanHelpOverlay({
     required this.visible,
     required this.child,
-    this.onOpenFirmware = _openKeystoneFirmware,
+    this.onOpenFirmware,
     super.key,
   });
 
   final bool visible;
   final Widget child;
-  final VoidCallback onOpenFirmware;
+  final VoidCallback? onOpenFirmware;
 
   @override
   State<KeystoneScanHelpOverlay> createState() =>
@@ -127,7 +127,7 @@ class _KeystoneScanHelpOverlayState extends State<KeystoneScanHelpOverlay> {
           offset: const Offset(_tooltipGap, 0),
           child: _KeystoneScanHelpTooltip(
             onDismiss: _dismiss,
-            onOpenFirmware: widget.onOpenFirmware,
+            onOpenFirmware: widget.onOpenFirmware ?? _openKeystoneFirmware,
           ),
         ),
       ),

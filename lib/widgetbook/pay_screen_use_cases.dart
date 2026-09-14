@@ -315,10 +315,12 @@ class _PayScreenHarnessState extends State<_PayScreenHarness> {
                       ? MobileSwapActivityDetailScreen(
                         swapIntentId: state.pathParameters['swapId'] ?? '',
                         returnTarget: SwapActivityReturnTarget.pay,
+                        launchExternalUri: (_) async {},
                       )
                       : SwapActivityDetailScreen(
                         swapIntentId: state.pathParameters['swapId'] ?? '',
                         returnTarget: SwapActivityReturnTarget.pay,
+                        launchExternalUri: (_) async {},
                       ),
         ),
         GoRoute(path: '/home', builder: (_, _) => const SizedBox.shrink()),

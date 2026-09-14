@@ -108,10 +108,12 @@ class VotingStatusScreen extends StatelessWidget {
     super.key,
     required this.roundId,
     this.accountUuid,
+    this.onOpenKeystoneFirmware,
   });
 
   final String roundId;
   final String? accountUuid;
+  final VoidCallback? onOpenKeystoneFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +121,11 @@ class VotingStatusScreen extends StatelessWidget {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: VotingStatusView(roundId: roundId, accountUuid: accountUuid),
+        child: VotingStatusView(
+          roundId: roundId,
+          accountUuid: accountUuid,
+          onOpenKeystoneFirmware: onOpenKeystoneFirmware,
+        ),
       ),
     );
   }
@@ -135,6 +141,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
     this.contentWrapper,
     this.submissionProgressBuilder,
     this.keystoneStatusBuilder,
+    this.onOpenKeystoneFirmware,
   });
 
   final String roundId;
@@ -144,6 +151,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
   final VotingStatusContentWrapper? contentWrapper;
   final VotingSubmissionProgressBuilder? submissionProgressBuilder;
   final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
+  final VoidCallback? onOpenKeystoneFirmware;
 
   @override
   ConsumerState<VotingStatusView> createState() => _VotingStatusViewState();
@@ -536,6 +544,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
               : null,
           onScanKeystone: _scanKeystoneSignature,
           onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
+          onOpenKeystoneFirmware: widget.onOpenKeystoneFirmware,
         );
       },
     );
@@ -805,6 +814,7 @@ class _StatusContent extends StatelessWidget {
     this.onClear,
     this.onScanKeystone,
     this.onSkipKeystoneBundles,
+    this.onOpenKeystoneFirmware,
   });
 
   final VotingSessionPhase phase;
@@ -846,6 +856,7 @@ class _StatusContent extends StatelessWidget {
   final VoidCallback? onClear;
   final VoidCallback? onScanKeystone;
   final VoidCallback? onSkipKeystoneBundles;
+  final VoidCallback? onOpenKeystoneFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -922,6 +933,7 @@ class _StatusContent extends StatelessWidget {
                     canSkipRemainingBundles: canSkipRemainingKeystoneBundles,
                     onScan: onScanKeystone,
                     onSkipRemainingBundles: onSkipKeystoneBundles,
+                    onOpenFirmware: onOpenKeystoneFirmware,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -1104,6 +1116,7 @@ class _KeystoneSigningPanel extends StatefulWidget {
     this.canSkipRemainingBundles = false,
     this.onScan,
     this.onSkipRemainingBundles,
+    this.onOpenFirmware,
   });
 
   final int bundleIndex;
@@ -1116,6 +1129,7 @@ class _KeystoneSigningPanel extends StatefulWidget {
   final bool canSkipRemainingBundles;
   final VoidCallback? onScan;
   final VoidCallback? onSkipRemainingBundles;
+  final VoidCallback? onOpenFirmware;
 
   @override
   State<_KeystoneSigningPanel> createState() => _KeystoneSigningPanelState();
@@ -1314,6 +1328,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
               visible:
                   qrPhase == KeystonePcztQrStagePhase.ready &&
                   urParts.isNotEmpty,
+              onOpenFirmware: widget.onOpenFirmware,
               child: KeystonePcztQrStage(
                 phase: qrPhase,
                 urParts: urParts,

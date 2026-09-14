@@ -122,9 +122,7 @@ Widget _votingDesktopPreviewShell(Widget content) {
 }
 
 Widget buildDesktopVotingVotedUseCase(BuildContext context) {
-  return votingVotedPollFixture(
-    frame: VotingVotedPollFrame.desktop,
-  );
+  return votingVotedPollFixture(frame: VotingVotedPollFrame.desktop);
 }
 
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
@@ -448,15 +446,11 @@ class _VotingPreviewTapOnMountState extends State<VotingPreviewTapOnMount> {
 }
 
 Widget buildMobileVotingVotedUseCase(BuildContext context) {
-  return votingVotedPollFixture(
-    frame: VotingVotedPollFrame.mobile,
-  );
+  return votingVotedPollFixture(frame: VotingVotedPollFrame.mobile);
 }
 
 Widget buildMobileVotingVotedCompleteUseCase(BuildContext context) {
-  return votingVotedPollFixture(
-    frame: VotingVotedPollFrame.mobile,
-  );
+  return votingVotedPollFixture(frame: VotingVotedPollFrame.mobile);
 }
 
 Widget buildMobileVotingProposalDefaultUseCase(BuildContext context) {
@@ -765,7 +759,7 @@ Widget votingSubmissionProgressFixture(
       activeStepProgress: switch (progress ??
           VotingSubmissionProgressCase.stepDefault) {
         VotingSubmissionProgressCase.stepDefault => switch (step) {
-          VotingSubmissionProgressStep.delegating => 0.25,
+          VotingSubmissionProgressStep.provingAuthority => 0.25,
           VotingSubmissionProgressStep.castingVotes => 0.6,
           VotingSubmissionProgressStep.finalizing => null,
         },
@@ -786,7 +780,7 @@ Widget votingSubmissionProgressFixture(
 Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
   return votingSubmissionProgressFixture(
     context,
-    step: VotingSubmissionProgressStep.delegating,
+    step: VotingSubmissionProgressStep.provingAuthority,
   );
 }
 
