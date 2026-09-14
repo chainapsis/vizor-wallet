@@ -1,15 +1,6 @@
-/// Keystroke guards for the two "Request ZEC" amount fields.
-///
-/// Every other amount field in the app installs these; the request field was
-/// the one exception, and it is the field least able to afford it. A ZIP-321
-/// amount has a stricter grammar than the parser that draws the conversion
-/// line, so text the screen happily converts (`.5`) and text a comma-decimal
-/// keypad emits on its own (`0,5`) both reach the builder as a rejection the
-/// user never asked for — a dead "Create request" and no way to see why.
-///
-/// Same rules and same order as the send composers
-/// (`send_screen.dart`, `mobile_send_screen.dart`): comma first, so the
-/// decimal validator only ever sees a period.
+/// Keystroke guards for the desktop and mobile "Request ZEC" amount fields.
+/// Commas are normalized first. Unlike the rejecting amount formatter used by
+/// Send, request inputs retain their existing sanitizing/truncating behavior.
 library;
 
 import 'package:flutter/services.dart';
@@ -66,26 +57,30 @@ class RequestDecimalAmountInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    var text = newValue.text;
-    if (text.isEmpty) return newValue;
+    final sourceText = newValue.text;
+    // Do not interfere with the input method while it owns a composing range.
+    if (sourceText.isEmpty || !newValue.composing.isCollapsed) return newValue;
 
     final buffer = StringBuffer();
+    final boundaryOffsets = List<int>.filled(sourceText.length + 1, 0);
     var hasDecimal = false;
-    for (final codeUnit in text.codeUnits) {
+    for (var index = 0; index < sourceText.length; index++) {
+      final codeUnit = sourceText.codeUnitAt(index);
       final ch = String.fromCharCode(codeUnit);
       if (ch == '.') {
-        if (hasDecimal) continue;
-        hasDecimal = true;
+        if (!hasDecimal) {
+          hasDecimal = true;
+          buffer.write(ch);
+        }
+      } else if (codeUnit >= 0x30 && codeUnit <= 0x39) {
         buffer.write(ch);
-        continue;
       }
-      if (codeUnit >= 0x30 && codeUnit <= 0x39) {
-        buffer.write(ch);
-      }
+      boundaryOffsets[index + 1] = buffer.length;
     }
 
-    text = buffer.toString();
-    if (text.startsWith('.')) text = '0$text';
+    var text = buffer.toString();
+    final insertedLeadingZero = text.startsWith('.');
+    if (insertedLeadingZero) text = '0$text';
     if (text.length > maxLength) text = text.substring(0, maxLength);
     final decimalIndex = text.indexOf('.');
     if (decimalIndex >= 0) {
@@ -93,9 +88,23 @@ class RequestDecimalAmountInputFormatter extends TextInputFormatter {
       if (text.length > maxEnd) text = text.substring(0, maxEnd);
     }
 
-    return TextEditingValue(
+    if (text == sourceText) return newValue;
+
+    int mapOffset(int offset) {
+      if (offset < 0) return offset;
+      final mapped =
+          boundaryOffsets[offset.clamp(0, sourceText.length)] +
+          (insertedLeadingZero ? 1 : 0);
+      return mapped.clamp(0, text.length);
+    }
+
+    return newValue.copyWith(
       text: text,
-      selection: TextSelection.collapsed(offset: text.length),
+      selection: newValue.selection.copyWith(
+        baseOffset: mapOffset(newValue.selection.baseOffset),
+        extentOffset: mapOffset(newValue.selection.extentOffset),
+      ),
+      composing: TextRange.empty,
     );
   }
 }

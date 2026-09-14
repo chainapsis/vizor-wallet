@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
+import '../../support/leading_decimal_input.dart';
 
 const _shielded =
     'u1tvg2412a23kshieldedaddress000000000000000000000000k64123hhq6d';
@@ -277,6 +278,29 @@ void main() {
 
       expect(controller.text, '0.5');
       expect(typed.last, '0.5');
+      final field = find.byKey(const ValueKey('request_amount_field'));
+      await expectLeadingDecimalInput(tester, field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.25',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.x25',
+          selection: TextSelection(baseOffset: 5, extentOffset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 4, extentOffset: 2),
+      );
     });
 
     testWidgets('the amount field stops at a zatoshi', (tester) async {
@@ -576,7 +600,7 @@ void main() {
       await _pump(
         tester,
         RequestAmountSheetCompose(
-          request: _empty,
+          request: _withAmount,
           amountController: controller,
           onAmountChanged: typed.add,
         ),
@@ -591,6 +615,29 @@ void main() {
 
       expect(controller.text, '0.5');
       expect(typed.last, '0.5');
+      final field = find.byKey(const ValueKey('request_amount_input'));
+      await expectLeadingDecimalInput(tester, field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.25',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.x25',
+          selection: TextSelection(baseOffset: 5, extentOffset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 4, extentOffset: 2),
+      );
     });
 
     testWidgets('the serif field stops at a zatoshi', (tester) async {
