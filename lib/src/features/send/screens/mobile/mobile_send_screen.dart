@@ -1913,21 +1913,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         extra: args,
       );
       if (ledger == null) {
-        unawaited(
-          discardSendProposal(
-            proposalId: args.proposalId,
-            sendFlowId: _sendFlowId,
-            logContext: 'MobileSend(ledger cancelled)',
-            syncNotifier: ref.read(syncProvider.notifier),
-            accountUuid: args.proposalAccountUuid,
-          ),
-        );
-        if (mounted) {
-          setState(() {
-            _isConfirmingSend = false;
-            _phase = _SendPhase.compose;
-          });
-        }
+        await _recoverCancelledProposal(args);
         return;
       }
       if (!mounted) return;

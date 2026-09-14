@@ -217,7 +217,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   Future<void> _handleSend() async {
     if (_reviewRecoveryFailed) {
-      await _cancelKeystoneSigning();
+      await _cancelSigningAndRefreshReview();
       return;
     }
     if (_cancelling || _proposalAbandoned) return;
@@ -406,6 +406,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               return _ledgerBasePczts!;
             });
     _ledgerBasePcztsFuture = creationFuture;
+    _proposalConsumption = creationFuture;
     try {
       return await creationFuture;
     } finally {
@@ -552,25 +553,24 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _dismissLedgerSigningModal() async {
-    if (_ledgerPhase == null || _ledgerSigningComplete) return;
+    if (_ledgerPhase == null || _ledgerSigningComplete || _cancelling) return;
     _ledgerAttemptGeneration++;
-    if (_showSaplingParamsPrompt) {
-      _resolveSaplingParamsDialog(false);
-    }
-    if (!mounted) return;
-    setState(() {
-      _ledgerPhase = null;
-      _ledgerFailure = null;
-      _ledgerRecoveryAction = null;
-    });
+    _resolveSaplingParamsDialog(false);
+    setState(() => _cancelling = true);
     try {
       await _cancelLedgerOperation();
     } catch (e, st) {
       log('SendReview._dismissLedgerSigningModal: ERROR: $e\n$st');
     }
+    if (!mounted) return;
+    // The shared recovery drains the creator, releases inputs and refreshes
+    // balance before constructing a new proposal with the preserved form.
+    _cancelling = false;
+    await _cancelSigningAndRefreshReview();
   }
 
   void _retryLedgerSigning() {
+    if (_cancelling) return;
     if (_ledgerPhase != LedgerSigningModalPhase.failed ||
         _ledgerRecoveryAction != _LedgerSendRecoveryAction.retrySigning ||
         _ledgerSigningComplete) {
@@ -606,13 +606,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     _ledgerAttemptGeneration++;
-    _scheduleDiscard();
-    ref.read(sendStatusRoutePayloadProvider.notifier).clear();
-    if (!mounted) return;
-    context.go('/send');
+    unawaited(
+      _leaveReview(() {
+        ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+        context.go('/send');
+      }),
+    );
   }
 
   void _handleLedgerRecoveryAction() {
+    if (_cancelling) return;
     switch (_ledgerRecoveryAction) {
       case _LedgerSendRecoveryAction.retrySigning:
         _retryLedgerSigning();
@@ -661,7 +664,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   Future<void> _handleDonationBack() => _ledgerPhase != null
       ? _dismissLedgerSigningModal()
       : _keystonePhase != null
-      ? _cancelKeystoneSigning()
+      ? _cancelSigningAndRefreshReview()
       : _leaveReview(() {
           if (context.canPop()) {
             context.pop();
@@ -854,8 +857,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     return 'Keystone signing could not be prepared. Return to Send and try again.';
   }
 
-  Future<void> _cancelKeystoneSigning() async {
+  Future<void> _cancelSigningAndRefreshReview() async {
     if (_cancelling) return;
+    final isLedger = ref
+        .read(accountProvider.notifier)
+        .isLedgerAccount(_reviewArgs.proposalAccountUuid);
     setState(() {
       _cancelling = true;
       _proposalAbandoned = true;
@@ -868,12 +874,30 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!released) {
       setState(() {
         _cancelling = false;
-        _keystonePhase = KeystoneSigningModalPhase.failed;
-        _keystoneError = 'Could not finish cancelling. Please try again.';
+        if (isLedger) {
+          _ledgerPhase = null;
+          _reviewRecoveryFailed = true;
+        } else {
+          _keystonePhase = KeystoneSigningModalPhase.failed;
+          _keystoneError = 'Could not finish cancelling. Please try again.';
+        }
       });
       return;
     }
-    setState(() => _keystonePhase = null);
+    setState(() {
+      _keystonePhase = null;
+      if (isLedger) {
+        _ledgerPhase = null;
+        _ledgerBasePczts = null;
+        _ledgerBasePcztsFuture = null;
+        _ledgerSignerPczts = null;
+        _ledgerPcztsWithProofs = null;
+        _ledgerSignedPczts.clear();
+        _ledgerRound = 0;
+        _ledgerFailure = null;
+        _ledgerRecoveryAction = null;
+      }
+    });
     final previous = _reviewArgs;
     try {
       final refreshed = await proposeSendTransfer(
@@ -1021,13 +1045,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final backTarget = AppBackResolver.resolve(context);
 
     return PopScope<Object?>(
-      canPop: keystonePhase == null && _ledgerPhase == null && !_cancelling && !_proposalAbandoned,
+      canPop:
+          keystonePhase == null &&
+          _ledgerPhase == null &&
+          !_cancelling &&
+          !_proposalAbandoned,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_ledgerPhase != null) {
           unawaited(_dismissLedgerSigningModal());
         } else if (keystonePhase != null) {
-          unawaited(_cancelKeystoneSigning());
+          unawaited(_cancelSigningAndRefreshReview());
         } else if (_proposalAbandoned) {
           unawaited(_leaveReview(() => backTarget.navigate(context)));
         }
@@ -1056,7 +1084,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                           onTap: () => _ledgerPhase != null
                               ? _dismissLedgerSigningModal()
                               : keystonePhase != null
-                              ? _cancelKeystoneSigning()
+                              ? _cancelSigningAndRefreshReview()
                               : _leaveReview(
                                   () => backTarget.navigate(context),
                                 ),
@@ -1144,7 +1172,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               if (keystonePhase != null)
                 PaymentUriBusySurfaceHold(
                   child: AppPaneModalOverlay(
-                    onDismiss: () => unawaited(_cancelKeystoneSigning()),
+                    onDismiss: () =>
+                        unawaited(_cancelSigningAndRefreshReview()),
                     child: KeystoneSigningModal(
                       phase: keystonePhase,
                       urParts: _keystoneUrParts,
@@ -1171,7 +1200,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       secondaryLabel: _cancelling ? 'Cancelling…' : 'Cancel',
                       onSecondary: _cancelling
                           ? null
-                          : () => unawaited(_cancelKeystoneSigning()),
+                          : () => unawaited(_cancelSigningAndRefreshReview()),
                     ),
                   ),
                 ),
@@ -1184,11 +1213,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                     accountUuid: _reviewArgs.proposalAccountUuid,
                     phase: ledgerPhase,
                     failure: _ledgerFailure,
-                    onCancel: !_ledgerSigningComplete
+                    onCancel: !_ledgerSigningComplete && !_cancelling
                         ? () => unawaited(_dismissLedgerSigningModal())
                         : null,
                     onFailureAction:
-                        ledgerPhase == LedgerSigningModalPhase.failed &&
+                        !_cancelling &&
+                            ledgerPhase == LedgerSigningModalPhase.failed &&
                             _ledgerRecoveryAction != null
                         ? _handleLedgerRecoveryAction
                         : null,

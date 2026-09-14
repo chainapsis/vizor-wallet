@@ -712,6 +712,14 @@ Widget _sendFlowRouterApp({
           child: const Text('keystone sign'),
         ),
       ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_ledger_cancel'),
+          onPressed: () => context.pop(),
+          child: const Text('ledger sign'),
+        ),
+      ),
     ],
   );
   return ProviderScope(
@@ -2212,6 +2220,52 @@ void main() {
       expect(_proposeCalls, 2);
     },
   );
+
+  testWidgets('Ledger cancel refreshes locked balance before enabling retry', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    final sync = _CancelRecoverySyncNotifier();
+    await tester.pumpWidget(
+      _cancelRecoveryApp(sync, signerKind: HardwareSignerKind.ledger),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 1);
+
+    sync.publishLockedBalance();
+    await tester.pumpAndSettle();
+    _discardGate = Completer<void>();
+    sync.refreshGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_ledger_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(sync.refreshCalls, 0);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+    expect(sync.refreshCalls, 1);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(_proposeCalls, 1);
+
+    sync.refreshGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNotNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('ledger sign'), findsOneWidget);
+    expect(_proposeCalls, 2);
+  });
 
   testWidgets(
     'Keystone release failure retries cleanup without a new proposal',
@@ -4328,6 +4382,7 @@ AppButton _confirmButton(WidgetTester tester) =>
 Widget _cancelRecoveryApp(
   _CancelRecoverySyncNotifier sync, {
   bool isMaxMode = false,
+  HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(
   syncNotifier: () => sync,
   initialLocation: '/send/review',
@@ -4339,13 +4394,14 @@ Widget _cancelRecoveryApp(
     isMaxMode: isMaxMode,
     feeZatoshi: BigInt.from(10000),
   ),
-  accountState: const AccountState(
+  accountState: AccountState(
     accounts: [
       AccountInfo(
         uuid: 'account-1',
-        name: 'Keystone',
+        name: signerKind.name,
         order: 0,
         isHardware: true,
+        hardwareSignerKind: signerKind,
       ),
     ],
     activeAccountUuid: 'account-1',

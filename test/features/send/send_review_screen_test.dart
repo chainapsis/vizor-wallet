@@ -1452,7 +1452,7 @@ void main() {
         expect(find.text('15.12 ZEC'), findsOneWidget);
         expect(find.text(truncatedAddress(_longAddress)), findsOneWidget);
         expect(cancelCount, 1);
-        expect(rustApi.discardCalls, isEmpty);
+        expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
         expect(operationService.checkpoints, isEmpty);
 
         signerResult.complete(_fakeSignatureBytes);
@@ -1461,10 +1461,63 @@ void main() {
         expect(find.byType(SendReviewScreen), findsOneWidget);
         expect(find.text('status-route'), findsNothing);
         expect(operationService.checkpoints, isEmpty);
-        expect(rustApi.discardCalls, isEmpty);
+        expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
       },
     );
   }
+
+  testWidgets('Ledger cannot retry while device cancellation is pending', (
+    tester,
+  ) async {
+    final cancellation = Completer<void>();
+    var signerCalls = 0;
+    addTearDown(() {
+      if (!cancellation.isCompleted) cancellation.complete();
+    });
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerSigner: (_) async {
+          signerCalls++;
+          throw StateError('6985 rejected');
+        },
+        ledgerCanceller: () => cancellation.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    final queuedRetry = tester
+        .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+        .onFailureAction!;
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pump();
+    queuedRetry();
+    await tester.pump();
+    expect(signerCalls, 1);
+    expect(
+      tester
+          .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+          .onFailureAction,
+      isNull,
+    );
+    expect(rustApi.discardCalls, isEmpty);
+    cancellation.complete();
+    await _flushRealAsync(tester);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+  });
 
   testWidgets('Ledger cancellation generation cannot affect the next request', (
     tester,
@@ -1529,55 +1582,52 @@ void main() {
     expect(cancelCount, 1);
   });
 
-  testWidgets('Ledger retry reuses an in-flight consumed proposal PCZT', (
-    tester,
-  ) async {
-    final creationGate = Completer<void>();
-    var cancelCount = 0;
-    rustApi.createPcztGate = creationGate;
-    addTearDown(() {
-      if (!creationGate.isCompleted) creationGate.complete();
-    });
-
-    await _setDesktopViewport(tester);
-    await tester.pumpWidget(
-      _harness(
-        _reviewArgs(addressType: 'unified'),
-        bootstrap: _bootstrap(
-          isHardware: true,
-          hardwareSignerKind: HardwareSignerKind.ledger,
+  testWidgets(
+    'Ledger cancellation drains creation before refreshing the review',
+    (tester) async {
+      final creationGate = Completer<void>();
+      final syncNotifier = _FakeSyncNotifier();
+      rustApi.createPcztGate = creationGate;
+      addTearDown(() {
+        if (!creationGate.isCompleted) creationGate.complete();
+      });
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          syncNotifier: syncNotifier,
+          ledgerSigner: (_) async => _fakeSignatureBytes,
+          ledgerCanceller: () async {},
         ),
-        ledgerSigner: (_) async => _fakeSignatureBytes,
-        ledgerCanceller: () async => cancelCount++,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Confirm with Ledger'));
-    await _flushRealAsync(tester);
-    expect(rustApi.createPcztCalls, 1);
-
-    await tester.tap(
-      find.descendant(
-        of: find.byType(LedgerSigningModal),
-        matching: find.text('Cancel'),
-      ),
-    );
-    await _flushRealAsync(tester);
-    expect(find.byType(SendReviewScreen), findsOneWidget);
-
-    await tester.tap(find.text('Confirm with Ledger'));
-    await _flushRealAsync(tester);
-    expect(rustApi.createPcztCalls, 1);
-
-    creationGate.complete();
-    await _flushRealAsync(tester);
-
-    expect(find.text('status-route'), findsOneWidget);
-    expect(rustApi.createPcztCalls, 1);
-    expect(cancelCount, 1);
-    expect(rustApi.discardCalls, isEmpty);
-  });
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createPcztCalls, 1);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(LedgerSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await _flushRealAsync(tester);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(find.text('Cancelling…'), findsOneWidget);
+      creationGate.complete();
+      await _flushRealAsync(tester);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.byType(LedgerSigningModal), findsNothing);
+      expect(find.text('Confirm with Ledger'), findsOneWidget);
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createdProposalIds, [BigInt.one, BigInt.two]);
+      expect(find.text('status-route'), findsOneWidget);
+    },
+  );
 
   testWidgets('Ledger expired proposal requires a new transaction', (
     tester,
@@ -2316,7 +2366,8 @@ Widget _harness(
 }) {
   final router = GoRouter(
     initialLocation: initialLocation == '/send/review'
-        ? sendReviewRouteLocation(args.sendFlowId) : initialLocation,
+        ? sendReviewRouteLocation(args.sendFlowId)
+        : initialLocation,
     initialExtra: args,
     refreshListenable: routerRefresh,
     routes: [
@@ -2329,16 +2380,20 @@ Widget _harness(
       GoRoute(
         path: '/send/review',
         pageBuilder: productionReviewRoute ? buildDesktopSendReviewPage : null,
-        builder: productionReviewRoute ? null : (context, state) => switch (resolveSendReviewRoutePayload(
-          routePayload: state.extra ?? (state.uri.queryParameters['flow'] == null ? args : null),
-          retainedPayload: ProviderScope.containerOf(
-            context,
-          ).read(sendStatusRoutePayloadProvider),
-          sendFlowId: state.uri.queryParameters['flow'],
-        )) {
-          SendReviewArgs resolved => SendReviewScreen(args: resolved),
-          _ => const Text('send-route'),
-        },
+        builder: productionReviewRoute
+            ? null
+            : (context, state) => switch (resolveSendReviewRoutePayload(
+                routePayload:
+                    state.extra ??
+                    (state.uri.queryParameters['flow'] == null ? args : null),
+                retainedPayload: ProviderScope.containerOf(
+                  context,
+                ).read(sendStatusRoutePayloadProvider),
+                sendFlowId: state.uri.queryParameters['flow'],
+              )) {
+                SendReviewArgs resolved => SendReviewScreen(args: resolved),
+                _ => const Text('send-route'),
+              },
       ),
       GoRoute(
         path: '/send/keystone/scan',

@@ -112,14 +112,16 @@ class _MobileLedgerSendSignScreenState
   var _ownershipTransferred = false;
   var _discardScheduled = false;
   var _cancelled = false;
-  late final SyncNotifier _syncNotifier;
+  late final SyncNotifier? _syncNotifier;
   late final String _operationId;
   late final LedgerOperationCanceller _cancelOperation;
 
   @override
   void initState() {
     super.initState();
-    _syncNotifier = ref.read(syncProvider.notifier);
+    _syncNotifier = widget.discardProposal == null
+        ? ref.read(syncProvider.notifier)
+        : null;
     _cancelOperation = ref.read(ledgerOperationCancellerProvider);
     _operationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
@@ -133,8 +135,8 @@ class _MobileLedgerSendSignScreenState
     _attemptGeneration++;
     final hasUncheckpointedSignature =
         _signingComplete && !_ownershipTransferred;
-    if (!_ownershipTransferred && !_cancelled && !hasUncheckpointedSignature) {
-      unawaited(_cancelOperationSafely());
+    if (!_ownershipTransferred && !hasUncheckpointedSignature) {
+      if (!_cancelled) unawaited(_cancelOperationSafely());
       _scheduleDiscard('MobileLedgerSendSign(dispose)');
     }
     super.dispose();
@@ -149,7 +151,7 @@ class _MobileLedgerSendSignScreenState
       _signedPczts.length == _basePczts!.length;
 
   void _startSigning() {
-    if (_signingComplete) return;
+    if (_signingComplete || _cancelled) return;
     final generation = ++_attemptGeneration;
     setState(() {
       _phase = LedgerSigningModalPhase.preparing;
@@ -433,6 +435,7 @@ class _MobileLedgerSendSignScreenState
   }
 
   void _handleFailureAction() {
+    if (_cancelled) return;
     switch (_recoveryAction) {
       case _LedgerSendRecoveryAction.retrySigning:
         _startSigning();
@@ -456,11 +459,22 @@ class _MobileLedgerSendSignScreenState
 
   Future<void> _cancelAndPop() async {
     if (_signingComplete || _cancelled) return;
-    _cancelled = true;
+    setState(() => _cancelled = true);
     _attemptGeneration++;
     await _cancelOperationSafely();
-    _scheduleDiscard('MobileLedgerSendSign(cancel)');
-    if (mounted) context.pop();
+    // Creation may still reserve inputs after the device cancellation returns.
+    // Drain it before handing release and fee refresh back to the review.
+    try {
+      await _basePcztsFuture;
+    } catch (_) {
+      // Failed creators still require the review's idempotent cleanup.
+    }
+    if (!mounted) return;
+    final discard = widget.discardProposal;
+    if (discard != null) await discard();
+    if (!mounted) return;
+    _ownershipTransferred = true;
+    context.pop();
   }
 
   Future<void> _cancelOperationSafely() async {
@@ -474,25 +488,32 @@ class _MobileLedgerSendSignScreenState
   void _scheduleDiscard(String logContext) {
     if (_discardScheduled) return;
     _discardScheduled = true;
+    final creation = _basePcztsFuture;
     final discard = widget.discardProposal;
-    if (discard != null) {
-      unawaited(discard());
-      return;
-    }
-    unawaited(
-      discardSendProposal(
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
+    final args = widget.args;
+    unawaited(() async {
+      try {
+        await creation;
+      } catch (_) {
+        // A failed creator still needs idempotent proposal cleanup.
+      }
+      if (discard != null) {
+        await discard();
+        return;
+      }
+      await discardSendProposal(
+        proposalId: args.proposalId,
+        sendFlowId: args.sendFlowId,
         logContext: logContext,
-        syncNotifier: _syncNotifier,
-        accountUuid: widget.args.proposalAccountUuid,
-      ),
-    );
+        syncNotifier: _syncNotifier!,
+        accountUuid: args.proposalAccountUuid,
+      );
+    }());
   }
 
   @override
   Widget build(BuildContext context) {
-    final canLeave = !_signingComplete;
+    final canLeave = !_signingComplete && !_cancelled;
     return MobileLedgerSigningSurface(
       key: const ValueKey('mobile_ledger_signing_surface'),
       title: 'Confirm transaction',
@@ -506,7 +527,9 @@ class _MobileLedgerSendSignScreenState
         roundCount: _basePczts?.length ?? 1,
         onCancel: canLeave ? () => unawaited(_cancelAndPop()) : null,
         onFailureAction:
-            _phase == LedgerSigningModalPhase.failed && _recoveryAction != null
+            !_cancelled &&
+                _phase == LedgerSigningModalPhase.failed &&
+                _recoveryAction != null
             ? _handleFailureAction
             : null,
       ),

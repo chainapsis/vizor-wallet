@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -88,6 +89,86 @@ void main() {
     expect(result?.operationId, 'send:account-1:flow-1');
     expect(result?.reviewArgs, same(_args));
   });
+
+  testWidgets(
+    'cancel waits for PCZT creation before returning proposal ownership',
+    (tester) async {
+      final creation = Completer<void>();
+      var discards = 0;
+      var signs = 0;
+      addTearDown(() {
+        if (!creation.isCompleted) creation.complete();
+      });
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async {
+            signs++;
+            return const [4];
+          },
+          canceller: () async {},
+          creationGate: creation.future,
+          onDiscard: () async {
+            discards++;
+          },
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(MobileLedgerSendSignScreen), findsOneWidget);
+      expect(discards, 0);
+      creation.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Open signing'), findsOneWidget);
+      expect(discards, 1);
+      expect(signs, 0);
+    },
+  );
+
+  testWidgets(
+    'retry stays disabled until pending cancellation returns to review',
+    (tester) async {
+      final cancellation = Completer<void>();
+      var signCalls = 0;
+      addTearDown(() {
+        if (!cancellation.isCompleted) cancellation.complete();
+      });
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async {
+            signCalls++;
+            throw StateError('6985 rejected');
+          },
+          canceller: () => cancellation.future,
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      final queuedRetry = tester
+          .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+          .onFailureAction!;
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      queuedRetry();
+      await tester.pump();
+      expect(signCalls, 1);
+      expect(
+        tester
+            .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+            .onFailureAction,
+        isNull,
+      );
+      cancellation.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Open signing'), findsOneWidget);
+    },
+  );
 
   testWidgets('cancel stays on the Ledger path and ignores cancel errors', (
     tester,
@@ -360,6 +441,7 @@ Widget _app({
   List<String>? events,
   ValueChanged<LedgerBroadcastArgs>? onResult,
   Future<void> Function()? onDiscard,
+  Future<void>? creationGate,
 }) {
   final router = GoRouter(
     routes: [
@@ -388,6 +470,7 @@ Widget _app({
                 required sendFlowId,
               }) async {
                 events?.add('create');
+                if (creationGate != null) await creationGate;
                 return const [1];
               },
           createTexPczts:

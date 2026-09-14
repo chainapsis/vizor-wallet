@@ -283,7 +283,12 @@ class LedgerSigningModal extends ConsumerWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.mediumLarge,
               minWidth: 280,
-              child: Text(cancelLabel),
+              constrainContent: true,
+              child: Text(
+                cancelLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             )
           else if (onCancel == null)
             AppButton(
@@ -291,7 +296,12 @@ class LedgerSigningModal extends ConsumerWidget {
               variant: AppButtonVariant.primary,
               size: AppButtonSize.mediumLarge,
               minWidth: 280,
-              child: Text(actionLabel),
+              constrainContent: true,
+              child: Text(
+                actionLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             )
           else
             AppModalActions(
