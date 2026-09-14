@@ -48,6 +48,7 @@ import '../src/features/swap/widgets/swap_review_page_content.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_address_book_repository.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
@@ -2308,6 +2309,9 @@ Widget _swapScreenScope({
         () => _SwapPreviewAccountNotifier(_swapScreenAccountState),
       ),
       syncProvider.overrideWith(() => _SwapPreviewSyncNotifier(syncState)),
+      addressBookRepositoryProvider.overrideWith(
+        (ref) => WbAddressBookRepository(),
+      ),
       addressBookProvider.overrideWith(
         () => _SwapPreviewAddressBookNotifier(_swapScreenContacts),
       ),

@@ -38,6 +38,7 @@ import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/providers/sync_provider.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_address_book_repository.dart';
 
 const _payShellAccountUuid = 'widgetbook-pay-screen-account';
 const _payShellContactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -187,6 +188,9 @@ Widget payPreviewShellScope({
       ),
       syncProvider.overrideWith(
         () => _PayPreviewSyncNotifier(_payShellSyncState),
+      ),
+      addressBookRepositoryProvider.overrideWith(
+        (ref) => WbAddressBookRepository(),
       ),
       addressBookProvider.overrideWith(
         () => _PayPreviewAddressBookNotifier(_payShellContacts),

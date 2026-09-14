@@ -3,6 +3,7 @@
 
 import 'dart:async';
 import 'dart:typed_data';
+import 'support/wb_address_book_repository.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -764,6 +765,9 @@ Widget _swapMobileScope({
       swapStateProvider.overrideWith(() => _SwapMobilePreviewNotifier(state)),
       accountProvider.overrideWith(_SwapMobileAccountNotifier.new),
       addressBookProvider.overrideWith(_SwapMobileAddressBookNotifier.new),
+      addressBookRepositoryProvider.overrideWith(
+        (ref) => WbAddressBookRepository(),
+      ),
       ironwoodMigrationAwareDisplaySpendableProvider.overrideWith(
         (ref, accountUuid) => spendableZatoshi,
       ),
@@ -1614,6 +1618,9 @@ Widget _swapActivityScope({required SwapState state, required Widget child}) {
       swapStateProvider.overrideWith(() => _SwapMobilePreviewNotifier(state)),
       accountProvider.overrideWith(_SwapActivityAccountNotifier.new),
       addressBookProvider.overrideWith(_SwapMobileAddressBookNotifier.new),
+      addressBookRepositoryProvider.overrideWith(
+        (ref) => WbAddressBookRepository(),
+      ),
       ironwoodMigrationAwareDisplaySpendableProvider.overrideWith(
         (ref, accountUuid) => _swapMobileSpendableZatoshi,
       ),
