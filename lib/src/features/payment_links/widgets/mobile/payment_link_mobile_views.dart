@@ -485,7 +485,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
-    this.usageStatus,
+    this.metadata,
     this.actionLabel,
     this.onAction,
     this.showLoader = false,
@@ -498,7 +498,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
-  final Widget? usageStatus;
+  final Widget? metadata;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -511,94 +511,76 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
   final VoidCallback? onShowQr;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => _buildRow(
-      context,
-      stackUsage:
-          usageStatus != null &&
-          constraints.maxWidth <
-              280 + MediaQuery.textScalerOf(context).scale(120),
-    ),
-  );
-
-  Widget _buildRow(BuildContext context, {required bool stackUsage}) {
+  Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: stackUsage
-          ? 108
-          : actionLabel == null
-          ? 64
-          : 88,
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadii.small),
-            child: SizedBox(width: 60, height: 44, child: thumbnail),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  amountText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                if (actionLabel != null)
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: actionLabel == null ? 64 : 88),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              child: SizedBox(width: 60, height: 44, child: thumbnail),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    statusText!,
+                    amountText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: context.colors.text.secondary,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
-                Text(
-                  dateText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                if (stackUsage)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                    child: SizedBox(width: 104, child: usageStatus),
-                  ),
-              ],
+                  if (actionLabel != null)
+                    Text(
+                      statusText!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  metadata ??
+                      Text(
+                        dateText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          if (usageStatus != null && !stackUsage) ...[
-            SizedBox(width: 104, child: usageStatus),
             const SizedBox(width: AppSpacing.xs),
+            if (showLinkActions) ...[
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_copy_action'),
+                semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+                icon: AppIcons.copy,
+                onPressed: onCopyLink,
+              ),
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_qr_action'),
+                semanticLabel: 'Show gift card QR code',
+                icon: AppIcons.qr,
+                onPressed: onShowQr,
+              ),
+            ] else if (statusText case final label?)
+              _MobileCardStatus(
+                label: actionLabel ?? label,
+                onTap: onAction,
+                showLoader: showLoader,
+              ),
           ],
-          if (showLinkActions) ...[
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_copy_action'),
-              semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
-              icon: AppIcons.copy,
-              onPressed: onCopyLink,
-            ),
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_qr_action'),
-              semanticLabel: 'Show gift card QR code',
-              icon: AppIcons.qr,
-              onPressed: onShowQr,
-            ),
-          ] else if (statusText case final label?)
-            _MobileCardStatus(
-              label: actionLabel ?? label,
-              onTap: onAction,
-              showLoader: showLoader,
-            ),
-        ],
+        ),
       ),
     );
   }

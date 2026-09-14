@@ -2459,8 +2459,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
-      usageStatus: state.canUseLink
-          ? GiftCardUsageStatusView(address: record.link.address, inline: true)
+      metadata: state.canUseLink
+          ? GiftCardUsageStatusView(
+              address: record.link.address,
+              inline: true,
+              dateText: _formatCardDate(record.link.createdAt),
+            )
           : null,
     );
   }
