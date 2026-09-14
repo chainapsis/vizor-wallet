@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_verify_address_overlay.dart';
 import 'package:widgetbook/widgetbook.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
@@ -1506,6 +1508,56 @@ void main() {
         otherKnobs: {'Flow': sendReviewScreenFlowLabel(SendFlowKind.send)},
       );
       await drainSendReviewDiscard(tester);
+    }
+  });
+
+  testWidgets('send status explorer actions never reach the host launcher', (
+    tester,
+  ) async {
+    final launches = <MethodCall>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      launches.add(call);
+      return true;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    for (final phase in [
+      SendStatusScreenPhase.sent,
+      SendStatusScreenPhase.queued,
+    ]) {
+      for (final hardware in [false, true]) {
+        await pumpUseCase(
+          tester,
+          buildSendStatusScreenGalleryCase,
+          knobs: {
+            ..._desktop,
+            'Phase': sendStatusScreenPhaseLabel(phase),
+            'Keystone account': '$hardware',
+            'Transaction hash': 'true',
+          },
+        );
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        final screen = tester.widget<SendStatusScreen>(
+          find.byType(SendStatusScreen),
+        );
+        expect(screen.explorerLauncher, isNotNull);
+        expect(screen.keystone != null, hardware);
+        await tester.tap(find.text('Tx ID'));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(launches, isEmpty);
+        expect(find.text('Transaction hash copied'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await disposeTree(tester);
+      }
     }
   });
 

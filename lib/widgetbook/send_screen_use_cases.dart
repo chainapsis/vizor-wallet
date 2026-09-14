@@ -893,6 +893,7 @@ Widget sendStatusScreenFixture({
     child: _SendScreenRouterHarness(
       screen: (_) => SendStatusScreen(
         args: args,
+        explorerLauncher: (_) async => true,
         keystone: hardwareAccount
             ? KeystoneBroadcastArgs(
                 reviewArgs: args,
