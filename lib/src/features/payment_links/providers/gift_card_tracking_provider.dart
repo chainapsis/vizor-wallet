@@ -16,16 +16,32 @@ import '../services/payment_link_recovery_store.dart';
 import 'gift_card_tracking_lifecycle_provider.dart';
 
 class GiftCardTrackingState {
-  const GiftCardTrackingState({this.checking = false, this.failed = false});
+  const GiftCardTrackingState({
+    this.checking = false,
+    this.failed = false,
+    this.failedAddresses = const {},
+  });
   final bool checking;
+
+  /// Shared infrastructure failure; individual card failures live below.
   final bool failed;
+  final Set<String> failedAddresses;
+
+  bool failedFor(String address) => failed || failedAddresses.contains(address);
 }
 
 class GiftCardTrackingStateNotifier extends Notifier<GiftCardTrackingState> {
   @override
   GiftCardTrackingState build() => const GiftCardTrackingState();
-  void update(bool checking, bool failed) =>
-      state = GiftCardTrackingState(checking: checking, failed: failed);
+  void update(
+    bool checking,
+    bool failed, [
+    Set<String> failedAddresses = const {},
+  ]) => state = GiftCardTrackingState(
+    checking: checking,
+    failed: failed,
+    failedAddresses: Set.unmodifiable(failedAddresses),
+  );
 }
 
 final giftCardTrackingStateProvider =
@@ -61,11 +77,11 @@ final giftCardTrackingServiceProvider = Provider((ref) {
         !disposed &&
         foreground &&
         !ref.read(appSecurityProvider).requiresUnlock,
-    onState: (checking, failed) {
+    onState: (checking, failed, failedAddresses) {
       if (!disposed) {
         ref
             .read(giftCardTrackingStateProvider.notifier)
-            .update(checking, failed);
+            .update(checking, failed, failedAddresses);
       }
     },
   );

@@ -71,7 +71,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         ? ''
         : state.checking
         ? ' · Checking…'
-        : state.failed
+        : state.failedFor(address)
         ? ' · Update failed'
         : '';
     final checked = usage.checkedAt?.toLocal();

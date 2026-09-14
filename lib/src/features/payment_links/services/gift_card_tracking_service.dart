@@ -29,7 +29,8 @@ class GiftCardTrackingService {
   final GiftCardTrackingBackend backend;
   final String Function() network;
   final bool Function() allowed;
-  final void Function(bool checking, bool failed) onState;
+  final void Function(bool checking, bool failed, Set<String> failedAddresses)
+  onState;
   final DateTime Function() now;
   Future<void> _tail = Future.value();
   Future<void>? _refresh;
@@ -84,8 +85,10 @@ class GiftCardTrackingService {
               now().difference(_lastSync!) < const Duration(seconds: 30)) {
             return;
           }
-          onState(true, false);
+          onState(true, false, const {});
           var failed = false;
+          final failedAddresses = <String>{};
+          var canCleanOrphans = true;
           try {
             var cards = (await store.load())
                 .where(
@@ -100,7 +103,12 @@ class GiftCardTrackingService {
               if (!_valid(epoch) || network() != currentNetwork) return;
               // Recover deletion after a crash without recreating the removed account.
               if (card.usage.cleanupPending) {
-                await backend.remove(currentNetwork, card.usage.accountUuid!);
+                try {
+                  await backend.remove(currentNetwork, card.usage.accountUuid!);
+                } catch (_) {
+                  failedAddresses.add(card.link.address);
+                  continue;
+                }
                 if (!_valid(epoch)) return;
                 await store.updateUsage(
                   expected: card,
@@ -109,13 +117,23 @@ class GiftCardTrackingService {
                 continue;
               }
               if (knownAccounts.contains(card.usage.accountUuid)) continue;
-              final uuid = await backend.register(card);
+              late final String uuid;
+              try {
+                uuid = await backend.register(card);
+              } catch (_) {
+                failedAddresses.add(card.link.address);
+                // A failed response may follow a committed native import.
+                // Do not mistake its not-yet-recorded UUID for an orphan.
+                canCleanOrphans = false;
+                continue;
+              }
               if (!_valid(epoch)) return;
               if (card.usage.accountUuid != uuid) {
-                await store.updateUsage(
+                final saved = await store.updateUsage(
                   expected: card,
                   usage: card.usage.withAccount(uuid),
                 );
+                if (!saved) canCleanOrphans = false;
               }
             }
             if (!_valid(epoch)) return;
@@ -129,8 +147,13 @@ class GiftCardTrackingService {
             final registered = await backend.accounts(currentNetwork);
             for (final uuid in registered) {
               if (!_valid(epoch)) return;
-              if (!retained.contains(uuid)) {
-                await backend.remove(currentNetwork, uuid);
+              if (canCleanOrphans && !retained.contains(uuid)) {
+                try {
+                  await backend.remove(currentNetwork, uuid);
+                } catch (_) {
+                  // No card owns this account. Retry housekeeping on the next
+                  // refresh without blocking live cards or marking them failed.
+                }
               }
             }
             if (!_valid(epoch)) return;
@@ -139,16 +162,24 @@ class GiftCardTrackingService {
                   (c) =>
                       c.link.network == currentNetwork &&
                       !c.usage.cleaned &&
+                      !failedAddresses.contains(c.link.address) &&
                       !c.usage.cleanupPending &&
                       c.usage.accountUuid != null &&
                       (c.fundingTxids?.isNotEmpty ?? false),
                 )
                 .toList();
-            if (cards.isEmpty) return;
-            await backend.sync(currentNetwork);
+            if (cards.isNotEmpty) await backend.sync(currentNetwork);
             if (!_valid(epoch) || network() != currentNetwork) return;
             for (final card in cards) {
-              final observation = await backend.inspect(card);
+              if (!_valid(epoch) || network() != currentNetwork) return;
+              late final GiftCardUsage observation;
+              try {
+                observation = await backend.inspect(card);
+                GiftCardUsage.fromJson(observation.toJson());
+              } catch (_) {
+                failedAddresses.add(card.link.address);
+                continue;
+              }
               if (!_valid(epoch)) return;
               // No history is not proof of a reorg or a failed broadcast. Preserve
               // the prior snapshot but do not claim it was freshly verified.
@@ -162,7 +193,15 @@ class GiftCardTrackingService {
               );
               if (!_valid(epoch)) return;
               if (saved && observation.cleanupPending) {
-                await backend.remove(currentNetwork, observation.accountUuid!);
+                try {
+                  await backend.remove(
+                    currentNetwork,
+                    observation.accountUuid!,
+                  );
+                } catch (_) {
+                  failedAddresses.add(card.link.address);
+                  continue;
+                }
                 if (!_valid(epoch)) return;
                 await store.updateUsage(
                   expected: card.copyWith(
@@ -180,7 +219,9 @@ class GiftCardTrackingService {
             failed = true;
             rethrow;
           } finally {
-            if (_valid(epoch)) onState(false, failed);
+            if (_valid(epoch)) {
+              onState(false, failed, Set.unmodifiable(failedAddresses));
+            }
           }
         }).whenComplete(() {
           if (identical(_refresh, result)) _refresh = null;
@@ -193,7 +234,7 @@ class GiftCardTrackingService {
     _epoch++;
     _lastSync = null;
     backend.cancel();
-    onState(false, false);
+    onState(false, false, const {});
   }
 
   Future<void> quiesceAndDrain() async {

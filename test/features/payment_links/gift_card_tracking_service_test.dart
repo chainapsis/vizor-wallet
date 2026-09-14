@@ -33,11 +33,24 @@ class Backend implements GiftCardTrackingBackend {
   bool used = false;
   bool remaining = false;
   bool failRemove = false;
+  bool failSync = false;
+  final failRegister = <String>{};
+  final failAfterRegister = <String>{};
+  final failInspect = <String>{};
+  final failRemoves = <String>{};
+  final inspected = <String>[];
+  void Function()? afterRegister;
+  void Function()? onInspectFailure;
   void Function()? beforeInspect;
   @override
   Future<String> register(PaymentLinkRecoveryRecord card) async {
     events.add('register');
+    if (failRegister.contains(card.link.address)) throw StateError('bad card');
     ids.add(card.link.address);
+    afterRegister?.call();
+    if (failAfterRegister.contains(card.link.address)) {
+      throw StateError('response lost');
+    }
     return card.link.address;
   }
 
@@ -46,11 +59,17 @@ class Backend implements GiftCardTrackingBackend {
   @override
   Future<void> sync(String network) async {
     events.add('sync');
+    if (failSync) throw StateError('offline');
     await scan?.future;
   }
 
   @override
   Future<GiftCardUsage> inspect(PaymentLinkRecoveryRecord card) async {
+    inspected.add(card.link.address);
+    if (failInspect.contains(card.link.address)) {
+      onInspectFailure?.call();
+      throw StateError('bad observation');
+    }
     beforeInspect?.call();
     return GiftCardUsage(
       status: used ? GiftCardUsageStatus.used : GiftCardUsageStatus.unused,
@@ -66,7 +85,7 @@ class Backend implements GiftCardTrackingBackend {
   @override
   Future<void> remove(String network, String uuid) async {
     events.add('remove');
-    if (failRemove) throw StateError('busy');
+    if (failRemove || failRemoves.contains(uuid)) throw StateError('busy');
     ids.remove(uuid);
   }
 
@@ -104,18 +123,26 @@ void main() {
   late GiftCardTrackingService service;
   late bool allowed;
   late List<(bool, bool)> states;
+  late Set<String> failedAddresses;
+  late DateTime clock;
   setUp(() {
     storage = MemoryStorage();
     store = PaymentLinkRecoveryStore(storage);
     backend = Backend();
     allowed = true;
     states = [];
+    failedAddresses = {};
+    clock = DateTime.utc(2026);
     service = GiftCardTrackingService(
       store: store,
       backend: backend,
       network: () => 'main',
+      now: () => clock,
       allowed: () => allowed,
-      onState: (checking, failed) => states.add((checking, failed)),
+      onState: (checking, failed, addresses) {
+        states.add((checking, failed));
+        failedAddresses = addresses;
+      },
     );
   });
   test(
@@ -164,14 +191,15 @@ void main() {
       await seed(store);
       backend.used = true;
       backend.failRemove = true;
-      await expectLater(service.refresh(), throwsStateError);
+      await service.refresh();
       final usage = (await store.load()).single.usage;
       expect(usage.status, GiftCardUsageStatus.used);
       expect(usage.cleanupPending, isTrue);
-      expect(states.last, (false, true));
+      expect(states.last, (false, false));
+      expect(failedAddresses, {'card'});
       backend.failRemove = false;
       backend.events.clear();
-      await service.refresh();
+      await service.refresh(force: true);
       expect(backend.events, ['remove']);
       expect((await store.load()).single.usage.cleaned, isTrue);
       backend.events.clear();
@@ -274,6 +302,155 @@ void main() {
       backend.events.clear();
       await service.refresh(force: true);
       expect(backend.events, ['sync']);
+    },
+  );
+  test(
+    'registration failure preserves the card and allows later cards to sync',
+    () async {
+      await seed(store, address: 'bad');
+      await seed(store, address: 'good');
+      backend.failRegister.add('bad');
+      await service.refresh();
+      final cards = await store.load();
+      expect(cards.first.usage.accountUuid, isNull);
+      expect(cards.last.usage.status, GiftCardUsageStatus.unused);
+      expect(backend.inspected, ['good']);
+      expect(failedAddresses, {'bad'});
+      expect(states.last, (false, false));
+      backend.failRegister.clear();
+      await service.refresh();
+      expect(failedAddresses, {'bad'}); // Cooldown preserves the last result.
+      clock = clock.add(const Duration(seconds: 30));
+      await service.refresh();
+      expect(failedAddresses, isEmpty);
+      expect(
+        (await store.load()).every(
+          (c) => c.usage.status == GiftCardUsageStatus.unused,
+        ),
+        isTrue,
+      );
+    },
+  );
+  test('lost registration response never triggers orphan deletion', () async {
+    await seed(store, address: 'bad');
+    await seed(store, address: 'good');
+    backend.failAfterRegister.add('bad');
+    await service.refresh();
+    expect(backend.ids, {'bad', 'good'});
+    expect(backend.events, isNot(contains('remove')));
+    expect(backend.inspected, ['good']);
+    backend.failAfterRegister.clear();
+    await service.refresh(force: true);
+    expect((await store.load()).first.usage.accountUuid, 'bad');
+    expect(failedAddresses, isEmpty);
+  });
+  test(
+    'registration metadata storage failure aborts before cleanup or sync',
+    () async {
+      await seed(store);
+      backend.afterRegister = () => storage.fail = true;
+      await expectLater(service.refresh(), throwsStateError);
+      expect(backend.ids, {'card'});
+      expect(backend.events, ['register']);
+      expect(states.last, (false, true));
+    },
+  );
+  test(
+    'stale registration receipt defers orphan cleanup until retry',
+    () async {
+      await seed(store);
+      backend.afterRegister = () {
+        unawaited(
+          store.markFunded(address: 'card', fundingTxids: _spent).then((_) {}),
+        );
+      };
+      await service.refresh();
+      expect((await store.load()).single.usage.accountUuid, isNull);
+      expect(backend.ids, {'card'});
+      expect(backend.events, ['register']);
+      backend.afterRegister = null;
+      await service.refresh(force: true);
+      expect(
+        (await store.load()).single.usage.status,
+        GiftCardUsageStatus.unused,
+      );
+      expect(failedAddresses, isEmpty);
+    },
+  );
+  test(
+    'inspection failure preserves its snapshot and updates later cards',
+    () async {
+      await seed(store, address: 'bad');
+      await seed(store, address: 'good');
+      await service.refresh();
+      final snapshot = (await store.load()).first.usage.toJson();
+      backend.failInspect.add('bad');
+      backend.used = true;
+      await service.refresh(force: true);
+      final cards = await store.load();
+      expect(cards.first.usage.toJson(), snapshot);
+      expect(cards.last.usage.cleaned, isTrue);
+      expect(failedAddresses, {'bad'});
+      backend.failInspect.clear();
+      await service.refresh(force: true);
+      expect((await store.load()).first.usage.cleaned, isTrue);
+      expect(failedAddresses, isEmpty);
+    },
+  );
+  test('cleanup failure and its retry never block another card', () async {
+    await seed(store, address: 'bad');
+    await seed(store, address: 'good');
+    backend.used = true;
+    backend.failRemoves.add('bad');
+    await service.refresh();
+    expect((await store.load()).first.usage.cleanupPending, isTrue);
+    expect((await store.load()).last.usage.cleaned, isTrue);
+    await seed(store, address: 'new');
+    await service.refresh(force: true);
+    expect((await store.load()).last.usage.cleaned, isTrue);
+    expect(failedAddresses, {'bad'});
+    backend.failRemoves.clear();
+    await service.refresh(force: true);
+    expect((await store.load()).every((c) => c.usage.cleaned), isTrue);
+    expect(failedAddresses, isEmpty);
+  });
+  test('orphan cleanup failure does not mark or block a live card', () async {
+    backend.ids.add('orphan');
+    backend.failRemoves.add('orphan');
+    await seed(store);
+    await service.refresh();
+    expect(
+      (await store.load()).single.usage.status,
+      GiftCardUsageStatus.unused,
+    );
+    expect(failedAddresses, isEmpty);
+    backend.failRemoves.clear();
+    await service.refresh(force: true);
+    expect(backend.ids, {'card'});
+  });
+  test(
+    'shared scan failure aborts all inspections and retains observers',
+    () async {
+      await seed(store, address: 'a');
+      await seed(store, address: 'b');
+      backend.failSync = true;
+      await expectLater(service.refresh(), throwsStateError);
+      expect(backend.inspected, isEmpty);
+      expect(backend.ids, {'a', 'b'});
+      expect(states.last, (false, true));
+    },
+  );
+  test(
+    'pause during failed inspection still stops the remaining cards',
+    () async {
+      await seed(store, address: 'bad');
+      await seed(store, address: 'good');
+      backend.failInspect.add('bad');
+      backend.onInspectFailure = service.pause;
+      await service.refresh();
+      expect(backend.inspected, ['bad']);
+      expect(failedAddresses, isEmpty);
+      expect(states.last, (false, false));
     },
   );
   test('corrupt terminal observations are rejected', () {

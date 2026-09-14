@@ -7,6 +7,69 @@ import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_trac
 import 'package:zcash_wallet/src/features/payment_links/widgets/gift_card_usage_status.dart';
 
 void main() {
+  testWidgets('only the failed card displays a card-specific update error', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        giftCardUsageProvider(
+          'bad',
+        ).overrideWith((ref) async => const GiftCardUsage()),
+        giftCardUsageProvider(
+          'good',
+        ).overrideWith((ref) async => const GiftCardUsage()),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: const Scaffold(
+              body: Column(
+                children: [
+                  GiftCardUsageStatusView(key: ValueKey('bad'), address: 'bad'),
+                  GiftCardUsageStatusView(
+                    key: ValueKey('good'),
+                    address: 'good',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final notifier = container.read(giftCardTrackingStateProvider.notifier);
+    final failures = {'bad'};
+    notifier.update(false, false, failures);
+    failures.clear(); // Published state must not share a mutable caller set.
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('bad')),
+        matching: find.textContaining('Update failed'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('good')),
+        matching: find.textContaining('Update failed'),
+      ),
+      findsNothing,
+    );
+    notifier.update(false, true);
+    await tester.pump();
+    expect(find.textContaining('Update failed'), findsNWidgets(2));
+    notifier.update(false, false);
+    await tester.pump();
+    expect(find.textContaining('Update failed'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'shows cached use independently of update errors and refreshes reactively',
     (tester) async {
@@ -27,7 +90,10 @@ void main() {
             home: AppTheme(
               data: AppThemeData.dark,
               child: const Scaffold(
-                body: GiftCardUsageStatusView(address: 'card', showCheckedAt: true),
+                body: GiftCardUsageStatusView(
+                  address: 'card',
+                  showCheckedAt: true,
+                ),
               ),
             ),
           ),

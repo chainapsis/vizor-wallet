@@ -41,8 +41,13 @@ amount. Byte order is normalized when matching funding IDs.
 
 The verified height is capped by pending scan ranges. Reorgs before cleanup may
 change the observed state; missing history alone never overwrites an earlier
-observation or claims it was freshly verified. Lookup failures preserve the
-snapshot and display an update error. Last checked is the observation time,
+observation or claims it was freshly verified. Card registration, lookup and account-deletion failures preserve the
+snapshot, display an update error only on that card and allow other cards to
+continue. They retry on the next refresh after the normal cooldown. Shared
+store/list/scan failures still abort the refresh. Uncertain imports or stale
+registration writes defer orphan cleanup, preventing deletion of an account
+whose registration receipt has not been saved. Orphan cleanup failure retries
+later without blocking live cards. Last checked is the observation time,
 not a recipient identity or a promise of instantaneous status.
 
 Before cleanup, the record saves the spending IDs, mined/verified heights and
