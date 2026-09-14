@@ -1718,6 +1718,7 @@ class _TxStatusHarnessState extends State<_TxStatusHarness> {
             args: widget.args,
             historyLoader: widget.historyLoader,
             detailLoader: widget.detailLoader,
+            explorerLauncher: (_) async => true,
           ),
         ),
       ],
@@ -1765,6 +1766,7 @@ class _TxStatusDesktopHarnessState extends State<_TxStatusDesktopHarness> {
             args: widget.args,
             historyLoader: widget.historyLoader,
             detailLoader: widget.detailLoader,
+            explorerLauncher: (_) async => true,
           ),
         ),
         for (final path in const [

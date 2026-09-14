@@ -74,6 +74,7 @@ class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
     required this.args,
     this.historyLoader,
     this.detailLoader,
+    this.explorerLauncher,
   });
 
   final ActivityTransactionStatusArgs args;
@@ -85,6 +86,10 @@ class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   /// Test seam — production reads the wallet DB through Rust.
   @visibleForTesting
   final ActivityTxDetailLoader? detailLoader;
+
+  /// Preview/test seam — production opens the configured external explorer.
+  @visibleForTesting
+  final ZcashExplorerLauncher? explorerLauncher;
 
   @override
   ConsumerState<ActivityTransactionStatusScreen> createState() =>
@@ -312,6 +317,7 @@ class _ActivityTransactionStatusScreenState
       txidHex: widget.args.txidHex,
       txidOrder: ZcashExplorerTxidOrder.protocol,
       customTemplate: ref.read(zcashExplorerProvider),
+      launcher: widget.explorerLauncher,
     );
     if (launched || !mounted) return;
     copyTextWithToast(

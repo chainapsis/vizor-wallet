@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -836,6 +838,45 @@ void main() {
     );
     expect(mobile.knobs.keys, contains('Refresh failed'));
     expect(mobile.knobs.keys, isNot(contains('Load')));
+    await disposeTree(tester);
+  });
+
+  testWidgets('transaction status previews keep explorer launches in memory', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildActivityTransactionStatusGalleryCase,
+      knobs: desktopLayout,
+    );
+    expect(
+      tester
+          .widget<ActivityTransactionStatusScreen>(
+            find.byType(ActivityTransactionStatusScreen),
+          )
+          .explorerLauncher,
+      isNotNull,
+    );
+    await tester.tap(find.text('Tx ID'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    await pumpUseCase(
+      tester,
+      buildActivityTransactionStatusGalleryCase,
+      knobs: mobileLayout,
+    );
+    expect(
+      tester
+          .widget<MobileTransactionStatusScreen>(
+            find.byType(MobileTransactionStatusScreen),
+          )
+          .explorerLauncher,
+      isNotNull,
+    );
+    await tester.tap(find.text('Tx ID'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
     await disposeTree(tester);
   });
 
