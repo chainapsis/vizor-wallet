@@ -9,7 +9,7 @@ import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 // of what it rejected into a log line.
 void main() {
   test(
-    'standard external payment schemes enter the payment lane, even malformed',
+    'cross-chain OS links are ignored, including malformed and mixed-case links',
     () {
       for (final raw in [
         'bitcoin:broken',
@@ -17,8 +17,11 @@ void main() {
         'ethereum:broken',
         'solana:broken',
         'ETHEREUM:broken',
+        'bitcoin:bc1recipient?amount=1',
+        'ethereum:0x1111111111111111111111111111111111111111@8453',
+        'solana://[invalid',
       ]) {
-        expect(classifyIncomingLink(raw), isA<IncomingPaymentRequestLink>());
+        expect(classifyIncomingLink(raw), isA<IncomingLinkUnknown>());
       }
     },
   );

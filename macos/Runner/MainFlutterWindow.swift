@@ -950,7 +950,7 @@ final class DeviceOwnerAuthChannel {
 
 final class PaymentUriChannel {
   private static let paymentRequestSchemes: Set<String> = [
-    "zcash", "bitcoin", "litecoin", "ethereum", "solana"
+    "zcash"
   ]
   private static var channel: FlutterMethodChannel?
   private static var pendingURLs: [String] = []

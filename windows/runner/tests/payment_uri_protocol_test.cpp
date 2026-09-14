@@ -113,16 +113,19 @@ void Reset() {
 
 int main() {
   constexpr const wchar_t* schemes[] = {
-      L"zcash", L"bitcoin", L"litecoin", L"ethereum", L"solana"};
+      L"zcash"};
   Reset();
   RegisterPaymentProtocolHandlersIfUnclaimed();
   for (const wchar_t* scheme : schemes) {
     assert(registry.at(CommandPath(scheme)) == OurCommand());
   }
+  for (const wchar_t* scheme : {L"bitcoin", L"litecoin", L"ethereum", L"solana"}) {
+    assert(!registry.count(CommandPath(scheme)));
+  }
   const int initial_writes = writes;
   RegisterPaymentProtocolHandlersIfUnclaimed();
   assert(writes == initial_writes);
-  std::cout << "PASS: all schemes register, and normal startup does not rewrite them\n";
+  std::cout << "PASS: only Zcash registers, and normal startup does not rewrite them\n";
 
   for (const wchar_t* scheme : schemes) {
     Reset();
@@ -154,7 +157,7 @@ int main() {
   Reset();
   const std::wstring competitor_command = L"\"C:\\OtherWallet\\wallet.exe\" \"%1\"";
   files.insert(L"C:\\OtherWallet\\wallet.exe");
-  for (const wchar_t* scheme : schemes) {
+  for (const wchar_t* scheme : {L"zcash", L"bitcoin", L"litecoin", L"ethereum", L"solana"}) {
     registry[CommandPath(scheme)] = competitor_command;
   }
   RegisterPaymentProtocolHandlers();
@@ -170,7 +173,7 @@ int main() {
   registry[CommandPath(L"solana")] = L"\"C:\\Wrapper\\wrapper.exe\" " + OurCommand();
   UnregisterPaymentProtocolHandlers();
   assert(deleted == std::set<std::wstring>({
-      SchemePath(L"zcash"), SchemePath(L"bitcoin"), SchemePath(L"litecoin")}));
+      SchemePath(L"zcash")}));
   std::cout << "PASS: uninstall removes only this install's effective handlers\n";
 
   const std::wstring delegate_clsid = L"{11111111-2222-3333-4444-555555555555}";
@@ -190,14 +193,7 @@ int main() {
       assert(registry.count(command_path) == default_command.has_value());
       if (default_command) assert(registry.at(command_path) == *default_command);
       assert(registry.at(delegate_key) == delegate_clsid);
-      // Zcash retains its existing explicit install-claim policy. New schemes
-      // must preserve a delegate owner at installation as well as at startup.
-      if (std::wstring(scheme) != L"zcash") {
-        RegisterPaymentProtocolHandlers();
-        assert(registry.count(command_path) == default_command.has_value());
-        if (default_command) assert(registry.at(command_path) == *default_command);
-        assert(registry.at(delegate_key) == delegate_clsid);
-      }
+
     }
   }
   std::cout << "PASS: delegate owners survive missing, empty, and Vizor default commands\n";

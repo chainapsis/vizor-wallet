@@ -81,6 +81,17 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testIncomingDeeplinkRejectsCrossChainPaymentUris() {
+    let bridge = IncomingUriChannelBridge.shared
+    _ = bridge.takePending()
+    for scheme in ["bitcoin", "litecoin", "ethereum", "solana", "ETHEREUM"] {
+      let raw = "\(scheme):recipient?amount=1"
+      XCTAssertFalse(bridge.handles(URL(string: raw)!))
+      XCTAssertFalse(bridge.handle(userActivity: browsingActivity(raw)))
+    }
+    XCTAssertEqual(bridge.takePending(), [])
+  }
+
   func testIncomingDeeplinkForwardsOversizeLinksForDartToReject() {
     let bridge = IncomingUriChannelBridge.shared
     let host = IncomingUriChannelBridge.deeplinkHost

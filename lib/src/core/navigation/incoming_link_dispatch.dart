@@ -1,7 +1,7 @@
 /// The single classifier for everything the native runners hand to Dart on
 /// `com.zcash.wallet/payment_uri`.
 ///
-/// Two products arrive on one pipe: Zcash and cross-chain payment requests (all
+/// Two products arrive on one pipe: Zcash payment requests (all
 /// five platforms) and Vizor Gift Card `https://` deeplinks (Android and iOS —
 /// the desktop runners never register a handler for them). One classifier, one
 /// subscription, so a link can only ever be handled by one of them.
@@ -20,7 +20,6 @@
 library;
 
 import 'vizor_deep_link.dart';
-import '../payments/cross_chain_payment_request.dart';
 
 /// What an incoming link turned out to be.
 sealed class IncomingLinkTarget {
@@ -75,8 +74,7 @@ IncomingLinkTarget classifyIncomingLink(String raw) {
         }
     }
 
-    if (uri.scheme.toLowerCase() == _zcashScheme ||
-        crossChainPaymentSchemes.contains(uri.scheme.toLowerCase())) {
+    if (uri.scheme.toLowerCase() == _zcashScheme) {
       return IncomingPaymentRequestLink(trimmed);
     }
     return const IncomingLinkUnknown();
@@ -86,8 +84,7 @@ IncomingLinkTarget classifyIncomingLink(String raw) {
   // so it cannot be a Gift Card link. A malformed `zcash:` link still has to
   // reach the payment-URI path, which is the only one that can tell the payer
   // their link is broken.
-  return trimmed.toLowerCase().startsWith('$_zcashScheme:') ||
-          isCrossChainPaymentUri(trimmed)
+  return trimmed.toLowerCase().startsWith('$_zcashScheme:')
       ? IncomingPaymentRequestLink(trimmed)
       : const IncomingLinkUnknown();
 }

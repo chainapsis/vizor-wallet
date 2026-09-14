@@ -12,8 +12,7 @@ bool IsPaymentUri(const std::string& value) {
   if (value.size() > kMaxPaymentUriBytes) {
     return false;
   }
-  constexpr const char* prefixes[] = {
-      "zcash:", "bitcoin:", "litecoin:", "ethereum:", "solana:"};
+  constexpr const char* prefixes[] = {"zcash:"};
   for (const char* prefix : prefixes) {
     size_t i = 0;
     while (prefix[i] != '\0' && i < value.size() &&

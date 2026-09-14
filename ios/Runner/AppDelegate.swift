@@ -814,7 +814,7 @@ final class IncomingUriChannelBridge {
     .lowercased() ?? "link.vizor.cash"
   private static let paymentLinkPath = "/payment-links/open"
   private static let paymentRequestSchemes: Set<String> = [
-    "zcash", "bitcoin", "litecoin", "ethereum", "solana"
+    "zcash"
   ]
   /// Sanity ceiling, set far above every link this app actually accepts.
   ///

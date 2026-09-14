@@ -22,13 +22,10 @@ class IncomingUriStateTest {
     private val solana = "solana:mvines9iiHiQTysrwkJjGf2gb9Ex9jXJX8ns3qwf2kN?amount=1&label=Alice"
     private val spl = "$solana&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
     private val zcash = "zcash:urecipient?amount=1"
-    private val transfers get() = listOf(bitcoin, litecoin, ethereum, erc20, solana, spl, zcash)
+    private val transfers get() = listOf(zcash, "zcash:usecondrecipient?amount=2")
+    private val excludedLinks get() = listOf(bitcoin, litecoin, ethereum, erc20, solana, spl)
     private val secretLinks get() = listOf(
         "https://${BuildConfig.VIZOR_DEEPLINK_HOST}/payment-links/open#claim-secret",
-        "solana:https://merchant.example/private-token",
-        "solana:https%3A%2F%2Fmerchant.example%2Fpay%3Ftoken%3Dprivate-token",
-        "$bitcoin&r=https%3A%2F%2Fmerchant.example%2Fprivate-token",
-        "$ethereum#private-token",
     )
 
     @Test fun pendingColdStartTransfersSurviveSerializedStateAndReachDartOnce() {
@@ -43,20 +40,20 @@ class IncomingUriStateTest {
 
     @Test fun pendingWarmLinksSurviveTogetherAndKeepTheirOrder() {
         val original = MainActivity()
-        launch(original, bitcoin)
+        launch(original, zcash)
         transfers.drop(1).forEach { capture(original, it) }
         val restored = restore(save(original))
-        launch(restored, bitcoin)
+        launch(restored, zcash)
         deliver(restored, transfers)
     }
 
     @Test fun deliveredLinksAreNotReplayedByTaskRestorationButCanBeRetapped() {
         val original = MainActivity()
-        launch(original, bitcoin)
-        capture(original, solana)
-        deliver(original, listOf(bitcoin, solana))
+        launch(original, zcash)
+        capture(original, transfers[1])
+        deliver(original, transfers)
         val state = save(original)
-        for (uri in listOf(bitcoin, solana)) {
+        for (uri in transfers) {
             val restored = restore(state)
             launch(restored, uri)
             val channel = ready(restored)
@@ -85,22 +82,38 @@ class IncomingUriStateTest {
 
     @Test fun restoreAlsoFiltersSecretLinksFromSavedQueue() {
         val state = Bundle().apply {
-            putStringArrayList("vizor.pendingIncomingUris", ArrayList(transfers + secretLinks))
+            putStringArrayList("vizor.pendingIncomingUris", ArrayList(transfers + secretLinks + excludedLinks))
         }
         deliver(restore(state), transfers)
     }
 
-    @Test fun transferSchemesAreCaseInsensitiveAndUnknownParametersStayMemoryOnly() {
+    @Test fun zcashSchemeIsCaseInsensitive() {
         for (uri in transfers) {
             val uppercase = uri.substringBefore(':').uppercase() + ":" + uri.substringAfter(':')
             val original = MainActivity()
             launch(original, uppercase)
             deliver(restore(save(original)), listOf(uppercase))
         }
-        for (uri in listOf("$solana&request=https%3A%2F%2Fmerchant.example", "$ethereum&secret=token")) {
-            val original = MainActivity()
-            launch(original, uri)
-            assertEquals(emptyList<String>(), save(original).getStringArrayList("vizor.pendingIncomingUris"))
+    }
+
+    @Test fun crossChainLinksAreRejectedOnColdWarmAndRestoredEntry() {
+        for (raw in excludedLinks + listOf("bitcoin:broken", "solana:https://merchant.example/secret")) {
+            for (uri in listOf(raw, raw.substringBefore(':').uppercase() + ":" + raw.substringAfter(':'))) {
+                val original = MainActivity()
+                launch(original, uri)
+                capture(original, uri)
+                val state = save(original)
+                assertEquals(emptyList<String>(), state.getStringArrayList("vizor.pendingIncomingUris"))
+                val channel = ready(original)
+                invoke(original, "flushPendingIncomingUris")
+                verifyNoInteractions(channel)
+                val restored = restore(Bundle().apply {
+                    putStringArrayList("vizor.pendingIncomingUris", arrayListOf(uri))
+                })
+                val restoredChannel = ready(restored)
+                invoke(restored, "flushPendingIncomingUris")
+                verifyNoInteractions(restoredChannel)
+            }
         }
     }
 

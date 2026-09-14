@@ -114,19 +114,16 @@ void main() {
     return (container, router, incomingUris);
   }
 
-  testWidgets('external request uses the card lane and defers a Gift Card', (
+  testWidgets('ignored cross-chain OS request does not defer a Gift Card', (
     tester,
   ) async {
     final (container, router, incomingUris) = await pumpHost(tester);
     incomingUris.emit('bitcoin:bc1recipient?amount=0.01');
     await tester.pumpAndSettle();
-    expect(container.read(crossChainPaymentFlowProvider)?.request.chain, 'btc');
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
     incomingUris.emit(_paymentLink.toUri().toString());
-    await tester.pumpAndSettle();
-    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
-    container.read(crossChainPaymentFlowProvider.notifier).clear();
     await tester.pumpAndSettle();
     expect(
       router.routerDelegate.currentConfiguration.uri.path,
@@ -134,23 +131,22 @@ void main() {
     );
   });
 
-  testWidgets(
-    'replacing Zcash with an external request leaves one active card',
-    (tester) async {
-      final (container, _, incomingUris) = await pumpHost(tester);
-      incomingUris.emit('zcash:u1recipient?amount=0.5');
-      await tester.pumpAndSettle();
-      expect(container.read(paymentRequestFlowProvider), isNotNull);
-      incomingUris.emit('bitcoin:bc1recipient?amount=0.01');
-      await tester.pumpAndSettle();
-      expect(container.read(crossChainPaymentFlowProvider), isNotNull);
-      expect(container.read(paymentRequestFlowProvider), isNull);
-      incomingUris.emit('zcash:u1newrecipient?amount=0.25');
-      await tester.pumpAndSettle();
-      expect(container.read(crossChainPaymentFlowProvider), isNull);
-      expect(container.read(paymentRequestFlowProvider), isNotNull);
-    },
-  );
+  testWidgets('cross-chain OS request preserves the active Zcash card', (
+    tester,
+  ) async {
+    final (container, _, incomingUris) = await pumpHost(tester);
+    incomingUris.emit('zcash:u1recipient?amount=0.5');
+    await tester.pumpAndSettle();
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    incomingUris.emit('bitcoin:bc1recipient?amount=0.01');
+    await tester.pumpAndSettle();
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+    incomingUris.emit('zcash:u1newrecipient?amount=0.25');
+    await tester.pumpAndSettle();
+    expect(container.read(crossChainPaymentFlowProvider), isNull);
+    expect(container.read(paymentRequestFlowProvider), isNotNull);
+  });
 
   testWidgets('one host routes each link kind to its own intake', (
     tester,
