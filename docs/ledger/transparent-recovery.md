@@ -59,18 +59,24 @@ automated tests do not move funds.
 
 ## Bounded transparent refresh costs
 
-Ledger external and ordinary internal scopes each select the highest 20 child
-indices plus up to 20 older indices in a rotating sweep. The unused gap candidates
+Ledger external and ordinary internal scopes select the highest 10 and 5 child
+indices respectively on every sync. Each scope adds up to 20 older indices in a
+rotating sweep when at least 10 minutes have passed since its last successful
+sweep. The first sweep is immediately eligible. Times persist across app restarts;
+failed requests do not start the cooldown, and a rewind or clock rollback makes
+the sweep eligible again. This is checked during normal sync, not by a new timer. The unused gap candidates
 are included in the highest indices. Ephemeral/standalone receivers and software
 internal receivers keep their prior snapshot behavior.
 
 Each selection is split into unqueried and previously checked addresses, so a new
 candidate does not pull checked addresses back to height 0. Each scope schedules
-at most four UTXO RPCs for at most 40 addresses per refresh; the global concurrency
+at most four UTXO RPCs when its sweep is due. A Ledger account normally queries
+at most 15 addresses, or 55 when both scopes sweep; the global concurrency
 limit remains four streams. Checked addresses use the minimum checked height in
 the batch, with a 100-block lookback. Older addresses remain eligible indefinitely:
-a fresh payment to one can be delayed until its sweep turn. For 1,000 addresses,
-one complete sweep requires 49 refreshes; this is not a wall-clock guarantee.
+a fresh payment to one can be delayed until its sweep turn. For 1,000 addresses in one scope, a complete sweep requires 50 eligible
+refreshes, approximately 8 hours 20 minutes at a 10-minute cadence. Background
+pauses and sync scheduling can extend this delay.
 
 Cache completion is published only after UTXO persistence. Internal metadata is
 stored separately from external metadata in the existing receive sidecar and
@@ -80,7 +86,7 @@ repairs. A sidecar from an earlier epoch discards both scopes' query heights and
 sweep positions. The reset may perform extra bounded queries but cannot skip
 rewound data because of stale heights. As with the existing external path, an
 unavailable/corrupt sidecar falls back to a complete snapshot with a warning;
-the 40-address bound applies to healthy-cache operation, not this fallback.
+these bounds apply to healthy-cache operation, not this fallback.
 
 Initial history recovery now reads only the next bounded range of cached
 transparent receivers from SQLite instead of repeatedly decoding and sorting all

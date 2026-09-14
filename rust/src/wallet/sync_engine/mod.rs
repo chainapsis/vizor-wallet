@@ -1367,6 +1367,25 @@ async fn refresh_utxos(
             safety_start_height
         };
 
+        let (external_sweep_due, internal_sweep_due) = if is_ledger {
+            transparent_receive_cache::ledger_sweep_due(db_data_path, network, &account_uuid)
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "transparent sweep schedule unavailable for account {}: {}",
+                        account_uuid,
+                        e
+                    );
+                    (true, true)
+                })
+        } else {
+            (true, true)
+        };
+        let external_recent_limit = if is_ledger {
+            10
+        } else {
+            TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
+        };
+
         let query_network = transparent_utxo_query_network(network);
         let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
@@ -1386,8 +1405,12 @@ async fn refresh_utxos(
             &external_addresses,
             account_birthday_height,
             u64::from(u32::from(safety_start_height)),
-            TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
-            TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
+            external_recent_limit,
+            if external_sweep_due {
+                TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT
+            } else {
+                0
+            },
         ) {
             Ok(batches) => batches,
             Err(e) => {
@@ -1457,8 +1480,8 @@ async fn refresh_utxos(
                 network,
                 &account_uuid,
                 &internal,
-                TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
-                TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
+                5,
+                if internal_sweep_due { TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT } else { 0 },
             )
             .unwrap_or_else(|e| {
                 // Like the existing external fallback, cache failure must not

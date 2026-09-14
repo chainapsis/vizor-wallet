@@ -14,7 +14,7 @@ pub(crate) const RECEIVE_CACHE_SIDECAR_SUFFIX: &str = ".receive.redb";
 const CACHE_VERSION: u32 = 3;
 const CACHE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("transparent_receive");
 const TRANSPARENT_UTXO_REQUERY_LOOKBACK: u64 = 100;
-const INTERNAL_UTXO_REFRESH_INTERVAL: u64 = 20;
+const LEDGER_SWEEP_INTERVAL_SECS: u64 = 10 * 60;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 const REDB_CACHE_SIZE_BYTES: usize = 256 * 1024;
@@ -31,6 +31,8 @@ struct CacheRecord {
     #[serde(default)]
     utxo_sweep_next_offset: usize,
     #[serde(default)]
+    last_external_sweep_at: Option<u64>,
+    #[serde(default)]
     utxo_checked_heights: Vec<CachedUtxoCheck>,
     #[serde(default)]
     internal: InternalUtxoCache,
@@ -42,6 +44,8 @@ struct CacheRecord {
 struct InternalUtxoCache {
     checked: Vec<CachedUtxoCheck>,
     sweep_offset: usize,
+    #[serde(default)]
+    last_sweep_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,6 +283,39 @@ pub(crate) fn refresh_account_cache_from_wallet_db(
     write_clean_addresses(db_path, network, account_uuid, &addresses, scanned_height)
 }
 
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn sweep_due(last: Option<u64>, now: u64) -> bool {
+    // A clock rollback must not suppress refreshes indefinitely.
+    last.is_none_or(|last| now < last || now - last >= LEDGER_SWEEP_INTERVAL_SECS)
+}
+
+pub(crate) fn ledger_sweep_due(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<(bool, bool), String> {
+    ledger_sweep_due_at(db_path, network, account_uuid, now_seconds())
+}
+
+fn ledger_sweep_due_at(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    now: u64,
+) -> Result<(bool, bool), String> {
+    let record = read_compatible_record(db_path, network, account_uuid)?;
+    Ok((
+        sweep_due(record.as_ref().and_then(|r| r.last_external_sweep_at), now),
+        sweep_due(record.as_ref().and_then(|r| r.internal.last_sweep_at), now),
+    ))
+}
+
 pub(crate) fn plan_external_utxo_refresh(
     db_path: &str,
     network: WalletNetwork,
@@ -380,6 +417,28 @@ pub(crate) fn mark_scoped_utxo_refresh_complete(
     next_start_height: u64,
     next_sweep_offset: Option<usize>,
 ) -> Result<(), String> {
+    mark_scoped_utxo_refresh_complete_at(
+        db_path,
+        network,
+        account_uuid,
+        scope,
+        child_indices,
+        next_start_height,
+        next_sweep_offset,
+        now_seconds(),
+    )
+}
+
+fn mark_scoped_utxo_refresh_complete_at(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    scope: RefreshScope,
+    child_indices: &[u32],
+    next_start_height: u64,
+    next_sweep_offset: Option<usize>,
+    now: u64,
+) -> Result<(), String> {
     if child_indices.is_empty() {
         return Ok(());
     }
@@ -388,14 +447,16 @@ pub(crate) fn mark_scoped_utxo_refresh_complete(
         Some(record) => record,
         None => return Ok(()),
     };
-    let (heights, offset) = match scope {
+    let (heights, offset, last_sweep) = match scope {
         RefreshScope::External => (
             &mut record.utxo_checked_heights,
             &mut record.utxo_sweep_next_offset,
+            &mut record.last_external_sweep_at,
         ),
         RefreshScope::Internal => (
             &mut record.internal.checked,
             &mut record.internal.sweep_offset,
+            &mut record.internal.last_sweep_at,
         ),
     };
     let mut checked = heights
@@ -414,6 +475,7 @@ pub(crate) fn mark_scoped_utxo_refresh_complete(
         .collect();
     if let Some(next_sweep_offset) = next_sweep_offset {
         *offset = next_sweep_offset;
+        *last_sweep = Some(now);
     }
 
     write_record(db_path, account_uuid, &record)
@@ -562,6 +624,7 @@ fn write_clean_addresses(
                 .as_ref()
                 .map(|r| r.rewind_epoch)
                 .unwrap_or_default(),
+            last_external_sweep_at: existing.as_ref().and_then(|r| r.last_external_sweep_at),
             internal: existing.map(|r| r.internal).unwrap_or_default(),
         },
     )
@@ -761,6 +824,7 @@ fn empty_record(network: WalletNetwork, scanned_height: Option<u64>) -> CacheRec
         refreshed_scanned_height: scanned_height,
         external_addresses: Vec::new(),
         utxo_sweep_next_offset: 0,
+        last_external_sweep_at: None,
         utxo_checked_heights: Vec::new(),
         internal: InternalUtxoCache::default(),
         rewind_epoch: 0,
@@ -827,6 +891,7 @@ fn read_compatible_record(
         if epoch != record.rewind_epoch {
             record.utxo_checked_heights.clear();
             record.utxo_sweep_next_offset = 0;
+            record.last_external_sweep_at = None;
             record.internal = InternalUtxoCache::default();
             record.rewind_epoch = epoch;
         }
@@ -1685,6 +1750,151 @@ mod tests {
         assert_eq!(batches[1].start_height, 900);
         assert!(batches.iter().map(|b| b.addresses.len()).sum::<usize>() <= 40);
         assert!(batches.len() <= 4);
+    }
+
+    #[test]
+    fn ledger_sweep_schedule_persists_and_only_successful_sweeps_delay_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let external = (0..100)
+            .map(|i| keys::ExternalTransparentAddress {
+                child_index: i,
+                address: format!("external-{i}"),
+                has_received: false,
+            })
+            .collect::<Vec<_>>();
+        let internal = (0..100)
+            .map(|i| (i, format!("internal-{i}")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1000).unwrap(),
+            (true, true)
+        );
+        let ext =
+            plan_external_utxo_refresh(path, WalletNetwork::Main, "a", &external, 0, 0, 10, 20)
+                .unwrap();
+        let int =
+            plan_internal_utxo_refresh(path, WalletNetwork::Main, "a", &internal, 5, 20).unwrap();
+        assert_eq!(
+            ext.iter()
+                .chain(&int)
+                .map(|b| b.addresses.len())
+                .sum::<usize>(),
+            55
+        );
+        // Planning / aborted downloads cannot start the interval.
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1000).unwrap(),
+            (true, true)
+        );
+        for b in ext {
+            mark_scoped_utxo_refresh_complete_at(
+                path,
+                WalletNetwork::Main,
+                "a",
+                RefreshScope::External,
+                &b.child_indices,
+                100,
+                b.next_sweep_offset,
+                1000,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1001).unwrap(),
+            (false, true)
+        );
+        for b in int.iter().filter(|b| b.next_sweep_offset.is_none()) {
+            mark_scoped_utxo_refresh_complete_at(
+                path,
+                WalletNetwork::Main,
+                "a",
+                RefreshScope::Internal,
+                &b.child_indices,
+                100,
+                None,
+                1010,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1010).unwrap(),
+            (false, true)
+        );
+        for b in int.iter().filter(|b| b.next_sweep_offset.is_some()) {
+            mark_scoped_utxo_refresh_complete_at(
+                path,
+                WalletNetwork::Main,
+                "a",
+                RefreshScope::Internal,
+                &b.child_indices,
+                100,
+                b.next_sweep_offset,
+                1010,
+            )
+            .unwrap();
+        }
+        write_clean_addresses(path, WalletNetwork::Main, "a", &external, Some(100)).unwrap();
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1599).unwrap(),
+            (false, false)
+        );
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1600).unwrap(),
+            (true, false)
+        );
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1610).unwrap(),
+            (true, true)
+        );
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 900).unwrap(),
+            (true, true)
+        );
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "other", 1011).unwrap(),
+            (true, true)
+        );
+        let ext =
+            plan_external_utxo_refresh(path, WalletNetwork::Main, "a", &external, 0, 0, 10, 0)
+                .unwrap();
+        let int =
+            plan_internal_utxo_refresh(path, WalletNetwork::Main, "a", &internal, 5, 0).unwrap();
+        assert_eq!(
+            ext.iter()
+                .chain(&int)
+                .map(|b| b.addresses.len())
+                .sum::<usize>(),
+            15
+        );
+        assert!(ext
+            .iter()
+            .chain(&int)
+            .all(|b| b.next_sweep_offset.is_none()));
+        // A persisted rewind epoch cancels the cooldown for both scopes.
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute_batch("CREATE TABLE ext_vizor_transparent_refresh_epoch(id INTEGER PRIMARY KEY, epoch INTEGER);
+            INSERT INTO ext_vizor_transparent_refresh_epoch VALUES(0,1);").unwrap();
+        assert_eq!(
+            ledger_sweep_due_at(path, WalletNetwork::Main, "a", 1011).unwrap(),
+            (true, true)
+        );
+    }
+
+    #[test]
+    fn old_cache_without_sweep_timestamps_remains_compatible() {
+        let mut json = serde_json::to_value(empty_record(WalletNetwork::Main, None)).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("last_external_sweep_at");
+        json["internal"]
+            .as_object_mut()
+            .unwrap()
+            .remove("last_sweep_at");
+        let record: CacheRecord = serde_json::from_value(json).unwrap();
+        assert!(sweep_due(record.last_external_sweep_at, 1000));
+        assert!(sweep_due(record.internal.last_sweep_at, 1000));
     }
 
     #[test]
