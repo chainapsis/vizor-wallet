@@ -349,8 +349,58 @@ fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
 /// Returns immediately. A proof requested before warm-up completes blocks on
 /// the transaction builder's shared cache, so this is a latency optimization
 /// rather than a correctness requirement.
+///
+/// This also arms the key's prepared commitment tables once it exists (see
+/// [`start_ironwood_prepared_commitment_warmup`]).
 pub fn start_orchard_proving_key_warmup() {
     zcash_client_backend::start_orchard_proving_key_warmup(ironwood_orchard_circuit_version());
+    start_ironwood_prepared_commitment_warmup();
+}
+
+/// Arms the Ironwood proving key's prepared commitment tables once warm-up
+/// has produced the key.
+///
+/// `ProvingKey::prepare_proving` builds the fixed-base tables that the
+/// prover's polynomial commitments evaluate through. Key generation does not
+/// build them, so without this every send takes the unprepared path.
+///
+/// Runs on its own thread: reaching the key means blocking on the builder's
+/// shared cache until warm-up finishes, while the FRB entry point must stay
+/// non-blocking. Starts at most once per process, and a failed spawn leaves
+/// the flag clear so a later send retries — losing preparation costs latency,
+/// never correctness.
+///
+/// halo2 routes through the tables only on pools of at most eight effective
+/// threads (ten for Orchard's `k = 11` SRS on AArch64 macOS), falling back to
+/// the planned multiexp past that. So this pays off on phones and is neutral
+/// on wide desktop pools, where the tables are retained but unread.
+///
+/// Only the Ironwood key is armed; `FixedPostNu6_2` is the legacy branch and
+/// does not justify a second set of tables.
+fn start_ironwood_prepared_commitment_warmup() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static STARTED: AtomicBool = AtomicBool::new(false);
+
+    if STARTED
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    let spawned = std::thread::Builder::new()
+        .name("orchard-prepared-commitment-warmup".to_string())
+        .spawn(|| {
+            // Blocks until key warm-up has populated the shared cache.
+            let armed = ironwood_orchard_proving_key().prepare_proving();
+            log::info!("orchard: prepared commitment tables armed={armed}");
+        });
+
+    if let Err(error) = spawned {
+        STARTED.store(false, Ordering::Release);
+        log::warn!("orchard: could not start prepared commitment warm-up: {error}");
+    }
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.

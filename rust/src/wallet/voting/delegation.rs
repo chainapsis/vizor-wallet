@@ -151,7 +151,31 @@ async fn proving<T: Send + 'static>(
 
 /// Start process-lifetime Halo2 proving-key warm-up if it has not started yet.
 pub fn start_proving_cache_warmup() {
+    report_proving_pool_width();
     zcash_voting::start_proving_cache_warmup();
+}
+
+/// Records how wide a pool the SDK will prove on, once per process.
+///
+/// halo2 evaluates commitments through its prepared tables only on pools of at
+/// most eight effective threads (ten for `K = 11` on AArch64 macOS), falling
+/// back to the planned multiexp past that. Whether those tables were *built*
+/// is a property of the build and is the same everywhere; whether they are
+/// *used* depends on this number, which is the part that varies by device.
+///
+/// The SDK's default `ProvingPolicy` takes its worker count from
+/// `available_parallelism` and Vizor never calls `configure_proving_runtime`,
+/// so that is the width reported. Revisit if Vizor ever sets a policy.
+fn report_proving_pool_width() {
+    static REPORTED: std::sync::Once = std::sync::Once::new();
+
+    REPORTED.call_once(|| match std::thread::available_parallelism() {
+        Ok(width) => log::info!(
+            "voting: proving pool width {width}; halo2 uses prepared \
+             commitment tables at 8 or fewer"
+        ),
+        Err(error) => log::warn!("voting: could not read proving pool width: {error}"),
+    });
 }
 
 /// Select notes and create/reuse delegation bundle rows for a round.

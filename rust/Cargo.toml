@@ -184,12 +184,17 @@ default-features = false
 features = ["zakura"]
 
 [patch.crates-io]
-# Rejects impossible tree positions in chain submission, bounds exact-tree
-# recovery, and reports the bundles a round intentionally drops from its
-# selected suffix.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
-vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
-vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "856b5e83c0cdf90ca20138ac2bb2c238b1795c65" }
+# Picks up voting-circuits 0.12.1, which arms halo2's prepared commitment
+# tables during proving-key warm-up. Proofs and verifying keys are unchanged;
+# this only changes how the prover evaluates its commitment MSMs, and halo2
+# uses the tables only on pools narrow enough to benefit.
+#
+# Still carries: rejects impossible tree positions in chain submission, bounds
+# exact-tree recovery, and reports the bundles a round intentionally drops
+# from its selected suffix.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting.git", rev = "65ec13fc697ce5edb41b1f17b03b4a330a27292a" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "65ec13fc697ce5edb41b1f17b03b4a330a27292a" }
+vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting.git", rev = "65ec13fc697ce5edb41b1f17b03b4a330a27292a" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
