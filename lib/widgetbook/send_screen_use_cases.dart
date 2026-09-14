@@ -1517,6 +1517,7 @@ Widget mobileKeystoneSignFixture({
         hasParent: true,
         child: MobileKeystoneSignScreen(
           args: args,
+          proposalDisposer: (_) async => true,
           loadWalletDbPath: failure == null
               // A never-completing load holds the preparing stage; the QR and
               // scanner stages need real PCZT bytes and are registered under
