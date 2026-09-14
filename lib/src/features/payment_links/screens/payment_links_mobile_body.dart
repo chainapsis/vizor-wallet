@@ -19,7 +19,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
-import '../widgets/gift_card_usage_status.dart';
 import '../widgets/mobile/payment_link_mobile_views.dart';
 import '../widgets/payment_link_card_flip.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
@@ -420,10 +419,6 @@ class PaymentLinksMobileBody extends StatelessWidget {
           ? PaymentLinkReadyMobileState.soon
           : PaymentLinkReadyMobileState.waiting,
       card: card,
-      usageStatus: GiftCardUsageStatusView(
-        address: link.address,
-        showCheckedAt: true,
-      ),
       decoration: ready || progress.confirmationCount == 0
           ? const PaymentLinkConfetti()
           : null,

@@ -12,7 +12,7 @@ it remain readable and do not imply pending funding. The sender UI shows:
   by lightwalletd with a matching parsed txid and at least one is unmined.
 - `Unverified` for missing saved funding information, missing observed
   funding, incomplete scan history, or insufficient observed funding value.
-  Hover/tap explains the specific reason on the list and completion screen.
+  Hover/tap explains the specific reason on the list and desktop completion screen.
 
 The read-only transaction lookup runs only when local funding evidence is
 missing. NotFound is inconclusive, never proof of pending funding. Network or
@@ -29,7 +29,8 @@ cleanup. A durable recovery draft is also the registration intent. Creation
 attempts registration before funding; observation failure leaves that intent
 retryable without causing another funding send. Related visible screens request
 refreshes, coalesced with a 30-second cooldown. Usage is displayed on the card
-list and creation completion screens; sharing and activity detail retain their
+list and desktop creation completion screens; the mobile completion screen
+keeps only the original sharing guidance; sharing and activity detail retain their
 original presentation. List rows show a short status before the copy/QR actions,
 with a reserved slot for a checking spinner or a per-card error icon. Error
 details are available by hover or tap. Narrow mobile rows place the status

@@ -141,10 +141,6 @@ Widget buildGiftCardUsageReadyCapture(BuildContext context) => _fixture(
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
     ),
-    usageStatus: GiftCardUsageStatusView(
-      address: 'unused',
-      showCheckedAt: true,
-    ),
     onHome: _noop,
     onCopy: _noop,
   ),
