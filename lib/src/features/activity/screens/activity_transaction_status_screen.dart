@@ -99,9 +99,6 @@ class _ActivityTransactionStatusScreenState
   String? _error;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
-  // Resolving the wallet DB path reads secure storage, so cache the result
-  // across the history + detail loads of one refresh.
-  String? _cachedDbPath;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -120,32 +117,30 @@ class _ActivityTransactionStatusScreenState
   }
 
   Future<List<rust_sync.TransactionInfo>> _loadHistory(
-    String accountUuid,
-  ) async {
+    String accountUuid, {
+    String? dbPath,
+    String? network,
+  }) async {
     final loader = widget.historyLoader;
     if (loader != null) return loader(accountUuid);
-    // Read the endpoint before awaiting so a dispose mid-load cannot make
-    // `ref.read` throw, and share one resolved DB path across both loads.
-    final endpoint = ref.read(rpcEndpointProvider);
-    final dbPath = _cachedDbPath ??= await getWalletDbPath();
     return rust_sync.getTransactionHistory(
-      dbPath: dbPath,
-      network: endpoint.networkName,
+      dbPath: dbPath!,
+      network: network!,
       accountUuid: accountUuid,
     );
   }
 
   Future<rust_sync.TransactionDetail?> _loadDetail(
     String accountUuid,
-    rust_sync.TransactionInfo transaction,
-  ) async {
+    rust_sync.TransactionInfo transaction, {
+    String? dbPath,
+    String? network,
+  }) async {
     final loader = widget.detailLoader;
     if (loader != null) return loader(accountUuid, transaction);
-    final endpoint = ref.read(rpcEndpointProvider);
-    final dbPath = _cachedDbPath ??= await getWalletDbPath();
     return rust_sync.getTransactionDetail(
-      dbPath: dbPath,
-      network: endpoint.networkName,
+      dbPath: dbPath!,
+      network: network!,
       accountUuid: accountUuid,
       txidHex: transaction.txidHex,
       txKind: transaction.txKind,
@@ -173,7 +168,18 @@ class _ActivityTransactionStatusScreenState
     }
 
     try {
-      final txs = await _loadHistory(accountUuid);
+      // Resolve once per refresh, as before the preview seams were added. A
+      // wallet reset can replace the DB name, so this must not be cached for
+      // the lifetime of the screen.
+      final needsProductionDb =
+          widget.historyLoader == null || widget.detailLoader == null;
+      final endpoint = needsProductionDb ? ref.read(rpcEndpointProvider) : null;
+      final dbPath = needsProductionDb ? await getWalletDbPath() : null;
+      final txs = await _loadHistory(
+        accountUuid,
+        dbPath: dbPath,
+        network: endpoint?.networkName,
+      );
       if (!mounted) return;
       if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return;
@@ -190,7 +196,12 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = await _loadDetail(accountUuid, tx);
+          detail = await _loadDetail(
+            accountUuid,
+            tx,
+            dbPath: dbPath,
+            network: endpoint?.networkName,
+          );
         } catch (e, st) {
           log('ActivityTransactionStatus: detail load failed: $e\n$st');
         }
