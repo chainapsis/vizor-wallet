@@ -52,7 +52,7 @@ void main() {
 
   for (final change in ['none', 'edit', 'leave']) {
     testWidgets(
-      'Send request intake respects input lifetime (change: $change)',
+      'Send rejects cross-chain requests without entering intake (change: $change)',
       (tester) async {
         final parsed = Completer<CrossChainPaymentRequest>();
         await _setDesktopViewport(tester);
@@ -87,13 +87,8 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        if (change == 'none') {
-          expect(container.read(paymentUriPrefillProvider)!.id, 'send-input');
-          expect(container.read(paymentRequestArrivalProvider), 1);
-        } else {
-          expect(container.read(paymentUriPrefillProvider), isNull);
-          expect(container.read(paymentRequestArrivalProvider), 0);
-        }
+        expect(container.read(paymentUriPrefillProvider), isNull);
+        expect(container.read(paymentRequestArrivalProvider), 0);
         if (change == 'edit') {
           expect(find.text('bitcoin:new-draft'), findsOneWidget);
         }

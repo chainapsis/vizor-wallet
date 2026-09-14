@@ -38,6 +38,8 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../address_scan/widgets/payment_request_input.dart';
+import '../../../address_scan/domain/address_input_policy.dart';
+import '../../services/send_address_input.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../models/send_scan_result.dart';
@@ -544,6 +546,30 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _contactLabel;
   String? _contactPictureId;
   int _addressSeq = 0;
+  int _inputEpoch = 0;
+  GoRouterDelegate? _inputRouter;
+  (Uri, Object)? _inputRouteStamp;
+
+  void _inputRouteChanged() {
+    final state = _inputRouter?.state;
+    final stamp = state == null ? null : (state.uri, state.pageKey);
+    if (_inputRouteStamp != stamp) {
+      _inputEpoch++;
+      _inputRouteStamp = stamp;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.maybeOf(context)?.routerDelegate;
+    if (_inputRouter != router) {
+      _inputRouter?.removeListener(_inputRouteChanged);
+      _inputRouter = router;
+      _inputRouter?.addListener(_inputRouteChanged);
+      _inputRouteChanged();
+    }
+  }
 
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
@@ -654,6 +680,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   void dispose() {
+    _inputEpoch++;
+    _inputRouter?.removeListener(_inputRouteChanged);
     if (_holdsConfirmBusySurface) {
       _holdsConfirmBusySurface = false;
       _paymentUriBusySurface.releaseAfterNavigation();
@@ -740,6 +768,30 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (mounted) setState(() {});
   }
 
+  Object get _pasteInputContext => (
+    _inputEpoch,
+    _addressSeq,
+    _validateSeq,
+    _memo,
+    _step,
+    _phase,
+    ref.read(accountProvider).value?.activeAccountUuid,
+    ref.read(rpcEndpointProvider).networkName,
+  );
+
+  void _inputContextChanged() {
+    _inputEpoch++;
+    _addressSeq++;
+    if (!mounted) return;
+    setState(() {
+      _addressType = '';
+      _addressWrongNetwork = false;
+    });
+    if (!isPaymentRequestUri(_addressController.text)) {
+      unawaited(_validateAddress());
+    }
+  }
+
   Future<void> _validateAddress() async {
     final seq = ++_addressSeq;
     final address = _addressController.text.trim();
@@ -796,22 +848,69 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
-  Future<void> _reviewInputPaymentRequest(String raw) async {
+  bool Function() _captureInputSession() {
+    final epoch = ++_inputEpoch;
     final sequence = _addressSeq;
     final input = _addressController.text;
+    final amountSequence = _validateSeq;
+    final memo = _memo;
     final step = _step;
     final phase = _phase;
-    await reviewPaymentRequestFromInput(
-      ref,
-      raw,
-      isCurrent: () =>
-          mounted &&
-          sequence == _addressSeq &&
-          input == _addressController.text &&
-          step == _step &&
-          phase == _phase,
-    );
+    final account = ref.read(accountProvider).value?.activeAccountUuid;
+    final network = ref.read(rpcEndpointProvider).networkName;
+    final route = ModalRoute.of(context);
+    return () =>
+        mounted &&
+        epoch == _inputEpoch &&
+        sequence == _addressSeq &&
+        input == _addressController.text &&
+        amountSequence == _validateSeq &&
+        memo == _memo &&
+        step == _step &&
+        phase == _phase &&
+        account == ref.read(accountProvider).value?.activeAccountUuid &&
+        network == ref.read(rpcEndpointProvider).networkName &&
+        (route?.isCurrent ?? true) &&
+        route?.animation?.status != AnimationStatus.reverse;
   }
+
+  Future<void> _applyAddressInput(
+    String raw, {
+    bool Function()? isCurrent,
+  }) async {
+    final current = isCurrent ?? _captureInputSession();
+    final result = await resolveSendAddressInput(
+      raw,
+      networkName: ref.read(rpcEndpointProvider).networkName,
+      validateAddress: widget.validateAddress,
+    );
+    if (!mounted || !current()) return;
+    switch (result.kind) {
+      case AddressInputResultKind.rejected:
+        showAppToast(
+          context,
+          result.reason!,
+          iconName: AppIcons.warning,
+          tone: AppToastTone.destructive,
+        );
+      case AddressInputResultKind.paymentRequest:
+        await reviewPaymentRequestFromInput(
+          ref,
+          result.rawPaymentUri!,
+          isCurrent: current,
+        );
+      case AddressInputResultKind.address:
+        final address = result.address!;
+        _addressController.value = TextEditingValue(
+          text: address,
+          selection: TextSelection.collapsed(offset: address.length),
+        );
+        _handleAddressChanged();
+    }
+  }
+
+  Future<void> _reviewInputPaymentRequest(String raw) =>
+      _applyAddressInput(raw);
 
   void _handleAddressChanged({bool clearContact = true}) {
     // A request URI is not validated as an address, but it still replaces
@@ -856,59 +955,42 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _openScanner() async {
+    final current = _captureInputSession();
     final scanned = await widget.openScanner(
       context,
       networkName: ref.read(rpcEndpointProvider).networkName,
     );
-    if (scanned == null || !mounted) return;
+    if (scanned == null || !mounted || !current()) return;
     switch (scanned) {
       case SendScanPaymentUri(:final rawUri):
         await WidgetsBinding.instance.endOfFrame;
-        if (!mounted) return;
-        await _reviewInputPaymentRequest(rawUri);
+        if (current()) await _applyAddressInput(rawUri, isCurrent: current);
       case SendScanPaymentRequest(:final prefill):
-        // A QR that already names an amount is the same object a `zcash:`
-        // link is, so it gets the same answer: the card, over whatever is on
-        // screen — not a half-filled composer.
+        // The scanner validated the complete request; it must still belong to
+        // this composer before publishing a card.
         ref
             .read(paymentRequestFlowProvider.notifier)
             .present(prefill, source: PaymentRequestSource.qrCode);
       case SendScanAddress(:final address, :final downgrade):
-        final recipient = address.trim();
-        if (recipient.isEmpty) return;
-        _addressController.value = TextEditingValue(
-          text: recipient,
-          selection: TextSelection.collapsed(offset: recipient.length),
-        );
-        _handleAddressChanged();
-        // A request the scan refused still surrendered its address, and the
-        // composer just took it. Say what was left behind — otherwise the
-        // payer answers a request they never saw the terms of.
-        final downgradeMessage = sendScanDowngradeMessage(downgrade);
-        if (downgradeMessage != null) {
+        if (downgrade != null) {
           showAppToast(
             context,
-            downgradeMessage,
+            'This payment request is not valid.',
             iconName: AppIcons.warning,
             tone: AppToastTone.destructive,
           );
+          return;
         }
+        await _applyAddressInput(address, isCurrent: current);
     }
   }
 
   Future<void> _pasteAddress() async {
-    final sequence = _addressSeq;
+    final current = _captureInputSession();
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
-    if (pasted.isEmpty || !mounted || sequence != _addressSeq) return;
-    _addressController.value = TextEditingValue(
-      text: pasted,
-      selection: TextSelection.collapsed(offset: pasted.length),
-    );
-    _handleAddressChanged();
-    if (isPaymentRequestUri(pasted)) {
-      await _reviewInputPaymentRequest(pasted);
-    }
+    if (pasted.isEmpty || !current()) return;
+    await _applyAddressInput(pasted, isCurrent: current);
   }
 
   void _clearAddress() {
@@ -1747,6 +1829,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _editMemo() async {
+    _inputEpoch++;
     // A bottom sheet, not a top-pinned card: the modal rises from the
     // bottom and the sheet frame floats it 16px above the software
     // keyboard (Figma `Review Add Memo`, 4638:74505).
@@ -2012,6 +2095,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _handleBack() {
+    _inputEpoch++;
     if (_isConfirmingSend || _pendingCancellation != null) return;
     switch (_phase) {
       case _SendPhase.failed:
@@ -2153,6 +2237,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         if (mounted) _reportAmountEditedIfChanged();
       });
     }
+    ref.listen(rpcEndpointProvider, (_, _) => _inputContextChanged());
+    ref.listen(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (_, _) => _inputContextChanged(),
+    );
     ref.listen<double?>(zecLiveUsdUnitPriceProvider, (previous, next) {
       if (previous == next || !mounted) return;
       _handleZecUsdPriceChanged(next);
@@ -2220,6 +2309,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return PopScope<void>(
       canPop: _routePopAllowed,
       onPopInvokedWithResult: (didPop, _) {
+        _inputEpoch++;
         if (!didPop) _handleBack();
       },
       child: Scaffold(
@@ -2490,6 +2580,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _addressType == 'invalid' || _addressType == 'error';
     return MobileTextField(
       key: const ValueKey('mobile_send_address_field'),
+      onPaste: _applyAddressInput,
+      pasteContext: _pasteInputContext,
+      readPasteContext: () => _pasteInputContext,
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
