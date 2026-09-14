@@ -86,6 +86,48 @@ void main() {
     'Transaction detail': buildActivityTransactionStatusGalleryCase,
     'Swap detail': buildActivitySwapDetailScreenGalleryCase,
   };
+  testWidgets('Send resume does not expose an active migration sidebar route', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildSendScreenGalleryCase,
+      knobs: {
+        'Layout': wbLayoutLabel(WbLayout.desktop),
+        'Balance': sendScreenBalanceLabel(SendScreenBalance.ironwoodResume),
+      },
+    );
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    final sidebar = find.byType(AppMainSidebar);
+    final context = tester.element(sidebar);
+    final router = GoRouter.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final accountBefore = container.read(accountProvider);
+    expect(
+      container.read(ironwoodHomeMigrationPresentationProvider).mode,
+      IronwoodHomeMigrationCtaMode.resume,
+    );
+    expect(find.text('Migrating...'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_migration_progress_button')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('sidebar_home_button')));
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.error, isNull);
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    expect(find.textContaining('/home'), findsWidgets);
+    await tester.tap(find.text('Back to send preview'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppMainSidebar), findsOneWidget);
+    expect(find.text('Migrating...'), findsNothing);
+    expect(container.read(accountProvider), same(accountBefore));
+    expect(container.exists(chainUpgradeStatusProvider), isFalse);
+    expect(tester.takeException(), isNull);
+    await disposeTree(tester);
+  });
   for (final layout in WbLayout.values) {
     testWidgets('${layout.name} Home switch updates address and scoped sync', (
       tester,
