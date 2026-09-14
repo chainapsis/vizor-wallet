@@ -121,13 +121,18 @@ bool _cardanoAddress(String value) {
     if (type <= 3) return bytes.length == 57;
     if (type == 6 || type == 7) return bytes.length == 29;
     if (type == 4 || type == 5) {
-      // Three variable-length unsigned pointer components follow the key hash.
+      // Slot, transaction and certificate indices are bounded to 32/16/16
+      // bits. Keep accepting non-minimal encodings of values within range.
       var cursor = 29;
-      for (var component = 0; component < 3; component++) {
-        if (cursor >= bytes.length) return false;
+      for (final maximum in [0xffffffff, 0xffff, 0xffff]) {
+        var value = 0;
+        int byte;
         do {
           if (cursor >= bytes.length) return false;
-        } while ((bytes[cursor++] & 0x80) != 0);
+          byte = bytes[cursor++];
+          value = value * 128 + (byte & 0x7f);
+          if (value > maximum) return false;
+        } while ((byte & 0x80) != 0);
       }
       return cursor == bytes.length;
     }

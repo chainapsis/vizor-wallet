@@ -153,6 +153,89 @@ void main() {
     }
   });
 
+  // Pointer vectors independently encoded with Python (CIP-19 / Bech32).
+  test('Cardano pointer type 4 accepts numeric boundary vectors', () {
+    const vectors = {
+      'zero': 'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqqqq6tvnq5',
+      'maximum':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xu0llll7lurlalc8lmljhdavc',
+      'non-minimal in-range':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xuqqzqqrqqql0c37e',
+    };
+    for (final entry in vectors.entries) {
+      expect(
+        addressFormatIssue(AddressBookNetwork.cardano, entry.value),
+        isNull,
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('Cardano pointer type 4 rejects numeric boundary vectors', () {
+    const vectors = {
+      'slot overflow':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xusszqgqqqqqq75m7sn',
+      'transaction overflow':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqsjqqqqq3guusr',
+      'certificate overflow':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqzzgqqqujyd3g',
+      'long overflow':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xllllllllllllllllllluqqqqqzn78y7',
+      'unterminated':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqzqq7075md',
+      'extra component':
+          'addr1gyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqqqqqnu7hdz',
+    };
+    for (final entry in vectors.entries) {
+      expect(
+        addressFormatIssue(AddressBookNetwork.cardano, entry.value),
+        isNotNull,
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('Cardano pointer type 5 accepts numeric boundary vectors', () {
+    const vectors = {
+      'zero': 'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqqqqhsjg4t',
+      'maximum':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xu0llll7lurlalc8lmlq0krke',
+      'non-minimal in-range':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xuqqzqqrqqqusmhq5',
+    };
+    for (final entry in vectors.entries) {
+      expect(
+        addressFormatIssue(AddressBookNetwork.cardano, entry.value),
+        isNull,
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('Cardano pointer type 5 rejects numeric boundary vectors', () {
+    const vectors = {
+      'slot overflow':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xusszqgqqqqqqxs0s8j',
+      'transaction overflow':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqsjqqqqqncx74w',
+      'certificate overflow':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqzzgqqq7z7059',
+      'long overflow':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xllllllllllllllllllluqqqqqzzhykg',
+      'unterminated':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqzqqn5q0wj',
+      'extra component':
+          'addr12yqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcqqqqqqy2ha7h',
+    };
+    for (final entry in vectors.entries) {
+      expect(
+        addressFormatIssue(AddressBookNetwork.cardano, entry.value),
+        isNotNull,
+        reason: entry.key,
+      );
+    }
+  });
+
   test('Cardano Byron reads network attribute and verifies CRC32', () {
     // Independent Python CBOR framing + zlib.crc32 vectors.
     const mainnet =
