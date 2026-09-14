@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 
 import 'mobile_regtest_flow.dart';
+import 'voting_discovery_regtest.dart';
 
 const _roundId = String.fromEnvironment('ZCASH_E2E_VOTE_ROUND_ID');
 
@@ -37,6 +38,7 @@ Future<void> initializeMobileVotingRegtestRuntime() async {
 
 Future<Widget> buildMobileVotingRegtestApp() => buildBootstrappedZcashWalletApp(
   overrides: [
+    ...votingDiscoveryRegtestOverrides(),
     votingParticipationSourceSupportedProvider.overrideWithValue(
       (network, source) =>
           network == 'regtest' && source == kE2eStaticVotingConfigSource,
@@ -207,7 +209,10 @@ Future<void> expectVotingNoteCachePersisted(
     final raw = await files.read(votingHomeCacheKey);
     if (raw != null) {
       final saved = (jsonDecode(raw) as Map)['facts'] as Map;
-      if ((saved[factKey] as Map?)?['decision'] == fact.decision.name) return;
+      if ((saved[factKey] as Map?)?['decision'] == fact.decision.name) {
+        await expectRegtestDiscoveryPersisted(container);
+        return;
+      }
     }
     await tester.pump(const Duration(milliseconds: 100));
   }
