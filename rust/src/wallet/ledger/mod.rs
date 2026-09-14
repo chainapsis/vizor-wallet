@@ -20,6 +20,9 @@ pub(crate) use operations::{
 #[cfg(target_os = "macos")]
 mod transport;
 
+/// Conservative per-approval limit supported by our current Ledger serializer.
+pub(crate) const MAX_SHIELDING_INPUTS: usize = 10;
+
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},

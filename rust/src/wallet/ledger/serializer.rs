@@ -51,7 +51,13 @@ pub(super) fn serialize_pczt(pczt: &ParsedPczt) -> Result<Vec<CommandPackets>, S
 }
 
 fn serialize_transparent_inputs(inputs: &[TransparentInput]) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("transparent inputs", inputs.len())?;
+    if inputs.len() > super::MAX_SHIELDING_INPUTS {
+        return Err(format!(
+            "Ledger supports at most {} transparent inputs; found {}",
+            super::MAX_SHIELDING_INPUTS,
+            inputs.len()
+        ));
+    }
     let mut packets = vec![compact_size(inputs.len())?];
 
     for input in inputs {

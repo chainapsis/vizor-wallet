@@ -53,7 +53,8 @@ use shardtree::{
 use tonic::Code;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection, SpendPolicy,
+    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection,
+    ShieldingSelector, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -990,7 +991,12 @@ pub(crate) fn get_shield_transparent_status(
     let account_id = parse_account_uuid(account_uuid)?;
 
     if !sync_engine::ledger_discovery::is_ready(db_path, account_id)? {
-        return Ok(ShieldTransparentStatus { can_shield: false, fee_zatoshi: 0, shielded_zatoshi: 0, reason: "Ledger transparent recovery is incomplete".into() });
+        return Ok(ShieldTransparentStatus {
+            can_shield: false,
+            fee_zatoshi: 0,
+            shielded_zatoshi: 0,
+            reason: "Ledger transparent recovery is incomplete".into(),
+        });
     }
 
     match build_shielding_proposal(&mut db, network, account_id, shielding_threshold) {
@@ -3289,6 +3295,22 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Account not found")?;
+    if crate::wallet::keys::hardware_signer_kind(account.source())
+        == Some(crate::wallet::keys::HardwareSignerKind::Ledger)
+    {
+        return build_ledger_shielding_round(
+            db,
+            network,
+            account_id,
+            shielding_threshold,
+            &from_addrs,
+        );
+    }
+
     let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
@@ -3305,6 +3327,76 @@ fn build_shielding_proposal(
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
     Ok((proposal, selected_value))
+}
+
+/// Bound each Ledger approval to the serializer's supported input count. Remaining
+/// UTXOs stay spendable for the next Shield action; signed-operation recovery is unchanged.
+fn build_ledger_shielding_round(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+    threshold: Zatoshis,
+    addresses: &[TransparentAddress],
+) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
+    let confirmations = ConfirmationsPolicy::MIN;
+    let (target, anchor) = db
+        .get_target_and_anchor_heights(confirmations.trusted())
+        .map_err(|e| e.to_string())?
+        .ok_or("Wallet must sync before shielding")?;
+    let mut outputs = Vec::new();
+    for address in addresses {
+        outputs.extend(
+            db.get_spendable_transparent_outputs(
+                address,
+                target,
+                confirmations,
+                CoinbaseFilter::AllTransparentOutputs,
+                LockFilter::Policy(&LockedInputPolicy::default()),
+            )
+            .map_err(|e| e.to_string())?,
+        );
+    }
+    outputs.sort_by(|a, b| {
+        b.txout()
+            .value()
+            .cmp(&a.txout().value())
+            .then_with(|| a.outpoint().hash().cmp(b.outpoint().hash()))
+            .then_with(|| a.outpoint().n().cmp(&b.outpoint().n()))
+    });
+    outputs.dedup_by(|a, b| a.outpoint() == b.outpoint());
+    outputs.truncate(crate::wallet::ledger::MAX_SHIELDING_INPUTS);
+    let selected = outputs
+        .iter()
+        .try_fold(Zatoshis::ZERO, |sum, o| sum + o.txout().value())
+        .ok_or("Ledger shielding value overflow")?;
+    let allowed = outputs
+        .into_iter()
+        .map(|o| o.outpoint().clone())
+        .collect::<HashSet<_>>();
+    let source = ReservedInputSource {
+        inner: db,
+        reserved: &BTreeSet::new(),
+        migration_locks: &BTreeSet::new(),
+        transparent_allowlist: Some(&allowed),
+    };
+    let (change_strategy, selector) =
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None);
+    let proposal = selector
+        .propose_shielding(
+            &network,
+            &source,
+            &change_strategy,
+            threshold,
+            addresses,
+            account,
+            target,
+            anchor,
+            &db.pool_migration_params(),
+            confirmations,
+            CoinbaseFilter::AllTransparentOutputs,
+        )
+        .map_err(|e| format!("Ledger shield proposal failed: {e}"))?;
+    Ok((proposal, selected))
 }
 
 fn build_send_request(
@@ -3350,6 +3442,7 @@ fn propose_send_with_reserved_notes(
         inner: db,
         reserved,
         migration_locks,
+        transparent_allowlist: None,
     };
     let zip318 = db.pool_migration_params();
     let (change_strategy, input_selector) =
@@ -3529,6 +3622,7 @@ struct ReservedInputSource<'a, I: InputSource> {
     inner: &'a I,
     reserved: &'a BTreeSet<I::NoteRef>,
     migration_locks: &'a BTreeSet<(String, u32)>,
+    transparent_allowlist: Option<&'a HashSet<OutPoint>>,
 }
 
 impl<I: InputSource> ReservedInputSource<'_, I> {
@@ -3735,13 +3829,17 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
         output_filter: CoinbaseFilter,
         lock_filter: LockFilter<'_>,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
-        self.inner.get_spendable_transparent_outputs(
+        let mut outputs = self.inner.get_spendable_transparent_outputs(
             address,
             target_height,
             confirmations_policy,
             output_filter,
             lock_filter,
-        )
+        )?;
+        if let Some(allowed) = self.transparent_allowlist {
+            outputs.retain(|output| allowed.contains(output.outpoint()));
+        }
+        Ok(outputs)
     }
 }
 
