@@ -1119,6 +1119,10 @@ void main() {
       disableAnimations: false,
     );
     expect(find.bySemanticsLabel('Flip gift card'), findsOneWidget);
+    expect(
+      find.text('You can copy this link again from Settings → My gift cards.'),
+      findsOneWidget,
+    );
     expect(find.text('Click on the card to flip it.'), findsNothing);
 
     await tester.tap(find.bySemanticsLabel('Flip gift card'));
@@ -1147,6 +1151,10 @@ void main() {
       ),
     );
     expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
+    expect(
+      find.text('You can copy this link again from Settings → My gift cards.'),
+      findsNothing,
+    );
     expect(find.byType(PaymentLinkConfetti), findsOneWidget);
     final initialPill = find.ancestor(
       of: find.text('Wait 1:15 to get the link'),
@@ -1491,6 +1499,13 @@ void main() {
     expect(
       tester.getTopLeft(find.byType(PaymentLinkGiftCard)).dy,
       closeTo(258.5, 1),
+    );
+    // The new guidance uses the existing gap above the actions.
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('payment_link_copy_link_button')))
+          .dy,
+      closeTo(596.5, 1),
     );
   });
 
