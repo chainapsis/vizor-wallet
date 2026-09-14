@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/config/swap_feature_config.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -1194,10 +1196,25 @@ class PaymentLinkService implements PaymentLinkOperations {
       accountUuid: session.accountUuid,
       claimTxids: '',
     );
+    PaymentLinkFiatSnapshot? claimFiatSnapshot;
+    if (_ref.read(swapFeatureEnabledProvider)) {
+      try {
+        final marketData = await _ref
+            .read(zecMarketDataSourceProvider)
+            .fetchMarketData();
+        claimFiatSnapshot = PaymentLinkFiatSnapshot.capture(
+          amountZatoshi: session.link.amountZatoshi,
+          zecUsdUnitPrice: marketData?.usdPrice,
+        );
+      } catch (_) {
+        // Price lookup is best-effort; retain the card's enclosed fiat value.
+      }
+    }
     final startedRecord = await _receivedStore.markClaimStarted(
       address: session.link.address,
       destinationAccountUuid: session.destinationAccountUuid,
       priorTxids: priorEvidence.localClaimTxids,
+      fiatSnapshot: claimFiatSnapshot,
     );
     var submissionStarted = false;
     try {
