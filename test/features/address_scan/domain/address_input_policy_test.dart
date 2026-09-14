@@ -193,6 +193,42 @@ void main() {
     }
   }
 
+  for (final context in [
+    AddressInputContext.pay,
+    AddressInputContext.swapRecipient,
+    AddressInputContext.swapRefund,
+  ]) {
+    test(
+      '$context prefers a valid Solana address over a Zcash-like prefix',
+      () async {
+        const address = 'u1yhDhjgbukb6pXaWT7ZD1543KEbL96SNFWESrqwBLW';
+        final result = await resolve(
+          address,
+          context,
+          network: AddressBookNetwork.solana,
+        );
+        expect(result.kind, AddressInputResultKind.address);
+        expect(result.address, address);
+        expect(
+          (await resolve(
+            address,
+            context,
+            network: AddressBookNetwork.ethereum,
+          )).kind,
+          AddressInputResultKind.rejected,
+        );
+        expect(
+          (await resolve(
+            'zcash:$address',
+            context,
+            network: AddressBookNetwork.solana,
+          )).kind,
+          AddressInputResultKind.rejected,
+        );
+      },
+    );
+  }
+
   test('Zcash-like prefix alone does not reject a NEAR account', () async {
     expect(
       (await resolve(

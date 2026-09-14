@@ -101,12 +101,18 @@ Future<AddressInputResult> resolveAddressInput(
         !uri.hasQuery &&
         !uri.hasFragment;
     if (scheme.isEmpty || isCashAddress) {
-      if (policy.context != AddressInputContext.send &&
+      final result = await _validateAddress(
+        input,
+        policy,
+        validateZcashAddress,
+      );
+      if (result.kind == AddressInputResultKind.rejected &&
+          policy.context != AddressInputContext.send &&
           policy.context != AddressInputContext.contact &&
           _isZcashAddress(input)) {
         return const AddressInputResult.rejected(_payOnly);
       }
-      return await _validateAddress(input, policy, validateZcashAddress);
+      return result;
     }
     if (scheme == 'zcash') {
       if (policy.context != AddressInputContext.send &&
@@ -272,9 +278,8 @@ bool _looksLikeZcash(String address) => RegExp(
   caseSensitive: false,
 ).hasMatch(address);
 
-// Transparent prefixes are only two characters and can also start valid Solana
-// public keys or NEAR names. Require address validation before classifying an
-// external-chain input as Zcash.
+// This is only a best-effort hint after the selected network rejects an address.
+// Zcash-looking prefixes can also start valid Solana public keys or NEAR names.
 bool _isZcashAddress(String address) => ZcashNetwork.values.any(
   (network) =>
       addressFormatIssue(
