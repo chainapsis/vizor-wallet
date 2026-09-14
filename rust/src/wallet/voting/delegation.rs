@@ -6,8 +6,8 @@
 //! anchor fetched over the wallet's network route, the wallet-database opener,
 //! the seed-owning signer, and the choice of PIR transport.
 //!
-//! PIR proof fetches deliberately use the SDK's direct HTTP transport rather
-//! than the Tor route; the settings copy discloses this.
+//! PIR warm-up and proof fetches follow the selected wallet network route.
+//! A selected but unavailable Tor route must never fall back to direct HTTP.
 
 use std::sync::Arc;
 
@@ -114,12 +114,17 @@ pub async fn open_pipeline(
     .map(Arc::new)
 }
 
-/// PIR fleet over the SDK's direct HTTP transport.
+/// PIR fleet over the wallet's policy-aware HTTP transport.
 pub fn pir_fleet(
     pir_server_urls: &[String],
     pir_layout: PirLayout,
 ) -> Result<Arc<PirFleet>, VotingError> {
-    PirFleet::new(pir_server_urls, pir_layout, Arc::new(HyperTransport::new())).map(Arc::new)
+    PirFleet::new(
+        pir_server_urls,
+        pir_layout,
+        Arc::new(HyperTransport::with_route(super::route::VizorRoute::new())),
+    )
+    .map(Arc::new)
 }
 
 async fn blocking<T: Send + 'static>(
@@ -348,4 +353,74 @@ pub async fn warm_pir_proof_cache(
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn pir_fleet_rechecks_route_and_never_falls_back_when_tor_fails() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let fleet = pir_fleet(
+            &[format!("http://{}", listener.local_addr().unwrap())],
+            PirLayout {
+                pir_depth: 19,
+                tier0_layers: 12,
+                tier1_layers: 7,
+                poly_len: 4096,
+            },
+        )
+        .unwrap();
+
+        // Reuse a fleet created in direct mode: the policy is selected at each
+        // request, including when a warm-up outlives a settings change.
+        for tor_failed in [false, true, false] {
+            if tor_failed {
+                crate::network_privacy::begin_tor_enable();
+                crate::network_privacy::fail_tor_enable();
+            } else {
+                crate::network_privacy::disable_tor();
+            }
+            let server_listener = listener.try_clone().unwrap();
+            let server = thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while Instant::now() < deadline {
+                    match server_listener.accept() {
+                        Ok((mut stream, _)) => {
+                            stream
+                                .set_read_timeout(Some(Duration::from_secs(1)))
+                                .unwrap();
+                            let mut request = [0; 2048];
+                            let count = stream.read(&mut request).unwrap();
+                            assert!(request[..count].starts_with(b"GET /root "));
+                            // End the real PIR handshake deterministically without
+                            // constructing cryptographic server fixtures.
+                            stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                            return true;
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                }
+                false
+            });
+            let error = fleet.connect().err().expect("handshake must fail");
+            assert!(
+                matches!(error, VotingError::PirUnavailable { .. }),
+                "{error}"
+            );
+            assert_eq!(server.join().unwrap(), !tor_failed);
+        }
+    }
 }
