@@ -1725,6 +1725,9 @@ class _SettingsPreviewAppSecurityNotifier extends AppSecurityNotifier {
   );
 
   @override
+  String requireSessionPasswordForNativeSecretUse() => '123456';
+
+  @override
   Future<bool> confirmPassword(String password) async =>
       _isPreviewPasscode(password);
 
@@ -2048,7 +2051,19 @@ class _SettingsPreviewNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   NetworkPrivacyState build() => initialState;
 
   @override
-  Future<void> setTorEnabled(bool enabled) async {}
+  Future<void> setTorEnabled(bool enabled) async {
+    state = enabled
+        ? NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+            softwareUpdatesAvailable: state.softwareUpdatesAvailable,
+          )
+        : NetworkPrivacyState(
+            torEnabled: false,
+            status: NetworkPrivacyConnectionStatus.off,
+            softwareUpdatesAvailable: state.softwareUpdatesAvailable,
+          );
+  }
 
   @override
   Future<void> retry() async {}
@@ -2064,6 +2079,16 @@ class _SettingsPreviewBiometricNotifier extends BiometricUnlockNotifier {
 
   @override
   Future<BiometricUnlockState> build() async => initialState;
+
+  @override
+  Future<void> enable(String passcode) async {
+    state = AsyncData((state.value ?? initialState).copyWith(enabled: true));
+  }
+
+  @override
+  Future<void> disable() async {
+    state = AsyncData((state.value ?? initialState).copyWith(enabled: false));
+  }
 
   @override
   Future<String?> readPasscode({required String reason}) async => null;

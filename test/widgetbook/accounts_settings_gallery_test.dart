@@ -1,9 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/account_name_policy.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/settings_pane_backdrop.dart';
 import 'package:zcash_wallet/widgetbook/accounts_settings_use_cases.dart';
 import 'package:zcash_wallet/widgetbook/gallery/pay_gallery.dart';
@@ -1066,6 +1069,77 @@ void main() {
     expect(
       find.byKey(const ValueKey('mobile_biometric_disable_confirm')),
       findsOneWidget,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('mobile_biometric_disable_confirm')),
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_biometric_disable_confirm')),
+    );
+    await _settle(tester);
+    expect(find.text('Turn off Touch ID unlock?'), findsNothing);
+    expect(container.read(biometricUnlockProvider).value?.enabled, isFalse);
+    await disposeTree(tester);
+  });
+
+  testWidgets('mobile settings biometric and Tor toggles stay interactive', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildSettingsScreenGalleryCase,
+      knobs: {
+        ..._mobileSettingsSystemGroupKnobs,
+        'Biometric': settingsBiometricLabel(SettingsBiometric.faceId),
+        'Biometric enabled': 'false',
+      },
+      canvasSize: const Size(393, 852),
+    );
+    await _settle(tester);
+
+    final biometricRow = find.byKey(
+      const ValueKey('mobile_settings_biometric_row'),
+    );
+    final biometricContainer = ProviderScope.containerOf(
+      tester.element(biometricRow),
+    );
+    await tester.tap(biometricRow);
+    await _settle(tester);
+    expect(
+      biometricContainer.read(biometricUnlockProvider).value?.enabled,
+      isTrue,
+    );
+
+    await pumpUseCase(
+      tester,
+      buildSettingsScreenGalleryCase,
+      knobs: {
+        ..._mobileLayoutKnobs,
+        'Scroll': settingsMobileScrollLabel(SettingsMobileScroll.footer),
+        'Tor': settingsMobileTorLabel(SettingsMobileTor.off),
+      },
+      canvasSize: const Size(393, 852),
+    );
+    await _settle(tester);
+
+    final torRow = find.byKey(const ValueKey('mobile_settings_tor_row'));
+    final torContainer = ProviderScope.containerOf(tester.element(torRow));
+    await tester.tap(torRow);
+    await _settle(tester);
+    expect(torContainer.read(networkPrivacyProvider).torEnabled, isTrue);
+    expect(
+      torContainer.read(networkPrivacyProvider).status,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+
+    await tester.tap(torRow);
+    await _settle(tester);
+    expect(torContainer.read(networkPrivacyProvider).torEnabled, isFalse);
+    expect(
+      torContainer.read(networkPrivacyProvider).status,
+      NetworkPrivacyConnectionStatus.off,
     );
     await disposeTree(tester);
   });
