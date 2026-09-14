@@ -1205,96 +1205,17 @@ final List<WidgetbookNode> widgetbookDirectories = [
             name: 'Swap Page',
             useCases: [
               WidgetbookUseCase(
-                name: 'Input active - Pay amount',
-                builder: buildSwapPageFigmaNode1UseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Input active - Receive amount',
-                builder: buildSwapPageFigmaNode2UseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Amount entered',
-                builder: buildSwapPageFigmaNode3UseCase,
-              ),
-              WidgetbookUseCase(
                 name: 'Direction switched',
                 builder: buildSwapPageFigmaNode5UseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Fiat value input',
-                builder: buildSwapPageFigmaNode6UseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Unsupported fiat price',
-                builder: buildSwapPageUnsupportedFiatUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Tor connection blocked',
                 builder: buildSwapPageTorBlockedUseCase,
               ),
             ],
           ),
-          WidgetbookComponent(
-            name: 'Swap Modals',
-            useCases: [
-              WidgetbookUseCase(
-                name: 'Address modal',
-                builder: buildSwapAddressModalFigmaNode7UseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Address scan - Permission',
-                builder: buildSwapAddressScanModalPermissionUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Address scan - Denied',
-                builder: buildSwapAddressScanModalDeniedUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Address scan - Active',
-                builder: buildSwapAddressScanModalActiveUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Address scan - Loading',
-                builder: buildSwapAddressScanModalLoadingUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile address scan - Requesting',
-                builder: buildMobileSwapAddressScanRequestingUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile address scan - Denied',
-                builder: buildMobileSwapAddressScanDeniedUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile address scan - Active',
-                builder: buildMobileSwapAddressScanActiveUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Mobile address scan - Loading',
-                builder: buildMobileSwapAddressScanLoadingUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Slippage modal',
-                builder: buildSwapSlippageModalUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Slippage custom',
-                builder: buildSwapSlippageModalCustomUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Slippage invalid',
-                builder: buildSwapSlippageModalInvalidUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Asset modal',
-                builder: buildSwapAssetModalUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Asset modal - Empty',
-                builder: buildSwapAssetModalEmptyUseCase,
-              ),
-            ],
-          ),
+
           WidgetbookComponent(
             name: 'Swap Review',
             useCases: [
@@ -2028,35 +1949,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
           WidgetbookUseCase(
             name: 'Buttons stack',
             builder: buildReviewButtonsStackUseCase,
-          ),
-        ],
-      ),
-      WidgetbookComponent(
-        name: 'Swap Widget',
-        useCases: [
-          WidgetbookUseCase(
-            name: 'Input active - Pay amount',
-            builder: buildSwapWidgetFigmaNode1UseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Input active - Receive amount',
-            builder: buildSwapWidgetFigmaNode2UseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Amount entered',
-            builder: buildSwapWidgetFigmaNode3UseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Direction switched',
-            builder: buildSwapWidgetFigmaNode5UseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Fiat value input',
-            builder: buildSwapWidgetFigmaNode6UseCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Unsupported fiat price',
-            builder: buildSwapWidgetUnsupportedFiatUseCase,
           ),
         ],
       ),
