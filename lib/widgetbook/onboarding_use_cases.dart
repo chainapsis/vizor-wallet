@@ -194,11 +194,24 @@ Widget onboardingSetPasswordFixture({required SetPasswordFlow flow}) {
     child: _OnboardingFlowHarness(
       key: ValueKey('onboarding-set-password-${flow.name}'),
       location: _setPasswordLocation(flow),
-      stubPaths: [args.backRoutePath],
-      builder: (_) => _setPasswordShell(flow, SetPasswordScreen(args: args)),
+      stubPaths: [
+        args.backRoutePath,
+        if (flow == SetPasswordFlow.importWalletLink) '/home',
+      ],
+      builder: (_) => _setPasswordShell(
+        flow,
+        SetPasswordScreen(
+          args: args,
+          submitOverride: flow == SetPasswordFlow.importWalletLink
+              ? _previewSetPasswordSubmit
+              : null,
+        ),
+      ),
     ),
   );
 }
+
+Future<void> _previewSetPasswordSubmit(String _) async {}
 
 SetPasswordScreenArgs _setPasswordArgs(SetPasswordFlow flow) {
   return switch (flow) {

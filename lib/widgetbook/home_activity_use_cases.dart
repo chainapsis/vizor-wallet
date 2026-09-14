@@ -1615,8 +1615,10 @@ class _ActivityDesktopHarnessState extends State<_ActivityDesktopHarness> {
       routes: [
         GoRoute(
           path: '/activity',
-          builder: (_, _) =>
-              ActivityScreen(historyLoader: widget.historyLoader),
+          builder: (_, _) => ActivityScreen(
+            historyLoader: widget.historyLoader,
+            transactionDetailLoader: _previewActivityTransactionDetail,
+          ),
         ),
         ..._activityPlaceholderRoutes(),
       ],
@@ -1661,7 +1663,10 @@ class _ActivityMobileHarnessState extends State<_ActivityMobileHarness> {
         GoRoute(
           path: '/activity',
           builder: (_, _) => AppMobileShell(
-            body: MobileActivityScreen(historyLoader: widget.historyLoader),
+            body: MobileActivityScreen(
+              historyLoader: widget.historyLoader,
+              transactionDetailLoader: _previewActivityTransactionDetail,
+            ),
             tabBar: AppMobileTabBar(
               items: _homeMobileTabItems,
               currentIndex: 2,
@@ -1683,6 +1688,10 @@ class _ActivityMobileHarnessState extends State<_ActivityMobileHarness> {
   @override
   Widget build(BuildContext context) => Router.withConfig(config: _router);
 }
+
+Future<rust_sync.TransactionDetail?> _previewActivityTransactionDetail(
+  rust_sync.TransactionInfo transaction,
+) async => null;
 
 class _TxStatusHarness extends StatefulWidget {
   const _TxStatusHarness({

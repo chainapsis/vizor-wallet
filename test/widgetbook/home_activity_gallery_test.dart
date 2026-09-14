@@ -813,6 +813,26 @@ void main() {
     await disposeTree(tester);
   });
 
+  testWidgets('activity transaction rows navigate in both layouts', (
+    tester,
+  ) async {
+    for (final layout in WbLayout.values) {
+      await pumpUseCase(
+        tester,
+        buildActivityScreenGalleryCase,
+        knobs: {'Layout': wbLayoutLabel(layout)},
+      );
+      await tester.tap(find.text('Sent').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Navigated to /activity/tx/'),
+        findsOneWidget,
+        reason: wbLayoutLabel(layout),
+      );
+    }
+    await disposeTree(tester);
+  });
+
   testWidgets('transaction status splits its load axis per layout', (
     tester,
   ) async {

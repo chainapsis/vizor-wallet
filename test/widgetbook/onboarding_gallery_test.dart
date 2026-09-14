@@ -542,6 +542,27 @@ void main() {
       },
     );
     expect(find.text('Set password & finish'), findsOne);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('set_password_password_field')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('set_password_confirm_field')),
+      'password123',
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('set_password_submit_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.text('Set password & finish'));
+    await tester.pumpAndSettle();
+    expect(find.text('Navigated to /home'), findsOneWidget);
     await disposeTree(tester);
   });
 
