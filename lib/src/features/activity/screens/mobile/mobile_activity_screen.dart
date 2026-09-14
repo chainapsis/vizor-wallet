@@ -30,14 +30,23 @@ import 'mobile_transaction_status_screen.dart';
 /// widget tests can avoid the Rust FFI.
 typedef MobileActivityHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+typedef MobileActivityTransactionDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      rust_sync.TransactionInfo transaction,
+    );
 
 /// Mobile activity tab — Figma `ACTIVITY` frames (4486:51925): the full
 /// date-grouped feed, reusing the shared section builder and row
 /// mappers with the desktop activity screen.
 class MobileActivityScreen extends ConsumerStatefulWidget {
-  const MobileActivityScreen({this.historyLoader, super.key});
+  const MobileActivityScreen({
+    this.historyLoader,
+    this.transactionDetailLoader,
+    super.key,
+  });
 
   final MobileActivityHistoryLoader? historyLoader;
+  final MobileActivityTransactionDetailLoader? transactionDetailLoader;
 
   @override
   ConsumerState<MobileActivityScreen> createState() =>
@@ -126,15 +135,20 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
 
     rust_sync.TransactionDetail? detail;
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      detail = await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
+      final loader = widget.transactionDetailLoader;
+      if (loader != null) {
+        detail = await loader(transaction);
+      } else {
+        final dbPath = await getWalletDbPath();
+        final endpoint = ref.read(rpcEndpointProvider);
+        detail = await rust_sync.getTransactionDetail(
+          dbPath: dbPath,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          txidHex: transaction.txidHex,
+          txKind: transaction.txKind,
+        );
+      }
     } catch (e, st) {
       log('MobileActivity: transaction detail load failed: $e\n$st');
     }

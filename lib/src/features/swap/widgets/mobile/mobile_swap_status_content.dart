@@ -23,6 +23,8 @@ import 'mobile_swap_review_header.dart';
 const _mobileStatusDetailIconSize = 16.0;
 const _mobileStatusHeaderToBodyGap = AppSpacing.sm + AppSpacing.s;
 
+typedef SwapExternalUriLauncher = Future<void> Function(Uri uri);
+
 /// Mobile swap status — Figma `Review Progress` (4752:30028) and
 /// `Swap Completed` (4752:82692): the serif paying/receiving header
 /// over either the Swap progress | Transaction details tabs with the
@@ -42,6 +44,7 @@ class MobileSwapStatusContent extends StatelessWidget {
     required this.onTabChanged,
     required this.onToggleDetails,
     this.paymentHeader,
+    this.launchExternalUri = _launchExternalUri,
     super.key,
   });
 
@@ -53,6 +56,7 @@ class MobileSwapStatusContent extends StatelessWidget {
   final ValueChanged<SwapStatusTab> onTabChanged;
   final VoidCallback onToggleDetails;
   final Widget? paymentHeader;
+  final SwapExternalUriLauncher launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
@@ -83,15 +87,24 @@ class MobileSwapStatusContent extends StatelessWidget {
                     badgeKind: presentation.badgeKind,
                   )
                 : presentation.paymentMode && presentation.payStatus != null
-                ? _MobilePaymentDetails(presentation: presentation)
-                : _MobileTransactionDetails(rows: presentation.details),
+                ? _MobilePaymentDetails(
+                    presentation: presentation,
+                    launchExternalUri: launchExternalUri,
+                  )
+                : _MobileTransactionDetails(
+                    rows: presentation.details,
+                    launchExternalUri: launchExternalUri,
+                  ),
           ),
         ] else ...[
           if (presentation.paymentMode) const SizedBox(height: 48),
           _StatusCard(
             key: const ValueKey('mobile_swap_status_card'),
             child: presentation.paymentMode && presentation.payStatus != null
-                ? _MobilePaymentDetails(presentation: presentation)
+                ? _MobilePaymentDetails(
+                    presentation: presentation,
+                    launchExternalUri: launchExternalUri,
+                  )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -99,6 +112,7 @@ class MobileSwapStatusContent extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       _MobileFinalDetails(
                         rows: presentation.details,
+                        launchExternalUri: launchExternalUri,
                         hideSuccessAddressRows:
                             presentation.badgeKind ==
                             SwapStatusBadgeKind.completed,
@@ -552,9 +566,13 @@ class _MobileStatusChipRow extends StatelessWidget {
 }
 
 class _MobilePaymentDetails extends StatelessWidget {
-  const _MobilePaymentDetails({required this.presentation});
+  const _MobilePaymentDetails({
+    required this.presentation,
+    required this.launchExternalUri,
+  });
 
   final SwapActivityStatusPresentation presentation;
+  final SwapExternalUriLauncher launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
@@ -601,6 +619,7 @@ class _MobilePaymentDetails extends StatelessWidget {
           if (txId != null)
             _MobileFinalDetailRow(
               row: txId,
+              launchExternalUri: launchExternalUri,
               paymentMode: true,
               actionIconSize: 20,
               actionIconColor: context.colors.icon.muted,
@@ -641,15 +660,20 @@ SwapStatusDetailRowData? _paymentDetailRow(
 /// Terminal-state rows in the transaction-status card style: small
 /// grey label left, value right, a divider before the fee section.
 class _MobileTransactionDetails extends StatelessWidget {
-  const _MobileTransactionDetails({required this.rows});
+  const _MobileTransactionDetails({
+    required this.rows,
+    required this.launchExternalUri,
+  });
 
   final List<SwapStatusDetailRowData> rows;
+  final SwapExternalUriLauncher launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
     return _MobileDetailRows(
       key: const ValueKey('mobile_swap_transaction_details'),
       rows: rows,
+      launchExternalUri: launchExternalUri,
       compactTransactionDetails: true,
     );
   }
@@ -659,15 +683,18 @@ class _MobileFinalDetails extends StatelessWidget {
   const _MobileFinalDetails({
     required this.rows,
     required this.hideSuccessAddressRows,
+    required this.launchExternalUri,
   });
 
   final List<SwapStatusDetailRowData> rows;
   final bool hideSuccessAddressRows;
+  final SwapExternalUriLauncher launchExternalUri;
 
   @override
   Widget build(BuildContext context) {
     return _MobileDetailRows(
       rows: rows,
+      launchExternalUri: launchExternalUri,
       hideSuccessAddressRows: hideSuccessAddressRows,
     );
   }
@@ -676,12 +703,14 @@ class _MobileFinalDetails extends StatelessWidget {
 class _MobileDetailRows extends StatelessWidget {
   const _MobileDetailRows({
     required this.rows,
+    required this.launchExternalUri,
     this.hideSuccessAddressRows = false,
     this.compactTransactionDetails = false,
     super.key,
   });
 
   final List<SwapStatusDetailRowData> rows;
+  final SwapExternalUriLauncher launchExternalUri;
   final bool hideSuccessAddressRows;
   final bool compactTransactionDetails;
 
@@ -706,7 +735,10 @@ class _MobileDetailRows extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
           ],
-          _MobileFinalDetailRow(row: visibleRows[i]),
+          _MobileFinalDetailRow(
+            row: visibleRows[i],
+            launchExternalUri: launchExternalUri,
+          ),
         ],
       ],
     );
@@ -773,6 +805,7 @@ bool _isMobileFeeDetailRow(SwapStatusDetailRowData row) {
 class _MobileFinalDetailRow extends StatelessWidget {
   const _MobileFinalDetailRow({
     required this.row,
+    this.launchExternalUri = _launchExternalUri,
     this.trailingIcon,
     this.paymentMode = false,
     this.actionIconSize = _mobileStatusDetailIconSize,
@@ -780,6 +813,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
   });
 
   final SwapStatusDetailRowData row;
+  final SwapExternalUriLauncher launchExternalUri;
   final String? trailingIcon;
   final bool paymentMode;
   final double actionIconSize;
@@ -799,7 +833,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
         onTap: canTap
             ? () {
                 if (linkUri != null) {
-                  unawaited(_launchExternalUri(linkUri));
+                  unawaited(launchExternalUri(linkUri));
                 } else {
                   copyTextWithToast(
                     context,

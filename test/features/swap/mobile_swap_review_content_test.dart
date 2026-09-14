@@ -62,6 +62,36 @@ MobileSwapReviewContent _content({
 }
 
 void main() {
+  for (final width in [320.0, 393.0]) {
+    testWidgets('review values stay at the row edge at width $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_harness(_content()));
+
+      for (final label in [
+        'Swap fee',
+        'Slippage tolerance',
+        'Guaranteed minimum',
+      ]) {
+        final row = find.ancestor(
+          of: find.text(label),
+          matching: find.byType(Row),
+        ).first;
+        final valueRow = find.descendant(of: row, matching: find.byType(Row));
+        expect(valueRow, findsOneWidget);
+        expect(
+          tester.getRect(valueRow).right,
+          closeTo(tester.getRect(row).right - AppSpacing.xxs, 0.01),
+          reason: '$label must keep its value and help icon at the right edge',
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets(
     'review card omits account destination and price protection rows',
     (tester) async {

@@ -264,6 +264,62 @@ void main() {
     expect(find.text('Happy birthday!'), findsNothing);
   });
 
+  testWidgets('reloads transaction data when sync reports a changed row', (
+    tester,
+  ) async {
+    final sync = FakeSyncNotifier(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        percentage: 1,
+      ),
+    );
+    var storedTransaction = _transaction(
+      txKind: 'sent',
+      minedHeight: BigInt.zero,
+      fee: BigInt.from(10000),
+    );
+    var historyLoads = 0;
+
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: storedTransaction,
+      ),
+      syncNotifier: sync,
+      historyLoader: (_) async {
+        historyLoads++;
+        return [storedTransaction];
+      },
+      detailLoader: (_, _) async => null,
+    );
+
+    expect(historyLoads, 1);
+    expect(find.text('In progress'), findsOneWidget);
+
+    storedTransaction = _transaction(
+      txKind: 'sent',
+      minedHeight: BigInt.from(123),
+      fee: BigInt.from(10000),
+    );
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        percentage: 1,
+        recentTransactions: [storedTransaction],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(historyLoads, 2);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('In progress'), findsNothing);
+  });
+
   testWidgets('renders the redesigned receipt for a confirmed receive', (
     tester,
   ) async {
@@ -926,6 +982,9 @@ Future<void> _pumpScreen(
   Map<String, AccountInfo> ownAccounts = const {},
   GiftCardActivityIndex? giftCardActivityIndex,
   AccountNotifier? accountNotifier,
+  FakeSyncNotifier? syncNotifier,
+  ActivityTxHistoryLoader? historyLoader,
+  ActivityTxDetailLoader? detailLoader,
   bool pricingEnabled = true,
   bool privacyEnabled = false,
 }) async {
@@ -939,7 +998,11 @@ Future<void> _pumpScreen(
     routes: [
       GoRoute(
         path: '/activity/tx/:txid',
-        builder: (_, _) => ActivityTransactionStatusScreen(args: args),
+        builder: (_, _) => ActivityTransactionStatusScreen(
+          args: args,
+          historyLoader: historyLoader,
+          detailLoader: detailLoader,
+        ),
       ),
       GoRoute(
         path: '/activity',
@@ -957,13 +1020,15 @@ Future<void> _pumpScreen(
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
         syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(
-              accountUuid: 'account-1',
-              hasAccountScopedData: true,
-              percentage: 1,
-            ),
-          ),
+          () =>
+              syncNotifier ??
+              FakeSyncNotifier(
+                SyncState(
+                  accountUuid: 'account-1',
+                  hasAccountScopedData: true,
+                  percentage: 1,
+                ),
+              ),
         ),
         addressBookRepositoryProvider.overrideWithValue(
           _FakeAddressBookRepository(contacts),

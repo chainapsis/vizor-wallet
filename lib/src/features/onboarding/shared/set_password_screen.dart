@@ -23,10 +23,13 @@ import 'onboarding_chrome.dart' as onboarding_chrome;
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
 
+typedef SetPasswordSubmitOverride = Future<void> Function(String password);
+
 class SetPasswordScreen extends ConsumerStatefulWidget {
-  const SetPasswordScreen({super.key, required this.args});
+  const SetPasswordScreen({super.key, required this.args, this.submitOverride});
 
   final SetPasswordScreenArgs args;
+  final SetPasswordSubmitOverride? submitOverride;
 
   @override
   ConsumerState<SetPasswordScreen> createState() => _SetPasswordScreenState();
@@ -68,6 +71,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
   Future<void> _submit() async {
     try {
+      if (widget.submitOverride != null) {
+        await _submitWithOwnership();
+        return;
+      }
       await ref
           .read(linuxKeyringCoordinatorProvider)
           .runMutation(_submitWithOwnership);
@@ -99,6 +106,23 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         pendingPassword: password,
       );
       router.go(customiseArgs.routePath, extra: customiseArgs);
+      return;
+    }
+
+    final submitOverride = widget.submitOverride;
+    if (submitOverride != null) {
+      try {
+        await submitOverride(password);
+        if (!mounted) return;
+        router.go('/home');
+      } catch (e, st) {
+        log('SetPasswordScreen._submit override: ERROR: $e\n$st');
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _SetPasswordSubmitPhase.idle;
+          _submitError = onboardingSubmitErrorMessage(e);
+        });
+      }
       return;
     }
 

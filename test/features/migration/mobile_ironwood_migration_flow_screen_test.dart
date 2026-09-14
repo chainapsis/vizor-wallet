@@ -53,6 +53,8 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 
 final _rustApiFake = _RustApiFake();
 
+Future<void> _ignoreReleaseNotes() async {}
+
 class _RustApiFake implements RustLibApi {
   final encodedRequestIds = <String>[];
   final encodedMaxFragmentLengths = <BigInt>[];
@@ -744,6 +746,7 @@ Widget _app({
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
   bool? privateMigrationSupported,
+  MobileIronwoodReleaseNotesLauncher openReleaseNotes = _ignoreReleaseNotes,
   bool disableAnimations = true,
 }) {
   late final GoRouter router;
@@ -756,6 +759,7 @@ Widget _app({
       previewStatus: previewStatus,
       previewSurface: previewSurface,
       privateMigrationSupported: privateMigrationSupported,
+      openReleaseNotes: openReleaseNotes,
     );
   }
 
@@ -1778,6 +1782,24 @@ void main() {
       tester.widget<Text>(find.text('1')).style?.fontWeight,
       FontWeight.w400,
     );
+  });
+
+  testWidgets('the intro release note uses the injected launcher', (
+    tester,
+  ) async {
+    var launchCalls = 0;
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.intro,
+        openReleaseNotes: () async => launchCalls++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Official release note'));
+    await tester.pump();
+
+    expect(launchCalls, 1);
   });
 
   testWidgets('uses dark semantic colors in the About migration hero', (

@@ -66,3 +66,5 @@ part 'mobile_ironwood_migration_step_review_card.dart';
 
 bool supportsPrivateMobileIronwoodMigration({bool? isAndroid}) =>
     !(isAndroid ?? Platform.isAndroid);
+
+typedef MobileIronwoodReleaseNotesLauncher = Future<void> Function();

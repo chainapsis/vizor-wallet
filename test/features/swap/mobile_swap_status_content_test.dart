@@ -76,6 +76,7 @@ Widget _content({
   SwapStatusBadgeKind badgeKind = SwapStatusBadgeKind.liveQuote,
   List<SwapStatusDetailRowData> details = const [],
   List<SwapStatusStepData> steps = const [],
+  SwapExternalUriLauncher? launchExternalUri,
 }) {
   return MobileSwapStatusContent(
     presentation: _presentation(
@@ -90,8 +91,11 @@ Widget _content({
     detailsExpanded: true,
     onTabChanged: (_) {},
     onToggleDetails: () {},
+    launchExternalUri: launchExternalUri ?? _noopExternalUriLauncher,
   );
 }
+
+Future<void> _noopExternalUriLauncher(Uri _) async {}
 
 SwapIntent _intent({
   required SwapDirection direction,
@@ -222,6 +226,35 @@ void main() {
     );
     final tabGroupCenter = (progressRect.left + detailsRect.right) / 2;
     expect(tabGroupCenter, moreOrLessEquals(contentRect.center.dx));
+  });
+
+  testWidgets('details tx link uses the injected external launcher', (
+    tester,
+  ) async {
+    final launched = <Uri>[];
+    final uri = Uri.parse('https://explorer.example/tx/deposit');
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: true,
+            details: [
+              SwapStatusDetailRowData(
+                label: 'Tx ID',
+                value: 'deposit',
+                linkUri: uri,
+              ),
+            ],
+            launchExternalUri: (value) async => launched.add(value),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Tx ID'));
+    await tester.pump();
+
+    expect(launched, [uri]);
   });
 
   testWidgets('progress active description wraps with Figma mobile typography', (
