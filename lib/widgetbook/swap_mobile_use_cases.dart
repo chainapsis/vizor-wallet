@@ -1334,6 +1334,7 @@ Widget swapActivityDetailSurfaceFixture({
     child: _SwapMobileRouterHarness(
       location: '/activity/swap/detail',
       screen: SwapActivityDetailSurface(
+        launchExternalUri: (_) async {},
         intentId: intentCase == SwapActivityIntentCase.found
             ? _swapActivityIntentId
             : _swapActivityMissingIntentId,

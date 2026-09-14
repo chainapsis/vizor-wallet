@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
@@ -30,6 +31,31 @@ import 'support/wb_gallery_harness.dart';
 // mobile-geometry finding for the lead, not something this file can assert
 // around.
 void main() {
+  for (final layout in WbLayout.values) {
+    testWidgets('${layout.name} payment detail isolates explorer launch', (
+      tester,
+    ) async {
+      await pumpUseCase(
+        tester,
+        buildSwapActivityDetailGalleryCase,
+        knobs: {
+          'Layout': wbLayoutLabel(layout),
+          'Mode': swapActivityModeLabel(SwapActivityMode.payment),
+        },
+      );
+      // The processing illustration loops while the detail remains mounted.
+      await tester.pump(const Duration(milliseconds: 300));
+      final surface = tester.widget<SwapActivityDetailSurface>(
+        find.byType(SwapActivityDetailSurface),
+      );
+      expect(surface.launchExternalUri, isNotNull);
+      await tester.tap(find.text('Tx ID'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SwapActivityDetailSurface), findsOneWidget);
+      await disposeTree(tester);
+    });
+  }
   testWidgets('every swap gallery case builds at its knob defaults', (
     tester,
   ) async {
