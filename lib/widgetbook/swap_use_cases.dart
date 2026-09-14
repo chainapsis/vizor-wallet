@@ -25,6 +25,7 @@ import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
+import '../src/features/swap/models/swap_amount_input_mapper.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/swap/providers/swap_state_provider.dart';
 import '../src/features/swap/providers/pay_selected_asset_store.dart';
@@ -2639,6 +2640,28 @@ class _SwapInteractiveNotifier extends _SwapPreviewNotifier {
 
   final SwapScreenSimulationScenario scenario;
   var _quoteFailedOnce = false;
+
+  @override
+  Future<void> useMaxZecAmount() async {
+    if (!state.direction.sendsZec || state.maxAmountLoading) return;
+    // The connected scope holds 12.3456 ZEC; reserve a simulated 0.0001 fee.
+    // Use the pure amount mapper, never the wallet-backed max estimator.
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        state.copyWith(
+          amountText: '12.3455',
+          quoteMode: SwapQuoteMode.exactInput,
+          amountInputMode: SwapAmountInputMode.token,
+          maxAmountLoading: false,
+          reviewVisible: false,
+          clearReview: true,
+          clearMaxAmountError: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+        ),
+      ),
+    );
+  }
 
   @override
   void prepareSwapComposer() {

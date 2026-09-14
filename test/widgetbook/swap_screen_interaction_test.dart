@@ -1,7 +1,10 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/widgetbook/swap_use_cases.dart';
+import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
@@ -33,6 +36,77 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_storageChannel, null);
   });
+
+  for (final layout in WbLayout.values) {
+    for (final fixture in [
+      SwapComposerFixture.maxAmountFailed,
+      SwapComposerFixture.fiatValueInput,
+    ]) {
+      testWidgets(
+        '${layout.name} Swap Max replaces ${fixture.name} without host services',
+        (tester) async {
+          await pumpUseCase(
+            tester,
+            buildSwapScreenGalleryCase,
+            knobs: {
+              'Layout': wbLayoutLabel(layout),
+              'State': swapComposerFixtureLabel(fixture),
+            },
+            theme: AppThemeData.light,
+          );
+          await tester.pumpAndSettle();
+          final field = find.byKey(const ValueKey('swap_amount_field'));
+          final container = ProviderScope.containerOf(
+            tester.element(field),
+            listen: false,
+          );
+          if (fixture == SwapComposerFixture.fiatValueInput) {
+            // This fixture starts external-to-ZEC. Max must ignore that side.
+            final before = container.read(swapStateProvider);
+            await container.read(swapStateProvider.notifier).useMaxZecAmount();
+            expect(container.read(swapStateProvider), same(before));
+            await tester.tap(
+              find.byKey(const ValueKey('swap_direction_zecToExternal')),
+            );
+            container.read(swapStateProvider.notifier).updateAmountFiat('1');
+            await tester.pumpAndSettle();
+          }
+          for (var attempt = 0; attempt < 2; attempt++) {
+            await tester.tap(
+              find.byKey(const ValueKey('swap_max_amount_button')),
+            );
+            await tester.pumpAndSettle();
+            expect(
+              tester
+                  .widget<EditableText>(
+                    find.descendant(
+                      of: field,
+                      matching: find.byType(EditableText),
+                    ),
+                  )
+                  .controller
+                  .text,
+              '12.3455',
+            );
+            final state = container.read(swapStateProvider);
+            expect(state.amountText, '12.3455');
+            expect(state.quoteMode, SwapQuoteMode.exactInput);
+            expect(state.amountInputMode, SwapAmountInputMode.token);
+            expect(state.maxAmountError, isNull);
+            expect(state.maxAmountLoading, isFalse);
+            expect(state.receiveAmountText, isNotEmpty);
+            expect(state.reviewVisible, isFalse);
+            expect(rust.calls, isEmpty);
+            expect(storageCalls, isEmpty);
+            expect(tester.takeException(), isNull);
+            await tester.enterText(field, '1');
+            await tester.pumpAndSettle();
+          }
+          await disposeTree(tester);
+        },
+      );
+    }
+  }
 
   testWidgets('Swap screen carries input through review and result', (
     tester,
