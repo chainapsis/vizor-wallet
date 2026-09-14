@@ -4,6 +4,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
+import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -340,6 +342,164 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  testWidgets(
+    'Pay rejected scan and paste preserve the composer and pending request',
+    (tester) async {
+      await _setMobileViewport(tester, const Size(393, 852));
+      await tester.pumpWidget(
+        _app(
+          paymentParser: (raw) async => CrossChainPaymentRequest(
+            id: 'testnet',
+            rawUri: raw,
+            address: '0x1111111111111111111111111111111111111111',
+            isEvm: true,
+            chainId: '11155111',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      const address = '0x2222222222222222222222222222222222222222';
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_recipient_input')),
+        address,
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobilePayScreen)),
+      );
+      final before = container.read(swapStateProvider);
+      const existing = CrossChainPaymentRequest(
+        id: 'existing',
+        rawUri: 'ethereum:existing',
+        address: address,
+        isEvm: true,
+      );
+      container.read(paymentUriPrefillProvider.notifier).set(existing);
+      final field = tester.widget<MobileTextField>(
+        find.byType(MobileTextField),
+      );
+      await field.onPaste!(
+        'ethereum:0x1111111111111111111111111111111111111111@11155111?value=1',
+      );
+      await tester.pumpAndSettle();
+      expect(field.controller.text, address);
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      expect(
+        container.read(swapStateProvider).receiveAmountText,
+        before.receiveAmountText,
+      );
+      expect(container.read(paymentUriPrefillProvider), same(existing));
+      await tester.tap(find.text('Scan a QR code'));
+      await tester.pumpAndSettle();
+      final scanner = tester.widget<MobileAddressScanCard>(
+        find.byType(MobileAddressScanCard),
+      );
+      final rejected = await scanner.resolve('zcash:u1example?amount=1');
+      expect(rejected.isAccepted, isFalse);
+      expect(rejected.error, contains('Use Send'));
+      expect(find.byType(MobileAddressScanCard), findsOneWidget);
+      expect(container.read(swapStateProvider).destinationText, address);
+      expect(container.read(paymentUriPrefillProvider), same(existing));
+      scanner.onClose();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Pay QR Keep editing uses only its address and preserves the composer',
+    (tester) async {
+      await _setMobileViewport(tester, const Size(393, 852));
+      var parseCount = 0;
+      await tester.pumpWidget(
+        _app(
+          paymentParser: (raw) async {
+            parseCount++;
+            return CrossChainPaymentRequest(
+              id: 'invoice',
+              rawUri: raw,
+              address: '0x1111111111111111111111111111111111111111',
+              isEvm: true,
+              chainId: '1',
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobilePayScreen)),
+      );
+      final before = container.read(swapStateProvider);
+      await tester.tap(find.text('Scan a QR code'));
+      await tester.pumpAndSettle();
+      final scanner = tester.widget<MobileAddressScanCard>(
+        find.byType(MobileAddressScanCard),
+      );
+      const raw =
+          'ethereum:0x1111111111111111111111111111111111111111@1?value=1';
+      final accepted = await scanner.resolve(raw);
+      expect(accepted.isAccepted, isTrue, reason: accepted.error);
+      scanner.onScanned(accepted.address!);
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileAddressScanCard), findsNothing);
+      expect(
+        container.read(paymentUriPrefillProvider),
+        isA<CrossChainPaymentRequest>(),
+      );
+      expect(
+        container.read(swapStateProvider).receiveAmountText,
+        before.receiveAmountText,
+      );
+      expect(
+        container.read(swapStateProvider).destinationText,
+        before.destinationText,
+      );
+      final flow = container.read(crossChainPaymentFlowProvider.notifier);
+      final request =
+          container.read(paymentUriPrefillProvider) as CrossChainPaymentRequest;
+      flow.present(request);
+      expect(flow.canUseAddressOnly, isTrue);
+      flow.useAddressOnly();
+      await tester.pumpAndSettle();
+      final after = container.read(swapStateProvider);
+      expect(after.destinationText, request.address);
+      expect(after.externalAsset, before.externalAsset);
+      expect(after.amountText, before.amountText);
+      expect(after.receiveAmountText, before.receiveAmountText);
+      expect(after.quoteMode, before.quoteMode);
+      expect(after.direction, before.direction);
+      expect(after.reviewVisible, isFalse);
+      expect(container.read(crossChainPaymentFlowProvider), isNull);
+      final field = tester.widget<MobileTextField>(
+        find.byType(MobileTextField),
+      );
+      expect(field.controller.text, request.address);
+      expect(parseCount, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final leaveStep in [false, true]) {
     testWidgets(
       'Pay discards a pending request after input or step changes (leaveStep: $leaveStep)',
@@ -360,7 +520,8 @@ void main() {
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MobilePayScreen)),
         );
-        const raw = 'bitcoin:bc1qinvoice?amount=0.1';
+        const raw =
+            'bitcoin:bc1ptwjws3cthy5xy3rfrxuyg4sugly597tkesjc8fpx69jwc7r8pl4qw7k8t5?amount=0.1';
         await tester.enterText(
           find.byKey(const ValueKey('mobile_pay_recipient_input')),
           raw,
@@ -383,7 +544,8 @@ void main() {
           const CrossChainPaymentRequest(
             id: 'obsolete',
             rawUri: raw,
-            address: 'bc1qinvoice',
+            address:
+                'bc1ptwjws3cthy5xy3rfrxuyg4sugly597tkesjc8fpx69jwc7r8pl4qw7k8t5',
             isEvm: false,
             chain: 'btc',
           ),
@@ -417,9 +579,12 @@ void main() {
               return CrossChainPaymentRequest(
                 id: 'mobile-input',
                 rawUri: raw,
-                address: 'Payee',
-                isEvm: false,
-                chain: 'sol',
+                address: typing
+                    ? '0x3333333333333333333333333333333333333333'
+                    : '11111111111111111111111111111111',
+                isEvm: typing,
+                chainId: typing ? '1' : null,
+                chain: typing ? null : 'sol',
               );
             },
           ),
@@ -444,7 +609,9 @@ void main() {
           tester.element(find.byType(MobilePayScreen)),
         );
         final previous = container.read(swapStateProvider);
-        const raw = 'solana:Payee?amount=25&spl-token=Mint&reference=Order';
+        final raw = typing
+            ? 'ethereum:0x3333333333333333333333333333333333333333@1?value=25'
+            : 'solana:11111111111111111111111111111111?amount=25';
         if (typing) {
           final field = find.byKey(
             const ValueKey('mobile_pay_recipient_input'),
@@ -496,6 +663,24 @@ void main() {
         expect(after.externalAsset, previous.externalAsset);
         expect(after.receiveAmountText, previous.receiveAmountText);
         if (typing) {
+          expect(find.text(raw), findsOneWidget);
+          final flow = container.read(crossChainPaymentFlowProvider.notifier);
+          final request =
+              container.read(paymentUriPrefillProvider)
+                  as CrossChainPaymentRequest;
+          flow.present(request);
+          expect(flow.canUseAddressOnly, isTrue);
+          flow.useAddressOnly();
+          await tester.pumpAndSettle();
+          final kept = container.read(swapStateProvider);
+          expect(kept.destinationText, request.address);
+          expect(kept.externalAsset, previous.externalAsset);
+          expect(kept.amountText, previous.amountText);
+          expect(kept.receiveAmountText, previous.receiveAmountText);
+          expect(kept.quoteMode, previous.quoteMode);
+          expect(kept.reviewVisible, isFalse);
+          expect(find.text(request.address), findsOneWidget);
+
           final field = find.byKey(
             const ValueKey('mobile_pay_recipient_input'),
           );
