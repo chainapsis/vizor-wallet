@@ -82,6 +82,10 @@ Widget receiveDesktopScreenFixture({
       receiveAddressServiceProvider.overrideWithValue(
         _ReceiveScreenAddressService(pool: pool, outcome: outcome),
       ),
+      // Never open the host save panel or write a fixture QR to disk.
+      requestQrSaveLocationPickerProvider.overrideWithValue(
+        ({required suggestedName}) async => null,
+      ),
       syncProvider.overrideWith(_ReceiveScreenSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(kReceiveScreenZecUsdPrice),
       swapFeatureEnabledProvider.overrideWithValue(true),

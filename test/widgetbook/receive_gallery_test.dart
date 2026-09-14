@@ -1,7 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart' show CircularProgressIndicator;
+import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:widgetbook/widgetbook.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
@@ -105,6 +110,30 @@ void main() {
       expect(
         find.byKey(const ValueKey('request_copy_link_button')),
         findsOneWidget,
+      );
+      final fixtureScope = ProviderScope.containerOf(
+        tester.element(find.byType(ReceiveScreen)),
+        listen: false,
+      );
+      expect(
+        await fixtureScope.read(requestQrSaveLocationPickerProvider)(
+          suggestedName: 'fixture.png',
+        ),
+        isNull,
+      );
+      // Exercise the real screen's save callback with already-encoded bytes;
+      // QR rasterization is independent of the platform/filesystem boundary.
+      await tester
+          .widget<RequestQrExportButton>(
+            find.byKey(const ValueKey('request_save_qr_button')),
+          )
+          .onBytes!(Uint8List.fromList([137, 80, 78, 71]));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('QR image saved'), findsNothing);
+      expect(
+        find.textContaining("We couldn't save the QR image"),
+        findsNothing,
       );
       await tester.tap(find.byKey(const ValueKey('request_modal_back')));
       await tester.pumpAndSettle();
