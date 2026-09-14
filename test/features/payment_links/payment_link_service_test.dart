@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -221,6 +224,8 @@ void main() {
     late _ClaimDestinationAccountNotifier accounts;
     late ProviderContainer container;
     late PaymentLinkService service;
+    late _ClaimMarketDataSource marketData;
+    late bool pricingEnabled;
     late Directory supportDirectory;
     late _PaymentLinkServiceReceivedStorage receivedStorage;
     const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
@@ -239,9 +244,13 @@ void main() {
           );
       api.reset();
       accounts = _ClaimDestinationAccountNotifier();
+      marketData = _ClaimMarketDataSource();
+      pricingEnabled = true;
       receivedStorage = _PaymentLinkServiceReceivedStorage();
       container = ProviderContainer(
         overrides: [
+          swapFeatureEnabledProvider.overrideWith((ref) => pricingEnabled),
+          zecMarketDataSourceProvider.overrideWithValue(marketData),
           accountProvider.overrideWith(() => accounts),
           syncProvider.overrideWith(
             () => FakeSyncNotifier(
@@ -393,6 +402,86 @@ void main() {
         expect(await store.countReceivingForAccount('receiver'), 0);
       },
     );
+
+    for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
+      test('claim persists fresh fiat or enclosed fallback: $price', () async {
+        marketData.price = price;
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final submission = service.claimPreparedLink(_claimSession());
+        final failed = expectLater(submission, throwsStateError);
+        await api.estimateStarted.future;
+        final record =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(marketData.calls, 1);
+        expect(record.fiatSnapshot!.amount, price == 200.0 ? 0.2 : 0.1);
+        expect(record.claimLink!.presentation!.fiatSnapshot!.amount, 0.1);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      });
+    }
+
+    for (final lateFailure in [false, true]) {
+      test(
+        'slow price cannot block claim or replace fallback: $lateFailure',
+        () async {
+          final priceGate = Completer<ZecMarketData?>();
+          marketData.pending = priceGate;
+          api.poolFixture = true;
+          api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+          final submission = service.claimPreparedLink(_claimSession());
+          final failed = expectLater(submission, throwsStateError);
+          // Claim preparation must start while the price request is unresolved.
+          await api.estimateStarted.future.timeout(const Duration(seconds: 3));
+          expect(priceGate.isCompleted, isFalse);
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          if (lateFailure) {
+            priceGate.completeError(StateError('late price failure'));
+          } else {
+            priceGate.complete(const ZecMarketData(usdPrice: 200));
+          }
+          await Future<void>.delayed(Duration.zero);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          api.estimateGate!.completeError(StateError('preparation failed'));
+          await failed;
+        },
+      );
+    }
+
+    test('disabled pricing keeps enclosed fiat without a request', () async {
+      pricingEnabled = false;
+      container.invalidate(swapFeatureEnabledProvider);
+      marketData.price = 200;
+      api.poolFixture = true;
+      api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+      final submission = service.claimPreparedLink(_claimSession());
+      final failed = expectLater(submission, throwsStateError);
+      await api.estimateStarted.future;
+      final record =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(marketData.calls, 0);
+      expect(record.fiatSnapshot!.amount, 0.1);
+      api.estimateGate!.completeError(StateError('preparation failed'));
+      await failed;
+    });
+
+    test('price lookup exception does not block claim preparation', () async {
+      marketData.throwOnFetch = true;
+      api.poolFixture = true;
+      api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+      final submission = service.claimPreparedLink(_claimSession());
+      final failed = expectLater(submission, throwsStateError);
+      await api.estimateStarted.future;
+      final record =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(record.fiatSnapshot!.amount, 0.1);
+      api.estimateGate!.completeError(StateError('preparation failed'));
+      await failed;
+    });
 
     test(
       'recovery cannot settle a submission still preparing transactions',
@@ -1818,6 +1907,9 @@ VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
     address: 'u1paymentlinkaddress',
+    presentation: const PaymentLinkPresentation(
+      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 0.1),
+    ),
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
@@ -2050,4 +2142,19 @@ class _ClaimDestinationRpcNotifier extends RpcEndpointNotifier {
     networkName: 'main',
     lightwalletdUrl: 'https://example.invalid:9067',
   );
+}
+
+class _ClaimMarketDataSource implements ZecMarketDataSource {
+  double? price;
+  bool throwOnFetch = false;
+  Completer<ZecMarketData?>? pending;
+  int calls = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    calls++;
+    if (pending != null) return pending!.future;
+    if (throwOnFetch) throw StateError('price unavailable');
+    return price == null ? null : ZecMarketData(usdPrice: price!);
+  }
 }
