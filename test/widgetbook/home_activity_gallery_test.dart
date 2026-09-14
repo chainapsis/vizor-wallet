@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart'
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
@@ -1563,6 +1564,41 @@ void main() {
     });
     expect(qrPhase(), KeystonePcztQrStagePhase.ready);
     expect(find.text('Get Signature'), findsOneWidget);
+    await disposeTree(tester);
+  });
+
+  testWidgets('desktop shield signature action stays isolated and returns to QR', (
+    tester,
+  ) async {
+    await _pumpShield(tester, {
+      ...desktopLayout,
+      'Stage': homeKeystoneShieldDesktopStageLabel(
+        HomeKeystoneShieldDesktopStage.qrReady,
+      ),
+    });
+    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 2; i++) {
+      for (var frame = 0; frame < 10; frame++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.tap(find.text('Get Signature'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.text('Signature scanning is unavailable in this preview.'),
+        findsOneWidget,
+      );
+      expect(find.byType(MobileScanner), findsNothing);
+      await tester.tap(find.text('Back to QR'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Get Signature'), findsOneWidget);
+      expect(
+        tester.widget<KeystonePcztQrStage>(find.byType(KeystonePcztQrStage)).phase,
+        KeystonePcztQrStagePhase.ready,
+      );
+      expect(tester.takeException(), isNull);
+    }
     await disposeTree(tester);
   });
 

@@ -2896,31 +2896,76 @@ Widget homeKeystoneShieldDesktopFixture({
     overrides: [appLayoutProvider.overrideWith(_HomeNoOpLayoutNotifier.new)],
     child: WbFrame(
       layout: WbLayout.desktop,
-      child: KeystoneShieldSigningOverlay(
-        // Preparation runs from `initState`, so the stage only changes on a
-        // remount.
-        key: ValueKey('wb_home_keystone_shield_desktop_${stage.name}'),
-        onCancel: _shieldNoop,
-        onComplete: _shieldNoop,
-        preparePczt: switch (stage) {
-          // Never completes: the overlay's own preparing phase.
-          HomeKeystoneShieldDesktopStage.preparing =>
-            () => Completer<KeystoneShieldPreparedPczt?>().future,
-          HomeKeystoneShieldDesktopStage.qrReady =>
-            () async => KeystoneShieldPreparedPczt(
-              urParts: _shieldPreviewUrParts(),
-              pcztWithProofs: const [],
-              saplingParams: _shieldPreviewSaplingParams,
-              needsSaplingParams: false,
+      child: _ShieldDesktopHarness(
+        child: KeystoneShieldSigningOverlay(
+          // Preparation runs from `initState`, so the stage only changes on a
+          // remount.
+          key: ValueKey('wb_home_keystone_shield_desktop_${stage.name}'),
+          onCancel: _shieldNoop,
+          onComplete: _shieldNoop,
+          preparePczt: switch (stage) {
+            // Never completes: the overlay's own preparing phase.
+            HomeKeystoneShieldDesktopStage.preparing =>
+              () => Completer<KeystoneShieldPreparedPczt?>().future,
+            HomeKeystoneShieldDesktopStage.qrReady =>
+              () async => KeystoneShieldPreparedPczt(
+                urParts: _shieldPreviewUrParts(),
+                pcztWithProofs: const [],
+                saplingParams: _shieldPreviewSaplingParams,
+                needsSaplingParams: false,
+              ),
+            // The copy is the overlay's own mapping of a Rust failure.
+            HomeKeystoneShieldDesktopStage.failed => () async => throw Exception(
+              'transparent balance too small to shield',
             ),
-          // The copy is the overlay's own mapping of a Rust failure.
-          HomeKeystoneShieldDesktopStage.failed => () async => throw Exception(
-            'transparent balance too small to shield',
-          ),
-        },
+          },
+        ),
       ),
     ),
   );
+}
+
+class _ShieldDesktopHarness extends StatefulWidget {
+  const _ShieldDesktopHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ShieldDesktopHarness> createState() => _ShieldDesktopHarnessState();
+}
+
+class _ShieldDesktopHarnessState extends State<_ShieldDesktopHarness> {
+  late final GoRouter _router = GoRouter(
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => widget.child),
+      GoRoute(
+        path: '/send/keystone/scan',
+        builder: (context, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Signature scanning is unavailable in this preview.'),
+              const Text('No camera, signing, or broadcast is started.'),
+              AppButton(
+                // Return no signatures so the live overlay never broadcasts.
+                onPressed: () => context.pop(),
+                child: const Text('Back to QR'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
 }
 
 /// `MobileKeystoneShieldScreen` in a phone frame.
