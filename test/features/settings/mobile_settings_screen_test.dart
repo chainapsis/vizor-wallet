@@ -62,8 +62,8 @@ const _hardwareAccountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-AppBootstrapState _bootstrap(
-  AccountState accountState, {
+AppBootstrapState _bootstrap({
+  AccountState accountState = _accountState,
   String network = 'main',
   bool enhancePirEnabled = false,
 }) => AppBootstrapState(
@@ -149,7 +149,7 @@ Widget _app({
     overrides: [
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
-          accountState,
+          accountState: accountState,
           network: network,
           enhancePirEnabled: enhancePirEnabled,
         ),
@@ -356,10 +356,9 @@ void main() {
               isNull,
               reason: 'Do not truncate prereleases',
             );
-            expect(
-              tester.getTopLeft(footer).dy,
-              greaterThan(tester.getBottomLeft(find.text('Theme')).dy),
-            );
+            // Ordering against the last card above the footer is asserted
+            // below. Rows further up (Theme) are unmounted by the scroll
+            // once the privacy section carries its full set of toggles.
             expect(
               tester.getBottomLeft(footer).dy,
               lessThanOrEqualTo(
