@@ -7290,6 +7290,175 @@ void main() {
     expect(resetSession.voteSubmissionTotalCount, 0);
   });
 
+  test(
+    'a stalled submission job retries itself once sync reaches the snapshot',
+    () async {
+      // A wallet-sync stall is the one failure the user cannot act on and
+      // that resolves by itself, so the job must not sit in its error card
+      // until someone notices.
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      final persistence = FakeVotingDraftPersistence();
+      const draftKey = VotingSessionKey(
+        roundId: kRoundId,
+        accountUuid: 'account-1',
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          roundStatus: roundStatusJson(roundId: kRoundId)
+            ..['proposals'] = [
+              {
+                'id': 7,
+                'title': 'One',
+                'options': [
+                  {'index': 0, 'label': 'No'},
+                  {'index': 1, 'label': 'Yes'},
+                ],
+              },
+            ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        draftPersistence: persistence,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 1),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+        extraOverrides: [
+          votingWalletSyncMaxWaitProvider.overrideWithValue(
+            const Duration(milliseconds: 20),
+          ),
+          votingWalletSyncRecoveryPollIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 5),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final submissionSessionSubscription = container.listen(
+        votingSubmissionSessionProvider(draftKey),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(submissionSessionSubscription.close);
+
+      await container.read(votingSubmissionSessionProvider(draftKey).future);
+      container.read(votingDraftProvider(draftKey).notifier).setChoice(7, 1);
+      await Future<void>.delayed(Duration.zero);
+
+      final key = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId, accountUuid: 'account-1');
+      expect(key, draftKey);
+
+      // The submission session fails on a stall rather than parking.
+      var failed = false;
+      for (var i = 0; i < 400; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        if (container.read(votingSubmissionJobProvider(draftKey)).status ==
+            VotingSubmissionJobStatus.error) {
+          failed = true;
+          break;
+        }
+      }
+      expect(failed, isTrue, reason: 'job never surfaced the stall');
+
+      // Sync catches up; nothing else touches the job.
+      readiness.ready = true;
+
+      var recovered = false;
+      for (var i = 0; i < 400; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        if (container.read(votingSubmissionJobProvider(draftKey)).status !=
+            VotingSubmissionJobStatus.error) {
+          recovered = true;
+          break;
+        }
+      }
+      expect(recovered, isTrue, reason: 'job did not retry itself');
+    },
+  );
+
+  test('a dismissed stalled job does not retry itself', () async {
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+    final persistence = FakeVotingDraftPersistence();
+    const draftKey = VotingSessionKey(
+      roundId: kRoundId,
+      accountUuid: 'account-1',
+    );
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        roundStatus: roundStatusJson(roundId: kRoundId)
+          ..['proposals'] = [
+            {
+              'id': 7,
+              'title': 'One',
+              'options': [
+                {'index': 0, 'label': 'No'},
+                {'index': 1, 'label': 'Yes'},
+              ],
+            },
+          ],
+      ),
+    );
+    final container = _sessionContainer(
+      http: http,
+      rust: rust,
+      draftPersistence: persistence,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+      txConfirmationPolling: _fastTxConfirmationPolling,
+      extraOverrides: [
+        votingWalletSyncMaxWaitProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
+        votingWalletSyncRecoveryPollIntervalProvider.overrideWithValue(
+          const Duration(milliseconds: 5),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final submissionSessionSubscription = container.listen(
+      votingSubmissionSessionProvider(draftKey),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(submissionSessionSubscription.close);
+
+    await container.read(votingSubmissionSessionProvider(draftKey).future);
+    container.read(votingDraftProvider(draftKey).notifier).setChoice(7, 1);
+    await Future<void>.delayed(Duration.zero);
+
+    await container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId, accountUuid: 'account-1');
+
+    var failed = false;
+    for (var i = 0; i < 400; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      if (container.read(votingSubmissionJobProvider(draftKey)).status ==
+          VotingSubmissionJobStatus.error) {
+        failed = true;
+        break;
+      }
+    }
+    expect(failed, isTrue, reason: 'job never surfaced the stall');
+
+    container.read(votingSubmissionJobsProvider.notifier).dismiss(draftKey);
+    readiness.ready = true;
+
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+
+    // Dismissing is the user's decision to stop; recovery must not undo it.
+    expect(
+      container.read(votingSubmissionJobProvider(draftKey)).status,
+      VotingSubmissionJobStatus.idle,
+    );
+  });
+
   test('Keystone signing starts after active account reload', () async {
     final rust = FakeVotingRustApi();
     final activeAccountProvider =

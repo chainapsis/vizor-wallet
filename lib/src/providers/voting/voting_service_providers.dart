@@ -450,6 +450,15 @@ class VotingWalletSyncProgressTracker {
   }
 }
 
+/// Delay between wallet-readiness checks while a submission job waits to
+/// recover from a stalled wallet sync.
+///
+/// Longer than the in-session poll: this runs in the background for as long
+/// as the stall lasts, and nothing is waiting on it interactively.
+final votingWalletSyncRecoveryPollIntervalProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
 /// Checks whether wallet scan progress has reached a voting snapshot height.
 final votingWalletSyncReadinessCheckerProvider =
     Provider<VotingWalletSyncReadinessChecker>((ref) {
