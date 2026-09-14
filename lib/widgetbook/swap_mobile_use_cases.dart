@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:go_router/go_router.dart';
 
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
@@ -1051,6 +1052,22 @@ class _SwapMobileRouterHarnessState extends State<_SwapMobileRouterHarness> {
                 ? widget.screen
                 : _SwapMobileRoutePlaceholder(label: path),
           ),
+        GoRoute(
+          path: '/send/keystone/scan',
+          builder: (context, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Signature scanning is unavailable in this preview.'),
+                AppButton(
+                  // No response means the signing overlay never broadcasts.
+                  onPressed: () => context.pop(),
+                  child: const Text('Back to QR'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1616,6 +1633,9 @@ Widget swapModalControlsFixture({
 Widget _swapActivityScope({required SwapState state, required Widget child}) {
   return ProviderScope(
     overrides: [
+      swapHardwareSigningServiceProvider.overrideWithValue(
+        _SwapMobileKeystoneSigningService(),
+      ),
       swapStateProvider.overrideWith(() => _SwapMobilePreviewNotifier(state)),
       accountProvider.overrideWith(_SwapActivityAccountNotifier.new),
       addressBookProvider.overrideWith(_SwapMobileAddressBookNotifier.new),

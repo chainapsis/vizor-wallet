@@ -1277,6 +1277,54 @@ void _swapChunk3GalleryTests() {
     await disposeTree(tester);
   });
 
+  testWidgets('activity hardware deposit isolates signing, scan and cancel', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildSwapActivityDetailGalleryCase,
+      knobs: {
+        ...desktop,
+        'Status': swapActivityStatusCaseLabel(
+          SwapActivityStatusCase.awaitingDeposit,
+        ),
+        'Hardware account': 'true',
+      },
+    );
+    Future<void> advance() async {
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await advance();
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.text('Deposit ZEC'));
+      await advance();
+      expect(
+        tester
+            .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+            .phase,
+        KeystoneSigningModalPhase.ready,
+      );
+      await tester.tap(find.text('Get signature'));
+      await advance();
+      expect(
+        find.text('Signature scanning is unavailable in this preview.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Back to QR'));
+      await advance();
+      expect(find.text('Get signature'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await advance();
+      expect(find.byType(KeystoneSigningModal), findsNothing);
+      expect(find.text('Deposit ZEC'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await disposeTree(tester);
+  });
+
   testWidgets('swap activity detail covers mode and layout', (tester) async {
     await expectKnobOptionsRenderDistinctly(
       tester,
