@@ -43,6 +43,7 @@ import '../src/features/send/widgets/send_status_content_view.dart';
 import '../src/features/send/widgets/send_verify_address_overlay.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
+import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_display_progress_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/wallet_provider.dart';
@@ -266,6 +267,9 @@ Widget _sendScreenScope({
       appLayoutProvider.overrideWith(_SendPreviewLayoutNotifier.new),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       wbSidebarActions,
+      receiveAddressServiceProvider.overrideWithValue(
+        const _SendPreviewReceiveAddressService(),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         _SendPreviewAddressBookRepository(contacts),
       ),
@@ -293,6 +297,39 @@ Widget _sendScreenScope({
     ],
     child: child,
   );
+}
+
+/// Address operations stay inside the seeded accounts, including the inactive
+/// account whose address is not cached in AccountState.
+class _SendPreviewReceiveAddressService implements ReceiveAddressService {
+  const _SendPreviewReceiveAddressService();
+
+  @override
+  String getCachedTransparentAddress(String accountUuid) =>
+      accountUuid == _ownAccount.uuid
+          ? kSendScreenFixtureTransparentOwnAccountAddress
+          : kSendScreenFixtureTransparentAddress;
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async => accountUuid == _ownAccount.uuid
+      ? kSendScreenFixtureOwnAccountAddress
+      : kSendScreenFixtureAddress;
+
+  @override
+  Future<String> loadTransparentReceiveAddress({
+    required String accountUuid,
+  }) async => getCachedTransparentAddress(accountUuid);
+
+  @override
+  Future<String> reserveOrchardAddress({required String accountUuid}) =>
+      loadShieldedAddress(accountUuid: accountUuid);
+
+  @override
+  Future<String> renewShieldedAddress({required String accountUuid}) =>
+      loadShieldedAddress(accountUuid: accountUuid);
 }
 
 /// Router the desktop send screens need: `AppMainSidebar` reads

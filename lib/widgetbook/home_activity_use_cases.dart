@@ -248,9 +248,6 @@ Widget homeMobileFixture({
         const _HomeVotingConfigSourceStore(),
       ),
       migrationSendGateProvider.overrideWithValue(sendBlockedByMigration),
-      receiveAddressServiceProvider.overrideWithValue(
-        const _HomeReceiveAddressService(),
-      ),
     ],
     child: _HomeMobileFrame(
       constrainToDesignSize: frame == HomeMobileFrame.phone,
@@ -286,6 +283,9 @@ List<Override> _homeOverrides({
   return [
     appLayoutProvider.overrideWith(_HomeNoOpLayoutNotifier.new),
     wbSidebarActions,
+    receiveAddressServiceProvider.overrideWithValue(
+      const _HomeReceiveAddressService(),
+    ),
     transparentShieldingRunnerProvider.overrideWithValue(
       ({required ref, required accountUuid, logContext = 'Preview'}) async =>
           _homeShieldPendingResult,

@@ -12,6 +12,7 @@ import 'package:zcash_wallet/widgetbook/gallery/send_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gallery/swap_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gallery/pay_gallery.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
+import 'package:zcash_wallet/widgetbook/send_screen_use_cases.dart';
 import 'support/wb_gallery_harness.dart';
 
 void main() {
@@ -50,6 +51,90 @@ void main() {
     'Swap detail': buildActivitySwapDetailScreenGalleryCase,
   };
   for (final surface in surfaces.entries) {
+    if (const [
+      'Home',
+      'Activity',
+      'Transaction detail',
+      'Swap detail',
+      'Send',
+    ].contains(surface.key)) {
+      testWidgets(
+        '${surface.key} copies inactive and active fixture addresses',
+        (tester) async {
+          final copied = <String>[];
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async {
+              if (call.method == 'Clipboard.setData') {
+                copied.add((call.arguments as Map)['text'] as String);
+              }
+              return null;
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
+          );
+          await pumpUseCase(
+            tester,
+            surface.value,
+            knobs: {'Layout': wbLayoutLabel(WbLayout.desktop)},
+          );
+          for (var i = 0; i < 8; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          final sidebar = find.byType(AppMainSidebar);
+          final container = ProviderScope.containerOf(
+            tester.element(sidebar),
+            listen: false,
+          );
+          final before = container.read(accountProvider);
+          expect(before.value!.accounts.length, greaterThan(1));
+          final copyButton = find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics &&
+                widget.properties.label == 'Copy shielded address',
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('sidebar_accounts_button')),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          for (final account in before.value!.accounts.where(
+            (account) => account.uuid != before.value!.activeAccountUuid,
+          )) {
+            await tester.tap(
+              find.descendant(
+                of: find.byKey(
+                  ValueKey('sidebar_account_popover_row_${account.uuid}'),
+                ),
+                matching: copyButton,
+              ),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+            expect(
+              copied.last,
+              surface.key == 'Send'
+                  ? (account.name == 'Savings'
+                        ? kSendScreenFixtureOwnAccountAddress
+                        : kSendScreenFixtureAddress)
+                  : 'u1widgetbookhomeaddress',
+            );
+          }
+          expect(find.text('Shielded address copied'), findsOneWidget);
+          await tester.tap(
+            find.byKey(const ValueKey('sidebar_accounts_button')),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          await tester.tap(find.descendant(of: sidebar, matching: copyButton));
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(copied.last, before.value!.activeAddress);
+          expect(copied.length, before.value!.accounts.length);
+          expect(container.read(accountProvider), same(before));
+          expect(tester.takeException(), isNull);
+          await disposeTree(tester);
+        },
+      );
+    }
     for (final action in {
       'Pay': '/pay',
       'Vote': '/voting',
