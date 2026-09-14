@@ -43,6 +43,42 @@ final votingParticipationClientProvider = Provider((ref) {
   );
 });
 
+/// Reconciles SDK-owned confirmations without changing the voting outcome.
+/// Register before the first await so deletion/reset cannot race cache writes.
+Future<void> refreshLocalVotingParticipation(
+  Ref ref,
+  rust.ApiVotingRoundContext context, {
+  required bool Function() isCurrent,
+}) async {
+  if (!ref.mounted || !isCurrent()) return;
+  final registry = ref.read(votingShareTrackingRegistryProvider);
+  final source = ref.read(votingConfigSourceProvider).value?.sourceUrl;
+  final network = ref.read(votingRpcEndpointConfigProvider).networkName;
+  final release = registry.beginBackgroundWork(
+    accountUuid: context.accountUuid,
+  );
+  if (release == null) return;
+  bool current() =>
+      ref.mounted &&
+      isCurrent() &&
+      !registry.isQuiesced(context.accountUuid) &&
+      ref.read(votingConfigSourceProvider).value?.sourceUrl == source &&
+      ref.read(votingRpcEndpointConfigProvider).networkName == network &&
+      !ref.read(appSecurityProvider).requiresUnlock;
+  try {
+    if (!current()) return;
+    await ref
+        .read(votingParticipationClientProvider)
+        .refreshLocal(context, isCurrent: current);
+  } catch (_) {
+    // The SDK confirmation remains authoritative. Reentry retries locally;
+    // never expose candidate identifiers or turn an accepted vote into failure.
+    if (current()) votingHomeTrace('participation.local-refresh.deferred');
+  } finally {
+    release();
+  }
+}
+
 final votingParticipationProvider = Provider(
   (ref) => VotingParticipationCoordinator(ref),
 );
@@ -135,13 +171,6 @@ class VotingParticipationCoordinator {
     for (final round in list.rounds) {
       if (epoch != _epoch || isHomeCurrent?.call() == false) return;
       if (!showTest && isHiddenTestVotingRoundTitle(round.title)) continue;
-      final fact = cache.fact(
-        votingHomeFactKey(network, list.fingerprint, account, round.roundId),
-      );
-      if ((fact.progress == VotingHomeProgress.inProgress ||
-          fact.progress == VotingHomeProgress.completed)) {
-        continue;
-      }
       if (!ref.mounted || ref.read(appSecurityProvider).requiresUnlock) return;
       if (votingPollListStatus(round.status) != VotingPollListStatus.active) {
         continue;
@@ -233,9 +262,9 @@ class VotingParticipationCoordinator {
             }
             if (!force &&
                 !snapshotChanged &&
-                (fact.hasCheckedParticipation ||
-                    fact.progress == VotingHomeProgress.completed ||
-                    fact.progress == VotingHomeProgress.inProgress)) {
+                fact.hasCheckedParticipation &&
+                fact.progress != VotingHomeProgress.completed &&
+                fact.progress != VotingHomeProgress.inProgress) {
               return;
             }
           }
@@ -261,9 +290,9 @@ class VotingParticipationCoordinator {
           }
           if (!force &&
               !snapshotChanged &&
-              (currentFact.hasCheckedParticipation ||
-                  currentFact.progress == VotingHomeProgress.inProgress ||
-                  currentFact.progress == VotingHomeProgress.completed)) {
+              currentFact.hasCheckedParticipation &&
+              currentFact.progress != VotingHomeProgress.inProgress &&
+              currentFact.progress != VotingHomeProgress.completed) {
             return;
           }
           final detailsKey =
@@ -297,6 +326,7 @@ class VotingParticipationCoordinator {
           ).map((p) => p.id).toList();
           // Durable recovery is independent of note inspection and its RPCs.
           // Empty proposal sets cannot establish that the round is completed.
+          var reconcileLocalOnly = false;
           if (localProposalIds.isNotEmpty) {
             final localPlan = await ref
                 .read(votingRecoveryServiceProvider)
@@ -323,9 +353,7 @@ class VotingParticipationCoordinator {
               await cache.recordPlan(factKey, localPlan);
               if (!current()) return;
               if (!force) {
-                _failed.remove(key);
-                _pendingDetails.remove(detailsKey);
-                return;
+                reconcileLocalOnly = true;
               }
             }
           }
@@ -368,6 +396,25 @@ class VotingParticipationCoordinator {
             maxRealNotesPerBundle: null,
             pirLayout: config.pirLayout,
           );
+          if (reconcileLocalOnly) {
+            // Completed/in-progress plans still own Home visibility. Repair
+            // their note cache locally instead of issuing participation RPCs.
+            await ref
+                .read(votingParticipationClientProvider)
+                .refreshLocal(
+                  context,
+                  isCurrent: () =>
+                      current() &&
+                      identical(ref.read(votingConfigProvider).value, config),
+                );
+            if (current()) {
+              _failed.remove(key);
+              // Keep the authenticated context for local reentry during a
+              // fleet outage; a changed config fingerprint uses a new key.
+              _pendingDetails[detailsKey] = details;
+            }
+            return;
+          }
           votingHomeTrace(
             'participation.check.start home=${isHomeCurrent != null} force=$force snapshot=${details.snapshotHeight}',
           );

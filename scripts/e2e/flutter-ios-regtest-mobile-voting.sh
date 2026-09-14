@@ -10,5 +10,5 @@ require_cmd xcrun
 UDID="$(pick_simulator)"
 FLUTTER_DEVICE="$UDID" \
 VIZOR_FORM_FACTOR=mobile \
-E2E_VOTING_TEST_FILE=integration_test/regtest_mobile_voting_test.dart \
+E2E_VOTING_TEST_FILE="${E2E_VOTING_TEST_FILE:-integration_test/regtest_mobile_voting_test.dart}" \
   exec "$ROOT_DIR/scripts/e2e/flutter-macos-regtest-voting.sh"

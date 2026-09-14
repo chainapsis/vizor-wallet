@@ -10,6 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
+import 'package:zcash_wallet/src/services/voting/voting_rust_exception.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -27,7 +30,6 @@ import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_sc
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
-import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
@@ -39,10 +41,12 @@ import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'fake_rust_api_shapes.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/api/voting_session.dart' as rust_session;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
@@ -54,18 +58,18 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
     as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
-    as rust_wire;
+import 'fake_rust_wire_shapes.dart' as rust_wire;
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
-import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
+import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
-import 'tx_event_json_test_utils.dart';
+import 'voting_retry_recovery_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
+import 'fake_round_recovery_state.dart';
 
 void main() {
   setUpAll(() {
@@ -73,6 +77,299 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+
+  testWidgets('authority ring follows the delegation proof, then the chain', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(
+            _roundId,
+            accountUuid: 'account-1',
+          ),
+        ),
+      ),
+    );
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: [
+        for (var index = 0; index < 3; index++)
+          rust_wire.NextStepView(
+            // Bundle 2 already has a submission. It must be counted before
+            // its first progress event, even though it needs no signature.
+            kind: index == 2
+                ? rust_frb_types.NextStepKind.advanceDelegation
+                : rust_frb_types.NextStepKind.delegate,
+            bundleIndex: index,
+            proposalId: 0,
+            choice: 0,
+            shareIndex: 0,
+          ),
+      ],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: false,
+    );
+    final progress = <int, VotingSessionProgress>{};
+    Future<void> check(String? detail, double? value) async {
+      updates.add(
+        VotingSessionState(
+          roundId: _roundId,
+          accountUuid: 'account-1',
+          phase: VotingSessionPhase.delegating,
+          roundPlan: plan,
+          delegationProgress: progress,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      if (detail == null) {
+        expect(find.textContaining('bundles proved'), findsNothing);
+      } else {
+        expect(find.text(detail), findsOneWidget);
+      }
+      expect(
+        tester
+            .widget<CircularProgressIndicator>(
+              find.byType(CircularProgressIndicator),
+            )
+            .value,
+        value == null ? isNull : closeTo(value, 0.0001),
+      );
+      expect(find.text('submission confirmed route'), findsNothing);
+    }
+
+    // Nothing is proved yet, so there is no count worth showing: `0 of 3`
+    // would sit there for the whole first proof and read as a stalled wallet.
+    // The ring is what moves during it.
+    await check(null, 0);
+    // The proof is nearly all of this step's wall clock, so the ring has to
+    // move with it. Under the combined envelope the step ends at
+    // `proofComplete` and never confirms, so a confirmation-only ring would
+    // sit at zero for the whole delegation and then jump.
+    progress[0] = const VotingSessionProgress(
+      phase: VotingProgressPhase.proofProgress,
+      proofProgress: 1,
+    );
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.proofProgress,
+      proofProgress: 0.7,
+    );
+    await check('1 of 3 bundles proved', (0.9 + 0.63) / 3);
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.waitingForExistingProof,
+      proofProgress: 0.7,
+    );
+    await check(
+      'Reusing an in-progress proof — 1 of 3 bundles proved',
+      (0.9 + 0.63) / 3,
+    );
+    for (var index = 0; index < 3; index++) {
+      progress[index] = const VotingSessionProgress(
+        phase: VotingProgressPhase.payloadReady,
+        proofProgress: 1,
+      );
+    }
+    await check(
+      'Waiting for submission and confirmation — 3 of 3 bundles proved',
+      0.95,
+    );
+    progress[2] = const VotingSessionProgress(
+      phase: VotingProgressPhase.submitted,
+    );
+    await check(
+      'Waiting for submission and confirmation — 3 of 3 bundles proved',
+      0.95,
+    );
+    // A confirmation still outranks a proof: only it fills a bundle's share of
+    // the ring.
+    progress[2] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check(
+      'Waiting for submission and confirmation — 3 of 3 bundles proved',
+      (0.95 + 0.95 + 1) / 3,
+    );
+    progress[0] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check(
+      'Waiting for submission and confirmation — 3 of 3 bundles proved',
+      (0.95 + 1 + 1) / 3,
+    );
+    progress[1] = const VotingSessionProgress(
+      phase: VotingProgressPhase.confirmed,
+    );
+    await check('Finalizing delegation — 3 of 3 bundles proved', null);
+    updates.add(
+      VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.castingVotes,
+        roundPlan: plan,
+        delegationProgress: progress,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('bundles proved'), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+  });
+
+  testWidgets('the ballot row holds its ground when the session falls back', (
+    tester,
+  ) async {
+    // The session legitimately reports a pre-vote phase and a collapsed tally
+    // while a vote is in flight: the run-scoped tally has no baseline yet, a
+    // sibling bundle still owes a signature, a plan refresh names `delegate`.
+    // On testnet that alternated the active step and ran "N of M" up and
+    // down. The screen shows the high-water mark instead.
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(
+            _roundId,
+            accountUuid: 'account-1',
+          ),
+        ),
+      ),
+    );
+
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: true,
+    );
+    // Confirmed on the chain, so shares are going out and the delivered line is
+    // the row's copy. A vote merely dispatched is still waiting for its block,
+    // and that stage shows no count.
+    final voteProgress = <VotingVoteKey, VotingSessionProgress>{
+      for (var proposalId = 1; proposalId <= 5; proposalId++)
+        VotingVoteKey(
+          bundleIndex: 0,
+          proposalId: proposalId,
+        ): VotingSessionProgress(
+          phase: VotingProgressPhase.confirmed,
+          bundleIndex: 0,
+          proposalId: proposalId,
+          proofProgress: 1,
+        ),
+    };
+
+    Future<void> push(VotingSessionState state) async {
+      updates.add(state);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    await push(
+      VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.castingVotes,
+        roundPlan: plan,
+        voteProgress: voteProgress,
+        voteSubmissionCompletedCount: 2,
+        voteSubmissionTotalCount: 5,
+        voteSubmissionProgress: 0.6,
+      ),
+    );
+    expect(find.text('Delivering your responses'), findsOneWidget);
+
+    // The fallback: no phase at the ballot, no tally, no per-vote events.
+    await push(
+      VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.readyToDelegate,
+        roundPlan: plan,
+      ),
+    );
+    // The line is the stage in words, so a stage that fell back to proving or
+    // to the chain wait would say so here.
+    expect(find.text('Delivering your responses'), findsOneWidget);
+    expect(find.text('Casting votes'), findsNothing);
+    expect(find.text('Waiting for chain confirmation'), findsNothing);
+    expect(find.textContaining('bundles proved'), findsNothing);
+
+    // And it still moves forward from there.
+    await push(
+      VotingSessionState(
+        roundId: _roundId,
+        accountUuid: 'account-1',
+        phase: VotingSessionPhase.submittingShares,
+        roundPlan: plan,
+        voteProgress: voteProgress,
+        voteSubmissionCompletedCount: 4,
+        voteSubmissionTotalCount: 5,
+        voteSubmissionProgress: 0.9,
+      ),
+    );
+    expect(find.text('Delivering your responses'), findsOneWidget);
+  });
 
   testWidgets('status screen requires software account without mnemonic', (
     tester,
@@ -268,12 +565,12 @@ void main() {
 
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationWorkflows: const [
-          rust_frb_types.DelegationRecoveryView(
+        delegationWorkflows: [
+          FakeDelegationRecovery(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.confirmed,
+            phase: rust_wire.WorkflowPhaseView.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: 0,
+            vanLeafPosition: BigInt.zero,
           ),
         ],
       )
@@ -282,7 +579,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -361,6 +658,16 @@ void main() {
     expect(rust.eligibilityCheckCalls, 1);
   });
 
+  testWidgets('retry leaves the error screen before asynchronous recovery', (
+    tester,
+  ) async {
+    await expectVotingRetryClearsError(
+      tester,
+      screenBuilder: (roundId) => VotingStatusView(roundId: roundId),
+      surfaceSize: const Size(1512, 982),
+    );
+  });
+
   testWidgets('status screen retry keeps setup errors specific', (
     tester,
   ) async {
@@ -433,38 +740,13 @@ void main() {
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
     });
-    final pendingShare = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List.fromList(List.filled(32, 1)),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.zero,
-      createdAt: BigInt.one,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(
-        shareDelegations: [pendingShare],
-        unconfirmedShareDelegations: [pendingShare],
-      );
-    final resumePlan = await VotingRecoveryService(api: recoveryApi)
-        .loadResumePlan(
-          dbPath: 'wallet.db',
-          accountUuid: 'account-1',
-          roundId: _roundId,
-        );
     final completedRoundPlan = apiRoundPlan(
       roundId: _roundId,
       pendingRecovery: true,
       blockingRecovery: false,
       nextSteps: const [
         rust_wire.NextStepView(
-          kind: 'confirm_share',
+          kind: rust_frb_types.NextStepKind.confirmShare,
           bundleIndex: 0,
           proposalId: 1,
           choice: 0,
@@ -491,7 +773,6 @@ void main() {
               accountUuid: 'account-1',
               phase: VotingSessionPhase.done,
               roundPlan: completedRoundPlan,
-              resumePlan: resumePlan,
               eligibleWeightZatoshi: BigInt.from(100),
             ),
           ),
@@ -625,81 +906,6 @@ void main() {
     expect(find.text('Voting power'), findsOneWidget);
     expect(find.text('0.000001 ZEC'), findsOneWidget);
     expect(notifier.refreshCalls, 2);
-  });
-
-  testWidgets('submitted route leaves vote-share status in the poll menu', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1512, 982));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-    final scheduled = DateTime.now().add(const Duration(hours: 3));
-    final share = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.from(
-        scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
-      ),
-      createdAt: BigInt.one,
-    );
-    final completedRoundPlan = apiRoundPlan(
-      roundId: _roundId,
-      pendingRecovery: true,
-      nextSteps: const [],
-      openProposals: Uint32List(0),
-      allDecided: true,
-      completedVoteArtifact: true,
-      completedForDisplay: true,
-    );
-    final resumePlan = const VotingRecoveryService().buildResumePlan(
-      _recoveryState(
-        shareDelegations: [share],
-        unconfirmedShareDelegations: [share],
-      ),
-    );
-    final container = _statusContainer(
-      accountOverride: _MnemonicAccountNotifier.new,
-      overrides: [
-        votingSessionProvider(_roundId).overrideWith(
-          () => _StaticVotingSessionNotifier(
-            VotingSessionState(
-              roundId: _roundId,
-              accountUuid: 'account-1',
-              round: VotingRoundDetails.fromStatus(
-                VotingRoundStatus.fromJson(_roundStatusJson()),
-              ),
-              phase: VotingSessionPhase.done,
-              resumePlan: resumePlan,
-              roundPlan: completedRoundPlan,
-              eligibleWeightZatoshi: BigInt.from(100),
-            ),
-          ),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _submissionHarness(),
-      ),
-    );
-    await _pumpUntilFound(tester, find.text('Submission confirmed!'));
-
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsNothing,
-    );
   });
 
   testWidgets(
@@ -862,10 +1068,10 @@ void main() {
       final recoveryApi = _MutableVotingRecoveryApi()
         ..state = _recoveryState(
           bundleCount: 1,
-          delegationWorkflows: const [
-            rust_frb_types.DelegationRecoveryView(
+          delegationWorkflows: [
+            FakeDelegationRecovery(
               bundleIndex: 0,
-              phase: 'submitted_delegation',
+              phase: rust_frb_types.WorkflowPhaseView.submittedDelegation,
               txHash: 'delegation-tx',
               vanLeafPosition: null,
             ),
@@ -876,7 +1082,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'poll_delegation',
+              kind: rust_frb_types.NextStepKind.advanceDelegation,
               bundleIndex: 0,
               proposalId: 0,
               choice: 0,
@@ -886,11 +1092,12 @@ void main() {
           openProposals: Uint32List.fromList(const [1]),
           allDecided: false,
         );
+      final rust = _VotingStatusRustApi(recoveryApi);
       final container = _statusContainer(
         http: http,
         accountOverride: _MnemonicAccountNotifier.new,
         recoveryApi: recoveryApi,
-        rust: _VotingStatusRustApi(recoveryApi),
+        rust: rust,
         hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
       );
       addTearDown(container.dispose);
@@ -912,15 +1119,8 @@ void main() {
         findsOne,
       );
       expect(find.text('submission confirmed route'), findsNothing);
-      expect(
-        http.requests.any(
-          (request) =>
-              request.method == 'GET' &&
-              request.uri.path == '/shielded-vote/v1/tx/delegation-tx',
-        ),
-        isTrue,
-      );
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.chainDelegationAdvanceCalls, 1);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -953,9 +1153,9 @@ void main() {
       ..state = _recoveryState(
         bundleCount: 2,
         delegationWorkflows: const [
-          rust_frb_types.DelegationRecoveryView(
+          FakeDelegationRecovery(
             bundleIndex: 0,
-            phase: 'submitted_delegation',
+            phase: rust_frb_types.WorkflowPhaseView.submittedDelegation,
             txHash: 'delegation-tx',
             vanLeafPosition: null,
           ),
@@ -966,14 +1166,14 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'poll_delegation',
+            kind: rust_frb_types.NextStepKind.advanceDelegation,
             bundleIndex: 0,
             proposalId: 0,
             choice: 0,
             shareIndex: 0,
           ),
           rust_wire.NextStepView(
-            kind: 'delegate',
+            kind: rust_frb_types.NextStepKind.delegate,
             bundleIndex: 1,
             proposalId: 0,
             choice: 0,
@@ -1027,7 +1227,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'confirm_share',
+            kind: rust_frb_types.NextStepKind.confirmShare,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -1037,10 +1237,11 @@ void main() {
         openProposals: Uint32List.fromList(const [2]),
         allDecided: false,
       );
+    final rust = _VotingStatusRustApi(recoveryApi);
     final container = _statusContainer(
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
+      rust: rust,
     );
     addTearDown(container.dispose);
 
@@ -1055,7 +1256,7 @@ void main() {
 
     expect(find.text('Choose at least one vote before submitting.'), findsOne);
     expect(find.text('submission confirmed route'), findsNothing);
-    expect(recoveryApi.ballotIntents, isEmpty);
+    expect(rust.sessionBallotIntents, isEmpty);
   });
 
   testWidgets(
@@ -1068,7 +1269,7 @@ void main() {
 
       final shareNullifier = Uint8List.fromList(List.filled(32, 1));
       final shareId = List.filled(32, '01').join();
-      final share = rust_frb_types.ShareDelegationRecordView(
+      final share = FakeShareDelegationRecord(
         roundId: _roundId,
         bundleIndex: 0,
         proposalId: 1,
@@ -1077,19 +1278,19 @@ void main() {
         ambiguousUrls: const [],
         targetCount: 1,
         nullifier: shareNullifier,
-        phase: 'submitted_share',
+        phase: rust_frb_types.WorkflowPhaseView.submittedShare,
         confirmed: false,
         submitAt: BigInt.zero,
         createdAt: BigInt.zero,
       );
       final recoveryApi = _MutableVotingRecoveryApi()
         ..state = _recoveryState(
-          delegationWorkflows: const [
-            rust_frb_types.DelegationRecoveryView(
+          delegationWorkflows: [
+            FakeDelegationRecovery(
               bundleIndex: 0,
-              phase: VotingWorkflowPhase.confirmed,
+              phase: rust_wire.WorkflowPhaseView.confirmed,
               txHash: 'delegation-0',
-              vanLeafPosition: 0,
+              vanLeafPosition: BigInt.zero,
             ),
           ],
           shareDelegations: [share],
@@ -1100,7 +1301,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'confirm_share',
+              kind: rust_frb_types.NextStepKind.confirmShare,
               bundleIndex: 0,
               proposalId: 1,
               choice: 0,
@@ -1129,11 +1330,12 @@ void main() {
           ..['https://voting-b.example/shielded-vote/v1/share-status/$_roundId/$shareId'] =
               {'status': 'confirmed'},
       );
+      final rust = _VotingStatusRustApi(recoveryApi);
       final container = _statusContainer(
         http: http,
         accountOverride: _MnemonicAccountNotifier.new,
         recoveryApi: recoveryApi,
-        rust: _VotingStatusRustApi(recoveryApi),
+        rust: rust,
       );
       addTearDown(container.dispose);
 
@@ -1151,7 +1353,7 @@ void main() {
         find.text('Choose at least one vote before submitting.'),
         findsNothing,
       );
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -1165,7 +1367,7 @@ void main() {
 
       final shareNullifier = Uint8List.fromList(List.filled(32, 1));
       final shareId = List.filled(32, '01').join();
-      final share = rust_frb_types.ShareDelegationRecordView(
+      final share = FakeShareDelegationRecord(
         roundId: _roundId,
         bundleIndex: 0,
         proposalId: 1,
@@ -1174,19 +1376,19 @@ void main() {
         ambiguousUrls: const [],
         targetCount: 1,
         nullifier: shareNullifier,
-        phase: 'submitted_share',
+        phase: rust_frb_types.WorkflowPhaseView.submittedShare,
         confirmed: false,
         submitAt: BigInt.zero,
         createdAt: BigInt.zero,
       );
       final recoveryApi = _MutableVotingRecoveryApi()
         ..state = _recoveryState(
-          delegationWorkflows: const [
-            rust_frb_types.DelegationRecoveryView(
+          delegationWorkflows: [
+            FakeDelegationRecovery(
               bundleIndex: 0,
-              phase: VotingWorkflowPhase.confirmed,
+              phase: rust_wire.WorkflowPhaseView.confirmed,
               txHash: 'delegation-0',
-              vanLeafPosition: 0,
+              vanLeafPosition: BigInt.zero,
             ),
           ],
           shareDelegations: [share],
@@ -1197,7 +1399,7 @@ void main() {
           pendingRecovery: true,
           nextSteps: const [
             rust_wire.NextStepView(
-              kind: 'confirm_share',
+              kind: rust_frb_types.NextStepKind.confirmShare,
               bundleIndex: 0,
               proposalId: 1,
               choice: 0,
@@ -1253,7 +1455,7 @@ void main() {
       expect(rust.eligibilityCheckCalls, 1);
       expect(rust.setupDelegationBundleCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, 0);
-      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.sessionBallotIntents, isEmpty);
     },
   );
 
@@ -1298,12 +1500,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationWorkflows: const [
-          rust_frb_types.DelegationRecoveryView(
+        delegationWorkflows: [
+          FakeDelegationRecovery(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.confirmed,
+            phase: rust_wire.WorkflowPhaseView.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: 0,
+            vanLeafPosition: BigInt.zero,
           ),
         ],
       )
@@ -1312,7 +1514,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -2202,327 +2404,6 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
-  testWidgets('proposal detail keeps live status despite a stale error', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1152, 768));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-    final round = _roundStatusJson();
-    final http = FakeVotingHttpClient(
-      responses: _votingHttpResponses()
-        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
-    );
-    final scheduled = DateTime.now().add(const Duration(hours: 4));
-    final share = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.from(
-        scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
-      ),
-      createdAt: BigInt.one,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(
-        shareDelegations: [share],
-        unconfirmedShareDelegations: [share],
-      )
-      ..roundPlan = apiRoundPlan(
-        roundId: _roundId,
-        pendingRecovery: true,
-        nextSteps: const [],
-        openProposals: Uint32List.fromList(const [1]),
-        allDecided: true,
-        completedVoteArtifact: true,
-        completedForDisplay: true,
-        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
-          choices: const [
-            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
-          ],
-          votedAt: BigInt.from(1717260000),
-        ),
-      );
-    final confirmedShare = rust_wire.ShareDelegationRecordView(
-      roundId: share.roundId,
-      bundleIndex: share.bundleIndex,
-      proposalId: share.proposalId,
-      shareIndex: share.shareIndex,
-      sentToUrls: share.sentToUrls,
-      ambiguousUrls: share.ambiguousUrls,
-      targetCount: share.targetCount,
-      nullifier: share.nullifier,
-      phase: VotingWorkflowPhase.confirmed,
-      confirmed: true,
-      submitAt: share.submitAt,
-      createdAt: share.createdAt,
-    );
-    final trackedResumePlan = const VotingRecoveryService().buildResumePlan(
-      _recoveryState(shareDelegations: [confirmedShare]),
-    );
-    final rust = _VotingStatusRustApi(recoveryApi);
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    final container = _statusContainer(
-      http: http,
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-      rust: rust,
-      overrides: [
-        votingSubmissionJobSessionProvider(key).overrideWith((ref) {
-          return ref
-              .watch(votingSessionProvider(_roundId))
-              .whenData(
-                (state) => state.copyWith(
-                  phase: VotingSessionPhase.done,
-                  resumePlan: trackedResumePlan,
-                  error: const VotingSessionError(
-                    message: 'temporary eligibility refresh failed',
-                  ),
-                ),
-              );
-        }),
-      ],
-    );
-    addTearDown(container.dispose);
-    // Exercise the cached-provider path where the manual listener fires from
-    // initState, before inherited route dependencies may be established.
-    await container.read(votingSessionProvider(_roundId).future);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _proposalHarness(),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await _pumpUntilCondition(tester, () => rust.shareTrackingPassCalls == 1);
-
-    expect(find.textContaining('Voted'), findsOneWidget);
-    expect(find.text('Submission status'), findsOneWidget);
-    expect(find.text('1 of 1 share submitted'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('voting_share_status_complete_icon')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('voting_share_status_progress')),
-      findsNothing,
-    );
-    expect(
-      tester
-          .getTopLeft(find.byKey(const ValueKey('voting_share_status_card')))
-          .dy,
-      greaterThan(
-        tester.getBottomLeft(find.byType(VotingProposalCard).last).dy,
-      ),
-    );
-    expect(find.text('temporary eligibility refresh failed'), findsNothing);
-
-    // Rebuilds do not turn the user-initiated refresh into another poll loop.
-    await tester.pump();
-    expect(rust.shareTrackingPassCalls, 1);
-
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-    expect(rust.shareTrackingPassCalls, 1);
-  });
-
-  testWidgets('proposal detail removes share status when the deadline passes', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1152, 768));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-    final deadline = DateTime.now().add(const Duration(seconds: 10));
-    final deadlineSeconds =
-        deadline.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond;
-    final round = _roundStatusJson()..['vote_end_time'] = deadlineSeconds;
-    final http = FakeVotingHttpClient(
-      responses: _votingHttpResponses()
-        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
-    );
-    final share = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.from(deadlineSeconds),
-      createdAt: BigInt.one,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(
-        shareDelegations: [share],
-        unconfirmedShareDelegations: [share],
-      )
-      ..roundPlan = apiRoundPlan(
-        roundId: _roundId,
-        pendingRecovery: true,
-        nextSteps: const [],
-        openProposals: Uint32List.fromList(const [1]),
-        allDecided: true,
-        completedVoteArtifact: true,
-        completedForDisplay: true,
-        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
-          choices: const [
-            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
-          ],
-          votedAt: BigInt.from(1717260000),
-        ),
-      );
-    final container = _statusContainer(
-      http: http,
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _proposalHarness(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsOneWidget,
-    );
-
-    await tester.pump(const Duration(seconds: 11));
-
-    expect(find.textContaining('Voted'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsNothing,
-    );
-  });
-
-  testWidgets('proposal detail uses the tracked share deadline', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1152, 768));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-    final nowSeconds =
-        DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond;
-    final cachedDeadlineSeconds = nowSeconds + 2;
-    final trackedDeadlineSeconds = nowSeconds + 10;
-    final cachedRound = _roundStatusJson()
-      ..['vote_end_time'] = cachedDeadlineSeconds;
-    final trackedRound = Map<String, dynamic>.of(cachedRound)
-      ..['vote_end_time'] = trackedDeadlineSeconds;
-    final http = FakeVotingHttpClient(
-      responses: _votingHttpResponses()
-        ..['/shielded-vote/v1/round/$_roundId'] = {'round': cachedRound},
-    );
-    final share = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.from(trackedDeadlineSeconds),
-      createdAt: BigInt.one,
-    );
-    final recoveryState = _recoveryState(
-      shareDelegations: [share],
-      unconfirmedShareDelegations: [share],
-    );
-    final resumePlan = const VotingRecoveryService().buildResumePlan(
-      recoveryState,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = recoveryState
-      ..roundPlan = apiRoundPlan(
-        roundId: _roundId,
-        pendingRecovery: true,
-        nextSteps: const [],
-        openProposals: Uint32List.fromList(const [1]),
-        allDecided: true,
-        completedVoteArtifact: true,
-        completedForDisplay: true,
-        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
-          choices: const [
-            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
-          ],
-          votedAt: BigInt.from(1717260000),
-        ),
-      );
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    final container = _statusContainer(
-      http: http,
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
-      overrides: [
-        votingSubmissionJobSessionProvider(key).overrideWithValue(
-          AsyncData(
-            VotingSessionState(
-              roundId: _roundId,
-              accountUuid: key.accountUuid,
-              round: VotingRoundDetails.fromStatus(
-                VotingRoundStatus.fromJson(trackedRound),
-              ),
-              resumePlan: resumePlan,
-              phase: VotingSessionPhase.done,
-            ),
-          ),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _proposalHarness(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsOneWidget,
-    );
-
-    await tester.pump(const Duration(seconds: 3));
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsOneWidget,
-    );
-
-    await tester.pump(const Duration(seconds: 8));
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsNothing,
-    );
-  });
-
   testWidgets('proposal detail shows long question descriptions in full', (
     tester,
   ) async {
@@ -2620,75 +2501,6 @@ void main() {
     expect(find.text('Confirm & submit'), findsNothing);
   });
 
-  testWidgets('proposal detail shows completed vote before eligibility loads', (
-    tester,
-  ) async {
-    final round = _roundStatusJson()..['status'] = 'pending';
-    final http = FakeVotingHttpClient(
-      responses: _votingHttpResponses()
-        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
-    );
-    final share = rust_wire.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.one,
-      createdAt: BigInt.one,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(
-        shareDelegations: [share],
-        unconfirmedShareDelegations: [share],
-      )
-      ..roundPlan = apiRoundPlan(
-        roundId: _roundId,
-        pendingRecovery: false,
-        nextSteps: const [],
-        openProposals: Uint32List.fromList(const [1]),
-        allDecided: true,
-        completedVoteArtifact: true,
-        completedForDisplay: true,
-        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
-          choices: const [
-            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
-          ],
-          votedAt: BigInt.from(1717260000),
-        ),
-      );
-    final rust = _PendingVotingEligibilityRustApi(recoveryApi);
-    addTearDown(rust.completeEligible);
-    final container = _statusContainer(
-      http: http,
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-      rust: rust,
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: _proposalHarness(),
-      ),
-    );
-    await _pumpUntilFound(tester, find.textContaining('Voted'));
-    await _pumpUntilCondition(tester, () => rust.eligibilityCheckCalls == 1);
-
-    expect(find.textContaining('Voted'), findsOneWidget);
-    expect(find.text('results route'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsNothing,
-    );
-  });
-
   testWidgets('proposal detail shows recovery before non-active redirect', (
     tester,
   ) async {
@@ -2703,7 +2515,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -3022,7 +2834,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -3144,149 +2956,6 @@ void main() {
 
     expect(find.text('Review your answers'), findsOneWidget);
     expect(find.textContaining('status account:'), findsNothing);
-  });
-
-  testWidgets('results screen renders flat tally rows as ZEC totals', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1152, 768));
-    addTearDown(() async {
-      await tester.binding.setSurfaceSize(null);
-    });
-
-    const optionDescription =
-        'Mint option explanation for detail screens only.';
-    const proposalDescription =
-        'This completed proposal description should remain fully visible on '
-        'the tally screen without an expansion control.';
-    final longRoundDescription = List.filled(
-      8,
-      'Completed poll description that should collapse behind the view more control.',
-    ).join(' ');
-    final round = _roundStatusJson()
-      ..['status'] = 'closed'
-      ..['summary'] = longRoundDescription
-      ..['proposals'] = [
-        _proposalJson(1, 'First proposal', ['Yes', 'No']),
-        {
-          'id': 2,
-          'title': 'Second proposal',
-          'description': proposalDescription,
-          'zip_number': 'ZIP 231',
-          'forum_url': 'https://forum.zcashcommunity.com/t/zip-231',
-          'options': [
-            {'index': 0, 'label': 'Mint', 'description': optionDescription},
-            {'index': 1, 'label': 'Burn'},
-          ],
-        },
-      ];
-    final http = FakeVotingHttpClient(
-      responses: _votingHttpResponses()
-        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
-        ..['/shielded-vote/v1/tally-results/$_roundId'] = {
-          'vote_round_id': _roundId,
-          'results': [
-            {'proposal_id': 1, 'total_value': 4},
-            {'proposal_id': 1, 'vote_decision': 1, 'total_value': 2},
-            {'proposal_id': 2, 'vote_decision': 0, 'total_value': 1},
-          ],
-        },
-    );
-    final confirmedTallyShare = rust_frb_types.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List(32),
-      phase: VotingWorkflowPhase.confirmed,
-      confirmed: true,
-      submitAt: BigInt.one,
-      createdAt: BigInt.one,
-    );
-    final missingTallyShare = rust_frb_types.ShareDelegationRecordView(
-      roundId: _roundId,
-      bundleIndex: 0,
-      proposalId: 1,
-      shareIndex: 1,
-      sentToUrls: const ['https://helper.example'],
-      ambiguousUrls: const [],
-      targetCount: 1,
-      nullifier: Uint8List.fromList(List.filled(32, 1)),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.two,
-      createdAt: BigInt.two,
-    );
-    final recoveryApi = _MutableVotingRecoveryApi()
-      ..state = _recoveryState(
-        votes: const [
-          rust_frb_types.VoteRecoveryView(
-            bundleIndex: 0,
-            proposalId: 1,
-            choice: 0,
-            phase: VotingWorkflowPhase.submittedVote,
-            hasCommitmentBundle: false,
-          ),
-        ],
-        shareDelegations: [confirmedTallyShare, missingTallyShare],
-        unconfirmedShareDelegations: [missingTallyShare],
-      );
-    final container = _statusContainer(
-      http: http,
-      accountOverride: _MnemonicAccountNotifier.new,
-      recoveryApi: recoveryApi,
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: _resultsHarness()),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Poll'), findsOneWidget);
-    expect(find.text(longRoundDescription), findsOneWidget);
-    expect(find.text('View more'), findsOneWidget);
-    await tester.tap(find.text('View more'));
-    await tester.pumpAndSettle();
-    expect(find.text('View less'), findsOneWidget);
-    expect(find.text('Results'), findsOneWidget);
-    expect(find.text('First proposal'), findsOneWidget);
-    expect(find.text('Yes'), findsOneWidget);
-    expect(find.text('0.50 ZEC'), findsOneWidget);
-    expect(find.text('No'), findsOneWidget);
-    expect(find.text('0.25 ZEC'), findsOneWidget);
-    expect(find.text('Total: 0.75 ZEC'), findsOneWidget);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('voting-result-card-1'))).width,
-      lessThanOrEqualTo(560),
-    );
-    expect(find.text('Voted: Yes'), findsOneWidget);
-    expect(find.text('Second proposal'), findsOneWidget);
-    expect(find.text(proposalDescription), findsOneWidget);
-    expect(find.text('ZIP-231'), findsOneWidget);
-    expect(find.text('Forum discussion'), findsOneWidget);
-    expect(find.text('Mint'), findsOneWidget);
-    expect(find.text(optionDescription), findsNothing);
-    expect(find.text('0.13 ZEC'), findsOneWidget);
-    expect(find.text('Burn'), findsOneWidget);
-    // Scope tally-row assertions to the results pane: the redesigned
-    // AppMainSidebar embedded by the screen now renders the active account
-    // balance, which is also "0.00 ZEC" for this zero-balance fixture.
-    expect(
-      find.descendant(
-        of: find.byType(VotingPaneScrollView),
-        matching: find.text('0.00 ZEC'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('voting_share_status_card')),
-      findsNothing,
-    );
-    expect(find.text('Vote shares'), findsNothing);
   });
 
   testWidgets('results screen keeps empty tallies visible as zero rows', (
@@ -3816,7 +3485,7 @@ void main() {
         pendingRecovery: true,
         nextSteps: const [
           rust_wire.NextStepView(
-            kind: 'cast_vote',
+            kind: rust_frb_types.NextStepKind.castVote,
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -4017,14 +3686,15 @@ void main() {
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _VotingStatusRustApi(
+      recoveryApi,
+      shareTrackingDelaySeconds: BigInt.one,
+    );
     final container = _statusContainer(
       http: http,
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(
-        recoveryApi,
-        shareTrackingDelaySeconds: BigInt.one,
-      ),
+      rust: rust,
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -4065,7 +3735,7 @@ void main() {
       find.text('Choose at least one vote before submitting.'),
       findsNothing,
     );
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
     expect(
       http.requests.any(
         (request) => request.uri.path.contains('/share-status/'),
@@ -4221,6 +3891,7 @@ void main() {
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _VotingStatusRustApi(recoveryApi);
     final container = _statusContainer(
       http: http,
       accountOverride: _HardwareAccountNotifier.new,
@@ -4228,7 +3899,7 @@ void main() {
       accountIsHardware: true,
       hardwareAccountUuids: const {'hardware-1'},
       recoveryApi: recoveryApi,
-      rust: _VotingStatusRustApi(recoveryApi),
+      rust: rust,
       hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
@@ -4268,15 +3939,8 @@ void main() {
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
-    expect(
-      http.requests.any(
-        (request) =>
-            request.method == 'POST' &&
-            request.uri.path == '/shielded-vote/v1/delegate-vote',
-      ),
-      isTrue,
-    );
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.chainDelegationAdvanceCalls, 1);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
   });
 
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
@@ -4407,15 +4071,8 @@ void main() {
         .read(votingSubmissionSessionProvider(key))
         .value;
     expect(submissionState?.eligibleWeightZatoshi, BigInt.from(100));
-    expect(
-      http.requests.any(
-        (request) =>
-            request.method == 'POST' &&
-            request.uri.path == '/shielded-vote/v1/delegate-vote',
-      ),
-      isTrue,
-    );
-    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
+    expect(rust.chainDelegationAdvanceCalls, 1);
+    expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
   });
 
   testWidgets('hardware status screen pages one memo for a large batch', (
@@ -4716,9 +4373,6 @@ ProviderContainer _statusContainer({
       votingWalletSyncPollIntervalProvider.overrideWithValue(Duration.zero),
       if (hotkeyStore != null)
         votingHotkeyStoreProvider.overrideWithValue(hotkeyStore),
-      votingTxConfirmationPollingProvider.overrideWithValue(
-        const VotingTxConfirmationPolling(attempts: 1, delay: Duration.zero),
-      ),
       ...overrides,
     ],
   );
@@ -5074,22 +4728,21 @@ Map<String, dynamic> _proposalJson(
   ],
 };
 
-rust_frb_types.RoundRecoveryStateView _recoveryState({
+FakeRoundRecoveryState _recoveryState({
   int bundleCount = 1,
-  List<rust_frb_types.DelegationRecoveryView> delegationWorkflows = const [],
-  List<rust_frb_types.DelegationRecoveryView> delegationTxHashes = const [],
-  List<rust_frb_types.VoteRecoveryView> votes = const [],
-  List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
-  List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.RecoverableCommitmentBundle> commitmentBundles = const [],
-  List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
-  List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
-  List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
-      const [],
+  List<FakeDelegationRecovery> delegationWorkflows = const [],
+  List<FakeDelegationRecovery> delegationTxHashes = const [],
+  List<FakeVoteRecovery> votes = const [],
+  List<FakeVoteRecovery> voteWorkflows = const [],
+  List<FakeVoteRecovery> voteTxHashes = const [],
+  List<FakeCommitmentBundle> commitmentBundles = const [],
+  List<FakeShareWorkflowRecovery> shareWorkflows = const [],
+  List<FakeShareDelegationRecord> shareDelegations = const [],
+  List<FakeShareDelegationRecord> unconfirmedShareDelegations = const [],
 }) {
-  final delegationByBundle = <int, rust_frb_types.DelegationRecoveryView>{
+  final delegationByBundle = <int, FakeDelegationRecovery>{
     for (final record in delegationWorkflows)
-      record.bundleIndex: rust_frb_types.DelegationRecoveryView(
+      record.bundleIndex: FakeDelegationRecovery(
         bundleIndex: record.bundleIndex,
         phase: record.phase,
         txHash: record.txHash,
@@ -5097,45 +4750,43 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
       ),
   };
   for (final record in delegationTxHashes) {
-    delegationByBundle[record.bundleIndex] =
-        rust_frb_types.DelegationRecoveryView(
-          bundleIndex: record.bundleIndex,
-          phase: VotingWorkflowPhase.submittedDelegation,
-          txHash: record.txHash,
-          vanLeafPosition: null,
-        );
+    delegationByBundle[record.bundleIndex] = FakeDelegationRecovery(
+      bundleIndex: record.bundleIndex,
+      phase: rust_wire.WorkflowPhaseView.submittedDelegation,
+      txHash: record.txHash,
+      vanLeafPosition: null,
+    );
   }
 
-  final votesByKey = <String, rust_frb_types.VoteRecoveryView>{
+  final votesByKey = <String, FakeVoteRecovery>{
     for (final record in votes)
       '${record.bundleIndex}:${record.proposalId}': record,
     for (final record in voteWorkflows)
-      '${record.bundleIndex}:${record.proposalId}':
-          rust_frb_types.VoteRecoveryView(
-            bundleIndex: record.bundleIndex,
-            proposalId: record.proposalId,
-            choice: 0,
-            phase: record.phase,
-            txHash: record.txHash,
-            vcTreePosition: record.vcTreePosition,
-            hasCommitmentBundle: record.hasCommitmentBundle,
-          ),
+      '${record.bundleIndex}:${record.proposalId}': FakeVoteRecovery(
+        bundleIndex: record.bundleIndex,
+        proposalId: record.proposalId,
+        choice: 0,
+        phase: record.phase,
+        txHash: record.txHash,
+        vcTreePosition: record.vcTreePosition,
+        hasCommitmentBundle: record.hasCommitmentBundle,
+      ),
   };
   for (final record in voteTxHashes) {
     final key = '${record.bundleIndex}:${record.proposalId}';
     final current = votesByKey[key];
-    votesByKey[key] = rust_frb_types.VoteRecoveryView(
+    votesByKey[key] = FakeVoteRecovery(
       bundleIndex: record.bundleIndex,
       proposalId: record.proposalId,
       choice: current?.choice ?? 0,
-      phase: current?.phase ?? VotingWorkflowPhase.submittedVote,
+      phase: current?.phase ?? rust_wire.WorkflowPhaseView.submittedVote,
       txHash: record.txHash,
       vcTreePosition: current?.vcTreePosition,
       hasCommitmentBundle: current?.hasCommitmentBundle ?? false,
     );
   }
 
-  return rust_frb_types.RoundRecoveryStateView(
+  return FakeRoundRecoveryState(
     roundId: _roundId,
     bundleCount: bundleCount,
     delegation: delegationByBundle.values.toList(),
@@ -5264,8 +4915,7 @@ class _ControlledVotingSubmissionJobsNotifier
 }
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {
-  @override
-  Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
+  Future<FakeRoundRecoveryState> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -5290,26 +4940,14 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
       proposalIds: proposalIds,
     );
   }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) async {}
 }
 
 class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
-  rust_frb_types.RoundRecoveryStateView state = _recoveryState();
+  FakeRoundRecoveryState state = _recoveryState();
   rust_wire.RoundPlanView? roundPlan;
-  final ballotIntents = <String>[];
 
   @override
-  Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
+  Future<FakeRoundRecoveryState> getRoundRecoveryState({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -5324,26 +4962,14 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   }) async {
-    return roundPlan ??
-        super.getRoundPlan(
-          dbPath: dbPath,
-          accountUuid: accountUuid,
-          roundId: roundId,
-          proposalIds: proposalIds,
-        );
-  }
-
-  @override
-  Future<void> setBallotIntent({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int proposalId,
-    required int numOptions,
-    required bool skipped,
-    int? choice,
-  }) async {
-    ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
+    final explicit = roundPlan;
+    if (explicit != null) return withDelegationStatusesFrom(explicit, state);
+    return super.getRoundPlan(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+      roundId: roundId,
+      proposalIds: proposalIds,
+    );
   }
 }
 
@@ -5392,12 +5018,14 @@ class _FailingEligibilityVotingSessionNotifier
 
   @override
   Future<BigInt?> refreshEligibleWeight() async {
-    throw Exception(
-      'Invalid input: minimum voting eligibility requires at least one '
-      'eligible voting bundle with 12500000 zatoshi voting weight; selected 0 '
-      'distinct notes across eligible bundles with 0 zatoshi eligible bundle '
-      'weight at snapshot height '
-      '3359740',
+    throw votingRustError(
+      rust_wire.VotingErrorKindView.insufficientEligibility,
+      message:
+          'minimum voting eligibility requires at least one eligible voting '
+          'bundle with 12500000 zatoshi voting weight',
+      snapshotHeight: BigInt.from(3359740),
+      requiredWeightZatoshi: BigInt.from(12500000),
+      selectedWeightZatoshi: BigInt.zero,
     );
   }
 }
@@ -5480,26 +5108,6 @@ class _BlockingVotingRoundsNotifier extends VotingRoundsNotifier {
 }
 
 class _NoopVotingRustApi implements VotingRustApi {
-  @override
-  String? selectPirSnapshotEndpoint({
-    required List<rust_api.ApiPirSnapshotEndpointDiagnostic> diagnostics,
-    required BigInt expectedSnapshotHeight,
-    required BigInt matchIndex,
-  }) {
-    final matches = diagnostics
-        .where(
-          (diagnostic) =>
-              diagnostic.status ==
-                  rust_api.ApiPirSnapshotEndpointStatus.matched &&
-              diagnostic.reportedHeight == expectedSnapshotHeight,
-        )
-        .map((diagnostic) => diagnostic.endpoint)
-        .toList(growable: false);
-    return matches.isEmpty
-        ? null
-        : matches[matchIndex.toInt() % matches.length];
-  }
-
   @override
   Future<rust_wire.VotingRoundParams> trustedVotingRoundParamsFromConfig({
     required rust_config.ResolvedVotingConfig config,
@@ -5665,10 +5273,14 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required int bundleIndex,
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
+    required bool singleShare,
+    required int maxProofConcurrency,
   }) async* {
-    throw Exception(
-      'Invalid input: no spendable voting notes at snapshot height 3359740',
+    throw votingRustError(
+      rust_wire.VotingErrorKindView.noSpendableNotes,
+      message: 'no spendable voting notes at snapshot height 3359740',
+      snapshotHeight: BigInt.from(3359740),
     );
   }
 }
@@ -5779,11 +5391,12 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
   }
 
   @override
-  Future<void> writeHotkey({
+  Future<List<int>> getOrCreate({
     required String accountUuid,
     required String roundId,
-    required List<int> hotkey,
-  }) async {}
+    required Future<List<int>> Function() generate,
+    required bool allowCreation,
+  }) async => hotkey;
 
   @override
   Future<void> deleteHotkey({
@@ -5794,7 +5407,53 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
 
 int _fakeShareTargetCount(int serverCount) => (serverCount + 1) ~/ 2;
 
-class _VotingStatusRustApi extends _NoopVotingRustApi {
+rust_api.ApiChainSubmissionCallResult _statusConfirmedChainSubmission({
+  required String txHash,
+  required int vanPosition,
+  List<int> votePositions = const [],
+}) {
+  return rust_api.ApiChainSubmissionCallResult(
+    outcome: rust_api.ApiChainSubmissionOutcome(
+      kind: rust_api.ApiChainSubmissionOutcomeKind.confirmed,
+      confirmationSource: rust_api.ApiChainConfirmationSource.hash,
+      transactionHash: txHash,
+      candidateTransactionHash: null,
+      finalVanPosition: BigInt.from(vanPosition),
+      voteCommitmentPositions: frb.Uint64List.fromList(votePositions),
+      diagnostic: null,
+    ),
+    failure: null,
+  );
+}
+
+class _VotingStatusChainPassHandle implements FakeChainSubmissionPassHandle {
+  _VotingStatusChainPassHandle({
+    required this.accountUuid,
+    required this.roundId,
+  });
+
+  @override
+  final String accountUuid;
+  @override
+  final String roundId;
+  @override
+  bool isCancelled = false;
+  @override
+  bool isDisposed = false;
+
+  @override
+  void cancel() => isCancelled = true;
+  @override
+  void dispose() => isDisposed = true;
+  @override
+  void setOperationEpoch(BigInt operationEpoch) {}
+}
+
+class _VotingStatusRustApi extends _NoopVotingRustApi
+    implements FakeRoundSessionDriver, FakeRoundStepApi {
+  @override
+  final Map<String, VotingRustException> roundStepBridgeErrors = {};
+
   _VotingStatusRustApi(
     this.recoveryApi, {
     this.bundleCount = 1,
@@ -5810,6 +5469,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
   final Map<int, String> keystoneMemoZecByBundle;
+  @override
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
   int setupDelegationBundleCalls = 0;
@@ -5821,7 +5481,179 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   BigInt privacyTrimDroppedValueZatoshi = BigInt.zero;
   int keystoneDelegationRequestCalls = 0;
   int voteCommitmentCalls = 0;
+  int chainDelegationAdvanceCalls = 0;
+  int chainVoteAdvanceCalls = 0;
+  final Map<int, List<int>> _batchProposalIdsByBundle = {};
   final _preparedHelperUrls = <String, List<String>>{};
+  @override
+  final roundSessionSteps = <String>[];
+
+  @override
+  final scriptedRoundRuns = <List<rust_session.ApiRoundRunEvent>>[];
+
+  @override
+  final scriptedShareTrackingRuns =
+      <List<rust_session.ApiShareTrackingRunEvent>>[];
+
+  @override
+  final shareTrackingSessions = <FakeVotingRoundSession>[];
+
+  @override
+  final shareTrackingPolicies = <rust_session.ApiShareTrackingDrivePolicy?>[];
+
+  @override
+  final focusedConfirmationSessions = <FakeVotingRoundSession>[];
+  @override
+  final sessionBallotIntents = <String>[];
+
+  @override
+  Object? get sessionBallotIntentsError => null;
+
+  @override
+  final sessionClearedBallotIntents = <int>[];
+  @override
+  final provenVoteKeys = <String>{};
+  @override
+  final handledVoteKeys = <String>{};
+
+  @override
+  VotingRustApi get api => this;
+
+  @override
+  FakeRoundStepApi get stepApi => this;
+
+  @override
+  Map<int, List<int>> get batchProposalIdsByBundle => _batchProposalIdsByBundle;
+
+  @override
+  int get planBundleCount => _persistedBundleCount;
+
+  @override
+  Future<rust_wire.RoundPlanView?> peekRoundPlan({
+    required String roundId,
+    required List<int> proposalIds,
+  }) {
+    return recoveryApi.getRoundPlan(
+      dbPath: '',
+      accountUuid: '',
+      roundId: roundId,
+      proposalIds: proposalIds,
+    );
+  }
+
+  @override
+  Future<rust_wire.RoundPlanView?> loadRoundPlan({
+    required String roundId,
+    required List<int> proposalIds,
+  }) => peekRoundPlan(roundId: roundId, proposalIds: proposalIds);
+
+  @override
+  Set<String> get recordedVoteKeys => {
+    for (final vote in recoveryApi.state.votes)
+      if (vote.phase != rust_wire.WorkflowPhaseView.prepared ||
+          vote.txHash != null)
+        '${vote.bundleIndex}:${vote.proposalId}',
+  };
+
+  @override
+  VotingRoundSession openRoundSession({
+    required rust_api.ApiVotingRoundContext ctx,
+    required rust_session.ApiRoundSessionBinding binding,
+    List<int>? storedHotkeySecret,
+    required BigInt operationEpoch,
+  }) {
+    return FakeVotingRoundSession(
+      driver: this,
+      ctx: ctx,
+      binding: binding,
+      storedHotkeySecret: storedHotkeySecret,
+      operationEpoch: operationEpoch,
+    );
+  }
+
+  @override
+  FakeChainSubmissionPassHandle beginChainSubmissionPass({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required String network,
+    required List<String> endpoints,
+    required BigInt operationEpoch,
+  }) {
+    return _VotingStatusChainPassHandle(
+      accountUuid: accountUuid,
+      roundId: roundId,
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainDelegation({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required rust_wire.SignedDelegationPayloadView submission,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) async {
+    chainDelegationAdvanceCalls++;
+    const txHash = 'delegation-tx';
+    _recordDelegationConfirmed(
+      bundleIndex: bundleIndex,
+      txHash: txHash,
+      vanLeafPosition: 0,
+    );
+    return _statusConfirmedChainSubmission(txHash: txHash, vanPosition: 0);
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVote({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) async {
+    chainVoteAdvanceCalls++;
+    final txHash = 'vote-tx-$bundleIndex-$proposalId';
+    final vcTreePosition = BigInt.from(11);
+    _recordVoteConfirmed(
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: txHash,
+      vanPosition: 0,
+      vcTreePosition: vcTreePosition,
+    );
+    return _statusConfirmedChainSubmission(
+      txHash: txHash,
+      vanPosition: 0,
+      votePositions: [vcTreePosition.toInt()],
+    );
+  }
+
+  @override
+  Future<rust_api.ApiChainSubmissionCallResult> advanceChainVoteBatch({
+    required FakeChainSubmissionPassHandle passHandle,
+    required int bundleIndex,
+    required int proposalId,
+    required rust_api.ApiChainRecoveryMode recoveryMode,
+  }) async {
+    chainVoteAdvanceCalls++;
+    final proposalIds = _batchProposalIdsByBundle[bundleIndex] ?? [proposalId];
+    final positions = [
+      for (var index = 0; index < proposalIds.length; index++) 11 + index,
+    ];
+    for (var index = 0; index < proposalIds.length; index++) {
+      _recordVoteConfirmed(
+        bundleIndex: bundleIndex,
+        proposalId: proposalIds[index],
+        txHash: 'vote-batch-$bundleIndex',
+        vanPosition: 0,
+        vcTreePosition: BigInt.from(positions[index]),
+      );
+    }
+    return _statusConfirmedChainSubmission(
+      txHash: 'vote-batch-$bundleIndex',
+      vanPosition: 0,
+      votePositions: positions,
+    );
+  }
 
   @override
   Future<rust_api.ApiBundleLayout> setupDelegationBundles({
@@ -6014,7 +5846,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return rust_api.ApiKeystoneSignatureBatchResult(
       inserted: inserted,
       alreadyPresent: alreadyPresent,
-      conflictingBundleIndex: null,
     );
   }
 
@@ -6057,7 +5888,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     );
   }
 
-  @override
   Future<String> delegationSubmissionWireJson({
     required rust_wire.SignedDelegationPayloadView submission,
   }) async {
@@ -6075,7 +5905,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     });
   }
 
-  @override
   Future<void> markDelegationSubmitted({
     required String dbPath,
     required String accountUuid,
@@ -6089,42 +5918,35 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
     required int vanLeafPosition,
   }) {
+    final previousPlan = recoveryApi.roundPlan;
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
-        rust_frb_types.DelegationRecoveryView(
+        FakeDelegationRecovery(
           bundleIndex: bundleIndex,
-          phase: VotingWorkflowPhase.confirmed,
+          phase: rust_wire.WorkflowPhaseView.confirmed,
           txHash: txHash,
-          vanLeafPosition: vanLeafPosition,
+          vanLeafPosition: BigInt.from(vanLeafPosition),
         ),
       ],
     );
-    recoveryApi.roundPlan = null;
-  }
-
-  @override
-  Future<rust_wire.DelegationConfirmation> confirmDelegationSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required String txHash,
-    required String eventsJson,
-  }) async {
-    final vanLeafPosition = eventIntFromTxEventsJson(
-      eventsJson,
-      'delegate_vote',
-      roundId,
-      'leaf_index',
-    );
-    _recordDelegationConfirmed(
-      bundleIndex: bundleIndex,
-      txHash: txHash,
-      vanLeafPosition: vanLeafPosition,
-    );
-    return rust_wire.DelegationConfirmation(
-      txHash: txHash,
-      vanLeafPosition: vanLeafPosition,
+    if (previousPlan == null) {
+      recoveryApi.roundPlan = null;
+      return;
+    }
+    final remainingSteps = previousPlan.nextSteps
+        .where(
+          (step) =>
+              step.bundleIndex != bundleIndex ||
+              (step.kind != rust_frb_types.NextStepKind.delegate &&
+                  step.kind != rust_frb_types.NextStepKind.advanceDelegation),
+        )
+        .toList(growable: false);
+    recoveryApi.roundPlan = apiRoundPlan(
+      roundId: previousPlan.roundId,
+      pendingRecovery: remainingSteps.isNotEmpty,
+      nextSteps: remainingSteps,
+      openProposals: previousPlan.openProposals,
+      allDecided: previousPlan.allDecided,
     );
   }
 
@@ -6162,26 +5984,47 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int bundleIndex,
     required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
-    required List<rust_wire.DraftVote> draftVotes,
+    required List<VotingDraftVote> draftVotes,
+    required bool singleShare,
+    required int maxProofConcurrency,
   }) async* {
     voteCommitmentCalls++;
+    _batchProposalIdsByBundle[bundleIndex] = [
+      for (final draft in draftVotes) draft.proposalId,
+    ];
+    provenVoteKeys.addAll([
+      for (final draft in draftVotes) '$bundleIndex:${draft.proposalId}',
+    ]);
     for (final draft in draftVotes) {
       yield rust_api.ApiVoteCommitEvent(
-        phase: 'result',
+        phase: 'proving',
         proposalId: draft.proposalId,
         bundleIndex: bundleIndex,
-        proofProgress: null,
-        commitments: _commitments(
-          roundId: roundId,
-          bundleIndex: bundleIndex,
-          proposalId: draft.proposalId,
-          choice: draft.choice,
-        ),
+        proofProgress: 0.5,
+        commitments: null,
       );
     }
+    yield rust_api.ApiVoteCommitEvent(
+      phase: 'result',
+      proposalId: null,
+      bundleIndex: bundleIndex,
+      proofProgress: null,
+      commitments: rust_api.ApiSignedVoteCommitments(
+        bundleIndex: bundleIndex,
+        commitments: [
+          for (final draft in draftVotes)
+            ..._commitments(
+              roundId: roundId,
+              bundleIndex: bundleIndex,
+              proposalId: draft.proposalId,
+              choice: draft.choice,
+            ).commitments,
+        ],
+        batchDigest: draftVotes.length > 1 ? Uint8List(32) : null,
+      ),
+    );
   }
 
-  @override
   Future<String> voteCommitmentWireJson({
     required rust_wire.VoteCommitmentWire commitment,
   }) async {
@@ -6238,13 +6081,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   /// these widget tests only need a pass that confirms ready shares so the
   /// screen can advance.
   @override
-  Future<bool> confirmShareWithHelpers({
-    required VotingShareTrackingPassHandle passHandle,
+  Future<bool> confirmOneShareWithHelpers({
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
     required BigInt nowSeconds,
+    required bool Function() isCancelled,
   }) async {
     final share = recoveryApi.state.shareDelegations
         .where(
@@ -6278,7 +6122,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     if (confirmations < quorum) return false;
     await _markShareConfirmed(
       dbPath: '',
-      accountUuid: passHandle.accountUuid,
+      accountUuid: scope.accountUuid,
       roundId: share.roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
@@ -6288,15 +6132,16 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiShareTrackingReport> trackPendingShares({
-    required VotingShareTrackingPassHandle passHandle,
+  Future<rust_wire.ShareTrackingPassReportView> trackPendingSharesPass({
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
+    required bool Function() isCancelled,
   }) async {
     shareTrackingPassCalls++;
-    final accountUuid = passHandle.accountUuid;
-    final confirmed = <rust_api.ApiShareKey>[];
+    final accountUuid = scope.accountUuid;
+    final confirmed = <rust_wire.ShareKeyView>[];
     final pending = List.of(recoveryApi.state.unconfirmedShareDelegations);
     for (final share in pending) {
       final flags = await _trackingFlags(
@@ -6332,7 +6177,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       }
       if (confirmingServerUrl == null) continue;
 
-      final key = rust_api.ApiShareKey(
+      final key = rust_wire.ShareKeyView(
         bundleIndex: share.bundleIndex,
         proposalId: share.proposalId,
         shareIndex: share.shareIndex,
@@ -6369,38 +6214,23 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       );
       confirmed.add(key);
     }
-    return rust_api.ApiShareTrackingReport(
+    return rust_wire.ShareTrackingPassReportView(
       confirmed: confirmed,
       resubmitted: const [],
       ambiguous: const [],
       unrecoverable: const [],
       cancelled: false,
       nextDelaySeconds: null,
+      unconfirmedAtEntry: 0,
     );
   }
 
   @override
-  VotingHelperDeliveryContext createVotingHelperDeliveryContext({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-  }) => _NoopVotingHelperDeliveryContext(
-    dbPath: dbPath,
-    accountUuid: accountUuid,
-    roundId: roundId,
-  );
-
-  @override
-  VotingShareTrackingPassHandle beginShareTrackingPass({
-    required VotingHelperDeliveryContext context,
-  }) => _NoopVotingShareTrackingPassHandle(
-    accountUuid: context.accountUuid,
-    roundId: context.roundId,
-  );
+  void onShareTrackingCancelled() {}
 
   @override
   Future<rust_api.ApiVotingHelperPreflight> preflightVotingHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required List<String> configuredHelperUrls,
   }) async => rust_api.ApiVotingHelperPreflight(
     configuredHelperUrls: configuredHelperUrls,
@@ -6409,7 +6239,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<void> prepareCommittedShareDelivery({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required rust_api.ApiVotingHelperPreflight preflight,
@@ -6425,7 +6255,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<rust_api.ApiShareBatchDeliveryReport> submitPreparedSharesToHelpers({
-    required VotingHelperDeliveryContext context,
+    required FakeHelperDeliveryScope scope,
     required int bundleIndex,
     required int proposalId,
     required List<String> configuredHelperUrls,
@@ -6460,7 +6290,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       targetCount: targetCount,
     );
     _persistShareDelivery(
-      roundId: context.roundId,
+      roundId: scope.roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: 0,
@@ -6482,7 +6312,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   Future<int> _trackingFlags({
-    required rust_frb_types.ShareDelegationRecordView share,
+    required FakeShareDelegationRecord share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) async {
@@ -6505,13 +6335,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     return flags;
   }
 
-  @override
-  Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_frb_types.ShareDelegationRecordView> shares,
-    required BigInt nowSeconds,
-  }) async => shareTrackingDelaySeconds;
-
-  @override
   Future<void> markVoteSubmitted({
     required String dbPath,
     required String accountUuid,
@@ -6530,19 +6353,19 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }) {
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
-        rust_frb_types.DelegationRecoveryView(
+        FakeDelegationRecovery(
           bundleIndex: bundleIndex,
-          phase: VotingWorkflowPhase.confirmed,
+          phase: rust_wire.WorkflowPhaseView.confirmed,
           txHash: 'delegation-tx',
-          vanLeafPosition: vanPosition,
+          vanLeafPosition: BigInt.from(vanPosition),
         ),
       ],
       votes: [
-        rust_frb_types.VoteRecoveryView(
+        FakeVoteRecovery(
           bundleIndex: bundleIndex,
           proposalId: proposalId,
           choice: 0,
-          phase: VotingWorkflowPhase.confirmed,
+          phase: rust_wire.WorkflowPhaseView.confirmed,
           txHash: txHash,
           vcTreePosition: vcTreePosition,
           hasCommitmentBundle: true,
@@ -6550,34 +6373,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       ],
     );
     recoveryApi.roundPlan = null;
-  }
-
-  @override
-  Future<rust_wire.VoteConfirmation> confirmVoteSubmission({
-    required String dbPath,
-    required String accountUuid,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-    required String eventsJson,
-  }) async {
-    final leafPositions = castVoteLeafPositionsFromTxEventsJson(
-      eventsJson,
-      roundId,
-    );
-    _recordVoteConfirmed(
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      txHash: txHash,
-      vanPosition: leafPositions.vanPosition,
-      vcTreePosition: leafPositions.vcTreePosition,
-    );
-    return rust_wire.VoteConfirmation(
-      txHash: txHash,
-      vanLeafPosition: leafPositions.vanPosition,
-      vcTreePosition: leafPositions.vcTreePosition,
-    );
   }
 
   void _persistShareDelivery({
@@ -6591,14 +6386,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required BigInt submitAt,
   }) {
     final current = recoveryApi.state;
-    bool matches(rust_frb_types.ShareDelegationRecordView share) {
+    bool matches(FakeShareDelegationRecord share) {
       return share.roundId == roundId &&
           share.bundleIndex == bundleIndex &&
           share.proposalId == proposalId &&
           share.shareIndex == shareIndex;
     }
 
-    final recorded = rust_frb_types.ShareDelegationRecordView(
+    final recorded = FakeShareDelegationRecord(
       roundId: roundId,
       bundleIndex: bundleIndex,
       proposalId: proposalId,
@@ -6607,7 +6402,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       ambiguousUrls: ambiguousUrls,
       targetCount: targetCount,
       nullifier: Uint8List.fromList(List.filled(32, shareIndex + 1)),
-      phase: VotingWorkflowPhase.submittedShare,
+      phase: rust_wire.WorkflowPhaseView.submittedShare,
       confirmed: false,
       submitAt: submitAt,
       createdAt: BigInt.zero,
@@ -6643,17 +6438,15 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int shareIndex,
   }) async {
     final current = recoveryApi.state;
-    bool matches(rust_frb_types.ShareDelegationRecordView share) {
+    bool matches(FakeShareDelegationRecord share) {
       return share.roundId == roundId &&
           share.bundleIndex == bundleIndex &&
           share.proposalId == proposalId &&
           share.shareIndex == shareIndex;
     }
 
-    rust_frb_types.ShareDelegationRecordView confirmed(
-      rust_frb_types.ShareDelegationRecordView share,
-    ) {
-      return rust_frb_types.ShareDelegationRecordView(
+    FakeShareDelegationRecord confirmed(FakeShareDelegationRecord share) {
+      return FakeShareDelegationRecord(
         roundId: share.roundId,
         bundleIndex: share.bundleIndex,
         proposalId: share.proposalId,
@@ -6662,7 +6455,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         ambiguousUrls: share.ambiguousUrls,
         targetCount: share.targetCount,
         nullifier: share.nullifier,
-        phase: 'confirmed',
+        phase: rust_frb_types.WorkflowPhaseView.confirmed,
         confirmed: true,
         submitAt: share.submitAt,
         createdAt: share.createdAt,
@@ -6673,7 +6466,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       for (final share in current.unconfirmedShareDelegations)
         if (!matches(share)) share,
     ];
-    recoveryApi.state = rust_frb_types.RoundRecoveryStateView(
+    recoveryApi.state = FakeRoundRecoveryState(
       roundId: current.roundId,
       bundleCount: current.bundleCount,
       delegation: current.delegation,
@@ -6688,99 +6481,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     );
     recoveryApi.roundPlan = null;
   }
-}
-
-class _NoopVotingHelperDeliveryContext implements VotingHelperDeliveryContext {
-  _NoopVotingHelperDeliveryContext({
-    required this.dbPath,
-    required this.accountUuid,
-    required this.roundId,
-  });
-
-  @override
-  final String dbPath;
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  @override
-  bool isDisposed = false;
-
-  @override
-  void dispose() {
-    isDisposed = true;
-  }
-}
-
-class _NoopVotingShareTrackingPassHandle
-    implements VotingShareTrackingPassHandle {
-  _NoopVotingShareTrackingPassHandle({
-    required this.accountUuid,
-    required this.roundId,
-  });
-
-  @override
-  final String accountUuid;
-
-  @override
-  final String roundId;
-
-  @override
-  bool isCancelled = false;
-
-  @override
-  bool isDisposed = false;
-
-  @override
-  void cancel() {
-    if (isCancelled || isDisposed) return;
-    isCancelled = true;
-  }
-
-  @override
-  void dispose() {
-    if (isDisposed) return;
-    isDisposed = true;
-  }
-}
-
-List<int> _bytesFromHex(String hex) {
-  return [
-    for (var i = 0; i < hex.length; i += 2)
-      int.parse(hex.substring(i, i + 2), radix: 16),
-  ];
-}
-
-rust_wire.SignedVoteCommitmentsView _commitments({
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required int choice,
-}) {
-  return rust_wire.SignedVoteCommitmentsView(
-    bundleIndex: bundleIndex,
-    commitments: [
-      rust_wire.SignedVoteCommitmentView(
-        proposalId: proposalId,
-        wire: rust_wire.VoteCommitmentWire(
-          vanNullifier: base64Encode(Uint8List.fromList(List.filled(32, 1))),
-          voteAuthorityNoteNew: base64Encode(
-            Uint8List.fromList(List.filled(32, 2)),
-          ),
-          voteCommitment: base64Encode(Uint8List.fromList(List.filled(32, 3))),
-          proposalId: proposalId,
-          proof: base64Encode(Uint8List.fromList(const [4])),
-          voteRoundId: base64Encode(_bytesFromHex(roundId)),
-          anchorHeight: 10,
-          rVpk: base64Encode(Uint8List.fromList(List.filled(32, 13))),
-          voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
-        ),
-      ),
-    ],
-  );
 }
 
 class _GatedShareVotingHttpClient extends FakeVotingHttpClient {
@@ -6915,4 +6615,41 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+List<int> _bytesFromHex(String hex) {
+  return [
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ];
+}
+
+rust_api.ApiSignedVoteCommitments _commitments({
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int choice,
+}) {
+  return rust_api.ApiSignedVoteCommitments(
+    bundleIndex: bundleIndex,
+    commitments: [
+      rust_wire.SignedVoteCommitmentView(
+        proposalId: proposalId,
+        wire: rust_wire.VoteCommitmentWire(
+          vanNullifier: base64Encode(Uint8List.fromList(List.filled(32, 1))),
+          voteAuthorityNoteNew: base64Encode(
+            Uint8List.fromList(List.filled(32, 2)),
+          ),
+          voteCommitment: base64Encode(Uint8List.fromList(List.filled(32, 3))),
+          proposalId: proposalId,
+          proof: base64Encode(Uint8List.fromList(const [4])),
+          voteRoundId: base64Encode(_bytesFromHex(roundId)),
+          anchorHeight: 10,
+          rVpk: base64Encode(Uint8List.fromList(List.filled(32, 13))),
+          voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
+        ),
+      ),
+    ],
+    batchDigest: null,
+  );
 }

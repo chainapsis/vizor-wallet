@@ -66,6 +66,12 @@ VotingDiscoveryScope? votingDiscoveryScopeForSource(
   return null;
 }
 
+/// Routing seam for local integration tests; production scope rules stay here.
+final votingDiscoveryScopeResolverProvider =
+    Provider<VotingDiscoveryScope? Function(String, String)>(
+      (ref) => votingDiscoveryScopeForSource,
+    );
+
 final votingDiscoveryClientProvider = Provider<VotingDiscoveryClient>((ref) {
   final http = DartIoVotingHttpClient();
   ref.onDispose(http.close);
@@ -134,7 +140,10 @@ class VotingHomeRefresh {
       final cached = cache.list(key);
       final fresh = cached?.isFresh(now) ?? false;
       VotingDiscoverySnapshot? discovery;
-      final scope = votingDiscoveryScopeForSource(network, source);
+      final scope = ref.read(votingDiscoveryScopeResolverProvider)(
+        network,
+        source,
+      );
       if (scope != null) {
         final probeKey = '$key/$endpoint';
         final failed = _probeFailures[probeKey];

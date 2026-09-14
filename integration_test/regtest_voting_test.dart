@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_onboarding_flow.dart';
+import 'support/voting_discovery_regtest.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
 const _mnemonic =
     'abandon abandon abandon abandon abandon abandon abandon abandon abandon '
@@ -42,7 +44,11 @@ void main() {
         await _cleanupE2eWalletState();
       }
 
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+      await tester.pumpWidget(
+        await buildBootstrappedZcashWalletApp(
+          overrides: votingDiscoveryRegtestOverrides(),
+        ),
+      );
       if (_reuseMigratedWallet) {
         _log('opening wallet preserved by the Orchard-to-Ironwood E2E');
         await tester.pump(const Duration(milliseconds: 500));
@@ -103,6 +109,16 @@ void main() {
         description: 'Ironwood balance to sync',
         timeout: const Duration(minutes: 5),
       );
+
+      // Desktop has a permanent sidebar entry. Exercise the same discovery
+      // endpoint explicitly because it has no mobile Home refresh lifecycle.
+      final homeContainer = ProviderScope.containerOf(
+        tester.element(
+          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+        ),
+      );
+      await homeContainer.read(votingHomeRefreshProvider).refresh();
+      await expectRegtestDiscoveryPersisted(homeContainer);
 
       _log('opening signed regtest voting round $_roundId');
       await _tap(tester, const ValueKey('sidebar_voting_button'));

@@ -24,7 +24,7 @@ void main() {
         submissionJobComplete: false,
         submissionJobInFlight: true,
       ),
-      VotingSubmissionProgressStep.delegating,
+      VotingSubmissionProgressStep.provingAuthority,
     );
     expect(
       votingSubmissionProgressStepFor(
@@ -62,7 +62,7 @@ void main() {
 
     expect(find.text('Don’t leave this window.'), findsOneWidget);
     expect(find.text('Submitting votes...'), findsOneWidget);
-    expect(find.text('Delegating voting authority'), findsOneWidget);
+    expect(find.text('Proving voting authority'), findsOneWidget);
     expect(find.text('Casting votes and submitting shares'), findsOneWidget);
     expect(find.text('Finalizing submission'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -80,7 +80,9 @@ void main() {
     expect(progressTransition.curve, Curves.easeOutCubic);
     expect(
       find.byKey(
-        const ValueKey('mobile_voting_submission_step_delegating_complete'),
+        const ValueKey(
+          'mobile_voting_submission_step_provingAuthority_complete',
+        ),
       ),
       findsOneWidget,
     );
@@ -98,10 +100,12 @@ void main() {
     );
 
     final delegatingRow = find.byKey(
-      const ValueKey('mobile_voting_submission_step_delegating_complete'),
+      const ValueKey('mobile_voting_submission_step_provingAuthority_complete'),
     );
     final connector = find.byKey(
-      const ValueKey('mobile_voting_submission_connector_after_delegating'),
+      const ValueKey(
+        'mobile_voting_submission_connector_after_provingAuthority',
+      ),
     );
     expect(
       tester.getCenter(connector).dx,
@@ -116,7 +120,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         const MobileVotingSubmissionProgressScreen(
-          activeStep: VotingSubmissionProgressStep.delegating,
+          activeStep: VotingSubmissionProgressStep.provingAuthority,
         ),
       ),
     );
@@ -132,6 +136,28 @@ void main() {
       ),
       const Size.square(20),
     );
+  });
+
+  testWidgets('shows detail for a coordinated in-progress proof', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        const MobileVotingSubmissionProgressScreen(
+          activeStep: VotingSubmissionProgressStep.provingAuthority,
+          activeStepDetail:
+              'Reusing an in-progress proof — 1 of 3 bundles proved',
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Reusing an in-progress proof — 1 of 3 bundles proved'),
+      findsOneWidget,
+    );
+    expect(find.text('Don’t leave this window.'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('keeps the proof notice visible on a compact mobile height', (

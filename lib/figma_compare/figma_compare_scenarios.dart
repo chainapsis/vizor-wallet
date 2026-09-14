@@ -177,20 +177,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     scrollToEnd: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-voting-share-in-progress',
-    description: 'Mobile encrypted vote shares while submission is in progress',
-    builder: buildVotingShareStatusUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-voting-share-complete',
-    description: 'Mobile encrypted vote shares after submission completes',
-    builder: buildVotingShareStatusCompleteUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,

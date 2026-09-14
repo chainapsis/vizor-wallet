@@ -11,7 +11,14 @@ VOTE_HOME="$STATE_DIR/vote-home"
 SHIM_DIR="$STATE_DIR/shims"
 
 VOTE_SDK_URL="https://github.com/valargroup/vote-sdk.git"
-VOTE_SDK_REV="6a10c073baae3c2003ada402d7c5c513ee6b90ce"
+# vote-sdk v1.6.0 includes delegate-and-cast-vote-batch, required by the
+# wallet's zcash_voting 5.0.0. The previous 990fb1c3 pin lacked this route
+# and returned HTTP 404 for combined delegation and vote submissions.
+# Its voting-circuits 0.12.0 verifier is compatible with the wallet's 0.12.1:
+# 0.12.1 adds prepared proving without changing proofs or verifying keys.
+# Both resolve vote-commitment-tree 0.6.1 and voting-crypto-deps 0.2.3.
+# When updating either side, check both API and circuit compatibility.
+VOTE_SDK_REV="36f5d828fc5be42d9a80baa38d1145c5541b229e"
 PIR_URL="https://github.com/valargroup/vote-nullifier-pir.git"
 PIR_REV="20356d14f61a825ef28726f38270c37d604cc268"
 VOTE_SDK_DIR="$DEPS_DIR/vote-sdk-$VOTE_SDK_REV"
@@ -179,6 +186,7 @@ cat >"$SHIM_DIR/grpcurl" <<EOF
 exec "$REAL_GRPCURL" -plaintext -import-path "$ROOT_DIR/protos" -proto service.proto "\$@"
 EOF
 chmod +x "$SHIM_DIR/grpcurl"
+create_voting_round() {
 PATH="$SHIM_DIR:$VOTE_SDK_DIR:$PATH" \
   VM_PRIVKEYS="$VOTE_MANAGER_PRIVATE_KEY" \
   SVOTE_HOME="$VOTE_HOME" SVOTE_PALLAS_PK_PATH="$VOTE_HOME/pallas.pk" \
@@ -188,7 +196,9 @@ PATH="$SHIM_DIR:$VOTE_SDK_DIR:$PATH" \
   ZASHI_SNAPSHOT_HEIGHT="$SNAPSHOT_HEIGHT" ZASHI_VOTE_WINDOW_SECS=7200 \
   cargo test --manifest-path "$VOTE_SDK_DIR/e2e-tests/Cargo.toml" \
   --test create_round_for_zashi create_round_for_zashi -- --ignored --nocapture \
-  >"$LOG_DIR/create-round.log" 2>&1
+  >"$LOG_DIR/$1" 2>&1
+}
+create_voting_round create-round.log
 
 ROUND_JSON="$(curl -fsS "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/rounds/active")"
 read -r ROUND_ID EA_PK < <(python3 -c '
@@ -240,7 +250,33 @@ EOF
   --config "$CONFIG_DIR/dynamic-voting-config.json" \
   --static-config "$CONFIG_DIR/static-voting-config.json"
 
+# A second real round is created up front but authenticated only on publication.
+# Keep its ID from its transaction, since /rounds/active returns the FIRST round.
+NEXT_ROUND_ID=""
+if [[ "${E2E_VOTING_DISCOVERY_TRANSITION:-0}" == "1" ]]; then
+  cp "$CONFIG_DIR/dynamic-voting-config.json" "$CONFIG_DIR/initial.json"
+  create_voting_round create-next-round.log
+  NEXT_ROUND_ID="$(sed -n 's/^\[create-round\] round_id: //p' "$LOG_DIR/create-next-round.log")"
+  [[ "$NEXT_ROUND_ID" =~ ^[0-9a-f]{64}$ && "$NEXT_ROUND_ID" != "$ROUND_ID" ]]
+  NEXT_EA_PK="$(curl -fsS "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/round/$NEXT_ROUND_ID" | jq -r '.round.ea_pk')"
+  "$VOTE_SDK_DIR/voting-config" sign --round-id "$NEXT_ROUND_ID" --ea-pk "$NEXT_EA_PK" \
+    --signer-id vizor-regtest-e2e --privkey-file "$CONFIG_DIR/signing.seed" \
+    --pir-depth 19 --tier0-layers 12 --tier1-layers 7 --poly-len 4096 \
+    --merge "$CONFIG_DIR/dynamic-voting-config.json"
+  "$VOTE_SDK_DIR/voting-config" verify \
+    --config "$CONFIG_DIR/dynamic-voting-config.json" \
+    --static-config "$CONFIG_DIR/static-voting-config.json"
+  mv "$CONFIG_DIR/dynamic-voting-config.json" "$CONFIG_DIR/new-round.json"
+  cp "$CONFIG_DIR/initial.json" "$CONFIG_DIR/dynamic-voting-config.json"
+  # A label update changes the backend's canonical revision, without new rights.
+  jq '.vote_servers[0].label = "updated regtest helper"' \
+    "$CONFIG_DIR/initial.json" > "$CONFIG_DIR/same-round.json"
+fi
+
 gateway_args=(--screenshot-dir "$LOG_DIR/screenshots")
+if [[ "${E2E_VOTING_DISCOVERY_TRANSITION:-0}" == "1" ]]; then
+  gateway_args+=(--discovery-transition)
+fi
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
   gateway_args+=(--simulator "$FLUTTER_DEVICE" --enable-zcash-mining)
 fi
@@ -278,6 +314,7 @@ voting_defines=( \
   --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
   --dart-define=ZCASH_E2E_VOTING_STATIC_CONFIG_URL="$STATIC_URL" \
   --dart-define=ZCASH_E2E_VOTE_ROUND_ID="$ROUND_ID" \
+  --dart-define=ZCASH_E2E_VOTE_NEXT_ROUND_ID="$NEXT_ROUND_ID" \
   --dart-define=ZCASH_E2E_VOTE_CHAIN_ID="$CHAIN_ID" \
   --dart-define=ZCASH_E2E_VOTE_VALIDATOR_HASH="$VALIDATOR_HASH" \
   --dart-define=ZCASH_E2E_VOTING_KEEP_APP_STATE="${E2E_VOTING_REINSTALL:-0}" \
@@ -311,6 +348,8 @@ if [[ "${E2E_VOTING_REINSTALL:-0}" == "1" ]]; then
 fi
 
 METRICS="$(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/metrics")"
+jq -e '.discovery_successes > 0 and .config_requests > 0 and .round_list_requests > 0' \
+  <<<"$METRICS" >/dev/null || { echo "discovery was not exercised: $METRICS" >&2; exit 1; }
 if [[ "$SLOW_HELPER_MODE" == "1" ]]; then
   jq -e '.slow_share_requests > 0 and .slow_share_max_inflight > 1' \
     <<<"$METRICS" >/dev/null || {
