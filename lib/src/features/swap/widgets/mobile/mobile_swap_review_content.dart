@@ -199,7 +199,7 @@ class _ReviewRow extends StatelessWidget {
       height: 32,
       child: Row(
         children: [
-          Flexible(
+          Expanded(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xxs),
               child: Text(
