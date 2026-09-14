@@ -464,7 +464,29 @@ void main() {
     );
   });
 
-  test('wallet reset hook clears private recovery runtime state', () async {
+  test('wallet reset keeps the install-scoped private recovery setting', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-enhance-pir-reset',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDirectory.path;
+          }
+          throw MissingPluginException('Unexpected path provider call.');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(
@@ -473,12 +495,15 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
+    await container.read(accountProvider.future);
 
     expect(container.read(enhancePirProvider), isTrue);
-    container.read(enhancePirProvider.notifier).clearAfterWalletReset();
+    await container.read(accountProvider.notifier).resetWallet();
 
-    expect(container.read(enhancePirProvider), isFalse);
-    expect(_rustApi.enhancePirEnabledValues, [false]);
+    // The preference lives outside the wiped secure-store bucket, so neither
+    // the published state nor the Rust route is touched by the reset.
+    expect(container.read(enhancePirProvider), isTrue);
+    expect(_rustApi.enhancePirEnabledValues, isEmpty);
   });
 
   test('private recovery ignores stale enabled state off mainnet', () {
@@ -1295,6 +1320,9 @@ class _AccountMutationRustApiFake implements RustLibApi {
   }) async {
     deletedAccountUuids.add(accountUuid);
   }
+
+  @override
+  Future<void> crateApiSyncDiscardAllKeystoneMigrationRequests() async {}
 
   @override
   Future<void> crateApiVotingResetVotingSessionState({

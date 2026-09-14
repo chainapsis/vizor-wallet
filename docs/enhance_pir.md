@@ -42,7 +42,17 @@ for the current sync, and retries on a later sync. It does not fall back to a
 transaction-ID request for protected Ironwood transactions. Locking or resetting
 the wallet, changing sync mode, and restarting sync for a privacy-setting change
 cancel route acquisition and in-flight PIR HTTP work along with the rest of the
-sync session.
+sync session. A reset cancels that work but does not turn the setting off.
+
+The setting is install-scoped: it is chosen once and applies to every wallet on
+the device. It is stored in shared preferences rather than the secure-store
+bucket that a wallet reset wipes, so deleting the last account, resetting after
+a forgotten password, or reimporting a wallet all leave it untouched, and the
+next wallet's first sync runs on the route the user chose. This is deliberately
+the opposite of the Tor route preference, which a reset removes as
+anti-forensics. Installs upgrading from the earlier build carry their saved
+value over from the legacy `vizor_enhance_pir_enabled` secure-store key on the
+first launch.
 
 Enabling the setting does not rescan or reprocess past history. It protects future compact scanning and future seed-recovery work. Details previously fetched by transaction ID remain stored, and that earlier disclosure cannot be undone.
 
@@ -64,3 +74,4 @@ The ignored live test validates the deployed generation and completes one random
 - Timing and the number of row queries remain observable. Vizor does not add cover traffic.
 - Tor routing follows the app-wide foreground network policy and fails closed when Tor is requested but unavailable.
 - Disabling the setting restores standard lightwalletd transaction enhancement.
+- An enabled setting persists on disk across wallet resets, so it is durable local evidence that this installation uses private recovery.

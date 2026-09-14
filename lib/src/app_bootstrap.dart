@@ -12,6 +12,7 @@ import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
+import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'core/storage/secure_storage_diagnostics.dart';
 import 'providers/account_models.dart';
@@ -24,7 +25,6 @@ const _networkKey = 'zcash_wallet_network';
 // Mirrors kBiometricUnlockEnabledKey in providers/biometric_unlock_provider.dart;
 // kept local to avoid a bootstrap → provider import cycle.
 const _biometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
-const kEnhancePirEnabledKey = 'vizor_enhance_pir_enabled';
 const _e2eLightwalletdUrlOverride = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
 );
@@ -261,11 +261,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
-    final enhancePirEnabled = await _readPlainBool(
-      storage,
-      key: kEnhancePirEnabledKey,
-      label: 'private Ironwood enhancement enabled flag',
-    );
+    final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -557,6 +553,47 @@ Future<bool> _readPlainBool(
     log('bootstrap: failed to read $label: $e');
     return false;
   }
+}
+
+/// Reads the install-scoped private Ironwood recovery preference.
+///
+/// The preference used to live in the secure-store plaintext lane, which a
+/// wallet reset wipes wholesale. On the first launch after that move the saved
+/// value is carried over into shared preferences and the legacy key is dropped,
+/// so an upgrading install keeps the choice it already made.
+///
+/// Best-effort by contract: a preference read must never block bootstrap, so
+/// every failure degrades to the off default.
+@visibleForTesting
+Future<bool> readEnhancePirEnabledPreference(
+  AppSecureStore storage, {
+  EnhancePirPreferenceStore preferences =
+      const SharedPreferencesEnhancePirStore(),
+}) async {
+  try {
+    final saved = await preferences.readEnabled();
+    if (saved != null) return saved;
+  } catch (e) {
+    log('bootstrap: failed to read private Ironwood recovery preference: $e');
+    return false;
+  }
+  var legacyEnabled = false;
+  try {
+    legacyEnabled =
+        (await storage.readPlain(kLegacyEnhancePirEnabledKey)) == 'true';
+  } catch (e) {
+    log('bootstrap: failed to read legacy private Ironwood recovery flag: $e');
+    return false;
+  }
+  try {
+    await preferences.writeEnabled(legacyEnabled);
+    await storage.delete(kLegacyEnhancePirEnabledKey);
+  } catch (e) {
+    // The value is still correct for this launch; the migration retries on the
+    // next one, and any explicit toggle finishes it.
+    log('bootstrap: failed to migrate private Ironwood recovery flag: $e');
+  }
+  return legacyEnabled;
 }
 
 Future<bool> _readSwapEnabledOverrideCachedForRelease() async {

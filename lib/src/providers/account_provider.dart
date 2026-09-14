@@ -32,7 +32,6 @@ import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
-import 'enhance_pir_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
@@ -1059,7 +1058,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
-      ref.read(enhancePirProvider.notifier).clearAfterWalletReset();
+      // Private Ironwood recovery is install-scoped and is deliberately NOT
+      // cleared here: it lives outside the secure-store bucket the wipe above
+      // destroyed, so the next wallet starts on the route the user chose. The
+      // Tor route preference below is the opposite case — it is removed as
+      // anti-forensics, because it is durable evidence of Tor use.
       final privacyRuntime = ref.read(networkPrivacyRuntimeProvider);
       final directRequests = ref.read(networkPrivacyDirectRequestGateProvider);
       await clearTorPrivacyStateForReset(
