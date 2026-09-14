@@ -9160,7 +9160,7 @@ void main() {
       expect(restored.receiveAmountText, isEmpty);
       expect(restored.destinationText, isEmpty);
       expect(restored.reviewQuote, isNull);
-      expect(restored.pendingKeystoneSigningIntent, isNull);
+      expect(restored.pendingHardwareSigningIntent, isNull);
       expect(
         tester.widget<EditableText>(find.byType(EditableText)).controller.text,
         isEmpty,
@@ -9273,7 +9273,7 @@ void main() {
     final restored = container.read(swapStateProvider);
     expect(restored.destinationText, isEmpty);
     expect(restored.reviewQuote, isNull);
-    expect(restored.pendingKeystoneSigningIntent, isNull);
+    expect(restored.pendingHardwareSigningIntent, isNull);
     final requestsBeforeRetry = swapProvider.requests.length;
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),

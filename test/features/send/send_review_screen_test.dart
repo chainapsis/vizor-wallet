@@ -2369,11 +2369,12 @@ Widget _harness(
   );
 
   return ProviderScope(
-    overrides: [..._harnessOverrides(
-      bootstrap: bootstrap,
-      addressBookRepository: addressBookRepository,
-      syncNotifier: syncNotifier,
-    ),
+    overrides: [
+      ..._harnessOverrides(
+        bootstrap: bootstrap,
+        addressBookRepository: addressBookRepository,
+        syncNotifier: syncNotifier,
+      ),
       if (ledgerSigner != null)
         ledgerPcztSignerProvider.overrideWithValue(
           (_, pcztBytes) => ledgerSigner(pcztBytes),
@@ -2575,7 +2576,6 @@ SendReviewArgs _reviewArgs({
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
   SendFlowKind flowKind = SendFlowKind.send,
-  bool needsSaplingParams = false,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,

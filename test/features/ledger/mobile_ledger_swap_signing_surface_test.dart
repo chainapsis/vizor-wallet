@@ -233,6 +233,7 @@ class _HardwareSigningService implements SwapHardwareSigningService {
     required String accountUuid,
     required SwapIntent intent,
   }) async => SwapHardwarePcztDraft(
+    accountUuid: accountUuid,
     pcztBytes: const [1],
     needsSaplingParams: false,
     feeZatoshi: BigInt.one,

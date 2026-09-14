@@ -1988,6 +1988,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     return [
       rust_wallet.AccountInfo(
         uuid: isClaimWallet ? 'claim-wallet' : 'receiver',
+        birthdayHeight: 0,
         name: 'Test',
         unifiedAddress: isClaimWallet ? _link().address : 'u1receiveraddress',
         isSeedAnchor: true,

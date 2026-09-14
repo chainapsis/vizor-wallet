@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../../../providers/sync_provider.dart';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -110,12 +112,14 @@ class _MobileLedgerSendSignScreenState
   var _ownershipTransferred = false;
   var _discardScheduled = false;
   var _cancelled = false;
+  late final SyncNotifier _syncNotifier;
   late final String _operationId;
   late final LedgerOperationCanceller _cancelOperation;
 
   @override
   void initState() {
     super.initState();
+    _syncNotifier = ref.read(syncProvider.notifier);
     _cancelOperation = ref.read(ledgerOperationCancellerProvider);
     _operationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
@@ -480,6 +484,8 @@ class _MobileLedgerSendSignScreenState
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
         logContext: logContext,
+        syncNotifier: _syncNotifier,
+        accountUuid: widget.args.proposalAccountUuid,
       ),
     );
   }

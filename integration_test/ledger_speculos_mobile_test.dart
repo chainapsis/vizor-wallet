@@ -907,7 +907,7 @@ Future<void> _runMobileSwapScenario(
           (_) async => 'inert-no-failover',
         ),
         rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-          (_) async => BigInt.zero,
+          (_, _) async => BigInt.zero,
         ),
       ],
     ),
@@ -1513,6 +1513,7 @@ class _SpeculosSwapHardwareSigningService
   }) async {
     draftCount++;
     return SwapHardwarePcztDraft(
+      accountUuid: accountUuid,
       pcztBytes: _pcztBytes,
       needsSaplingParams: false,
       feeZatoshi: BigInt.from(10000),

@@ -264,6 +264,7 @@ void main() {
                 required ref,
                 required args,
                 keystone,
+                ledger,
                 required confirmSaplingParamsDownload,
                 shouldAbort,
               }) async => const SendBroadcastOutcome(
@@ -309,6 +310,7 @@ void main() {
               required ref,
               required args,
               keystone,
+              ledger,
               required confirmSaplingParamsDownload,
               shouldAbort,
             }) async => const SendBroadcastOutcome(
@@ -366,6 +368,7 @@ void main() {
                 required ref,
                 required args,
                 keystone,
+                ledger,
                 required confirmSaplingParamsDownload,
                 shouldAbort,
               }) async => const SendBroadcastOutcome(
@@ -1058,7 +1061,8 @@ Widget _harness(
         path: '/send/status',
         builder: (_, _) => SendStatusScreen(
           args: args,
-          keystone: keystone, ledger: ledger,
+          keystone: keystone,
+          ledger: ledger,
           broadcastRunner: broadcastRunner,
         ),
       ),

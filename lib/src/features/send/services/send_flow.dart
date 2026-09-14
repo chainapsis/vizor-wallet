@@ -726,15 +726,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           logContext: 'SendBroadcast(ledger-abort)',
         );
       } else {
-      // A release Rust never confirmed leaves the proposal for the receipt
-      // to release; only a confirmed one counts as consumed.
-      proposalConsumed = await discardSendProposal(
-        proposalId: args.proposalId,
-        sendFlowId: args.sendFlowId,
-        logContext: 'SendBroadcast(abort)',
-        syncNotifier: syncNotifier,
-        accountUuid: args.proposalAccountUuid,
-      );
+        // A release Rust never confirmed leaves the proposal for the receipt
+        // to release; only a confirmed one counts as consumed.
+        proposalConsumed = await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(abort)',
+          syncNotifier: syncNotifier,
+          accountUuid: args.proposalAccountUuid,
+        );
       }
       proposalReleased = true;
     }
@@ -773,14 +773,14 @@ Future<SendBroadcastOutcome> runSendBroadcast({
                 logContext: 'SendBroadcast(ledger-params-declined)',
               );
             } else {
-            proposalConsumed = await discardSendProposal(
-              proposalId: args.proposalId,
-              sendFlowId: args.sendFlowId,
-              logContext: 'SendBroadcast(params-declined)',
-              syncNotifier: syncNotifier,
-              accountUuid: args.proposalAccountUuid,
-            );
-      }
+              proposalConsumed = await discardSendProposal(
+                proposalId: args.proposalId,
+                sendFlowId: args.sendFlowId,
+                logContext: 'SendBroadcast(params-declined)',
+                syncNotifier: syncNotifier,
+                accountUuid: args.proposalAccountUuid,
+              );
+            }
             proposalReleased = true;
           }
           return SendBroadcastOutcome(
@@ -838,6 +838,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
               proposalId: args.proposalId,
               sendFlowId: args.sendFlowId,
               logContext: 'SendBroadcast(ledger-terminal)',
+              syncNotifier: syncNotifier,
+              accountUuid: args.proposalAccountUuid,
             );
           } else {
             await retainSendProposalLockUntilExpiry(
@@ -861,6 +863,8 @@ Future<SendBroadcastOutcome> runSendBroadcast({
             proposalId: args.proposalId,
             sendFlowId: args.sendFlowId,
             logContext: 'SendBroadcast(ledger-finish)',
+            syncNotifier: syncNotifier,
+            accountUuid: args.proposalAccountUuid,
           );
         }
         proposalReleased = true;

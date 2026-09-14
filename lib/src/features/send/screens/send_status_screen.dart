@@ -37,6 +37,7 @@ typedef SendStatusBroadcastRunner =
       required WidgetRef ref,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
+      LedgerBroadcastArgs? ledger,
       required Future<bool> Function() confirmSaplingParamsDownload,
       Future<bool> Function()? shouldAbort,
     });

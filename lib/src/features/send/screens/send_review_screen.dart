@@ -160,7 +160,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       unawaited(_cancelLedgerOperation());
     }
     final discard = _handoffToHardware || hasUncheckpointedLedgerSignature
-        ? null : _scheduleDiscard();
+        ? null
+        : _scheduleDiscard();
     _releasePaymentUriBusySurface(after: discard);
     super.dispose();
   }
@@ -1069,11 +1070,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
+                            : isLedger
+                            ? 'Confirm with Ledger'
                             : isHardware
                             ? 'Confirm with Keystone'
                             : 'Confirm donation',
                         confirmIcon: isHardware
-                            ? AppIcons.qr
+                            ? (isLedger ? AppIcons.ledger : AppIcons.qr)
                             : AppIcons.donation,
                         onConfirm:
                             _cancelling ||
@@ -1101,11 +1104,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
+                            : isLedger
+                            ? 'Confirm with Ledger'
                             : isHardware
                             ? 'Confirm with Keystone'
                             : 'Confirm & send',
                         confirmLeadingIconName: isHardware
-                            ? AppIcons.qr
+                            ? (isLedger ? AppIcons.ledger : AppIcons.qr)
                             : AppIcons.plane,
                         onConfirm:
                             _cancelling ||
@@ -1118,7 +1123,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         onExpandMemo: _toggleMessageExpanded,
                       ),
               ),
-              if (_showVerifyAddress && keystonePhase == null && _ledgerPhase == null)
+              if (_showVerifyAddress &&
+                  keystonePhase == null &&
+                  _ledgerPhase == null)
                 SendVerifyAddressOverlay(
                   accountUuid: _reviewArgs.proposalAccountUuid,
                   address: _reviewArgs.address.trim(),
@@ -1162,27 +1169,27 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                     ),
                   ),
                 ),
-            if (_ledgerPhase case final ledgerPhase?)
-              AppPaneModalOverlay(
-                onDismiss: !_ledgerSigningComplete
-                    ? () => unawaited(_dismissLedgerSigningModal())
-                    : () {},
-                child: LedgerSigningModal(
-                  accountUuid: _reviewArgs.proposalAccountUuid,
-                  phase: ledgerPhase,
-                  failure: _ledgerFailure,
-                  onCancel: !_ledgerSigningComplete
+              if (_ledgerPhase case final ledgerPhase?)
+                AppPaneModalOverlay(
+                  onDismiss: !_ledgerSigningComplete
                       ? () => unawaited(_dismissLedgerSigningModal())
-                      : null,
-                  onFailureAction:
-                      ledgerPhase == LedgerSigningModalPhase.failed &&
-                          _ledgerRecoveryAction != null
-                      ? _handleLedgerRecoveryAction
-                      : null,
-                  roundNumber: _ledgerRound + 1,
-                  roundCount: _ledgerBasePczts?.length ?? 1,
+                      : () {},
+                  child: LedgerSigningModal(
+                    accountUuid: _reviewArgs.proposalAccountUuid,
+                    phase: ledgerPhase,
+                    failure: _ledgerFailure,
+                    onCancel: !_ledgerSigningComplete
+                        ? () => unawaited(_dismissLedgerSigningModal())
+                        : null,
+                    onFailureAction:
+                        ledgerPhase == LedgerSigningModalPhase.failed &&
+                            _ledgerRecoveryAction != null
+                        ? _handleLedgerRecoveryAction
+                        : null,
+                    roundNumber: _ledgerRound + 1,
+                    roundCount: _ledgerBasePczts?.length ?? 1,
+                  ),
                 ),
-              ),
               if (_showSaplingParamsPrompt)
                 Positioned.fill(
                   child: SaplingParamsPrompt(

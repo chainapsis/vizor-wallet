@@ -87,7 +87,6 @@ import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         SendReviewArgs,
-        resolveSendReviewRoutePayload,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
@@ -1479,7 +1478,9 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // up, in `_IncomingLinkHost`.
                                     child: PaymentRequestHost(
                                       router: router,
-                                      child: LedgerOperationRecoveryHost(child: child!),
+                                      child: LedgerOperationRecoveryHost(
+                                        child: child!,
+                                      ),
                                     ),
                                   ),
                                 ),

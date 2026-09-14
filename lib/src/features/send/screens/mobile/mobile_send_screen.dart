@@ -1918,6 +1918,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             proposalId: args.proposalId,
             sendFlowId: _sendFlowId,
             logContext: 'MobileSend(ledger cancelled)',
+            syncNotifier: ref.read(syncProvider.notifier),
+            accountUuid: args.proposalAccountUuid,
           ),
         );
         if (mounted) {
@@ -2560,8 +2562,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     Widget? line;
     if (showError) {
       line = Text(
-        ledgerTex ? _ledgerTexUnsupportedText :
-        _addressType == 'invalid'
+        ledgerTex
+            ? _ledgerTexUnsupportedText
+            : _addressType == 'invalid'
             // A wrong-network address is well-formed, so "Invalid address"
             // would send the user hunting for a typo that is not there.
             ? (_addressWrongNetwork

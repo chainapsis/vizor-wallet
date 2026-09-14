@@ -5078,11 +5078,6 @@ class _PreviewReceiveAddressService implements ReceiveAddressService {
   const _PreviewReceiveAddressService();
 
   @override
-  Future<String> reserveOrchardAddress({required String accountUuid}) async {
-    return 'u1widgetbookaccountsreservedaddress';
-  }
-
-  @override
   String? getCachedTransparentAddress(String accountUuid) =>
       't1WidgetbookTransparentAddress';
 

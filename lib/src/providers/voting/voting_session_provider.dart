@@ -25,7 +25,6 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../app_security_provider.dart';
 import 'voting_participation_provider.dart';
-import '../account_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_participation_provider.dart';
 import 'voting_home_cache_provider.dart';

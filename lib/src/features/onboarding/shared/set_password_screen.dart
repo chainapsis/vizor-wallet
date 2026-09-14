@@ -89,7 +89,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   Future<void> _submitWithOwnership() async {
-    final args = widget.args;
     final passwordPolicyError = _passwordPolicyError;
     final password = _passwordController.text;
     if (_submitPhase != _SetPasswordSubmitPhase.idle ||

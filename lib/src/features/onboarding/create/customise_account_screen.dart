@@ -129,7 +129,7 @@ class _CustomiseAccountScreenState
       .runMutation(_finishSetupWithOwnership);
 
   Future<void> _finishSetupWithOwnership() async {
-    final args = widget.args;
+    final args = widget.args!;
     final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;
 

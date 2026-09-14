@@ -35,7 +35,11 @@ import '../../features/swap/screens/mobile/mobile_swap_ledger_sign_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import '../../core/formatting/zec_amount.dart' show parseZecAmount;
 import '../../features/send/services/send_flow.dart'
-    show KeystoneBroadcastArgs, LedgerBroadcastArgs, SendReviewArgs, sanitisePaymentRequestLabel;
+    show
+        KeystoneBroadcastArgs,
+        LedgerBroadcastArgs,
+        SendReviewArgs,
+        sanitisePaymentRequestLabel;
 import '../../features/send/models/send_prefill_args.dart';
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';

@@ -346,7 +346,9 @@ Widget _app(
           (ref) =>
               () => ref.read(votingHomeCacheProvider.notifier).ensureLoaded(),
         ),
-      appBootstrapProvider.overrideWithValue(_bootstrap(accountState: accountState)),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       if (migrationCompletion != null || migrationCompletionFuture != null)
         ironwoodMigrationCompletionProvider.overrideWith(
           (ref) =>
