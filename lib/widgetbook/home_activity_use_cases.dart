@@ -169,6 +169,7 @@ Widget homeDesktopFixture({
   const harness = _HomeDesktopHarness();
   return ProviderScope(
     overrides: [
+      swapStateProvider.overrideWith(_HomePayNotifier.new),
       ..._homeOverrides(
         accountState: accountState,
         balance: balance,
@@ -221,6 +222,7 @@ Widget homeMobileFixture({
   final accountState = _homeAccountState(account);
   return ProviderScope(
     overrides: [
+      swapStateProvider.overrideWith(_HomePayNotifier.new),
       ..._homeOverrides(
         accountState: accountState,
         balance: balance,
@@ -848,6 +850,38 @@ class _HomeRoutePlaceholder extends StatelessWidget {
 }
 
 // --- Preview notifiers -----------------------------------------------------
+
+/// Home only prepares a simulated Pay entry and navigates to a placeholder.
+/// Never initialize the production composer's storage or network listeners.
+class _HomePayNotifier extends SwapNotifier {
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    amountText: '',
+    receiveAmountText: '',
+    destinationText: '',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+  );
+
+  @override
+  Future<SwapAsset?> resolvePaySelectedAssetForEntry({
+    required String accountUuid,
+  }) async => SwapAsset.usdc;
+
+  @override
+  bool preparePayFromShieldedZec({
+    SwapAsset? preferredAsset,
+    String? expectedAccountUuid,
+  }) {
+    state = state.copyWith(
+      payMode: true,
+      externalAsset: preferredAsset ?? SwapAsset.usdc,
+    );
+    return true;
+  }
+}
 
 class _HomeNoOpLayoutNotifier extends AppLayoutNotifier {
   @override

@@ -4,6 +4,11 @@ import 'package:flutter/widgets.dart'
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
@@ -43,6 +48,56 @@ void main() {
   // The mobile shielding case installs the camera fake for its scanning
   // stage; nothing else in this file should inherit it.
   tearDown(WbFakeMobileScannerPlatform.reset);
+
+  for (final layout in WbLayout.values) {
+    testWidgets('${layout.name} Home content Pay avoids host services', (
+      tester,
+    ) async {
+      await pumpUseCase(
+        tester,
+        buildHomeScreenGalleryCase,
+        knobs: {
+          'Layout': wbLayoutLabel(layout),
+          'Pay in USDC': 'true',
+          'Balance': homeBalanceLabel(HomeBalanceAmount.funded),
+        },
+      );
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final screen = layout == WbLayout.mobile
+          ? find.byType(MobileHomeScreen)
+          : find.byType(HomeScreen);
+      final context = tester.element(screen);
+      final router = GoRouter.of(context);
+      final container = ProviderScope.containerOf(context, listen: false);
+      expect(container.exists(swapStateProvider), isFalse);
+      for (var visit = 0; visit < 2; visit++) {
+        await tester.tap(
+          layout == WbLayout.mobile
+              ? find.byKey(const ValueKey('mobile_home_pay'))
+              : find.byKey(const ValueKey('home_desktop_pay_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.last.route.path,
+          '/pay',
+        );
+        expect(router.routerDelegate.currentConfiguration.error, isNull);
+        expect(find.text('Navigated to /pay'), findsOneWidget);
+        expect(container.read(swapStateProvider).payMode, isTrue);
+        expect(container.exists(paySelectedAssetStoreProvider), isFalse);
+        expect(container.exists(swapComposerPreferencesStoreProvider), isFalse);
+        expect(tester.takeException(), isNull);
+        router.pop();
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(screen, findsOneWidget);
+      }
+      await disposeTree(tester);
+    });
+  }
 
   testWidgets('both Home shield actions use the isolated preview runner', (
     tester,
