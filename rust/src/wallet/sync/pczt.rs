@@ -378,29 +378,41 @@ pub fn start_orchard_proving_key_warmup() {
 /// Only the Ironwood key is armed; `FixedPostNu6_2` is the legacy branch and
 /// does not justify a second set of tables.
 fn start_ironwood_prepared_commitment_warmup() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
 
     static STARTED: AtomicBool = AtomicBool::new(false);
 
-    if STARTED
+    start_ironwood_prepared_commitment_warmup_with(&STARTED, |task| {
+        std::thread::Builder::new()
+            .name("orchard-prepared-commitment-warmup".to_string())
+            .spawn(task)
+            .map(|_| ())
+    });
+}
+
+fn start_ironwood_prepared_commitment_warmup_with(
+    started: &std::sync::atomic::AtomicBool,
+    spawn: impl FnOnce(fn()) -> std::io::Result<()>,
+) {
+    use std::sync::atomic::Ordering;
+
+    if started
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
         return;
     }
 
-    let spawned = std::thread::Builder::new()
-        .name("orchard-prepared-commitment-warmup".to_string())
-        .spawn(|| {
-            // Blocks until key warm-up has populated the shared cache.
-            let armed = ironwood_orchard_proving_key().prepare_proving();
-            log::info!("orchard: prepared commitment tables armed={armed}");
-        });
-
-    if let Err(error) = spawned {
-        STARTED.store(false, Ordering::Release);
+    if let Err(error) = spawn(prepare_ironwood_commitments) {
+        started.store(false, Ordering::Release);
         log::warn!("orchard: could not start prepared commitment warm-up: {error}");
     }
+}
+
+fn prepare_ironwood_commitments() {
+    // Blocks until key warm-up has populated the shared cache.
+    let armed = ironwood_orchard_proving_key().prepare_proving();
+    log::info!("orchard: prepared commitment tables armed={armed}");
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
@@ -2583,12 +2595,36 @@ mod tests {
     }
 
     #[test]
-    fn pczt_and_warmup_share_the_transaction_builder_proving_key() {
-        start_orchard_proving_key_warmup();
-        start_orchard_proving_key_warmup();
+    fn prepared_commitment_warmup_is_single_flight_over_the_builder_key() {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Barrier,
+        };
+
+        const CALLERS: usize = 8;
+        let started = AtomicBool::new(false);
+        let spawn_calls = AtomicUsize::new(0);
+        let barrier = Barrier::new(CALLERS);
+        std::thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                scope.spawn(|| {
+                    barrier.wait();
+                    start_ironwood_prepared_commitment_warmup_with(&started, |task| {
+                        spawn_calls.fetch_add(1, Ordering::Relaxed);
+                        task();
+                        Ok(())
+                    });
+                });
+            }
+        });
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            panic!("prepared commitment warm-up scheduled more than once")
+        });
+        assert_eq!(spawn_calls.load(Ordering::Relaxed), 1);
 
         let builder_key = cached_orchard_proving_key(ironwood_orchard_circuit_version());
         assert!(std::ptr::eq(ironwood_orchard_proving_key(), builder_key));
+        assert!(builder_key.prepare_proving());
 
         let legacy_builder_key =
             cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
@@ -2596,6 +2632,20 @@ mod tests {
             legacy_orchard_proving_key(),
             legacy_builder_key
         ));
+    }
+
+    #[test]
+    fn prepared_commitment_warmup_retries_after_spawn_failure() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let started = AtomicBool::new(false);
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            Err(std::io::Error::other("simulated spawn failure"))
+        });
+        assert!(!started.load(Ordering::Acquire));
+
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| Ok(()));
+        assert!(started.load(Ordering::Acquire));
     }
 
     #[test]
