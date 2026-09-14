@@ -9814,6 +9814,128 @@ void main() {
     },
   );
 
+  for (final outcome in ['recover', 'drain', 'permanent']) {
+    final stopBeforeRetry = outcome == 'drain';
+    final permanent = outcome == 'permanent';
+    test(
+      'tracking open failure ${stopBeforeRetry ? "drains before retry" : outcome}',
+      () async {
+        final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final pendingShare = FakeShareDelegationRecord(
+          roundId: kRoundId,
+          bundleIndex: 0,
+          proposalId: 7,
+          shareIndex: 0,
+          sentToUrls: const ['https://helper-a.example'],
+          ambiguousUrls: const [],
+          targetCount: 1,
+          nullifier: Uint8List.fromList(List.filled(32, 9)),
+          phase: rust_wire.WorkflowPhaseView.submittedShare,
+          confirmed: false,
+          submitAt: BigInt.zero,
+          createdAt: BigInt.from(nowSeconds - 600),
+        );
+        final rust = FakeVotingRustApi();
+        rust.roundSessionOpenErrors.add(
+          votingRustError(
+            permanent
+                ? rust_wire.VotingErrorKindView.storage
+                : rust_wire.VotingErrorKindView.dbBusy,
+            message: 'injected sidecar open failure',
+            retryable: !permanent,
+          ),
+        );
+        rust.scriptedShareTrackingRuns.add([
+          _trackingRunResult(
+            rust_wire.ShareTrackingQuiescenceKind.allConfirmed,
+          ),
+        ]);
+        final recovery = FakeVotingRecoveryApi(
+          state: recoveryState(
+            shareDelegations: [pendingShare],
+            unconfirmedShareDelegations: [pendingShare],
+          ),
+        );
+        final container = _sessionContainer(
+          rust: rust,
+          recoveryApi: recovery,
+          extraOverrides: [
+            votingShareTrackingFailureRetryDelayProvider.overrideWithValue(
+              Duration.zero,
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        const key = VotingSessionKey(
+          accountUuid: 'account-1',
+          roundId: kRoundId,
+        );
+        // Model a visible consumer so releasing the tracking keep-alive does
+        // not dispose/rebuild the provider when the test reads its state.
+        final subscription = container.listen(
+          votingSubmissionSessionProvider(key),
+          (_, _) {},
+        );
+        addTearDown(subscription.close);
+        await container.read(votingSubmissionSessionProvider(key).future);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final notifier = container.read(
+          votingSubmissionSessionProvider(key).notifier,
+        );
+        expect(rust.roundSessionOpenAttempts, 1);
+        expect(rust.shareTrackingSessions, isEmpty);
+        final registry = container.read(votingShareTrackingRegistryProvider);
+        if (permanent) {
+          expect(registry.registeredKeys, isEmpty);
+          await Future<void>.delayed(const Duration(milliseconds: 1200));
+          expect(rust.roundSessionOpenAttempts, 1);
+        } else if (stopBeforeRetry) {
+          expect(registry.registeredKeys, contains(key));
+          await registry.quiesceAndDrain(accountUuid: 'account-1');
+          expect(registry.registeredKeys, isEmpty);
+          await Future<void>.delayed(const Duration(milliseconds: 1200));
+          expect(rust.roundSessionOpenAttempts, 1);
+          registry.resume(accountUuid: 'account-1');
+        } else {
+          // An explicit start must still report its failure, while replacing the
+          // automatic retry it cancelled with another bounded retry.
+          rust.roundSessionOpenErrors.add(
+            votingRustError(
+              rust_wire.VotingErrorKindView.storage,
+              message: 'injected storage error',
+              retryable: true,
+            ),
+          );
+          await expectLater(
+            notifier.startShareTracking(),
+            throwsA(isA<VotingRustException>()),
+          );
+          // Match the scripted successful report with its durable post-run plan.
+          recovery.state = recoveryState();
+          rust.roundSessionOpenErrors.add(
+            votingRustError(
+              rust_wire.VotingErrorKindView.dbBusy,
+              message: 'retry also encounters contention',
+              retryable: true,
+            ),
+          );
+          await _waitForShareTrackingRuns(
+            rust,
+            1,
+            timeout: const Duration(seconds: 10),
+          );
+          await notifier.shareTrackingRun;
+          expect(rust.roundSessionOpenAttempts, 4);
+          expect(registry.registeredKeys, isEmpty);
+          expect(
+            container.read(votingSubmissionSessionProvider(key)).value?.phase,
+            isNot(VotingSessionPhase.error),
+          );
+        }
+      },
+    );
+  }
+
   test('a failing tracking run re-arms itself', () async {
     // The SDK retries inside a run, so a `Failing` quiescence means the fleet
     // was unreachable for longer than that. It is still a condition a later
@@ -12707,9 +12829,11 @@ rust_session.ApiShareTrackingRunEvent _trackingRunResult(
 
 Future<void> _waitForShareTrackingRuns(
   FakeVotingRustApi rust,
-  int expectedRuns,
-) async {
-  for (var i = 0; i < 200; i++) {
+  int expectedRuns, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
     if (rust.shareTrackingSessions.length >= expectedRuns) return;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
@@ -14476,6 +14600,9 @@ class FakeVotingRustApi
         '${vote.bundleIndex}:${vote.proposalId}',
   };
 
+  final List<Object> roundSessionOpenErrors = [];
+  int roundSessionOpenAttempts = 0;
+
   @override
   VotingRoundSession openRoundSession({
     required rust_api.ApiVotingRoundContext ctx,
@@ -14483,6 +14610,10 @@ class FakeVotingRustApi
     List<int>? storedHotkeySecret,
     required BigInt operationEpoch,
   }) {
+    roundSessionOpenAttempts++;
+    if (roundSessionOpenErrors.isNotEmpty) {
+      throw roundSessionOpenErrors.removeAt(0);
+    }
     accountUuids.add(ctx.accountUuid);
     final session = FakeVotingRoundSession(
       driver: this,

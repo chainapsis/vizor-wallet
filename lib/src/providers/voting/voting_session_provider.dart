@@ -182,7 +182,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // Only the notifier that owns automatic tracking starts a run by itself.
     // A screen-scoped notifier still tracks when something asks it to, but it
     // does not begin polling helpers merely by being watched.
-    if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
+    if (_ownsAutomaticShareTracking) {
+      unawaited(_startAutomaticShareTracking(context));
+    }
     return initialState;
   }
 
@@ -326,7 +328,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           phase: _phaseForPlans(context.roundPlan),
         ),
       );
-      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
+      if (_ownsAutomaticShareTracking) {
+        unawaited(_startAutomaticShareTracking(context));
+      }
     } catch (error, stackTrace) {
       if (!_isCurrentGeneration(generation) ||
           _sessionAccountUuid != accountUuid) {
@@ -1463,7 +1467,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
         );
         if (_ownsAutomaticShareTracking) {
-          unawaited(_startShareTracking(context));
+          unawaited(_startAutomaticShareTracking(context));
         }
         rethrow;
       } finally {
@@ -1507,7 +1511,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentVoteKey: true,
         ),
       );
-      if (_ownsAutomaticShareTracking) unawaited(_startShareTracking(context));
+      if (_ownsAutomaticShareTracking) {
+        unawaited(_startAutomaticShareTracking(context));
+      }
     }, cleanupProcessStateOnError: false);
     return operation;
   }
@@ -2345,8 +2351,48 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return running != null && _isCurrentContext(running);
   }
 
-  /// [startShareTracking], reusing a context the caller already loaded.
+  // Automatic callers consume the error after startup schedules recovery.
+  // Explicit callers still receive it so a waiting submission cannot hang.
+  Future<void> _startAutomaticShareTracking(
+    _VotingSessionContext context,
+  ) async {
+    try {
+      await _startShareTracking(context);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: automatic share tracking could not start '
+        'kind=${votingRustExceptionOf(error)?.kind.name ?? 'unknown'}',
+      );
+    }
+  }
+
   Future<void> _startShareTracking([
+    _VotingSessionContext? knownContext,
+  ]) async {
+    try {
+      await _startShareTrackingUnchecked(knownContext);
+    } catch (error) {
+      if (!_isDisposed && ref.mounted && !_shareTrackingRunIsLive) {
+        final context = knownContext ?? _currentContext;
+        if (context != null && _isCurrentContext(context)) {
+          if (_automaticShareTrackingStopped ||
+              _shareTrackingCancelled(context) ||
+              votingRustExceptionOf(error)?.view.retryable == false) {
+            _cancelShareTrackingRetry();
+            _releaseAutomaticShareTracking();
+          } else {
+            _armShareTrackingRetry(context);
+          }
+        } else if (context == null) {
+          _cancelShareTrackingRetry();
+          _releaseAutomaticShareTracking();
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _startShareTrackingUnchecked([
     _VotingSessionContext? knownContext,
   ]) async {
     if (_shareTrackingRunIsLive) {
@@ -2590,7 +2636,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       unawaited(
         finishing.then((_) {
           if (_isDisposed || !ref.mounted) return null;
-          return _startShareTracking();
+          return _startAutomaticShareTracking(context);
         }),
       );
       return;
@@ -2673,18 +2719,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // A start that fails anyway backs off again instead of ending here: the
       // timer has already been cleared, so returning without re-arming would
       // leave the round pinned and untracked until some later lifecycle event.
-      unawaited(
-        _startShareTracking(context).catchError((
-          Object error,
-          StackTrace stack,
-        ) {
-          debugPrint(
-            '[zcash] Voting: share tracking retry failed to start '
-            'round=${context.round.roundId} error=$error\n$stack',
-          );
-          _armShareTrackingRetry(context);
-        }),
-      );
+      unawaited(_startAutomaticShareTracking(context));
     });
   }
 
