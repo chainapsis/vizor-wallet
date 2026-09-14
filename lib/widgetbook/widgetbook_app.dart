@@ -708,14 +708,7 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Entry - Request ZEC button',
                 builder: buildReceiveDesktopRequestEntryUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Request modal - step 1 - empty',
-                builder: buildRequestModalStepOneEmptyUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Request modal - step 1 - amount',
-                builder: buildRequestModalStepOneAmountUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Request modal - step 1 - price unavailable',
                 builder: buildRequestModalStepOnePriceUnavailableUseCase,
@@ -724,22 +717,12 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Request modal - step 1 - amount + message',
                 builder: buildRequestModalStepOneMessageUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Request modal - step 1 - transparent',
-                builder: buildRequestModalStepOneTransparentUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Request modal - step 1 - amount error',
-                builder: buildRequestModalStepOneAmountErrorUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Request modal - step 2 - shielded',
                 builder: buildRequestModalStepTwoShieldedUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Request modal - step 2 - transparent',
-                builder: buildRequestModalStepTwoTransparentUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Request modal - step 2 - 512-byte message',
                 builder: buildRequestModalStepTwoDenseUseCase,
@@ -765,18 +748,7 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Transparent sheet',
                 builder: buildReceiveMobileTransparentSheetUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Entry - Request ZEC button',
-                builder: buildRequestMobileEntryUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Request step 1 - empty',
-                builder: buildRequestMobileComposeEmptyUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Request step 1 - amount (USD mode)',
-                builder: buildRequestMobileComposeUsdUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Request step 1 - price unavailable',
                 builder: buildRequestMobileComposePriceUnavailableUseCase,
@@ -792,10 +764,6 @@ final List<WidgetbookNode> widgetbookDirectories = [
               WidgetbookUseCase(
                 name: 'Request step 2 - shielded QR',
                 builder: buildRequestMobileResultShieldedUseCase,
-              ),
-              WidgetbookUseCase(
-                name: 'Request step 2 - transparent QR',
-                builder: buildRequestMobileResultTransparentUseCase,
               ),
             ],
           ),
