@@ -1996,6 +1996,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
         const SizedBox(width: AppSpacing.xxs),
         AppTooltip(
           tapToShow: true,
+          mouseClickToShow: true,
           richMessage: TextSpan(
             children: [
               TextSpan(

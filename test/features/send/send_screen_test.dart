@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1419,6 +1420,92 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets('mouse click opens spendable help before hover and dismisses', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.enterText(_editableIn('send_amount_field'), '1');
+    await tester.pumpAndSettle();
+
+    final help = find.byWidgetPredicate(
+      (widget) =>
+          widget is Tooltip &&
+          widget.richMessage?.toPlainText().contains(
+                'Your spendable balance may be lower',
+              ) ==
+              true,
+    );
+    final visibleHelp = find.byWidgetPredicate(
+      (widget) =>
+          widget is RichText &&
+          widget.text.toPlainText().contains(
+            '6 for funds received from others',
+          ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    final target = tester.getCenter(help);
+    await mouse.moveTo(target);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(visibleHelp, findsNothing);
+    await mouse.down(target);
+    await mouse.up();
+    // Stay below the 350 ms hover delay, including the fade-in animation.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(visibleHelp, findsOneWidget);
+    expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    expect(_fieldText(tester, 'send_amount_field'), '1');
+    expect(rustApi.proposeSendCalls, 0);
+
+    await mouse.down(target);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsOneWidget);
+    await tester.pump(const Duration(seconds: 9));
+    expect(visibleHelp, findsOneWidget);
+
+    // Moving into the tooltip keeps it open; leaving both regions closes it.
+    await mouse.moveTo(tester.getCenter(visibleHelp));
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsOneWidget);
+    await mouse.moveTo(Offset.zero);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsNothing);
+
+    // Clicking then leaving the icon directly must also dismiss.
+    await mouse.moveTo(target);
+    await mouse.down(target);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsOneWidget);
+    await mouse.moveTo(Offset.zero);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsNothing);
+
+    // The original hover path still works.
+    await mouse.moveTo(target);
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsOneWidget);
+    // Down outside dismisses immediately, before the hover exit delay.
+    await mouse.moveTo(Offset.zero);
+    await mouse.down(Offset.zero);
+    await mouse.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(visibleHelp, findsNothing);
+    expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    expect(_fieldText(tester, 'send_amount_field'), '1');
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
   testWidgets('tapping spendable balance help preserves the send draft', (
     tester,
   ) async {
@@ -1454,8 +1541,16 @@ void main() {
     expect(_fieldText(tester, 'send_amount_field'), '1');
     expect(rustApi.proposeSendCalls, 0);
 
-    Tooltip.dismissAllToolTips();
+    // Touch keeps the existing eight-second timeout.
+    await tester.pump(const Duration(seconds: 8));
     await tester.pumpAndSettle();
+    expect(visibleHelp, findsNothing);
+    await tester.tap(help);
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    expect(visibleHelp, findsNothing);
   });
 
   // The desktop mirror of mobile_send_screen_test's request-framing group.
