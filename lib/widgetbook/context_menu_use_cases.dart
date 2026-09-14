@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_context_menu.dart';
 import '../src/core/widgets/app_icon.dart';
+import 'support/wb_layout.dart';
 
 Widget buildContextMenuGalleryUseCase(BuildContext context) {
   final colors = context.colors;
@@ -195,3 +196,97 @@ class _NarrowActionsMenu extends StatelessWidget {
 }
 
 void _noop() {}
+
+// --- Anchor positions -------------------------------------------------------
+
+/// Where the menu is pinned inside the pane, which is what drives
+/// [AppContextMenu]'s own edge self-correction.
+enum ContextMenuAnchor {
+  topLeft,
+  topRight,
+  bottomLeft,
+  bottomRight,
+  tallClamped,
+}
+
+/// Narrow width option, matching the narrow menu fixture above.
+const double kContextMenuNarrowWidth = 128;
+
+/// One menu pinned near a pane edge, so the flip / shift / clamp correction is
+/// what the preview shows.
+///
+/// The menu measures itself against the ambient [Overlay], so the fixture
+/// gives it a local one filling the pane — otherwise it would measure the
+/// whole widgetbook canvas and never need to correct.
+Widget contextMenuAnchorFixture(
+  BuildContext context, {
+  required ContextMenuAnchor anchor,
+  required double width,
+}) {
+  return WbFrame(
+    layout: WbLayout.desktop,
+    child: ColoredBox(
+      color: context.colors.background.ground,
+      child: Overlay(
+        // `initialEntries` is read once in `initState`, so a knob change needs
+        // a new Overlay rather than a rebuild of the old one.
+        key: ValueKey('$anchor|$width'),
+        initialEntries: [
+          OverlayEntry(
+            builder: (context) => Stack(
+              children: [_anchoredMenu(anchor: anchor, width: width)],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _anchoredMenu({
+  required ContextMenuAnchor anchor,
+  required double width,
+}) {
+  // Negative insets put the menu's natural rect past the pane edge, which is
+  // the overflow a row near the edge produces at the real call sites.
+  final menu = AppContextMenu(
+    width: width,
+    children: _anchorMenuItems(
+      anchor == ContextMenuAnchor.tallClamped ? 14 : 3,
+    ),
+  );
+  return switch (anchor) {
+    ContextMenuAnchor.topLeft => Positioned(left: 24, top: 24, child: menu),
+    ContextMenuAnchor.topRight => Positioned(right: -72, top: 24, child: menu),
+    ContextMenuAnchor.bottomLeft => Positioned(
+      left: 24,
+      bottom: -48,
+      child: menu,
+    ),
+    ContextMenuAnchor.bottomRight => Positioned(
+      right: -72,
+      bottom: -48,
+      child: menu,
+    ),
+    // Taller than half the pane, so flipping up would overflow the top and the
+    // menu clamps to the bottom edge instead.
+    ContextMenuAnchor.tallClamped => Positioned(
+      left: 24,
+      bottom: -48,
+      child: menu,
+    ),
+  };
+}
+
+List<Widget> _anchorMenuItems(int count) {
+  return [
+    for (var index = 0; index < count; index++) ...[
+      if (index > 0) const SizedBox(height: AppSpacing.xxs),
+      AppContextMenuItem(
+        iconName: AppIcons.copy,
+        label: 'Copy address',
+        onTap: _noop,
+      ),
+    ],
+  ];
+}

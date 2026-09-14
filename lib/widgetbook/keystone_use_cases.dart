@@ -14,6 +14,7 @@ import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../src/features/keystone/widgets/keystone_signing_modal.dart';
 import '../src/features/keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/onboarding/keystone/keystone_onboarding_flow.dart';
@@ -25,6 +26,7 @@ import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/providers/account_provider.dart' show AccountState;
 import '../src/rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import '../src/services/qr_scanner.dart' show ScanResult;
+import 'support/wb_layout.dart';
 
 Widget buildMobileKeystoneScanRequestingUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
@@ -118,7 +120,9 @@ Widget buildMobileKeystoneSigningScannerUseCase(BuildContext context) {
 }
 
 Widget buildMobileKeystoneConnectUseCase(BuildContext context) {
-  return const _MobileKeystoneScreenFrame(child: MobileKeystoneIntroScreen());
+  return _MobileKeystoneScreenFrame(
+    child: MobileKeystoneIntroScreen(urlLauncher: (_) async {}),
+  );
 }
 
 Widget buildMobileKeystoneBirthdayUseCase(BuildContext context) {
@@ -144,6 +148,41 @@ Widget buildMobileKeystoneSelectAccountUseCase(BuildContext context) {
   return const _MobileKeystoneSelectAccountFrame();
 }
 
+/// The desktop Keystone signing modal (send / swap / voting / migration all
+/// show this one surface). Pure props, so the preview sits on a plain pane
+/// rather than over a live composer. Copy matches `send_review_screen.dart`.
+Widget keystoneSigningModalFixture({
+  required KeystoneSigningModalPhase phase,
+  required bool showPrimary,
+  required bool showSecondary,
+  required bool showInstruction,
+}) {
+  return WbFrame(
+    layout: WbLayout.desktop,
+    child: Center(
+      child: KeystoneSigningModal(
+        phase: phase,
+        urParts: phase == KeystoneSigningModalPhase.ready
+            ? _pcztPreviewUrParts()
+            : const [],
+        error: phase == KeystoneSigningModalPhase.failed
+            ? 'Could not prepare the transaction for your Keystone.'
+            : null,
+        title: 'Confirm with Keystone',
+        subtitle: 'Scan with your Keystone',
+        instruction: showInstruction
+            ? 'After you scanned, click Get signature.'
+            : null,
+        primaryLabel: showPrimary ? 'Get signature' : null,
+        onPrimary: showPrimary ? _noop : null,
+        secondaryLabel: showSecondary ? 'Cancel' : null,
+        onSecondary: showSecondary ? _noop : null,
+        onOpenFirmware: _noop,
+      ),
+    ),
+  );
+}
+
 /// A bare 393×852 phone frame for Keystone onboarding screens that bring
 /// their own scaffold.
 class _MobileKeystoneScreenFrame extends StatelessWidget {
@@ -153,15 +192,18 @@ class _MobileKeystoneScreenFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
+    return WbScaleDownBox(
+      size: const Size(393, 852),
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(393, 852),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: child,
         ),
-        child: child,
       ),
     );
   }
@@ -196,15 +238,18 @@ class _MobileKeystoneSelectAccountFrame extends StatelessWidget {
           _SeededKeystoneOnboardingNotifier.new,
         ),
       ],
-      child: const SizedBox(
-        width: 393,
-        height: 852,
-        child: MediaQuery(
-          data: MediaQueryData(
-            size: Size(393, 852),
-            viewPadding: EdgeInsets.only(top: 55),
+      child: const WbScaleDownBox(
+        size: Size(393, 852),
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MediaQuery(
+            data: MediaQueryData(
+              size: Size(393, 852),
+              viewPadding: EdgeInsets.only(top: 55),
+            ),
+            child: MobileKeystoneSelectAccountScreen(),
           ),
-          child: MobileKeystoneSelectAccountScreen(),
         ),
       ),
     );
@@ -238,39 +283,42 @@ class _MobileKeystoneModalScanFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const MobileOnboardingStepScaffold(
-              progress: 0.4,
-              onBack: _noop,
-              title: 'Scan QR Code',
-              subtitle: 'Prepare your Keystone wallet',
-              scrollable: false,
-              child: SizedBox.shrink(),
-            ),
-            IgnorePointer(
-              child: ModalBarrier(color: colors.background.neutralScrim),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: child),
-                ],
+    return WbScaleDownBox(
+      size: const Size(393, 852),
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(393, 852),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const MobileOnboardingStepScaffold(
+                progress: 0.4,
+                onBack: _noop,
+                title: 'Scan QR Code',
+                subtitle: 'Prepare your Keystone wallet',
+                scrollable: false,
+                child: SizedBox.shrink(),
               ),
-            ),
-          ],
+              IgnorePointer(
+                child: ModalBarrier(color: colors.background.neutralScrim),
+              ),
+              SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Spacer(),
+                    MobileModalCard(child: child),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -285,50 +333,53 @@ class _MobileKeystonePcztQrFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
-        ),
-        child: DecoratedBox(
-          decoration: const BoxDecoration(color: Color(0xFF000000)),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: Column(
-                children: [
-                  const SizedBox(height: 72),
-                  Text(
-                    'Confirm transaction',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: const Color(0xFFFFFFFF),
+    return WbScaleDownBox(
+      size: const Size(393, 852),
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(393, 852),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(color: Color(0xFF000000)),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 72),
+                    Text(
+                      'Confirm transaction',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: const Color(0xFFFFFFFF),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.s),
-                  Text(
-                    'Use your Keystone wallet to scan this transaction QR '
-                    'code. Follow the steps on your device.',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: const Color(0xCCFFFFFF),
+                    const SizedBox(height: AppSpacing.s),
+                    Text(
+                      'Use your Keystone wallet to scan this transaction QR '
+                      'code. Follow the steps on your device.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: const Color(0xCCFFFFFF),
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: colors.background.ground,
-                      borderRadius: BorderRadius.circular(AppRadii.large),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: colors.background.ground,
+                        borderRadius: BorderRadius.circular(AppRadii.large),
+                      ),
+                      child: child,
                     ),
-                    child: child,
-                  ),
-                  const Spacer(),
-                  const SizedBox(height: 96),
-                ],
+                    const Spacer(),
+                    const SizedBox(height: 96),
+                  ],
+                ),
               ),
             ),
           ),
@@ -347,29 +398,32 @@ class _MobileKeystoneSigningFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
-        ),
-        child: ProviderScope(
-          child: MobileKeystonePcztSigningFlow(
-            title: 'Confirm transaction',
-            description:
-                'Use your Keystone wallet to scan this transaction QR code. '
-                'Follow the steps on your device.',
-            keyPrefix: 'mobile_keystone_signing_widgetbook',
-            onCancel: _noop,
-            preparePczt: _prepare,
-            scannerBuilder: _buildScannerPreview,
-            forceScannerActiveForTesting: true,
-            startInScannerForTesting: phase == _SigningPreviewPhase.scanner,
-            signedPcztDecoder: (_) async => Uint8List.fromList(const [9]),
-            onSigned: (_, _, _, _) async {},
-            friendlyError: (_) => 'Keystone signing could not be prepared.',
+    return WbScaleDownBox(
+      size: const Size(393, 852),
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(393, 852),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: ProviderScope(
+            child: MobileKeystonePcztSigningFlow(
+              title: 'Confirm transaction',
+              description:
+                  'Use your Keystone wallet to scan this transaction QR code. '
+                  'Follow the steps on your device.',
+              keyPrefix: 'mobile_keystone_signing_widgetbook',
+              onCancel: _noop,
+              preparePczt: _prepare,
+              scannerBuilder: _buildScannerPreview,
+              forceScannerActiveForTesting: true,
+              startInScannerForTesting: phase == _SigningPreviewPhase.scanner,
+              signedPcztDecoder: (_) async => Uint8List.fromList(const [9]),
+              onSigned: (_, _, _, _) async {},
+              friendlyError: (_) => 'Keystone signing could not be prepared.',
+            ),
           ),
         ),
       ),

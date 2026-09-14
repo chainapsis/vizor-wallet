@@ -12,6 +12,7 @@ import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_profile_picture.dart';
 import '../src/core/widgets/mobile/mobile_list_row.dart';
 import '../src/core/widgets/mobile/mobile_surface_card.dart';
+import 'support/wb_layout.dart';
 
 // Preview these with the mobile token lane for true metrics:
 // fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile
@@ -94,7 +95,10 @@ class _InteractiveTabBarState extends State<_InteractiveTabBar> {
 
 Widget buildMobileShellUseCase(BuildContext context) {
   return Center(
-    child: SizedBox(width: 393, height: 700, child: const _ShellPreview()),
+    child: const WbScaleDownBox(
+      size: Size(393, 700),
+      child: SizedBox(width: 393, height: 700, child: _ShellPreview()),
+    ),
   );
 }
 
@@ -211,4 +215,111 @@ Widget buildMobileSheetUseCase(BuildContext context) {
       ),
     ),
   );
+}
+
+// --- Top nav playground -----------------------------------------------------
+
+/// The three `MobileTopNav` constructors.
+enum MobileTopNavVariantCase { account, steps, back }
+
+/// Account-variant sync status; `hidden` is the no-label form a tab root uses
+/// while the status is suppressed.
+enum MobileTopNavSyncCase { hidden, synced, syncing, failed }
+
+/// Back-variant leading glyph; the swap composer swaps to the cross while its
+/// number pad is open.
+enum MobileTopNavBackIconCase { chevron, cross }
+
+/// One `MobileTopNav` on the phone frame, every axis driven by a parameter.
+///
+/// Separate from [buildMobileTopNavVariantsUseCase], which stays the fixed
+/// multi-variant sheet.
+Widget mobileTopNavFixture(
+  BuildContext context, {
+  required MobileTopNavVariantCase variant,
+  required MobileTopNavSyncCase sync,
+  required bool reducedMotion,
+  required bool balanceLabel,
+  required MobileTopNavBackIconCase backIcon,
+  required bool hasBackAction,
+  required bool trailing,
+  required double progress,
+}) {
+  final colors = context.colors;
+  final (
+    syncLabel,
+    syncLabelColor,
+    syncIndicatorColor,
+    syncAnimated,
+  ) = switch (sync) {
+    MobileTopNavSyncCase.hidden => (null, null, null, false),
+    MobileTopNavSyncCase.synced => (
+      'Vizor is synced',
+      colors.sync.text,
+      colors.sync.lightSuccess,
+      false,
+    ),
+    MobileTopNavSyncCase.syncing => (
+      '34% Syncing...',
+      colors.sync.textSyncing,
+      colors.text.muted,
+      true,
+    ),
+    MobileTopNavSyncCase.failed => (
+      'Syncing failed. Network error...',
+      colors.sync.textError,
+      colors.sync.lightError,
+      false,
+    ),
+  };
+
+  final nav = switch (variant) {
+    MobileTopNavVariantCase.account => MobileTopNav.account(
+      accountName: 'Account1',
+      balanceLabel: balanceLabel ? '140.12 ZEC' : null,
+      syncLabel: syncLabel,
+      syncLabelColor: syncLabelColor,
+      syncIndicatorColor: syncIndicatorColor,
+      syncHighlightColor: colors.sync.lightSuccess,
+      syncAnimated: syncAnimated,
+      onAccountTap: () {},
+    ),
+    MobileTopNavVariantCase.steps => MobileTopNav.steps(
+      progress: progress,
+      onBack: hasBackAction ? () {} : null,
+      showBackButton: hasBackAction,
+    ),
+    MobileTopNavVariantCase.back => MobileTopNav.back(
+      title: 'Activity',
+      onBack: hasBackAction ? () {} : null,
+      backIcon: backIcon == MobileTopNavBackIconCase.cross
+          ? AppIcons.cross
+          : AppIcons.chevronBackward,
+      trailing: trailing ? const _MobileTopNavTrailingLockup() : null,
+    ),
+  };
+
+  return _phoneFrame(
+    context,
+    MediaQuery(
+      // Reduced motion is a MediaQuery flag, not a provider: the shimmer band
+      // and the edge-bar glow both read `disableAnimations`.
+      data: MediaQuery.of(context).copyWith(disableAnimations: reducedMotion),
+      child: nav,
+    ),
+  );
+}
+
+class _MobileTopNavTrailingLockup extends StatelessWidget {
+  const _MobileTopNavTrailingLockup();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Powered by NEAR Intents',
+      style: AppTypography.labelSmall.copyWith(
+        color: context.colors.text.secondary,
+      ),
+    );
+  }
 }
