@@ -97,14 +97,26 @@ void main() {
     );
   });
 
-  test('proposal ZIP badges fall back to title and description text', () {
+  test('proposal ZIP badges require explicit metadata', () {
+    const description =
+        'A shielded wallet accounting CLI with ZIP-321 payment request generation.';
     final proposals = proposalsFromJson({
       'proposals': [
         {'id': 1, 'title': 'NU7 ZIP 233', 'description': 'Related to ZIP 234.'},
+        {
+          'id': 9,
+          'title': 'ZecLedger',
+          'description': description,
+          'zipNumber': '',
+        },
       ],
     });
 
-    expect(proposals.single.zipBadges, ['ZIP-233', 'ZIP-234']);
+    expect(proposals.first.zipBadges, isEmpty);
+    expect(proposals.first.title, 'NU7 ZIP 233');
+    expect(proposals.first.description, 'Related to ZIP 234.');
+    expect(proposals.last.zipBadges, isEmpty);
+    expect(proposals.last.description, description);
   });
 
   test('round forum URL parser accepts discussion and forum aliases', () {

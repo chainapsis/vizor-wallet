@@ -67,11 +67,8 @@ class VotingProposalView {
   final String zipNumber;
   final String forumUrl;
 
-  List<String> get zipBadges {
-    final explicitBadges = votingZipBadgesFromZipNumber(zipNumber);
-    if (explicitBadges.isNotEmpty) return explicitBadges;
-    return votingZipBadgesFromText('$title $description');
-  }
+  /// ZIP badges come only from explicit metadata. Mentions in prose stay text.
+  List<String> get zipBadges => votingZipBadgesFromZipNumber(zipNumber);
 
   Uri? get forumUri => votingForumUriFromString(forumUrl);
 
