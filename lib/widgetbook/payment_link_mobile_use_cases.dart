@@ -38,6 +38,11 @@ const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
 const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
 const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
 
+const _amountFormatters = [
+  CommaToDotInputFormatter(),
+  DecimalAmountInputFormatter(maxFractionDigits: 8),
+];
+
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _PaymentLinkHomeFixture());
 }
@@ -692,6 +697,7 @@ class _FocusedAmountFixtureState extends State<_FocusedAmountFixture> {
               amountEditorKey: const ValueKey(
                 'mobile_payment_link_focused_amount_editor',
               ),
+              amountInputFormatters: _amountFormatters,
               supportingLoading: true,
               semanticLabel: 'Gift card amount input',
             ),
@@ -825,10 +831,6 @@ class _MobilePaymentLinkInteractivePreview extends StatefulWidget {
 class _MobilePaymentLinkInteractivePreviewState
     extends State<_MobilePaymentLinkInteractivePreview> {
   static const _usdPerZec = 272.0;
-  static const _amountFormatters = [
-    CommaToDotInputFormatter(),
-    DecimalAmountInputFormatter(maxFractionDigits: 8),
-  ];
 
   final _amountController = TextEditingController();
   final _amountFocusNode = FocusNode();

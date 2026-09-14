@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart' show InputDecoration, TextField;
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -158,13 +157,9 @@ class _MobileSwapSlippageStepperModalState
                                         decimal: true,
                                       ),
                                   inputFormatters: [
-                                    // The decimal-pad key follows the device
-                                    // locale; normalise a comma to the period
-                                    // the filter keeps.
+                                    // Normalize the locale separator before
+                                    // the shared decimal validator.
                                     const CommaToDotInputFormatter(),
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9.]'),
-                                    ),
                                     // Cap at two decimal places (1.55 ok,
                                     // 1.555 rejected).
                                     const DecimalAmountInputFormatter(

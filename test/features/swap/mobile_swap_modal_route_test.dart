@@ -215,6 +215,11 @@ void main() {
         },
       );
       final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['a.7', '.7%', '1 2', '1..2']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
       await tester.enterText(field, '0.555');
       await tester.pump();
       expect(controller.text, '0.5');
