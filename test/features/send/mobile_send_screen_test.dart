@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -387,10 +388,10 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
 class _FakeAddressBookRepository implements AddressBookRepository {
   _FakeAddressBookRepository(this.contacts);
 
-  final List<AddressBookContact> contacts;
+  final FutureOr<List<AddressBookContact>> contacts;
 
   @override
-  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+  Future<List<AddressBookContact>> loadContacts() async => [...await contacts];
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
@@ -569,6 +570,8 @@ Widget _reviewApp({
 /// SendPrefillArgs)`, so `/send` becomes the entire stack and there is nothing
 /// under it to pop.
 Widget _sendFlowRouterApp({
+  FutureOr<List<AddressBookContact>> contacts = const [],
+  FutureOr<Map<String, AccountInfo>> ownAccounts = const {},
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   MobileSendFeeEstimator? estimateFee,
@@ -715,9 +718,9 @@ Widget _sendFlowRouterApp({
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
-        _FakeAddressBookRepository(const []),
+        _FakeAddressBookRepository(contacts),
       ),
-      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -3009,6 +3012,93 @@ void main() {
       expect(find.text('Savings'), findsWidgets);
     },
   );
+
+  for (final ownAccount in [false, true]) {
+    for (final delayed in [false, true]) {
+      testWidgets(
+        'amount recipient resolves ${ownAccount ? 'own account' : 'contact'} '
+        '${delayed ? 'after loading' : 'from entered address'} on pushed route',
+        (tester) async {
+          final contacts = Completer<List<AddressBookContact>>();
+          final ownAccounts = Completer<Map<String, AccountInfo>>();
+          void completeIdentity() {
+            contacts.complete(
+              ownAccount
+                  ? const []
+                  : const [
+                      AddressBookContact(
+                        id: 'alice',
+                        label: 'Alice',
+                        network: AddressBookNetwork.zcash,
+                        address: _shieldedAddress,
+                        profilePictureId: 'pfp-01',
+                        createdAtMs: 0,
+                        updatedAtMs: 0,
+                      ),
+                    ],
+            );
+            ownAccounts.complete(const {
+              _shieldedAddress: AccountInfo(
+                uuid: 'account-2',
+                name: 'Savings',
+                order: 1,
+                profilePictureId: 'pfp-02',
+              ),
+            });
+          }
+
+          if (!delayed) completeIdentity();
+          await tester.pumpWidget(
+            _sendFlowRouterApp(
+              initialLocation: '/send',
+              contacts: contacts.future,
+              ownAccounts: ownAccounts.future,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await _toAmountStep(tester, _shieldedAddress);
+          final row = find.byKey(
+            const ValueKey('mobile_send_amount_recipient_row'),
+          );
+          final name = ownAccount ? 'Savings' : 'Alice';
+          if (delayed) {
+            expect(
+              find.descendant(of: row, matching: find.text(name)),
+              findsNothing,
+            );
+            completeIdentity();
+            await tester.pumpAndSettle();
+          }
+          expect(
+            find.descendant(of: row, matching: find.text(name)),
+            findsOneWidget,
+          );
+          final picture = tester.widget<AppProfilePicture>(
+            find.byKey(const ValueKey('mobile_send_amount_recipient_picture')),
+          );
+          expect(picture.profilePictureId, ownAccount ? 'pfp-02' : 'pfp-01');
+          expect(
+            find.descendant(of: row, matching: find.byType(Text)),
+            findsNWidgets(2),
+          );
+
+          // Going back and entering another address must not retain the name.
+          await tester.tap(find.bySemanticsLabel('Back'));
+          await tester.pumpAndSettle();
+          await _toAmountStep(tester, _transparentAddress);
+          expect(
+            find.descendant(of: row, matching: find.text(name)),
+            findsNothing,
+          );
+          expect(
+            find.descendant(of: row, matching: find.byType(Text)),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('amount step shows animated price loading placeholder', (
     tester,
