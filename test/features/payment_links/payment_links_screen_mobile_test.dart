@@ -24,8 +24,51 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 
 import '../../support/payment_links_screen_support.dart';
+import '../../support/leading_decimal_input.dart';
 
 void main() {
+  testWidgets(
+    'gift amount normalizes leading separators and preserves precision',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester, logicalSize: const Size(390, 844));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_create_button')),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(
+                    const ValueKey(
+                      'payment_link_mobile_amount_continue_button',
+                    ),
+                  ),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      await tester.enterText(field, ',12345678');
+      await tester.pumpAndSettle();
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      final controller = tester.widget<EditableText>(editable).controller;
+      expect(controller.text, '0.12345678');
+      await tester.enterText(field, '0.123456789');
+      await tester.pumpAndSettle();
+      expect(controller.text, '0.12345678');
+    },
+  );
+
   testWidgets('copying an older card preserves creation order after reload', (
     tester,
   ) async {

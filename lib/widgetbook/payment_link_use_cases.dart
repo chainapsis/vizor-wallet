@@ -12,6 +12,8 @@ import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/core/widgets/app_profile_picture.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
@@ -1045,15 +1047,10 @@ class PaymentLinkInteractiveDesktopPreview extends StatefulWidget {
 class _PaymentLinkInteractiveDesktopPreviewState
     extends State<PaymentLinkInteractiveDesktopPreview> {
   static const _usdPerZec = 272.0;
-  static final _amountFormatter = TextInputFormatter.withFunction((
-    oldValue,
-    newValue,
-  ) {
-    final isNumericAmount = RegExp(
-      r'^(?:\d+(?:\.\d{0,8})?|\.\d{0,8})?$',
-    ).hasMatch(newValue.text);
-    return isNumericAmount ? newValue : oldValue;
-  });
+  static const _amountFormatters = [
+    CommaToDotInputFormatter(),
+    DecimalAmountInputFormatter(maxFractionDigits: 8),
+  ];
 
   late final TextEditingController _amountController;
   final FocusNode _amountFocusNode = FocusNode();
@@ -1151,7 +1148,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
                 amountEditorKey: const ValueKey(
                   'payment_link_interactive_amount_editor',
                 ),
-                amountInputFormatters: [_amountFormatter],
+                amountInputFormatters: _amountFormatters,
                 onAmountChanged: _handleAmountChanged,
                 maxAmountText: '142.23',
                 onUseMax: _useMax,

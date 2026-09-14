@@ -32,8 +32,47 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/payment_links_screen_support.dart';
+import '../../support/leading_decimal_input.dart';
 
 void main() {
+  testWidgets(
+    'gift amount normalizes leading separators and preserves precision',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester);
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(
+                    const ValueKey('payment_link_amount_continue_button'),
+                  ),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      await tester.enterText(field, ',12345678');
+      await tester.pumpAndSettle();
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      final controller = tester.widget<EditableText>(editable).controller;
+      expect(controller.text, '0.12345678');
+      await tester.enterText(field, '0.123456789');
+      await tester.pumpAndSettle();
+      expect(controller.text, '0.12345678');
+    },
+  );
+
   testWidgets('copying an older card preserves creation order after reload', (
     tester,
   ) async {

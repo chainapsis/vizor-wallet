@@ -15,6 +15,7 @@ Future<void> expectLeadingDecimalInput(
     final editable = find.descendant(
       of: field,
       matching: find.byType(EditableText),
+      matchRoot: true,
     );
     final controller = tester.widget<EditableText>(editable).controller;
     expect(controller.text, '0.');
