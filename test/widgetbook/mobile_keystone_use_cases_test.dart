@@ -163,7 +163,7 @@ void main() {
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
     expect(
-      find.text('Scan the QR code on your Keystone to finish sending'),
+      find.text('Scan the QR code on your Keystone to confirm'),
       findsOneWidget,
     );
     expect(
