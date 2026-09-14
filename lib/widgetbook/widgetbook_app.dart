@@ -10,13 +10,16 @@ import '../src/core/theme/app_theme.dart';
 import 'gallery/accounts_settings_gallery.dart';
 import 'gallery/address_book_gallery.dart';
 import 'gallery/components_gallery.dart';
+import 'gallery/gift_cards_gallery.dart';
 import 'gallery/home_activity_gallery.dart';
+import 'gallery/migration_gallery.dart';
 import 'gallery/onboarding_gallery.dart';
 import 'gallery/pay_gallery.dart';
 import 'gallery/receive_gallery.dart';
 import 'gallery/scanner_gallery.dart';
 import 'gallery/send_gallery.dart';
 import 'gallery/swap_gallery.dart';
+import 'gallery/voting_gallery.dart';
 import 'support/wb_compare_layouts.dart';
 import 'support/wb_design_status.dart';
 
@@ -39,7 +42,13 @@ final List<WidgetbookNode> widgetbookDirectories = [
       WidgetbookFolder(name: 'Send', children: sendGalleryNodes),
       WidgetbookFolder(name: 'Swap', children: swapGalleryNodes),
       WidgetbookFolder(name: 'Pay', children: payGalleryNodes),
+      WidgetbookFolder(name: 'Gift cards', children: giftCardsGalleryNodes),
       WidgetbookFolder(name: 'Address book', children: addressBookGalleryNodes),
+      WidgetbookFolder(name: 'Voting', children: votingGalleryNodes),
+      WidgetbookFolder(
+        name: 'Ironwood migration',
+        children: migrationGalleryNodes,
+      ),
     ],
   ),
   WidgetbookFolder(name: 'Components', children: componentsGalleryNodes),

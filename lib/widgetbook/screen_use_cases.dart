@@ -2095,37 +2095,40 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
   // Production only knows the round split and message count once the request
   // is encoded, so the loading state carries neither.
   final loading = state == MobileIronwoodKeystoneSigningViewState.loading;
-  return SizedBox(
-    width: 393,
-    height: 852,
-    child: MediaQuery(
-      data: const MediaQueryData(
-        size: Size(393, 852),
-        viewPadding: EdgeInsets.only(top: 55),
-      ),
-      child: MobileIronwoodKeystoneSigningView(
-        state: state,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        // A multi-round request: the badge and the per-round transaction count
-        // are the states that need previewing.
-        signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
-        signingMessageCountLabel: loading
-            ? null
-            : multiRound
-            ? 'Signs 26 of 51 transactions'
-            : 'Signs 51 transactions',
-        // Mid-scan so the viewfinder-width progress bar and its numeric
-        // readout are visible in the scanner preview.
-        scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
-            ? 0.42
-            : null,
-        qrCode: const _KeystoneMigrationQrPreview(),
-        camera: const _KeystoneMigrationCameraPreview(),
-        onNext: () {},
-        onCancel: () {},
-        onToggleFlashlight: () {},
-        onShowRequestQr: () {},
-        onShowScanHelp: () {},
+  return WbScaleDownBox(
+    size: const Size(393, 852),
+    child: SizedBox(
+      width: 393,
+      height: 852,
+      child: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(393, 852),
+          viewPadding: EdgeInsets.only(top: 55),
+        ),
+        child: MobileIronwoodKeystoneSigningView(
+          state: state,
+          round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+          // A multi-round request: the badge and the per-round transaction count
+          // are the states that need previewing.
+          signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
+          signingMessageCountLabel: loading
+              ? null
+              : multiRound
+              ? 'Signs 26 of 51 transactions'
+              : 'Signs 51 transactions',
+          // Mid-scan so the viewfinder-width progress bar and its numeric
+          // readout are visible in the scanner preview.
+          scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
+              ? 0.42
+              : null,
+          qrCode: const _KeystoneMigrationQrPreview(),
+          camera: const _KeystoneMigrationCameraPreview(),
+          onNext: () {},
+          onCancel: () {},
+          onToggleFlashlight: () {},
+          onShowRequestQr: () {},
+          onShowScanHelp: () {},
+        ),
       ),
     ),
   );
@@ -3377,6 +3380,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 'ur:zcash-sign-request/preview-immediate-transaction',
               ],
               previewStartScanning: widget.previewImmediateKeystoneScanner,
+              onOpenFirmware: () {},
             );
           },
         ),
@@ -3403,6 +3407,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             previewUrParts: const [
               'ur:zcash-sign-request/preview-private-split-1',
             ],
+            onOpenFirmware: () {},
           ),
         ),
         GoRoute(
@@ -3429,9 +3434,11 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -5262,8 +5269,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       routes: [
         GoRoute(
           path: '/activity',
-          builder: (_, _) =>
-              MobileActivityScreen(historyLoader: (_) async => _history),
+          builder: (_, _) => MobileActivityScreen(
+            historyLoader: (_) async => _history,
+            transactionDetailLoader: (_) async => null,
+          ),
         ),
         GoRoute(
           path: '/activity/tx/:txid',
@@ -5280,6 +5289,7 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
                   ),
               historyLoader: (_) async => _history,
               detailLoader: (_, _) async => null,
+              explorerLauncher: (_) async => true,
             );
           },
         ),
