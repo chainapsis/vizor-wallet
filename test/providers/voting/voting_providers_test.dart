@@ -75,6 +75,181 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
+    'SDK round reconciliation is awaited and cache errors preserve success',
+    () async {
+      for (final cacheFails in [false, true]) {
+        final client = FakeVotingParticipationClient();
+        final rust = FakeVotingRustApi();
+        final container = _sessionContainer(
+          rust: rust,
+          extraOverrides: [
+            votingParticipationClientProvider.overrideWithValue(client),
+          ],
+        );
+        await container.read(votingSessionProvider(kRoundId).future);
+        final before = client.localRefreshes;
+        final observedConfirmations = <bool>[];
+        client.onLocalRefresh = () =>
+            observedConfirmations.add(rust.storedVanPositions.isNotEmpty);
+        client.localError = cacheFails ? StateError('disk unavailable') : null;
+        await container
+            .read(votingSessionProvider(kRoundId).notifier)
+            .delegatePendingBundles(mnemonic: kTestMnemonic);
+        expect(rust.storedVanPositions, isNotEmpty);
+        expect(client.localRefreshes, greaterThan(before));
+        if (!cacheFails) expect(observedConfirmations, contains(true));
+        expect(
+          container.read(votingSessionProvider(kRoundId)).value!.phase,
+          VotingSessionPhase.delegated,
+        );
+        container.dispose();
+      }
+    },
+  );
+
+  test(
+    'local cache reconciliation is drained and cancelled before deletion',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(votingSessionProvider(kRoundId).future);
+      final context = client.localContexts.last;
+      final before = client.localWrites;
+      client.localGate = Completer<void>();
+      final operation = container.read(
+        Provider(
+          (ref) => refreshLocalVotingParticipation(
+            ref,
+            context,
+            isCurrent: () => true,
+          ),
+        ),
+      );
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: context.accountUuid)
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, false);
+      client.localGate!.complete();
+      await Future.wait([operation, drain]);
+      expect(drained, true);
+      expect(client.localWrites, before);
+      registry.resume(accountUuid: context.accountUuid);
+    },
+  );
+
+  test(
+    'stale local reconciliation never writes after account context changes',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(votingSessionProvider(kRoundId).future);
+      final context = client.localContexts.last;
+      final before = client.localWrites;
+      var current = true;
+      client.localGate = Completer<void>();
+      final operation = container.read(
+        Provider(
+          (ref) => refreshLocalVotingParticipation(
+            ref,
+            context,
+            isCurrent: () => current,
+          ),
+        ),
+      );
+      current = false;
+      client.localGate!.complete();
+      await operation;
+      expect(client.localWrites, before);
+    },
+  );
+
+  test(
+    'partial SDK failure reconciles confirmed siblings before reporting error',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final rust = FakeVotingRustApi(
+        bundleCount: 2,
+        delegationStreamErrorsByBundle: {1: StateError('bundle failed')},
+      );
+      final observed = <List<String>>[];
+      client.onLocalRefresh = () =>
+          observed.add(List.of(rust.storedVanPositions));
+      final container = _sessionContainer(
+        rust: rust,
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.phase,
+        VotingSessionPhase.error,
+      );
+      expect(
+        observed.any((positions) => positions.any((p) => p.startsWith('0:'))),
+        true,
+      );
+      expect(observed.expand((p) => p).any((p) => p.startsWith('1:')), false);
+    },
+  );
+
+  test(
+    'deletion drain waits for a local cache write already in progress',
+    () async {
+      final client = FakeVotingParticipationClient();
+      final container = _sessionContainer(
+        extraOverrides: [
+          votingParticipationClientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(votingSessionProvider(kRoundId).future);
+      final context = client.localContexts.last;
+      final enteredWrite = Completer<void>();
+      client.localWriteGate = Completer<void>();
+      client.onLocalRefresh = () => enteredWrite.complete();
+      final operation = container.read(
+        Provider(
+          (ref) => refreshLocalVotingParticipation(
+            ref,
+            context,
+            isCurrent: () => true,
+          ),
+        ),
+      );
+      await enteredWrite.future;
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: context.accountUuid)
+          .then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, false);
+      client.localWriteGate!.complete();
+      await Future.wait([operation, drain]);
+      expect(drained, true);
+      registry.resume(accountUuid: context.accountUuid);
+    },
+  );
+
+  test(
     'Home asynchronously restores decisions without waiting for sync or repeating participation',
     () async {
       for (final visible in [true, false]) {
@@ -275,6 +450,7 @@ void main() {
                 kRoundId,
               ),
             );
+        expect(client.localRefreshes, 1);
         expect(recovery.roundPlanProposalIds, hasLength(1));
         expect(recovery.roundPlanProposalIds.single, isNotEmpty);
         expect(
@@ -284,6 +460,12 @@ void main() {
         expect(fact.needsRecheck, false);
         await checker.checkRound(kRoundId);
         expect(client.calls, 0);
+        expect(
+          client.localRefreshes,
+          2,
+          reason:
+              'Completed plans must still reconcile persisted notes on reentry',
+        );
         await checker.checkRound(kRoundId, force: true);
         expect(client.calls, 1);
         final afterFailure = container
@@ -12124,6 +12306,12 @@ ProviderContainer _sessionContainer({
     observers: observers,
     retry: retry,
     overrides: [
+      if (!extraOverrides.any(
+        (override) => override.origin == votingParticipationClientProvider,
+      ))
+        votingParticipationClientProvider.overrideWithValue(
+          FakeVotingParticipationClient(),
+        ),
       votingFileCacheProvider.overrideWithValue(_SnapshotCache()),
       votingHomeCacheStoreProvider.overrideWithValue(
         homeCacheStore ?? MemoryVotingHomeCacheStore(),

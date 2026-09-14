@@ -95,20 +95,38 @@ class VotingParticipationClient {
   ]);
 
   /// Called only after the existing durable delegation confirmation. No RPC.
-  Future<void> refreshLocal(rust.ApiVotingRoundContext context) async {
+  Future<void> refreshLocal(
+    rust.ApiVotingRoundContext context, {
+    bool Function()? isCurrent,
+  }) async {
+    void guard() {
+      if (isCurrent?.call() == false) {
+        throw StateError('Voting local reconciliation cancelled');
+      }
+    }
+
+    guard();
     final candidates =
         jsonDecode(await bridge.prepare(context)) as Map<String, dynamic>;
+    guard();
     final scope = scopeFor(context);
     final memoryKey = '${context.accountUuid}|$scope';
     final known =
         await cache?.readNotes(context.accountUuid, scope) ??
         _memory[memoryKey] ??
         <String, dynamic>{};
+    guard();
     for (final key in candidates['confirmed'] as List? ?? []) {
       known[key as String] = {'used': true, 'height': 0};
     }
     if (cache != null) {
-      await cache!.writeNotes(context.accountUuid, scope, known);
+      await cache!.writeNotes(
+        context.accountUuid,
+        scope,
+        known,
+        isCurrent: isCurrent,
+      );
+      guard();
     } else {
       _memory[memoryKey] = known;
     }

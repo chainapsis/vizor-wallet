@@ -23,6 +23,7 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../app_security_provider.dart';
 import 'voting_config_provider.dart';
+import 'voting_participation_provider.dart';
 import 'voting_home_cache_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
@@ -2061,22 +2062,32 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) async {
     _throwIfContextStale(context, '$label-run');
     rust_wire.RoundRunReportView? report;
-    await for (final event in session.runRound(
-      signer: signer,
-      policy: policy,
-    )) {
-      _throwIfContextStale(context, '$label-run-event');
-      final observed = event.event;
-      if (observed != null) onEvent(observed);
-      final error = event.error;
-      if (error != null) throw votingRustExceptionFromStepError(error);
-      final finished = event.report;
-      if (finished != null) report = finished;
+    try {
+      await for (final event in session.runRound(
+        signer: signer,
+        policy: policy,
+      )) {
+        _throwIfContextStale(context, '$label-run-event');
+        final observed = event.event;
+        if (observed != null) onEvent(observed);
+        final error = event.error;
+        if (error != null) throw votingRustExceptionFromStepError(error);
+        final finished = event.report;
+        if (finished != null) report = finished;
+      }
+      if (report == null) {
+        throw StateError('Round run completed without a report.');
+      }
+      return report;
+    } finally {
+      // A run can confirm some bundles before another fails or the stream
+      // errors. Re-read durable confirmations, never infer them from progress.
+      await refreshLocalVotingParticipation(
+        ref,
+        _apiRoundContext(context),
+        isCurrent: () => _isCurrentContext(context),
+      );
     }
-    if (report == null) {
-      throw StateError('Round run completed without a report.');
-    }
-    return report;
   }
 
   /// TEMPORARY diagnostic: the network the voting layer binds.
@@ -3620,6 +3631,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundParams: roundParams,
       roundPlan: roundPlan,
     );
+    await refreshLocalVotingParticipation(
+      ref,
+      _apiRoundContext(context),
+      isCurrent: () => _isCurrentContext(context),
+    );
+    checkAction();
     return context;
   }
 
