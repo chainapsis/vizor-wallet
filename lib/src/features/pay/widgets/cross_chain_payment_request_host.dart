@@ -108,7 +108,7 @@ class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
       if (!mounted) return;
       if (ref.read(crossChainPaymentFlowProvider)?.request.id ==
           flow.request.id) {
-        flowNotifier.clear();
+        flowNotifier.dismiss();
       }
     }
 
@@ -179,6 +179,10 @@ class _RequestOverlayState extends ConsumerState<_RequestOverlay> {
           }
         },
         onContinue: () => unawaited(continueToPay(review: true)),
+        onKeepEditing: flow.inputOrigin == null
+            ? null
+            : flowNotifier.useAddressOnly,
+        keepEditingAvailable: flowNotifier.canUseAddressOnly,
         onEdit: () => unawaited(continueToPay(review: false)),
       ),
     );

@@ -47,6 +47,8 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     VoidCallback? onCancel,
     VoidCallback? onRetry,
     VoidCallback? onEdit,
+    VoidCallback? onKeepEditing,
+    bool keepEditingAvailable = true,
     ValueChanged<String>? onNetworkSelected,
     String? selectedChain,
     String? availabilityMessage,
@@ -88,6 +90,8 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
                       onCancel: onCancel ?? () {},
                       onRetry: onRetry ?? () {},
                       onEdit: onEdit ?? () {},
+                      onKeepEditing: onKeepEditing,
+                      keepEditingAvailable: keepEditingAvailable,
                       onNetworkSelected: onNetworkSelected ?? (_) {},
                       selectedChain: selectedChain,
                       availabilityMessage: availabilityMessage,
@@ -180,6 +184,61 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
     await _capture(tester, isMobile: isMobile, state: 'no-amount');
     await tester.tap(find.byKey(_continueKey));
     expect(continued, isTrue);
+  });
+
+  testWidgets('Keep editing uses only the address even without an amount', (
+    tester,
+  ) async {
+    var keptEditing = 0;
+    var edited = 0;
+    await pump(
+      tester,
+      request: _request(includeAmount: false),
+      resolution: PaymentRequestResolution(asset: _baseUsdc),
+      onKeepEditing: () => keptEditing++,
+      onEdit: () => edited++,
+    );
+    expect(find.text('Keep editing'), findsOneWidget);
+    expect(find.text('Edit'), findsNothing);
+    expect(find.text('Enter amount'), findsOneWidget);
+    await tester.tap(find.byKey(_editKey));
+    expect(keptEditing, 1);
+    expect(edited, 0);
+    await _capture(tester, isMobile: isMobile, state: 'keep-editing-no-amount');
+  });
+
+  testWidgets('Keep editing does not depend on the asset catalogue', (
+    tester,
+  ) async {
+    var keptEditing = 0;
+    const assetError = 'This payment asset is not available in Vizor.';
+    for (final loading in [true, false]) {
+      await pump(
+        tester,
+        isLoading: loading,
+        resolution: const PaymentRequestResolution(message: assetError),
+        onKeepEditing: () => keptEditing++,
+      );
+      expect(find.text(assetError), loading ? findsNothing : findsOneWidget);
+      expect(_primary(tester).onPressed, isNull);
+      await tester.tap(find.byKey(_editKey));
+    }
+    expect(keptEditing, 2);
+  });
+
+  testWidgets('Keep editing is disabled for chain mismatch or preparing', (
+    tester,
+  ) async {
+    for (final preparing in [false, true]) {
+      await pump(
+        tester,
+        keepEditingAvailable: preparing,
+        isPreparingReview: preparing,
+        onKeepEditing: () => fail('Must not apply an unavailable address'),
+      );
+      expect(find.text('Keep editing'), findsOneWidget);
+      expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
+    }
   });
 
   testWidgets(
@@ -355,7 +414,10 @@ void runCrossChainPaymentRequestCardTests({required bool isMobile}) {
         unsupportedReason: reason,
       ),
       resolution: const PaymentRequestResolution(message: reason),
+      onKeepEditing: () =>
+          fail('Unsupported requests must not become addresses'),
     );
+    expect(tester.widget<AppButton>(find.byKey(_editKey)).onPressed, isNull);
     expect(find.text(reason), findsOneWidget);
     expect(find.text('Solana'), findsOneWidget);
     expect(find.text(uri), findsNothing);

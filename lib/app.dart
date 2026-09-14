@@ -288,7 +288,7 @@ final _routerProvider = Provider<_AppRouter>((ref) {
         if (crossChainFlow.isEditingSlippage) {
           notifier.setSlippageEditing(false);
         } else {
-          notifier.clear();
+          notifier.dismiss();
         }
         return true;
       }

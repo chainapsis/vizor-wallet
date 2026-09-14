@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/pay/providers/cross_chain_payment_request_provider.dart';
+import 'package:zcash_wallet/src/features/pay/providers/payment_request_input_origin_provider.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/cross_chain_payment_request_host.dart';
@@ -67,6 +68,43 @@ final _btc = SwapAsset.live(
 void runCrossChainPaymentRequestHostTests({required bool isMobile}) {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadFigmaCompareFonts);
+  testWidgets(
+    'review from an address scanner applies the complete exact-out request',
+    (tester) async {
+      final harness = await _pump(tester, isMobile: isMobile);
+      final addresses = <String>[];
+      var cancellations = 0;
+      harness.container
+          .read(paymentRequestInputOriginProvider.notifier)
+          .set(
+            'request-25-usdc',
+            PaymentRequestInputOrigin(
+              chain: 'base',
+              isCurrent: () => true,
+              useAddress: addresses.add,
+              onCancel: () => cancellations++,
+            ),
+          );
+      harness.present();
+      await tester.pumpAndSettle();
+      harness.provider.initial.complete(_pricing([_btc, _usdc]));
+      await tester.pumpAndSettle();
+      expect(find.text('Keep editing'), findsOneWidget);
+      await tester.tap(find.byKey(_continueKey));
+      await tester.pumpAndSettle();
+      expect(harness.location, isMobile ? '/pay/review' : '/pay');
+      expect(harness.state.externalAsset, _usdc);
+      expect(harness.state.destinationText, _recipient);
+      expect(harness.state.quoteMode, SwapQuoteMode.exactOutput);
+      expect(harness.state.receiveAmountText, '25.000001');
+      expect(harness.state.reviewVisible, isTrue);
+      expect(addresses, isEmpty);
+      expect(cancellations, 0);
+      expect(tester.takeException(), isNull);
+      await harness.dispose(tester);
+    },
+  );
+
   testWidgets(
     'closing the slippage editor from above the router keeps the card',
     (tester) async {

@@ -25,6 +25,8 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
     required this.onNetworkSelected,
     required this.onRetry,
     this.onEdit,
+    this.onKeepEditing,
+    this.keepEditingAvailable = true,
     this.isLoading = false,
     this.isPreparingReview = false,
     this.selectedChain,
@@ -43,6 +45,8 @@ class CrossChainPaymentRequestCard extends StatefulWidget {
   final ValueChanged<String> onNetworkSelected;
   final VoidCallback onRetry;
   final VoidCallback? onEdit;
+  final VoidCallback? onKeepEditing;
+  final bool keepEditingAvailable;
   final bool isLoading;
   final bool isPreparingReview;
   final String? selectedChain;
@@ -218,16 +222,25 @@ class _CrossChainPaymentRequestCardState
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (widget.onEdit != null && hasAmount && resolution.isReady) ...[
+          if (widget.onKeepEditing != null ||
+              (widget.onEdit != null && hasAmount && resolution.isReady)) ...[
             const SizedBox(height: AppSpacing.xs),
             AppButton(
               key: const ValueKey('cross_chain_payment_request_edit'),
-              onPressed: widget.isLoading || widget.isPreparingReview
+              onPressed: widget.onKeepEditing != null
+                  ? widget.keepEditingAvailable &&
+                            !widget.isPreparingReview &&
+                            request.unsupportedReason == null
+                        ? widget.onKeepEditing
+                        : null
+                  : widget.isLoading || widget.isPreparingReview
                   ? null
                   : widget.onEdit,
               variant: AppButtonVariant.ghost,
               expand: true,
-              child: const Text('Edit'),
+              child: Text(
+                widget.onKeepEditing != null ? 'Keep editing' : 'Edit',
+              ),
             ),
           ],
         ],
