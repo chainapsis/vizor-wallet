@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/account_name_policy.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/settings_pane_backdrop.dart';
 import 'package:zcash_wallet/widgetbook/accounts_settings_use_cases.dart';
+import 'package:zcash_wallet/widgetbook/gallery/pay_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gallery/accounts_settings_gallery.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
 import 'package:zcash_wallet/widgetbook/widgetbook_app.dart';
@@ -67,13 +68,29 @@ void main() {
     tester,
   ) async {
     final useCases = widgetbookUseCases(accountsSettingsGalleryNodes).toList();
-    expect(useCases.length, 23);
+    expect(useCases.length, 29);
 
     for (final useCase in useCases) {
       await pumpUseCase(tester, useCase.builder);
       expect(tester.takeException(), isNull, reason: useCase.name);
     }
     await disposeTree(tester);
+  });
+
+  test('donation surfaces are registered under Settings', () {
+    final useCases = widgetbookUseCases(accountsSettingsGalleryNodes).toList();
+    expect(
+      useCases.where(
+        (entry) => entry.builder == buildDonationComposeGalleryCase,
+      ),
+      hasLength(1),
+    );
+    expect(
+      useCases.where(
+        (entry) => entry.builder == buildDonationRecipientRowGalleryCase,
+      ),
+      hasLength(1),
+    );
   });
 
   // The row menus and the mobile sheets land on overlays above the capture

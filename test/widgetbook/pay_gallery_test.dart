@@ -26,7 +26,7 @@ void main() {
     tester,
   ) async {
     final useCases = widgetbookUseCases(payGalleryNodes).toList();
-    expect(useCases.length, 14);
+    expect(useCases.length, 8);
 
     for (final useCase in useCases) {
       await pumpUseCase(tester, useCase.builder);

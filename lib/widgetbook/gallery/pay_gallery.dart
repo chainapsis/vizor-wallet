@@ -58,27 +58,6 @@ final List<WidgetbookNode> payGalleryNodes = [
       WidgetbookUseCase(name: 'Playground', builder: buildPayStatusGalleryCase),
     ],
   ),
-  WidgetbookComponent(
-    name: 'Donation',
-    useCases: [
-      WidgetbookUseCase(
-        name: 'Compose',
-        builder: buildDonationComposeGalleryCase,
-      ),
-      WidgetbookUseCase(
-        name: 'Screen',
-        builder: buildDonationScreenGalleryCase,
-      ),
-      WidgetbookUseCase(
-        name: 'Review',
-        builder: buildDonationReviewGalleryCase,
-      ),
-      WidgetbookUseCase(
-        name: 'Status',
-        builder: buildDonationStatusGalleryCase,
-      ),
-    ],
-  ),
   WidgetbookFolder(
     name: 'Components',
     children: [
@@ -88,19 +67,6 @@ final List<WidgetbookNode> payGalleryNodes = [
           WidgetbookUseCase(
             name: 'Playground',
             builder: buildPayWizardStepperGalleryCase,
-          ),
-        ],
-      ),
-      WidgetbookComponent(
-        name: 'Donation recipient row',
-        useCases: [
-          WidgetbookUseCase(
-            name: 'Row',
-            builder: buildDonationRecipientRowGalleryCase,
-          ),
-          WidgetbookUseCase(
-            name: 'Vizor badge',
-            builder: buildDonationVizorBadgeUseCase,
           ),
         ],
       ),
