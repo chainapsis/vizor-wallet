@@ -48,8 +48,8 @@ use {
 mod address_history;
 mod block_source;
 mod enhance;
-pub(crate) mod ledger_discovery;
 mod error;
+pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 mod tip_cache;
@@ -1344,6 +1344,24 @@ async fn refresh_utxos(
                 u64::from(u32::from(safety_start_height))
             });
 
+        let is_ledger = db
+            .get_account(account_id)
+            .map_err(|e| SyncError::db(e.to_string()))?
+            .is_some_and(|a| {
+                keys::hardware_signer_kind(zcash_client_backend::data_api::Account::source(&a))
+                    == Some(keys::HardwareSignerKind::Ledger)
+            });
+        let account_birthday_height = if is_ledger {
+            0
+        } else {
+            account_birthday_height
+        };
+        let safety_start_height = if is_ledger {
+            BlockHeight::from_u32(0)
+        } else {
+            safety_start_height
+        };
+
         let query_network = transparent_utxo_query_network(network);
         let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
@@ -1950,7 +1968,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            db.truncate_to_height(height)
+            ledger_discovery::truncate(db, height)
         })
     })
 }
@@ -2521,7 +2539,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        db.truncate_to_height(height)
+                        ledger_discovery::truncate(&mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2624,8 +2642,9 @@ async fn run_payment_link_claim_sync_once(
                     block_height_from_u64(requested_height, "payment-link scan rewind target")?;
                 let fresh_tip =
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
-                invalidate_transparent_checks_before_rewind(db_data_path)?;
-                truncate_wallet_with(requested, fresh_tip, |height| db.truncate_to_height(height))?;
+                truncate_wallet_with(requested, fresh_tip, |height| {
+                    ledger_discovery::truncate(&mut db, height)
+                })?;
             }
         }
     }
@@ -2780,8 +2799,18 @@ async fn run_sync_impl(
 
     // Recovery runs after import, under the existing sync lifetime. Once both
     // scopes complete it performs no further address-history requests.
-    ledger_discovery::run(&mut client, &mut db, db_data_path, network, tip_height, &should_exit).await?;
-    if should_exit() { return Ok(()); }
+    ledger_discovery::run(
+        &mut client,
+        &mut db,
+        db_data_path,
+        network,
+        tip_height,
+        &should_exit,
+    )
+    .await?;
+    if should_exit() {
+        return Ok(());
+    }
 
     let active_utxo_progress = |completed, total| {
         progress_fn(preparation_progress_event(
@@ -3622,7 +3651,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match db.truncate_to_height(target) {
+                            match ledger_discovery::truncate(&mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -3633,7 +3662,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    db.truncate_to_height(safe).map_err(|e| {
+                                    ledger_discovery::truncate(&mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -4061,6 +4090,16 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
+    for id in db
+        .get_account_ids()
+        .map_err(|e| SyncError::db(e.to_string()))?
+    {
+        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
+            return Err(SyncError::other(
+                "Ledger recovery was invalidated during sync; retrying",
+            ));
+        }
+    }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
     // became visible in this run. This is intentionally repeated after every

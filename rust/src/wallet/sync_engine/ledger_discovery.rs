@@ -1,37 +1,37 @@
 //! One-time, resumable transparent history recovery for imported Ledger accounts.
 //! Subsequent address growth belongs to the ordinary UTXO sync, not this pass.
 use futures::Stream;
-use futures::{StreamExt, TryStreamExt, stream};
-use rusqlite::{OptionalExtension, params};
+use futures::{stream, StreamExt, TryStreamExt};
+use rusqlite::{params, OptionalExtension};
 use std::pin::Pin;
 use tonic::transport::Channel;
 use transparent::keys::TransparentKeyScope;
 use zcash_client_backend::{
     data_api::{
-        Account as _, WalletRead, ll::LowLevelWalletWrite, wallet::decrypt_and_store_transaction,
+        ll::LowLevelWalletWrite, wallet::decrypt_and_store_transaction, Account as _, WalletRead,
     },
-    proto::service::{RawTransaction, compact_tx_streamer_client::CompactTxStreamerClient},
+    proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::{
     encoding::AddressCodec,
-    keys::{ReceiverRequirement::*, UnifiedAddressRequest, transparent::gap_limits::GapLimits},
+    keys::{transparent::gap_limits::GapLimits, ReceiverRequirement::*, UnifiedAddressRequest},
 };
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
-use super::{SyncError, get_taddress_txids, next_stream_message, watch_for_exit};
+use super::{get_taddress_txids, next_stream_message, watch_for_exit, SyncError};
 use crate::wallet::{
     db::{
-        SYNC_DB_BUSY_TIMEOUT, WalletDatabase, open_readonly_conn_with_timeout,
-        open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+        open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout,
+        with_wallet_db_write_lock, WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
     },
     keys::{self, HardwareSignerKind},
     network::WalletNetwork,
 };
 
-const TABLE: &str = "vizor_ledger_initial_discovery";
+const TABLE: &str = "ext_vizor_ledger_initial_discovery";
 const CONCURRENCY: usize = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -79,7 +79,7 @@ pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, S
     if !table_exists(&conn)? {
         return Ok(false);
     }
-    conn.query_row(&format!("SELECT COUNT(*)=2 FROM {TABLE} WHERE account_uuid=?1 AND complete=1 AND key_scope IN (0,1)"), [account_id.expose_uuid().as_bytes().as_slice()], |r| r.get(0)).map_err(|e| e.to_string())
+    conn.query_row(&format!("SELECT COUNT(*)=2 FROM {TABLE} WHERE account_uuid=?1 AND complete=2 AND key_scope IN (0,1)"), [account_id.expose_uuid().as_bytes().as_slice()], |r| r.get(0)).map_err(|e| e.to_string())
 }
 
 pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result<(), String> {
@@ -91,6 +91,30 @@ pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result
         .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Invalidate first, so even a crash during rewind cannot retain a stale completion.
+/// Caller owns the wallet write lock, as for the original truncate operation.
+pub(crate) fn truncate(
+    db: &mut WalletDatabase,
+    height: BlockHeight,
+) -> Result<BlockHeight, zcash_client_sqlite::error::SqliteClientError> {
+    use zcash_client_backend::data_api::WalletWrite;
+    db.transactionally_with_extension(|_, ext| {
+        let exists: bool = ext.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [TABLE],
+            |r| r.get(0),
+        )?;
+        if exists {
+            ext.execute(
+                &format!("DELETE FROM {TABLE} WHERE tip_height > ?1"),
+                [u32::from(height)],
+            )?;
+        }
+        Ok::<_, zcash_client_sqlite::error::SqliteClientError>(())
+    })?;
+    db.truncate_to_height(height)
 }
 
 fn ensure_table(db_path: &str) -> Result<(), SyncError> {
@@ -201,6 +225,9 @@ async fn run_with<R: DiscoveryRpc>(
     }
     ensure_table(db_path)?;
     for id in accounts {
+        if is_ready(db_path, id).map_err(SyncError::db)? {
+            continue;
+        }
         for (scope_code, scope, gap) in [
             (
                 0,
@@ -217,15 +244,15 @@ async fn run_with<R: DiscoveryRpc>(
                 return Ok(());
             }
             let state = load(db_path, id, scope_code)?;
-            if state.as_ref().is_some_and(|s| s.3) {
-                continue;
-            }
             let mut scan_tip = u32::from(tip);
             let mut progress = Progress::default();
-            if let Some((saved, height, hash, _)) = state {
+            if let Some((saved, height, hash, complete)) = state {
                 if height <= scan_tip {
                     let actual = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(()), r = client.block_hash(u64::from(height)) => r? };
                     if actual.0.as_slice() == hash {
+                        if complete {
+                            continue;
+                        }
                         progress = saved;
                         scan_tip = height;
                     }
@@ -349,6 +376,46 @@ async fn run_with<R: DiscoveryRpc>(
                 started.elapsed().as_millis()
             );
         }
+        // Publish account readiness only after both scopes agree with the chain.
+        // Scope-complete (1) is resumable; account-complete (2) opens shielding.
+        for scope in 0..2 {
+            let (_, height, hash, complete) = load(db_path, id, scope)?
+                .ok_or_else(|| SyncError::db("Ledger recovery checkpoint missing"))?;
+            if !complete {
+                return Err(SyncError::db("Ledger recovery scope incomplete"));
+            }
+            let actual = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(()), r = client.block_hash(u64::from(height)) => r? };
+            if actual.0.as_slice() != hash {
+                if should_exit() {
+                    return Ok(());
+                }
+                save(
+                    db_path,
+                    id,
+                    scope,
+                    Progress::default(),
+                    height,
+                    &actual.0,
+                    false,
+                )?;
+                return Err(SyncError::other(
+                    "Ledger recovery scope chain changed; retrying",
+                ));
+            }
+        }
+        if should_exit() {
+            return Ok(());
+        }
+        with_wallet_db_write_lock("ledger_discovery.complete", || {
+            let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
+                .map_err(SyncError::db)?;
+            conn.execute(
+                &format!("UPDATE {TABLE} SET complete=2 WHERE account_uuid=?1 AND complete=1"),
+                [id.expose_uuid().as_bytes().as_slice()],
+            )
+            .map_err(|e| SyncError::db(e.to_string()))?;
+            Ok::<_, SyncError>(())
+        })?;
     }
     Ok(())
 }
@@ -638,18 +705,16 @@ mod tests {
             fail_address: Some(addr),
             hash: 1,
         };
-        assert!(
-            run_with(
-                &mut rpc,
-                &mut db,
-                &path,
-                WalletNetwork::Main,
-                BlockHeight::from_u32(2_600_000),
-                &|| false
-            )
-            .await
-            .is_err()
-        );
+        assert!(run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_000),
+            &|| false
+        )
+        .await
+        .is_err());
         assert_eq!(
             load(&path, id, 0).unwrap().unwrap().0,
             Progress {
@@ -701,5 +766,103 @@ mod tests {
         .unwrap();
         assert!(!is_ready(&path, id).unwrap());
         assert!(rpc.queries.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn changed_chain_restarts_partial_history_and_rewind_invalidates_completion() {
+        use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+        let (_dir, path, id, mut db, ufvk) = ledger_fixture();
+        let addr = ufvk
+            .transparent()
+            .unwrap()
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::from_index(3).unwrap())
+            .unwrap()
+            .encode(&WalletNetwork::Main);
+        let mut rpc = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: Some(addr),
+            hash: 1,
+        };
+        assert!(run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_000),
+            &|| false
+        )
+        .await
+        .is_err());
+        rpc.hash = 2;
+        rpc.fail_address = None;
+        rpc.queries.lock().unwrap().clear();
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_001),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rpc.queries.lock().unwrap().len(), 15);
+        assert!(is_ready(&path, id).unwrap());
+        // Invalidation precedes the truncate, including when the wallet cannot rewind.
+        let _ = truncate(&mut db, BlockHeight::from_u32(2_599_999));
+        assert!(!is_ready(&path, id).unwrap());
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        delete_account(&conn, id.expose_uuid().as_bytes()).unwrap();
+        assert!(load(&path, id, 0).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn resume_revalidates_finished_scope_before_publishing_account_ready() {
+        use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+        let (_dir, path, id, mut db, ufvk) = ledger_fixture();
+        let addr = ufvk
+            .transparent()
+            .unwrap()
+            .derive_internal_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::ZERO)
+            .unwrap()
+            .encode(&WalletNetwork::Main);
+        let mut rpc = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: Some(addr),
+            hash: 1,
+        };
+        assert!(run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_000),
+            &|| false
+        )
+        .await
+        .is_err());
+        assert!(load(&path, id, 0).unwrap().unwrap().3);
+        assert!(!is_ready(&path, id).unwrap());
+        rpc.hash = 2;
+        rpc.fail_address = None;
+        rpc.queries.lock().unwrap().clear();
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_001),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rpc.queries.lock().unwrap().len(), 15);
+        assert!(is_ready(&path, id).unwrap());
     }
 }
