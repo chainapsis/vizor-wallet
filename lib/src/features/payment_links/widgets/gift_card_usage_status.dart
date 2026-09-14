@@ -96,20 +96,10 @@ class GiftCardUsageStatusView extends ConsumerWidget {
           label: description,
           excludeSemantics: true,
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Expanded(
-                child: Text(
-                  usage.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              // Reserve the indicator slot so labels and actions stay fixed.
+              // Reserve space before the label so its right edge stays fixed
+              // next to the card actions, including when checking stops.
               SizedBox(
                 width: 16,
                 height: 16,
@@ -120,6 +110,18 @@ class GiftCardUsageStatusView extends ConsumerWidget {
                         color: context.colors.icon.regular,
                       )
                     : null,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  usage.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
               ),
             ],
           ),
