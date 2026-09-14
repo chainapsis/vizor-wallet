@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/payment_uri_prefill_provider.dart';
 
 /// A live address editor that can consume just the recipient of a request.
 /// This is local UI state: it is never serialized or restored after locking.
@@ -33,15 +34,26 @@ class PaymentRequestInputOriginNotifier
       _,
       unlocked,
     ) {
-      if (!unlocked) state = null;
+      if (!unlocked) _invalidate();
     });
     ref.listen(
       accountProvider.select((value) => value.value?.activeAccountUuid),
       (_, _) {
-        state = null;
+        _invalidate();
       },
     );
     return null;
+  }
+
+  void _invalidate() {
+    final pending = state;
+    state = null;
+    // A local request must not become a global request when its editor expires.
+    // Leave a newer parked request intact, including links received while locked.
+    if (pending != null &&
+        ref.read(paymentUriPrefillProvider)?.id == pending.requestId) {
+      ref.read(paymentUriPrefillProvider.notifier).clear();
+    }
   }
 
   void set(String requestId, PaymentRequestInputOrigin? origin) {

@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/core/navigation/payment_request_intake.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
@@ -195,6 +197,62 @@ void main() {
       expect(recipients, isEmpty);
       expect(cancellations, 0);
     });
+
+    for (final replacement in ['none', 'global', 'unrelated']) {
+      test(
+        '$invalidate invalidates parked local request ($replacement)',
+        () async {
+          const local = CrossChainPaymentRequest(
+            id: 'local',
+            rawUri: 'ethereum:$_recipient',
+            address: _recipient,
+            isEvm: true,
+            chainId: '8453',
+          );
+          final intake = container.read(paymentRequestIntakeProvider);
+          await intake.receive(
+            local.rawUri,
+            resolvedCrossChainRequest: local,
+            inputOrigin: origin(),
+          );
+          if (replacement == 'global') {
+            await intake.receive('zcash:u1newrequest?amount=2');
+          } else if (replacement == 'unrelated') {
+            // A newer parked request must survive even if an older origin remains.
+            container
+                .read(paymentUriPrefillProvider.notifier)
+                .set(
+                  const CrossChainPaymentRequest(
+                    id: 'other',
+                    rawUri: 'ethereum:$_recipient?value=2',
+                    address: _recipient,
+                    isEvm: true,
+                    chainId: '8453',
+                  ),
+                );
+          }
+          final parked = container.read(paymentUriPrefillProvider);
+          expect(parked, isNotNull);
+          if (invalidate == 'lock') {
+            (container.read(appSecurityProvider.notifier) as _Security).lock();
+          } else {
+            (container.read(accountProvider.notifier) as _Accounts)
+                .switchToSecondAccount();
+          }
+          expect(container.read(paymentRequestInputOriginProvider), isNull);
+          // This is the same claim used before presenting after unlock.
+          final claimed = container
+              .read(paymentUriPrefillProvider.notifier)
+              .takeIfFresh();
+          expect(
+            claimed.prefill,
+            replacement == 'none' ? isNull : same(parked),
+          );
+          expect(recipients, isEmpty);
+          expect(cancellations, 0);
+        },
+      );
+    }
 
     test('$invalidate drops pending editor origin before presentation', () {
       container
