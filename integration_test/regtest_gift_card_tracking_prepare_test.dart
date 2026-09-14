@@ -37,6 +37,14 @@ void main() {
         artworkId: 'coin',
         message: 'Observer before idle gap',
       );
+      await openPaymentLinksFromSettings(tester);
+      await waitForTrackedUsage(
+        tester,
+        link.address,
+        GiftCardUsageStatus.unknown,
+        reason: GiftCardUsageReason.awaitingConfirmation,
+      );
+      await trackingScreenshot(tester, 'first-awaiting-confirmation');
       await minePaymentLinkRegtestBlocks(6);
       await openPaymentLinksFromSettings(tester);
       await waitForTrackedUsage(

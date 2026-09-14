@@ -525,7 +525,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     final colors = context.colors;
     return SizedBox(
       height: stackUsage
-          ? 88
+          ? 108
           : actionLabel == null
           ? 64
           : 88,

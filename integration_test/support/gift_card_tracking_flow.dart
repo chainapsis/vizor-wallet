@@ -40,6 +40,7 @@ Future<GiftCardUsage> waitForTrackedUsage(
   String address,
   GiftCardUsageStatus status, {
   bool cleaned = false,
+  GiftCardUsageReason? reason,
 }) async {
   final container = trackingContainer(tester);
   final deadline = DateTime.now().add(const Duration(minutes: 3));
@@ -49,7 +50,9 @@ Future<GiftCardUsage> waitForTrackedUsage(
         .read(paymentLinkRecoveryStoreProvider)
         .load();
     last = records.where((r) => r.link.address == address).firstOrNull?.usage;
-    if (last?.status == status && last?.cleaned == cleaned) {
+    if (last?.status == status &&
+        last?.cleaned == cleaned &&
+        (reason == null || last?.reason == reason)) {
       final row = find.byKey(ValueKey('payment_link_recovery_$address'));
       await pumpUntil(
         tester,

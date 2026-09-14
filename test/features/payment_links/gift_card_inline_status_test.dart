@@ -102,10 +102,72 @@ void main() {
         expect(icon(AppIcons.loader), findsNothing);
         expect(icon(AppIcons.warningCircle), findsNothing);
         expect(tester.getRect(copy), original);
+        notifier.update(false, false);
+        for (final reason in [null, GiftCardUsageReason.awaitingConfirmation]) {
+          usage = GiftCardUsage(reason: reason);
+          container.invalidate(giftCardUsageProvider('card'));
+          await tester.pumpAndSettle();
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.text(usage.label),
+          );
+          expect(paragraph.didExceedMaxLines, isFalse);
+          expect(tester.getRect(copy), original);
+        }
+        notifier.update(true, false);
+        await tester.pump();
+        expect(find.text('Checking usage…'), findsOneWidget);
+        notifier.update(false, true);
+        await tester.pump();
+        expect(find.text('Awaiting confirmation'), findsOneWidget);
+        expect(icon(AppIcons.warningCircle), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
   }
+
+  testWidgets(
+    'completion status explains pending funding and avoids duplicate checking',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          giftCardUsageProvider('card').overrideWith(
+            (ref) async => const GiftCardUsage(
+              reason: GiftCardUsageReason.awaitingConfirmation,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.dark,
+              child: const Scaffold(
+                body: GiftCardUsageStatusView(address: 'card'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Card use: Awaiting confirmation'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(
+          'Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.',
+        ),
+        findsOneWidget,
+      );
+      container
+          .read(giftCardTrackingStateProvider.notifier)
+          .update(true, false);
+      await tester.pump();
+      expect(find.text('Card use: Checking usage…'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 9));
+    },
+  );
 
   for (final width in [288.0, 358.0, 440.0]) {
     testWidgets('mobile row preserves card details and tap targets at $width', (

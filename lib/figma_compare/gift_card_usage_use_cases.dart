@@ -33,6 +33,7 @@ Widget _fixture(Widget child, {bool checking = false}) => ProviderScope(
     ),
     giftCardUsageProvider.overrideWith((ref, address) async {
       final status = switch (address) {
+        'awaiting' => GiftCardUsageStatus.unknown,
         'unknown' => GiftCardUsageStatus.unknown,
         'detected' => GiftCardUsageStatus.spendDetected,
         'used' => GiftCardUsageStatus.used,
@@ -40,6 +41,9 @@ Widget _fixture(Widget child, {bool checking = false}) => ProviderScope(
       };
       return GiftCardUsage(
         status: status,
+        reason: address == 'awaiting'
+            ? GiftCardUsageReason.awaitingConfirmation
+            : null,
         checkedAt: status == GiftCardUsageStatus.unknown
             ? null
             : DateTime(2026, 9, 14, 18, 30),
@@ -73,6 +77,7 @@ Widget _list({bool mobile = false, bool checking = false}) {
       label: 'Pending',
       cards: [
         for (final address in [
+          'awaiting',
           'unknown',
           'unused',
           'detected',

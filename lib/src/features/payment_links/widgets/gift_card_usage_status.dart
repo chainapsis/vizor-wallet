@@ -71,23 +71,29 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         ref.watch(giftCardUsageProvider(address)).value ??
         const GiftCardUsage();
     final state = ref.watch(giftCardTrackingStateProvider);
+    final checking = !usage.cleaned && state.checking;
+    final label = checking && usage.status == GiftCardUsageStatus.unknown
+        ? 'Checking usage…'
+        : usage.label;
     final suffix = usage.cleaned
         ? ''
         : state.checking
-        ? ' · Checking…'
+        ? usage.status == GiftCardUsageStatus.unknown
+              ? ''
+              : ' · Checking…'
         : state.failedFor(address)
         ? ' · Update failed'
         : '';
     if (inline) {
-      final checking = !usage.cleaned && state.checking;
       final failed = !usage.cleaned && !checking && state.failedFor(address);
       final description =
-          'Card use: ${usage.label}'
+          'Card use: $label'
           '${checking
               ? '. Checking'
               : failed
               ? '. Update failed'
-              : ''}';
+              : ''}'
+          '${usage.explanation == null ? '' : '. ${usage.explanation}'}';
       return AppTooltip(
         message: description,
         tapToShow: true,
@@ -114,10 +120,11 @@ class GiftCardUsageStatusView extends ConsumerWidget {
               const SizedBox(width: AppSpacing.xxs),
               Flexible(
                 child: Text(
-                  usage.label,
-                  maxLines: 1,
+                  label,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
+                  textWidthBasis: TextWidthBasis.longestLine,
                   style: AppTypography.bodySmall.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -134,10 +141,14 @@ class GiftCardUsageStatusView extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Card use: ${usage.label}$suffix',
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
+          AppTooltip(
+            message: usage.explanation ?? 'Card use: $label$suffix',
+            tapToShow: true,
+            child: Text(
+              'Card use: $label$suffix',
+              style: AppTypography.bodySmall.copyWith(
+                color: context.colors.text.secondary,
+              ),
             ),
           ),
           if (showCheckedAt && checked != null)

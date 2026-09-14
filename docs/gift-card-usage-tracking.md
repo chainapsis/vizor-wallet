@@ -5,6 +5,23 @@ The optional `usage` field in the existing encrypted recovery record is a
 separate sender observation; missing fields default to `unknown`. Malformed
 present usage records fail validation. Receiver claim records are unchanged.
 
+Unverified observations now carry an optional `reason`; older records without
+it remain readable and do not imply pending funding. The sender UI shows:
+- `Checking usage…` while an unverified card is being checked.
+- `Awaiting confirmation` only when every saved funding transaction is returned
+  by lightwalletd with a matching parsed txid and at least one is unmined.
+- `Usage not verified` for missing saved funding information, missing observed
+  funding, incomplete scan history, or insufficient observed funding value.
+  Hover/tap explains the specific reason on the list and completion screen.
+
+The read-only transaction lookup runs only when local funding evidence is
+missing. NotFound is inconclusive, never proof of pending funding. Network or
+invalid-response failures retain the previous observation and show the error
+indicator. Lookup uses the existing route-aware lightwalletd transport and
+endpoint fallback; observer pause/reset cancels it and drains before cleanup.
+Previously verified usage is preserved if a later observation lacks evidence.
+Long inline labels may wrap to two lines while preserving the action positions.
+
 ## Ownership
 
 `GiftCardTrackingService` serializes registration, scans, observations and
@@ -86,7 +103,7 @@ multi-account viewing-key scans, a late older-birthday registration and an
 external claim. It also covers 1 → 0 → later registration with real shielded
 activity in the idle interval, zero scanned blocks in the skipped interval,
 subsequent tip refresh and older-card recovery. The macOS
-`flutter-macos-regtest-gift-card-tracking.sh` runner checks automatic UI/store
+`flutter-macos-regtest-gift-card-tracking.sh` runner checks unmined funding → Unused, automatic UI/store
 updates and retention across a process restart. See `scripts/e2e/README.md`.
 It mines on the shared Docker chain; run it only when regtest
 execution is explicitly requested.
