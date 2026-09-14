@@ -87,6 +87,7 @@ import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         SendReviewArgs,
+        resolveSendReviewRoutePayload,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
@@ -1060,7 +1061,14 @@ Page<dynamic> buildDesktopSendReviewPage(
   BuildContext context,
   GoRouterState state,
 ) {
-  final args = state.extra;
+  final args = resolveSendReviewRoutePayload(
+    routePayload: state.extra,
+    retainedPayload: ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(sendStatusRoutePayloadProvider),
+    sendFlowId: state.uri.queryParameters['flow'],
+  );
   if (args is! SendReviewArgs) {
     return _payloadKeyedDesktopPage(
       state,

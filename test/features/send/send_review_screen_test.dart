@@ -1850,6 +1850,7 @@ void main() {
     await tester.pumpWidget(
       _harness(
         args,
+        productionReviewRoute: true,
         bootstrap: _bootstrap(
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
@@ -2310,6 +2311,7 @@ Widget _harness(
   LedgerSignedOperationService? ledgerOperationService,
   _FakeSyncNotifier? syncNotifier,
   bool cancelScan = false,
+  bool productionReviewRoute = false,
   String initialLocation = '/send/review',
 }) {
   final router = GoRouter(
@@ -2326,7 +2328,8 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/review',
-        builder: (context, state) => switch (resolveSendReviewRoutePayload(
+        pageBuilder: productionReviewRoute ? buildDesktopSendReviewPage : null,
+        builder: productionReviewRoute ? null : (context, state) => switch (resolveSendReviewRoutePayload(
           routePayload: state.extra ?? (state.uri.queryParameters['flow'] == null ? args : null),
           retainedPayload: ProviderScope.containerOf(
             context,

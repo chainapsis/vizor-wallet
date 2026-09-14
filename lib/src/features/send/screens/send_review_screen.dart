@@ -658,7 +658,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     ),
   );
 
-  Future<void> _handleDonationBack() => _keystonePhase != null
+  Future<void> _handleDonationBack() => _ledgerPhase != null
+      ? _dismissLedgerSigningModal()
+      : _keystonePhase != null
       ? _cancelKeystoneSigning()
       : _leaveReview(() {
           if (context.canPop()) {
@@ -1019,10 +1021,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final backTarget = AppBackResolver.resolve(context);
 
     return PopScope<Object?>(
-      canPop: keystonePhase == null && !_cancelling && !_proposalAbandoned,
+      canPop: keystonePhase == null && _ledgerPhase == null && !_cancelling && !_proposalAbandoned,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (keystonePhase != null) {
+        if (_ledgerPhase != null) {
+          unawaited(_dismissLedgerSigningModal());
+        } else if (keystonePhase != null) {
           unawaited(_cancelKeystoneSigning());
         } else if (_proposalAbandoned) {
           unawaited(_leaveReview(() => backTarget.navigate(context)));
@@ -1049,7 +1053,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       : AppBackLink(
                           label: backTarget.label,
                           minWidth: 60,
-                          onTap: () => keystonePhase != null
+                          onTap: () => _ledgerPhase != null
+                              ? _dismissLedgerSigningModal()
+                              : keystonePhase != null
                               ? _cancelKeystoneSigning()
                               : _leaveReview(
                                   () => backTarget.navigate(context),
