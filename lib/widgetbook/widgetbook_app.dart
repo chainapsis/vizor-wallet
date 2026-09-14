@@ -1410,10 +1410,7 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Shielded - filled',
                 builder: buildSendShieldedFilledUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Price loading',
-                builder: buildSendPriceLoadingUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'USD input',
                 builder: buildSendUsdInputUseCase,
@@ -1422,10 +1419,7 @@ final List<WidgetbookNode> widgetbookDirectories = [
                 name: 'Insufficient shielded balance',
                 builder: buildSendNotEnoughUseCase,
               ),
-              WidgetbookUseCase(
-                name: 'Shielded - memo too long',
-                builder: buildSendMemoTooLongUseCase,
-              ),
+
               WidgetbookUseCase(
                 name: 'Transparent recipient',
                 builder: buildSendTransparentUseCase,
