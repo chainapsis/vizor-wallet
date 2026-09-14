@@ -388,6 +388,24 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void updateDestination(String value) {
     _clearReviewState();
+    final prefixMatch = detectSwapPrefixedAddress(value);
+    final matchedAsset = prefixMatch == null
+        ? null
+        : _supportedAssetForSymbolAndChain(
+            symbol: prefixMatch.symbol,
+            chainTicker: prefixMatch.chainTicker,
+            supported: state.supportedExternalAssets,
+          );
+    if (prefixMatch != null && matchedAsset != null) {
+      state = state.copyWith(
+        externalAsset: matchedAsset,
+        destinationText: prefixMatch.address,
+        reviewVisible: false,
+        clearMaxAmountError: true,
+        clearUserExternalContactId: true,
+      );
+      return;
+    }
     state = state.copyWith(
       destinationText: value,
       reviewVisible: false,
@@ -2150,6 +2168,25 @@ SwapAsset? _supportedAssetFor(SwapAsset asset, List<SwapAsset> supported) {
   }
   for (final candidate in supported) {
     if (candidate.hasSameMarketAs(asset)) return candidate;
+  }
+  return null;
+}
+
+/// Finds the supported asset matching a bare symbol/chain pair, used to
+/// resolve a chain-prefixed address (e.g. `usdttron:`) to a concrete
+/// [SwapAsset] without knowing its decimals or asset id up front.
+SwapAsset? _supportedAssetForSymbolAndChain({
+  required String symbol,
+  required String chainTicker,
+  required List<SwapAsset> supported,
+}) {
+  final normalizedSymbol = symbol.toLowerCase();
+  final normalizedChain = chainTicker.toLowerCase();
+  for (final candidate in supported) {
+    if (candidate.symbol.toLowerCase() == normalizedSymbol &&
+        candidate.chainTicker.toLowerCase() == normalizedChain) {
+      return candidate;
+    }
   }
   return null;
 }
