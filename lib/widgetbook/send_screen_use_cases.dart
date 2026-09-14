@@ -49,6 +49,7 @@ import '../src/providers/wallet_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 import 'send_review_status_use_cases.dart';
 import 'send_use_cases.dart'
     show
@@ -261,6 +262,7 @@ Widget _sendScreenScope({
       privacyModeProvider.overrideWith(_SendPreviewPrivacyModeNotifier.new),
       appLayoutProvider.overrideWith(_SendPreviewLayoutNotifier.new),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
+      wbSidebarActions,
       addressBookRepositoryProvider.overrideWithValue(
         _SendPreviewAddressBookRepository(contacts),
       ),
@@ -381,10 +383,14 @@ class _SendScreenRouterHarnessState extends State<_SendScreenRouterHarness> {
           '/settings',
           '/send/status',
           '/send/keystone/scan',
+          '/unlock',
         ])
           GoRoute(
             path: path,
-            builder: (_, _) => _SendPreviewRoutePlaceholder(label: path),
+            builder: (context, _) => _SendPreviewRoutePlaceholder(
+              label: path,
+              onBack: () => context.go('/send'),
+            ),
           ),
       ],
     );

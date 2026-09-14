@@ -37,8 +37,9 @@ void main() {
     for (final layout in WbLayout.values) {
       // The pinned mobile composer has a separate provider scope from the
       // interactive screen; its desktop counterpart is not a screen host.
-      if (entry.key == 'Swap pinned mobile' && layout == WbLayout.desktop)
+      if (entry.key == 'Swap pinned mobile' && layout == WbLayout.desktop) {
         continue;
+      }
       testWidgets(
         '${entry.key} ${layout.name} persists contacts only in its own preview',
         (tester) async {

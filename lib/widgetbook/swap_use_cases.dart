@@ -48,6 +48,7 @@ import '../src/features/swap/widgets/swap_review_page_content.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 import 'support/wb_address_book_repository.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
@@ -2309,6 +2310,7 @@ Widget _swapScreenScope({
         () => _SwapPreviewAccountNotifier(_swapScreenAccountState),
       ),
       syncProvider.overrideWith(() => _SwapPreviewSyncNotifier(syncState)),
+      wbSidebarActions,
       addressBookRepositoryProvider.overrideWith(
         (ref) => WbAddressBookRepository(),
       ),
@@ -2408,7 +2410,7 @@ class _SwapScreenHarness extends StatefulWidget {
 }
 
 class _SwapScreenHarnessState extends State<_SwapScreenHarness> {
-  static const _exitRoutes = ['/home', '/activity', '/pay', '/settings'];
+  static const _exitRoutes = wbSidebarPaths;
 
   late final GoRouter _router;
 
@@ -2446,7 +2448,7 @@ class _SwapScreenHarnessState extends State<_SwapScreenHarness> {
         ),
         for (final path in _exitRoutes)
           if (path != widget.location)
-            GoRoute(path: path, builder: (_, _) => const SizedBox.shrink()),
+            GoRoute(path: path, builder: (_, _) => wbSidebarDestination(path)),
       ],
     );
   }

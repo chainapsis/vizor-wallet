@@ -35,6 +35,7 @@ import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 
 /// The addresses the other Receive fixtures preview, so every Receive surface
 /// describes the same wallet.
@@ -77,6 +78,7 @@ Widget receiveDesktopScreenFixture({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_receiveBootstrap),
+      wbSidebarActions,
       // `setMode(large)` would reshape the dev tool's own window.
       appLayoutProvider.overrideWith(_ReceiveNoOpLayoutNotifier.new),
       receiveAddressServiceProvider.overrideWithValue(
@@ -144,6 +146,8 @@ class _ReceiveDesktopScreenHarnessState
           '/accounts',
           '/add-account',
           '/migration',
+          '/voting',
+          '/unlock',
         ])
           GoRoute(
             path: path,

@@ -38,6 +38,7 @@ import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/providers/sync_provider.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 import 'support/wb_address_book_repository.dart';
 
 const _payShellAccountUuid = 'widgetbook-pay-screen-account';
@@ -192,6 +193,7 @@ Widget payPreviewShellScope({
       addressBookRepositoryProvider.overrideWith(
         (ref) => WbAddressBookRepository(),
       ),
+      wbSidebarActions,
       addressBookProvider.overrideWith(
         () => _PayPreviewAddressBookNotifier(_payShellContacts),
       ),
@@ -327,8 +329,9 @@ class _PayScreenHarnessState extends State<_PayScreenHarness> {
                         launchExternalUri: (_) async {},
                       ),
         ),
-        GoRoute(path: '/home', builder: (_, _) => const SizedBox.shrink()),
-        GoRoute(path: '/activity', builder: (_, _) => const SizedBox.shrink()),
+        for (final path in wbSidebarPaths)
+          if (path != '/pay')
+            GoRoute(path: path, builder: (_, _) => wbSidebarDestination(path)),
       ],
     );
   }

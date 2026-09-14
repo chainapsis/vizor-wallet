@@ -66,6 +66,7 @@ import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import 'support/wb_fake_scanner_platform.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 
 /// Deterministic Home fixtures for the gallery's knob axes.
 ///
@@ -282,6 +283,7 @@ List<Override> _homeOverrides({
         );
   return [
     appLayoutProvider.overrideWith(_HomeNoOpLayoutNotifier.new),
+    wbSidebarActions,
     transparentShieldingRunnerProvider.overrideWithValue(
       ({required ref, required accountUuid, logContext = 'Preview'}) async =>
           _homeShieldPendingResult,
@@ -666,6 +668,11 @@ class _HomeDesktopHarnessState extends State<_HomeDesktopHarness> {
           '/settings',
           '/settings/endpoint',
           '/migration',
+          '/swap',
+          '/voting',
+          '/accounts',
+          '/add-account',
+          '/unlock',
         ])
           GoRoute(path: path, builder: (_, _) => _HomeRoutePlaceholder(path)),
         GoRoute(
