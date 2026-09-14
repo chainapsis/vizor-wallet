@@ -47,10 +47,51 @@ final sendWalletDbPathProvider = Provider<Future<String> Function()>((ref) {
   return getWalletDbPath;
 });
 
+typedef SendAddressValidator =
+    Future<rust_sync.AddressValidationResult> Function({
+      required String address,
+      required String network,
+    });
+
+typedef SendFeeEstimator =
+    Future<BigInt> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String toAddress,
+      required BigInt amountZatoshi,
+      String? memo,
+    });
+
+typedef SendReviewPreparer =
+    Future<SendReviewArgs> Function({
+      required String accountUuid,
+      required String sendFlowId,
+      required String address,
+      required String addressType,
+      required BigInt amountZatoshi,
+      String? memo,
+      required bool isPaymentRequest,
+      String? requestedBy,
+      BigInt? requestedAmountZatoshi,
+    });
+typedef SendPreparedReviewDiscarder = Future<void> Function(BigInt proposalId);
+
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key, this.prefill});
+  const SendScreen({
+    super.key,
+    this.prefill,
+    this.validateAddress,
+    this.estimateFee,
+    this.prepareReview,
+    this.discardPreparedReview,
+  });
 
   final SendPrefillArgs? prefill;
+  final SendAddressValidator? validateAddress;
+  final SendFeeEstimator? estimateFee;
+  final SendReviewPreparer? prepareReview;
+  final SendPreparedReviewDiscarder? discardPreparedReview;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -114,6 +155,10 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       displaySpendableBalance: displaySpendableBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
       prefill: prefill,
+      validateAddress: widget.validateAddress,
+      estimateFee: widget.estimateFee,
+      prepareReview: widget.prepareReview,
+      discardPreparedReview: widget.discardPreparedReview,
     );
   }
 }
@@ -128,6 +173,10 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.displaySpendableBalance,
     required this.isUsingCompletedSpendableSnapshot,
     this.prefill,
+    this.validateAddress,
+    this.estimateFee,
+    this.prepareReview,
+    this.discardPreparedReview,
   });
 
   final AsyncValue<WalletState> walletAsync;
@@ -137,6 +186,10 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   final BigInt displaySpendableBalance;
   final bool isUsingCompletedSpendableSnapshot;
   final SendPrefillArgs? prefill;
+  final SendAddressValidator? validateAddress;
+  final SendFeeEstimator? estimateFee;
+  final SendReviewPreparer? prepareReview;
+  final SendPreparedReviewDiscarder? discardPreparedReview;
 
   @override
   ConsumerState<_SendComposeBody> createState() => _SendComposeBodyState();
@@ -407,10 +460,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
     try {
-      final result = await rust_sync.validateAddress(
-        address: addr,
-        network: ref.read(rpcEndpointProvider).networkName,
-      );
+      final result =
+          await (widget.validateAddress ?? rust_sync.validateAddress)(
+            address: addr,
+            network: ref.read(rpcEndpointProvider).networkName,
+          );
       if (!mounted || seq != _addressSeq) return;
       final nextAddressType = result.isValid ? result.addressType : 'invalid';
       setState(() {
@@ -883,7 +937,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
               final dbPath = await ref.read(sendWalletDbPathProvider).call();
               final endpoint = ref.read(rpcEndpointProvider);
               if (!mounted || seq != _validateSeq) return null;
-              return rust_sync.estimateFee(
+              return (widget.estimateFee ?? rust_sync.estimateFee)(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
@@ -1006,19 +1060,32 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // its framing — but only while the recipient is still the one the
       // request named. Retype the address and this is an ordinary send again.
       final request = _activePaymentRequest(address);
-      final reviewArgs = await proposeSendTransfer(
-        ref: ref,
-        loadDbPath: ref.read(sendWalletDbPathProvider),
-        accountUuid: accountUuid,
-        sendFlowId: _sendFlowId,
-        address: address,
-        addressType: _addressType,
-        amountZatoshi: amountZatoshi,
-        memo: memo.isNotEmpty ? memo : null,
-        isPaymentRequest: request != null,
-        requestedBy: request?.label,
-        requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
-      );
+      final prepareReview = widget.prepareReview;
+      final reviewArgs = prepareReview != null
+          ? await prepareReview(
+              accountUuid: accountUuid,
+              sendFlowId: _sendFlowId,
+              address: address,
+              addressType: _addressType,
+              amountZatoshi: amountZatoshi,
+              memo: memo.isNotEmpty ? memo : null,
+              isPaymentRequest: request != null,
+              requestedBy: request?.label,
+              requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
+            )
+          : await proposeSendTransfer(
+              ref: ref,
+              loadDbPath: ref.read(sendWalletDbPathProvider),
+              accountUuid: accountUuid,
+              sendFlowId: _sendFlowId,
+              address: address,
+              addressType: _addressType,
+              amountZatoshi: amountZatoshi,
+              memo: memo.isNotEmpty ? memo : null,
+              isPaymentRequest: request != null,
+              requestedBy: request?.label,
+              requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
+            );
       activeProposalId = reviewArgs.proposalId;
 
       if (!mounted) {
@@ -1036,13 +1103,18 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       });
     } finally {
       if (activeProposalId != null && !pushedReview) {
-        await discardSendProposal(
-          proposalId: activeProposalId,
-          sendFlowId: _sendFlowId,
-          logContext: 'Send(review not opened)',
-          syncNotifier: syncNotifier,
-          accountUuid: proposalAccountUuid!,
-        );
+        final discardPreparedReview = widget.discardPreparedReview;
+        if (discardPreparedReview != null) {
+          await discardPreparedReview(activeProposalId);
+        } else {
+          await discardSendProposal(
+            proposalId: activeProposalId,
+            sendFlowId: _sendFlowId,
+            logContext: 'Send(review not opened)',
+            syncNotifier: syncNotifier,
+            accountUuid: proposalAccountUuid!,
+          );
+        }
       }
     }
   }

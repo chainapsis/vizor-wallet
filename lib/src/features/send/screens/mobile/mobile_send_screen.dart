@@ -130,6 +130,19 @@ typedef MobileSendScanner =
       required String networkName,
     });
 
+typedef MobileSendReviewPreparer =
+    Future<SendReviewArgs> Function({
+      required String accountUuid,
+      required String sendFlowId,
+      required String address,
+      required String addressType,
+      required BigInt amountZatoshi,
+      String? memo,
+    });
+
+typedef MobileSendPreparedReviewDiscarder =
+    Future<bool> Function(SendReviewArgs args);
+
 class _MobileSendMaxQuote {
   const _MobileSendMaxQuote({
     required this.accountUuid,
@@ -409,6 +422,8 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.loadWalletDbPath = getWalletDbPath,
     this.validateAddress,
     this.estimateFee,
+    this.prepareReview,
+    this.discardPreparedReview,
     this.openScanner = showMobileSendScanSheet,
     this.useRouteSteps = false,
     this.initialSendFlowId,
@@ -485,6 +500,12 @@ class MobileSendScreen extends ConsumerStatefulWidget {
 
   /// Preview/test seam for the direct Rust fee-estimation call.
   final MobileSendFeeEstimator? estimateFee;
+
+  /// Preview/test seam for creating a deterministic in-memory review.
+  final MobileSendReviewPreparer? prepareReview;
+
+  /// Preview/test seam for releasing a prepared review without Rust.
+  final MobileSendPreparedReviewDiscarder? discardPreparedReview;
 
   /// Preview/test seam for the mobile scanner sheet.
   final MobileSendScanner openScanner;
@@ -1836,16 +1857,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
     SendReviewArgs args;
     try {
-      args = await proposeSendTransfer(
-        ref: ref,
-        loadDbPath: widget.loadWalletDbPath,
-        accountUuid: accountUuid,
-        sendFlowId: _sendFlowId,
-        address: address,
-        addressType: _addressType,
-        amountZatoshi: amountZatoshi,
-        memo: memo.isNotEmpty ? memo : null,
-      );
+      args =
+          widget.prepareReview != null
+              ? await widget.prepareReview!(
+                accountUuid: accountUuid,
+                sendFlowId: _sendFlowId,
+                address: address,
+                addressType: _addressType,
+                amountZatoshi: amountZatoshi,
+                memo: memo.isNotEmpty ? memo : null,
+              )
+              : await proposeSendTransfer(
+                ref: ref,
+                loadDbPath: widget.loadWalletDbPath,
+                accountUuid: accountUuid,
+                sendFlowId: _sendFlowId,
+                address: address,
+                addressType: _addressType,
+                amountZatoshi: amountZatoshi,
+                memo: memo.isNotEmpty ? memo : null,
+              );
     } catch (e) {
       log('MobileSend: propose error: $e');
       if (!mounted) return;
@@ -1860,12 +1891,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       // Awaited: `_confirmAndSend`'s hold on the payment-URI latch lifts when
       // this returns, and a link parked behind it would otherwise be
       // pre-checked against inputs this proposal still holds.
-      await discardSendProposal(
-        syncNotifier: _syncNotifier,
-        accountUuid: args.proposalAccountUuid,
-        proposalId: args.proposalId,
+      await _discardPreparedReview(
+        args,
+        'MobileSend(unmounted)',
         sendFlowId: _sendFlowId,
-        logContext: 'MobileSend(unmounted)',
       );
       return;
     }
@@ -1930,12 +1959,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _isResolvingMax = false;
       });
     }
-    final released = await discardSendProposal(
-      syncNotifier: _syncNotifier,
-      accountUuid: args.proposalAccountUuid,
-      proposalId: args.proposalId,
-      sendFlowId: args.sendFlowId,
-      logContext: 'MobileSend(cancelled proposal)',
+    final released = await _discardPreparedReview(
+      args,
+      'MobileSend(cancelled proposal)',
     );
     if (!mounted) return;
     if (!released) {
@@ -1955,6 +1981,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     // were reserved, including a Max quote from the first signing attempt.
     await _refreshReviewQuote();
     if (mounted) setState(() => _isConfirmingSend = false);
+  }
+
+  Future<bool> _discardPreparedReview(
+    SendReviewArgs args,
+    String logContext, {
+    String? sendFlowId,
+  }) {
+    final discard = widget.discardPreparedReview;
+    if (discard != null) return discard(args);
+    return discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: args.proposalAccountUuid,
+      proposalId: args.proposalId,
+      sendFlowId: sendFlowId ?? args.sendFlowId,
+      logContext: logContext,
+    );
   }
 
   Future<void> _retryCancelledProposal() async {

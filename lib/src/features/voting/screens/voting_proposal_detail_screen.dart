@@ -637,7 +637,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     if (skippedCount > 0) {
       final continueToReview = await showDialog<bool>(
         context: context,
-        builder: (_) => _SkippedQuestionsDialog(
+        builder: (_) => SkippedQuestionsDialog(
           skippedCount: skippedCount,
           totalCount: widget.proposals.length,
         ),
@@ -907,10 +907,12 @@ class _DesktopVotedPollHeader extends StatelessWidget {
   }
 }
 
-class _SkippedQuestionsDialog extends StatelessWidget {
-  const _SkippedQuestionsDialog({
+/// Confirms leaving questions unanswered before signing a ballot.
+class SkippedQuestionsDialog extends StatelessWidget {
+  const SkippedQuestionsDialog({
     required this.skippedCount,
     required this.totalCount,
+    super.key,
   });
 
   final int skippedCount;

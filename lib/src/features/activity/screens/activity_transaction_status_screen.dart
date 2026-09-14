@@ -56,10 +56,35 @@ class ActivityTransactionStatusArgs {
   final GiftCardActivityMetadata? giftCard;
 }
 
+/// Loads the transaction history; injectable so widget tests can avoid
+/// the Rust FFI.
+typedef ActivityTxHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+
+/// Loads one transaction's detail; injectable for widget tests.
+typedef ActivityTxDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      String accountUuid,
+      rust_sync.TransactionInfo transaction,
+    );
+
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
-  const ActivityTransactionStatusScreen({super.key, required this.args});
+  const ActivityTransactionStatusScreen({
+    super.key,
+    required this.args,
+    this.historyLoader,
+    this.detailLoader,
+  });
 
   final ActivityTransactionStatusArgs args;
+
+  /// Test seam — production reads the wallet DB through Rust.
+  @visibleForTesting
+  final ActivityTxHistoryLoader? historyLoader;
+
+  /// Test seam — production reads the wallet DB through Rust.
+  @visibleForTesting
+  final ActivityTxDetailLoader? detailLoader;
 
   @override
   ConsumerState<ActivityTransactionStatusScreen> createState() =>
@@ -74,6 +99,9 @@ class _ActivityTransactionStatusScreenState
   String? _error;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
+  // Resolving the wallet DB path reads secure storage, so cache the result
+  // across the history + detail loads of one refresh.
+  String? _cachedDbPath;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -89,6 +117,39 @@ class _ActivityTransactionStatusScreenState
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_loadTransaction(showLoading: _transaction == null));
     });
+  }
+
+  Future<List<rust_sync.TransactionInfo>> _loadHistory(
+    String accountUuid,
+  ) async {
+    final loader = widget.historyLoader;
+    if (loader != null) return loader(accountUuid);
+    // Read the endpoint before awaiting so a dispose mid-load cannot make
+    // `ref.read` throw, and share one resolved DB path across both loads.
+    final endpoint = ref.read(rpcEndpointProvider);
+    final dbPath = _cachedDbPath ??= await getWalletDbPath();
+    return rust_sync.getTransactionHistory(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+  }
+
+  Future<rust_sync.TransactionDetail?> _loadDetail(
+    String accountUuid,
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final loader = widget.detailLoader;
+    if (loader != null) return loader(accountUuid, transaction);
+    final endpoint = ref.read(rpcEndpointProvider);
+    final dbPath = _cachedDbPath ??= await getWalletDbPath();
+    return rust_sync.getTransactionDetail(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      txidHex: transaction.txidHex,
+      txKind: transaction.txKind,
+    );
   }
 
   Future<void> _loadTransaction({bool showLoading = false}) async {
@@ -112,13 +173,7 @@ class _ActivityTransactionStatusScreenState
     }
 
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final txs = await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
+      final txs = await _loadHistory(accountUuid);
       if (!mounted) return;
       if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return;
@@ -135,13 +190,7 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = await rust_sync.getTransactionDetail(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            txidHex: tx.txidHex,
-            txKind: tx.txKind,
-          );
+          detail = await _loadDetail(accountUuid, tx);
         } catch (e, st) {
           log('ActivityTransactionStatus: detail load failed: $e\n$st');
         }

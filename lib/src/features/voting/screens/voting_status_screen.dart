@@ -273,7 +273,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return const _SkipSignedBundlesDialog();
+        return const SkipSignedBundlesDialog();
       },
     );
     if (!mounted || _selectedJobKey() != key) return;
@@ -696,8 +696,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 }
 
-class _SkipSignedBundlesDialog extends StatelessWidget {
-  const _SkipSignedBundlesDialog();
+/// Confirms discarding bundles that were already signed on the device.
+class SkipSignedBundlesDialog extends StatelessWidget {
+  const SkipSignedBundlesDialog({super.key});
 
   @override
   Widget build(BuildContext context) {

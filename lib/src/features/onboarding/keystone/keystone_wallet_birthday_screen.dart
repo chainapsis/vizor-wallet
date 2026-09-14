@@ -21,8 +21,17 @@ enum KeystoneBirthdayTab { date, blockHeight }
 
 enum _KeystoneBirthdaySubmitPhase { idle, stoppingSync, importing }
 
+/// Loads the wallet-birthday metadata; injectable so previews and widget
+/// tests can avoid the Rust FFI.
+typedef KeystoneBirthdayMetadataLoader =
+    Future<ImportBirthdayMetadata> Function();
+
 class KeystoneWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const KeystoneWalletBirthdayScreen({super.key});
+  const KeystoneWalletBirthdayScreen({super.key, this.metadataLoader});
+
+  /// Preview/test seam — production loads the metadata through Rust.
+  @visibleForTesting
+  final KeystoneBirthdayMetadataLoader? metadataLoader;
 
   @override
   ConsumerState<KeystoneWalletBirthdayScreen> createState() =>
@@ -88,10 +97,12 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final loader = widget.metadataLoader;
+      final metadata = loader != null
+          ? await loader()
+          : await ImportBirthdayEstimator.loadMetadata(
+              endpoint: ref.read(rpcEndpointProvider),
+            );
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
