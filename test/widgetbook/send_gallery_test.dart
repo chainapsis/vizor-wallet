@@ -60,6 +60,61 @@ const _mobileSendScreenStepAxes = <SendScreenMobileStep, List<String>>{
 // layout axis is driven by explicit query params rather than the compiled
 // lane, so both test lanes exercise the same combinations.
 void main() {
+  testWidgets('mobile status exit returns home and can reopen the preview', (
+    tester,
+  ) async {
+    for (final entry in {'Sent': 'Done', 'Failed': 'Return home'}.entries) {
+      await pumpUseCase(
+        tester,
+        buildSendStatusScreenGalleryCase,
+        knobs: {..._mobile, 'Phase': entry.key},
+      );
+      await tester.pumpAndSettle();
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(find.text(entry.value));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('/home'), findsOneWidget);
+        expect(find.text(entry.value), findsNothing);
+        await tester.tap(find.text('Back to send preview'));
+        await tester.pumpAndSettle();
+        expect(find.text(entry.value), findsOneWidget);
+      }
+      await disposeTree(tester);
+      await drainSendStatusHaptics(tester);
+    }
+  });
+
+  testWidgets('mobile Keystone cancel returns to its parent and can reopen', (
+    tester,
+  ) async {
+    for (final failure in [null, MobileKeystoneSignFailure.generic]) {
+      await pumpUseCase(
+        tester,
+        (_) => mobileKeystoneSignFixture(failure: failure),
+      );
+      await tester.pump();
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_keystone_sign_cancel')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('/home'), findsOneWidget);
+        expect(find.text('Cancel'), findsNothing);
+        await tester.tap(find.text('Back to send preview'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(
+          find.byKey(const ValueKey('mobile_keystone_sign_cancel')),
+          findsOneWidget,
+        );
+      }
+      await disposeTree(tester);
+      await drainSendReviewDiscard(tester);
+    }
+  });
+
   testWidgets('every send gallery case builds at its knob defaults', (
     tester,
   ) async {

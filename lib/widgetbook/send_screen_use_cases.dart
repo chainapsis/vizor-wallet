@@ -408,9 +408,10 @@ class _SendScreenRouterHarnessState extends State<_SendScreenRouterHarness> {
 }
 
 class _SendPreviewRoutePlaceholder extends StatelessWidget {
-  const _SendPreviewRoutePlaceholder({required this.label});
+  const _SendPreviewRoutePlaceholder({required this.label, this.onBack});
 
   final String label;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -429,7 +430,7 @@ class _SendPreviewRoutePlaceholder extends StatelessWidget {
             const SizedBox(height: 16),
             AppBackLink(
               label: 'Back to send preview',
-              onTap: () => context.pop(),
+              onTap: onBack ?? () => context.pop(),
             ),
           ],
         ),
@@ -1046,14 +1047,59 @@ class _MobileSendScreenFrame extends StatelessWidget {
   }
 }
 
-/// These screens read `GoRouter.of(context)` when their primary action or
-/// back gesture fires; the widgetbook host is not a router, so a detached
-/// instance keeps a reviewer's tap from throwing.
-final GoRouter _mobileSendPreviewRouter = GoRouter(
-  routes: [
-    GoRoute(path: '/', builder: (context, state) => const SizedBox.shrink()),
-  ],
-);
+/// Owns navigation per mounted preview (also isolates Compare panes).
+/// Status uses its `/home` fallback; signing needs a parent to pop back to.
+class _MobileSendPreviewRouter extends StatefulWidget {
+  const _MobileSendPreviewRouter({required this.child, this.hasParent = false});
+
+  final Widget child;
+  final bool hasParent;
+
+  @override
+  State<_MobileSendPreviewRouter> createState() =>
+      _MobileSendPreviewRouterState();
+}
+
+class _MobileSendPreviewRouterState extends State<_MobileSendPreviewRouter> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    final location = widget.hasParent ? '/home/preview' : '/preview';
+    final preview = GoRoute(
+      path: widget.hasParent ? 'preview' : '/preview',
+      pageBuilder: (_, state) =>
+          NoTransitionPage<void>(key: state.pageKey, child: widget.child),
+    );
+    _router = GoRouter(
+      initialLocation: location,
+      routes: [
+        GoRoute(
+          path: '/home',
+          pageBuilder: (context, state) => NoTransitionPage<void>(
+            key: state.pageKey,
+            child: _SendPreviewRoutePlaceholder(
+              label: '/home',
+              onBack: () => context.go(location),
+            ),
+          ),
+          routes: [if (widget.hasParent) preview],
+        ),
+        if (!widget.hasParent) preview,
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
 
 /// Broadcast outcomes the mobile receipt can land on; `null` holds it on the
 /// sending phase.
@@ -1092,8 +1138,7 @@ Widget mobileSendStatusFixture({
   return _sendScreenScope(
     accountState: accountState,
     child: _MobileSendScreenFrame(
-      child: InheritedGoRouter(
-        goRouter: _mobileSendPreviewRouter,
+      child: _MobileSendPreviewRouter(
         child: MobileSendStatusScreen(
           args: args,
           keystone: hardwareAccount
@@ -1468,8 +1513,8 @@ Widget mobileKeystoneSignFixture({
   return _sendScreenScope(
     accountState: accountState,
     child: _MobileSendScreenFrame(
-      child: InheritedGoRouter(
-        goRouter: _mobileSendPreviewRouter,
+      child: _MobileSendPreviewRouter(
+        hasParent: true,
         child: MobileKeystoneSignScreen(
           args: args,
           loadWalletDbPath: failure == null
