@@ -31,6 +31,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 const _accountState = AccountState(
   accounts: [
     AccountInfo(
@@ -94,6 +96,26 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
+  });
+
   testWidgets('review actions use the mobile button height', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

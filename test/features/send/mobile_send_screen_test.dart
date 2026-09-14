@@ -41,6 +41,8 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
@@ -3123,6 +3125,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(loadingFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('mobile_send_amount_input')),
+        onIncompleteAmount: () {
+          expect(find.text('Enter amount to continue'), findsOneWidget);
+        },
+      );
+    }
   });
 
   testWidgets('amount input preserves a middle selection while editing', (

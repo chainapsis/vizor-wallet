@@ -16,6 +16,8 @@ import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_s
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 const _recipient = '0x1111111111111111111111111111111111111111';
 const _otherRecipient = '0x2222222222222222222222222222222222222222';
 const _unknownRecipient = '0x3333333333333333333333333333333333333333';
@@ -70,6 +72,37 @@ final _recents = [
 ];
 
 void main() {
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    for (final mode in SwapAmountInputMode.values) {
+      await _pumpStep(
+        tester,
+        MobilePayAmountStep(
+          state: _amountState.copyWith(receiveAmountInputMode: mode),
+          controller: controller,
+          focusNode: focusNode,
+          onAmountChanged: (_) {},
+          onFiatAmountChanged: (_) {},
+          onToggleFiatInputMode: () {},
+          onOpenAssetSelector: () {},
+          zecAvailableZatoshi: BigInt.from(1000000000),
+          slippageLabel: '0.5%',
+          onOpenSlippage: () {},
+          onContinue: () {},
+        ),
+      );
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+      );
+    }
+  });
+
   group('MobilePayAmountStep', () {
     testWidgets('matches the mobile amount card and pinned action geometry', (
       tester,

@@ -67,6 +67,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
@@ -124,6 +126,34 @@ void main() {
     final parts = splitSwapSummaryAmountText(r'999K $SHIT', _testShitAsset);
     expect(parts.amount, '999K');
     expect(parts.symbol, r'$SHIT');
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _FakeSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
   });
 
   testWidgets('review summary fits a long pay amount via FittedBox', (

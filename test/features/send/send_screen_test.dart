@@ -30,6 +30,8 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -186,6 +188,36 @@ void main() {
 
     expect(find.byType(SendScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+        await tester.pumpAndSettle();
+      }
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('send_amount_field')),
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('send_review_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+    }
   });
 
   testWidgets('amount input preserves a middle selection while editing', (
