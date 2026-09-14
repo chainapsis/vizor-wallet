@@ -267,6 +267,7 @@ Widget _sendScreenScope({
       appLayoutProvider.overrideWith(_SendPreviewLayoutNotifier.new),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       wbSidebarActions,
+      wbPostMigrationState,
       receiveAddressServiceProvider.overrideWithValue(
         const _SendPreviewReceiveAddressService(),
       ),

@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/widgetbook/support/wb_sidebar.dart';
 import 'package:zcash_wallet/widgetbook/gallery/receive_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gallery/home_activity_gallery.dart';
 import 'package:zcash_wallet/widgetbook/gallery/send_gallery.dart';
@@ -16,6 +19,36 @@ import 'package:zcash_wallet/widgetbook/send_screen_use_cases.dart';
 import 'support/wb_gallery_harness.dart';
 
 void main() {
+  test(
+    'preview post-migration state follows the CTA without chain services',
+    () async {
+      for (final cta in [
+        const IronwoodHomeMigrationCtaState.hidden(),
+        const IronwoodHomeMigrationCtaState.start(
+          network: 'main',
+          accountUuid: 'preview',
+        ),
+      ]) {
+        final container = ProviderContainer(
+          overrides: [
+            ironwoodHomeMigrationPresentationProvider.overrideWithValue(cta),
+            wbPostMigrationState,
+          ],
+        );
+        addTearDown(container.dispose);
+        final state = await container.read(
+          ironwoodPostMigrationStateProvider.future,
+        );
+        expect(
+          state.locksNavigation,
+          cta.mode == IronwoodHomeMigrationCtaMode.start,
+        );
+        expect(state.accountUuid, cta.accountUuid);
+        expect(container.exists(chainUpgradeStatusProvider), isFalse);
+        expect(container.exists(ironwoodActivationStoreProvider), isFalse);
+      }
+    },
+  );
   setUpAll(() async {
     for (final entry in {
       'Geist': ['Regular', 'Medium', 'SemiBold', 'Bold'],
@@ -168,6 +201,8 @@ void main() {
           final router = GoRouter.of(context);
           final container = ProviderScope.containerOf(context, listen: false);
           final accountBefore = container.read(accountProvider);
+          expect(container.exists(chainUpgradeStatusProvider), isFalse);
+          expect(container.exists(ironwoodActivationStoreProvider), isFalse);
           if (surface.key == 'Receive' || surface.key == 'Home') {
             expect(container.exists(swapStateProvider), isFalse);
           }

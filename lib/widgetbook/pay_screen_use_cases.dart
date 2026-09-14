@@ -194,6 +194,7 @@ Widget payPreviewShellScope({
         (ref) => WbAddressBookRepository(),
       ),
       wbSidebarActions,
+      wbPostMigrationState,
       addressBookProvider.overrideWith(
         () => _PayPreviewAddressBookNotifier(_payShellContacts),
       ),

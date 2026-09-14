@@ -2311,6 +2311,7 @@ Widget _swapScreenScope({
       ),
       syncProvider.overrideWith(() => _SwapPreviewSyncNotifier(syncState)),
       wbSidebarActions,
+      wbPostMigrationState,
       addressBookRepositoryProvider.overrideWith(
         (ref) => WbAddressBookRepository(),
       ),

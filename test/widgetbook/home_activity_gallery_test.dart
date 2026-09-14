@@ -6,6 +6,8 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
@@ -50,6 +52,36 @@ void main() {
   // stage; nothing else in this file should inherit it.
   tearDown(WbFakeMobileScannerPlatform.reset);
 
+  for (final layout in WbLayout.values) {
+    testWidgets('${layout.name} Home activation state avoids host services', (
+      tester,
+    ) async {
+      await pumpUseCase(
+        tester,
+        buildHomeScreenGalleryCase,
+        knobs: {'Layout': wbLayoutLabel(layout)},
+      );
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final screen = find.byType(
+        layout == WbLayout.mobile ? MobileHomeScreen : HomeScreen,
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(screen),
+        listen: false,
+      );
+      final migration = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      expect(migration.mode, IronwoodPostMigrationMode.inactive);
+      expect(container.exists(chainUpgradeStatusProvider), isFalse);
+      expect(container.exists(ironwoodActivationStoreProvider), isFalse);
+      expect(tester.takeException(), isNull);
+      await disposeTree(tester);
+    });
+  }
+
   testWidgets('Home failure settings opens an isolated destination', (
     tester,
   ) async {
@@ -75,7 +107,7 @@ void main() {
       buildHomeScreenGalleryCase,
       knobs: {
         'Layout': wbLayoutLabel(WbLayout.desktop),
-          'Network': homeNetworkRouteLabel(HomeNetworkRoute.torBlocked),
+        'Network': homeNetworkRouteLabel(HomeNetworkRoute.torBlocked),
       },
     );
     await tester.pumpAndSettle();

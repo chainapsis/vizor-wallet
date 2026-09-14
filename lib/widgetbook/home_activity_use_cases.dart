@@ -283,6 +283,7 @@ List<Override> _homeOverrides({
   return [
     appLayoutProvider.overrideWith(_HomeNoOpLayoutNotifier.new),
     wbSidebarActions,
+    wbPostMigrationState,
     receiveAddressServiceProvider.overrideWithValue(
       const _HomeReceiveAddressService(),
     ),
@@ -348,6 +349,10 @@ List<Override> _homeOverrides({
     ),
     ironwoodMigrationAnnouncementProvider.overrideWith(
       (ref) async => const IronwoodMigrationAnnouncementState.hidden(),
+    ),
+    // Mobile Home also checks completion on mount, independently of the CTA.
+    ironwoodMigrationCompletionProvider.overrideWith(
+      (ref) async => const IronwoodMigrationCompletionState.hidden(),
     ),
   ];
 }
