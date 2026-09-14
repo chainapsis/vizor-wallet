@@ -115,10 +115,10 @@ void main() {
         }
         notifier.update(true, false);
         await tester.pump();
-        expect(find.text('Checking usage…'), findsOneWidget);
+        expect(find.text('Checking…'), findsOneWidget);
         notifier.update(false, true);
         await tester.pump();
-        expect(find.text('Awaiting confirmation'), findsOneWidget);
+        expect(find.text('Confirming'), findsOneWidget);
         expect(icon(AppIcons.warningCircle), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
@@ -152,7 +152,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Card use: Awaiting confirmation'));
+      await tester.tap(find.text('Card use: Confirming'));
       await tester.pump(const Duration(milliseconds: 500));
       expect(
         find.text(
@@ -164,7 +164,7 @@ void main() {
           .read(giftCardTrackingStateProvider.notifier)
           .update(true, false);
       await tester.pump();
-      expect(find.text('Card use: Checking usage…'), findsOneWidget);
+      expect(find.text('Card use: Checking…'), findsOneWidget);
       await tester.pump(const Duration(seconds: 9));
     },
   );

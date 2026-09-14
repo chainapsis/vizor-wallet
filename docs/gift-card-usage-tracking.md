@@ -7,10 +7,10 @@ present usage records fail validation. Receiver claim records are unchanged.
 
 Unverified observations now carry an optional `reason`; older records without
 it remain readable and do not imply pending funding. The sender UI shows:
-- `Checking usage…` while an unverified card is being checked.
-- `Awaiting confirmation` only when every saved funding transaction is returned
+- `Checking…` while an unverified card is being checked.
+- `Confirming` only when every saved funding transaction is returned
   by lightwalletd with a matching parsed txid and at least one is unmined.
-- `Usage not verified` for missing saved funding information, missing observed
+- `Unverified` for missing saved funding information, missing observed
   funding, incomplete scan history, or insufficient observed funding value.
   Hover/tap explains the specific reason on the list and completion screen.
 

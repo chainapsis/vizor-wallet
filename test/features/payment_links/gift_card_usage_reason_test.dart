@@ -6,7 +6,7 @@ void main() {
     final legacy = const GiftCardUsage().toJson()..remove('reason');
     final usage = GiftCardUsage.fromJson(legacy);
     expect(usage.reason, isNull);
-    expect(usage.label, 'Usage not verified');
+    expect(usage.label, 'Unverified');
     expect(GiftCardUsage.fromJson(null).reason, isNull);
   });
 
@@ -20,8 +20,8 @@ void main() {
       expect(
         usage.label,
         reason == GiftCardUsageReason.awaitingConfirmation
-            ? 'Awaiting confirmation'
-            : 'Usage not verified',
+            ? 'Confirming'
+            : 'Unverified',
       );
     }
   });

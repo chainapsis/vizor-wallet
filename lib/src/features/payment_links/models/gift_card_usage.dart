@@ -35,8 +35,8 @@ class GiftCardUsage {
   String get label => switch (status) {
     GiftCardUsageStatus.unknown =>
       reason == GiftCardUsageReason.awaitingConfirmation
-          ? 'Awaiting confirmation'
-          : 'Usage not verified',
+          ? 'Confirming'
+          : 'Unverified',
     GiftCardUsageStatus.unused => 'Unused',
     GiftCardUsageStatus.spendDetected => 'Use detected',
     GiftCardUsageStatus.used => 'Used',

@@ -73,7 +73,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
     final state = ref.watch(giftCardTrackingStateProvider);
     final checking = !usage.cleaned && state.checking;
     final label = checking && usage.status == GiftCardUsageStatus.unknown
-        ? 'Checking usage…'
+        ? 'Checking…'
         : usage.label;
     final suffix = usage.cleaned
         ? ''
