@@ -1209,10 +1209,6 @@ Widget buildMobileAccountsActiveMigrationRemoveAccountUseCase(
   );
 }
 
-Widget buildMobileAccountsManyUseCase(BuildContext context) {
-  return _buildMobileAccountsUseCase(_accountsManyState);
-}
-
 Widget buildMobileHomeDefaultUseCase(
   BuildContext context, {
   bool votingVisible = true,
@@ -1224,18 +1220,6 @@ Widget buildMobileHomeDefaultUseCase(
       orchardBalance: BigInt.from(14312000000),
       recentTransactions: [_homeTx(1), _homeTx(2)],
     ),
-  );
-}
-
-Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
-  final transactions = _previewGiftCardActivityTransactions();
-  return _buildMobileHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14312000000),
-      recentTransactions: transactions,
-    ),
-    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -1283,24 +1267,10 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
           createdGiftCard,
           _homeTx(3),
         ],
+        transactionDetailLoader: (_) async => null,
       ),
     ),
   );
-}
-
-List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
-  return [
-    _giftCardActivityTx(
-      txidHex: 'preview-gift-card-redeemed',
-      kind: 'received',
-      seconds: 1800000011,
-    ),
-    _giftCardActivityTx(
-      txidHex: 'preview-gift-card-created',
-      kind: 'sent',
-      seconds: 1800000010,
-    ),
-  ];
 }
 
 GiftCardActivityIndex _previewGiftCardActivityIndex() {
@@ -1384,24 +1354,10 @@ Widget buildMobileHomeIronwoodMigrationInProgressUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileHomeNoActivityUseCase(BuildContext context) {
-  return _buildMobileHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(orchardBalance: BigInt.from(14312000000)),
-  );
-}
-
 Widget buildMobileHomeNoBalanceUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _accountsDesignState,
     syncState: _homeSyncedState(),
-  );
-}
-
-Widget buildMobileHomeNoBalanceKeystoneUseCase(BuildContext context) {
-  return _buildMobileHomeUseCase(
-    accountState: _homeKeystoneState,
-    syncState: _homeSyncedState(accountUuid: _homeKeystoneAccountUuid),
   );
 }
 
@@ -1451,18 +1407,6 @@ Widget buildDesktopHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
     zecUsdPrice: 1200.12 / 143.23,
-  );
-}
-
-Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
-  return _buildDesktopHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14_323_000_000),
-      recentTransactions: _previewGiftCardActivityTransactions(),
-    ),
-    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
-    giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
 }
 
@@ -2240,9 +2184,31 @@ Widget _buildMobileIronwoodMigrationUseCase({
         previewImmediatePlan: previewImmediatePlan,
         previewSurface: previewSurface,
         privateMigrationSupported: privateMigrationSupported,
+        openReleaseNotes: _ignoreMobileIronwoodReleaseNotes,
       ),
     ),
   );
+}
+
+Future<void> _ignoreMobileIronwoodReleaseNotes() async {}
+
+class _PreviewIronwoodMigrationAnnouncementStore
+    implements IronwoodMigrationAnnouncementStore {
+  final Set<String> _seen = <String>{};
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+  }) async => _seen.contains('$network|$accountUuid');
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+  }) async {
+    _seen.add('$network|$accountUuid');
+  }
 }
 
 Widget _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
@@ -2425,6 +2391,9 @@ Widget _buildDesktopHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
+      ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
+        _PreviewIronwoodMigrationAnnouncementStore(),
+      ),
     ],
     child: const _DesktopHomeHarness(),
   );
@@ -3132,7 +3101,13 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
     _router = GoRouter(
       initialLocation: '/home',
       routes: [
-        GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => HomeScreen(
+            transactionDetailLoader: (_, _) async => null,
+            releaseNotesLauncher: () async {},
+          ),
+        ),
         GoRoute(
           path: '/send',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
@@ -3186,9 +3161,11 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -3217,7 +3194,10 @@ class _MobileHomeBodyState extends State<_MobileHomeBody> {
 
   @override
   Widget build(BuildContext context) {
-    return const MobileHomeScreen();
+    return MobileHomeScreen(
+      transactionDetailLoader: (_, _) async => null,
+      releaseNotesLauncher: () async {},
+    );
   }
 }
 
@@ -3967,22 +3947,6 @@ AccountState _ironwoodMigrationAccountState({bool isHardware = false}) {
     activeAddress: _accountsDesignState.activeAddress,
   );
 }
-
-const _homeKeystoneAccountUuid = 'preview-keystone-account';
-
-final _homeKeystoneState = AccountState(
-  accounts: const [
-    AccountInfo(
-      uuid: _homeKeystoneAccountUuid,
-      name: 'Keystone Vault',
-      order: 0,
-      isHardware: true,
-      profilePictureId: 'pfp-02',
-    ),
-  ],
-  activeAccountUuid: _homeKeystoneAccountUuid,
-  activeAddress: 'u1widgetbookkeystoneaddress',
-);
 
 const _mobileHomeTabItems = [
   AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),

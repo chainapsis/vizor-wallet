@@ -15,9 +15,11 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/widgetbook/send_screen_use_cases.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/payment_uri_busy_surface_expectations.dart';
+import '../../widgetbook/support/wb_gallery_harness.dart';
 
 /// The hold belongs to the screen rather than to the signing flow inside it:
 /// the flow is keyed per signing round, so a hold taken there would fall back
@@ -27,6 +29,43 @@ void main() {
   setUpAll(() => RustLib.initMock(api: api));
   tearDownAll(RustLib.dispose);
   setUp(() => api.releaseCalls = 0);
+
+  testWidgets('abnormal unmount uses the injected proposal disposer once', (
+    tester,
+  ) async {
+    final container = _container();
+    final disposed = <SendReviewArgs>[];
+    await tester.pumpWidget(
+      _host(container)(
+        MobileKeystoneSignScreen(
+          args: _reviewArgs,
+          loadWalletDbPath: () => Completer<String>().future,
+          proposalDisposer: (args) async {
+            disposed.add(args);
+            return true;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(disposed, [_reviewArgs]);
+    expect(api.releaseCalls, 0);
+  });
+
+  testWidgets('Keystone fixtures never release fake proposals through Rust', (
+    tester,
+  ) async {
+    for (final failure in [null, MobileKeystoneSignFailure.generic]) {
+      await pumpUseCase(
+        tester,
+        (_) => mobileKeystoneSignFixture(failure: failure),
+      );
+      await tester.pump();
+      await disposeTree(tester);
+      expect(api.releaseCalls, 0);
+    }
+  });
 
   testWidgets('the mobile send signing screen holds the payment-URI busy '
       'latch', (tester) async {

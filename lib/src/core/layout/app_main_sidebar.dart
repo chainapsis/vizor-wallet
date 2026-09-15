@@ -83,6 +83,13 @@ String _formatSidebarCompactBalance(
   return '${zatoshi.isNegative ? '-' : ''}$whole$fraction$suffix';
 }
 
+/// Hosts may replace service-backed sidebar actions with isolated navigation.
+/// Null preserves the application's Pay preparation and sign-out lifecycle.
+final appSidebarActionOverrideProvider =
+    Provider<Future<void> Function(BuildContext context, String path)?>(
+      (ref) => null,
+    );
+
 class AppMainSidebar extends ConsumerStatefulWidget {
   const AppMainSidebar({
     this.disabledRoutePaths = const {},
@@ -176,6 +183,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   Future<void> _openPay() async {
     if (_matches('/pay')) return;
+    final actionOverride = ref.read(appSidebarActionOverrideProvider);
+    if (actionOverride != null) return actionOverride(context, '/pay');
 
     final accountUuid = ref
         .read(accountProvider)
@@ -381,6 +390,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   Future<void> _handleSignOut() async {
     if (_isSigningOut) return;
+    final actionOverride = ref.read(appSidebarActionOverrideProvider);
+    if (actionOverride != null) return actionOverride(context, '/unlock');
     if (_blockIfVotingSubmissionInProgress()) return;
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);

@@ -26,11 +26,16 @@ class MobileKeystoneSignScreen extends ConsumerStatefulWidget {
   const MobileKeystoneSignScreen({
     required this.args,
     this.loadWalletDbPath = getWalletDbPath,
+    this.proposalDisposer,
     super.key,
   });
 
   final SendReviewArgs args;
   final Future<String> Function() loadWalletDbPath;
+
+  /// Overrides abnormal-unmount cleanup for isolated previews and tests.
+  /// Normal cancellation returns cleanup ownership to the review screen.
+  final Future<bool> Function(SendReviewArgs args)? proposalDisposer;
 
   @override
   ConsumerState<MobileKeystoneSignScreen> createState() =>
@@ -93,13 +98,14 @@ class _MobileKeystoneSignScreenState
   void dispose() {
     if (!_proposalOwnershipTransferred) {
       unawaited(
-        discardSendProposal(
-          syncNotifier: _syncNotifier,
-          accountUuid: widget.args.proposalAccountUuid,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-          logContext: 'MobileKeystoneSign(dispose)',
-        ),
+        widget.proposalDisposer?.call(widget.args) ??
+            discardSendProposal(
+              syncNotifier: _syncNotifier,
+              accountUuid: widget.args.proposalAccountUuid,
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+              logContext: 'MobileKeystoneSign(dispose)',
+            ),
       );
     }
     super.dispose();

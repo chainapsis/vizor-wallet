@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/send/widgets/send_compose_view.dart';
+import 'package:zcash_wallet/widgetbook/send_compose_view.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
 
 void main() {

@@ -992,7 +992,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
     setState(() => _isShieldingBalance = true);
     try {
-      final result = await shieldTransparentSoftwareBalance(
+      final result = await ref.read(transparentShieldingRunnerProvider)(
         ref: ref,
         accountUuid: accountUuid,
         logContext: 'MobileHome',
