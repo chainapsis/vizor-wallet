@@ -5,7 +5,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +13,8 @@ import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/screens/payment_links_local_page.dart';
 import '../src/features/payment_links/screens/payment_links_mobile_body.dart';
@@ -47,6 +48,10 @@ const _messageCharacterCount = 42;
 const _amount = '4.45';
 const _fiat = r'$1,210.20';
 const _maxAmount = '142.23';
+const _amountFormatters = [
+  CommaToDotInputFormatter(),
+  DecimalAmountInputFormatter(maxFractionDigits: 8),
+];
 const _desktopArtwork = PaymentLinkCardArtwork.ruby;
 const _wizardArtwork = PaymentLinkCardArtwork.chestLava;
 const _mobileCardArtwork = PaymentLinkCardArtwork.knightMagic;
@@ -271,6 +276,7 @@ class _GiftCardsFocusedAmountCardState
       amountController: _controller,
       amountFocusNode: _focusNode,
       amountEditorKey: const ValueKey('gift_cards_focused_amount_editor'),
+      amountInputFormatters: _amountFormatters,
       supportingLoading: true,
       semanticLabel: 'Gift card amount input',
     );
@@ -1406,7 +1412,7 @@ class _GiftCardsMobileBodyState extends State<_GiftCardsMobileBody> {
       selectedArtwork: _wizardArtwork,
       amountController: _amountController,
       amountFocusNode: _amountFocusNode,
-      amountInputFormatters: const <TextInputFormatter>[],
+      amountInputFormatters: _amountFormatters,
       amountFiatText: _fiat,
       amountFiatLoading: false,
       maxAmountText: _maxAmount,
