@@ -35,6 +35,12 @@ and other requests continue. A failed address is skipped for the remaining queue
 passes of that enhancement invocation and retried by a later invocation. Network
 failures retain the existing sync retry behavior.
 
+Enhancement keeps the existing scheduling: after a block-scan batch, or during
+eligible deferred inactive-account processing. A sync with no blocks to scan does
+not run an extra enhancement pass. Newly discovered UTXOs and their retrieval
+requests remain stored; full-transaction processing and spend-watch registration
+may wait until a later enhancement invocation, normally after the next block scan.
+
 `spend-index` is not enabled in the resolved dependency graph. This code uses
 the existing address-based spend detection and does not change server RPCs.
 

@@ -2834,18 +2834,6 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    // A same-tip sync may have no scan batch to service durable UTXO
-    // enhancement/spend requests. When scanning is pending, retain the normal
-    // post-scan ordering so rewound mined transactions are restored first.
-    if !db
-        .suggest_scan_ranges()
-        .map_err(|e| SyncError::db(format!("transparent enhancement scan ranges: {e}")))?
-        .iter()
-        .any(is_pending_scan_range)
-    {
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
-    }
-
     if running_mode == 1 {
         progress_fn(preparation_progress_event(
             current_tip_height,
