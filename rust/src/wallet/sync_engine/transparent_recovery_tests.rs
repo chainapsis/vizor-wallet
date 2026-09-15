@@ -163,7 +163,14 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
     assert!(plan.iter().all(|batch| batch.start_height == 0));
     assert_eq!(
         transparent_receive_cache::plan_non_external_utxo_refresh(
-            path, network, &uuid, &internal, 2_000_000, 2_000_000
+            path,
+            network,
+            &uuid,
+            &internal,
+            2_000_000,
+            2_000_000,
+            &std::collections::HashSet::new(),
+            1000
         )
         .unwrap()[0]
             .1,
@@ -173,4 +180,156 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
         account_birthday_height(path, keys::parse_account_uuid(&uuid).unwrap()).unwrap(),
         2_000_000
     );
+}
+
+#[test]
+fn internal_sweep_age_uses_latest_receipt_and_keeps_unknown_heights_frequent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "age").unwrap();
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap();
+    let internal = TransparentAddress::decode(&network, &addresses[1]).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(2_000_500))
+        .unwrap();
+    assert!(old_transparent_receive_addresses(path, account, 2_000_500)
+        .unwrap()
+        .is_empty());
+    let old = legacy_transaction(OutPoint::new([41; 32], 0), internal, 1_000_000);
+    store_transparent_outputs(&mut db, &[downloaded(&uuid, &old, 100)]).unwrap();
+    assert!(old_transparent_receive_addresses(path, account, 199)
+        .unwrap()
+        .is_empty());
+    assert!(old_transparent_receive_addresses(path, account, 200)
+        .unwrap()
+        .contains(&addresses[1]));
+    // A reused old address becomes frequent again as soon as its new receipt is known.
+    let recent = legacy_transaction(OutPoint::new([42; 32], 0), internal, 1_000_000);
+    store_transparent_outputs(&mut db, &[downloaded(&uuid, &recent, 2_000_450)]).unwrap();
+    assert!(old_transparent_receive_addresses(path, account, 2_000_500)
+        .unwrap()
+        .is_empty());
+    assert!(old_transparent_receive_addresses(path, account, 2_000_550)
+        .unwrap()
+        .contains(&addresses[1]));
+    let other = keys::parse_account_uuid(&uuid::Uuid::new_v4().to_string()).unwrap();
+    assert!(old_transparent_receive_addresses(path, other, 2_000_550)
+        .unwrap()
+        .is_empty());
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "UPDATE transactions SET mined_height=NULL WHERE txid=?1",
+        params![recent.txid().as_ref()],
+    )
+    .unwrap();
+    assert!(old_transparent_receive_addresses(path, account, 2_000_550)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn internal_sweep_saves_utxo_requests_without_suppressing_spend_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "budget").unwrap();
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let derived = keys::software_account_transparent_addresses(network, &seed, 0, 180).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let tip = BlockHeight::from_u32(2_000_100);
+    db.update_chain_tip(tip).unwrap();
+    let receipts: Vec<_> = derived
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .enumerate()
+        .map(|(i, address)| {
+            let recipient = TransparentAddress::decode(&network, address).unwrap();
+            legacy_transaction(OutPoint::new([i as u8 + 1; 32], 0), recipient, 1_000_000)
+        })
+        .collect();
+    let downloaded: Vec<_> = receipts
+        .iter()
+        .map(|tx| downloaded(&uuid, tx, 100))
+        .collect();
+    store_transparent_outputs(&mut db, &downloaded).unwrap();
+    for tx in &receipts {
+        decrypt_and_store_transaction(&network, &mut db, tx, Some(BlockHeight::from_u32(100)))
+            .unwrap();
+    }
+    let addresses: Vec<_> = db
+        .get_transparent_receivers(account, true, true)
+        .unwrap()
+        .into_iter()
+        .filter(|(_, metadata)| metadata.scope() == Some(TransparentKeyScope::INTERNAL))
+        .map(|(address, _)| address.encode(&network))
+        .collect();
+    let old = old_transparent_receive_addresses(path, account, u64::from(u32::from(tip))).unwrap();
+    assert_eq!(old.len(), 180);
+    let plan = |old: &std::collections::HashSet<String>, height| {
+        transparent_receive_cache::plan_non_external_utxo_refresh(
+            path, network, &uuid, &addresses, 2_000_000, 2_000_000, old, height,
+        )
+        .unwrap()
+    };
+    plan(&old, 2_000_100);
+    transparent_receive_cache::mark_non_external_utxo_refresh_complete(
+        path, network, &uuid, &addresses, 2_000_101,
+    )
+    .unwrap();
+    db.update_chain_tip(tip + 1).unwrap();
+    let requests_before = db.transaction_data_requests().unwrap();
+    let histories = requests_before
+        .iter()
+        // Enhancement skips unbounded requests (including unused ephemeral receivers).
+        .filter(|r| {
+            matches!(r, TransactionDataRequest::TransactionsInvolvingAddress(req)
+            if req.block_range_end().is_some())
+        })
+        .count();
+    assert_eq!(histories, 180);
+    let baseline = plan(&std::collections::HashSet::new(), 2_000_101);
+    let swept = plan(&old, 2_000_101);
+    assert_eq!(baseline.len(), addresses.len().div_ceil(20));
+    assert!(swept.len() < baseline.len());
+    // These receipts are older than every query range: both policies return no
+    // UTXOs and leave the same 180 address-history requests to enhancement.
+    assert!(baseline
+        .iter()
+        .chain(&swept)
+        .all(|(_, height)| *height > 100));
+    assert_eq!(
+        db.transaction_data_requests().unwrap().len(),
+        requests_before.len()
+    );
+    eprintln!("Internal sweep: UTXO requests {} -> {}; address-history requests {} -> {}; combined planned requests {} -> {}",
+        baseline.len(), swept.len(), histories, histories, baseline.len()+histories, swept.len()+histories);
+    let queried: std::collections::HashSet<_> =
+        swept.iter().flat_map(|(batch, _)| batch.iter()).collect();
+    let (index, skipped) = derived
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .enumerate()
+        .find(|(_, address)| !queried.contains(address))
+        .unwrap();
+    // A skipped UTXO address still has its independent spend watch.
+    assert!(requests_before.iter().any(|r| matches!(r,
+        TransactionDataRequest::TransactionsInvolvingAddress(req) if req.address().encode(&network) == *skipped)));
+    let spend = legacy_transaction(
+        OutPoint::new(*receipts[index].txid().as_ref(), 0),
+        TransparentAddress::PublicKeyHash([77; 20]),
+        990_000,
+    );
+    decrypt_and_store_transaction(&network, &mut db, &spend, Some(tip + 1)).unwrap();
+    assert!(!db.transaction_data_requests().unwrap().iter().any(|r| matches!(r,
+        TransactionDataRequest::TransactionsInvolvingAddress(req) if req.address().encode(&network) == *skipped)));
 }

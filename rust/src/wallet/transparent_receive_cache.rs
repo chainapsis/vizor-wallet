@@ -14,6 +14,8 @@ pub(crate) const RECEIVE_CACHE_SIDECAR_SUFFIX: &str = ".receive.redb";
 const CACHE_VERSION: u32 = 3;
 const CACHE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("transparent_receive");
 const TRANSPARENT_UTXO_REQUERY_LOOKBACK: u64 = 100;
+const NON_EXTERNAL_BATCH_SIZE: usize = 20;
+const OLD_INTERNAL_SWEEP_LIMIT: usize = 20;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 const REDB_CACHE_SIZE_BYTES: usize = 256 * 1024;
@@ -346,36 +348,71 @@ pub(crate) fn plan_non_external_utxo_refresh(
     addresses: &[String],
     birthday: u64,
     safety: u64,
+    old_internal_addresses: &HashSet<String>,
+    tip: u64,
 ) -> Result<Vec<(Vec<String>, u64)>, String> {
-    let mut record = read_compatible_record(db_path, network, account_uuid)?
+    let existing = read_compatible_record(db_path, network, account_uuid)?;
+    let mut record = existing
+        .clone()
         .unwrap_or_else(|| empty_record(network, None));
+    let known: HashSet<_> = addresses.iter().collect();
     record
         .non_external_checked_heights
-        .retain(|address, _| addresses.contains(address));
+        .retain(|address, _| known.contains(address));
+    // Planning never advances completion. Avoid a disk commit when nothing changed.
+    if existing.as_ref() != Some(&record) {
+        write_record(db_path, account_uuid, &record)?;
+    }
     let mut unchecked = Vec::new();
-    let mut checked = Vec::new();
-    let mut checked_start = u64::MAX;
+    let mut frequent = Vec::new();
+    let mut old = Vec::new();
     for address in addresses {
         match record.non_external_checked_heights.get(address) {
-            Some(height) => {
-                checked.push(address.clone());
-                checked_start = checked_start.min(
-                    height
-                        .saturating_sub(TRANSPARENT_UTXO_REQUERY_LOOKBACK)
-                        .max(birthday.min(safety)),
-                );
-            }
             None => unchecked.push(address.clone()),
+            Some(height)
+                if addresses.len() > NON_EXTERNAL_BATCH_SIZE
+                    && old_internal_addresses.contains(address) =>
+            {
+                // Already covered this tip: let same-tip retries sweep other addresses.
+                if *height < tip.saturating_add(1) {
+                    old.push((address.clone(), *height));
+                }
+            }
+            Some(_) => frequent.push(address.clone()),
         }
     }
-    write_record(db_path, account_uuid, &record)?;
-    // Bound address count for both initial and subsequent requests.
-    Ok([(unchecked, 0), (checked, checked_start)]
+    unchecked.sort();
+    frequent.sort();
+    old.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    let sweep = old
         .into_iter()
-        .flat_map(|(addresses, height)| {
-            addresses
-                .chunks(20)
-                .map(|chunk| (chunk.to_vec(), height))
+        .take(OLD_INTERNAL_SWEEP_LIMIT)
+        .map(|(address, _)| address)
+        .collect::<Vec<_>>();
+    // Keep old checkpoints from widening the frequent candidates' query range.
+    Ok([unchecked, frequent, sweep]
+        .into_iter()
+        .flat_map(|group| {
+            group
+                .chunks(NON_EXTERNAL_BATCH_SIZE)
+                .map(|chunk| {
+                    let start = chunk
+                        .iter()
+                        .map(|address| {
+                            record
+                                .non_external_checked_heights
+                                .get(address)
+                                .map(|height| {
+                                    height
+                                        .saturating_sub(TRANSPARENT_UTXO_REQUERY_LOOKBACK)
+                                        .max(birthday.min(safety))
+                                })
+                                .unwrap_or(0)
+                        })
+                        .min()
+                        .unwrap_or(0);
+                    (chunk.to_vec(), start)
+                })
                 .collect::<Vec<_>>()
         })
         .collect())
@@ -875,23 +912,49 @@ mod tests {
                 .unwrap();
         assert_eq!(plan[0].start_height, 901);
         let internal = vec!["t1internal0".to_string()];
-        let plan =
-            plan_non_external_utxo_refresh(path, WalletNetwork::Main, "a", &internal, 500, 500)
-                .unwrap();
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &internal,
+            500,
+            500,
+            &std::collections::HashSet::new(),
+            1000,
+        )
+        .unwrap();
         assert_eq!(plan[0].1, 0);
         mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &internal, 1001)
             .unwrap();
         write_clean_addresses(path, WalletNetwork::Main, "a", &external, Some(1000)).unwrap();
         assert_eq!(
-            plan_non_external_utxo_refresh(path, WalletNetwork::Main, "a", &internal, 500, 500)
-                .unwrap()[0]
+            plan_non_external_utxo_refresh(
+                path,
+                WalletNetwork::Main,
+                "a",
+                &internal,
+                500,
+                500,
+                &std::collections::HashSet::new(),
+                1000
+            )
+            .unwrap()[0]
                 .1,
             901
         );
         let mut grown = internal.clone();
         grown.push("t1internal1".to_string());
-        let plan = plan_non_external_utxo_refresh(path, WalletNetwork::Main, "a", &grown, 500, 500)
-            .unwrap();
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &grown,
+            500,
+            500,
+            &std::collections::HashSet::new(),
+            1000,
+        )
+        .unwrap();
         assert_eq!(plan, vec![(vec![grown[1].clone()], 0), (internal, 901)]);
         delete_account(path, "a").unwrap();
         assert_eq!(
@@ -900,6 +963,151 @@ mod tests {
                 .start_height,
             0
         );
+    }
+
+    #[test]
+    fn internal_sweep_reduces_batches_without_delaying_candidates_and_rotates_after_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let addresses: Vec<_> = (0..200).map(|i| format!("internal{i:03}")).collect();
+        let old: HashSet<_> = addresses[..180].iter().cloned().collect();
+        let plan = |tip| {
+            plan_non_external_utxo_refresh(
+                path,
+                WalletNetwork::Main,
+                "a",
+                &addresses,
+                500,
+                500,
+                &old,
+                tip,
+            )
+            .unwrap()
+        };
+        let initial = plan(1000);
+        assert_eq!(initial.len(), 10);
+        assert!(initial.iter().all(|(_, start)| *start == 0));
+        // No completion on cancellation, including old addresses still needing discovery.
+        assert_eq!(plan(1000), initial);
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &addresses, 1001)
+            .unwrap();
+        let mut seen = HashSet::new();
+        for _ in 0..9 {
+            let batches = plan(1001);
+            assert_eq!(
+                batches.len(),
+                2,
+                "20 candidates + 20 old addresses, rather than ten requests"
+            );
+            assert_eq!(batches[0].0, addresses[180..]);
+            assert_eq!(
+                plan(1001),
+                batches,
+                "planning/retry alone never rotates the sweep"
+            );
+            for address in &batches[1].0 {
+                assert!(
+                    seen.insert(address.clone()),
+                    "same-tip completed addresses cannot starve others"
+                );
+            }
+            for (batch, _) in batches {
+                mark_non_external_utxo_refresh_complete(
+                    path,
+                    WalletNetwork::Main,
+                    "a",
+                    &batch,
+                    1002,
+                )
+                .unwrap();
+            }
+        }
+        assert_eq!(seen, old);
+        assert_eq!(
+            plan(1001).len(),
+            1,
+            "all old addresses are now covered at this tip"
+        );
+        let next = plan(1002);
+        assert_eq!(next.len(), 2, "a later block resumes the sweep");
+        // Simulated crash after only part of the selected old batch was committed.
+        mark_non_external_utxo_refresh_complete(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &next[1].0[..10],
+            1003,
+        )
+        .unwrap();
+        let retry = plan(1002);
+        assert!(next[1].0[10..].iter().all(|a| retry[1].0.contains(a)));
+        // Full cache rebuild must preserve the sweep's durable progress.
+        let before = plan(1002);
+        write_clean_addresses(path, WalletNetwork::Main, "a", &[], Some(1002)).unwrap();
+        assert_eq!(plan(1002), before);
+    }
+
+    #[test]
+    fn internal_small_accounts_and_unchecked_growth_are_not_throttled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let addresses: Vec<_> = (0..20).map(|i| format!("internal{i:03}")).collect();
+        let old: HashSet<_> = addresses.iter().cloned().collect();
+        plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &addresses,
+            500,
+            500,
+            &old,
+            1000,
+        )
+        .unwrap();
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &addresses, 1001)
+            .unwrap();
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &addresses,
+            500,
+            500,
+            &old,
+            1000,
+        )
+        .unwrap();
+        assert_eq!(plan, vec![(addresses.clone(), 901)]);
+        let mut grown = addresses.clone();
+        grown.push("new_candidate".into());
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &grown,
+            500,
+            500,
+            &old,
+            1000,
+        )
+        .unwrap();
+        assert_eq!(plan, vec![(vec!["new_candidate".into()], 0)]);
+        // Missing/failed age classification falls back to refreshing everything.
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &grown,
+            500,
+            500,
+            &HashSet::new(),
+            1000,
+        )
+        .unwrap();
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[1].0.len(), 20);
     }
 
     #[test]

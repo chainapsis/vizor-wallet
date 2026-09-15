@@ -24,6 +24,44 @@ The shielded birthday and compact-block RPC construction are unchanged.
   Resetting only to the rewind height would miss an old output resurrected by
   removal of a later spend. These exceptional full lookups favor correctness.
 
+## Internal address scheduling
+
+The supported non-external receiver list still includes all generated candidates.
+New addresses always receive a genesis lookup, even if historical usage is already
+known. For lists of at most 20 addresses, every address is refreshed as before.
+For larger lists:
+
+- Unused, recently funded, and unknown/unmined-receipt addresses remain frequent.
+- Only internal/change addresses whose latest known receipt is at least 100 blocks
+  old enter the sweep. Standalone/imported addresses are never throttled by this
+  policy, even if they have old receipts.
+- At most 20 checked old internal addresses are selected per refresh, ordered by
+  their oldest successful UTXO completion height (then address for deterministic
+  ties). Old addresses already checked at this tip are skipped. Repeated same-tip
+  refreshes can therefore drain the remaining old addresses without repeating the
+  ones just checked.
+- Frequent and swept addresses use separate batches, so an old checkpoint does
+  not widen the frequent addresses' query range. All batches remain at most 20.
+- Only successful storage advances completion; cancellation/retry and cache
+  rebuilding preserve sweep progress. No new persisted cursor or migration is
+  added. A failed age lookup falls back to frequent refresh for every address.
+
+For example, 180 old checked internal addresses plus 20 frequent candidates need
+2 UTXO requests per normal advancing-tip refresh instead of 10. This counts UTXO
+requests only: spend-history RPCs may offset part of the saving, and no mainnet
+latency improvement is claimed. With a stable set of N old addresses, all are
+selected within ceil(N/20) successful advancing-tip refreshes. Discovery of a
+reused old address can be delayed by that rotation; it is never excluded forever.
+The policy does not assume that the account is used exclusively in Vizor.
+
+The DB-backed regression fixture with 180 old unspent internal outputs schedules
+10 -> 2 UTXO RPCs and retains 180 -> 180 actionable spend-history requests, for
+190 -> 182 combined planned requests. It also processes a spend at an address
+excluded from that UTXO sweep. These are deterministic request counts, not a
+network latency benchmark; unbounded ephemeral requests that enhancement skips
+are excluded from the count.
+
+
 ## Spend tracking
 
 An incremental UTXO response cannot establish whether an older output was spent.
