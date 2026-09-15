@@ -121,7 +121,7 @@ version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.0.0"
+version = "=5.0.1"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -175,7 +175,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-version = "=5.0.0"
+version = "=5.0.1"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
