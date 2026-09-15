@@ -1291,13 +1291,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     )) {
       return true;
     }
-    // Only a *resolved* config counts. An ordinary refresh publishes
+    // Only a *resolved* config is terminal. An ordinary refresh publishes
     // AsyncLoading with no value, and reading that as a changed fingerprint
-    // would cancel recovery for a reload that lands on the same config.
-    final liveFingerprint = ref
-        .read(votingConfigProvider)
-        .value
-        ?.sourceFingerprint;
+    // would cancel recovery for a reload that lands on the same config;
+    // _walletSyncRecoveryConfigIsReviewed parks the tick meanwhile.
+    final liveFingerprint = _liveVotingConfigFingerprint();
     if (liveFingerprint != null &&
         liveFingerprint != _walletSyncRecoveryConfigFingerprint) {
       return true;
@@ -1309,6 +1307,22 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       armedChoices,
       ref.read(votingDraftProvider(_key)).choices,
     );
+  }
+
+  String? _liveVotingConfigFingerprint() =>
+      ref.read(votingConfigProvider).value?.sourceFingerprint;
+
+  /// Whether the config in force right now is the one the user reviewed.
+  ///
+  /// Stricter than the terminal check on purpose: a config still resolving
+  /// is not "unchanged", and the retry's `_run` would wait on that future
+  /// and continue against whatever it lands on. So a retry launches only on
+  /// a resolved fingerprint that matches, and an unresolved one parks the
+  /// tick with the arming intact.
+  bool _walletSyncRecoveryConfigIsReviewed() {
+    final liveFingerprint = _liveVotingConfigFingerprint();
+    return liveFingerprint != null &&
+        liveFingerprint == _walletSyncRecoveryConfigFingerprint;
   }
 
   /// Only a loaded account list that no longer holds this account counts:
@@ -1337,6 +1351,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _cancelWalletSyncRecovery();
       return;
     }
+    if (!_walletSyncRecoveryConfigIsReviewed()) return;
     if (ref.read(appSecurityProvider).requiresUnlock) {
       // Polling would spin for the whole lock: sync cannot advance, and the
       // retry itself needs the unlocked spending secret.
@@ -1387,6 +1402,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _cancelWalletSyncRecovery();
         return;
       }
+      if (!_walletSyncRecoveryConfigIsReviewed()) return;
       if (ref.read(appSecurityProvider).requiresUnlock) {
         _walletSyncRecoveryRetryOnUnlock = true;
         return;
