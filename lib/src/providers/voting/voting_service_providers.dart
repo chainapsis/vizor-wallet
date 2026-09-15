@@ -243,6 +243,7 @@ class VotingWalletSyncProgressSample {
     this.phase = '',
     this.phaseCompletedUnits = 0,
     this.phaseTotalUnits = 0,
+    this.lastSyncFailedAt,
   });
 
   final double percentage;
@@ -250,6 +251,12 @@ class VotingWalletSyncProgressSample {
   final String phase;
   final int phaseCompletedUnits;
   final int phaseTotalUnits;
+
+  /// When the sync engine last reported a failure, as published by
+  /// `SyncNotifier`. A *change* in this value during one wait means the run
+  /// being observed died and was restarted from a standing start, which is
+  /// how a restart reset is told apart from a real scan rewind.
+  final DateTime? lastSyncFailedAt;
 
   /// Whether the engine is actually running. Sync state is also republished
   /// from a standing start when work *stops* — locking the wallet resets it
@@ -279,6 +286,7 @@ final votingWalletSyncProgressSampleProvider =
             phase: sync.phase,
             phaseCompletedUnits: sync.phaseCompletedUnits,
             phaseTotalUnits: sync.phaseTotalUnits,
+            lastSyncFailedAt: sync.lastSyncFailedAt,
           );
         } catch (_) {
           return null;
@@ -306,6 +314,14 @@ final votingWalletSyncProgressSampleProvider =
 /// lower height range. The tracker rebases onto that epoch so its subsequent
 /// forward movement registers normally.
 ///
+/// A failed run resets the published heights the same way, and the next
+/// attempt then replays the range it already scanned — so a sync that fails
+/// at the same point forever would rebase and re-climb on every cycle and
+/// postpone the stall indefinitely. A restart is therefore told apart from
+/// an epoch by the engine's own failure marker: once a new failure is seen,
+/// a lower height is a reset, not work, until the run climbs past the marks
+/// it had already reached.
+///
 /// Measurable preparation phases, such as the active-account transparent UTXO
 /// refresh, intentionally preserve percentage and scanned height. Their raw
 /// completed-unit counters are tracked separately by phase. High-water marks
@@ -315,6 +331,8 @@ class VotingWalletSyncProgressTracker {
   double? _maxPercentage;
   int? _maxScannedHeight;
   final Map<String, int> _maxPreparationCompletedUnits = {};
+  DateTime? _lastSyncFailedAt;
+  bool _restartedAfterFailure = false;
 
   bool observe(VotingWalletSyncProgressSample? sample) {
     if (sample == null) return false;
@@ -323,9 +341,11 @@ class VotingWalletSyncProgressTracker {
     if (maxPercentage == null || maxScannedHeight == null) {
       _maxPercentage = sample.percentage;
       _maxScannedHeight = sample.scannedHeight;
+      _lastSyncFailedAt = sample.lastSyncFailedAt;
       _observePreparationProgress(sample);
       return false;
     }
+    _observeSyncFailure(sample);
     final preparationAdvanced = _observePreparationProgress(sample);
     if (sample.scannedHeight < maxScannedHeight) {
       // Only a running engine can start a new scan epoch. An idle engine
@@ -334,6 +354,12 @@ class VotingWalletSyncProgressTracker {
       // rebasing onto it would both count the lock as progress and lower
       // the percentage mark, letting later replays read as progress.
       if (!sample.isSyncing) return false;
+      // A run that failed during this wait publishes the same standing-start
+      // values when it is restarted. Rebasing onto that would let a sync
+      // that fails at the same point every time replay its way past the
+      // threshold forever, which is exactly the stall the caller needs to
+      // see.
+      if (_restartedAfterFailure) return false;
       // New scan epoch (rescan from an older birthday, reorg rewind, tail
       // repair): rebase both marks onto it. The rewind itself is engine
       // activity, so it counts as progress.
@@ -341,15 +367,25 @@ class VotingWalletSyncProgressTracker {
       _maxScannedHeight = sample.scannedHeight;
       return true;
     }
-    final advanced =
+    final passedMarks =
         sample.percentage > maxPercentage ||
-        sample.scannedHeight > maxScannedHeight ||
-        preparationAdvanced;
+        sample.scannedHeight > maxScannedHeight;
+    final advanced = passedMarks || preparationAdvanced;
     if (sample.percentage > maxPercentage) _maxPercentage = sample.percentage;
     if (sample.scannedHeight > maxScannedHeight) {
       _maxScannedHeight = sample.scannedHeight;
     }
+    // Climbing past the marks is work the failed run had not done, so the
+    // restarted run has stopped replaying: a later rewind is an epoch again.
+    if (passedMarks) _restartedAfterFailure = false;
     return advanced;
+  }
+
+  void _observeSyncFailure(VotingWalletSyncProgressSample sample) {
+    final failedAt = sample.lastSyncFailedAt;
+    if (failedAt == null || failedAt == _lastSyncFailedAt) return;
+    _lastSyncFailedAt = failedAt;
+    _restartedAfterFailure = true;
   }
 
   bool _observePreparationProgress(VotingWalletSyncProgressSample sample) {
