@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
@@ -1536,15 +1537,38 @@ void main() {
           .toList(),
       otherKnobs: {'Layout': lane},
     );
-    await expectKnobOptionsRenderDistinctly(
-      tester,
-      buildVotingReviewCase,
-      label: 'Answers',
-      optionLabels: VotingReviewAnswersCase.values
-          .map(votingReviewAnswersLabel)
-          .toList(),
-      otherKnobs: {'Layout': lane},
-    );
+    // A phone's status bar leaves the second proposal below the first fold.
+    // Include the scrolled content, so different answers are not mistaken
+    // for a dead knob merely because their first viewport is identical.
+    final answerFrames = <String>{};
+    for (final answers in VotingReviewAnswersCase.values) {
+      await pumpUseCase(
+        tester,
+        buildVotingReviewCase,
+        knobs: {'Layout': lane, 'Answers': votingReviewAnswersLabel(answers)},
+      );
+      final firstFrame = await useCaseFingerprint(tester);
+      if (!_desktopLane) {
+        await tester.drag(
+          find
+              .descendant(
+                of: find.byType(MobileVotingReviewScreen),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+          const Offset(0, -500),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+      final lastFrame = await useCaseFingerprint(tester);
+      expect(
+        answerFrames.add('$firstFrame/$lastFrame'),
+        isTrue,
+        reason: 'Duplicate review state: $answers',
+      );
+    }
+    await disposeTree(tester);
 
     Future<void> pumpReview(Map<String, String> knobs) async {
       await pumpUseCase(

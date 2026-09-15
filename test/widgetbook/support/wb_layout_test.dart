@@ -83,11 +83,55 @@ void main() {
     expect(tester.getSize(find.byKey(childKey)), kWbPhoneSize);
     expect(media.size, kWbPhoneSize);
     expect(media.viewPadding.top, kWbPhoneStatusBarInset);
-    // The fixtures hand their screens a const MediaQueryData, so no host
-    // padding or keyboard inset may leak into the preview.
-    expect(media.padding, EdgeInsets.zero);
+    expect(media.padding, const EdgeInsets.only(top: kWbPhoneStatusBarInset));
     expect(media.viewInsets, EdgeInsets.zero);
   });
+
+  for (final inset in [0.0, kWbPhoneStatusBarInset, 24.0]) {
+    testWidgets('phone SafeArea consumes only its simulated inset $inset', (
+      tester,
+    ) async {
+      const frameKey = ValueKey('phone_frame');
+      const safeChildKey = ValueKey('phone_safe_child');
+      late MediaQueryData inside;
+      await pumpUseCase(
+        tester,
+        (_) => MediaQuery(
+          data: const MediaQueryData(
+            padding: EdgeInsets.fromLTRB(10, 99, 20, 34),
+            viewPadding: EdgeInsets.fromLTRB(10, 99, 20, 34),
+            viewInsets: EdgeInsets.only(bottom: 300),
+          ),
+          child: WbPhoneBox(
+            statusBarInset: inset,
+            child: SizedBox.expand(
+              key: frameKey,
+              child: SafeArea(
+                child: SafeArea(
+                  child: Builder(
+                    builder: (context) {
+                      inside = MediaQuery.of(context);
+                      return const SizedBox.expand(key: safeChildKey);
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final frame = tester.getRect(find.byKey(frameKey));
+      final child = tester.getRect(find.byKey(safeChildKey));
+      expect(child.top - frame.top, inset);
+      expect(child.left, frame.left);
+      expect(child.right, frame.right);
+      expect(child.bottom, frame.bottom);
+      expect(inside.padding, EdgeInsets.zero);
+      expect(inside.viewInsets, EdgeInsets.zero);
+      expect(tester.takeException(), isNull);
+      await disposeTree(tester);
+    });
+  }
 
   testWidgets('WbDesktopWindowBox keeps the 1080x720 window on a big canvas', (
     tester,

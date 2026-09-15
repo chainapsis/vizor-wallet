@@ -264,13 +264,13 @@ class WbPhoneBox extends StatelessWidget {
         child: ColoredBox(
           color: background ?? context.colors.background.window,
           child: MediaQuery(
-            // `padding` / `viewInsets` are zeroed like the fixtures' own
-            // `const MediaQueryData`, so a host inset never reaches a
-            // `SafeArea` inside the previewed screen.
+            // Replace host insets with the simulated phone geometry. SafeArea
+            // consumes padding, while explicit status-bar layouts read
+            // viewPadding; both must describe the same unobscured screen.
             data: MediaQuery.of(context).copyWith(
               size: size,
               viewPadding: EdgeInsets.only(top: statusBarInset),
-              padding: EdgeInsets.zero,
+              padding: EdgeInsets.only(top: statusBarInset),
               viewInsets: EdgeInsets.zero,
             ),
             child: child,
