@@ -1847,9 +1847,93 @@ Widget buildMobileIronwoodMigrationAndroidOptionsUseCase(BuildContext context) {
 }
 
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.fastReview,
-    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  return const _MobileFastReviewPreview();
+}
+
+class _MobileFastReviewPreview extends StatefulWidget {
+  const _MobileFastReviewPreview();
+
+  @override
+  State<_MobileFastReviewPreview> createState() => _MobileFastReviewPreviewState();
+}
+
+class _MobileFastReviewPreviewState extends State<_MobileFastReviewPreview> {
+  late final _account = _ironwoodMigrationAccountState();
+  late final _router = GoRouter(
+    initialLocation: '/migration/immediate/review',
+    routes: [
+      GoRoute(
+        path: '/migration/immediate/review',
+        builder: (_, _) => MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+          previewData: _ironwoodMigrationFlowData(
+            zatoshi: BigInt.from(14_224_000_000),
+          ),
+          previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+        ),
+      ),
+      for (final path in ['/home', '/migration/options'])
+        GoRoute(
+          path: path,
+          builder: (context, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Preview: $path'),
+                AppButton(
+                  onPressed: () => context.go('/migration/immediate/review'),
+                  child: const Text('Restart preview'),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProviderScope(
+    overrides: [
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(_account)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_account.activeAccountUuid),
+      ),
+      ironwoodMigrationServiceProvider.overrideWithValue(
+        _PreviewImmediateMigrationService(),
+      ),
+      ironwoodHomeMigrationCtaProvider.overrideWith(
+        (ref) async => const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+      ironwoodMigrationRouteCtaProvider.overrideWith(
+        (ref) async => const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+      ironwoodPostMigrationStateProvider.overrideWith(
+        (ref) async => const IronwoodPostMigrationState.inactive(),
+      ),
+    ],
+    child: _MobilePreviewFrame(child: Router.withConfig(config: _router)),
+  );
+}
+
+class _PreviewImmediateMigrationService extends WbMigrationService {
+  @override
+  Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) async => rust_sync.IronwoodMigrationResult(
+    txids: 'preview-only',
+    status: 'broadcasted',
+    broadcastedCount: 1,
+    totalCount: 1,
+    feeZatoshi: approvedPlan.feeZatoshi,
+    migratedZatoshi: approvedPlan.migratedZatoshi,
+    message: 'Simulated preview. No transaction was signed or broadcast.',
   );
 }
 
