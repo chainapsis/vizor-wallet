@@ -3108,6 +3108,37 @@ void main() {
     expect(isVotingRoundEnded(state.error?.cause), isTrue);
   });
 
+  test('a suspended app does not spend the whole no-progress budget', () async {
+    // Foreground sync cannot advance while the app is suspended, and this
+    // loop is frozen with it, so the budget must charge observed polling
+    // rather than wall time — otherwise an ordinary app switch surfaces as a
+    // voting error on resume.
+    final rust = FakeVotingRustApi();
+    final readiness = _SuspendingVotingWalletSyncReadinessChecker(
+      gap: const Duration(milliseconds: 300),
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      extraOverrides: [
+        votingWalletSyncMaxWaitProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.readyToDelegate);
+    expect(state.error, isNull);
+  });
+
   test('a frontier that rewinds and rescans the same range stalls', () async {
     // A continuity error exhausting Rust's rewind budget on every retried run
     // moves the frontier both ways forever without the wallet ever getting
@@ -14255,6 +14286,33 @@ class FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
+/// Stalls one readiness query for [gap], standing in for an app that was
+/// suspended (backgrounded, device locked) mid-wait, then reports a ready
+/// wallet.
+class _SuspendingVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  _SuspendingVotingWalletSyncReadinessChecker({required this.gap});
+
+  final Duration gap;
+  int calls = 0;
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    final index = calls;
+    calls++;
+    if (index == 1) await Future<void>.delayed(gap);
+    return VotingWalletSyncReadiness(
+      scannedHeight: index >= 2 ? snapshotHeight : snapshotHeight - 23,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 7,
     );
   }
 }

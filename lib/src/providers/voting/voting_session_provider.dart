@@ -3793,7 +3793,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // already-closed round does to a caller that never had to wait.
     var waited = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
-    final noProgressTimer = Stopwatch()..start();
+    final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
+    // The budget measures *observed polling*, not wall time. Each iteration
+    // charges the time it actually took, capped at a couple of poll
+    // intervals: a suspended app — backgrounded, device locked — freezes
+    // this loop and foreground sync alike, and charging that gap would
+    // report a stall on resume before sync had any chance to advance. A slow
+    // readiness query is discounted the same way and for the same reason:
+    // neither is evidence that the scan stopped.
+    final maxChargePerPoll = pollInterval * 2;
+    final iterationTimer = Stopwatch()..start();
+    var noProgress = Duration.zero;
     // A high-water mark, not the previous value: a sync that rewinds and
     // rescans the same range — a continuity error exhausting Rust's rewind
     // budget on every retried run — moves this frontier both ways forever
@@ -3843,9 +3853,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           maxReadinessHeight == null ||
           readiness.scannedHeight > maxReadinessHeight;
       if (readinessAdvanced) maxReadinessHeight = readiness.scannedHeight;
-      if (readinessAdvanced || engineProgressed) {
-        noProgressTimer.reset();
-      }
+      final observed = iterationTimer.elapsed;
+      iterationTimer.reset();
+      noProgress = readinessAdvanced || engineProgressed
+          ? Duration.zero
+          : noProgress +
+                (observed < maxChargePerPoll ? observed : maxChargePerPoll);
 
       if (!loggedWait) {
         loggedWait = true;
@@ -3856,7 +3869,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'snapshot=${readiness.snapshotHeight}',
         );
       }
-      if (noProgressTimer.elapsed >= maxWait) {
+      if (noProgress >= maxWait) {
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
@@ -3879,8 +3892,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (e) {
         debugPrint('[zcash] Voting: wallet sync start skipped: $e');
       }
-      final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
-      final remainingWait = maxWait - noProgressTimer.elapsed;
+      final remainingWait = maxWait - noProgress;
       final delay =
           remainingWait > Duration.zero && remainingWait < pollInterval
           ? remainingWait
