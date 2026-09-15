@@ -67,6 +67,7 @@ Widget migrationKeystoneSignFixture({
       ? _previewSigningRequest(step: step, multiRound: multiRound)
       : null;
   return ProviderScope(
+    key: ValueKey((step, layout, stage, multiRound)),
     overrides: [
       ..._migrationSidebarOverrides,
       appBootstrapProvider.overrideWithValue(

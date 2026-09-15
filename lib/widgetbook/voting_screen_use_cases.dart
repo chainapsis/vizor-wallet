@@ -951,6 +951,7 @@ Widget votingProposalDetailFixture({
   VotingDetailPowerCase power = VotingDetailPowerCase.ready,
 }) {
   return _votingScreenHost(
+    key: ValueKey((layout, session, branch, power)),
     overrides: [
       votingParticipationUnavailableProvider.overrideWith(
         (ref, roundId) => false,
@@ -1336,10 +1337,12 @@ Widget votingMobileScaffoldFixture(
 /// `AppMainSidebar` (which reads `GoRouterState`) or navigates on tap, so the
 /// fixtures run inside a throwaway router with the routes they can reach.
 Widget _votingScreenHost({
+  Key? key,
   required List<Override> overrides,
   required WidgetBuilder builder,
 }) {
   return ProviderScope(
+    key: key,
     // No retry: Riverpod's default backoff reloads a failed provider, which
     // would turn a preview's error state back into a spinner.
     retry: (_, _) => null,

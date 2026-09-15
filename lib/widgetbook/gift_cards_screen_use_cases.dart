@@ -1584,6 +1584,7 @@ Widget giftCardsKeystoneSigningFixture({
   GiftCardsKeystoneError error = GiftCardsKeystoneError.generic,
 }) {
   return ProviderScope(
+    key: ValueKey((phase, error)),
     overrides: [
       paymentLinkHardwareSigningServiceProvider.overrideWithValue(
         _GiftCardsKeystoneSigningService(phase: phase, error: error),
