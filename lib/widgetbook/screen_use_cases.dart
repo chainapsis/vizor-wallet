@@ -531,6 +531,59 @@ Widget buildMobileSecretPassphraseRevealedUseCase(BuildContext context) {
   );
 }
 
+/// Only the reveal transition is interactive; subsequent actions remain a
+/// static preview, just like the explicit revealed fixture below.
+Widget buildMobileSecretPassphraseHiddenUseCase(BuildContext context) {
+  return ProviderScope(
+    key: const ValueKey('mobile-passphrase-hidden'),
+    overrides: [
+      createOnboardingMnemonicProvider.overrideWith(_HiddenPreviewMnemonic.new),
+      onboardingSecretPassphraseRevealedProvider.overrideWith(
+        OnboardingSecretPassphraseRevealedNotifier.new,
+      ),
+    ],
+    child: const _MobileHiddenPassphrasePreview(),
+  );
+}
+
+class _HiddenPreviewMnemonic extends CreateOnboardingMnemonicNotifier {
+  @override
+  String? build() => _previewMnemonic;
+}
+
+class _MobileHiddenPassphrasePreview extends ConsumerStatefulWidget {
+  const _MobileHiddenPassphrasePreview();
+
+  @override
+  ConsumerState<_MobileHiddenPassphrasePreview> createState() =>
+      _MobileHiddenPassphrasePreviewState();
+}
+
+class _MobileHiddenPassphrasePreviewState
+    extends ConsumerState<_MobileHiddenPassphrasePreview> {
+  final _privacyController = SensitivePrivacyOverlayController();
+
+  @override
+  void dispose() {
+    _privacyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final revealed = ref.watch(onboardingSecretPassphraseRevealedProvider);
+    return _MobilePreviewFrame(
+      child: IgnorePointer(
+        ignoring: revealed,
+        child: MobileSecretPassphraseScreen(
+          screenshotStream: const Stream.empty(),
+          privacyOverlayController: _privacyController,
+        ),
+      ),
+    );
+  }
+}
+
 Widget buildMobileSecretPassphraseLongWordsUseCase(BuildContext context) {
   return const _MobilePreviewFrame(
     child: IgnorePointer(

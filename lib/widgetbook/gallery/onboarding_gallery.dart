@@ -1024,6 +1024,7 @@ String onboardingMobileUnlockOverlayLabel(
 /// and the privacy overlay replaces the grid, so neither splits into its own
 /// orthogonal knob without new fixtures.
 enum OnboardingMobilePassphraseState {
+  hidden,
   revealed,
   longWords,
   privacyProtected,
@@ -1038,6 +1039,8 @@ Widget _onboardingMobileSecretPassphrase(BuildContext context) {
     labelBuilder: onboardingMobilePassphraseStateLabel,
   );
   return switch (state) {
+    OnboardingMobilePassphraseState.hidden =>
+      buildMobileSecretPassphraseHiddenUseCase(context),
     OnboardingMobilePassphraseState.revealed =>
       buildMobileSecretPassphraseRevealedUseCase(context),
     OnboardingMobilePassphraseState.longWords =>
@@ -1053,6 +1056,7 @@ String onboardingMobilePassphraseStateLabel(
   OnboardingMobilePassphraseState state,
 ) {
   return switch (state) {
+    OnboardingMobilePassphraseState.hidden => 'Hidden',
     OnboardingMobilePassphraseState.revealed => 'Revealed',
     OnboardingMobilePassphraseState.longWords => 'Long words',
     OnboardingMobilePassphraseState.privacyProtected => 'Privacy protected',
