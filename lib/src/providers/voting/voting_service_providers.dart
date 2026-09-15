@@ -322,15 +322,18 @@ final votingWalletSyncProgressSampleProvider =
 /// a lower height is a reset, not work, until the run climbs past the marks
 /// it had already reached.
 ///
-/// Measurable preparation phases, such as the active-account transparent UTXO
-/// refresh, intentionally preserve percentage and scanned height. Their raw
-/// completed-unit counters are tracked separately by phase. High-water marks
-/// reject counter resets and replays, so a repeatedly restarting sync cannot
-/// postpone a genuine stall forever.
+/// Preparation phases, such as the active-account transparent UTXO refresh,
+/// intentionally preserve percentage and scanned height. The measurable ones
+/// publish completed-unit counters, tracked separately by phase; the
+/// unmeasured ones publish nothing at all, so entering a phase is itself
+/// counted once. High-water marks and a per-wait set of seen phases reject
+/// counter resets and replayed phase sequences, so a repeatedly restarting
+/// sync cannot postpone a genuine stall forever.
 class VotingWalletSyncProgressTracker {
   double? _maxPercentage;
   int? _maxScannedHeight;
   final Map<String, int> _maxPreparationCompletedUnits = {};
+  final Set<String> _seenPhases = {};
   DateTime? _lastSyncFailedAt;
   bool _restartedAfterFailure = false;
 
@@ -342,11 +345,14 @@ class VotingWalletSyncProgressTracker {
       _maxPercentage = sample.percentage;
       _maxScannedHeight = sample.scannedHeight;
       _lastSyncFailedAt = sample.lastSyncFailedAt;
+      _observePhase(sample);
       _observePreparationProgress(sample);
       return false;
     }
     _observeSyncFailure(sample);
-    final preparationAdvanced = _observePreparationProgress(sample);
+    // Either counts as observable engine activity on its own.
+    final engineActivity =
+        _observePhase(sample) || _observePreparationProgress(sample);
     if (sample.scannedHeight < maxScannedHeight) {
       // Only a running engine can start a new scan epoch. An idle engine
       // reporting a lower height is a state reset, not work — locking the
@@ -358,10 +364,10 @@ class VotingWalletSyncProgressTracker {
       // values when it is restarted. Rebasing onto that would let a sync
       // that fails at the same point every time replay its way past the
       // threshold forever, which is exactly the stall the caller needs to
-      // see. Only the replayed scan marks are ignored: a preparation phase
-      // the restarted run is working through is measurable new work, and
-      // its counters carry their own high-water marks.
-      if (_restartedAfterFailure) return preparationAdvanced;
+      // see. Only the replayed scan marks are ignored: a phase the restarted
+      // run reaches for the first time, or a preparation counter it pushes
+      // past its high-water mark, is new work either way.
+      if (_restartedAfterFailure) return engineActivity;
       // New scan epoch (rescan from an older birthday, reorg rewind, tail
       // repair): rebase both marks onto it. The rewind itself is engine
       // activity, so it counts as progress.
@@ -372,7 +378,7 @@ class VotingWalletSyncProgressTracker {
     final passedMarks =
         sample.percentage > maxPercentage ||
         sample.scannedHeight > maxScannedHeight;
-    final advanced = passedMarks || preparationAdvanced;
+    final advanced = passedMarks || engineActivity;
     if (sample.percentage > maxPercentage) _maxPercentage = sample.percentage;
     if (sample.scannedHeight > maxScannedHeight) {
       _maxScannedHeight = sample.scannedHeight;
@@ -381,6 +387,25 @@ class VotingWalletSyncProgressTracker {
     // restarted run has stopped replaying: a later rewind is an epoch again.
     if (passedMarks) _restartedAfterFailure = false;
     return advanced;
+  }
+
+  /// Records the phase this sample reports, and says whether the engine has
+  /// entered one it had not reached earlier in this wait.
+  ///
+  /// Some phases publish no counters at all — Rust emits `chain_prepare` with
+  /// `0/0` and then spends the whole pending-transaction resubmission and
+  /// subtree-root download inside it — so a healthy sync can hold percentage,
+  /// heights and counters still for a long stretch. Entering a phase is the
+  /// only observable event in that window, so it is worth one budget reset.
+  ///
+  /// Counted only the first time a phase appears in this wait: a restarting
+  /// sync replays the same phase sequence on every attempt, and counting the
+  /// replay would postpone a genuine stall forever. The reset is therefore
+  /// bounded — a sync wedged inside one unmeasured phase still stalls, one
+  /// threshold later.
+  bool _observePhase(VotingWalletSyncProgressSample sample) {
+    if (!sample.isSyncing || sample.phase.isEmpty) return false;
+    return _seenPhases.add(sample.phase);
   }
 
   void _observeSyncFailure(VotingWalletSyncProgressSample sample) {

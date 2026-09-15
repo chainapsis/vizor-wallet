@@ -76,6 +76,73 @@ void main() {
     );
   });
 
+  test('entering an unmeasured phase counts once', () {
+    // Rust emits chain_prepare with 0/0 and then spends the whole resubmit
+    // pass and subtree-root download inside it, publishing nothing further.
+    // Entering the phase is the only observable event in that window.
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(
+      _sample(percentage: 0.5, scannedHeight: 100, phase: kSyncPhaseSetup),
+    );
+
+    expect(
+      tracker.observe(
+        _sample(
+          percentage: 0.5,
+          scannedHeight: 100,
+          phase: kSyncPhaseChainPrepare,
+        ),
+      ),
+      true,
+    );
+    // Sitting in that phase is not progress, so a sync wedged inside it
+    // still stalls one threshold later.
+    expect(
+      tracker.observe(
+        _sample(
+          percentage: 0.5,
+          scannedHeight: 100,
+          phase: kSyncPhaseChainPrepare,
+        ),
+      ),
+      false,
+    );
+  });
+
+  test('a replayed phase sequence is not progress', () {
+    // A restarting sync walks the same phases on every attempt.
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(_sample(scannedHeight: 100, phase: kSyncPhaseSetup));
+    tracker.observe(_sample(scannedHeight: 100, phase: kSyncPhaseChainPrepare));
+
+    expect(
+      tracker.observe(_sample(scannedHeight: 100, phase: kSyncPhaseSetup)),
+      false,
+    );
+    expect(
+      tracker.observe(
+        _sample(scannedHeight: 100, phase: kSyncPhaseChainPrepare),
+      ),
+      false,
+    );
+  });
+
+  test('an idle engine reporting a phase is not progress', () {
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(_sample(scannedHeight: 100, phase: kSyncPhaseSetup));
+
+    expect(
+      tracker.observe(
+        _sample(
+          scannedHeight: 100,
+          isSyncing: false,
+          phase: kSyncPhaseChainPrepare,
+        ),
+      ),
+      false,
+    );
+  });
+
   test('a restart after a failure is not a new scan epoch', () {
     // A failed run republishes zeroed heights and the next attempt replays
     // the range it already scanned. Rebasing onto that would let a sync that
