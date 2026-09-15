@@ -193,6 +193,26 @@ final votingActiveAccountUuidProvider = Provider<Future<String?> Function()>((
   };
 });
 
+/// Identity of the wallet's account set, changing whenever an account is
+/// added or removed.
+///
+/// Voting readiness is wallet-wide: the shared scan frontier, and the wallet
+/// birthday the snapshot guard compares against, belong to every account
+/// rather than to the active one. A session therefore has to react to the
+/// list changing even when [votingActiveAccountUuidProvider] still emits the
+/// same UUID — deleting the oldest account can move the wallet birthday past
+/// a round snapshot the surviving account was eligible for.
+final votingWalletAccountSetProvider = Provider<String>((ref) {
+  return ref.watch(
+    accountProvider.select((value) {
+      final accounts = value.value?.accounts;
+      if (accounts == null) return '';
+      final uuids = [for (final account in accounts) account.uuid]..sort();
+      return uuids.join(',');
+    }),
+  );
+});
+
 /// Test seam for account hardware classification.
 final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
   (ref) {

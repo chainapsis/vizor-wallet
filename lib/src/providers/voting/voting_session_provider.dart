@@ -138,6 +138,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   _VotingSessionContext? _currentContext;
   bool _disposeHandlerRegistered = false;
   bool _activeAccountListenerRegistered = false;
+  bool _walletAccountSetListenerRegistered = false;
   bool _submissionGuardListenerRegistered = false;
   List<VotingSubmissionGuard> _activeSubmissionGuards = const [];
   int _sessionGeneration = 0;
@@ -167,6 +168,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _registerSubmissionGuardListener();
     _registerDisposeHandler();
     _registerActiveAccountListener();
+    _registerWalletAccountSetListener();
     await _refreshSessionAccountFromActiveAccount();
     final context = await _loadContext(_roundId, checkStaleAction: false);
     _currentContext = context;
@@ -210,6 +212,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               _guardsOwnContext(_guardNotifierState(guardNotifier), context));
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
+      _walletAccountSetListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
       // Preserve durable setup for background proofs and later signing.
       // Only the round-scoped vote-tree cache is released on disposal.
@@ -267,6 +270,42 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
+  }
+
+  /// Re-checks eligibility when the wallet's account set changes under a
+  /// session whose own account did not.
+  ///
+  /// Readiness is wallet-wide, so deleting another account can move the
+  /// wallet birthday past this round's snapshot and make a resolved
+  /// eligibility wrong — while `votingActiveAccountUuidProvider` still emits
+  /// the same UUID, so nothing else rebuilds the session. Without this the
+  /// voting UI stays enabled until some later foreground action happens to
+  /// run the readiness check. Adding an account with an older birthday is the
+  /// same event in the other direction, and re-checking covers both.
+  void _registerWalletAccountSetListener() {
+    if (_walletAccountSetListenerRegistered) return;
+    _walletAccountSetListenerRegistered = true;
+    ref.listen<String>(votingWalletAccountSetProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      unawaited(_revalidateEligibilityForAccountSetChange());
+    });
+  }
+
+  Future<void> _revalidateEligibilityForAccountSetChange() async {
+    final current = state.value;
+    // Nothing resolved yet: the session's next action runs the gate anyway.
+    if (current == null || current.eligibleWeightZatoshi == null) return;
+    final context = _currentContext;
+    // A running submission owns its account and its own recovery path.
+    if (context != null && _activeSubmissionOwnsContext(context)) return;
+    final accountUuid = await ref.read(votingActiveAccountUuidProvider).call();
+    // The active account changed too — _registerActiveAccountListener owns
+    // that path and rebuilds the session from scratch.
+    if (accountUuid == null || accountUuid != _sessionAccountUuid) return;
+    if (_isDisposed) return;
+    // Publishes its own error state rather than throwing: this runs
+    // unawaited, from a listener.
+    await _enqueue(_refreshEligibleWeightUnlocked);
   }
 
   Future<void> _refreshSessionAccountFromActiveAccount() async {
@@ -4686,6 +4725,11 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
   // hooks to pin background submissions to their original account.
   @override
   void _registerActiveAccountListener() {}
+
+  /// Same reason as the account listener above: this session is pinned to the
+  /// account its job started on, and the job owns what happens to it.
+  @override
+  void _registerWalletAccountSetListener() {}
 
   @override
   Future<void> _refreshSessionAccountFromActiveAccount() async {

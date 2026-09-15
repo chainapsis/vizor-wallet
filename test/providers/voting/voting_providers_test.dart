@@ -3330,6 +3330,111 @@ void main() {
     },
   );
 
+  test(
+    'deleting another account re-checks the surviving session eligibility',
+    () async {
+      // Readiness is wallet-wide, so removing the oldest account can move the
+      // wallet birthday past this round's snapshot while the active account
+      // UUID never changes. Nothing else rebuilds the session, so the voting
+      // UI would stay enabled on a wallet that can no longer cover the
+      // snapshot.
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+      final accountSetProvider =
+          NotifierProvider<_WalletAccountSetNotifier, String>(
+            _WalletAccountSetNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: Duration.zero,
+        extraOverrides: [
+          votingWalletAccountSetProvider.overrideWith(
+            (ref) => ref.watch(accountSetProvider),
+          ),
+        ],
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      expect(
+        container
+            .read(votingSessionProvider(kRoundId))
+            .value!
+            .hasConfirmedVotingEligibility,
+        isTrue,
+      );
+
+      // The oldest account is deleted: same active account, later wallet
+      // birthday.
+      readiness.walletBirthdayHeight = 999999;
+      container.read(accountSetProvider.notifier).set('account-1');
+
+      VotingSessionState? rejected;
+      for (var i = 0; i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final state = container.read(votingSessionProvider(kRoundId)).value;
+        if (state != null && state.hasError) {
+          rejected = state;
+          break;
+        }
+      }
+
+      expect(rejected, isNotNull, reason: 'eligibility was never re-checked');
+      expect(rejected!.error?.isEligibilityFailure, isTrue);
+      expect(rejected.error?.message, contains('birthday block'));
+      expect(rejected.hasConfirmedVotingEligibility, isFalse);
+    },
+  );
+
+  test('an unchanged account set does not re-check eligibility', () async {
+    // The listener must react to the set changing, not to every rebuild of
+    // the account provider.
+    final rust = FakeVotingRustApi();
+    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+    final accountSetProvider =
+        NotifierProvider<_WalletAccountSetNotifier, String>(
+          _WalletAccountSetNotifier.new,
+        );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: Duration.zero,
+      extraOverrides: [
+        votingWalletAccountSetProvider.overrideWith(
+          (ref) => ref.watch(accountSetProvider),
+        ),
+      ],
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+    final callsAfterRefresh = readiness.calls;
+
+    container.read(accountSetProvider.notifier).set('account-1,account-2');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(readiness.calls, callsAfterRefresh);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value!.error,
+      isNull,
+    );
+  });
+
   test('a birthday at the snapshot still votes normally', () async {
     // Boundary: birthday == snapshot is coverable, so it must not be
     // mistaken for the rejection case.
@@ -14138,6 +14243,15 @@ class _MutableActiveAccount {
   String? value;
 
   Future<String?> call() async => value;
+}
+
+class _WalletAccountSetNotifier extends Notifier<String> {
+  @override
+  String build() => 'account-1,account-2';
+
+  void set(String accountSet) {
+    state = accountSet;
+  }
 }
 
 class _ActiveVotingAccountNotifier extends Notifier<String?> {
