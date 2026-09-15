@@ -54,6 +54,19 @@ Future<void> expectLiveStates(
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+  testWidgets('mobile migration status returns from redirecting route knobs', (
+    tester,
+  ) async {
+    await expectLiveStates(tester, buildMigrationMobileStatusGalleryCase, [
+      for (final route in [
+        'Status',
+        'Loading',
+        'Sent home',
+        'Sent to About Ironwood',
+      ])
+        {'Route': route},
+    ]);
+  });
   testWidgets('gift-card signer follows live phase and error knobs', (
     tester,
   ) async {

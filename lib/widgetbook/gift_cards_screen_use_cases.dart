@@ -1790,7 +1790,7 @@ Widget giftCardsCardRowFixture({
   final showLinkActions = trailing == GiftCardsRowTrailing.linkActions;
   final actionLabel = giftCardsRowActionLabel(action);
   final statusText = giftCardsRowStatusText(status);
-  final onAction = enabled ? _noop : null;
+  final onAction = enabled && actionLabel != null ? _noop : null;
   final thumbnail = Image.asset(
     _componentArtwork.assetPath,
     fit: BoxFit.cover,

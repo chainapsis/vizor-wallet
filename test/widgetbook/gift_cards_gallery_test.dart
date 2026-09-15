@@ -1,6 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart'
+    show PaymentLinkCardListRow;
+import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart'
+    show PaymentLinkCardListMobileRow;
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_archive_header.dart';
@@ -965,6 +969,39 @@ void main() {
         ...lane,
         'Trailing': giftCardsRowTrailingLabel(GiftCardsRowTrailing.none),
       };
+      for (final trailing in giftCardsRowTrailingOptions(layout)) {
+        for (final action in GiftCardsRowAction.values) {
+          for (final enabled in [true, false]) {
+            await pumpUseCase(
+              tester,
+              buildGiftCardsCardRowGalleryCase,
+              knobs: {
+                ...lane,
+                'Trailing': giftCardsRowTrailingLabel(trailing),
+                'Action': giftCardsRowActionOptionLabel(action),
+                'Enabled': '$enabled',
+              },
+            );
+            final callback = layout == WbLayout.mobile
+                ? tester
+                      .widget<PaymentLinkCardListMobileRow>(
+                        find.byType(PaymentLinkCardListMobileRow),
+                      )
+                      .onAction
+                : tester
+                      .widget<PaymentLinkCardListRow>(
+                        find.byType(PaymentLinkCardListRow),
+                      )
+                      .onAction;
+            expect(
+              callback != null,
+              enabled && action != GiftCardsRowAction.none,
+              reason: '$layout / $trailing / $action / $enabled',
+            );
+            expect(tester.takeException(), isNull);
+          }
+        }
+      }
       await expectKnobOptionsRenderDistinctly(
         tester,
         buildGiftCardsCardRowGalleryCase,

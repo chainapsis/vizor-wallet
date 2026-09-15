@@ -1157,6 +1157,13 @@ Widget migrationMobileStatusFixture({
     ),
   };
   return ProviderScope(
+    key: ValueKey((
+      phase,
+      account,
+      notificationsAuthorized,
+      backgroundTrackingSupported,
+      route,
+    )),
     overrides: [
       ..._migrationMobileOverrides(accountState),
       ironwoodMigrationFlowDataProvider.overrideWith(
