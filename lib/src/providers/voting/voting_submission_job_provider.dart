@@ -16,6 +16,7 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../account_provider.dart';
 import '../app_security_provider.dart';
+import 'voting_home_cache_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_share_tracking_registry_provider.dart';
@@ -284,6 +285,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Timer? _walletSyncRecoveryTimer;
   int? _walletSyncRecoveryGeneration;
   int? _walletSyncRecoverySnapshotHeight;
+  DateTime? _walletSyncRecoveryVoteEndTime;
+  Map<int, int>? _walletSyncRecoveryDraftChoices;
   bool _walletSyncRecoveryInFlight = false;
   bool _walletSyncRecoveryRetryOnUnlock = false;
   int _nextGeneration = 0;
@@ -1120,16 +1123,18 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // generic failure teardown, and re-arming is this path's decision.
     final stalled = isVotingWalletSyncStalled(session.error?.cause);
     final snapshotHeight = session.walletSnapshotHeight;
+    final voteEndTime = session.round?.voteEndTime;
     _failJob(
       key: key,
       generation: generation,
       message: _statusErrorMessage(session) ?? _genericVotingStatusErrorMessage,
     );
-    if (!stalled || snapshotHeight == null) return;
+    if (!stalled || snapshotHeight == null || voteEndTime == null) return;
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _armWalletSyncRecovery(
       generation: generation,
       snapshotHeight: snapshotHeight,
+      voteEndTime: voteEndTime,
     );
   }
 
@@ -1137,15 +1142,22 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   ///
   /// A stall is the one failure the user cannot act on and that resolves on
   /// its own, so leaving the job parked until someone notices the error card
-  /// is the behaviour this replaces. The reviewed choices are not carried in
-  /// memory: the retry reloads them from the durable draft store, the same
-  /// way a manual retry does.
+  /// is the behaviour this replaces. The retry reloads the ballot from the
+  /// durable draft store the same way a manual retry does, so the arming
+  /// pins the choices the user actually confirmed and stands down if they
+  /// change: an automatic submission must never carry an edit nobody
+  /// reviewed.
   void _armWalletSyncRecovery({
     required int generation,
     required int snapshotHeight,
+    required DateTime voteEndTime,
   }) {
     _walletSyncRecoveryGeneration = generation;
     _walletSyncRecoverySnapshotHeight = snapshotHeight;
+    _walletSyncRecoveryVoteEndTime = voteEndTime;
+    _walletSyncRecoveryDraftChoices = Map<int, int>.unmodifiable(
+      ref.read(votingDraftProvider(_key)).choices,
+    );
     _walletSyncRecoveryTimer?.cancel();
     _walletSyncRecoveryTimer = Timer.periodic(
       ref.read(votingWalletSyncRecoveryPollIntervalProvider),
@@ -1158,7 +1170,48 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoveryTimer = null;
     _walletSyncRecoveryGeneration = null;
     _walletSyncRecoverySnapshotHeight = null;
+    _walletSyncRecoveryVoteEndTime = null;
+    _walletSyncRecoveryDraftChoices = null;
     _walletSyncRecoveryRetryOnUnlock = false;
+  }
+
+  /// Whether this arming still describes the job the user is looking at.
+  bool _walletSyncRecoveryIsCurrent(int generation) {
+    return _walletSyncRecoveryGeneration == generation &&
+        state.status == VotingSubmissionJobStatus.error &&
+        state.generation == generation;
+  }
+
+  /// Terminal reasons to stop waiting, all of which the poll re-reads after
+  /// every await because each can arrive while a readiness query is in
+  /// flight.
+  ///
+  /// - The voting window closed: reaching the snapshot afterwards cannot
+  ///   produce an accepted vote, so retrying would only replace a useful
+  ///   stall message with a downstream rejection.
+  /// - The account is gone: a full wallet reset removes it, and this
+  ///   notifier is not auto-disposed, so a surviving timer would re-create
+  ///   the wallet DB name and file that the reset just deleted.
+  /// - The confirmed ballot changed: see [_armWalletSyncRecovery].
+  bool _walletSyncRecoveryIsFinished() {
+    final voteEndTime = _walletSyncRecoveryVoteEndTime;
+    if (voteEndTime == null) return true;
+    if (!ref.read(votingHomeClockProvider)().isBefore(voteEndTime)) return true;
+    if (_walletSyncRecoveryAccountRemoved()) return true;
+    final armedChoices = _walletSyncRecoveryDraftChoices;
+    if (armedChoices == null) return true;
+    return !mapEquals(
+      armedChoices,
+      ref.read(votingDraftProvider(_key)).choices,
+    );
+  }
+
+  /// Only a loaded account list that no longer holds this account counts:
+  /// while the list is still loading, absence says nothing.
+  bool _walletSyncRecoveryAccountRemoved() {
+    final accounts = ref.read(accountProvider).value?.accounts;
+    if (accounts == null) return false;
+    return accounts.every((account) => account.uuid != _key.accountUuid);
   }
 
   Future<void> _pollWalletSyncRecovery() async {
@@ -1170,9 +1223,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         !ref.mounted) {
       return;
     }
-    if (state.status != VotingSubmissionJobStatus.error ||
-        state.generation != generation) {
+    if (!_walletSyncRecoveryIsCurrent(generation)) {
       // Something else already moved the job on; this arming is stale.
+      _cancelWalletSyncRecovery();
+      return;
+    }
+    if (_walletSyncRecoveryIsFinished()) {
       _cancelWalletSyncRecovery();
       return;
     }
@@ -1183,10 +1239,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       return;
     }
     // Taken before the first await so account delete/reset drains this poll
-    // before mutating the wallet DB it is about to read.
-    final releaseBackgroundWork = ref
-        .read(votingShareTrackingRegistryProvider)
-        .beginBackgroundWork(accountUuid: _key.accountUuid);
+    // before mutating the wallet DB it is about to read. The lease is global
+    // rather than account-scoped because both readiness reads are
+    // wallet-wide: the scan frontier is shared, and the birthday is the
+    // minimum across every account.
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    final releaseBackgroundWork = registry.beginBackgroundWork();
     // A wallet mutation is in progress; the next tick picks it up again.
     if (releaseBackgroundWork == null) return;
     _walletSyncRecoveryInFlight = true;
@@ -1200,14 +1258,39 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             network: endpoint.networkName,
             snapshotHeight: snapshotHeight,
           );
-      if (!readiness.isReady || !ref.mounted) return;
-      // Re-check after the awaits: the job may have been retried, dismissed,
-      // or superseded while the readiness call was in flight.
-      if (_walletSyncRecoveryGeneration != generation ||
-          state.status != VotingSubmissionJobStatus.error ||
-          state.generation != generation) {
+      if (!ref.mounted) return;
+      if (readiness.walletBirthdayAfterSnapshot) {
+        // Terminal, not a slow catch-up: a wallet mutation can remove the
+        // account whose birthday made this snapshot reachable, and no amount
+        // of scanning recovers from that. Say so instead of polling forever
+        // behind a stall message that is no longer true.
+        _failJob(
+          key: _key,
+          generation: generation,
+          message: votingWalletBirthdayAfterSnapshotMessage(readiness),
+        );
+        _cancelWalletSyncRecovery();
         return;
       }
+      if (!readiness.isReady) return;
+      // Re-check after the awaits: the job may have been retried, dismissed,
+      // or superseded, the round may have closed, the ballot may have been
+      // edited, or the wallet may have locked while the readiness call was in
+      // flight.
+      if (!_walletSyncRecoveryIsCurrent(generation)) return;
+      if (_walletSyncRecoveryIsFinished()) {
+        _cancelWalletSyncRecovery();
+        return;
+      }
+      if (ref.read(appSecurityProvider).requiresUnlock) {
+        _walletSyncRecoveryRetryOnUnlock = true;
+        return;
+      }
+      // A destructive operation can have passed its own guard and be waiting
+      // on this very lease. Launching the job here would register its work
+      // after that wait began, so park and let the next tick — which cannot
+      // take a lease while quiescence holds — run once the wallet is stable.
+      if (registry.isQuiesced(_key.accountUuid)) return;
       _cancelWalletSyncRecovery();
       unawaited(retry());
     } catch (error, stackTrace) {
