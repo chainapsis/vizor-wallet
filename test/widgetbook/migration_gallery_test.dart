@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
+import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
 import 'package:zcash_wallet/widgetbook/gallery/migration_gallery.dart';
 import 'package:zcash_wallet/widgetbook/migration_use_cases.dart';
 import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
@@ -980,6 +981,94 @@ Future<void> _expectDesktopOptionsDistinct(
 }
 
 void _wave2MigrationGalleryTests() {
+  testWidgets('private review reruns after live stage changes', (tester) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    final state = await pumpUseCase(
+      tester,
+      buildMigrationPrivateReviewGalleryCase,
+      knobs: {
+        'Stage': migrationPrivateReviewCaseLabel(
+          MigrationPrivateReviewCase.planUnavailable,
+        ),
+      },
+    );
+    for (final stage in [
+      MigrationPrivateReviewCase.planUnavailable,
+      MigrationPrivateReviewCase.startError,
+      MigrationPrivateReviewCase.planUnavailable,
+      MigrationPrivateReviewCase.startError,
+    ]) {
+      state.updateQueryField(
+        group: 'knobs',
+        field: 'Stage',
+        value: migrationPrivateReviewCaseLabel(stage),
+      );
+      for (var frame = 0; frame < 25; frame++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          stage == MigrationPrivateReviewCase.startError
+              ? "Couldn't start migration. Try again."
+              : "Couldn't analyze this balance",
+        ),
+        findsOneWidget,
+      );
+    }
+    await _drainFixtureTimers(tester);
+  });
+
+  testWidgets('virtual unlock resubmits after live password changes', (
+    tester,
+  ) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    final state = await pumpUseCase(
+      tester,
+      buildMigrationVirtualUnlockGalleryCase,
+      knobs: {
+        'Password': migrationVirtualUnlockCaseLabel(
+          MigrationVirtualUnlockCase.idle,
+        ),
+      },
+    );
+    for (final password in [
+      MigrationVirtualUnlockCase.submitting,
+      MigrationVirtualUnlockCase.wrongPassword,
+      MigrationVirtualUnlockCase.policyError,
+      MigrationVirtualUnlockCase.wrongPassword,
+      MigrationVirtualUnlockCase.submitting,
+      MigrationVirtualUnlockCase.idle,
+    ]) {
+      state.updateQueryField(
+        group: 'knobs',
+        field: 'Password',
+        value: migrationVirtualUnlockCaseLabel(password),
+      );
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(tester.takeException(), isNull);
+      final content = tester.widget<DesktopUnlockContent>(
+        find.byType(DesktopUnlockContent),
+      );
+      expect(content.messageText, switch (password) {
+        MigrationVirtualUnlockCase.wrongPassword =>
+          'Incorrect password. Try again.',
+        MigrationVirtualUnlockCase.policyError => kWalletPasswordAsciiMessage,
+        _ => null,
+      });
+      if (password == MigrationVirtualUnlockCase.submitting) {
+        expect(content.canSubmit, isFalse);
+        expect(content.passwordController.text, isNotEmpty);
+      }
+      if (password == MigrationVirtualUnlockCase.idle) {
+        expect(content.passwordController.text, isEmpty);
+      }
+    }
+    await _drainFixtureTimers(tester);
+  });
+
   testWidgets('desktop private review reaches its plan and start failures', (
     tester,
   ) async {

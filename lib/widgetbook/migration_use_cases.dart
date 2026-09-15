@@ -658,6 +658,7 @@ class _MigrationDesktopRouteHarnessState
 // --- Desktop provider scope ------------------------------------------------
 
 Widget _migrationDesktopScope({
+  Key? key,
   required Widget child,
   required IronwoodMigrationInputs inputs,
   OrchardMigrationStatusGetter? statusGetter,
@@ -665,6 +666,7 @@ Widget _migrationDesktopScope({
   List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
+    key: key,
     overrides: [
       ironwoodMigrationServiceProvider.overrideWithValue(WbMigrationService()),
       ..._migrationSidebarOverrides,
@@ -1757,6 +1759,8 @@ Widget migrationPrivateReviewDataFixture({
 }) {
   final startFailure = data == MigrationPrivateReviewDataCase.startFailure;
   return _migrationDesktopScope(
+    // Reset the driver, route, and provider overrides together on knob changes.
+    key: ValueKey(data),
     inputs: _migrationInputs(),
     // `activeRunId` stays null, so the start path's "did it start anyway?"
     // check answers no and the error reaches the screen.
@@ -1822,6 +1826,7 @@ Widget migrationVirtualUnlockSubmitFixture({
   bool reducedMotion = false,
 }) {
   return ProviderScope(
+    key: ValueKey(state),
     overrides: [
       appSecurityProvider.overrideWith(
         () => _MigrationUnlockSecurityNotifier(
