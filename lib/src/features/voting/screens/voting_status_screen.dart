@@ -528,7 +528,6 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletScannedHeight: state.walletScannedHeight,
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
-          walletSyncStalled: state.walletSyncStalled,
           errorMessage: _sessionErrorMessage(state, localError),
           terminalDelegationNotice: state.terminalDelegationNotice,
           onRetry: _retry,
@@ -799,7 +798,6 @@ class _StatusContent extends StatelessWidget {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
-    this.walletSyncStalled = false,
     this.errorMessage,
     this.terminalDelegationNotice,
     this.onRetry,
@@ -837,10 +835,6 @@ class _StatusContent extends StatelessWidget {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
-
-  /// Sync stopped advancing toward the snapshot. Voting still resumes by
-  /// itself when sync recovers, so this only softens the copy.
-  final bool walletSyncStalled;
 
   final String? errorMessage;
 
@@ -907,7 +901,6 @@ class _StatusContent extends StatelessWidget {
                   scannedHeight: walletScannedHeight,
                   snapshotHeight: walletSnapshotHeight,
                   chainTipHeight: walletChainTipHeight,
-                  stalled: walletSyncStalled,
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -1022,13 +1015,11 @@ class _WalletSyncProgressText extends StatelessWidget {
     required this.scannedHeight,
     required this.snapshotHeight,
     required this.chainTipHeight,
-    required this.stalled,
   });
 
   final int? scannedHeight;
   final int? snapshotHeight;
   final int? chainTipHeight;
-  final bool stalled;
 
   @override
   Widget build(BuildContext context) {
@@ -1060,7 +1051,7 @@ class _WalletSyncProgressText extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              stalled ? 'Wallet sync has stalled' : 'Waiting for wallet sync',
+              'Waiting for wallet sync',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1068,9 +1059,7 @@ class _WalletSyncProgressText extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              stalled
-                  ? 'Wallet sync has stopped advancing toward this voting round snapshot. Voting will continue automatically once sync resumes and reaches the snapshot block.'
-                  : 'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
+              'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,

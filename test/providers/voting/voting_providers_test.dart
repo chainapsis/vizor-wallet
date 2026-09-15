@@ -2976,12 +2976,14 @@ void main() {
       // frontier, so the wait never reported a stall.
       expect(elapsed.elapsed, greaterThan(const Duration(milliseconds: 200)));
       expect(state.phase, VotingSessionPhase.readyToDelegate);
-      expect(state.walletSyncStalled, isFalse);
       expect(state.error, isNull);
     },
   );
 
-  test('a pinned frontier with no engine progress marks the session stalled', () async {
+  test('a pinned frontier with no engine progress fails the wait', () async {
+    // Nothing renders a waiting session, and the wait holds the session's
+    // serialized action queue, so a stall must surface as a retryable error
+    // rather than parking the session silently.
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
       responses: const [
@@ -3010,34 +3012,54 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(votingSessionProvider(kRoundId).future);
-    // Never completes: a UI-owned session keeps waiting through a stall.
-    unawaited(
-      container.read(votingSessionProvider(kRoundId).notifier)
-          .prepareDelegation(),
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(isVotingWalletSyncStalled(state.error?.cause), isTrue);
+    // The submission job's recovery poll reads the snapshot height back off
+    // this state, so the stall keeps the readiness heights.
+    expect(state.walletScannedHeight, 100);
+    expect(state.walletSnapshotHeight, 123);
+  });
+
+  test('the wait stops once the round\'s voting window closes', () async {
+    // Reaching the snapshot after voting closed cannot produce an accepted
+    // vote, so a wallet that is still advancing must stop waiting anyway.
+    final rust = FakeVotingRustApi();
+    var scanned = 100;
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: [
+        for (var i = 0; i < 64; i++)
+          VotingWalletSyncReadiness(
+            scannedHeight: scanned++,
+            snapshotHeight: 123,
+            chainTipHeight: 130,
+          ),
+      ],
     );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      extraOverrides: [
+        // Well past the fixture round's vote_end_time.
+        votingHomeClockProvider.overrideWithValue(() => DateTime.utc(2200)),
+      ],
+    );
+    addTearDown(container.dispose);
 
-    VotingSessionState? stalledState;
-    for (var i = 0; i < 200; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      final state = container.read(votingSessionProvider(kRoundId)).value;
-      if (state != null && state.walletSyncStalled) {
-        stalledState = state;
-        break;
-      }
-    }
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
 
-    expect(stalledState, isNotNull, reason: 'wait never reported a stall');
-    // A stall is a display state, not a failure: still waiting, no error,
-    // and the frozen heights are retained for the stalled copy.
-    expect(stalledState!.phase, VotingSessionPhase.waitingForWalletSync);
-    expect(stalledState.error, isNull);
-    expect(stalledState.walletScannedHeight, 100);
-    expect(stalledState.walletSnapshotHeight, 123);
-
-    // The loop keeps polling rather than giving up.
-    final callsAtStall = readiness.calls;
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(readiness.calls, greaterThan(callsAtStall));
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(isVotingRoundEnded(state.error?.cause), isTrue);
+    expect(isVotingWalletSyncStalled(state.error?.cause), isFalse);
   });
 
   test('engine progress keeps a pinned frontier from stalling', () async {
@@ -3081,7 +3103,8 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     unawaited(
-      container.read(votingSessionProvider(kRoundId).notifier)
+      container
+          .read(votingSessionProvider(kRoundId).notifier)
           .prepareDelegation(),
     );
 
@@ -3090,7 +3113,7 @@ void main() {
 
     expect(readiness.calls, greaterThan(3));
     expect(state.phase, VotingSessionPhase.waitingForWalletSync);
-    expect(state.walletSyncStalled, isFalse);
+    expect(state.error, isNull);
   });
 
   test('preparation progress keeps a pinned frontier from stalling', () async {
@@ -3132,7 +3155,8 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     unawaited(
-      container.read(votingSessionProvider(kRoundId).notifier)
+      container
+          .read(votingSessionProvider(kRoundId).notifier)
           .prepareDelegation(),
     );
 
@@ -3141,7 +3165,7 @@ void main() {
 
     expect(readiness.calls, greaterThan(3));
     expect(state.phase, VotingSessionPhase.waitingForWalletSync);
-    expect(state.walletSyncStalled, isFalse);
+    expect(state.error, isNull);
   });
 
   test('wallet sync wait aborts stale account before queued action', () async {
