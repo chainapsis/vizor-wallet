@@ -292,3 +292,59 @@ fn internal_interval_reduces_utxo_frequency_without_suppressing_spend_history() 
     assert!(!db.transaction_data_requests().unwrap().iter().any(|r| matches!(r,
         TransactionDataRequest::TransactionsInvolvingAddress(req) if req.address().encode(&network) == *skipped)));
 }
+
+#[test]
+fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "history").unwrap();
+    let address =
+        keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap()[0].clone();
+    let address = TransparentAddress::decode(&network, &address).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let tip = BlockHeight::from_u32(2_000_100);
+    db.update_chain_tip(tip).unwrap();
+    let mut receipts = Vec::new();
+    for index in 1..=10 {
+        let tx = legacy_transaction(OutPoint::new([index; 32], 0), address, 1_000_000);
+        store_transparent_outputs(&mut db, &[downloaded(&uuid, &tx, 100)]).unwrap();
+        decrypt_and_store_transaction(&network, &mut db, &tx, Some(BlockHeight::from_u32(100)))
+            .unwrap();
+        receipts.push(tx);
+    }
+    db.update_chain_tip(tip + 1).unwrap();
+    let requests = db.transaction_data_requests().unwrap();
+    let count = requests.iter().filter(|r| matches!(r, TransactionDataRequest::TransactionsInvolvingAddress(r) if r.address() == address && r.block_range_end().is_some())).count();
+    assert_eq!(
+        count, 10,
+        "real backend emits one overlapping range per receipt"
+    );
+    let planned = address_history::plan(&requests);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].len(), 1, "ten network requests become one");
+    // Planning has no completion side effect; cancellation can retry the same range.
+    assert_eq!(
+        address_history::plan(&db.transaction_data_requests().unwrap()),
+        planned
+    );
+    let spend = legacy_transaction(
+        OutPoint::new(*receipts[0].txid().as_ref(), 0),
+        TransparentAddress::PublicKeyHash([77; 20]),
+        990_000,
+    );
+    decrypt_and_store_transaction(&network, &mut db, &spend, Some(tip + 1)).unwrap();
+    let req = planned[0][0].clone();
+    db.notify_address_checked(req.clone(), req.block_range_end().unwrap() - 1)
+        .unwrap();
+    assert!(address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+    db.update_chain_tip(tip + 2).unwrap();
+    let requests = db.transaction_data_requests().unwrap();
+    let remaining = requests.iter().filter(|r| matches!(r, TransactionDataRequest::TransactionsInvolvingAddress(r) if r.address() == address && r.block_range_end().is_some())).count();
+    assert_eq!(remaining, 9, "the spent output is no longer watched");
+    let next = address_history::plan(&requests);
+    assert_eq!(next[0][0].block_range_start(), tip + 2);
+}

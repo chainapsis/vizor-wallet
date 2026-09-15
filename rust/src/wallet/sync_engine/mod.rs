@@ -45,6 +45,7 @@ use {
     zcash_script::script,
 };
 
+mod address_history;
 mod block_source;
 mod enhance;
 mod error;
@@ -3772,7 +3773,7 @@ async fn run_sync_impl(
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -4184,7 +4185,9 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+            if let Err(error) =
+                run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await
+            {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
                     elapsed(),

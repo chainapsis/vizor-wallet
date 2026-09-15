@@ -25,6 +25,8 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use futures::{FutureExt, StreamExt};
+
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
@@ -56,10 +58,11 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
-    let mut failed_addresses: HashSet<String> = HashSet::new();
+    let mut failed_addresses = HashSet::new();
 
     backfill_stored_fees(client, db, db_path).await?;
 
@@ -80,7 +83,7 @@ pub(super) async fn run_enhancement(
             break;
         }
 
-        'requests: for req in &requests {
+        for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
@@ -158,78 +161,90 @@ pub(super) async fn run_enhancement(
                         },
                     }
                 }
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                    let end_height = match req.block_range_end() {
-                        Some(h) => h,
-                        None => continue,
-                    };
-                    let addr_str = zcash_keys::encoding::encode_transparent_address_p(
-                        &network,
-                        &req.address(),
-                    );
-                    if failed_addresses.contains(&addr_str) {
-                        continue;
-                    }
-                    let start = u32::from(req.block_range_start()) as u64;
-                    let end = u32::from(end_height) as u64;
-
-                    match lwd::get_taddress_txids(
-                        client,
-                        addr_str.clone(),
-                        start,
-                        end.saturating_sub(1),
-                    )
-                    .await
-                    {
-                        Ok(mut stream) => {
-                            let mut fee_client = client.clone();
-                            loop {
-                                match lwd::next_stream_message(
-                                    &mut stream,
-                                    "get_taddress_txids stream",
-                                )
-                                .await
-                                {
-                                    Ok(Some(raw)) => {
-                                        let processed = store_address_transaction(
-                                            &network, db, &raw.data, raw.height,
-                                        );
-                                        let tx = match processed {
-                                            Ok(tx) => tx,
-                                            Err(error) => {
-                                                log::warn!("sync: address transaction processing failed; leaving range unchecked for retry: {error}");
-                                                failed_addresses.insert(addr_str.clone());
-                                                continue 'requests;
-                                            }
-                                        };
-                                        if let Err(e) =
-                                            fill_missing_fee(&mut fee_client, db_path, &tx).await
-                                        {
-                                            log::warn!(
-                                                "sync: fee enhancement (addr) failed for {}: {e}",
-                                                tx.txid()
-                                            );
-                                        }
-                                    }
-                                    Ok(None) => break,
-                                    Err(e) => return Err(e),
-                                }
-                            }
-                            // Only advance after the complete stream has been
-                            // decoded and stored. Otherwise long-offline wallets
-                            // repeat the first bounded spend-search range forever.
-                            if let Err(error) = with_wallet_db_write_lock(
-                                "sync_engine.notify_address_checked",
-                                || db.notify_address_checked(req.clone(), end_height - 1),
-                            ) {
-                                log::warn!("sync: address completion write failed; retrying on a later sync: {error}");
-                                failed_addresses.insert(addr_str);
-                            }
+                TransactionDataRequest::TransactionsInvolvingAddress(_) => {}
+            }
+        }
+        let mut planned = super::address_history::plan(&requests);
+        planned.retain(|group| !failed_addresses.contains(&group[0].address()));
+        let download_client = client.clone();
+        let open: super::address_history::OpenHistory = Box::new(move |req| {
+            let mut client = download_client.clone();
+            async move {
+                let address =
+                    zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
+                let stream = lwd::get_taddress_txids(
+                    &mut client,
+                    address,
+                    u64::from(u32::from(req.block_range_start())),
+                    u64::from(u32::from(req.block_range_end().unwrap())) - 1,
+                )
+                .await?;
+                Ok(
+                    futures::stream::try_unfold(stream, |mut stream| async move {
+                        Ok(
+                            lwd::next_stream_message(&mut stream, "get_taddress_txids stream")
+                                .await?
+                                .map(|raw| (raw, stream)),
+                        )
+                    })
+                    .boxed(),
+                )
+            }
+            .boxed()
+        });
+        let mut reads = super::address_history::HistoryReads::new(planned, open);
+        loop {
+            let event = tokio::select! {
+                biased;
+                _ = super::watch_for_exit(should_exit) => return Ok(()),
+                event = reads.next() => event,
+            };
+            let Some((mut read, result)) = event else {
+                break;
+            };
+            if should_exit() {
+                return Ok(());
+            }
+            let req = read.request().clone();
+            match result? {
+                Some(raw) => {
+                    let tx = match store_address_transaction(&network, db, &raw.data, raw.height) {
+                        Ok(tx) => tx,
+                        Err(error) => {
+                            log::warn!("sync: address transaction processing failed; leaving range unchecked for retry: {error}");
+                            failed_addresses.insert(req.address());
+                            continue;
                         }
-                        Err(e) => return Err(e),
+                    };
+                    let fee_result = tokio::select! {
+                        biased;
+                        _ = super::watch_for_exit(should_exit) => return Ok(()),
+                        result = fill_missing_fee(client, db_path, &tx) => result,
+                    };
+                    if let Err(error) = fee_result {
+                        log::warn!(
+                            "sync: fee enhancement (addr) failed for {}: {error}",
+                            tx.txid()
+                        );
                     }
                 }
+                None => {
+                    if let Err(error) =
+                        with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
+                            db.notify_address_checked(
+                                req.clone(),
+                                req.block_range_end().unwrap() - 1,
+                            )
+                        })
+                    {
+                        log::warn!("sync: address completion write failed; retrying on a later sync: {error}");
+                        failed_addresses.insert(req.address());
+                        continue;
+                    }
+                    read.finish_range();
+                }
             }
+            reads.resume(read);
         }
     }
     Ok(())

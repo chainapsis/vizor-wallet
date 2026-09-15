@@ -75,6 +75,25 @@ may wait until a later enhancement invocation, normally after the next block sca
 `spend-index` is not enabled in the resolved dependency graph. This code uses
 the existing address-based spend detection and does not change server RPCs.
 
+## Address-history query scheduling
+
+Enhancement coalesces identical, overlapping, and adjacent bounded history
+requests for the same address when their filters and scheduling constraints
+match. The merged range is split at the backend's existing expiry-window bound.
+Unbounded requests retain their existing skipped behavior. Distinct addresses
+have up to four streams in flight; each address advances in height order only
+after its current stream has ended and all transactions and completion have been
+stored. Download futures hold at most one decoded wire message per active address,
+not the entire history. DB writes and fee processing remain sequential.
+
+A parse or storage failure drops the remaining ranges for that address for this
+invocation while other addresses continue. Network failures retain the outer
+sync retry behavior. Cancellation drops the pending streams without acknowledging
+unfinished ranges; already committed transactions can safely be seen on retry.
+No detached background task or new persistent scheduling state is introduced.
+This reduces duplicate requests and overlaps network waits; it does not lower
+spend-check frequency or promise a fourfold overall sync speedup.
+
 ## Limits
 
 This searches addresses already generated within the wallet's supported gap
