@@ -52,6 +52,7 @@ import '../src/rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../src/rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../src/rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import 'support/wb_layout.dart';
+import 'support/wb_voting_dates.dart';
 import 'support/wb_sidebar.dart';
 
 // ---------------------------------------------------------------------------
@@ -840,7 +841,10 @@ Widget votingPollCardFixture({
             "governance, but it represents the coinholders' view about "
             'NSM, supply, and release timing.',
       if (date == VotingPollCardDate.endDate)
-        'vote_end_time': '2026-08-24T12:00:00Z',
+        'vote_end_time': state == VotingPollCardState.closed ||
+                state == VotingPollCardState.tallying
+            ? '2026-08-24T12:00:00Z'
+            : wbVotingActiveEndTime,
       if (date == VotingPollCardDate.startDate)
         'ceremony_phase_start': '2026-08-01T12:00:00Z',
       if (forumLink)
@@ -1768,11 +1772,11 @@ final _previewRoundDetails = VotingRoundDetails(
   rawJson: _previewRoundJson,
 );
 
-const _previewRoundJson = <String, dynamic>{
+final _previewRoundJson = <String, dynamic>{
   'title': '[TEST] Very Serious Snack Governance 3',
   'status': 'active',
   'snapshot_height': 3543600,
-  'vote_end_time': '2026-08-24T12:00:00Z',
+  'vote_end_time': wbVotingActiveEndTime,
   'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
   'proposals': [
     {
@@ -1807,7 +1811,7 @@ const _previewRoundJson = <String, dynamic>{
 const _previewActiveRoundId = 'nu7-scope-active';
 const _previewIneligibleRoundId = 'nu7-scope-ineligible';
 
-const _previewPollListRounds = [
+final _previewPollListRounds = [
   VotingRoundView(
     roundId: _previewActiveRoundId,
     title: 'NU7 Scope',
@@ -1825,12 +1829,15 @@ const _previewPollListRounds = [
     roundId: 'nu7-scope-closed',
     title: 'Official Snack of the Next Team Sync',
     status: 'closed',
-    rawJson: _previewPollListRoundJson,
+    rawJson: {
+      ..._previewPollListRoundJson,
+      'vote_end_time': '2026-08-24T12:00:00Z',
+    },
   ),
 ];
 
 /// One ineligible row beside the eligible ones, so the list shows both.
-const _previewMixedEligibilityRounds = [
+final _previewMixedEligibilityRounds = [
   VotingRoundView(
     roundId: _previewIneligibleRoundId,
     title: 'NU7 Scope',
@@ -1840,12 +1847,12 @@ const _previewMixedEligibilityRounds = [
   ..._previewPollListRounds,
 ];
 
-const _previewPollListRoundJson = <String, dynamic>{
+final _previewPollListRoundJson = <String, dynamic>{
   'description':
       'This vote concerns the scope of NU7. It is one component of '
       "governance, but it represents the coinholders' view about NSM, "
       'supply, and release timing.',
-  'vote_end_time': '2026-08-24T12:00:00Z',
+  'vote_end_time': wbVotingActiveEndTime,
   'forum_url': 'https://forum.zcashcommunity.com/t/nu7-scope',
 };
 
@@ -1853,17 +1860,29 @@ const _previewPollListRoundJson = <String, dynamic>{
 
 final _previewClosedRoundDetails = _previewRoundDetailsWith(
   status: 'closed',
-  json: {..._previewRoundJson, 'status': 'closed'},
+  json: {
+    ..._previewRoundJson,
+    'status': 'closed',
+    'vote_end_time': '2026-08-24T12:00:00Z',
+  },
 );
 
 final _previewTallyingRoundDetails = _previewRoundDetailsWith(
   status: 'tallying',
-  json: {..._previewRoundJson, 'status': 'tallying'},
+  json: {
+    ..._previewRoundJson,
+    'status': 'tallying',
+    'vote_end_time': '2026-08-24T12:00:00Z',
+  },
 );
 
 final _previewProposalFreeRoundDetails = _previewRoundDetailsWith(
   status: 'closed',
-  json: {..._previewRoundJson, 'status': 'closed'}..remove('proposals'),
+  json: {
+    ..._previewRoundJson,
+    'status': 'closed',
+    'vote_end_time': '2026-08-24T12:00:00Z',
+  }..remove('proposals'),
 );
 
 VotingRoundDetails _previewRoundDetailsWith({

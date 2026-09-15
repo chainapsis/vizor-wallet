@@ -27,6 +27,7 @@ import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
+import '../src/providers/voting/voting_service_providers.dart';
 import '../src/providers/voting/voting_poll_eligibility_provider.dart';
 import '../src/providers/voting/voting_pir_warmup_provider.dart';
 import '../src/providers/voting/voting_round_visibility_provider.dart';
@@ -37,6 +38,7 @@ import '../src/rust/third_party/zcash_voting/config.dart';
 import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_voting_dates.dart';
 
 /// Which shell the voted-poll fixture is framed in. `VotingVotedPollContent`
 /// itself branches on `kAppFormFactor`, so this only picks the surrounding
@@ -250,6 +252,10 @@ Widget votingConfigSettingsFixture({
     // spinner.
     retry: (_, _) => null,
     overrides: [
+      // Custom-source validation is unavailable in this static preview.
+      votingHttpClientProvider.overrideWith(
+        (_) => throw StateError('Source validation is preview-only.'),
+      ),
       votingParticipationUnavailableProvider.overrideWith(
         (ref, roundId) => false,
       ),
@@ -295,10 +301,7 @@ Widget votingConfigSettingsFixture({
       layout == WbLayout.mobile
           ? const WbFrame(
               layout: WbLayout.mobile,
-              child: MobileModalOverlay(
-                background: MobileVotingPollsScreen(),
-                child: MobileVotingConfigSettingsSheet(),
-              ),
+              child: _VotingSettingsSheetHost(),
             )
           : WbFrame(
               layout: WbLayout.desktop,
@@ -316,6 +319,42 @@ Widget votingConfigSettingsFixture({
               ),
             ),
     ),
+  );
+}
+
+/// Own both routes so even an unconditional production pop stays local.
+class _VotingSettingsSheetHost extends StatefulWidget {
+  const _VotingSettingsSheetHost();
+
+  @override
+  State<_VotingSettingsSheetHost> createState() => _VotingSettingsSheetHostState();
+}
+
+class _VotingSettingsSheetHostState extends State<_VotingSettingsSheetHost> {
+  bool _open = true;
+
+  @override
+  Widget build(BuildContext context) => Navigator(
+    pages: [
+      MaterialPage<void>(
+        key: const ValueKey('voting_settings_preview_base'),
+        child: Center(
+          child: AppButton(
+            onPressed: () => setState(() => _open = true),
+            child: const Text('Reopen voting settings'),
+          ),
+        ),
+      ),
+      if (_open)
+        const MaterialPage<void>(
+          key: ValueKey('voting_settings_preview_sheet'),
+          child: MobileModalOverlay(
+            background: MobileVotingPollsScreen(),
+            child: MobileVotingConfigSettingsSheet(),
+          ),
+        ),
+    ],
+    onDidRemovePage: (_) => setState(() => _open = false),
   );
 }
 
@@ -543,7 +582,7 @@ Widget votingActivePollFixture(
               'without using real governance content.'
         : '',
     forumUri: Uri.parse('https://forum.zcashcommunity.com/t/nsm'),
-    endDate: showEndDate ? DateTime(2026, 8, 24) : null,
+    endDate: showEndDate ? wbVotingActiveEndDate : null,
     votingPowerZatoshi: power != VotingActivePollPower.amount
         ? null
         : eligibilityUnknown
@@ -1030,7 +1069,7 @@ class _PreviewVotingRoundsNotifier extends VotingRoundsNotifier {
 
   @override
   Future<void> reload() async {
-    state = const AsyncData(_previewVotingRounds);
+    state = AsyncData(_previewVotingRounds);
   }
 }
 
@@ -1054,7 +1093,7 @@ final _eligibilityPreviewRounds = [
         'description':
             'This vote concerns the scope of NU7. It is one component of '
             "governance, but it represents the coinholders' view about NSM, supply...",
-        'vote_end_time': '2026-08-24T12:00:00Z',
+        'vote_end_time': wbVotingActiveEndTime,
         if (id == 'nu7-ineligible')
           'forum_url': 'https://forum.zcashcommunity.com/t/nu7-scope',
       },
@@ -1158,7 +1197,7 @@ const _previewSourceState = VotingConfigSourceState(
   savedSources: [_previewSavedSource],
 );
 
-const _previewVotingRounds = [
+final _previewVotingRounds = [
   VotingRoundView(
     roundId: 'snack-governance-active',
     title: '[TEST] Very Serious Snack Governance 3',
@@ -1168,7 +1207,7 @@ const _previewVotingRounds = [
           'Welcome\n\nThis poll resolves outstanding NU7 scope questions '
           'following the early-2026 sentiment polling. Already in NU7, '
           'established by prior consensus.',
-      'vote_end_time': '2026-08-24T12:00:00Z',
+      'vote_end_time': wbVotingActiveEndTime,
       'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
@@ -1181,7 +1220,7 @@ const _previewVotingRounds = [
       'description':
           'A silly sample round for testing the shielded vote builder without '
           'using real governance content.',
-      'vote_end_time': '2026-08-24T12:00:00Z',
+      'vote_end_time': wbVotingActiveEndTime,
       'forum_url': 'https://forum.zcashcommunity.com/t/snack-governance',
     },
   ),
