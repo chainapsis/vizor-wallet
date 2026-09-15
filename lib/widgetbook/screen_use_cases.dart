@@ -43,7 +43,6 @@ import '../src/features/migration/providers/ironwood_migration_announcement_prov
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
-import '../src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
@@ -86,6 +85,10 @@ import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
+import 'support/wb_migration_service.dart';
+import 'migration_use_cases.dart' show migrationVirtualUnlockFixture;
+import '../src/features/migration/services/ironwood_migration_service.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -247,8 +250,9 @@ Widget buildUnlockLoginUseCase(BuildContext context) {
 }
 
 Widget buildIronwoodMigrationPrivacyLockUseCase(BuildContext context) {
-  return const ProviderScope(
-    child: WbDesktopWindowBox(child: IronwoodMigrationVirtualUnlockScreen()),
+  return migrationVirtualUnlockFixture(
+    showMigrationInProgress: true,
+    reducedMotion: false,
   );
 }
 
@@ -1818,34 +1822,171 @@ Widget buildIronwoodMigrationPostPrepareActiveUseCase(BuildContext context) {
 }
 
 Widget buildMobileIronwoodMigrationIntroUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.intro,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-intro'),
+    initialLocation: '/migration/intro',
   );
 }
 
 Widget buildMobileIronwoodMigrationHowItWorksUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.howItWorks,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-how-it-works'),
+    initialLocation: '/migration/how-it-works',
   );
 }
 
 Widget buildMobileIronwoodMigrationOptionsUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.options,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-options'),
+    initialLocation: '/migration/options',
   );
 }
 
 Widget buildMobileIronwoodMigrationAndroidOptionsUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.options,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-options-no-private'),
+    initialLocation: '/migration/options',
     privateMigrationSupported: false,
   );
 }
 
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.fastReview,
-    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  return const _MobileMigrationFlowPreview();
+}
+
+class _MobileMigrationFlowPreview extends StatefulWidget {
+  const _MobileMigrationFlowPreview({
+    this.initialLocation = '/migration/immediate/review',
+    this.privateMigrationSupported = true,
+    super.key,
+  });
+
+  final String initialLocation;
+  final bool privateMigrationSupported;
+
+  @override
+  State<_MobileMigrationFlowPreview> createState() =>
+      _MobileMigrationFlowPreviewState();
+}
+
+class _MobileMigrationFlowPreviewState
+    extends State<_MobileMigrationFlowPreview> {
+  late final _account = _ironwoodMigrationAccountState();
+  late final _router = GoRouter(
+    initialLocation: widget.initialLocation,
+    routes: [
+      for (final entry in {
+        '/migration/intro': MobileIronwoodMigrationStep.intro,
+        '/migration/how-it-works': MobileIronwoodMigrationStep.howItWorks,
+        '/migration/options': MobileIronwoodMigrationStep.options,
+      }.entries)
+        GoRoute(
+          path: entry.key,
+          builder: (_, _) => MobileIronwoodMigrationFlowScreen(
+            step: entry.value,
+            previewData: _ironwoodMigrationFlowData(
+              zatoshi: BigInt.from(14_223_000_000),
+            ),
+            privateMigrationSupported: widget.privateMigrationSupported,
+            openReleaseNotes: _ignoreMobileIronwoodReleaseNotes,
+          ),
+        ),
+      GoRoute(
+        path: '/migration/fast/review',
+        redirect: (_, _) => '/migration/immediate/review',
+      ),
+      GoRoute(
+        path: '/migration/immediate/review',
+        builder: (_, _) => MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+          previewData: _ironwoodMigrationFlowData(
+            zatoshi: BigInt.from(14_224_000_000),
+          ),
+          previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+        ),
+      ),
+      for (final path in [
+        '/home',
+        '/migration/private/notifications',
+        '/migration/private/start',
+      ])
+        GoRoute(
+          path: path,
+          builder: (context, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Preview: $path'),
+                if (path != '/home')
+                  const Text(
+                    'Private migration execution is unavailable in this preview.',
+                    textAlign: TextAlign.center,
+                  ),
+                AppButton(
+                  onPressed: () => context.go(
+                    path == '/home'
+                        ? widget.initialLocation
+                        : '/migration/options',
+                  ),
+                  child: Text(
+                    path == '/home' ? 'Restart preview' : 'Back to options',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProviderScope(
+    overrides: [
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(_account)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(_account.activeAccountUuid),
+      ),
+      ironwoodMigrationServiceProvider.overrideWithValue(
+        _PreviewImmediateMigrationService(),
+      ),
+      ironwoodHomeMigrationCtaProvider.overrideWith(
+        (ref) async => const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+      ironwoodMigrationRouteCtaProvider.overrideWith(
+        (ref) async => const IronwoodHomeMigrationCtaState.hidden(),
+      ),
+      ironwoodPostMigrationStateProvider.overrideWith(
+        (ref) async => const IronwoodPostMigrationState.inactive(),
+      ),
+    ],
+    child: _MobilePreviewFrame(child: Router.withConfig(config: _router)),
+  );
+}
+
+class _PreviewImmediateMigrationService extends WbMigrationService {
+  @override
+  Future<IronwoodMigrationNotificationAuthorizationStatus>
+  notificationAuthorizationStatus() async =>
+      IronwoodMigrationNotificationAuthorizationStatus.notDetermined;
+
+  @override
+  Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) async => rust_sync.IronwoodMigrationResult(
+    txids: 'preview-only',
+    status: 'broadcasted',
+    broadcastedCount: 1,
+    totalCount: 1,
+    feeZatoshi: approvedPlan.feeZatoshi,
+    migratedZatoshi: approvedPlan.migratedZatoshi,
+    message: 'Simulated preview. No transaction was signed or broadcast.',
   );
 }
 
@@ -2095,37 +2236,40 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
   // Production only knows the round split and message count once the request
   // is encoded, so the loading state carries neither.
   final loading = state == MobileIronwoodKeystoneSigningViewState.loading;
-  return SizedBox(
-    width: 393,
-    height: 852,
-    child: MediaQuery(
-      data: const MediaQueryData(
-        size: Size(393, 852),
-        viewPadding: EdgeInsets.only(top: 55),
-      ),
-      child: MobileIronwoodKeystoneSigningView(
-        state: state,
-        round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        // A multi-round request: the badge and the per-round transaction count
-        // are the states that need previewing.
-        signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
-        signingMessageCountLabel: loading
-            ? null
-            : multiRound
-            ? 'Signs 26 of 51 transactions'
-            : 'Signs 51 transactions',
-        // Mid-scan so the viewfinder-width progress bar and its numeric
-        // readout are visible in the scanner preview.
-        scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
-            ? 0.42
-            : null,
-        qrCode: const _KeystoneMigrationQrPreview(),
-        camera: const _KeystoneMigrationCameraPreview(),
-        onNext: () {},
-        onCancel: () {},
-        onToggleFlashlight: () {},
-        onShowRequestQr: () {},
-        onShowScanHelp: () {},
+  return WbScaleDownBox(
+    size: const Size(393, 852),
+    child: SizedBox(
+      width: 393,
+      height: 852,
+      child: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(393, 852),
+          viewPadding: EdgeInsets.only(top: 55),
+        ),
+        child: MobileIronwoodKeystoneSigningView(
+          state: state,
+          round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+          // A multi-round request: the badge and the per-round transaction count
+          // are the states that need previewing.
+          signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
+          signingMessageCountLabel: loading
+              ? null
+              : multiRound
+              ? 'Signs 26 of 51 transactions'
+              : 'Signs 51 transactions',
+          // Mid-scan so the viewfinder-width progress bar and its numeric
+          // readout are visible in the scanner preview.
+          scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
+              ? 0.42
+              : null,
+          qrCode: const _KeystoneMigrationQrPreview(),
+          camera: const _KeystoneMigrationCameraPreview(),
+          onNext: () {},
+          onCancel: () {},
+          onToggleFlashlight: () {},
+          onShowRequestQr: () {},
+          onShowScanHelp: () {},
+        ),
       ),
     ),
   );
@@ -2415,7 +2559,36 @@ Widget _buildIronwoodMigrationUseCase({
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
+    key: ValueKey((initialLocation, step)),
     overrides: [
+      ironwoodMigrationServiceProvider.overrideWithValue(WbMigrationService()),
+      ironwoodMigrationInputsProvider.overrideWithValue(IronwoodMigrationInputs(
+        ironwoodActiveAtTip: true,
+        network: 'main',
+        accountUuid: accountState.activeAccountUuid,
+        accountName: data.accountName,
+        profilePictureId: data.profilePictureId,
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isBackgroundMode: false,
+        isSyncComplete: false,
+        hasSyncFailure: false,
+        orchardBalance: data.amountZatoshi,
+        orchardPendingBalance: BigInt.zero,
+        ironwoodBalance: BigInt.zero,
+        ironwoodPendingBalance: BigInt.zero,
+      )),
+      walletDbPathGetterProvider.overrideWithValue(() async => '/preview/wallet.db'),
+      orchardMigrationStatusGetterProvider.overrideWithValue(({
+        required String dbPath,
+        required String network,
+        required String accountUuid,
+      }) async => previewStatus ?? _previewPrivateMigrationStatus()),
+      wbSidebarActions,
+      wbPostMigrationState,
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        const IronwoodHomeMigrationCtaState.hidden(),
+      ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       syncProvider.overrideWith(
@@ -3240,6 +3413,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
     _router = GoRouter(
       initialLocation: widget.initialLocation,
       routes: [
+        for (final path in wbSidebarPaths)
+          if (!const ['/home', '/activity', '/settings'].contains(path))
+            GoRoute(path: path, builder: (_, _) => wbSidebarDestination(path)),
         GoRoute(path: '/migration', redirect: (_, _) => '/migration/intro'),
         GoRoute(
           path: '/migration/intro',
@@ -3377,6 +3553,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 'ur:zcash-sign-request/preview-immediate-transaction',
               ],
               previewStartScanning: widget.previewImmediateKeystoneScanner,
+              onOpenFirmware: () {},
             );
           },
         ),
@@ -3403,6 +3580,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             previewUrParts: const [
               'ur:zcash-sign-request/preview-private-split-1',
             ],
+            onOpenFirmware: () {},
           ),
         ),
         GoRoute(
@@ -3429,9 +3607,11 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.colors.macosUtility.window,
-      child: Router.withConfig(config: _router),
+    return WbDesktopWindowBox(
+      child: ColoredBox(
+        color: context.colors.macosUtility.window,
+        child: Router.withConfig(config: _router),
+      ),
     );
   }
 }
@@ -4970,6 +5150,27 @@ class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
   final rust_sync.MigrationStatus? status;
 
   @override
+  Future<void> stop({required String accountUuid, required String runId}) async {}
+
+  @override
+  Future<void> startSoftwareMigration({
+    required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  }) async {}
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
+
+  @override
+  Future<void> retry(String accountUuid, {rust_sync.MigrationStatus? status}) async {}
+
+  @override
+  Future<void> resumeSoftwarePreparation({
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) async {}
+
+  @override
   IronwoodMigrationCoordinatorState build() {
     final uuid = accountUuid;
     final previewStatus = status;
@@ -5262,8 +5463,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       routes: [
         GoRoute(
           path: '/activity',
-          builder: (_, _) =>
-              MobileActivityScreen(historyLoader: (_) async => _history),
+          builder: (_, _) => MobileActivityScreen(
+            historyLoader: (_) async => _history,
+            transactionDetailLoader: (_) async => null,
+          ),
         ),
         GoRoute(
           path: '/activity/tx/:txid',
@@ -5280,6 +5483,7 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
                   ),
               historyLoader: (_) async => _history,
               detailLoader: (_, _) async => null,
+              explorerLauncher: (_) async => true,
             );
           },
         ),
