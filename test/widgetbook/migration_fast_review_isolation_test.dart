@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/widgetbook/gallery/migration_gallery.dart';
@@ -82,8 +83,39 @@ void main() {
         // Back and Done must remain inside this mounted preview router.
         await tester.tap(find.text('Consider another option'));
         await advance();
-        expect(find.text('Preview: /migration/options'), findsOneWidget);
-        await tester.tap(find.text('Restart preview'));
+        expect(find.text('Private'), findsOneWidget);
+        // The private action queries only the fake permission service and
+        // lands on an explicit execution boundary, never native preparation.
+        await tester.tap(find.text('Continue'));
+        await advance();
+        expect(
+          find.text(
+            'Private migration execution is unavailable in this preview.',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Back to options'));
+        await advance();
+        // Follow the real informational back links, then walk forward again.
+        for (var step = 0; step < 2; step++) {
+          await tester.tap(
+            find.descendant(
+              of: find.byType(MobileTopNav),
+              matching: find.byType(GestureDetector),
+            ),
+          );
+          await advance();
+        }
+        await tester.tap(find.text('Official release note'));
+        await advance();
+        await tester.tap(find.text('Next'));
+        await advance();
+        await tester.tap(find.text('Continue'));
+        await advance();
+        expect(find.text('Private'), findsOneWidget);
+        await tester.tap(find.text('Immediate'));
+        await advance();
+        await tester.tap(find.text('Continue'));
         await advance();
         for (var attempt = 0; attempt < 2; attempt++) {
           await tester.tap(find.text('Continue anyway'));

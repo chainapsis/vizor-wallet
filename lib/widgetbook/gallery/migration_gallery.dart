@@ -2,7 +2,6 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../../src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -273,19 +272,6 @@ enum MigrationMobileStepCase { intro, howItWorks, migrationType, fastReview }
 /// migration-type step renders the difference.
 enum MigrationPrivateOptionCase { available, unavailable }
 
-/// The mobile flow screens wrap themselves in a back scope that reads
-/// `GoRouter.of(context)` during build, and the widgetbook host is not a
-/// router; this detached instance answers `canPop()` with false.
-final GoRouter _wbPreviewRouter = GoRouter(
-  routes: [
-    GoRoute(
-      path: '/',
-      builder: (BuildContext context, GoRouterState state) =>
-          const SizedBox.shrink(),
-    ),
-  ],
-);
-
 /// Both flow screens under one `Layout` knob. The step sets do not line up —
 /// desktop has 'What to expect' and the prepare step, mobile has the fast
 /// review — so each layout registers its own step axis instead of sharing one.
@@ -397,26 +383,23 @@ Widget _migrationMobileFlowCase(BuildContext context) {
     options: MigrationPrivateOptionCase.values,
     labelBuilder: migrationPrivateOptionCaseLabel,
   );
-  return InheritedGoRouter(
-    goRouter: _wbPreviewRouter,
-    child: Builder(
-      builder: (BuildContext context) {
-        if (step == MigrationMobileStepCase.migrationType &&
-            privateOption == MigrationPrivateOptionCase.unavailable) {
-          return buildMobileIronwoodMigrationAndroidOptionsUseCase(context);
-        }
-        return switch (step) {
-          MigrationMobileStepCase.intro =>
-            buildMobileIronwoodMigrationIntroUseCase(context),
-          MigrationMobileStepCase.howItWorks =>
-            buildMobileIronwoodMigrationHowItWorksUseCase(context),
-          MigrationMobileStepCase.migrationType =>
-            buildMobileIronwoodMigrationOptionsUseCase(context),
-          MigrationMobileStepCase.fastReview =>
-            buildMobileIronwoodMigrationFastReviewUseCase(context),
-        };
-      },
-    ),
+  return Builder(
+    builder: (BuildContext context) {
+      if (step == MigrationMobileStepCase.migrationType &&
+          privateOption == MigrationPrivateOptionCase.unavailable) {
+        return buildMobileIronwoodMigrationAndroidOptionsUseCase(context);
+      }
+      return switch (step) {
+        MigrationMobileStepCase.intro =>
+          buildMobileIronwoodMigrationIntroUseCase(context),
+        MigrationMobileStepCase.howItWorks =>
+          buildMobileIronwoodMigrationHowItWorksUseCase(context),
+        MigrationMobileStepCase.migrationType =>
+          buildMobileIronwoodMigrationOptionsUseCase(context),
+        MigrationMobileStepCase.fastReview =>
+          buildMobileIronwoodMigrationFastReviewUseCase(context),
+      };
+    },
   );
 }
 

@@ -1822,46 +1822,79 @@ Widget buildIronwoodMigrationPostPrepareActiveUseCase(BuildContext context) {
 }
 
 Widget buildMobileIronwoodMigrationIntroUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.intro,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-intro'),
+    initialLocation: '/migration/intro',
   );
 }
 
 Widget buildMobileIronwoodMigrationHowItWorksUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.howItWorks,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-how-it-works'),
+    initialLocation: '/migration/how-it-works',
   );
 }
 
 Widget buildMobileIronwoodMigrationOptionsUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.options,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-options'),
+    initialLocation: '/migration/options',
   );
 }
 
 Widget buildMobileIronwoodMigrationAndroidOptionsUseCase(BuildContext context) {
-  return _buildMobileIronwoodMigrationUseCase(
-    step: MobileIronwoodMigrationStep.options,
+  return const _MobileMigrationFlowPreview(
+    key: ValueKey('migration-options-no-private'),
+    initialLocation: '/migration/options',
     privateMigrationSupported: false,
   );
 }
 
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
-  return const _MobileFastReviewPreview();
+  return const _MobileMigrationFlowPreview();
 }
 
-class _MobileFastReviewPreview extends StatefulWidget {
-  const _MobileFastReviewPreview();
+class _MobileMigrationFlowPreview extends StatefulWidget {
+  const _MobileMigrationFlowPreview({
+    this.initialLocation = '/migration/immediate/review',
+    this.privateMigrationSupported = true,
+    super.key,
+  });
+
+  final String initialLocation;
+  final bool privateMigrationSupported;
 
   @override
-  State<_MobileFastReviewPreview> createState() => _MobileFastReviewPreviewState();
+  State<_MobileMigrationFlowPreview> createState() =>
+      _MobileMigrationFlowPreviewState();
 }
 
-class _MobileFastReviewPreviewState extends State<_MobileFastReviewPreview> {
+class _MobileMigrationFlowPreviewState
+    extends State<_MobileMigrationFlowPreview> {
   late final _account = _ironwoodMigrationAccountState();
   late final _router = GoRouter(
-    initialLocation: '/migration/immediate/review',
+    initialLocation: widget.initialLocation,
     routes: [
+      for (final entry in {
+        '/migration/intro': MobileIronwoodMigrationStep.intro,
+        '/migration/how-it-works': MobileIronwoodMigrationStep.howItWorks,
+        '/migration/options': MobileIronwoodMigrationStep.options,
+      }.entries)
+        GoRoute(
+          path: entry.key,
+          builder: (_, _) => MobileIronwoodMigrationFlowScreen(
+            step: entry.value,
+            previewData: _ironwoodMigrationFlowData(
+              zatoshi: BigInt.from(14_223_000_000),
+            ),
+            privateMigrationSupported: widget.privateMigrationSupported,
+            openReleaseNotes: _ignoreMobileIronwoodReleaseNotes,
+          ),
+        ),
+      GoRoute(
+        path: '/migration/fast/review',
+        redirect: (_, _) => '/migration/immediate/review',
+      ),
       GoRoute(
         path: '/migration/immediate/review',
         builder: (_, _) => MobileIronwoodMigrationFlowScreen(
@@ -1872,7 +1905,11 @@ class _MobileFastReviewPreviewState extends State<_MobileFastReviewPreview> {
           previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
         ),
       ),
-      for (final path in ['/home', '/migration/options'])
+      for (final path in [
+        '/home',
+        '/migration/private/notifications',
+        '/migration/private/start',
+      ])
         GoRoute(
           path: path,
           builder: (context, _) => Center(
@@ -1880,9 +1917,20 @@ class _MobileFastReviewPreviewState extends State<_MobileFastReviewPreview> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('Preview: $path'),
+                if (path != '/home')
+                  const Text(
+                    'Private migration execution is unavailable in this preview.',
+                    textAlign: TextAlign.center,
+                  ),
                 AppButton(
-                  onPressed: () => context.go('/migration/immediate/review'),
-                  child: const Text('Restart preview'),
+                  onPressed: () => context.go(
+                    path == '/home'
+                        ? widget.initialLocation
+                        : '/migration/options',
+                  ),
+                  child: Text(
+                    path == '/home' ? 'Restart preview' : 'Back to options',
+                  ),
                 ),
               ],
             ),
@@ -1922,6 +1970,11 @@ class _MobileFastReviewPreviewState extends State<_MobileFastReviewPreview> {
 }
 
 class _PreviewImmediateMigrationService extends WbMigrationService {
+  @override
+  Future<IronwoodMigrationNotificationAuthorizationStatus>
+  notificationAuthorizationStatus() async =>
+      IronwoodMigrationNotificationAuthorizationStatus.notDetermined;
+
   @override
   Future<rust_sync.IronwoodMigrationResult> startSoftwareImmediateMigration({
     required String accountUuid,

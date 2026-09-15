@@ -123,6 +123,24 @@ void main() {
         {'Page': 'Review', 'Funding metadata': metadata},
     ]);
   });
+  testWidgets('mobile migration resets its mounted flow on knob changes', (
+    tester,
+  ) async {
+    await expectLiveStates(tester, buildMigrationFlowGalleryCase, [
+      for (final step in [
+        'About Ironwood',
+        'Ironwood steps',
+        'Migration type',
+        'Fast review',
+      ])
+        {'Layout': 'Mobile', 'Step': step, 'Private option': 'Available'},
+      {
+        'Layout': 'Mobile',
+        'Step': 'Migration type',
+        'Private option': 'Unavailable',
+      },
+    ]);
+  });
   testWidgets('desktop migration follows live Step changes', (tester) async {
     if (wbCompiledLaneLayout != WbLayout.desktop) return;
     await expectLiveStates(tester, buildMigrationFlowGalleryCase, [
