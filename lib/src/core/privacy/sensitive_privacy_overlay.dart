@@ -19,6 +19,7 @@ bool get _supportsNativePrivacyShield => supportsNativePrivacyShield(
   isWeb: kIsWeb,
   isMacOS: !kIsWeb && Platform.isMacOS,
   isAndroid: !kIsWeb && Platform.isAndroid,
+  isIOS: !kIsWeb && Platform.isIOS,
 );
 
 @visibleForTesting
@@ -31,13 +32,23 @@ bool supportsPlatformPrivacySignals({
   return !isWeb && isMacOS;
 }
 
+/// Whether the platform can natively blank the app in OS screenshots and
+/// screen recordings via the `com.zcash.wallet/privacy_shield` channel.
+///
+/// - macOS suppresses Mission Control capture of the window.
+/// - Android sets `FLAG_SECURE`.
+/// - iOS re-parents the window layer into a `secureTextEntry` field's canvas
+///   (see `SecureScreenshotShield` in `ios/Runner/AppDelegate.swift`); the
+///   screenshot warning sheet stays as a secondary post-capture UX because
+///   iOS only notifies after the capture completes.
 @visibleForTesting
 bool supportsNativePrivacyShield({
   required bool isWeb,
   required bool isMacOS,
   required bool isAndroid,
+  required bool isIOS,
 }) {
-  return !isWeb && (isMacOS || isAndroid);
+  return !isWeb && (isMacOS || isAndroid || isIOS);
 }
 
 class MacOSPrivacyExposureEvent {
@@ -81,7 +92,24 @@ abstract final class NativeSensitiveContentBridge {
 
   static final Set<int> _visibleTokens = <int>{};
   static int _nextToken = 0;
-  static bool _lastVisible = false;
+  static bool? _lastVisible = false;
+  static bool _listening = false;
+  static int _requestGeneration = 0;
+
+  /// Native attachment status, not proof that OS capture exclusion works.
+  /// Platforms that do not report attachment state leave this as unknown.
+  static final status = ValueNotifier<String>('unknown');
+  static String? failureReason;
+
+  static void _readStatus(Object? reply) {
+    if (reply is! Map || reply['visible'] != _visibleTokens.isNotEmpty) return;
+    final state = reply['state'];
+    if (!const ['applied', 'pending', 'failed', 'disabled'].contains(state)) {
+      return;
+    }
+    failureReason = reply['reason'] as String?;
+    status.value = state as String;
+  }
 
   static int createToken() => _nextToken++;
 
@@ -104,6 +132,9 @@ abstract final class NativeSensitiveContentBridge {
     _visibleTokens.clear();
     _nextToken = 0;
     _lastVisible = false;
+    _requestGeneration++;
+    status.value = 'unknown';
+    failureReason = null;
   }
 
   static void _syncIfNeeded() {
@@ -111,20 +142,39 @@ abstract final class NativeSensitiveContentBridge {
     final visible = _visibleTokens.isNotEmpty;
     if (_lastVisible == visible) return;
     _lastVisible = visible;
-    unawaited(_setSensitiveContentVisible(visible));
+    status.value = 'unknown';
+    failureReason = null;
+    if (!_listening) {
+      _listening = true;
+      _channel.setMethodCallHandler((call) async {
+        if (call.method == 'protectionStatusChanged') {
+          _readStatus(call.arguments);
+        }
+      });
+    }
+    unawaited(_setSensitiveContentVisible(visible, ++_requestGeneration));
   }
 
-  static Future<void> _setSensitiveContentVisible(bool visible) async {
+  static Future<void> _setSensitiveContentVisible(
+    bool visible,
+    int generation,
+  ) async {
     final arguments = <String, Object?>{'visible': visible};
 
     try {
-      await _channel.invokeMethod<void>(
+      final reply = await _channel.invokeMethod<Object?>(
         'setSensitiveContentVisible',
         arguments,
       );
-    } catch (_) {
-      // This bridge only controls native window screenshot policy. The Flutter
-      // overlay remains the visual privacy layer if the channel fails.
+      if (generation == _requestGeneration) _readStatus(reply);
+    } catch (error) {
+      if (generation != _requestGeneration) return;
+      // Allow the next visibility update to retry instead of permanently
+      // deduplicating a request that never reached the native implementation.
+      _lastVisible = null;
+      failureReason = 'channel_error';
+      status.value = 'failed';
+      debugPrint('Native privacy shield request failed: ${error.runtimeType}');
     }
   }
 }
@@ -237,14 +287,14 @@ class SensitivePrivacyEnvironmentController
 
   @override
   void beginAuthPrompt() {
-    if (_authPromptActive) return;
+    if (_disposed || _authPromptActive) return;
     super.beginAuthPrompt();
     _syncSafety();
   }
 
   @override
   void endAuthPrompt() {
-    if (!_authPromptActive) return;
+    if (_disposed || !_authPromptActive) return;
     // The biometric sheet pushes the app to `inactive`; dropping suppression
     // now would flash the shield for the frames before `onResume`/`onShow`
     // arrives. Defer the release to the next foreground transition so
