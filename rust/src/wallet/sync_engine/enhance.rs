@@ -181,54 +181,53 @@ pub(super) async fn run_enhancement(
                                 .await
                                 {
                                     Ok(Some(raw)) => {
-                                        if !raw.data.is_empty() {
-                                            let mined_height =
-                                                mined_height_from_raw_height(raw.height)?;
-                                            match Transaction::read(
-                                                &raw.data[..],
-                                                BranchId::Sapling,
-                                            ) {
-                                                Ok(tx) => {
-                                                    if let Err(e) = with_wallet_db_write_lock(
-                                                        "sync_engine.enhance.decrypt_and_store_transaction",
-                                                        || {
-                                                            decrypt_and_store_transaction(
-                                                                &network,
-                                                                db,
-                                                                &tx,
-                                                                mined_height,
-                                                            )
-                                                        },
-                                                    ) {
-                                                        log::error!(
-                                                            "sync: decrypt_and_store_transaction (addr) failed: {e}"
-                                                        );
-                                                    }
-                                                    if let Err(e) = fill_missing_fee(
-                                                        &mut fee_client,
-                                                        db_path,
-                                                        &tx,
-                                                    )
-                                                    .await
-                                                    {
-                                                        log::warn!(
-                                                            "sync: fee enhancement (addr) failed for {}: {e}",
-                                                            tx.txid()
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    log::warn!(
-                                                        "sync: Transaction::read (addr) failed: {e}"
-                                                    )
-                                                }
-                                            }
+                                        let mined_height =
+                                            mined_height_from_raw_height(raw.height)?;
+                                        // Empty or malformed payloads must not advance
+                                        // the durable address-search completion.
+                                        let tx =
+                                            Transaction::read(&raw.data[..], BranchId::Sapling)
+                                                .map_err(|e| {
+                                                    SyncError::parse(format!(
+                                                        "Transaction::read (addr): {e}"
+                                                    ))
+                                                })?;
+                                        with_wallet_db_write_lock(
+                                            "sync_engine.enhance.decrypt_and_store_transaction",
+                                            || {
+                                                decrypt_and_store_transaction(
+                                                    &network,
+                                                    db,
+                                                    &tx,
+                                                    mined_height,
+                                                )
+                                            },
+                                        )
+                                        .map_err(|e| {
+                                            SyncError::db(format!(
+                                                "decrypt_and_store_transaction (addr): {e}"
+                                            ))
+                                        })?;
+                                        if let Err(e) =
+                                            fill_missing_fee(&mut fee_client, db_path, &tx).await
+                                        {
+                                            log::warn!(
+                                                "sync: fee enhancement (addr) failed for {}: {e}",
+                                                tx.txid()
+                                            );
                                         }
                                     }
                                     Ok(None) => break,
                                     Err(e) => return Err(e),
                                 }
                             }
+                            // Only advance after the complete stream has been
+                            // decoded and stored. Otherwise long-offline wallets
+                            // repeat the first bounded spend-search range forever.
+                            with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
+                                db.notify_address_checked(req.clone(), end_height - 1)
+                            })
+                            .map_err(|e| SyncError::db(format!("notify_address_checked: {e}")))?;
                         }
                         Err(e) => return Err(e),
                     }
