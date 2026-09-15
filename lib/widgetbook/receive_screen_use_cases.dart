@@ -26,6 +26,7 @@ import '../src/core/widgets/app_toast.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/receive/screens/receive_screen.dart';
+import '../src/features/receive/services/receive_clipboard.dart';
 import '../src/features/receive/services/request_qr_export.dart';
 import '../src/features/receive/widgets/mobile/receive_request_sheet.dart';
 import '../src/features/receive/widgets/receive_address_widgets.dart';
@@ -261,6 +262,7 @@ Widget receiveRequestSheetFixture({
         priceAvailable ? kReceiveScreenZecUsdPrice : null,
       ),
       requestShareHandlerProvider.overrideWithValue(_previewShare),
+      receiveClipboardWriterProvider.overrideWithValue((_) async {}),
     ],
     child: _ReceiveRequestSheetFrame(
       address: pool == ReceiveAddressType.shielded

@@ -13,6 +13,7 @@ import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/receive/screens/mobile/mobile_receive_screen.dart';
+import '../src/features/receive/services/receive_clipboard.dart';
 import '../src/features/receive/services/request_qr_export.dart';
 import '../src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
 import '../src/features/receive/widgets/receive_desktop_preview.dart';
@@ -77,8 +78,8 @@ Widget receiveMobileScreenFixture({
 }
 
 /// The actual mobile receive screen and its request sheet, backed only by
-/// in-memory addresses, price and sharing. This is used by the connected flow
-/// playground; the snapshot fixture above intentionally remains unchanged.
+/// in-memory addresses, price, clipboard and sharing. The nested navigator
+/// keeps the connected request flow inside the simulated phone.
 Widget receiveMobileFlowFixture({
   required ReceiveAddressType type,
   bool addressAvailable = true,
@@ -93,6 +94,7 @@ Widget receiveMobileFlowFixture({
             : const _WidgetbookReceiveAddressService(available: false),
       ),
       zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+      receiveClipboardWriterProvider.overrideWithValue((_) async {}),
       requestShareHandlerProvider.overrideWithValue(
         ({required png, required fileName}) async {},
       ),
@@ -107,6 +109,7 @@ Widget receiveMobileFlowFixture({
         // escaping into Widgetbook's desktop-sized navigator.
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
+          builder: (context, child) => WbPhoneBox(child: child!),
           home: MobileReceiveScreen(
             initialType: type,
             shareAddress: _ignoreSharedAddress,
@@ -185,6 +188,7 @@ class _ReceiveMobileHarness extends StatelessWidget {
       overrides: [
         appBootstrapProvider.overrideWithValue(_mobileReceiveBootstrap),
         syncProvider.overrideWith(() => _WidgetbookSyncNotifier()),
+        receiveClipboardWriterProvider.overrideWithValue((_) async {}),
         // Both branches are const, so a rebuild never hands the provider a
         // new identity and the default render stays byte-identical.
         receiveAddressServiceProvider.overrideWithValue(

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +17,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../services/receive_clipboard.dart';
 import '../../widgets/mobile/receive_address_info_sheet.dart';
 import '../../widgets/mobile/receive_request_sheet.dart';
 import '../../widgets/receive_address_widgets.dart';
@@ -195,7 +195,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   Future<void> _copyAddress() async {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: address));
+    await ref.read(receiveClipboardWriterProvider)(address);
     if (!mounted) return;
     showAppToast(context, 'Address copied');
   }

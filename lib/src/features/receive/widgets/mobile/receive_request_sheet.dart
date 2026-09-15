@@ -7,8 +7,8 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,6 +17,7 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/zec_price_change_provider.dart';
+import '../../services/receive_clipboard.dart';
 import '../../services/request_qr_export.dart';
 import '../../services/zec_request_draft.dart';
 import '../request/request_amount_model.dart';
@@ -152,7 +153,7 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   /// failure names the other hand-off, which is still one tap away.
   Future<void> _copyLink(String uri) async {
     try {
-      await Clipboard.setData(ClipboardData(text: uri));
+      await ref.read(receiveClipboardWriterProvider)(uri);
     } catch (e) {
       log('ReceiveRequest: ERROR copying request link: $e');
       if (!mounted) return;
