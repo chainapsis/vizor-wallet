@@ -7459,6 +7459,98 @@ void main() {
     );
   });
 
+  test(
+    'a stalled job stands down when the ballot changes during the wait',
+    () async {
+      // The edit lands while the job is still waiting for sync, so the arming
+      // must pin the ballot captured at job start rather than whatever the
+      // draft holds by the time the stall surfaces.
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: false);
+      final persistence = FakeVotingDraftPersistence();
+      const draftKey = VotingSessionKey(
+        roundId: kRoundId,
+        accountUuid: 'account-1',
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          roundStatus: roundStatusJson(roundId: kRoundId)
+            ..['proposals'] = [
+              {
+                'id': 7,
+                'title': 'One',
+                'options': [
+                  {'index': 0, 'label': 'No'},
+                  {'index': 1, 'label': 'Yes'},
+                ],
+              },
+            ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        draftPersistence: persistence,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 5),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+        extraOverrides: [
+          // Long enough that the edit below lands inside the wait.
+          votingWalletSyncMaxWaitProvider.overrideWithValue(
+            const Duration(milliseconds: 200),
+          ),
+          votingWalletSyncRecoveryPollIntervalProvider.overrideWithValue(
+            const Duration(milliseconds: 5),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final submissionSessionSubscription = container.listen(
+        votingSubmissionSessionProvider(draftKey),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(submissionSessionSubscription.close);
+
+      await container.read(votingSubmissionSessionProvider(draftKey).future);
+      container.read(votingDraftProvider(draftKey).notifier).setChoice(7, 1);
+      await Future<void>.delayed(Duration.zero);
+
+      await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId, accountUuid: 'account-1');
+
+      // Still waiting for sync: the user goes back and changes their vote.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        container.read(votingSubmissionJobProvider(draftKey)).status,
+        isNot(VotingSubmissionJobStatus.error),
+        reason: 'the edit must land while the job is still waiting',
+      );
+      container.read(votingDraftProvider(draftKey).notifier).setChoice(7, 0);
+
+      var failed = false;
+      for (var i = 0; i < 400; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        if (container.read(votingSubmissionJobProvider(draftKey)).status ==
+            VotingSubmissionJobStatus.error) {
+          failed = true;
+          break;
+        }
+      }
+      expect(failed, isTrue, reason: 'job never surfaced the stall');
+
+      readiness.ready = true;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(
+        container.read(votingSubmissionJobProvider(draftKey)).status,
+        VotingSubmissionJobStatus.error,
+      );
+    },
+  );
+
   test('a stalled job stands down when the confirmed ballot changes', () async {
     // The retry reloads the ballot from the durable draft store, so an edit
     // made after the stall would be submitted without anyone reviewing it.

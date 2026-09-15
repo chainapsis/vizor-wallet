@@ -20,10 +20,10 @@ class VotingShareTrackingRegistry {
   /// A null account scope may inspect every account. Account delete/reset block
   /// matching work and await the returned lease before mutating wallet state.
   VoidCallback? beginBackgroundWork({String? accountUuid}) {
-    final accountIsQuiesced = accountUuid == null
-        ? _accountQuiescenceDepths.isNotEmpty
-        : (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
-    if (_globalQuiescenceDepth > 0 || accountIsQuiesced) return null;
+    final blocked = accountUuid == null
+        ? isAnyAccountQuiesced
+        : isQuiesced(accountUuid);
+    if (blocked) return null;
 
     final completion = Completer<void>();
     _backgroundWork[completion] = accountUuid;
