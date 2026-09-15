@@ -640,6 +640,74 @@ bool shouldStartSyncForPolledTip(
       latestTipHeight > (current?.chainTipHeight ?? 0);
 }
 
+@visibleForTesting
+const kRecoveryRestartInitialBackoff = Duration(seconds: 30);
+@visibleForTesting
+const kRecoveryRestartMaxBackoff = Duration(minutes: 10);
+
+/// Rate-limits sync restarts that exist only to retry private recovery.
+///
+/// Durable PIR obligations stay pending for as long as the work cannot
+/// progress — the service has no usable snapshot, its anchor is not scanned
+/// yet, or a rediscovery job cannot be reconstructed. A bare "work remains"
+/// check therefore turns every 10-second poll into a full foreground sync at
+/// an unchanged tip, re-running tip validation, transparent-UTXO refresh, and
+/// the 100-block rediscovery cover download for work that will fail again.
+///
+/// The gate treats an attempt as actionable only once its deadline passes,
+/// and grows the wait only when the previous attempt left the outstanding
+/// count exactly where it was. Any movement — work completed, or new work
+/// discovered by fresh scanning — starts over at the base interval, so a
+/// service that recovers is picked up promptly.
+///
+/// Syncs driven by a new chain tip or an incomplete previous sync are
+/// unaffected: those run recovery anyway, and they coincide with the newly
+/// scanned blocks that can make a stuck job resolvable.
+@visibleForTesting
+class RecoveryRestartGate {
+  RecoveryRestartGate({DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+
+  int? _lastUnits;
+  DateTime? _retryAt;
+  Duration _backoff = kRecoveryRestartInitialBackoff;
+
+  void reset() {
+    _lastUnits = null;
+    _retryAt = null;
+    _backoff = kRecoveryRestartInitialBackoff;
+  }
+
+  /// [outstanding] is the durable query + rediscovery obligation count.
+  /// Suspended work is excluded by the caller: it is not retryable, so it
+  /// must never schedule network work of its own.
+  bool shouldRestart(int outstanding) {
+    if (outstanding <= 0) {
+      reset();
+      return false;
+    }
+    final at = _now();
+    final deadline = _retryAt;
+    if (deadline != null && at.isBefore(deadline)) return false;
+    final previous = _lastUnits;
+    final stalled = previous != null && outstanding == previous;
+    _backoff = stalled
+        ? _doubledBackoff(_backoff)
+        : kRecoveryRestartInitialBackoff;
+    _lastUnits = outstanding;
+    _retryAt = at.add(_backoff);
+    return true;
+  }
+
+  static Duration _doubledBackoff(Duration current) {
+    final doubled = current * 2;
+    return doubled > kRecoveryRestartMaxBackoff
+        ? kRecoveryRestartMaxBackoff
+        : doubled;
+  }
+}
+
 /// Native resume retires the lease and prevents late callbacks from pausing
 /// managers. A stalled channel must therefore fail within the deadline.
 @visibleForTesting
@@ -697,6 +765,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   final Future<String> Function() _walletDbPathResolver;
   bool _isSyncing = false;
   bool _recoverySettingTransition = false;
+  final RecoveryRestartGate _recoveryRestartGate = RecoveryRestartGate();
   int _walletMutationPauseCount = 0;
   int _recoveryStatusReadCount = 0;
   Completer<void>? _recoveryStatusReadsDrained;
@@ -1699,6 +1768,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           } catch (error) {
             log('Could not resume native preparation: $error');
           }
+          // The toggle changes which obligations are retryable at all, so
+          // the previous attempt's backoff no longer describes this wallet.
+          _recoveryRestartGate.reset();
           resumeAfterWalletMutation(pause ?? previousWork);
           if (!_requiresUnlock &&
               _isInForeground &&
@@ -1775,6 +1847,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    _recoveryRestartGate.reset();
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
     ++_syncGen;
@@ -1950,22 +2023,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         log('AutoSync: skipping restart after lock transition');
         return;
       }
-      final recovery = ref.read(enhancePirProvider)
-          ? await recoveryStatus()
-          : null;
-      if (_recoverySettingTransition ||
-          _requiresUnlock ||
-          gen != _syncGen ||
-          epoch != _sensitiveStateEpoch) {
-        return;
+      // Skip the status read entirely when the tip or an incomplete previous
+      // sync already calls for a restart: that sync runs recovery anyway.
+      var recoveryRestart = false;
+      if (!shouldStartSyncForPolledTip(current, tip.toInt()) &&
+          ref.read(enhancePirProvider)) {
+        final recovery = await recoveryStatus();
+        if (_recoverySettingTransition ||
+            _requiresUnlock ||
+            gen != _syncGen ||
+            epoch != _sensitiveStateEpoch) {
+          return;
+        }
+        recoveryRestart = _recoveryRestartGate.shouldRestart(
+          (recovery?.queries ?? 0) + (recovery?.rediscovery ?? 0),
+        );
       }
-      final recoveryPending =
-          ref.read(enhancePirProvider) &&
-          (recovery?.queries ?? 0) + (recovery?.rediscovery ?? 0) > 0;
       if (shouldStartSyncForPolledTip(
         current,
         tip.toInt(),
-        hasActiveRecovery: recoveryPending,
+        hasActiveRecovery: recoveryRestart,
       )) {
         log(
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',

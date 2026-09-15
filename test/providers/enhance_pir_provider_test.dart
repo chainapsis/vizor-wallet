@@ -279,6 +279,83 @@ void main() {
       expect(shouldStartSyncForPolledTip(current, 100), isFalse);
     },
   );
+
+  group('RecoveryRestartGate', () {
+    late DateTime clock;
+    RecoveryRestartGate gate() => RecoveryRestartGate(now: () => clock);
+
+    setUp(() => clock = DateTime.utc(2026));
+
+    test('suspension-only work never schedules a restart', () {
+      expect(gate().shouldRestart(0), isFalse);
+    });
+
+    test('the first outstanding obligation retries immediately', () {
+      expect(gate().shouldRestart(3), isTrue);
+    });
+
+    test('a stalled obligation backs off instead of retrying every poll', () {
+      final g = gate();
+      expect(g.shouldRestart(3), isTrue);
+      // The 10-second poll keeps firing inside the first window.
+      for (var i = 0; i < 2; i++) {
+        clock = clock.add(const Duration(seconds: 10));
+        expect(g.shouldRestart(3), isFalse);
+      }
+      clock = clock.add(const Duration(seconds: 10));
+      expect(g.shouldRestart(3), isTrue);
+      // The unchanged count doubled the wait, so the old interval is too soon.
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isFalse);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue);
+    });
+
+    test('the backoff is capped', () {
+      final g = gate();
+      for (var i = 0; i < 20; i++) {
+        clock = clock.add(kRecoveryRestartMaxBackoff);
+        expect(g.shouldRestart(3), isTrue);
+      }
+      clock = clock.add(
+        kRecoveryRestartMaxBackoff - const Duration(seconds: 1),
+      );
+      expect(g.shouldRestart(3), isFalse);
+      clock = clock.add(const Duration(seconds: 1));
+      expect(g.shouldRestart(3), isTrue);
+    });
+
+    test('progress restores the base interval', () {
+      final g = gate();
+      expect(g.shouldRestart(3), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
+      clock = clock.add(const Duration(seconds: 60));
+      expect(g.shouldRestart(2), isTrue); // progressed
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(2), isTrue); // base interval again
+    });
+
+    test('newly discovered work also restores the base interval', () {
+      final g = gate();
+      expect(g.shouldRestart(3), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
+      clock = clock.add(const Duration(seconds: 60));
+      expect(g.shouldRestart(5), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(5), isTrue);
+    });
+
+    test('draining the queue clears the backoff for the next obligation', () {
+      final g = gate();
+      expect(g.shouldRestart(3), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue);
+      expect(g.shouldRestart(0), isFalse);
+      expect(g.shouldRestart(1), isTrue);
+    });
+  });
   test('a failed preference write can be retried', () async {
     final store = _Store()..fail = true;
     final sync = _Sync()..gate.complete();

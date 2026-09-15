@@ -77,10 +77,21 @@ including metadata backfill and rediscovery obligations. Previously disclosed
 transaction IDs cannot be made private retroactively.
 
 `get_enhance_recovery_status` returns flat query, rediscovery, and suspension counts
-from durable work, plus current-wallet transient service state. Both settings
-layouts show progress and suspension counts. Suspended-only work is **incomplete
-recovery**. **No pending private recovery** means that no PIR obligations remain;
-ordinary LWD fallback requests can still be pending or retrying.
+from durable work, plus current-wallet transient service state. It is internal
+polling data, not a user-facing surface: the client reads it every foreground poll
+to decide whether outstanding obligations justify restarting sync at an unchanged
+chain tip. Neither settings layout renders these counts. Queue depth is dominated by
+obligations that can never complete — dummy actions, outputs the wallet cannot open —
+so shown to a user they read as failures to act on. Both layouts therefore display
+only the toggle and the feedback for the user's own setting transition.
+
+Suspended work is not retryable, so it is excluded from the restart decision on its
+own. Retryable work (queries plus rediscovery) that stays at exactly the same count
+across attempts is backed off — 30 seconds, doubling to a 10-minute ceiling — so a
+service with no usable snapshot cannot turn every 10-second poll into a full
+foreground sync. Any change in the count, in either direction, restores the base
+interval. Syncs driven by a new chain tip or an incomplete previous sync are
+unaffected and run recovery as usual.
 
 ## Verification and generation
 
