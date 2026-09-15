@@ -304,7 +304,9 @@ impl EnhancePirSync {
         let Some(session) = &self.session else {
             return Ok(());
         };
-        let results = session.query_batch(&route, work.positions());
+        // Rejected before any network I/O when the batch exceeds the client's
+        // input limit, so an oversized batch costs nothing and defers the run.
+        let results = session.query_batch(&route, work.positions())?;
         futures::pin_mut!(results);
         while let Some(result) = results.next().await {
             if should_exit() {
