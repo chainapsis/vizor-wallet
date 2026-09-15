@@ -775,16 +775,19 @@ void main() {
             scannedHeight: 0,
             snapshotHeight: 100,
             chainTipHeight: 100,
+            walletBirthdayHeight: 0,
           ),
           const VotingWalletSyncReadiness(
             scannedHeight: 0,
             snapshotHeight: 100,
             chainTipHeight: 100,
+            walletBirthdayHeight: 0,
           ),
           const VotingWalletSyncReadiness(
             scannedHeight: 100,
             snapshotHeight: 100,
             chainTipHeight: 100,
+            walletBirthdayHeight: 0,
           ),
         ],
       );
@@ -985,11 +988,13 @@ void main() {
                 scannedHeight: 1,
                 snapshotHeight: 2,
                 chainTipHeight: 2,
+                walletBirthdayHeight: 0,
               ),
               const VotingWalletSyncReadiness(
                 scannedHeight: 2,
                 snapshotHeight: 2,
                 chainTipHeight: 2,
+                walletBirthdayHeight: 0,
               ),
             ],
           ),
@@ -1083,11 +1088,13 @@ void main() {
               scannedHeight: 1,
               snapshotHeight: 2,
               chainTipHeight: 3,
+              walletBirthdayHeight: 0,
             ),
             const VotingWalletSyncReadiness(
               scannedHeight: 2,
               snapshotHeight: 2,
               chainTipHeight: 3,
+              walletBirthdayHeight: 0,
             ),
           ],
         );
@@ -2889,11 +2896,13 @@ void main() {
             scannedHeight: 122,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 0,
           ),
           VotingWalletSyncReadiness(
             scannedHeight: 123,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 0,
           ),
         ],
       );
@@ -2944,11 +2953,13 @@ void main() {
               scannedHeight: scanned,
               snapshotHeight: 123,
               chainTipHeight: 130,
+              walletBirthdayHeight: 0,
             ),
           const VotingWalletSyncReadiness(
             scannedHeight: 123,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 0,
           ),
         ],
       );
@@ -2991,6 +3002,7 @@ void main() {
           scannedHeight: 100,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
       ],
     );
@@ -3037,6 +3049,7 @@ void main() {
             scannedHeight: scanned++,
             snapshotHeight: 123,
             chainTipHeight: 130,
+            walletBirthdayHeight: 0,
           ),
       ],
     );
@@ -3074,11 +3087,13 @@ void main() {
           scannedHeight: 100,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
         VotingWalletSyncReadiness(
           scannedHeight: 123,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
       ],
     );
@@ -3180,6 +3195,7 @@ void main() {
           scannedHeight: 100,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
       ],
     );
@@ -3232,6 +3248,7 @@ void main() {
           scannedHeight: 100,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
       ],
     );
@@ -3276,6 +3293,69 @@ void main() {
     expect(state.error, isNull);
   });
 
+  test(
+    'a wallet starting after the snapshot is rejected, not waited on',
+    () async {
+      // Nothing the scanner does can cover a snapshot that predates every
+      // account, so this must fail immediately rather than burn the wait.
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(
+        ready: false,
+        walletBirthdayHeight: 999999,
+      );
+      var syncStartCalls = 0;
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncStarter: () => syncStartCalls++,
+        walletSyncPollInterval: Duration.zero,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      // Permanent ineligibility, so the UI shows its read-only treatment
+      // instead of offering a retry that cannot succeed.
+      expect(state.error?.isEligibilityFailure, isTrue);
+      expect(state.error?.message, contains('birthday block'));
+      expect(state.walletBirthdayAfterSnapshot, isTrue);
+      // It never asked sync to catch up, because catching up is pointless.
+      expect(syncStartCalls, 0);
+      expect(readiness.calls, 1);
+    },
+  );
+
+  test('a birthday at the snapshot still votes normally', () async {
+    // Boundary: birthday == snapshot is coverable, so it must not be
+    // mistaken for the rejection case.
+    final rust = FakeVotingRustApi();
+    final readiness = _MutableVotingWalletSyncReadinessChecker(
+      ready: true,
+      walletBirthdayHeight: 123,
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.readyToDelegate);
+    expect(state.walletBirthdayAfterSnapshot, isFalse);
+    expect(state.error, isNull);
+  });
+
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
@@ -3284,11 +3364,13 @@ void main() {
           scannedHeight: 122,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
         VotingWalletSyncReadiness(
           scannedHeight: 123,
           snapshotHeight: 123,
           chainTipHeight: 130,
+          walletBirthdayHeight: 0,
         ),
       ],
     );
@@ -14286,6 +14368,7 @@ class FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: 0,
     );
   }
 }
@@ -14313,6 +14396,7 @@ class _SuspendingVotingWalletSyncReadinessChecker
       scannedHeight: index >= 2 ? snapshotHeight : snapshotHeight - 23,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight + 7,
+      walletBirthdayHeight: 0,
     );
   }
 }
@@ -14342,6 +14426,7 @@ class _OscillatingVotingWalletSyncReadinessChecker
       scannedHeight: scanned,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight + 7,
+      walletBirthdayHeight: 0,
     );
   }
 }
@@ -14366,6 +14451,7 @@ class _GatedVotingWalletSyncReadinessChecker
       scannedHeight: _ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: 0,
     );
   }
 }
@@ -14391,15 +14477,25 @@ class _QuiescenceGatedVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: 0,
     );
   }
 }
 
 class _MutableVotingWalletSyncReadinessChecker
     implements VotingWalletSyncReadinessChecker {
-  _MutableVotingWalletSyncReadinessChecker({required this.ready});
+  _MutableVotingWalletSyncReadinessChecker({
+    required this.ready,
+    this.walletBirthdayHeight = 0,
+  });
 
   bool ready;
+
+  /// Defaults to 0 so the birthday boundary never fires by accident; tests
+  /// that exercise it set a birthday above the snapshot explicitly.
+  int walletBirthdayHeight;
+
+  int calls = 0;
 
   @override
   Future<VotingWalletSyncReadiness> check({
@@ -14407,10 +14503,12 @@ class _MutableVotingWalletSyncReadinessChecker
     required String network,
     required int snapshotHeight,
   }) async {
+    calls++;
     return VotingWalletSyncReadiness(
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: walletBirthdayHeight,
     );
   }
 }
@@ -14441,6 +14539,7 @@ class _VotingWalletSyncDrainRaceReadinessChecker
       scannedHeight: ready ? snapshotHeight : snapshotHeight - 1,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: 0,
     );
   }
 }

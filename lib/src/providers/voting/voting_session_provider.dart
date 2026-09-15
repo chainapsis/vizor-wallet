@@ -3301,7 +3301,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             _actionErrorMessage(e),
             cause: e,
             isEligibilityFailure:
-                votingRustExceptionOf(e)?.isEligibilityFailure ?? false,
+                isVotingWalletBirthdayAfterSnapshot(e) ||
+                (votingRustExceptionOf(e)?.isEligibilityFailure ?? false),
           );
         }
         onError?.call();
@@ -3579,7 +3580,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } catch (error) {
       final message = friendlyVotingErrorMessage(error);
       final eligibilityError =
-          votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
+          isVotingWalletBirthdayAfterSnapshot(error) ||
+          (votingRustExceptionOf(error)?.isEligibilityFailure ?? false);
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
@@ -3827,6 +3829,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       lastReadiness = readiness;
       throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-readiness');
+      if (readiness.walletBirthdayAfterSnapshot) {
+        // Not a slow catch-up: no amount of scanning can cover a snapshot
+        // that predates every account in this wallet, so this is terminal
+        // rather than the retryable stall the threshold raises.
+        _setWalletSyncReadinessState(
+          context: context,
+          readiness: readiness,
+          waiting: false,
+          retainReadiness: true,
+        );
+        throw _VotingWalletBirthdayAfterSnapshot(readiness);
+      }
       if (readiness.isReady) {
         // The readiness query is asynchronous, so the window can close while
         // it is in flight. A wait that has been running must not deliver a
@@ -3926,6 +3940,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
         walletChainTipHeight: readiness.chainTipHeight,
+        walletBirthdayHeight: readiness.walletBirthdayHeight,
         clearWalletSyncReadiness: !waiting && !retainReadiness,
         clearError: true,
       ),
@@ -4580,6 +4595,32 @@ class _VotingRoundEnded implements Exception {
     return 'This voting round closed while the wallet was still catching up '
         'to its snapshot block.$scanned';
   }
+}
+
+/// Whether an error means this wallet starts after the round snapshot.
+///
+/// Also typed: this drives the read-only "not eligible" presentation, and a
+/// copy edit must not be able to turn it back into a retryable failure.
+bool isVotingWalletBirthdayAfterSnapshot(Object? error) =>
+    error is _VotingWalletBirthdayAfterSnapshot;
+
+String votingWalletBirthdayAfterSnapshotMessage(
+  VotingWalletSyncReadiness readiness,
+) {
+  return 'This wallet starts at birthday block '
+      '${formatBlockHeight(readiness.walletBirthdayHeight)}, after this '
+      'voting round snapshot at block '
+      '${formatBlockHeight(readiness.snapshotHeight)}. Restore an account '
+      'with a birthday at or before the snapshot to vote in this round.';
+}
+
+class _VotingWalletBirthdayAfterSnapshot implements Exception {
+  const _VotingWalletBirthdayAfterSnapshot(this.readiness);
+
+  final VotingWalletSyncReadiness readiness;
+
+  @override
+  String toString() => votingWalletBirthdayAfterSnapshotMessage(readiness);
 }
 
 class _VotingWalletSyncStalled implements Exception {

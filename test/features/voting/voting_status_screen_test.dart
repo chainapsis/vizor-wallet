@@ -5373,6 +5373,7 @@ class _FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+      walletBirthdayHeight: 0,
     );
   }
 }

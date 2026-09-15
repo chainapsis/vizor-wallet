@@ -441,13 +441,25 @@ class VotingWalletSyncReadiness {
     required this.scannedHeight,
     required this.snapshotHeight,
     required this.chainTipHeight,
+    required this.walletBirthdayHeight,
   });
 
   final int scannedHeight;
   final int snapshotHeight;
   final int chainTipHeight;
 
-  bool get isReady => scannedHeight >= snapshotHeight;
+  /// Earliest recovery birthday across every account in the wallet. Scanning
+  /// is wallet-wide, so this is where the shared scan frontier starts.
+  final int walletBirthdayHeight;
+
+  /// No account can make the shared scanner cover this round's snapshot, so
+  /// the historical balance behind it is unknowable. Permanent for this
+  /// round: waiting longer cannot resolve it, which is what separates this
+  /// from a slow catch-up.
+  bool get walletBirthdayAfterSnapshot => walletBirthdayHeight > snapshotHeight;
+
+  bool get isReady =>
+      !walletBirthdayAfterSnapshot && scannedHeight >= snapshotHeight;
 
   int get blocksRemaining {
     final remaining = snapshotHeight - scannedHeight;
@@ -473,14 +485,17 @@ class FrbVotingWalletSyncReadinessChecker
     required String network,
     required int snapshotHeight,
   }) async {
-    final status = await rust_sync.getSyncStatus(
-      dbPath: dbPath,
-      network: network,
-    );
+    final results = await Future.wait<Object>([
+      rust_sync.getSyncStatus(dbPath: dbPath, network: network),
+      rust_sync.getWalletBirthdayHeight(dbPath: dbPath, network: network),
+    ]);
+    final status = results[0] as rust_sync.SyncProgress;
+    final birthdayHeight = results[1] as BigInt;
     return VotingWalletSyncReadiness(
       scannedHeight: status.scannedHeight.toInt(),
       snapshotHeight: snapshotHeight,
       chainTipHeight: status.chainTipHeight.toInt(),
+      walletBirthdayHeight: birthdayHeight.toInt(),
     );
   }
 }
