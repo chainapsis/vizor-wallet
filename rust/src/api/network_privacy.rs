@@ -44,7 +44,7 @@ struct BirthdayAnchor {
 // Blossom is included explicitly because its activation halved the target block
 // interval. Later anchors keep accumulated mining-rate drift well below the
 // existing 15-day wallet-birthday safety margin.
-const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 7] = [
+const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 8] = [
     BirthdayAnchor {
         height: MAINNET_SAPLING_ACTIVATION_HEIGHT,
         time: MAINNET_SAPLING_ACTIVATION_TIME,
@@ -72,6 +72,10 @@ const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 7] = [
     BirthdayAnchor {
         height: 3_000_000,
         time: 1_752_983_473,
+    },
+    BirthdayAnchor {
+        height: 3_450_000,
+        time: 1_786_894_060,
     },
 ];
 
@@ -775,6 +779,33 @@ mod tests {
 
         assert!(later > current);
         assert!(earlier < current);
+    }
+
+    #[test]
+    fn mainnet_anchor_table_stays_chronologically_and_monotonically_ordered() {
+        for pair in MAINNET_BIRTHDAY_ANCHORS.windows(2) {
+            assert!(pair[1].height > pair[0].height);
+            assert!(pair[1].time > pair[0].time);
+        }
+    }
+
+    #[test]
+    fn mainnet_anchor_segment_resolves_against_the_latest_anchor() {
+        let latest = *MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
+        let previous = MAINNET_BIRTHDAY_ANCHORS[MAINNET_BIRTHDAY_ANCHORS.len() - 2];
+        let tip = BirthdayAnchor {
+            height: latest.height + 10_000,
+            time: latest.time + 900_000,
+        };
+
+        assert_eq!(
+            mainnet_anchor_segment(i64::from(latest.time), tip),
+            Some((previous, latest))
+        );
+        assert_eq!(
+            mainnet_anchor_segment(i64::from(latest.time) + 1, tip),
+            Some((latest, tip))
+        );
     }
 
     #[test]
