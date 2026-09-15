@@ -3778,6 +3778,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     var loggedWait = false;
+    // Set once the loop has actually waited for a poll interval, so the
+    // deadline can be re-read on a ready result without changing what an
+    // already-closed round does to a caller that never had to wait.
+    var waited = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final noProgressTimer = Stopwatch()..start();
     int? lastScannedHeight;
@@ -3799,6 +3803,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throwIfBackgroundWorkQuiesced();
       _throwIfContextStale(context, 'wallet-sync-readiness');
       if (readiness.isReady) {
+        // The readiness query is asynchronous, so the window can close while
+        // it is in flight. A wait that has been running must not deliver a
+        // ready result into a round that ended underneath it.
+        if (waited) throwIfRoundEnded();
         _setWalletSyncReadinessState(
           context: context,
           readiness: readiness,
@@ -3862,6 +3870,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ? remainingWait
           : pollInterval;
       await Future.any<void>([Future<void>.delayed(delay), sessionInvalidated]);
+      waited = true;
     }
   }
 

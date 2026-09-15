@@ -3062,6 +3062,52 @@ void main() {
     expect(isVotingWalletSyncStalled(state.error?.cause), isFalse);
   });
 
+  test('a wait in progress does not accept a ready result after the round '
+      'closes', () async {
+    // The readiness query is asynchronous, so the window can close while it
+    // is in flight. The wallet becomes ready on the second poll, by which
+    // time voting has closed.
+    final rust = FakeVotingRustApi();
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: const [
+        VotingWalletSyncReadiness(
+          scannedHeight: 100,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+        VotingWalletSyncReadiness(
+          scannedHeight: 123,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+      ],
+    );
+    var closed = false;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      extraOverrides: [
+        votingHomeClockProvider.overrideWithValue(
+          // The fixture round's vote_end_time is in 2100.
+          () => closed ? DateTime.utc(2200) : DateTime.utc(2026),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final pending = container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    closed = true;
+    await pending;
+
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(isVotingRoundEnded(state.error?.cause), isTrue);
+  });
+
   test('engine progress keeps a pinned frontier from stalling', () async {
     // Tip-priority ranges scan first, so the contiguous frontier can stay
     // pinned during a healthy catch-up. The engine sample is the signal.

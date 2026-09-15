@@ -108,6 +108,43 @@ void main() {
     );
   });
 
+  test('a restarted run still counts measurable preparation progress', () {
+    // Only the replayed scan marks are ignored after a restart. A
+    // preparation phase the restarted run works through is new work, and its
+    // counters carry their own high-water marks.
+    final tracker = VotingWalletSyncProgressTracker();
+    final failedAt = DateTime.utc(2026, 9, 14, 12);
+    tracker.observe(_sample(percentage: 0.5, scannedHeight: 100));
+    tracker.observe(_sample(isSyncing: false, lastSyncFailedAt: failedAt));
+    tracker.observe(
+      _sample(
+        lastSyncFailedAt: failedAt,
+        phase: kSyncPhaseActiveUtxo,
+        phaseCompletedUnits: 1,
+        phaseTotalUnits: 10,
+      ),
+    );
+
+    expect(
+      tracker.observe(
+        _sample(
+          lastSyncFailedAt: failedAt,
+          phase: kSyncPhaseActiveUtxo,
+          phaseCompletedUnits: 2,
+          phaseTotalUnits: 10,
+        ),
+      ),
+      true,
+    );
+    // The replayed scan marks are still not progress on their own.
+    expect(
+      tracker.observe(
+        _sample(percentage: 0.4, scannedHeight: 80, lastSyncFailedAt: failedAt),
+      ),
+      false,
+    );
+  });
+
   test('a restarted run that passes the marks is progress again', () {
     final tracker = VotingWalletSyncProgressTracker();
     final failedAt = DateTime.utc(2026, 9, 14, 12);

@@ -358,8 +358,10 @@ class VotingWalletSyncProgressTracker {
       // values when it is restarted. Rebasing onto that would let a sync
       // that fails at the same point every time replay its way past the
       // threshold forever, which is exactly the stall the caller needs to
-      // see.
-      if (_restartedAfterFailure) return false;
+      // see. Only the replayed scan marks are ignored: a preparation phase
+      // the restarted run is working through is measurable new work, and
+      // its counters carry their own high-water marks.
+      if (_restartedAfterFailure) return preparationAdvanced;
       // New scan epoch (rescan from an older birthday, reorg rewind, tail
       // repair): rebase both marks onto it. The rewind itself is engine
       // activity, so it counts as progress.
