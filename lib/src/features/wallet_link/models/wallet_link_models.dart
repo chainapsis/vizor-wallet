@@ -352,8 +352,6 @@ class WalletLinkTransferAccount {
     required this.seedFingerprint,
     required this.mnemonic,
     this.bip39Passphrase = '',
-    this.ledgerWalletFingerprint,
-    this.ledgerWalletName,
     this.ledgerDeviceModel,
   });
 
@@ -370,8 +368,6 @@ class WalletLinkTransferAccount {
   final List<int>? seedFingerprint;
   final String? mnemonic;
   final String bip39Passphrase;
-  final String? ledgerWalletFingerprint;
-  final String? ledgerWalletName;
   final String? ledgerDeviceModel;
 
   factory WalletLinkTransferAccount.fromJson(Map<String, Object?> json) {
@@ -392,10 +388,7 @@ class WalletLinkTransferAccount {
           .toList(),
       mnemonic: recoveryMaterial.mnemonic,
       bip39Passphrase: recoveryMaterial.bip39Passphrase,
-      ledgerWalletFingerprint: _normalizedOptionalString(
-        json['ledgerWalletFingerprint'],
-      ),
-      ledgerWalletName: (json['ledgerWalletName'] as String?)?.trim(),
+
       // Keep the model's casing: it is shown to the user as-is.
       ledgerDeviceModel: switch ((json['ledgerDeviceModel'] as String?)
           ?.trim()) {
@@ -421,13 +414,6 @@ class WalletLinkTransferAccount {
   bool get isImportable {
     if (!isSupportedByMobile) return false;
     if (birthdayHeight == null || zip32AccountIndex == null) return false;
-    if (effectiveHardwareKind == kWalletLinkHardwareKindLedger &&
-        !RegExp(
-          r'^[0-9a-f]{64}$',
-          caseSensitive: false,
-        ).hasMatch(ledgerWalletFingerprint?.trim() ?? '')) {
-      return false;
-    }
     if (isHardware) {
       return ufvk != null &&
           ufvk!.isNotEmpty &&
@@ -455,8 +441,6 @@ class WalletLinkTransferAccount {
       seedFingerprint: seedFingerprint,
       profilePictureId: profilePictureId,
       sourceAccountUuid: uuid,
-      ledgerWalletFingerprint: ledgerWalletFingerprint?.trim().toLowerCase(),
-      ledgerWalletName: ledgerWalletName,
       ledgerDeviceModel: ledgerDeviceModel,
     );
   }

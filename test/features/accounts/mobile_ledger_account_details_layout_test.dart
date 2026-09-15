@@ -13,7 +13,6 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 const _account = AccountInfo(
@@ -22,9 +21,7 @@ const _account = AccountInfo(
   order: 0,
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
-  ledgerWalletName: 'Family cold storage',
-  ledgerWalletFingerprint:
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+
   ledgerDeviceId: 'layout-device',
   ledgerDeviceName: 'Ledger Flex',
   ledgerDeviceModel: 'Ledger Flex',
@@ -65,34 +62,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a verified Ledger account can add another index', (
-    tester,
-  ) async {
-    Object? routeExtra;
-    await _pumpRecovery(
-      tester,
-      loadBirthday: () async => null,
-      onLedgerConnect: (extra) => routeExtra = extra,
-    );
-    await tester.pumpAndSettle();
-
-    final button = find.byKey(
-      const ValueKey('hardware_account_details_add_ledger_account'),
-    );
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-
-    expect(find.text('ledger-connect-route'), findsOneWidget);
-    expect(routeExtra, isA<LedgerConnectArgs>());
-    expect(
-      (routeExtra! as LedgerConnectArgs).sourceAccountUuid,
-      'layout-ledger',
-    );
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('an account without a wallet fingerprint cannot add an index', (
+  testWidgets('account details do not offer wallet-level account addition', (
     tester,
   ) async {
     await _pumpRecovery(

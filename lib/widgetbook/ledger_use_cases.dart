@@ -4,8 +4,7 @@ import 'dart:async';
 import '../src/features/ledger/services/ledger_connection_recovery.dart';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart'
-    show Material, MaterialApp, Theme, ThemeMode;
+import 'package:flutter/material.dart' show MaterialApp, Theme, ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,8 +16,6 @@ import '../src/core/layout/app_form_factor.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/hardware_account_details_screen.dart';
-import '../src/features/accounts/widgets/ledger_wallet_rename_modal.dart';
-import '../src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import '../src/features/ledger/ledger_capability.dart';
 import '../src/features/ledger/ledger_error_messages.dart';
 import '../src/features/ledger/services/ledger_app_readiness_service.dart';
@@ -98,9 +95,8 @@ WidgetbookFolder buildLedgerWidgetbookFolder() {
       WidgetbookFolder(
         name: 'Accounts',
         children: [
-          screen('Account groups', 'Account groups'),
+          screen('Accounts', 'Accounts'),
           screen('Recovery information', 'Recovery information'),
-          screen('Rename group', 'Rename group'),
         ],
       ),
       WidgetbookFolder(
@@ -178,20 +174,16 @@ Widget buildLedgerFlowPreview({
             ? buildMobileLedgerAdditionalAccountUseCase(context)
             : buildLedgerAdditionalAccountUseCase(context),
       'Recovery information' => _LedgerAccountDetailsPreview(mobile: mobile),
-      'Account groups' => ProviderScope(
+      'Accounts' => ProviderScope(
         overrides: [
           ledgerTargetPlatformProvider.overrideWithValue(
             mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
           ),
         ],
         child: mobile
-            ? buildMobileAccountsLedgerFamilyUseCase(context)
-            : buildAccountsLedgerFamilyUseCase(context),
+            ? buildMobileAccountsLedgerUseCase(context)
+            : buildAccountsLedgerUseCase(context),
       ),
-      'Rename group' =>
-        mobile
-            ? buildMobileLedgerRenameUseCase(context)
-            : buildLedgerRenameUseCase(context),
       'Voting approval' => buildLedgerVotingPreview(
         bundleNumber: 1,
         bundleCount: 2,
@@ -248,8 +240,6 @@ class _LedgerDemoConnections extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const fingerprint =
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     Future<LedgerDeviceAccount> account(
       int index, [
       LedgerBleDevice? device,
@@ -260,7 +250,7 @@ class _LedgerDemoConnections extends StatelessWidget {
         seedFingerprint: const [1, 2, 3],
         accountIndex: index,
         appVersion: '3.9.3',
-        walletFingerprint: fingerprint,
+
         device: device,
         transport: device == null
             ? LedgerConnectionTransport.usb
@@ -276,12 +266,6 @@ class _LedgerDemoConnections extends StatelessWidget {
         ledgerAccountConnectorProvider.overrideWithValue(account),
         ledgerBluetoothAccountConnectorProvider.overrideWithValue(
           (index, device) => account(index, device),
-        ),
-        ledgerWalletIdentityConnectorProvider.overrideWithValue(
-          () async => const LedgerWalletIdentity(fingerprint: fingerprint),
-        ),
-        ledgerBluetoothWalletIdentityConnectorProvider.overrideWithValue(
-          (_) async => const LedgerWalletIdentity(fingerprint: fingerprint),
         ),
         ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         ledgerMobileBleServiceProvider.overrideWithValue(
@@ -416,34 +400,6 @@ Widget buildLedgerAccountDetailsUseCase(BuildContext context) {
 
 Widget buildMobileLedgerAccountDetailsUseCase(BuildContext context) {
   return const _LedgerAccountDetailsPreview(mobile: true);
-}
-
-Widget buildLedgerRenameUseCase(BuildContext context) {
-  return Material(
-    color: const Color(0x00000000),
-    child: Center(
-      child: LedgerWalletRenameModal(
-        initialName: 'Rowan Ledger',
-        onCancel: () {},
-        onRename: (_) async {},
-      ),
-    ),
-  );
-}
-
-Widget buildMobileLedgerRenameUseCase(BuildContext context) {
-  return Builder(
-    builder: (context) => Center(
-      child: AppButton(
-        onPressed: () => showLedgerWalletRenameSheet(
-          context,
-          initialName: 'Rowan Ledger',
-          onRename: (_) async {},
-        ),
-        child: const Text('Open rename sheet'),
-      ),
-    ),
-  );
 }
 
 enum LedgerSigningPlaygroundReadiness {
@@ -1070,12 +1026,8 @@ class _LedgerAccountDetailsPreviewState
         GoRoute(
           path: '/onboarding/ledger',
           builder: (_, _) => widget.mobile
-              ? const MobileLedgerConnectScreen(
-                  sourceAccountUuid: _ledgerAccountUuid,
-                )
-              : const LedgerConnectScreen(
-                  sourceAccountUuid: _ledgerAccountUuid,
-                ),
+              ? const MobileLedgerConnectScreen()
+              : const LedgerConnectScreen(),
         ),
         GoRoute(
           path: '/onboarding/ledger/birthday',
@@ -1262,9 +1214,6 @@ const _ledgerAccount = AccountInfo(
   ledgerDeviceId: 'widgetbook-ledger-flex',
   ledgerDeviceName: 'Ledger Flex',
   ledgerDeviceModel: 'Ledger Flex',
-  ledgerWalletName: 'Rowan Ledger',
-  ledgerWalletFingerprint:
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 );
 
 const _ledgerAccountState = AccountState(

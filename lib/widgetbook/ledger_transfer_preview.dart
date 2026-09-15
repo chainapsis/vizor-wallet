@@ -36,7 +36,6 @@ const _account = AccountInfo(
   order: 0,
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
-  ledgerWalletName: 'My Ledger',
 );
 const _accounts = AccountState(
   accounts: [_account],

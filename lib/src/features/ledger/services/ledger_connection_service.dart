@@ -63,7 +63,9 @@ class LedgerConnectionService {
         // replay it. Recovery and a new signing attempt require user action.
         if (operationStarted) rethrow;
         if (!_isConnectionFailure(error)) rethrow;
-        lastConnectionError = error;
+        if (!ledgerPairingNeedsReset(lastConnectionError)) {
+          lastConnectionError = error;
+        }
       }
     }
 
@@ -228,6 +230,7 @@ class LedgerConnectionService {
         LedgerMobileFailure.bluetoothOff ||
         LedgerMobileFailure.permissionDenied ||
         LedgerMobileFailure.pairingRejected ||
+        LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.unavailable => true,
         LedgerMobileFailure.locked ||
         LedgerMobileFailure.rejected ||
@@ -245,6 +248,7 @@ class LedgerConnectionService {
   }
 
   String _connectionFailureMessage(AccountInfo account, Object? error) {
+    if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
     final suffix = error == null ? '' : ' ${error.toString()}';
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb =>

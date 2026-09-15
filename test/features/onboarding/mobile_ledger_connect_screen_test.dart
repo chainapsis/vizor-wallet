@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,6 @@ import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -37,14 +38,44 @@ void main() {
       ..devicePixelRatio = 1;
   });
 
-  for (final mismatch in ['none', 'wallet', 'ufvk']) {
+  testWidgets(
+    'invalid pairing gives portable recovery instructions on mobile',
+    (tester) async {
+      final ble = _FakeBleService(
+        connectError: const LedgerMobileException(
+          LedgerMobileFailure.pairingInvalid,
+          kLedgerPairingInvalidMessage,
+        ),
+      );
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) => throw StateError('Must not export keys'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _selectLedger(tester, ble);
+      await tester.pumpAndSettle();
+      expect(find.text(kLedgerPairingInvalidTitle), findsOneWidget);
+      expect(find.text(kLedgerPairingInvalidMessage), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      const dir = String.fromEnvironment('LEDGER_PREVIEW_CAPTURE_DIR');
+      if (dir.isNotEmpty) {
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile(Uri.file('$dir/mobile-pairing-invalid.png')),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final mismatch in ['none', 'ufvk']) {
     testWidgets(
-      'connects a linked Ledger only after identity checks: $mismatch',
+      'connects a linked Ledger only after matching the account UFVK: $mismatch',
       (tester) async {
         tester.view.physicalSize = const Size(393, 700);
         final ble = _FakeBleService();
-        const fingerprint =
-            '0000000000000000000000000000000000000000000000000000000000000001';
         const accountState = AccountState(
           accounts: [
             AccountInfo(
@@ -55,7 +86,6 @@ void main() {
               hardwareSignerKind: HardwareSignerKind.ledger,
               zip32AccountIndex: 7,
               birthdayHeight: 3000000,
-              ledgerWalletFingerprint: fingerprint,
             ),
           ],
         );
@@ -72,11 +102,6 @@ void main() {
               expect(uuid, 'linked-ledger');
               return 'uview1stored';
             },
-            identityConnector: (_) async => LedgerWalletIdentity(
-              fingerprint: mismatch == 'wallet'
-                  ? 'different-wallet'
-                  : fingerprint,
-            ),
             connector: (index) async {
               exports++;
               expect(index, 7);
@@ -115,7 +140,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(birthdayVisits, 0);
-        expect(exports, mismatch == 'wallet' ? 0 : 1);
+        expect(exports, 1);
         if (mismatch == 'none') {
           expect(find.text('connection-return'), findsOneWidget);
           expect(notifier.connectedUuid, 'linked-ledger');
@@ -148,8 +173,6 @@ void main() {
               isHardware: true,
               hardwareSignerKind: HardwareSignerKind.ledger,
               zip32AccountIndex: 7,
-              ledgerWalletFingerprint:
-                  '0000000000000000000000000000000000000000000000000000000000000001',
             ),
           ],
         );
@@ -487,7 +510,7 @@ void main() {
       await tester.pumpWidget(
         _methodHarness(
           bootstrap: _bootstrap(accounts: const [account]),
-          platform: TargetPlatform.linux,
+          platform: TargetPlatform.fuchsia,
         ),
       );
       await tester.pumpAndSettle();
@@ -565,6 +588,40 @@ void main() {
       expect(find.text('Connect Ledger'), findsOneWidget);
     });
   }
+
+  testWidgets('rejects an already imported UFVK after approval', (
+    tester,
+  ) async {
+    final ble = _FakeBleService();
+    var exports = 0;
+    var birthdayVisits = 0;
+    await tester.pumpWidget(
+      _ledgerHarness(
+        ble: ble,
+        ufvkLoader: (_) async => 'uview-duplicate',
+        connector: (index) async {
+          exports++;
+          return LedgerDeviceAccount(
+            ufvk: 'uview-duplicate',
+            seedFingerprint: const [1],
+            accountIndex: index,
+            appVersion: '3.9.3',
+          );
+        },
+        onBirthday: (_) => birthdayVisits++,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _selectLedger(tester, ble);
+    await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
+    await tester.pumpAndSettle();
+    expect(exports, 1);
+    expect(birthdayVisits, 0);
+    expect(
+      find.text('This Ledger account is already in Vizor.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('discovers, connects, and exports the selected Ledger', (
     tester,
@@ -656,14 +713,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(birthdayArgs?.account.accountIndex, 12);
     expect(find.text('birthday-route-bluetooth-Nano X'), findsOneWidget);
     expect(connectorCalls, 1);
     expect(requestedIndex, 12);
-    expect(birthdayArgs?.sourceAccountUuid, isNull);
-    expect(
-      birthdayArgs?.account.walletFingerprint,
-      '0000000000000000000000000000000000000000000000000000000000000001',
-    );
+
     expect(
       find.byKey(const ValueKey('mobile_ledger_account_name_field')),
       findsNothing,
@@ -782,192 +836,6 @@ void main() {
     );
     expect(ble.disconnectCalls, 2);
   });
-
-  testWidgets(
-    'shows same-wallet accounts, suggests the first gap, and blocks duplicates',
-    (tester) async {
-      const fingerprint =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      var identityCalls = 0;
-      var connectorCalls = 0;
-      final ble = _FakeBleService();
-      await tester.pumpWidget(
-        _ledgerHarness(
-          ble: ble,
-          sourceAccountUuid: 'ledger-0',
-          accountState: const AccountState(
-            accounts: [
-              AccountInfo(
-                uuid: 'ledger-0',
-                name: 'Primary Ledger account',
-                order: 0,
-                isHardware: true,
-                hardwareSignerKind: HardwareSignerKind.ledger,
-                zip32AccountIndex: 0,
-                ledgerWalletFingerprint: fingerprint,
-              ),
-              AccountInfo(
-                uuid: 'ledger-2',
-                name: 'Savings',
-                order: 1,
-                isHardware: true,
-                hardwareSignerKind: HardwareSignerKind.ledger,
-                zip32AccountIndex: 2,
-                ledgerWalletFingerprint: fingerprint,
-              ),
-              AccountInfo(
-                uuid: 'other-ledger-1',
-                name: 'Different Ledger',
-                order: 2,
-                isHardware: true,
-                hardwareSignerKind: HardwareSignerKind.ledger,
-                zip32AccountIndex: 1,
-                ledgerWalletFingerprint:
-                    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-              ),
-            ],
-            activeAccountUuid: 'ledger-0',
-          ),
-          identityConnector: (_) async {
-            identityCalls++;
-            return const LedgerWalletIdentity(fingerprint: fingerprint);
-          },
-          connector: (_) async {
-            connectorCalls++;
-            throw StateError('duplicate must stop before device requests');
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Primary Ledger account'), findsOneWidget);
-      expect(find.text('Savings'), findsOneWidget);
-      expect(find.text('Different Ledger'), findsNothing);
-      expect(find.text('Next available index: 1'), findsOneWidget);
-
-      await _selectLedger(tester, ble);
-      final disclosure = find.byKey(
-        const ValueKey('mobile_ledger_advanced_options_disclosure'),
-      );
-      await tester.ensureVisible(disclosure);
-      await tester.tap(disclosure);
-      await tester.pumpAndSettle();
-      final field = tester.widget<AppTextField>(
-        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-      );
-      expect(field.controller!.text, '1');
-      final importButton = find.byKey(
-        const ValueKey('mobile_ledger_import_button'),
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-        '2147483648',
-      );
-      await tester.ensureVisible(importButton);
-      await tester.tap(importButton);
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Account index must be between 0 and 2147483647.'),
-        findsOneWidget,
-      );
-
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-        '2',
-      );
-      await tester.ensureVisible(importButton);
-      await tester.tap(importButton);
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Index 2 is already used by this Ledger wallet.'),
-        findsOneWidget,
-      );
-      expect(identityCalls, 0);
-
-      final indexInput = find.byKey(
-        const ValueKey('mobile_ledger_account_index_field'),
-      );
-      final indexMessage = find.byKey(
-        const ValueKey('mobile_ledger_account_index_message'),
-      );
-      expect(tester.widget<AppTextField>(indexInput).messageText, isNull);
-      expect(
-        tester.getRect(indexMessage).top,
-        greaterThan(tester.getRect(indexInput).bottom),
-      );
-      expect(
-        find.text(
-          'Use a different index to restore or add another Ledger account.',
-        ),
-        findsNothing,
-      );
-
-      await tester.enterText(indexInput, '1');
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Index 2 is already used by this Ledger wallet.'),
-        findsNothing,
-      );
-      expect(
-        find.text(
-          'Use a different index to restore or add another Ledger account.',
-        ),
-        findsOneWidget,
-      );
-      expect(connectorCalls, 0);
-    },
-  );
-
-  testWidgets('stops a wrong Ledger before requesting the target UFVK', (
-    tester,
-  ) async {
-    var connectorCalls = 0;
-    final ble = _FakeBleService();
-    await tester.pumpWidget(
-      _ledgerHarness(
-        ble: ble,
-        sourceAccountUuid: 'ledger-0',
-        accountState: const AccountState(
-          accounts: [
-            AccountInfo(
-              uuid: 'ledger-0',
-              name: 'Primary',
-              order: 0,
-              isHardware: true,
-              hardwareSignerKind: HardwareSignerKind.ledger,
-              zip32AccountIndex: 0,
-              ledgerWalletFingerprint:
-                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            ),
-          ],
-          activeAccountUuid: 'ledger-0',
-        ),
-        identityConnector: (_) async => const LedgerWalletIdentity(
-          fingerprint:
-              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-        ),
-        connector: (_) async {
-          connectorCalls++;
-          throw StateError('must not request UFVK');
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
-    await _selectLedger(tester, ble);
-    final importButton = find.byKey(
-      const ValueKey('mobile_ledger_import_button'),
-    );
-    await tester.ensureVisible(importButton);
-    await tester.tap(importButton);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('This Ledger does not match the account you started from.'),
-      findsOneWidget,
-    );
-    expect(connectorCalls, 0);
-  });
 }
 
 Widget _methodHarness({
@@ -988,12 +856,10 @@ Widget _methodHarness({
 Widget _ledgerHarness({
   required _FakeBleService ble,
   required LedgerAccountConnector connector,
-  LedgerBluetoothWalletIdentityConnector? identityConnector,
   LedgerOperationCanceller? canceller,
   AccountState accountState = const AccountState(
     accounts: [AccountInfo(uuid: 'software', name: 'Main', order: 0)],
   ),
-  String? sourceAccountUuid,
   String? connectionAccountUuid,
   _FakeAccountNotifier? accountNotifier,
   Future<String> Function(String)? ufvkLoader,
@@ -1041,8 +907,7 @@ Widget _ledgerHarness({
       ),
       GoRoute(
         path: '/onboarding/ledger',
-        builder: (_, _) =>
-            MobileLedgerConnectScreen(sourceAccountUuid: sourceAccountUuid),
+        builder: (_, _) => MobileLedgerConnectScreen(),
       ),
       GoRoute(
         path: '/onboarding/ledger/birthday',
@@ -1065,8 +930,9 @@ Widget _ledgerHarness({
       accountProvider.overrideWith(
         () => accountNotifier ?? _FakeAccountNotifier(accountState),
       ),
-      if (ufvkLoader != null)
-        ledgerAccountUfvkLoaderProvider.overrideWithValue(ufvkLoader),
+      ledgerAccountUfvkLoaderProvider.overrideWithValue(
+        ufvkLoader ?? (uuid) async => 'uview-existing-$uuid',
+      ),
       if (startAtSigning)
         ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
       if (reconnect != null)
@@ -1087,13 +953,6 @@ Widget _ledgerHarness({
           device: device,
         );
       }),
-      ledgerBluetoothWalletIdentityConnectorProvider.overrideWithValue(
-        identityConnector ??
-            (_) async => const LedgerWalletIdentity(
-              fingerprint:
-                  '0000000000000000000000000000000000000000000000000000000000000001',
-            ),
-      ),
       ledgerOperationCancellerProvider.overrideWithValue(
         canceller ?? () async {},
       ),

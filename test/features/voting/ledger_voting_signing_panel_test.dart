@@ -27,7 +27,7 @@ void main() {
       expect(find.text('Delegation details'), findsOneWidget);
       expect(find.text('Voting with'), findsOneWidget);
       expect(find.text('Voting savings'), findsOneWidget);
-      expect(find.text('Travel Ledger'), findsOneWidget);
+      expect(find.text('Travel Ledger'), findsNothing);
       expect(find.textContaining('Account index'), findsNothing);
       expect(find.textContaining('may not display'), findsOneWidget);
       expect(find.byType(LedgerDeviceIllustration), findsOneWidget);
@@ -260,7 +260,6 @@ void main() {
         accounts: [
           _signingAccount.copyWith(
             name: 'My long-term community voting savings account',
-            ledgerWalletName: 'My family Ledger wallet with a long group name',
           ),
         ],
       ),
@@ -292,7 +291,7 @@ const _signingAccount = AccountInfo(
   order: 0,
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
-  ledgerWalletName: 'Travel Ledger',
+
   zip32AccountIndex: 2,
 );
 const _otherAccount = AccountInfo(

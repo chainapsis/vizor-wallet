@@ -37,8 +37,10 @@ enum _PasscodePhase { create, confirm, submitting }
 /// Import flows still use the desktop set-password sequence (prepare → account
 /// mutation under the sync pause → commit, with rollback on failure).
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
-  const MobilePasscodeScreen({required SetPasswordScreenArgs this.args, super.key})
-    : ledgerArgs = null;
+  const MobilePasscodeScreen({
+    required SetPasswordScreenArgs this.args,
+    super.key,
+  }) : ledgerArgs = null;
 
   const MobilePasscodeScreen.ledger({
     required LedgerSetPasswordArgs args,
@@ -121,7 +123,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           account: ledgerArgs.account,
           birthdayHeight: ledgerArgs.birthdayHeight,
           pendingPassword: passcode,
-          sourceAccountUuid: ledgerArgs.sourceAccountUuid,
         ),
       );
       if (!mounted) return;

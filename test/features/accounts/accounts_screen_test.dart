@@ -22,7 +22,6 @@ import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -34,10 +33,6 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _validDeletePassword = 'Correct123!';
 const _invalidDeletePassword = 'Wrong123!';
-const _ledgerFingerprintA =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const _ledgerFingerprintB =
-    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 void main() {
   setUpAll(() async {
@@ -153,154 +148,7 @@ void main() {
     },
   );
 
-  testWidgets(
-    'accounts from the same Ledger render as one renameable wallet family',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1512, 982));
-      addTearDown(() async {
-        await tester.binding.setSurfaceSize(null);
-      });
-
-      const accountState = AccountState(
-        accounts: [
-          AccountInfo(uuid: 'software', name: 'Daily wallet', order: 0),
-          AccountInfo(
-            uuid: 'ledger-0',
-            name: 'Ledger primary',
-            order: 1,
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-            zip32AccountIndex: 0,
-            ledgerWalletFingerprint: _ledgerFingerprintA,
-          ),
-          AccountInfo(
-            uuid: 'ledger-1',
-            name: 'Ledger savings',
-            order: 2,
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-            zip32AccountIndex: 1,
-            ledgerWalletFingerprint: _ledgerFingerprintA,
-          ),
-        ],
-        activeAccountUuid: 'ledger-0',
-      );
-      await tester.pumpWidget(
-        _accountsHarness(
-          accountNotifier: () => _FakeAccountNotifier(accountState),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('Ledger wallet'), findsOneWidget);
-      expect(find.text('aaaa…aaaa'), findsNothing);
-      expect(find.text('Account 0'), findsOneWidget);
-      expect(find.text('Current'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('ledger_grouped_account_current_ledger-0')),
-        findsOneWidget,
-      );
-      expect(
-        tester
-            .widget<Text>(
-              find.byKey(
-                const ValueKey('ledger_grouped_account_current_ledger-0'),
-              ),
-            )
-            .data,
-        '· Current',
-      );
-      expect(
-        tester
-            .widget<Semantics>(
-              find.byKey(
-                const ValueKey('ledger_grouped_account_selection_ledger-0'),
-              ),
-            )
-            .properties
-            .selected,
-        isTrue,
-      );
-      expect(
-        tester.getTopLeft(find.text('Account 0')).dy,
-        greaterThan(
-          tester
-              .getBottomLeft(
-                find.descendant(
-                  of: find.byKey(
-                    const ValueKey('accounts_active_row_ledger-0'),
-                  ),
-                  matching: find.text('Ledger primary'),
-                ),
-              )
-              .dy,
-        ),
-      );
-      expect(
-        tester
-            .getTopRight(
-              find.byKey(
-                const ValueKey('ledger_grouped_account_current_ledger-0'),
-              ),
-            )
-            .dx,
-        lessThan(
-          tester
-              .getTopLeft(
-                find.byKey(const ValueKey('accounts_row_menu_button_ledger-0')),
-              )
-              .dx,
-        ),
-      );
-      expect(find.text('Account 1'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('accounts_active_row_ledger-0')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('accounts_other_row_ledger-1')),
-        findsOneWidget,
-      );
-      expect(find.text('Other'), findsOneWidget);
-      expect(find.text('Daily wallet'), findsOneWidget);
-
-      final groupName = find.text('Ledger wallet');
-      final renameButton = find.byKey(
-        const ValueKey('accounts_rename_ledger_family_ledger-0'),
-      );
-      final addButton = find.byKey(
-        const ValueKey('accounts_add_ledger_family_ledger-0'),
-      );
-      expect(
-        tester.getTopLeft(renameButton).dx - tester.getTopRight(groupName).dx,
-        moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
-      );
-      expect(
-        tester.getTopLeft(addButton).dx - tester.getTopRight(renameButton).dx,
-        greaterThan(AppSpacing.xl),
-      );
-
-      await tester.tap(
-        find.byKey(const ValueKey('accounts_rename_ledger_family_ledger-0')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Rename group name'), findsOneWidget);
-      await tester.enterText(
-        find.descendant(
-          of: find.byKey(const ValueKey('ledger_wallet_rename_field')),
-          matching: find.byType(EditableText),
-        ),
-        'Cold storage',
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('account_modal_action_button')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Cold storage'), findsOneWidget);
-    },
-  );
-
-  testWidgets('different Ledger wallets keep the flat account layout', (
+  testWidgets('Ledger accounts remain independent in Current and Other', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -316,7 +164,7 @@ void main() {
           order: 0,
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
-          ledgerWalletFingerprint: _ledgerFingerprintA,
+          zip32AccountIndex: 0,
         ),
         AccountInfo(
           uuid: 'ledger-b',
@@ -324,7 +172,7 @@ void main() {
           order: 1,
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
-          ledgerWalletFingerprint: _ledgerFingerprintB,
+          zip32AccountIndex: 1,
         ),
       ],
       activeAccountUuid: 'ledger-a',
@@ -700,7 +548,6 @@ void main() {
           ledgerDeviceId: 'nano-x-id',
           ledgerDeviceName: 'Rowan Ledger',
           ledgerDeviceModel: 'Nano X',
-          ledgerWalletFingerprint: _ledgerFingerprintA,
         ),
       ],
       activeAccountUuid: 'ledger-account',
@@ -726,7 +573,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Add Ledger account'), findsOneWidget);
+    expect(find.text('Add Ledger account'), findsNothing);
     await tester.tap(find.text('Recovery information'));
     await tester.pumpAndSettle();
 
@@ -745,7 +592,7 @@ void main() {
     );
   });
 
-  testWidgets('Ledger context menu starts add-account from that wallet', (
+  testWidgets('Ledger context menu has no wallet-level add-account action', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -761,7 +608,6 @@ void main() {
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
           zip32AccountIndex: 0,
-          ledgerWalletFingerprint: _ledgerFingerprintA,
         ),
       ],
       activeAccountUuid: 'ledger-account',
@@ -777,10 +623,7 @@ void main() {
       find.byKey(const ValueKey('accounts_row_menu_button_ledger-account')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Ledger account'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ledger add ledger-account'), findsOneWidget);
+    expect(find.text('Add Ledger account'), findsNothing);
   });
 
   for (final platform in [
@@ -1857,8 +1700,7 @@ Widget _accountsHarness({
       GoRoute(
         path: '/onboarding/ledger',
         builder: (_, state) {
-          final args = state.extra as LedgerConnectArgs?;
-          return Text('ledger add ${args?.sourceAccountUuid}');
+          return const Text('ledger add');
         },
       ),
       GoRoute(
@@ -2045,22 +1887,6 @@ class _FakeAccountNotifier extends AccountNotifier {
     final updated = [
       for (final account in prev.accounts)
         if (account.uuid == uuid) account.copyWith(name: newName) else account,
-    ];
-    state = AsyncData(prev.copyWith(accounts: updated));
-  }
-
-  @override
-  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
-    final prev = state.value ?? initialState;
-    final source = prev.accounts.singleWhere(
-      (account) => account.uuid == accountUuid,
-    );
-    final updated = [
-      for (final account in prev.accounts)
-        if (account.ledgerWalletFingerprint == source.ledgerWalletFingerprint)
-          account.copyWith(ledgerWalletName: newName)
-        else
-          account,
     ];
     state = AsyncData(prev.copyWith(accounts: updated));
   }

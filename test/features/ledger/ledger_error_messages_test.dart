@@ -66,13 +66,6 @@ void main() {
     }
   });
 
-  test('a different wallet detected before signing keeps retry open', () {
-    const error = 'Exception: $kLedgerWrongWalletMessage';
-    expect(ledgerActionableErrorMessage(error), kLedgerWrongWalletMessage);
-    expect(ledgerRequestNeedsRebuilding(error), isFalse);
-    expect(ledgerRequestExceedsCapacity(error), isFalse);
-  });
-
   test('only transaction counts are classified as smaller transfers', () {
     for (final label in [
       'transparent inputs',

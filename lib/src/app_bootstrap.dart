@@ -520,7 +520,6 @@ AccountInfo mergeBootstrappedAccountInfo({
     ledgerDeviceId: storedAccount?.ledgerDeviceId,
     ledgerDeviceName: storedAccount?.ledgerDeviceName,
     ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
-    ledgerWalletFingerprint: storedAccount?.ledgerWalletFingerprint,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,

@@ -32,7 +32,6 @@ use std::{
 
 use orchard::ValuePool;
 use pczt::roles::signer::{Signer, SpendAuthSignature};
-use sha2::{Digest, Sha256};
 
 use self::{
     apdu::{ApduCommand, ZCASH_CLA},
@@ -62,11 +61,6 @@ const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
 pub struct DeviceAppInfo {
     pub name: String,
     pub version: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WalletIdentity {
-    pub fingerprint: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -652,29 +646,6 @@ pub fn get_ufvk_with_device_model(_account_index: u32) -> Result<(String, Option
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn get_wallet_identity() -> Result<WalletIdentity, String> {
-    let operation = lock_operation()?;
-    let identity =
-        transport::LedgerTransport::connect_ufvk(operation.context())?.wallet_identity()?;
-    Ok(WalletIdentity {
-        fingerprint: wallet_fingerprint(&identity),
-    })
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn get_wallet_identity() -> Result<WalletIdentity, String> {
-    Err(unsupported_platform())
-}
-
-pub(crate) fn wallet_fingerprint(key: &apdu::WalletPublicKey) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"vizor-ledger-wallet-fingerprint-v1\0");
-    hasher.update(key.public_key);
-    hasher.update(key.chain_code);
-    hex::encode(hasher.finalize())
-}
-
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
@@ -915,8 +886,8 @@ fn lock_operation() -> Result<OperationGuard, String> {
             deadline: Instant::now() + LEDGER_OPERATION_TIMEOUT,
         },
     };
-    // Every operation waits, not only signing: the wallet check before a
-    // back-to-back signature is also an app command.
+    // Every operation waits, not only signing: key exports are also app
+    // commands that the status screen can drop.
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     wait_for_signing_status(guard.context())?;
     Ok(guard)

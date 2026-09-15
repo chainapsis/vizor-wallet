@@ -1408,7 +1408,6 @@ class _LedgerVotingAccountIdentity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final groupName = account.ledgerWalletName?.trim();
     return Column(
       key: const ValueKey('ledger_voting_account_identity'),
       mainAxisSize: MainAxisSize.min,
@@ -1435,16 +1434,6 @@ class _LedgerVotingAccountIdentity extends StatelessWidget {
             ),
           ],
         ),
-        if (groupName != null && groupName.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            groupName,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
-        ],
       ],
     );
   }

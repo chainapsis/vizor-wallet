@@ -546,7 +546,6 @@ void main() {
               seedFingerprint: List.filled(32, 1),
               zip32Index: 0,
               birthdayHeight: 3000000,
-              ledgerWalletFingerprint: 'ab' * 32,
             ),
         throwsA(anything),
       );
@@ -558,7 +557,7 @@ void main() {
   );
 
   test(
-    'wallet link preserves Ledger identity and recovery metadata without pairing',
+    'wallet link imports independent Ledger accounts without pairing',
     () async {
       FlutterSecureStorage.setMockInitialValues({});
       final supportDirectory = Directory.systemTemp.createTempSync(
@@ -582,8 +581,6 @@ void main() {
       );
       addTearDown(container.dispose);
       await container.read(accountProvider.future);
-      const fingerprint =
-          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
       LinkedWalletAccountImport linked(int index, String name) =>
           LinkedWalletAccountImport(
             sourceAccountUuid: 'desktop-$index',
@@ -595,8 +592,7 @@ void main() {
             hardwareSignerKind: HardwareSignerKind.ledger,
             ufvk: 'uview1ledger$index',
             seedFingerprint: List.filled(32, index),
-            ledgerWalletFingerprint: fingerprint,
-            ledgerWalletName: name,
+
             ledgerDeviceModel: 'Ledger Nano S Plus',
           );
       final result = await container
@@ -621,134 +617,19 @@ void main() {
         3000007,
       ]);
       for (final account in accounts) {
-        expect(account.ledgerWalletFingerprint, fingerprint.toLowerCase());
-        expect(account.ledgerWalletName, 'Travel Ledger');
         expect(account.ledgerDeviceModel, 'Ledger Nano S Plus');
         expect(account.ledgerDeviceId, isNull);
         expect(account.ledgerLastTransport, isNull);
         final restored = AccountInfo.fromJson(account.toJson());
-        expect(restored.ledgerWalletName, account.ledgerWalletName);
+
         expect(restored.ledgerDeviceModel, account.ledgerDeviceModel);
-        expect(
-          restored.ledgerWalletFingerprint,
-          account.ledgerWalletFingerprint,
-        );
+
         expect(restored.zip32AccountIndex, account.zip32AccountIndex);
         expect(restored.birthdayHeight, account.birthdayHeight);
       }
-      await container
-          .read(accountProvider.notifier)
-          .renameLedgerWallet(accounts.first.uuid, 'Local name');
-      await container
-          .read(accountProvider.notifier)
-          .importLinkedWalletAccounts(
-            network: 'main',
-            accountsToImport: [linked(8, 'Desktop name')],
-          );
-      expect(
-        container
-            .read(accountProvider)
-            .requireValue
-            .accounts
-            .last
-            .ledgerWalletName,
-        'Local name',
-      );
-      expect(_rustApi.importedHardwareKinds, ['ledger', 'ledger', 'ledger']);
+      expect(_rustApi.importedHardwareKinds, ['ledger', 'ledger']);
     },
   );
-
-  test(
-    'wallet link rejects a Ledger without identity before importing any account',
-    () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      final container = ProviderContainer(
-        overrides: [
-          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
-        ],
-      );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
-      await expectLater(
-        container
-            .read(accountProvider.notifier)
-            .importLinkedWalletAccounts(
-              network: 'main',
-              accountsToImport: const [
-                LinkedWalletAccountImport(
-                  name: 'Ledger',
-                  birthdayHeight: 3000000,
-                  zip32AccountIndex: 0,
-                  isHardware: true,
-                  isSeedAnchor: false,
-                  hardwareSignerKind: HardwareSignerKind.ledger,
-                ),
-              ],
-            ),
-        throwsArgumentError,
-      );
-      expect(_rustApi.importedHardwareKinds, isEmpty);
-    },
-  );
-
-  test('renames every account in the same Ledger wallet', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    const fingerprint =
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    const ledgers = [
-      AccountInfo(
-        uuid: 'ledger-1',
-        name: 'Ledger 1',
-        order: 0,
-        isHardware: true,
-        hardwareSignerKind: HardwareSignerKind.ledger,
-        zip32AccountIndex: 0,
-        ledgerWalletFingerprint: fingerprint,
-      ),
-      AccountInfo(
-        uuid: 'ledger-2',
-        name: 'Ledger 2',
-        order: 1,
-        isHardware: true,
-        hardwareSignerKind: HardwareSignerKind.ledger,
-        zip32AccountIndex: 1,
-        ledgerWalletFingerprint: fingerprint,
-      ),
-    ];
-    final bootstrap = AppBootstrapState(
-      initialLocation: '/home',
-      initialAccountState: const AccountState(
-        accounts: ledgers,
-        activeAccountUuid: 'ledger-1',
-      ),
-      initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('ledger-1'),
-      network: kZcashDefaultNetworkName,
-      rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
-      themeMode: ThemeMode.system,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
-    final container = ProviderContainer(
-      overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
-    );
-    addTearDown(container.dispose);
-    await container.read(accountProvider.future);
-
-    await container
-        .read(accountProvider.notifier)
-        .renameLedgerWallet('ledger-1', 'Cold storage');
-
-    expect(
-      container
-          .read(accountProvider)
-          .value!
-          .accounts
-          .map((account) => account.ledgerWalletName),
-      everyElement('Cold storage'),
-    );
-  });
 
   test(
     'next active account stays unchanged when removing a non-active account',

@@ -560,11 +560,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       key: state.pageKey,
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
-      child: LedgerConnectScreen(
-        sourceAccountUuid: state.extra is LedgerConnectArgs
-            ? (state.extra as LedgerConnectArgs).sourceAccountUuid
-            : null,
-      ),
+      child: LedgerConnectScreen(),
       transitionsBuilder: _onboardingFadeTransition,
     ),
   ),
@@ -586,9 +582,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           ledgerBackTarget: OnboardingBackTarget.route(
             label: 'Connect Ledger',
             routePath: '/onboarding/ledger',
-            routeExtra: LedgerConnectArgs(
-              sourceAccountUuid: args.sourceAccountUuid,
-            ),
           ),
           onBirthdaySelected: (birthdayHeight) async {
             if (!context.mounted) return;
@@ -598,7 +591,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 extra: LedgerSetPasswordArgs(
                   account: args.account,
                   birthdayHeight: birthdayHeight,
-                  sourceAccountUuid: args.sourceAccountUuid,
                 ),
               );
               return;
@@ -608,7 +600,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: birthdayHeight,
-                sourceAccountUuid: args.sourceAccountUuid,
               ),
             );
           },
@@ -635,10 +626,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           ledgerBackTarget: OnboardingBackTarget.route(
             label: 'Wallet Birthday Height',
             routePath: '/onboarding/ledger/birthday',
-            routeExtra: LedgerBirthdayArgs(
-              account: args.account,
-              sourceAccountUuid: args.sourceAccountUuid,
-            ),
+            routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
           ledgerOnContinue: (password) async {
             if (!context.mounted) return;
@@ -648,7 +636,6 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 account: args.account,
                 birthdayHeight: args.birthdayHeight,
                 pendingPassword: password,
-                sourceAccountUuid: args.sourceAccountUuid,
               ),
             );
           },
@@ -682,14 +669,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 ? '/onboarding/ledger/birthday'
                 : '/onboarding/ledger/set-password',
             routeExtra: args.pendingPassword == null
-                ? LedgerBirthdayArgs(
-                    account: args.account,
-                    sourceAccountUuid: args.sourceAccountUuid,
-                  )
+                ? LedgerBirthdayArgs(account: args.account)
                 : LedgerSetPasswordArgs(
                     account: args.account,
                     birthdayHeight: args.birthdayHeight,
-                    sourceAccountUuid: args.sourceAccountUuid,
                   ),
           ),
           onFinish: (name, profilePictureId) async {

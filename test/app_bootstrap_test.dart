@@ -190,8 +190,6 @@ void main() {
       ledgerDeviceId: 'nano-x-id',
       ledgerDeviceName: 'Rowan Ledger',
       ledgerDeviceModel: 'Nano X',
-      ledgerWalletFingerprint:
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -211,10 +209,6 @@ void main() {
     expect(merged.ledgerDeviceId, 'nano-x-id');
     expect(merged.ledgerDeviceName, 'Rowan Ledger');
     expect(merged.ledgerDeviceModel, 'Nano X');
-    expect(
-      merged.ledgerWalletFingerprint,
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    );
   });
 
   test('legacy hardware backfill preserves each stored signer kind', () {

@@ -1,3 +1,4 @@
+import '../../ledger/widgets/ledger_bluetooth_settings_button.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -178,6 +179,33 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final busy = _connectingDeviceId != null;
+    if (ledgerPairingNeedsReset(_error)) {
+      return MobileModalScaffold(
+        key: const ValueKey('mobile_ledger_device_sheet'),
+        title: kLedgerPairingInvalidTitle,
+        onClose: widget.onClose,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              kLedgerPairingInvalidMessage,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            const LedgerBluetoothSettingsButton(),
+            AppButton(
+              key: const ValueKey('mobile_ledger_discovery_retry'),
+              onPressed: () => unawaited(_startDiscovery()),
+              child: const Text('Try again'),
+            ),
+          ],
+        ),
+      );
+    }
+
     return MobileModalScaffold(
       key: const ValueKey('mobile_ledger_device_sheet'),
       title: 'Select your Ledger',

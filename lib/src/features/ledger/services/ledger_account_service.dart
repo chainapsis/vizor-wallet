@@ -18,7 +18,6 @@ class LedgerDeviceAccount {
     this.transport = LedgerConnectionTransport.usb,
     this.device,
     this.deviceModel,
-    this.walletFingerprint,
   });
 
   final String ufvk;
@@ -30,25 +29,6 @@ class LedgerDeviceAccount {
 
   /// Model of a USB device; Bluetooth devices carry it in [device].
   final String? deviceModel;
-  final String? walletFingerprint;
-
-  LedgerDeviceAccount withWalletIdentity(LedgerWalletIdentity identity) =>
-      LedgerDeviceAccount(
-        ufvk: ufvk,
-        seedFingerprint: seedFingerprint,
-        accountIndex: accountIndex,
-        appVersion: appVersion,
-        transport: transport,
-        device: device,
-        deviceModel: deviceModel,
-        walletFingerprint: identity.fingerprint,
-      );
-}
-
-class LedgerWalletIdentity {
-  const LedgerWalletIdentity({required this.fingerprint});
-
-  final String fingerprint;
 }
 
 typedef LedgerAccountConnector =
@@ -58,9 +38,6 @@ typedef LedgerBluetoothAccountConnector =
       int accountIndex,
       LedgerBleDevice device,
     );
-typedef LedgerWalletIdentityConnector = Future<LedgerWalletIdentity> Function();
-typedef LedgerBluetoothWalletIdentityConnector =
-    Future<LedgerWalletIdentity> Function(LedgerBleDevice device);
 typedef LedgerAccountImporter =
     Future<void> Function({
       required String name,
@@ -98,55 +75,6 @@ final ledgerBluetoothAccountConnectorProvider =
         bluetoothDevice: device,
       );
     });
-
-final ledgerWalletIdentityConnectorProvider =
-    Provider<LedgerWalletIdentityConnector>((ref) {
-      return () => _readLedgerWalletIdentity(
-        ref,
-        transport: LedgerConnectionTransport.usb,
-      );
-    });
-
-final ledgerBluetoothWalletIdentityConnectorProvider =
-    Provider<LedgerBluetoothWalletIdentityConnector>((ref) {
-      return (device) => _readLedgerWalletIdentity(
-        ref,
-        transport: LedgerConnectionTransport.bluetooth,
-      );
-    });
-
-Future<LedgerWalletIdentity> _readLedgerWalletIdentity(
-  Ref ref, {
-  required LedgerConnectionTransport transport,
-}) async {
-  final capability = ref.watch(ledgerStaticCapabilityProvider);
-  final networkName = ref.watch(
-    rpcEndpointProvider.select((endpoint) => endpoint.networkName),
-  );
-  capability.requireSupported();
-  await ref
-      .read(ledgerAppReadinessServiceForTransportProvider(transport))
-      .ensureReady();
-  final identity = transport == LedgerConnectionTransport.bluetooth
-      ? await readMobileLedgerWalletIdentity(
-          mobile: ref.read(ledgerMobileBleServiceProvider),
-          networkName: networkName,
-        )
-      : await rust_ledger.ledgerWalletIdentity(network: networkName);
-  return LedgerWalletIdentity(fingerprint: identity.fingerprint);
-}
-
-Future<rust_ledger.LedgerWalletIdentity> readMobileLedgerWalletIdentity({
-  required LedgerMobileBleService mobile,
-  required String networkName,
-}) async {
-  final plan = await rust_ledger.ledgerBuildWalletIdentityApduPlan();
-  final responses = await mobile.exchangeApdus(plan.commands);
-  return rust_ledger.ledgerParseMobileWalletIdentityResponses(
-    network: networkName,
-    responses: responses,
-  );
-}
 
 Future<LedgerDeviceAccount> _connectLedgerAccount(
   Ref ref, {
@@ -209,10 +137,6 @@ final ledgerAccountImporterProvider = Provider<LedgerAccountImporter>((ref) {
     required birthdayHeight,
     required profilePictureId,
   }) {
-    final walletFingerprint = account.walletFingerprint;
-    if (walletFingerprint == null) {
-      throw StateError('Ledger wallet identity is required before import.');
-    }
     return ref
         .read(accountProvider.notifier)
         .importLedgerAccount(
@@ -226,7 +150,26 @@ final ledgerAccountImporterProvider = Provider<LedgerAccountImporter>((ref) {
           ledgerDeviceId: account.device?.id,
           ledgerDeviceName: account.device?.name,
           ledgerDeviceModel: account.device?.model ?? account.deviceModel,
-          ledgerWalletFingerprint: walletFingerprint,
         );
   };
 });
+
+class LedgerDuplicateAccountException implements Exception {
+  const LedgerDuplicateAccountException();
+
+  @override
+  String toString() => 'This Ledger account is already in Vizor.';
+}
+
+final ledgerAccountDuplicateCheckerProvider =
+    Provider<Future<void> Function(String)>((ref) {
+      return (ufvk) async {
+        final accounts = (await ref.read(accountProvider.future)).accounts;
+        final loadUfvk = ref.read(ledgerAccountUfvkLoaderProvider);
+        for (final account in accounts) {
+          if (await loadUfvk(account.uuid) == ufvk) {
+            throw const LedgerDuplicateAccountException();
+          }
+        }
+      };
+    });

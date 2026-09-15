@@ -11,6 +11,17 @@ import XCTest
 @testable import Runner
 
 final class LedgerMobileHandlerTests: XCTestCase {
+  func testInvalidPairingIsDistinctFromRejectionAndDisconnection() {
+    let invalid = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue)
+    XCTAssertTrue(ledgerPairingInformationIsInvalid(invalid))
+    XCTAssertTrue(ledgerPairingInformationIsInvalid(
+      BleTransportError.connectError(description: invalid.localizedDescription)))
+    XCTAssertFalse(ledgerPairingInformationIsInvalid(
+      BleTransportError.pairingError(description: "Rejected")))
+    XCTAssertFalse(ledgerPairingInformationIsInvalid(
+      NSError(domain: CBErrorDomain, code: CBError.peripheralDisconnected.rawValue)))
+  }
+
   @MainActor
   func testCancelledUfvkDrainsWithoutContinuationOrDuplicateResult() async {
     // An approved first chunk would normally require another APDU. A rejection

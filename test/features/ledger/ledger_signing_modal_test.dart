@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_recovery.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,49 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  testWidgets(
+    'invalid pairing recovery reconnects before allowing another signature',
+    (tester) async {
+      var reconnects = 0;
+      var signatures = 0;
+      await tester.pumpWidget(
+        _harness(
+          phase: LedgerSigningModalPhase.failed,
+          account: const AccountInfo(
+            uuid: 'ledger-1',
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          failure: const LedgerSigningFailurePresentation(
+            title: 'Failed',
+            statusLabel: 'Interrupted',
+            message: kLedgerPairingInvalidMessage,
+            actionLabel: 'Try again',
+            requiresReconnect: true,
+          ),
+          reconnect: (_) async {
+            reconnects++;
+          },
+          onFailureAction: () {
+            signatures++;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(kLedgerPairingInvalidTitle), findsOneWidget);
+      expect(find.text(kLedgerPairingInvalidMessage), findsOneWidget);
+      expect(find.text('Open Bluetooth settings'), findsOneWidget);
+      await tester.ensureVisible(find.text('Try again'));
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(reconnects, 1);
+      expect(signatures, 0);
+      expect(find.text('Ready when you are'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'page layout keeps actions at the bottom while guidance scrolls',
     (tester) async {

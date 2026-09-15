@@ -7,6 +7,7 @@ import 'ledger_mobile_ble_service.dart';
 
 bool ledgerFailureNeedsReconnect(Object error) =>
     error is LedgerConnectionRequiredException ||
+    ledgerPairingNeedsReset(error) ||
     (error is LedgerMobileException &&
         (error.failure == LedgerMobileFailure.disconnected ||
             error.failure == LedgerMobileFailure.bluetoothOff)) ||

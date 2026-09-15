@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`, `to_wallet_identity`
+// These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
 
 /// Read the application currently running on the connected Ledger device.
 Future<LedgerDeviceApp> ledgerDeviceApp() =>
@@ -49,24 +49,6 @@ Future<LedgerAccountExport> ledgerExportAccount({
   accountIndex: accountIndex,
   network: network,
 );
-
-/// Read a stable wallet fingerprint without displaying an address.
-Future<LedgerWalletIdentity> ledgerWalletIdentity({required String network}) =>
-    RustLib.instance.api.crateApiLedgerLedgerWalletIdentity(network: network);
-
-/// Build the transport-neutral no-display public-key exchange used by BLE.
-Future<LedgerWalletIdentityApduPlan> ledgerBuildWalletIdentityApduPlan() =>
-    RustLib.instance.api.crateApiLedgerLedgerBuildWalletIdentityApduPlan();
-
-/// Parse status-bearing BLE responses from the wallet-identity plan.
-Future<LedgerWalletIdentity> ledgerParseMobileWalletIdentityResponses({
-  required String network,
-  required List<Uint8List> responses,
-}) =>
-    RustLib.instance.api.crateApiLedgerLedgerParseMobileWalletIdentityResponses(
-      network: network,
-      responses: responses,
-    );
 
 /// Build the Zcash app's UFVK request without opening a desktop transport.
 Future<LedgerUfvkApduPlan> ledgerBuildUfvkApduPlan({
@@ -507,38 +489,4 @@ class LedgerUfvkApduPlan {
           runtimeType == other.runtimeType &&
           first == other.first &&
           continuation == other.continuation;
-}
-
-/// Public, non-spending identity material used only to group local Ledger
-/// accounts that come from the same seed.
-class LedgerWalletIdentity {
-  final String fingerprint;
-
-  const LedgerWalletIdentity({required this.fingerprint});
-
-  @override
-  int get hashCode => fingerprint.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is LedgerWalletIdentity &&
-          runtimeType == other.runtimeType &&
-          fingerprint == other.fingerprint;
-}
-
-class LedgerWalletIdentityApduPlan {
-  final List<LedgerApduCommand> commands;
-
-  const LedgerWalletIdentityApduPlan({required this.commands});
-
-  @override
-  int get hashCode => commands.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is LedgerWalletIdentityApduPlan &&
-          runtimeType == other.runtimeType &&
-          commands == other.commands;
 }

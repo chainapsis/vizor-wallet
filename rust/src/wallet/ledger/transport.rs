@@ -15,8 +15,7 @@ use url::{Host, Url};
 
 use super::{
     apdu::{
-        decode_ufvk_chunks, decode_wallet_public_key, map_status_word, ufvk_commands,
-        wallet_identity_commands, WalletPublicKey,
+        decode_ufvk_chunks, map_status_word, ufvk_commands,
     },
     serializer::{packet_p1, packet_p2, CommandPackets},
     OperationContext,
@@ -167,20 +166,6 @@ impl LedgerTransport {
             )?);
         }
         decode_ufvk_chunks(&chunks)
-    }
-
-    pub(super) fn wallet_identity(&self) -> Result<WalletPublicKey, String> {
-        let mut commands = wallet_identity_commands()?.into_iter();
-        let identity_command = commands
-            .next()
-            .ok_or("Ledger wallet identity plan is empty")?;
-        let identity = decode_wallet_public_key(&self.exchange(
-            identity_command.ins,
-            identity_command.p1,
-            identity_command.p2,
-            identity_command.data,
-        )?)?;
-        Ok(identity)
     }
 
     pub(super) fn send_pczt(&self, commands: &[CommandPackets]) -> Result<(), String> {

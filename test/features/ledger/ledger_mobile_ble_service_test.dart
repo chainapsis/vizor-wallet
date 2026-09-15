@@ -21,6 +21,46 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test(
+    'invalid pairing retains recovery metadata across the native channel',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'pairing_invalid',
+              message: 'Native description',
+            );
+          });
+      await expectLater(
+        service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Flex'),
+        ),
+        throwsA(
+          isA<LedgerMobileException>()
+              .having(
+                (e) => e.failure,
+                'failure',
+                LedgerMobileFailure.pairingInvalid,
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                kLedgerPairingInvalidMessage,
+              ),
+        ),
+      );
+      expect(
+        ledgerPairingNeedsReset(
+          const LedgerMobileException(
+            LedgerMobileFailure.pairingRejected,
+            'Rejected',
+          ),
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test('maps native permission failure to a typed error', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

@@ -14,6 +14,37 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test('connection recovery preserves invalid pairing instructions', () async {
+    final ble = _FakeBleService()
+      ..connectError = const LedgerMobileException(
+        LedgerMobileFailure.pairingInvalid,
+        kLedgerPairingInvalidMessage,
+      );
+    final container = _container(
+      notifier: _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      ),
+      ble: ble,
+      platform: TargetPlatform.macOS,
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await expectLater(
+      container.read(ledgerConnectionServiceProvider).reconnect('ledger-1'),
+      throwsA(
+        isA<LedgerConnectionRequiredException>().having(
+          (e) => e.message,
+          'message',
+          kLedgerPairingInvalidMessage,
+        ),
+      ),
+    );
+    expect(ble.apduCalls, 0);
+  });
+
   for (final preference in LedgerConnectionPreference.values) {
     test('Linux respects the connection preference $preference', () async {
       final notifier = _FakeAccountNotifier(
@@ -537,6 +568,7 @@ class _FakeBleService implements LedgerMobileBleService {
   var grantPermissions = true;
   var apduCalls = 0;
   var connectCalls = 0;
+  Object? connectError;
   var disconnectCalls = 0;
   final connectedDeviceIds = <String>[];
   String? _connectedDeviceId;
@@ -546,6 +578,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
+    if (connectError case final error?) throw error;
     recoveryEvents.add('connect');
     connectCalls++;
     connectedDeviceIds.add(device.id);

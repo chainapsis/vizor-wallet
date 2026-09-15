@@ -35,9 +35,8 @@ void main() {
           'Recovery flow',
           'Connect Ledger',
           'Additional account',
-          'Account groups',
+          'Accounts',
           'Recovery information',
-          'Rename group',
           'Device approval',
           'Bundle approval',
         ]),
@@ -77,8 +76,7 @@ void main() {
         'Reconnect',
         'Ready to continue',
         'Recovery information',
-        'Account groups',
-        'Rename group',
+        'Accounts',
         'Voting approval',
         'Devices found',
         'No devices',
@@ -103,7 +101,7 @@ void main() {
         if (captureDir.isNotEmpty &&
             const [
               'Connect Ledger',
-              'Account groups',
+              'Accounts',
               'Approve transaction',
               'Reconnect',
               'Recovery information',
@@ -133,7 +131,7 @@ void main() {
             await tester.enterText(input, '2');
             await tester.pump(const Duration(milliseconds: 300));
             expect(
-              find.text('Index 2 is already used by this Ledger wallet.'),
+              find.text("Shielded: m/32'/133'/2'\nTransparent: m/44'/133'/2'"),
               findsOneWidget,
             );
           }
@@ -159,7 +157,7 @@ void main() {
               find.byKey(const ValueKey('ledger_preview_capture')),
               matchesGoldenFile(
                 Uri.file(
-                  '$captureDir/${screen == 'Connect Ledger' ? 'account-index' : 'duplicate-index'}.png',
+                  '$captureDir/${screen == 'Connect Ledger' ? 'account-index' : 'additional-account-index'}.png',
                 ),
               ),
             );
@@ -170,18 +168,6 @@ void main() {
           final frame = find.byKey(const ValueKey('ledger_flow_mobile_frame'));
           expect(tester.getSize(frame), const Size(393, 852));
           expect(tester.getCenter(frame).dx, 640);
-          if (screen == 'Rename group') {
-            await tester.tap(find.text('Open rename sheet'));
-            await tester.pumpAndSettle();
-            final nameField = find.byKey(
-              const ValueKey('mobile_ledger_wallet_name'),
-            );
-            expect(nameField, findsOneWidget);
-            expect(tester.getSize(nameField).width, lessThanOrEqualTo(393));
-            expect(tester.takeException(), isNull);
-            await tester.tap(find.text('Cancel'));
-            await tester.pumpAndSettle();
-          }
         }
       }
     }
@@ -232,8 +218,7 @@ void main() {
       (tester) async {
         await _pumpUseCase(
           tester,
-          (_) =>
-              buildLedgerFlowPreview(screen: 'Account groups', mobile: false),
+          (_) => buildLedgerFlowPreview(screen: 'Accounts', mobile: false),
           themeInsideHome: true,
         );
         await _pumpAsyncState(tester);
@@ -517,7 +502,7 @@ void main() {
         if (_mobileTokens) ...['Devices found', 'Empty', 'Permission denied'],
       ]),
     );
-    expect(folder.leaves, hasLength(_mobileTokens ? 17 : 14));
+    expect(folder.leaves, hasLength(_mobileTokens ? 17 : 13));
   });
 
   testWidgets('capacity guidance renders each transfer context', (
@@ -540,8 +525,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-        expect(find.text(kLedgerSmallerTransferTitle), findsOneWidget);
-        expect(find.text('Try another connection'), findsNothing);
+      expect(find.text(kLedgerSmallerTransferTitle), findsOneWidget);
+      expect(find.text('Try another connection'), findsNothing);
       expect(find.text('Try again'), findsNothing);
       expect(tester.takeException(), isNull, reason: kind.name);
       const captureDir = String.fromEnvironment('LEDGER_PREVIEW_CAPTURE_DIR');
@@ -725,7 +710,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('account details and rename previews use production surfaces', (
+  testWidgets('account details previews use production surfaces', (
     tester,
   ) async {
     await _pumpUseCase(
@@ -746,9 +731,6 @@ void main() {
     expect(find.text('Account index'), findsOne);
     expect(find.text('2870000'), findsOne);
 
-    await _pumpUseCase(tester, buildLedgerRenameUseCase);
-    expect(find.text('Rename group name'), findsOne);
-    expect(find.text('Group name'), findsOne);
     expect(tester.takeException(), isNull);
   });
 

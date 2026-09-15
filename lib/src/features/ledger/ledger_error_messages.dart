@@ -1,3 +1,4 @@
+import 'services/ledger_mobile_ble_service.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 
@@ -6,11 +7,6 @@ import 'package:flutter/foundation.dart'
 enum LedgerRequestKind { send, swap, payment, shield, migration, voting }
 
 const kLedgerSmallerTransferTitle = 'Ledger requires a smaller transfer';
-
-/// The connected device is a different Ledger wallet; checked before any
-/// approval is requested.
-const kLedgerWrongWalletMessage =
-    'This Ledger does not hold this account. Connect the Ledger that holds this account, then try again.';
 
 /// Only transaction capacity limits are amount-related. For example, the
 /// single BIP32 derivation limit cannot be fixed by reducing a payment.
@@ -24,6 +20,7 @@ String? ledgerActionableErrorMessage(
   Object error, {
   LedgerRequestKind requestKind = LedgerRequestKind.send,
 }) {
+  if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
   final text = error.toString().toLowerCase();
   if (ledgerRequestExceedsCapacity(error)) {
     return switch (requestKind) {
@@ -40,9 +37,6 @@ String? ledgerActionableErrorMessage(
       LedgerRequestKind.voting =>
         'This voting request exceeds your Ledger’s signing limit. Your vote was not signed. Changing a transfer amount will not fix this voting request.',
     };
-  }
-  if (text.contains('does not hold this account')) {
-    return kLedgerWrongWalletMessage;
   }
   if ((text.contains('apply ledger') && text.contains('signature at action')) ||
       text.contains('validate ledger transparent signature')) {

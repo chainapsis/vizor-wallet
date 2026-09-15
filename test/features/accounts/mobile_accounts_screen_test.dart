@@ -23,7 +23,6 @@ import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account
 import 'package:zcash_wallet/src/features/accounts/screens/hardware_account_details_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
-import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -32,11 +31,6 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
-
-const _ledgerFingerprintA =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const _ledgerFingerprintB =
-    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 AccountInfo _account(
   String uuid,
@@ -47,8 +41,6 @@ AccountInfo _account(
   HardwareSignerKind? hardwareSignerKind,
   int? birthdayHeight,
   int? zip32AccountIndex,
-  String? ledgerWalletFingerprint,
-  String? ledgerWalletName,
 }) => AccountInfo(
   uuid: uuid,
   name: name,
@@ -59,8 +51,6 @@ AccountInfo _account(
   hardwareSignerKind: hardwareSignerKind,
   birthdayHeight: birthdayHeight,
   zip32AccountIndex: zip32AccountIndex,
-  ledgerWalletFingerprint: ledgerWalletFingerprint,
-  ledgerWalletName: ledgerWalletName,
 );
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
@@ -113,8 +103,7 @@ Widget _app(
       GoRoute(
         path: '/onboarding/ledger',
         builder: (_, state) {
-          final args = state.extra as LedgerConnectArgs?;
-          return Text('ledger add ${args?.sourceAccountUuid}');
+          return const Text('ledger add');
         },
       ),
       GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
@@ -188,22 +177,6 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   FutureOr<AccountState> build() => initialState;
-
-  @override
-  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
-    final previous = state.value ?? initialState;
-    final source = previous.accounts.singleWhere(
-      (account) => account.uuid == accountUuid,
-    );
-    final updated = [
-      for (final account in previous.accounts)
-        if (account.ledgerWalletFingerprint == source.ledgerWalletFingerprint)
-          account.copyWith(ledgerWalletName: newName)
-        else
-          account,
-    ];
-    state = AsyncData(previous.copyWith(accounts: updated));
-  }
 
   @override
   Future<void> removeAccount(String uuid) async {
@@ -378,135 +351,7 @@ void main() {
     expect(safeArea.bottom, isFalse);
   });
 
-  testWidgets(
-    'accounts from the same Ledger render as one renameable wallet family',
-    (tester) async {
-      final accountState = AccountState(
-        accounts: [
-          _account('software', 'Daily wallet', order: 0),
-          _account(
-            'ledger-0',
-            'Ledger primary',
-            order: 1,
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-            zip32AccountIndex: 0,
-            ledgerWalletFingerprint: _ledgerFingerprintA,
-          ),
-          _account(
-            'ledger-1',
-            'Ledger savings',
-            order: 2,
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-            zip32AccountIndex: 1,
-            ledgerWalletFingerprint: _ledgerFingerprintA,
-          ),
-        ],
-        activeAccountUuid: 'ledger-0',
-      );
-      await tester.pumpWidget(
-        _app(
-          accountState,
-          accountNotifier: () => _FakeAccountNotifier(accountState),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('Ledger wallet'), findsOneWidget);
-      expect(find.text('aaaa…aaaa'), findsNothing);
-      expect(find.text('Account 0'), findsOneWidget);
-      expect(find.text('Account 1'), findsOneWidget);
-      expect(find.text('Current'), findsNothing);
-      expect(
-        tester
-            .widget<Semantics>(
-              find.byKey(
-                const ValueKey('ledger_grouped_account_selection_ledger-0'),
-              ),
-            )
-            .properties
-            .selected,
-        isTrue,
-      );
-      expect(
-        find.byKey(const ValueKey('ledger_grouped_account_current_ledger-1')),
-        findsNothing,
-      );
-      expect(
-        tester.getTopLeft(find.text('Account 0')).dy,
-        greaterThan(tester.getBottomLeft(find.text('Ledger primary')).dy),
-      );
-      expect(
-        tester
-            .getTopRight(
-              find.byKey(
-                const ValueKey('ledger_grouped_account_current_ledger-0'),
-              ),
-            )
-            .dx,
-        lessThan(
-          tester
-              .getTopLeft(
-                find.byKey(const ValueKey('mobile_accounts_menu_ledger-0')),
-              )
-              .dx,
-        ),
-      );
-      expect(find.text('Other'), findsOneWidget);
-      expect(find.text('Daily wallet'), findsOneWidget);
-
-      final groupTitle = find.text('Ledger wallet');
-      final groupRename = find.byKey(
-        const ValueKey('mobile_accounts_rename_ledger_family_ledger-0'),
-      );
-      final groupAdd = find.byKey(
-        const ValueKey('mobile_accounts_add_ledger_family_ledger-0'),
-      );
-      expect(
-        tester.getTopLeft(groupRename).dx - tester.getTopRight(groupTitle).dx,
-        moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
-      );
-      expect(
-        tester.getTopLeft(groupAdd).dx,
-        greaterThan(tester.getTopRight(groupRename).dx),
-      );
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('mobile_accounts_rename_ledger_family_ledger-0'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Rename group name'), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_ledger_wallet_name')),
-        'Cold storage',
-      );
-      expect(find.text('Cold storage'), findsOneWidget);
-      tester.testTextInput.hide();
-      await tester.pumpAndSettle();
-      final renameButton = find.byKey(
-        const ValueKey('mobile_ledger_wallet_rename'),
-      );
-      await tester.ensureVisible(renameButton);
-      await tester.tap(renameButton);
-      await tester.pumpAndSettle();
-      expect(find.text('Rename group name'), findsNothing);
-      expect(find.text('Cold storage'), findsOneWidget);
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('mobile_accounts_add_ledger_family_ledger-0'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('ledger add ledger-0'), findsOneWidget);
-    },
-  );
-
-  testWidgets('different Ledger wallets keep the flat account layout', (
+  testWidgets('Ledger accounts remain independent in Current and Other', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -519,7 +364,6 @@ void main() {
               order: 0,
               isHardware: true,
               hardwareSignerKind: HardwareSignerKind.ledger,
-              ledgerWalletFingerprint: _ledgerFingerprintA,
             ),
             _account(
               'ledger-b',
@@ -527,7 +371,6 @@ void main() {
               order: 1,
               isHardware: true,
               hardwareSignerKind: HardwareSignerKind.ledger,
-              ledgerWalletFingerprint: _ledgerFingerprintB,
             ),
           ],
           activeAccountUuid: 'ledger-a',
@@ -656,9 +499,6 @@ void main() {
                 hardwareSignerKind: kind,
                 birthdayHeight: birthday,
                 zip32AccountIndex: accountIndex,
-                ledgerWalletFingerprint: kind == HardwareSignerKind.ledger
-                    ? _ledgerFingerprintA
-                    : null,
               ),
             ],
             activeAccountUuid: 'a',

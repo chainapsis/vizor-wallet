@@ -637,6 +637,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func flutterError(for error: Error) -> FlutterError {
+    if ledgerPairingInformationIsInvalid(error) {
+      return flutterError(
+        code: "pairing_invalid",
+        message: "Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect."
+      )
+    }
+
     if error is CancellationError {
       return flutterError(code: "cancelled", message: "Ledger preparation was cancelled.")
     }
@@ -892,6 +899,7 @@ struct LedgerMobileAppSwitchCoordinator {
   }
 
   static func isTransientTransitionError(_ error: Error) -> Bool {
+    if ledgerPairingInformationIsInvalid(error) { return false }
     if let error = error as? LedgerMobileProtocolError {
       // Only explicit device-busy statuses are safe to wait through. Rejection,
       // lock, missing-app and malformed responses must still fail immediately.
@@ -1052,5 +1060,30 @@ extension Array where Element == UInt8 {
 extension Array where Element == [UInt8] {
   fileprivate func asFlutterResponses() -> [[Int]] {
     map { response in response.map(Int.init) }
+  }
+}
+
+/// BleTransport 1.0.1 flattens CoreBluetooth errors to localized descriptions.
+/// Compare against the OS's own localized description, not an English substring.
+func ledgerPairingInformationIsInvalid(_ error: Error) -> Bool {
+  let native = error as NSError
+  if native.domain == CBErrorDomain,
+    native.code == CBError.peerRemovedPairingInformation.rawValue
+  {
+    return true
+  }
+  let expected = NSError(
+    domain: CBErrorDomain,
+    code: CBError.peerRemovedPairingInformation.rawValue
+  ).localizedDescription
+  guard let transportError = error as? BleTransportError else { return false }
+  switch transportError {
+  case .connectError(let description), .currentConnectedError(let description),
+    .writeError(let description), .readError(let description),
+    .listenError(let description), .pairingError(let description),
+    .lowerLevelError(let description):
+    return description == expected
+  default:
+    return false
   }
 }

@@ -115,7 +115,6 @@ Widget _ledgerRouterApp() {
           args: LedgerSetPasswordArgs(
             account: account,
             birthdayHeight: 2500000,
-            sourceAccountUuid: 'source-ledger',
           ),
         ),
       ),
@@ -125,8 +124,7 @@ Widget _ledgerRouterApp() {
           final args = state.extra! as LedgerCustomiseAccountArgs;
           return Text(
             'ledger customise ${args.account.accountIndex} '
-            '${args.birthdayHeight} ${args.pendingPassword} '
-            '${args.sourceAccountUuid}',
+            '${args.birthdayHeight} ${args.pendingPassword}',
           );
         },
       ),
@@ -200,25 +198,23 @@ void main() {
     expect(_stepsProgress(tester), closeTo(mobileImportProgress(4), 0.0001));
   });
 
-  testWidgets('Ledger passcode forwards the pending password to customisation', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_ledgerRouterApp());
-    await tester.pump();
+  testWidgets(
+    'Ledger passcode forwards the pending password to customisation',
+    (tester) async {
+      await tester.pumpWidget(_ledgerRouterApp());
+      await tester.pump();
 
-    expect(
-      _stepsProgress(tester),
-      closeTo(kMobileLedgerPasscodeProgress, 0.0001),
-    );
-    await _enter(tester, '123456');
-    await _enter(tester, '123456');
-    await tester.pumpAndSettle();
+      expect(
+        _stepsProgress(tester),
+        closeTo(kMobileLedgerPasscodeProgress, 0.0001),
+      );
+      await _enter(tester, '123456');
+      await _enter(tester, '123456');
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text('ledger customise 7 2500000 123456 source-ledger'),
-      findsOneWidget,
-    );
-  });
+      expect(find.text('ledger customise 7 2500000 123456'), findsOneWidget);
+    },
+  );
 
   testWidgets('a mismatched confirmation restarts with an error', (
     tester,

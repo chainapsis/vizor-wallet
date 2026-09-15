@@ -231,6 +231,7 @@ class LedgerAppReadinessService {
     if (error is LedgerMobileException) {
       final failure = switch (error.failure) {
         LedgerMobileFailure.pairingRejected ||
+        LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.disconnected =>
           LedgerAppReadinessFailure.disconnected,
         LedgerMobileFailure.locked => LedgerAppReadinessFailure.locked,

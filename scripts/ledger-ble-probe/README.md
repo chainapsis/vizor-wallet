@@ -1,5 +1,24 @@
 # Ledger-shaped virtual BLE probe
 
+## Current implementation reference, 2026-09-10
+
+The observations below retain the versions and timings of their original runs.
+At Vizor `0c74730724bc8d3f141cd89c82d9268609f8043d`, the Dart BLE signing gate
+and Rust USB signing cooldown are **3 seconds**, not the 4 seconds recorded
+in the September 7 replays. Those replays do not validate the current timing.
+Current support contracts and remaining validation gaps are in
+[Ledger 지원 사양](../../docs/ledger-support.md) and
+[Ledger 지원 검토](../../docs/ledger-support-review.md).
+Windows now has a separate C++/WinRT BLE adapter. Its Windows Release/Stax
+verification and user-reported transaction/recovery results are recorded in
+the support review; they are not results of this Android synthetic probe.
+Linux now has a separate BlueZ/GIO adapter sharing the BLE protocol headers.
+The Ubuntu Release/Stax pairing, account import, and user-confirmed Bluetooth
+connection/signing are recorded there separately, along with the final staged
+source tests. They do not extend the coverage of the Android probe below.
+
+## Probe scope
+
 This directory contains a raw Android GATT probe and an official Ledger DMK
 probe. Neither provides Vizor, Ledger firmware, RF, or Speculos E2E coverage.
 No seed, wallet, or network transaction is used. The raw peripheral accepts

@@ -240,8 +240,6 @@ void main() {
           'zip32AccountIndex': 3,
           'ufvk': 'uview1ledger',
           'seedFingerprint': List<int>.filled(32, 9),
-          'ledgerWalletFingerprint': List.filled(64, 'A').join(),
-          'ledgerWalletName': '  Travel Ledger  ',
           'ledgerDeviceModel': ' Ledger Nano S Plus ',
         },
       ],
@@ -282,8 +280,7 @@ void main() {
     expect(ledger.isSupportedByMobile, isTrue);
     expect(ledger.isImportable, isTrue);
     final ledgerImport = ledger.toAccountImport();
-    expect(ledgerImport.ledgerWalletFingerprint, List.filled(64, 'a').join());
-    expect(ledgerImport.ledgerWalletName, 'Travel Ledger');
+
     expect(ledgerImport.ledgerDeviceModel, 'Ledger Nano S Plus');
     expect(ledgerImport.zip32AccountIndex, 3);
     expect(ledgerImport.birthdayHeight, 100);
@@ -310,27 +307,6 @@ void main() {
 
     final linkedImport = keystone.toAccountImport();
     expect(linkedImport.sourceAccountUuid, 'keystone');
-  });
-
-  test('linked Ledger needs a valid wallet identity, not a device ID', () {
-    for (final fingerprint in [null, '', 'abcd', List.filled(64, 'g').join()]) {
-      final account = WalletLinkTransferAccount.fromJson({
-        'uuid': 'ledger',
-        'name': 'Ledger',
-        'order': 0,
-        'isHardware': true,
-        'isSeedAnchor': false,
-        'hardwareKind': 'ledger',
-        'birthdayHeight': 100,
-        'zip32AccountIndex': 0,
-        'ufvk': 'uview1ledger',
-        'seedFingerprint': List<int>.filled(32, 9),
-        'ledgerWalletFingerprint': fingerprint,
-        'ledgerDeviceId': 'desktop-only-device',
-      });
-      expect(account.isSupportedByMobile, isTrue);
-      expect(account.isImportable, isFalse);
-    }
   });
 
   test('mobile wallet link state excludes already imported accounts', () {

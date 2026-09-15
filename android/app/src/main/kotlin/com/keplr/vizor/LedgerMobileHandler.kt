@@ -5,6 +5,8 @@ import android.app.Activity
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.provider.Settings
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import com.ledger.devicemanagement.DeviceManagementKitApi
@@ -62,6 +64,14 @@ class LedgerMobileHandler(
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "openBluetoothSettings" -> {
+                try {
+                    activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                    result.success(true)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    result.success(false)
+                }
+            }
             "requestPermissions" -> requestPermissions(result)
             "startDiscovery" -> startDiscovery(result)
             "stopDiscovery" -> {

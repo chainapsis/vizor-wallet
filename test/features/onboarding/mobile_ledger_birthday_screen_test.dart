@@ -37,10 +37,7 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => const MobileLedgerBirthdayScreen(
-            args: LedgerBirthdayArgs(
-              account: _account,
-              sourceAccountUuid: 'source-ledger',
-            ),
+            args: LedgerBirthdayArgs(account: _account),
             loadChainMetadata: false,
           ),
         ),
@@ -49,8 +46,7 @@ void main() {
           builder: (_, state) {
             final args = state.extra! as LedgerCustomiseAccountArgs;
             return Text(
-              'customise-${args.account.accountIndex}-${args.birthdayHeight}-'
-              '${args.sourceAccountUuid}',
+              'customise-${args.account.accountIndex}-${args.birthdayHeight}',
             );
           },
         ),
@@ -73,7 +69,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('customise-7-2500000-source-ledger'), findsOneWidget);
+    expect(find.text('customise-7-2500000'), findsOneWidget);
 
     router.pop();
     await tester.pumpAndSettle();
@@ -82,7 +78,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('customise-7-2500000-source-ledger'), findsOneWidget);
+    expect(find.text('customise-7-2500000'), findsOneWidget);
   });
 
   testWidgets('routes a first Ledger account through passcode setup', (
@@ -95,10 +91,7 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => const MobileLedgerBirthdayScreen(
-            args: LedgerBirthdayArgs(
-              account: _account,
-              sourceAccountUuid: 'source-ledger',
-            ),
+            args: LedgerBirthdayArgs(account: _account),
             loadChainMetadata: false,
           ),
         ),
@@ -131,35 +124,33 @@ void main() {
     expect(find.text('passcode route'), findsOneWidget);
     expect(passcodeArgs?.account, same(_account));
     expect(passcodeArgs?.birthdayHeight, 2500000);
-    expect(passcodeArgs?.sourceAccountUuid, 'source-ledger');
   });
 }
 
-Widget _harness(
-  GoRouter router, {
-  bool passwordConfigured = true,
-}) => ProviderScope(
-  overrides: [
-    appBootstrapProvider.overrideWithValue(
-      _bootstrap(passwordConfigured: passwordConfigured),
-    ),
-  ],
-  child: MaterialApp.router(
-    routerConfig: router,
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
-  ),
-);
+Widget _harness(GoRouter router, {bool passwordConfigured = true}) =>
+    ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(passwordConfigured: passwordConfigured),
+        ),
+      ],
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (_, child) =>
+            AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    );
 
 AppBootstrapState _bootstrap({required bool passwordConfigured}) =>
     AppBootstrapState(
-  initialLocation: '/',
-  initialAccountState: const AccountState(accounts: []),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
-  isPasswordConfigured: passwordConfigured,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-);
+      initialLocation: '/',
+      initialAccountState: const AccountState(accounts: []),
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.light,
+      privacyModeEnabled: false,
+      isPasswordConfigured: passwordConfigured,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+    );

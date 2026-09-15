@@ -248,8 +248,6 @@ class WalletLinkController extends Notifier<WalletLinkState> {
             ? seedFingerprint!.toList()
             : null,
         if (account.isLedger) ...{
-          'ledgerWalletFingerprint': account.ledgerWalletFingerprint,
-          'ledgerWalletName': account.ledgerWalletName,
           // The model decides whether Bluetooth signing is possible on mobile.
           'ledgerDeviceModel': account.ledgerDeviceModel,
         },

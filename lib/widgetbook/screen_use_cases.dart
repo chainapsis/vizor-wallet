@@ -246,8 +246,6 @@ const _ledgerAdditionalAccountState = AccountState(
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 0,
-      ledgerWalletFingerprint:
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ),
     AccountInfo(
       uuid: 'ledger-savings',
@@ -256,8 +254,6 @@ const _ledgerAdditionalAccountState = AccountState(
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 2,
-      ledgerWalletFingerprint:
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ),
   ],
   activeAccountUuid: 'ledger-primary',
@@ -708,8 +704,8 @@ Widget buildAccountsManyUseCase(BuildContext context) {
   return _buildAccountsUseCase(_accountsManyState);
 }
 
-Widget buildAccountsLedgerFamilyUseCase(BuildContext context) {
-  return _buildAccountsUseCase(_accountsLedgerFamilyState);
+Widget buildAccountsLedgerUseCase(BuildContext context) {
+  return _buildAccountsUseCase(_accountsLedgerState);
 }
 
 Widget buildAccountsOtherMenuUseCase(BuildContext context) {
@@ -1287,8 +1283,8 @@ Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
 }
 
-Widget buildMobileAccountsLedgerFamilyUseCase(BuildContext context) {
-  return _buildMobileAccountsUseCase(_accountsLedgerFamilyState);
+Widget buildMobileAccountsLedgerUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsLedgerState);
 }
 
 Widget buildMobileHomeDefaultUseCase(
@@ -3571,8 +3567,7 @@ class _LedgerAdditionalAccountHarnessState
       routes: [
         GoRoute(
           path: '/onboarding/ledger',
-          builder: (_, _) =>
-              const LedgerConnectScreen(sourceAccountUuid: 'ledger-primary'),
+          builder: (_, _) => const LedgerConnectScreen(),
         ),
         GoRoute(
           path: '/onboarding/ledger/birthday',
@@ -3628,9 +3623,7 @@ class _MobileLedgerAdditionalAccountHarnessState
       routes: [
         GoRoute(
           path: '/onboarding/ledger',
-          builder: (_, _) => const MobileLedgerConnectScreen(
-            sourceAccountUuid: 'ledger-primary',
-          ),
+          builder: (_, _) => const MobileLedgerConnectScreen(),
         ),
         GoRoute(
           path: '/accounts',
@@ -4132,10 +4125,7 @@ final _accountsManyState = AccountState(
   activeAddress: 'u1widgetbookaccountsaddress',
 );
 
-const _previewLedgerWalletFingerprint =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-
-final _accountsLedgerFamilyState = AccountState(
+final _accountsLedgerState = AccountState(
   accounts: const [
     AccountInfo(
       uuid: 'preview-ledger-0',
@@ -4144,7 +4134,7 @@ final _accountsLedgerFamilyState = AccountState(
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 0,
-      ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+
       birthdayHeight: 2870000,
       ledgerDeviceId: 'preview-ledger-device',
       ledgerDeviceName: 'Ledger Flex',
@@ -4158,7 +4148,7 @@ final _accountsLedgerFamilyState = AccountState(
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
       zip32AccountIndex: 1,
-      ledgerWalletFingerprint: _previewLedgerWalletFingerprint,
+
       birthdayHeight: 2870000,
       ledgerDeviceId: 'preview-ledger-device',
       ledgerDeviceName: 'Ledger Flex',
@@ -5185,28 +5175,6 @@ class _PreviewAccountNotifier extends AccountNotifier {
           for (final account in prev.accounts)
             if (account.uuid == uuid)
               account.copyWith(name: newName)
-            else
-              account,
-        ],
-      ),
-    );
-  }
-
-  @override
-  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
-    final previous = state.value ?? initialState;
-    final target = previous.accounts
-        .where((account) => account.uuid == accountUuid && account.isLedger)
-        .firstOrNull;
-    final fingerprint = target?.ledgerWalletFingerprint;
-    if (fingerprint == null) return;
-    state = AsyncData(
-      previous.copyWith(
-        accounts: [
-          for (final account in previous.accounts)
-            if (account.isLedger &&
-                account.ledgerWalletFingerprint == fingerprint)
-              account.copyWith(ledgerWalletName: newName)
             else
               account,
         ],

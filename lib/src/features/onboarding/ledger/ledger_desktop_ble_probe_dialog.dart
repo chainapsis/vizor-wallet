@@ -10,6 +10,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/widgets/ledger_bluetooth_settings_button.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -255,7 +256,9 @@ class _LedgerDesktopBleConnectDialogState
         'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
       _ => 'Vizor could not connect to this Ledger over Bluetooth. Try again.',
     };
-    _fail(message);
+    _fail(
+      ledgerPairingNeedsReset(error) ? kLedgerPairingInvalidMessage : message,
+    );
   }
 
   Future<void> _answerPairing(LedgerPairingAnswer answer, bool accept) async {
@@ -276,6 +279,8 @@ class _LedgerDesktopBleConnectDialogState
 
   @override
   Widget build(BuildContext context) {
+    final pairingInvalid =
+        _phase == _ProbePhase.failed && ledgerPairingNeedsReset(_error);
     return Material(
       type: MaterialType.transparency,
       child: AppModalCard(
@@ -287,7 +292,9 @@ class _LedgerDesktopBleConnectDialogState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Choose your Ledger',
+                pairingInvalid
+                    ? kLedgerPairingInvalidTitle
+                    : 'Choose your Ledger',
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineMedium.copyWith(
                   color: context.colors.text.accent,
@@ -295,34 +302,41 @@ class _LedgerDesktopBleConnectDialogState
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
+                pairingInvalid
+                    ? kLedgerPairingInvalidMessage
+                    : 'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              Consumer(
-                builder: (context, ref, _) => _buildBody(
-                  context,
-                  pairingCode: _phase == _ProbePhase.connecting
-                      ? ref.watch(ledgerPairingCodeProvider).value
-                      : null,
-                  answerPairing: ref.read(ledgerPairingAnswerProvider),
+              if (!pairingInvalid)
+                Consumer(
+                  builder: (context, ref, _) => _buildBody(
+                    context,
+                    pairingCode: _phase == _ProbePhase.connecting
+                        ? ref.watch(ledgerPairingCodeProvider).value
+                        : null,
+                    answerPairing: ref.read(ledgerPairingAnswerProvider),
+                  ),
                 ),
-              ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(widget.platform)}.',
-                style: AppTypography.bodySmall.copyWith(
-                  color: context.colors.text.secondary,
+              if (!pairingInvalid)
+                Text(
+                  'Bluetooth is available on Ledger ${ledgerBluetoothSupportedModels(widget.platform)}.',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
               const SizedBox(height: AppSpacing.sm),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_phase == _ProbePhase.failed &&
+                      ledgerPairingNeedsReset(_error))
+                    const LedgerBluetoothSettingsButton(),
                   Visibility(
                     visible:
                         _phase == _ProbePhase.empty ||
@@ -445,7 +459,9 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.failed => (
         AppIcons.ledger,
-        'Let’s reconnect',
+        ledgerPairingNeedsReset(_error)
+            ? kLedgerPairingInvalidTitle
+            : 'Let’s reconnect',
         _error ?? 'Try again.',
       ),
       _ProbePhase.devices => throw StateError('Device list handled above'),

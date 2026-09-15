@@ -386,7 +386,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      GoRouter.of(tester.element(find.text('send-route'))).push('/send/review');
+      GoRouter.of(tester.element(find.text('send-route'))).push(
+        '/send/review?flow=test-send-flow',
+        extra: _reviewArgs(addressType: 'unified'),
+      );
       await tester.pumpAndSettle();
       if (refreshFailure) {
         syncNotifier.refreshError = StateError('balance unavailable');

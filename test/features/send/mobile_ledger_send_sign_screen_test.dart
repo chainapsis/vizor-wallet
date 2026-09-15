@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send
 import 'package:zcash_wallet/src/features/send/services/sapling_params.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 final _args = SendReviewArgs(
@@ -554,6 +555,7 @@ Widget _app({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
       ledgerPcztSignerProvider.overrideWithValue(
         (_, pcztBytes) => signer(pcztBytes),
       ),
@@ -667,4 +669,12 @@ class _FakeOperationService
 
   @override
   Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+}
+
+class _FakeSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
 }

@@ -2,8 +2,8 @@
 
 This document is Vizor's Ledger support contract. It covers what works on which
 platform and device, how accounts and signatures are checked, the limits a user
-can hit, and what is still unverified. It describes `rowan/ledger-advanced` at
-`2cdbd5552` (2026-09-14). Ledger support is not on `main` and has not shipped.
+can hit, and what is still unverified. It describes the account-level cleanup on `rowan/ledger-advanced`
+(2026-09-16, based on `7ef833bc0`). Ledger support is not on `main` and has not shipped.
 
 "Implemented" means the code path exists. It does not mean every OS and Ledger
 model was tested on a physical device; [Verification status](#verification-status)
@@ -21,7 +21,7 @@ the device, and mobile USB are not supported.
 | Feature | macOS / Windows / Linux | iOS / Android | Conditions |
 | --- | --- | --- | --- |
 | Add as the first account | Implemented | Implemented | Approve the UFVK on the Ledger, then set the birthday and password or passcode |
-| Add another account from the same Ledger | Implemented | Implemented | Each index needs its own UFVK approval and a matching wallet fingerprint |
+| Add another account from the same Ledger | Implemented | Implemented | Each account index needs its own UFVK approval |
 | Sync, balances, receive addresses | Implemented | Implemented | Uses the imported UFVK; no Ledger connection needed |
 | Send | Implemented | Implemented | Pool, address, and capacity limits below |
 | Send to a TEX address | Implemented | Implemented | Two dependent PCZTs, approved one after the other |
@@ -30,7 +30,7 @@ the device, and mobile USB are not supported.
 | Coinholder voting | Implemented | Implemented | One approval per bundle; the device does not clear-sign the vote content |
 | Orchard-to-Ironwood migration | Blocked | Blocked | Signer code remains; the product entry point is closed |
 | Verify a receive address on the Ledger | Not implemented | Not implemented | Vizor shows and copies addresses; the device does not display them |
-| Wallet Link, desktop to mobile | Exports Ledger accounts | Imports without the device | The first mobile signature enrolls a Bluetooth Ledger after matching the wallet fingerprint and UFVK |
+| Wallet Link, desktop to mobile | Exports Ledger accounts | Imports without the device | The first mobile signature enrolls a Bluetooth Ledger after matching the account UFVK |
 
 Signing entry points: [send review](../lib/src/features/send/screens/send_review_screen.dart),
 [mobile send](../lib/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart),
@@ -151,7 +151,7 @@ Sources: [Linux transport](../linux/runner/ledger_bluez_transport.cc),
 Windows and Linux share the Ledger UUIDs, framing, MTU handling, and response
 parser in [`native/ledger/ble_protocol.h`](../native/ledger/ble_protocol.h).
 
-## Accounts and wallet identity
+## Accounts and derivation metadata
 
 ### What Vizor holds
 
@@ -169,89 +169,37 @@ mnemonic entry, and the account menu does not offer to show a secret phrase.
 | `accountUuid` | The account's ID in the Vizor database | A Ledger device ID |
 | ZIP-32 account index | Selects `m/32'/133'/index'`, and `m/44'/133'/index'` for transparent funds; `0..2147483647` | The display order |
 | `seedFingerprint` | SHA-256 over `vizor-ledger-account-fingerprint-v1\0`, the index, and the UFVK; fills the 32-byte seed fingerprint slot in the database and in PCZTs | The real ZIP-32 seed fingerprint, which requires the seed |
-| `ledgerWalletFingerprint` | SHA-256 over the public key and chain code at `m/44'/133'/0'`; the same for every account from one seed | A device serial, a Bluetooth address, or spending authority |
 | Bluetooth device ID, name, model | Rediscovery and display | Proof that the device holds the account |
 
-The Zcash app does not export a seed fingerprint, so Vizor keeps these two
-values separate. The device does not check the PCZT seed fingerprint field:
+The Zcash app does not export a seed fingerprint, so Vizor uses the account-scoped
+substitute described above for DB and PCZT derivation metadata. The device does not check the PCZT seed fingerprint field:
 app-zcash 3.9.3 only logs it while parsing (`src/parser/pczt/orchard.rs`,
 `ironwood.rs`, `transparent.rs`) and checks keys by re-deriving them from the
 path. Vizor compares the field with the selected account before signing.
 
-### Wallet identity
-
-A physical device is not a wallet. A Ledger reset to a new seed must not join
-its old accounts, and the same seed restored on another Ledger must. Vizor
-therefore derives the wallet fingerprint from public BIP-44 data:
-
-1. Send `GET_PUBLIC_KEY` (`CLA 0xE0`, `INS 0x40`, `P1 0x00`) for `m/44'/133'/0'`.
-   `P1 0x00` means no display, so the app answers without a screen or an
-   approval. The Ledger only needs to be unlocked with the Zcash app open.
-2. Validate the returned secp256k1 key and serialize it in its compressed 33-byte form.
-3. Hash `vizor-ledger-wallet-fingerprint-v1\0 || compressed_pubkey || chain_code` with SHA-256.
-4. Store the lowercase hex digest on every imported Ledger account.
-
-The account level is fixed at `0'` so that the value identifies the wallet
-rather than an account. USB and Bluetooth use the same command plan, so both
-produce the same fingerprint. The request draws no screen, so it does not start
-the [status screen after signing](#status-screen-after-signing).
-
-The fingerprint is used to:
-
-- group accounts from the same Ledger and rename the group;
-- find the wallet's existing accounts and suggest the next index during import;
-- check, before every signature, that the connected Ledger holds the account's wallet;
-- keep the grouping through Wallet Link.
-
-There is no backfill. An account imported before the fingerprint existed is
-shown on its own, cannot be the source for adding another index, and is not
-checked before signing; Rust still rejects signatures that do not match it.
-
-Sources: [command plan](../rust/src/wallet/ledger/apdu.rs),
-[fingerprint and device operations](../rust/src/wallet/ledger/mod.rs),
-[Rust API](../rust/src/api/ledger.rs),
-[signing check](../lib/src/features/ledger/services/ledger_wallet_identity_guard.dart),
-[app-zcash APDU reference](https://github.com/LedgerHQ/app-zcash/blob/22dc38537f9a84b31b938e3ca95434595ef378d3/docs/APDU.md), and
-[app-zcash public key handler](https://github.com/LedgerHQ/app-zcash/blob/22dc38537f9a84b31b938e3ca95434595ef378d3/src/handlers/get_public_key.rs).
-
 ### Adding accounts
 
-Each ZIP-32 index is its own Vizor account, and each needs its own UFVK approval
-on the Ledger. Vizor does not scan indexes for balances or history.
+Each ZIP-32 index is its own Vizor account and needs its own UFVK approval on
+Ledger. Accounts are displayed independently, even when they share a seed.
+Vizor does not group accounts, name Ledger wallets, or read a separate wallet
+fingerprint. It does not scan account indexes for balances or history.
 
-- Accounts group only when their non-null wallet fingerprints match.
-- An index already used by the same wallet is blocked. The same index on a
-  different wallet is allowed.
-- The suggestion is the lowest unused index for that wallet; known indexes 0,
-  1, and 3 suggest 2.
-- Starting from an existing account, Vizor checks the wallet identity after
-  connecting and before the UFVK request. A different Ledger stops there.
-- On the general route, Vizor reads the wallet identity first and rejects a
-  duplicate before the UFVK request, with an inline error.
-- Rust's UFVK import remains the final duplicate guard.
-- Renaming a group writes the name to every account with that fingerprint.
+Use **Add account → Ledger**. The **Advanced · Account N** disclosure defaults
+to index 0 and accepts `0..2147483647`. It shows the account-level paths
+`m/32'/133'/N'` and `m/44'/133'/N'`. Receive-address rotation remains managed by
+the wallet; there is no address-index input in account import.
 
-**Add Ledger account** appears in a Ledger account's menu and on its details
-screen, on desktop and mobile. It shows the wallet's known accounts and
-preselects the suggested index. **Add account → Ledger** covers a Ledger not yet
-in Vizor and defaults to index 0. On every route, the index sits behind an
-**Account index · N** disclosure, with "Use a different index to restore or add
-another Ledger account." The birthday, password or passcode, and account-name
-steps follow unchanged, keep the source account's context, and import stores the
-wallet fingerprint on the new account.
+After UFVK approval, Vizor compares the exported UFVK with existing accounts
+before proceeding to the birthday step. The same account index on another
+Ledger seed is allowed. Rust's UFVK import is the final duplicate guard.
+A duplicate reports `This Ledger account is already in Vizor.`
 
-| State | Copy |
-| --- | --- |
-| Index out of range | `Account index must be between 0 and 2147483647.` |
-| Index already used | `Index N is already used by this Ledger wallet.` |
-| Different Ledger during import | `This Ledger does not match the account you started from.` |
-| Different Ledger before signing | `This Ledger does not hold this account. Connect the Ledger that holds this account, then try again.` |
-
-A rejection or disconnect keeps the chosen index for a retry. While busy, the
-inputs are disabled and the button keeps its readiness label and spinner.
+The birthday, password or passcode, and account-name steps remain unchanged.
+A rejection or disconnect keeps the chosen index for retry. Busy inputs are
+disabled. Adding accounts no longer uses an existing account as a source or
+suggests the next index for a Ledger wallet.
 
 Sources: [account service](../lib/src/features/ledger/services/ledger_account_service.dart),
-[import context](../lib/src/features/onboarding/ledger/ledger_account_import_context.dart),
 [account provider](../lib/src/providers/account_provider.dart),
 [desktop connect screen](../lib/src/features/onboarding/ledger/ledger_connect_screen.dart), and
 [mobile connect screen](../lib/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart).
@@ -259,13 +207,12 @@ Sources: [account service](../lib/src/features/ledger/services/ledger_account_se
 ### Wallet Link
 
 The encrypted transfer carries the UFVK, seed fingerprint, birthday, account
-index, wallet fingerprint, wallet name, and device model. A group name already
-on the phone is kept. Desktop Bluetooth IDs and transport settings are not
-copied.
+index, account name, and device model. Desktop Bluetooth IDs and transport
+settings are not copied.
 
 Importing and syncing need no Ledger. On the first signature, the reconnect
-screen lets the user pick a Bluetooth Ledger. Vizor enrolls it only when both
-the wallet fingerprint and that index's UFVK match. Connecting does not sign or
+screen lets the user pick a Bluetooth Ledger. Vizor enrolls it only when
+the exported UFVK matches the stored UFVK for that account. Connecting does not sign or
 broadcast; the user taps **Try again** on the original signing screen. A
 different Ledger is refused, and cancelling the connection signs nothing.
 
@@ -364,14 +311,14 @@ Sources: [shield overlay](../lib/src/features/home/widgets/ledger_shield_signing
 ```text
 Vizor: validate proposal, account, and support range -> base PCZT
   |- Vizor: build proofs -> keep the proof PCZT
-  `- Ledger: wallet fingerprint check -> APDU review and approval -> spend signatures
+  `- Ledger: APDU review and approval -> spend signatures
 Vizor: validate responses, account, and signatures -> checkpoint signed operation -> broadcast -> recover or clean up
 ```
 
 Native Bluetooth code only connects and moves bytes. Rust builds and parses
-every Zcash APDU. Before any approval, Vizor reads the connected Ledger's wallet
-fingerprint on the signing connection and compares it with the account, so a
-different Ledger fails before the user approves a transaction it cannot sign.
+every Zcash APDU. There is no wallet-fingerprint request before signing.
+A different Ledger may be rejected only after approval when its signatures
+fail validation. The signature checks and signing-status cooldown remain.
 Vizor matches the PCZT's account paths and fingerprints against the database
 account, and checks the response count, status, signature length, and signature
 validity. `0x9000` alone never completes a send.
@@ -387,6 +334,16 @@ Sources: [shared signer](../lib/src/features/ledger/services/ledger_signing_serv
 [voting signature intake](../lib/src/providers/voting/voting_session_provider.dart).
 
 ## Connection, cancellation, and retries
+
+An invalid Bluetooth pairing shows **Pair your Ledger again** and asks the user
+to forget the Ledger in their device's Bluetooth settings, then reconnect.
+**Try again** restarts discovery or connection recovery; it does not sign.
+**Open Bluetooth settings** is available on macOS, Windows, and Android. iOS
+and Linux retain the manual instruction because there is no shared supported
+shortcut here. The Apple adapter recognizes CoreBluetooth's removed-pairing
+error, including its localized description preserved by BleTransport. Generic
+pairing rejection and ordinary disconnection do not imply invalid pairing.
+
 
 | Situation | Handling | Limit |
 | --- | --- | --- |
@@ -414,10 +371,10 @@ apart hang and 5 s apart pass
 
 Vizor records when each signature request ends, whether it succeeded or failed,
 and sends no device command until 4 seconds after that. On desktop USB, every
-device operation waits in the Rust operation lock. On Bluetooth, the wallet
-check and the signing exchange both run inside the signing gate, while
+device operation waits in the Rust operation lock. On Bluetooth, the
+signing exchange runs inside the signing gate, while
 get-app-and-version may run earlier. The extra second covers the device timer's
-slack. The wallet identity request draws no screen. A UFVK approval does show
+slack. A UFVK approval also shows
 the screen, but the import and Bluetooth enrollment flows send no device
 command right after it.
 
@@ -482,7 +439,7 @@ Sources: [connection service](../lib/src/features/ledger/services/ledger_connect
 | USB: no device, permission denied, device in use, link interrupted | Connect and unlock the Ledger; on Linux install the udev rule; close other wallet apps using the Ledger; reconnect |
 | Locked or rejected | Unlock the Ledger or review the request again; approvals are never retried automatically |
 | Outdated or unreadable app version | Update the Zcash app or check the installed version |
-| Different Ledger before signing | Connect the Ledger that holds this account |
+| Signature mismatch from a different Ledger | Connect the Ledger that holds this account |
 | `VIZOR_LEDGER_CAPACITY` | Send less; for swap, get a new quote; for pay, arrange a new amount with the merchant |
 | `0x6986` | Check the selected account and build a new request; it is not a "send less" problem |
 | Signature apply failure (`Apply Ledger … signature`) | Another Ledger signed; reconnect the Ledger this account was added from |
@@ -554,40 +511,6 @@ Sources: [Dart minimum version](../lib/src/features/ledger/ledger_capability.dar
 [Zcash app changelog](https://github.com/LedgerHQ/app-zcash/blob/22dc38537f9a84b31b938e3ca95434595ef378d3/CHANGELOG.md), and
 [Ledger app catalog](https://manager.api.live.ledger.com/api/applications).
 
-## Planned: choosing the wallet identity account
-
-Today the user chooses the ZIP-32 account index at import (`m/32'/133'/N'`,
-with transparent funds under `m/44'/133'/N'/scope/index`; signing accepts any
-address index under the account). The wallet identity path stays fixed at
-`m/44'/133'/0'` in `wallet_identity_commands`
-([`apdu.rs`](../rust/src/wallet/ledger/apdu.rs)). This item makes that account
-level configurable.
-
-The device needs nothing new. The Zcash app answers a no-display public key
-request for any hardened account under `44'/133'` without an approval; it only
-checks that prefix.
-
-Changes needed for either design, about half a day:
-
-- **Rust:** take an account argument in the command plan (`apdu.rs`), the USB
-  read (`transport.rs`), `get_wallet_identity` (`mod.rs`), and the FFI functions
-  `ledger_wallet_identity` and `ledger_build_wallet_identity_apdu_plan`
-  (`api/ledger.rs`), then regenerate the Flutter Rust Bridge bindings.
-- **Dart:** pass the account to the readers in `ledger_account_service.dart` and
-  to the signing check in `ledger_wallet_identity_guard.dart`.
-- **Native Bluetooth code:** no change; it forwards the bytes Rust builds and
-  hardcodes no path.
-- **Tests:** the Rust command-plan and parser tests and about three Dart test files.
-
-The rest depends on what the configurable account means:
-
-| Design | Additional changes | Estimate, including the common changes |
-| --- | --- | --- |
-| One chosen account per Ledger wallet | Store the chosen account with the wallet, ask for it during import, carry it through Wallet Link | 1–1.5 days |
-| Each account uses its own index | Accounts from one Ledger get different fingerprints, so grouping, group rename, same-wallet detection and index suggestion, import duplicate checks, Wallet Link, and the account list need a separate wallet-level key, which is today's `0'` fingerprint; about 13 test files use the fingerprint | 2–3 days |
-
-Ledger support is not on `main`, so neither design needs a data migration.
-
 ## Verification status
 
 ### By platform
@@ -636,9 +559,6 @@ proof that every timing is fixed on real devices.
   `discardSendProposal` in [send flow](../lib/src/features/send/services/send_flow.dart)
   do not request a refresh. The likely fix is to refresh after a successful
   discard. Reproduced only on a desktop Ledger send.
-- **The Speculos TEX scenario skips the wallet check.** Its test account has no
-  wallet fingerprint, so the pre-signing check protected by the 4-second wait
-  never runs there.
 - **Receive-address verification on the device** needs a product decision. It
   would need a contract that shows the same account, index, and receiver as
   Vizor's address rotation.
@@ -670,7 +590,7 @@ proof that every timing is fixed on real devices.
   Bluetooth loss, reconnecting, and outbox recovery after an app restart.
 - Do not count Apple's pending exchange or Android's GATT and session cleanup as
   passed on mock tests alone.
-- Run the Speculos TEX scenario with an account that has a wallet fingerprint.
+- Recheck consecutive Ledger signatures after the account-level cleanup, including the 4-second status-screen wait.
 - Keep the Orchard-to-Ironwood guard until an upstream fix and the zero-value
   padding canary both pass.
 - When the support matrix changes, update the capability, user guidance, UI
@@ -692,3 +612,4 @@ at the current head.
 | 2026-09-10 | `11e570282`, `e0ce7858e`, `9af211630` | Linux pairing agent and code confirmation | Native handler and transport tests on the VM's real GIO and D-Bus | Stax: code confirmed within the window, pairing finished in about 5 s, UFVK read, next index suggested; an earlier attempt confirmed after the window and failed on the Ledger |
 | 2026-09-10 | `dff30debc`, `bee896046`, `9eac24cae` | Shielding in rounds | Shield overlay tests for extra rounds and both pause cases | None |
 | 2026-09-14 | `2cdbd5552` | 4-second wait before any command after signing | Rust Ledger 64 passed; Dart Ledger tests 136 passed, 1 skipped | Windows VM x64 Release built and launched; no Ledger operation |
+| 2026-09-16 | Working tree based on `7ef833bc0` | Independent accounts; remove wallet fingerprint and grouping; show Advanced account paths | Desktop regression 166 passed, 1 mobile-only skip; mobile regression 65 passed plus the skipped provider test passed in its mobile lane; mobile gallery and Wallet Link follow-up 29 passed; Rust Ledger 62, keys 45, API 2 passed; Flutter analysis clean; FRB regenerated | Desktop/mobile widget captures checked; no physical Ledger signing or native release build |

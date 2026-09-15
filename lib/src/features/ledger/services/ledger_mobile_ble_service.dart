@@ -5,10 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../rust/api/ledger.dart' as rust_ledger;
 
+const kLedgerPairingInvalidTitle = 'Pair your Ledger again';
+const kLedgerPairingInvalidMessage =
+    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
+
+bool ledgerPairingNeedsReset(Object? error) =>
+    (error is LedgerMobileException &&
+        error.failure == LedgerMobileFailure.pairingInvalid) ||
+    error?.toString() == kLedgerPairingInvalidMessage;
+
 enum LedgerMobileFailure {
   permissionDenied,
   bluetoothOff,
   pairingRejected,
+  pairingInvalid,
   disconnected,
   locked,
   rejected,
@@ -385,7 +395,9 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   static LedgerMobileException _mapPlatformError(PlatformException error) {
     return _errorFromCode(
       error.code,
-      error.message ?? 'Ledger mobile connection failed.',
+      error.code == 'pairing_invalid'
+          ? kLedgerPairingInvalidMessage
+          : error.message ?? 'Ledger mobile connection failed.',
     );
   }
 
@@ -394,6 +406,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
       'permission_denied' => LedgerMobileFailure.permissionDenied,
       'bluetooth_off' => LedgerMobileFailure.bluetoothOff,
       'pairing_rejected' => LedgerMobileFailure.pairingRejected,
+      'pairing_invalid' => LedgerMobileFailure.pairingInvalid,
       'disconnected' => LedgerMobileFailure.disconnected,
       'locked' => LedgerMobileFailure.locked,
       'rejected' => LedgerMobileFailure.rejected,

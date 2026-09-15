@@ -10,6 +10,8 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
+import '../services/ledger_mobile_ble_service.dart';
+import 'ledger_bluetooth_settings_button.dart';
 import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_connection_recovery.dart';
 import '../services/ledger_connection_service.dart';
@@ -256,6 +258,8 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       LedgerSigningModalPhase.failed => failure!.message,
     };
 
+    final pairingInvalid =
+        failed && ledgerPairingNeedsReset(_recoveryError ?? failure?.message);
     var statusLabel = failed ? failure!.statusLabel : null;
     if (failed && needsReconnect) {
       title = 'Let’s reconnect your Ledger';
@@ -263,7 +267,13 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
           _recoveryError ??
           'Your signing request was interrupted. Reconnect first, then choose when to try signing again.';
     }
-    if (!needsReconnect &&
+    if (pairingInvalid) {
+      title = kLedgerPairingInvalidTitle;
+      message = kLedgerPairingInvalidMessage;
+      statusLabel = 'Action needed';
+    }
+    if (!pairingInvalid &&
+        !needsReconnect &&
         phase == LedgerSigningModalPhase.failed &&
         readiness.phase == LedgerAppReadinessPhase.failed) {
       title = 'Ledger needs attention';
@@ -282,7 +292,9 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
       }
     }
     final String? actionLabel = failed
-        ? needsReconnect
+        ? pairingInvalid
+              ? 'Try again'
+              : needsReconnect
               ? 'Reconnect'
               : failure!.actionLabel
         : phase == LedgerSigningModalPhase.saving
@@ -382,16 +394,17 @@ class _LedgerSigningModalState extends ConsumerState<LedgerSigningModal> {
           ? '$roundNumber of $roundCount'
           : null,
       detailLabel: pairingCode,
-      connectionPicker:
-          failed &&
-              failure!.canChangeConnection &&
-              account != null &&
-              (ref.watch(ledgerTargetPlatformProvider) ==
-                      TargetPlatform.macOS ||
-                  ref.watch(ledgerTargetPlatformProvider) ==
-                      TargetPlatform.windows ||
-                  ref.watch(ledgerTargetPlatformProvider) ==
-                      TargetPlatform.linux)
+      connectionPicker: pairingInvalid
+          ? const LedgerBluetoothSettingsButton()
+          : failed &&
+                failure!.canChangeConnection &&
+                account != null &&
+                (ref.watch(ledgerTargetPlatformProvider) ==
+                        TargetPlatform.macOS ||
+                    ref.watch(ledgerTargetPlatformProvider) ==
+                        TargetPlatform.windows ||
+                    ref.watch(ledgerTargetPlatformProvider) ==
+                        TargetPlatform.linux)
           ? _LedgerFailureConnectionPicker(account: account)
           : null,
       message: guidanceMessage,

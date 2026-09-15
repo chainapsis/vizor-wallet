@@ -481,8 +481,9 @@ pub fn add_account_at_index(
 }
 
 /// Import a hardware wallet account using a UFVK string (no seed/mnemonic needed).
-/// The UFVK is obtained from the hardware device. Seed fingerprint and zip32 index
-/// are provided by the device for Zip32Derivation metadata.
+/// The UFVK is obtained from the hardware device. The caller supplies the seed
+/// fingerprint and zip32 index for Zip32Derivation metadata; Ledger uses a
+/// synthetic fingerprint derived from its account keys.
 ///
 /// Hardware accounts may be the first account in the wallet. If no `Derived`
 /// account exists yet, this can leave the wallet DB containing only `Imported`
@@ -534,7 +535,10 @@ pub fn import_hardware_account(
             .map_err(|e| {
                 map_account_import_error(
                     e,
-                    DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    match hardware_signer_kind {
+                        HardwareSignerKind::Ledger => "This Ledger account is already in your wallet.",
+                        HardwareSignerKind::Keystone => DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    },
                     "Failed to import hardware account",
                 )
             })?;
@@ -2372,6 +2376,19 @@ mod tests {
         .expect_err("duplicate Keystone UFVK import should fail");
 
         assert_eq!(error, DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE);
+        let ledger_error = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Ledger",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+            HardwareSignerKind::Ledger,
+        )
+        .expect_err("duplicate Ledger UFVK import should fail");
+        assert_eq!(ledger_error, "This Ledger account is already in your wallet.");
+
     }
 
     #[test]

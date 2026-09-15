@@ -15,9 +15,6 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
-const _fingerprint =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => RustLib.initMock(api: _ExportRustApi()));
@@ -25,7 +22,7 @@ void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
   test(
-    'encrypted Ledger export keeps wallet identity but no desktop connection IDs',
+    'encrypted Ledger export keeps recovery metadata without wallet grouping',
     () async {
       final directory = Directory.systemTemp.createTempSync(
         'vizor-ledger-link-export',
@@ -66,8 +63,7 @@ void main() {
       final transfer = WalletLinkTransferPayload.fromJson(json);
       final linked = transfer.importableAccounts.single.toAccountImport();
       expect(linked.hardwareSignerKind, HardwareSignerKind.ledger);
-      expect(linked.ledgerWalletFingerprint, _fingerprint);
-      expect(linked.ledgerWalletName, 'Travel Ledger');
+
       expect(linked.ledgerDeviceModel, 'Ledger Flex');
       expect(linked.birthdayHeight, 3000000);
       expect(linked.zip32AccountIndex, 7);
@@ -75,6 +71,8 @@ void main() {
       expect(linked.seedFingerprint, List.filled(32, 7));
       expect(linked.sourceAccountUuid, 'desktop-ledger');
       final accountJson = (json['accounts'] as List).single as Map;
+      expect(accountJson.containsKey('ledgerWalletFingerprint'), isFalse);
+      expect(accountJson.containsKey('ledgerWalletName'), isFalse);
       expect(accountJson.containsKey('ledgerDeviceId'), isFalse);
       expect(accountJson.containsKey('ledgerLastTransport'), isFalse);
       expect(accountJson.containsKey('ledgerConnectionPreference'), isFalse);
@@ -96,8 +94,7 @@ class _Accounts extends AccountNotifier {
         order: 0,
         isHardware: true,
         hardwareSignerKind: HardwareSignerKind.ledger,
-        ledgerWalletFingerprint: _fingerprint,
-        ledgerWalletName: 'Travel Ledger',
+
         ledgerDeviceId: 'desktop-only-ble-id',
         ledgerDeviceName: 'My Flex',
         ledgerDeviceModel: 'Ledger Flex',

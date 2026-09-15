@@ -27,16 +27,6 @@ pub struct LedgerUfvkApduPlan {
     pub continuation: LedgerApduCommand,
 }
 
-/// Public, non-spending identity material used only to group local Ledger
-/// accounts that come from the same seed.
-pub struct LedgerWalletIdentity {
-    pub fingerprint: String,
-}
-
-pub struct LedgerWalletIdentityApduPlan {
-    pub commands: Vec<LedgerApduCommand>,
-}
-
 /// Complete ordered APDU exchange for one PCZT signing operation.
 pub struct LedgerPcztApduPlan {
     pub commands: Vec<LedgerApduCommand>,
@@ -124,41 +114,6 @@ pub fn ledger_export_account(
         ufvk,
         account_index,
         device_model,
-    })
-}
-
-/// Read a stable wallet fingerprint without displaying an address.
-pub fn ledger_wallet_identity(network: String) -> Result<LedgerWalletIdentity, String> {
-    require_mainnet(&network)?;
-    ledger::get_wallet_identity().map(to_wallet_identity)
-}
-
-/// Build the transport-neutral no-display public-key exchange used by BLE.
-pub fn ledger_build_wallet_identity_apdu_plan() -> Result<LedgerWalletIdentityApduPlan, String> {
-    Ok(LedgerWalletIdentityApduPlan {
-        commands: ledger::apdu::wallet_identity_commands()?
-            .into_iter()
-            .map(to_apdu_command)
-            .collect(),
-    })
-}
-
-/// Parse status-bearing BLE responses from the wallet-identity plan.
-pub fn ledger_parse_mobile_wallet_identity_responses(
-    network: String,
-    responses: Vec<Vec<u8>>,
-) -> Result<LedgerWalletIdentity, String> {
-    require_mainnet(&network)?;
-    let expected = 1;
-    if responses.len() != expected {
-        return Err(format!(
-            "Ledger wallet identity returned {} responses; expected {expected}",
-            responses.len()
-        ));
-    }
-    let identity = ledger::apdu::decode_raw_wallet_public_key(&responses[0])?;
-    Ok(LedgerWalletIdentity {
-        fingerprint: ledger::wallet_fingerprint(&identity),
     })
 }
 
@@ -258,12 +213,6 @@ fn to_apdu_command(command: ledger::apdu::ApduCommand) -> LedgerApduCommand {
         p1: command.p1,
         p2: command.p2,
         data: command.data,
-    }
-}
-
-fn to_wallet_identity(identity: ledger::WalletIdentity) -> LedgerWalletIdentity {
-    LedgerWalletIdentity {
-        fingerprint: identity.fingerprint,
     }
 }
 
@@ -499,21 +448,8 @@ fn require_mainnet(network: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ledger_account_fingerprint, ledger_parse_mobile_wallet_identity_responses, require_mainnet,
+        ledger_account_fingerprint, require_mainnet,
     };
-
-    fn raw_public_key_response(seed: u8, address: &str) -> Vec<u8> {
-        let secret = secp256k1::SecretKey::from_slice(&[seed; 32]).unwrap();
-        let public_key =
-            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret);
-        let mut response = vec![65];
-        response.extend_from_slice(&public_key.serialize_uncompressed());
-        response.push(address.len() as u8);
-        response.extend_from_slice(address.as_bytes());
-        response.extend_from_slice(&[seed; 32]);
-        response.extend_from_slice(&[0x90, 0x00]);
-        response
-    }
 
     #[test]
     fn account_fingerprint_is_stable_and_account_scoped() {
@@ -530,19 +466,4 @@ mod tests {
         assert!(require_mainnet("regtest").unwrap_err().contains("mainnet"));
     }
 
-    #[test]
-    fn mobile_wallet_identity_parser_requires_the_exact_plan_responses() {
-        let identity = raw_public_key_response(7, "unused");
-        let parsed =
-            ledger_parse_mobile_wallet_identity_responses("main".into(), vec![identity.clone()])
-                .unwrap();
-        assert_eq!(parsed.fingerprint.len(), 64);
-        let error = ledger_parse_mobile_wallet_identity_responses(
-            "main".into(),
-            vec![identity.clone(), identity],
-        )
-        .err()
-        .expect("extra response must fail");
-        assert!(error.contains("expected 1"));
-    }
 }

@@ -27,11 +27,9 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
-import '../../../onboarding/ledger/ledger_setup_args.dart';
 import '../../../payment_links/services/payment_link_received_store.dart';
 import '../../../payment_links/services/payment_link_recovery_store.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
-import '../../widgets/ledger_grouped_account_row.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
 /// `Remove` / `PFP Modal` (4514:53389 / 4514:84873 / 4514:85954 /
@@ -519,17 +517,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  Future<void> _renameLedgerFamily(AccountFamily family) async {
-    if (_busy) return;
-    await showLedgerWalletRenameSheet(
-      context,
-      initialName: family.name,
-      onRename: (name) => ref
-          .read(accountProvider.notifier)
-          .renameLedgerWallet(family.accounts.first.uuid, name),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -550,27 +537,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       for (final account in accounts)
         if (account.uuid != active?.uuid) account,
     ];
-    final ledgerFamilies = [
-      for (final family in resolveAccountFamilies(accounts))
-        if (family.isLedger && family.accounts.length > 1) family,
-    ];
-    final groupedAccountUuids = {
-      for (final family in ledgerFamilies)
-        for (final account in family.accounts) account.uuid,
-    };
-    AccountFamily? activeLedgerFamily;
-    if (activeUuid != null) {
-      for (final family in ledgerFamilies) {
-        if (family.accounts.any((account) => account.uuid == activeUuid)) {
-          activeLedgerFamily = family;
-          break;
-        }
-      }
-    }
-    final standaloneOthers = [
-      for (final account in others)
-        if (!groupedAccountUuids.contains(account.uuid)) account,
-    ];
     final accountCards = <Widget>[];
     void addAccountCard(Widget card) {
       if (accountCards.isNotEmpty) {
@@ -579,46 +545,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       accountCards.add(card);
     }
 
-    void addLedgerFamilyCard(AccountFamily family) {
-      final containsActive = family.accounts.any(
-        (account) => account.uuid == activeUuid,
-      );
-      final sourceAccount = containsActive
-          ? family.accounts.firstWhere((account) => account.uuid == activeUuid)
-          : family.accounts.first;
-      addAccountCard(
-        _AccountsGroupCard(
-          key: ValueKey('mobile_accounts_ledger_family_${family.stableKey}'),
-          title: family.name,
-          ledgerFamilyAnchorUuid: family.accounts.first.uuid,
-          onRenameLedgerWallet: _busy
-              ? null
-              : () => _renameLedgerFamily(family),
-          onAddLedgerAccount: _busy
-              ? null
-              : () => context.push(
-                  '/onboarding/ledger',
-                  extra: LedgerConnectArgs(
-                    sourceAccountUuid: sourceAccount.uuid,
-                  ),
-                ),
-          titleGap: AppSpacing.xs,
-          children: [
-            for (final account in family.accounts)
-              _accountRow(
-                account,
-                enabled: !_busy,
-                showLedgerAccountIndex: true,
-                isCurrent: account.uuid == activeUuid,
-              ),
-          ],
-        ),
-      );
-    }
-
-    if (activeLedgerFamily case final family?) {
-      addLedgerFamilyCard(family);
-    } else if (active != null) {
+    if (active != null) {
       addAccountCard(
         _AccountsGroupCard(
           title: 'Current',
@@ -627,18 +554,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         ),
       );
     }
-    for (final family in ledgerFamilies) {
-      if (identical(family, activeLedgerFamily)) continue;
-      addLedgerFamilyCard(family);
-    }
-    if (standaloneOthers.isNotEmpty) {
+    if (others.isNotEmpty) {
       addAccountCard(
         _AccountsGroupCard(
           title: 'Other',
           titleGap: AppSpacing.xs,
           children: [
-            for (final account in standaloneOthers)
-              _accountRow(account, enabled: !_busy),
+            for (final account in others) _accountRow(account, enabled: !_busy),
           ],
         ),
       );
@@ -687,12 +609,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     );
   }
 
-  Widget _accountRow(
-    AccountInfo account, {
-    required bool enabled,
-    bool showLedgerAccountIndex = false,
-    bool isCurrent = false,
-  }) {
+  Widget _accountRow(AccountInfo account, {required bool enabled}) {
     final colors = context.colors;
     final menuOpen = _openRowMenuAccountUuid == account.uuid;
     final avatar = MobileAccountAvatar(
@@ -748,17 +665,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         );
       },
     );
-    if (showLedgerAccountIndex) {
-      return LedgerGroupedAccountRow(
-        key: ValueKey('mobile_accounts_row_${account.uuid}'),
-        accountUuid: account.uuid,
-        name: account.name,
-        accountIndex: account.zip32AccountIndex,
-        isCurrent: isCurrent,
-        leading: avatar,
-        options: options,
-      );
-    }
     return MobileListRow(
       key: ValueKey('mobile_accounts_row_${account.uuid}'),
       leading: avatar,
@@ -785,18 +691,11 @@ class _AccountsGroupCard extends StatelessWidget {
     required this.title,
     required this.titleGap,
     required this.children,
-    this.ledgerFamilyAnchorUuid,
-    this.onRenameLedgerWallet,
-    this.onAddLedgerAccount,
-    super.key,
   });
 
   final String title;
   final double titleGap;
   final List<Widget> children;
-  final String? ledgerFamilyAnchorUuid;
-  final VoidCallback? onRenameLedgerWallet;
-  final VoidCallback? onAddLedgerAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -811,68 +710,12 @@ class _AccountsGroupCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: ledgerFamilyAnchorUuid == null
-                ? Text(
-                    title,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: context.colors.text.secondary,
-                    ),
-                  )
-                : Row(
-                    children: [
-                      AppIcon(
-                        AppIcons.ledgerBrand,
-                        size: AppIconSize.medium,
-                        color: context.colors.icon.muted,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: context.colors.text.secondary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.xxs),
-                            Semantics(
-                              label: 'Rename group name',
-                              child: AppButton(
-                                key: ValueKey(
-                                  'mobile_accounts_rename_ledger_family_'
-                                  '$ledgerFamilyAnchorUuid',
-                                ),
-                                variant: AppButtonVariant.ghost,
-                                size: AppButtonSize.small,
-                                height: 40,
-                                minWidth: 40,
-                                onPressed: onRenameLedgerWallet,
-                                child: const AppIcon(AppIcons.edit),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      AppButton(
-                        key: ValueKey(
-                          'mobile_accounts_add_ledger_family_'
-                          '$ledgerFamilyAnchorUuid',
-                        ),
-                        variant: AppButtonVariant.ghost,
-                        size: AppButtonSize.small,
-                        height: 40,
-                        onPressed: onAddLedgerAccount,
-                        leading: const AppIcon(AppIcons.addNew),
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
+            child: Text(
+              title,
+              style: AppTypography.labelLarge.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
           ),
           SizedBox(height: titleGap),
           for (var i = 0; i < children.length; i++) ...[

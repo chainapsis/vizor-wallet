@@ -121,8 +121,6 @@ class LinkedWalletAccountImport {
     this.seedFingerprint,
     this.profilePictureId,
     this.sourceAccountUuid,
-    this.ledgerWalletFingerprint,
-    this.ledgerWalletName,
     this.ledgerDeviceModel,
   });
 
@@ -138,8 +136,6 @@ class LinkedWalletAccountImport {
   final List<int>? seedFingerprint;
   final String? profilePictureId;
   final String? sourceAccountUuid;
-  final String? ledgerWalletFingerprint;
-  final String? ledgerWalletName;
   final String? ledgerDeviceModel;
 }
 
@@ -657,39 +653,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       current.copyWith(accounts: current.accounts.map(rename).toList()),
     );
     log('renameAccount: $uuid → $normalizedName');
-  }
-
-  /// Renames every account that belongs to the same authenticated Ledger.
-  Future<void> renameLedgerWallet(String accountUuid, String newName) async {
-    final normalizedName = normalizeAccountName(newName);
-    validateAccountName(normalizedName);
-    final prev = state.value ?? const AccountState();
-    final matches = prev.accounts.where(
-      (account) => account.uuid == accountUuid && account.isLedger,
-    );
-    if (matches.length != 1) {
-      throw ArgumentError.value(
-        accountUuid,
-        'accountUuid',
-        'Unknown Ledger account UUID',
-      );
-    }
-    final fingerprint = matches.single.ledgerWalletFingerprint;
-    if (fingerprint == null ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint)) {
-      throw StateError('Ledger wallet identity is required to rename a group.');
-    }
-    final updated = prev.accounts
-        .map(
-          (account) =>
-              account.isLedger && account.ledgerWalletFingerprint == fingerprint
-              ? account.copyWith(ledgerWalletName: normalizedName)
-              : account,
-        )
-        .toList(growable: false);
-    await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
-    log('renameLedgerWallet: $accountUuid → $normalizedName');
   }
 
   /// Update an account profile picture.
@@ -1468,7 +1431,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
-    required String ledgerWalletFingerprint,
   }) async {
     try {
       final accountName = normalizeAccountName(name);
@@ -1483,29 +1445,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final normalizedProfilePictureId = normalizeProfilePictureId(
         profilePictureId,
       );
-      final normalizedLedgerWalletFingerprint = ledgerWalletFingerprint
-          .trim()
-          .toLowerCase();
-      if (!RegExp(
-        r'^[0-9a-f]{64}$',
-      ).hasMatch(normalizedLedgerWalletFingerprint)) {
-        throw ArgumentError.value(
-          ledgerWalletFingerprint,
-          'ledgerWalletFingerprint',
-          'Ledger wallet fingerprint must be a 32-byte hex digest',
-        );
-      }
       final prev = state.value ?? const AccountState();
-      final ledgerWalletName = prev.accounts
-          .where(
-            (account) =>
-                account.isLedger &&
-                account.ledgerWalletFingerprint ==
-                    normalizedLedgerWalletFingerprint,
-          )
-          .map((account) => account.ledgerWalletName)
-          .whereType<String>()
-          .firstOrNull;
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
 
@@ -1534,8 +1474,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ledgerDeviceId: ledgerDeviceId,
         ledgerDeviceName: ledgerDeviceName,
         ledgerDeviceModel: ledgerDeviceModel,
-        ledgerWalletFingerprint: normalizedLedgerWalletFingerprint,
-        ledgerWalletName: ledgerWalletName,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
@@ -1587,19 +1525,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'accountsToImport',
         'Select at least one wallet link account.',
       );
-    }
-
-    for (final input in accountsToImport) {
-      if (input.isHardware &&
-          input.hardwareSignerKind == HardwareSignerKind.ledger &&
-          !RegExp(
-            r'^[0-9a-f]{64}$',
-            caseSensitive: false,
-          ).hasMatch(input.ledgerWalletFingerprint?.trim() ?? '')) {
-        throw ArgumentError(
-          'A linked Ledger account needs its wallet fingerprint.',
-        );
-      }
     }
 
     try {
@@ -1679,24 +1604,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         }
         firstImportedUuid ??= accountUuid;
         firstImportedAddress ??= unifiedAddress;
-        final ledgerFingerprint =
-            input.isHardware &&
-                input.hardwareSignerKind == HardwareSignerKind.ledger
-            ? input.ledgerWalletFingerprint!.trim().toLowerCase()
-            : null;
-        final ledgerName = ledgerFingerprint == null
-            ? null
-            : [...prev.accounts, ...importedAccounts]
-                      .where(
-                        (account) =>
-                            account.isLedger &&
-                            account.ledgerWalletFingerprint ==
-                                ledgerFingerprint,
-                      )
-                      .map((account) => account.ledgerWalletName)
-                      .whereType<String>()
-                      .firstOrNull ??
-                  _normalizedOptionalString(input.ledgerWalletName);
         importedAccounts.add(
           AccountInfo(
             uuid: accountUuid,
@@ -1705,11 +1612,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             isHardware: input.isHardware,
             birthdayHeight: input.birthdayHeight,
             zip32AccountIndex: input.zip32AccountIndex,
-            ledgerWalletFingerprint: ledgerFingerprint,
-            ledgerWalletName: ledgerName,
-            ledgerDeviceModel: ledgerFingerprint == null
-                ? null
-                : _normalizedOptionalString(input.ledgerDeviceModel),
+            ledgerDeviceModel:
+                input.isHardware &&
+                    input.hardwareSignerKind == HardwareSignerKind.ledger
+                ? _normalizedOptionalString(input.ledgerDeviceModel)
+                : null,
             hardwareSignerKind: input.isHardware
                 ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
                 : null,

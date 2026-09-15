@@ -613,11 +613,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// The signatures are durable in the sidecar; the SDK loads the record for
   /// each bundle and verifies it against the stored PCZT sighash.
   Future<void> delegatePendingBundlesWithLedgerSignatures() {
-    return _delegatePendingBundles(hardware: true);
+    return _delegatePendingBundles(
+      hardware: true,
+      signerKind: HardwareSignerKind.ledger,
+    );
   }
 
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
-    return _delegatePendingBundles(hardware: true);
+    return _delegatePendingBundles(
+      hardware: true,
+      signerKind: HardwareSignerKind.keystone,
+    );
   }
 
   /// Runs the delegation round for whichever signer this account uses.
@@ -635,6 +641,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// other way.
   Future<void> _delegatePendingBundles({
     required bool hardware,
+    HardwareSignerKind? signerKind,
     String? mnemonic,
   }) {
     final secretGuard = mnemonic == null
@@ -650,6 +657,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
+      if (signerKind != null &&
+          !_requireHardwareVotingAccount(context, signerKind)) {
+        return;
+      }
       if (hardware != context.isHardwareAccount) {
         _setError(
           hardware
@@ -738,6 +749,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearError: !hardware,
           keystoneSignatures: hardware ? signatures : null,
           clearKeystoneSigningRequest: hardware,
+          clearLedgerSigningRequest: hardware,
           clearKeystoneScanError: hardware,
         );
         _setStateForContext(context, nextState);
@@ -844,6 +856,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
           keystoneSignatures: hardware ? signatures : null,
           clearKeystoneSigningRequest: hardware,
+          clearLedgerSigningRequest: hardware,
           clearKeystoneScanError: hardware,
         ),
       );

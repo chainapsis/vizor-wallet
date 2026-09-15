@@ -6,84 +6,91 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
-const _fingerprint =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-
 void main() {
-  const exportedAccount = LedgerDeviceAccount(
-    ufvk: 'uview-test',
-    seedFingerprint: [1, 2, 3],
-    accountIndex: 0,
-    appVersion: '3.9.3',
+  test(
+    'imports account metadata and USB model without a wallet identity',
+    () async {
+      final notifier = _CapturingAccountNotifier();
+      final container = ProviderContainer(
+        overrides: [accountProvider.overrideWith(() => notifier)],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(ledgerAccountImporterProvider)(
+        name: 'Ledger',
+        account: const LedgerDeviceAccount(
+          ufvk: 'uview-test',
+          seedFingerprint: [1, 2, 3],
+          accountIndex: 7,
+          appVersion: '3.9.3',
+          deviceModel: 'Ledger Nano S Plus',
+        ),
+        birthdayHeight: 3000000,
+        profilePictureId: kDefaultProfilePictureId,
+      );
+      expect(notifier.importedUfvk, 'uview-test');
+      expect(notifier.importedIndex, 7);
+      expect(notifier.importedSeedFingerprint, [1, 2, 3]);
+      expect(notifier.importedDeviceModel, 'Ledger Nano S Plus');
+    },
   );
 
-  test('Ledger import rejects an export without wallet identity', () async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-
-    expect(
-      () => container.read(ledgerAccountImporterProvider)(
-        name: 'Ledger',
-        account: exportedAccount,
-        birthdayHeight: 2_900_000,
-        profilePictureId: kDefaultProfilePictureId,
-      ),
-      throwsA(isA<StateError>()),
+  for (final sameUfvk in [true, false]) {
+    test(
+      'duplicate check compares UFVK, not account index: $sameUfvk',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            accountProvider.overrideWith(
+              () => _CapturingAccountNotifier(
+                const AccountState(
+                  accounts: [
+                    AccountInfo(
+                      uuid: 'existing',
+                      name: 'Existing',
+                      order: 0,
+                      isHardware: true,
+                      hardwareSignerKind: HardwareSignerKind.ledger,
+                      zip32AccountIndex: 0,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            ledgerAccountUfvkLoaderProvider.overrideWithValue((uuid) async {
+              expect(uuid, 'existing');
+              return sameUfvk ? 'uview-new' : 'uview-other';
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        final result = container.read(ledgerAccountDuplicateCheckerProvider)(
+          'uview-new',
+        );
+        if (sameUfvk) {
+          await expectLater(
+            result,
+            throwsA(isA<LedgerDuplicateAccountException>()),
+          );
+        } else {
+          await result;
+        }
+      },
     );
-  });
-
-  test('Ledger import forwards the authenticated wallet fingerprint', () async {
-    final notifier = _CapturingAccountNotifier();
-    final container = ProviderContainer(
-      overrides: [accountProvider.overrideWith(() => notifier)],
-    );
-    addTearDown(container.dispose);
-    await container.read(accountProvider.future);
-
-    await container.read(ledgerAccountImporterProvider)(
-      name: 'Ledger',
-      account: exportedAccount.withWalletIdentity(
-        const LedgerWalletIdentity(fingerprint: _fingerprint),
-      ),
-      birthdayHeight: 2_900_000,
-      profilePictureId: kDefaultProfilePictureId,
-    );
-
-    expect(notifier.importedFingerprint, _fingerprint);
-  });
-
-  test('Ledger import records the USB device model for the account', () async {
-    final notifier = _CapturingAccountNotifier();
-    final container = ProviderContainer(
-      overrides: [accountProvider.overrideWith(() => notifier)],
-    );
-    addTearDown(container.dispose);
-    await container.read(accountProvider.future);
-
-    await container.read(ledgerAccountImporterProvider)(
-      name: 'Ledger',
-      account: const LedgerDeviceAccount(
-        ufvk: 'uview1ledger',
-        seedFingerprint: [1],
-        accountIndex: 0,
-        appVersion: '3.9.3',
-        deviceModel: 'Ledger Nano S Plus',
-        walletFingerprint: _fingerprint,
-      ),
-      birthdayHeight: 2_900_000,
-      profilePictureId: kDefaultProfilePictureId,
-    );
-
-    expect(notifier.importedDeviceModel, 'Ledger Nano S Plus');
-  });
+  }
 }
 
 class _CapturingAccountNotifier extends AccountNotifier {
-  String? importedFingerprint;
+  _CapturingAccountNotifier([this.initial = const AccountState()]);
+  final AccountState initial;
+  String? importedUfvk;
+  int? importedIndex;
+  List<int>? importedSeedFingerprint;
   String? importedDeviceModel;
 
   @override
-  FutureOr<AccountState> build() => const AccountState();
+  FutureOr<AccountState> build() => initial;
 
   @override
   Future<void> importLedgerAccount({
@@ -97,9 +104,10 @@ class _CapturingAccountNotifier extends AccountNotifier {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
-    required String ledgerWalletFingerprint,
   }) async {
-    importedFingerprint = ledgerWalletFingerprint;
+    importedUfvk = ufvk;
+    importedIndex = zip32Index;
+    importedSeedFingerprint = seedFingerprint;
     importedDeviceModel = ledgerDeviceModel;
   }
 }

@@ -8,7 +8,6 @@ import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_mobile_ble_service.dart';
-import 'ledger_wallet_identity_guard.dart';
 
 typedef LedgerPcztSigner =
     Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
@@ -26,9 +25,8 @@ typedef LedgerSigningClock = DateTime Function();
 const kLedgerMobileSigningStatusCooldown = Duration(seconds: 4);
 
 /// Serializes mobile signing streams and waits until the Zcash app can accept
-/// another stream after returning its previous signatures. The app drops app
-/// commands sent while its status screen is up, so a signer's wallet check
-/// runs inside the gate too.
+/// another stream after returning its previous signatures. The app drops
+/// commands while its status screen is visible, including after failed streams.
 class LedgerMobileSigningStatusGate {
   LedgerMobileSigningStatusGate({
     this.cooldown = kLedgerMobileSigningStatusCooldown,
@@ -165,7 +163,6 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
   final networkName = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
-  final verifyWallet = ref.watch(ledgerWalletIdentityGuardProvider);
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
     final dbPath = await loadWalletDbPath();
@@ -174,7 +171,6 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
         .run(
           accountUuid: accountUuid,
           usb: () async {
-            await verifyWallet(accountUuid);
             return rust_ledger.ledgerSignPcztFull(
               dbPath: dbPath,
               accountUuid: accountUuid,
@@ -185,7 +181,6 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
           bluetooth: (mobile) {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
               () async {
-                await verifyWallet(accountUuid, mobile: mobile);
                 final plan = await rust_ledger
                     .ledgerBuildPcztFullSigningApduPlan(
                       dbPath: dbPath,
@@ -225,7 +220,6 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
   final networkName = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
-  final verifyWallet = ref.watch(ledgerWalletIdentityGuardProvider);
   return (accountUuid, pcztBytes) async {
     capability.requireSupported();
     final dbPath = await loadWalletDbPath();
@@ -234,7 +228,6 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         .run(
           accountUuid: accountUuid,
           usb: () async {
-            await verifyWallet(accountUuid);
             return rust_ledger.ledgerSignPczt(
               dbPath: dbPath,
               accountUuid: accountUuid,
@@ -245,7 +238,6 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
           bluetooth: (mobile) {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
               () async {
-                await verifyWallet(accountUuid, mobile: mobile);
                 return _signMobileVotingPczt(
                   mobile: mobile,
                   dbPath: dbPath,
