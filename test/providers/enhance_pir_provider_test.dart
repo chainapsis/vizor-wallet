@@ -92,10 +92,22 @@ class _RealSync extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState();
   @override
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {
     endWalletMutationPause();
     resumes++;
   }
+}
+
+/// Records restart attempts without touching Rust or the wallet DB.
+class _RestartSync extends SyncNotifier {
+  int starts = 0;
+  @override
+  Future<SyncState> build() async => SyncState();
+  @override
+  void startSync({int? latestTipHeight}) => starts++;
 }
 
 class _StatusSync extends SyncNotifier {
@@ -279,6 +291,50 @@ void main() {
       expect(shouldStartSyncForPolledTip(current, 100), isFalse);
     },
   );
+
+  group('overlapping wallet mutations', () {
+    late ProviderContainer container;
+    late _RestartSync sync;
+
+    setUp(() {
+      sync = _RestartSync();
+      container = setup(_Store(), sync, hasAccount: true);
+      addTearDown(container.dispose);
+      container.read(syncProvider.notifier);
+    });
+
+    test('a restart waits for the last pause to exit', () async {
+      // Account deletion takes the outer pause; the recovery toggle takes the
+      // inner one while deletion is still writing the wallet DB.
+      final deletion = await sync.pauseForWalletMutation();
+      final toggle = await sync.pauseForWalletMutation();
+
+      sync.resumeAfterWalletMutation(toggle, forceRestart: true);
+      expect(sync.starts, 0, reason: 'deletion still owns the wallet DB');
+
+      sync.resumeAfterWalletMutation(deletion);
+      expect(sync.starts, 1);
+    });
+
+    test('an opt-out exit discards a deferred restart', () async {
+      final reset = await sync.pauseForWalletMutation();
+      final toggle = await sync.pauseForWalletMutation();
+
+      sync.resumeAfterWalletMutation(toggle, forceRestart: true);
+      expect(sync.starts, 0);
+
+      // A full reset ends with no wallet to sync, so it opts out entirely.
+      expect(reset.hadWorkToPause, isFalse);
+      sync.endWalletMutationPause();
+      expect(sync.starts, 0);
+    });
+
+    test('a lone pause restarts immediately', () async {
+      final toggle = await sync.pauseForWalletMutation();
+      sync.resumeAfterWalletMutation(toggle, forceRestart: true);
+      expect(sync.starts, 1);
+    });
+  });
 
   group('RecoveryRestartGate', () {
     late DateTime clock;

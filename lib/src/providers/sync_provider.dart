@@ -767,6 +767,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _recoverySettingTransition = false;
   final RecoveryRestartGate _recoveryRestartGate = RecoveryRestartGate();
   int _walletMutationPauseCount = 0;
+  bool _pendingMutationRestartSync = false;
+  bool _pendingMutationRestartPolling = false;
   int _recoveryStatusReadCount = 0;
   Completer<void>? _recoveryStatusReadsDrained;
   bool _isInForeground = true;
@@ -1736,9 +1738,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return (_recoveryStatusReadsDrained ??= Completer<void>()).future;
   }
 
-  void endWalletMutationPause() {
+  /// Exit a pause without resuming. Destructive callers use this when the
+  /// wallet DB may already be gone, so it also discards any restart another
+  /// pause deferred: nothing should sync a wallet that was just reset.
+  void endWalletMutationPause() => _endWalletMutationPause(resume: false);
+
+  void _endWalletMutationPause({required bool resume}) {
     if (_walletMutationPauseCount > 0) {
       _walletMutationPauseCount--;
+    }
+    // Another wallet mutation still owns the DB — account deletion or a reset
+    // is mid-flight. Restarting here would open and write the wallet DB
+    // underneath it, so hand the restart to whichever pause exits last.
+    if (_walletMutationPauseCount > 0) return;
+    final restartSync = resume && _pendingMutationRestartSync;
+    final restartPolling = resume && _pendingMutationRestartPolling;
+    _pendingMutationRestartSync = false;
+    _pendingMutationRestartPolling = false;
+    // Check nothing else when there is nothing to restart: the opt-out exit
+    // runs after a wallet reset, where reading providers is unsafe.
+    if (!restartSync && !restartPolling) return;
+    if (_requiresUnlock) return;
+    if (restartSync) {
+      log('SyncNotifier: resuming sync and mempool observation after pause');
+      startSync();
+    }
+    if (restartPolling) {
+      _startPolling();
     }
   }
 
@@ -1771,13 +1797,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // The toggle changes which obligations are retryable at all, so
           // the previous attempt's backoff no longer describes this wallet.
           _recoveryRestartGate.reset();
-          resumeAfterWalletMutation(pause ?? previousWork);
-          if (!_requiresUnlock &&
-              _isInForeground &&
-              (ref.read(accountProvider).value?.hasAccounts ?? false)) {
-            startSync();
-            _startPolling();
-          }
+          resumeAfterWalletMutation(
+            pause ?? previousWork,
+            forceRestart:
+                !_requiresUnlock &&
+                _isInForeground &&
+                (ref.read(accountProvider).value?.hasAccounts ?? false),
+          );
         }
       },
     );
@@ -1833,21 +1859,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
-    endWalletMutationPause();
-    if (_requiresUnlock) return;
-
-    if (pause.hadActiveSync || pause.hadMempoolObserver) {
-      log('SyncNotifier: resuming sync and mempool observation after pause');
-      startSync();
-    }
-    if (pause.hadPolling || pause.hadActiveSync) {
-      _startPolling();
-    }
+  /// [forceRestart] resumes sync and polling regardless of what the pause
+  /// snapshot captured — the recovery toggle stops sync itself, so it must
+  /// bring it back even when nothing was running when it took the pause.
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {
+    _pendingMutationRestartSync |=
+        forceRestart || pause.hadActiveSync || pause.hadMempoolObserver;
+    _pendingMutationRestartPolling |=
+        forceRestart || pause.hadPolling || pause.hadActiveSync;
+    _endWalletMutationPause(resume: true);
   }
 
   Future<void> clearSensitiveStateForLock() async {
     _recoveryRestartGate.reset();
+    _pendingMutationRestartSync = false;
+    _pendingMutationRestartPolling = false;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
     ++_syncGen;

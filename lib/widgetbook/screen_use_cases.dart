@@ -5068,7 +5068,10 @@ class _PreviewSyncNotifier extends SyncNotifier {
   }
 
   @override
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {}
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {}
 
   @override
   Future<void> clearSensitiveStateForLock() async {}
