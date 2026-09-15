@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
+import '../models/gift_card_usage.dart';
 import 'payment_link_lifecycle_revision.dart';
 
 const _storageVersion = 1;
@@ -48,9 +49,11 @@ class PaymentLinkRecoveryRecord {
     this.fundingTxids,
     this.preparedExpiryHeight,
     this.submittedAtHeight,
+    this.usage = const GiftCardUsage(),
     required this.claimFeeReserveZatoshi,
   });
 
+  final GiftCardUsage usage;
   final VizorPaymentLink link;
   final String sourceAccountUuid;
   final PaymentLinkRecoveryState state;
@@ -96,9 +99,11 @@ class PaymentLinkRecoveryRecord {
     Object? fundingTxids = _fieldNotProvided,
     Object? preparedExpiryHeight = _fieldNotProvided,
     Object? submittedAtHeight = _fieldNotProvided,
+    GiftCardUsage? usage,
   }) {
     return PaymentLinkRecoveryRecord(
       link: link,
+      usage: usage ?? this.usage,
       claimFeeReserveZatoshi: claimFeeReserveZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       state: state,
@@ -477,6 +482,36 @@ class PaymentLinkRecoveryStore {
     });
   }
 
+  /// Compare identity and funding before applying an asynchronous observation.
+  /// Preserve independent funding/share changes made while the scan ran.
+  Future<bool> updateUsage({
+    required PaymentLinkRecoveryRecord expected,
+    required GiftCardUsage usage,
+  }) => _runExclusive(() async {
+    final records = await _loadUnlocked();
+    final current = _findByAddress(records, expected.link.address);
+    if (current == null ||
+        !current.link.hasSameCanonicalPayload(expected.link) ||
+        current.fundingTxids != expected.fundingTxids ||
+        jsonEncode(current.usage.toJson()) !=
+            jsonEncode(expected.usage.toJson())) {
+      return false;
+    }
+    // Apply the same validation to writes and reads.
+    GiftCardUsage.fromJson(usage.toJson());
+    await _writeRecords(
+      _replaceByAddress(
+        records,
+        current.copyWith(
+          state: current.state,
+          updatedAt: current.updatedAt,
+          usage: usage,
+        ),
+      ),
+    );
+    return true;
+  });
+
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {
     final raw = await _storage.read();
     if (raw == null || raw.trim().isEmpty) return const [];
@@ -684,6 +719,7 @@ List<PaymentLinkRecoveryRecord> _replaceByAddress(
 
 Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
   return {
+    'usage': record.usage.toJson(),
     'link': record.link.toUri().toString(),
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
@@ -762,6 +798,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
 
   return PaymentLinkRecoveryRecord(
     link: VizorPaymentLink.parse(linkRaw),
+    usage: GiftCardUsage.fromJson(value['usage']),
     claimFeeReserveZatoshi: reserve,
     sourceAccountUuid: sourceAccountUuid,
     state: state,

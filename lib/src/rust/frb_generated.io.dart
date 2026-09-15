@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/gift_card_tracking.dart';
 import 'api/keystone.dart';
 import 'api/network_privacy.dart';
 import 'api/secret.dart';
@@ -21,6 +22,7 @@ import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
+import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -446,6 +448,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   GeneratedSoftwareAccount dco_decode_generated_software_account(dynamic raw);
+
+  @protected
+  GiftCardUsageEvidence dco_decode_gift_card_usage_evidence(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -1752,6 +1757,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   GeneratedSoftwareAccount sse_decode_generated_software_account(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  GiftCardUsageEvidence sse_decode_gift_card_usage_evidence(
     SseDeserializer deserializer,
   );
 
@@ -3381,6 +3391,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_generated_software_account(
     GeneratedSoftwareAccount self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_gift_card_usage_evidence(
+    GiftCardUsageEvidence self,
     SseSerializer serializer,
   );
 

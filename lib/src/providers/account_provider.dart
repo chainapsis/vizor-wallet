@@ -19,6 +19,7 @@ import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
+import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
@@ -683,6 +684,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
+    final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     try {
       // Gift Card claims first, and before the in-flight count below: that
@@ -693,11 +695,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // new claims and draining the running ones here means a claim already
       // under way finishes first, and the count then sees it and refuses the
       // deletion. The pause holds until the wallet rows are gone.
+      await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
       claimLifecycle.resume();
+      giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
       shareTracking.requestRestore();
     }
@@ -890,13 +894,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
+    final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
+    var resetCompleted = false;
     try {
+      await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
       await _resetWalletWithShareTrackingStopped();
+      resetCompleted = true;
       resumeClaimLifecycle = true;
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
@@ -904,6 +912,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       rethrow;
     } finally {
       if (resumeClaimLifecycle) claimLifecycle.resume();
+      // Release only after all destructive work has finished. New onboarding
+      // reuses this registry; stale registrations re-read the now-empty store.
+      if (resetCompleted || restoreAfterFailure) giftTracking.resume();
       shareTracking.resume();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
@@ -1046,6 +1057,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // Finish the remaining safe cleanup, but do not report a complete
         // reset while a privacy-sensitive claim database remains.
         recordError('payment-link claim db cleanup', e, st);
+      }
+      try {
+        await deleteGiftCardTrackingDirectories();
+      } catch (e, st) {
+        recordError('gift-card observer db cleanup', e, st);
       }
       try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();

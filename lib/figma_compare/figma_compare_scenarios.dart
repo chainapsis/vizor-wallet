@@ -23,6 +23,7 @@ import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
+import 'gift_card_usage_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -53,6 +54,55 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildGiftCardUsageCheckingCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-list',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageListCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageCheckingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-list',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageListCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-share',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageShareCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-activity',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageActivityCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-ready',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageReadyCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-send-amount-contact',
     description: 'Mobile amount screen resolving a saved contact (4479:47503)',

@@ -36,6 +36,7 @@ import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
+import '../widgets/gift_card_usage_status.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_archive_header.dart';
 import '../widgets/payment_link_card_flip.dart';
@@ -2041,7 +2042,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GiftCardTrackingScope(child: _buildContent(context));
+
+  Widget _buildContent(BuildContext context) {
     ref.listen<String?>(
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
@@ -2434,6 +2438,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
+      usageStatus: state.canUseLink
+          ? GiftCardUsageStatusView(address: record.link.address, inline: true)
+          : null,
     );
   }
 
@@ -2452,6 +2459,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
+      metadata: state.canUseLink
+          ? GiftCardUsageStatusView(
+              address: record.link.address,
+              inline: true,
+              dateText: _formatCardDate(record.link.createdAt),
+            )
+          : null,
     );
   }
 
@@ -2820,6 +2834,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
+      usageStatus: GiftCardUsageStatusView(
+        address: link.address,
+        showCheckedAt: true,
+      ),
       decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress || copying
