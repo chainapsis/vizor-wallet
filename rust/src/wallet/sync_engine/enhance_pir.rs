@@ -66,7 +66,41 @@ impl From<ClientError> for EnhancePirRunError {
         }
     }
 }
-struct RoutedTransport<'a, F>(&'a F);
+type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
+
+/// One transport per `run`, reused by every request it makes.
+///
+/// The pooled client lives here rather than being built per request: a hyper
+/// `Client` owns its connection pool, so a fresh one per call throws the
+/// keep-alive connection away and makes a batch of packed rows pay a TCP and
+/// TLS handshake for the initialization fetch and again for every query.
+///
+/// Scoping it to the transport rather than a process-wide cache keeps idle
+/// connections from outliving the sync. That is belt and braces only:
+/// `routed_request` re-checks the route per request, and `DirectRouteIo` polls
+/// the route lease on every read and write, so a pooled connection stays
+/// route-policed for its whole life.
+struct RoutedTransport<'a, F> {
+    should_exit: &'a F,
+    direct: DirectHttpsClient,
+}
+
+impl<'a, F> RoutedTransport<'a, F> {
+    fn new(should_exit: &'a F) -> Self {
+        let connector = HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_only()
+            .enable_http1()
+            .wrap_connector(DirectRouteConnector::new());
+        Self {
+            should_exit,
+            // Cheap: no connection is opened until the first request, and the
+            // Tor route simply never uses it.
+            direct: Client::builder(TokioExecutor::new()).build(connector),
+        }
+    }
+}
+
 impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
     async fn execute(
         &self,
@@ -81,10 +115,11 @@ impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
             &request.url,
             request.body,
             collector,
-            self.0,
+            self.should_exit,
+            &self.direct,
         )
         .await;
-        if (self.0)() {
+        if (self.should_exit)() {
             return Err(ClientError::Cancelled);
         }
         response.map_err(|e| match e {
@@ -224,7 +259,7 @@ impl EnhancePirSync {
                 "recovering"
             },
         );
-        let route = RoutedTransport(should_exit);
+        let route = RoutedTransport::new(should_exit);
         // Refresh is opportunistic: it must not suppress already accepted coverage.
         let refresh = async {
             if uncovered && self.pending_session.is_none() && refresh_due(&self.db_path) {
@@ -336,6 +371,7 @@ async fn routed_request(
     body: Vec<u8>,
     collector: BoundedBody,
     should_exit: &impl Fn() -> bool,
+    direct: &DirectHttpsClient,
 ) -> Result<transport::ResponseBody, EnhancePirRunError> {
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
@@ -403,12 +439,6 @@ async fn routed_request(
         return Ok(response.into_body());
     }
 
-    let connector = HttpsConnectorBuilder::new()
-        .with_webpki_roots()
-        .https_only()
-        .enable_http1()
-        .wrap_connector(DirectRouteConnector::new());
-    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(connector);
     let request = Request::builder()
         .method(method)
         .uri(uri)
@@ -416,7 +446,7 @@ async fn routed_request(
         .body(Full::new(Bytes::from(body)))
         .map_err(|error| SyncError::parse(format!("build Enhance PIR request: {error}")))?;
     let request = async {
-        let response = client.request(request).await.map_err(|error| {
+        let response = direct.request(request).await.map_err(|error| {
             SyncError::net(format!("Enhance PIR HTTPS request failed: {error}"))
         })?;
         if !response.status().is_success() {
