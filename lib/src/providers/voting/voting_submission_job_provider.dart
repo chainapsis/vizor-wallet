@@ -29,12 +29,6 @@ const _votingRoundClosedDuringRecoveryMessage =
     'This voting round closed before the wallet finished catching up to its '
     'snapshot block.';
 
-/// Shown when an automatic retry finds the voting configuration no longer the
-/// one the round was reviewed under.
-const _votingConfigChangedDuringRecoveryMessage =
-    'The voting configuration changed while the wallet was catching up. '
-    'Review your vote and submit again.';
-
 /// Shown when an automatic retry finds the ballot no longer the one it was
 /// armed against. The user reviews and submits the new one themselves.
 const _votingBallotChangedDuringRecoveryMessage =
@@ -384,6 +378,17 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final sessionNotifier = ref.read(
       votingSubmissionSessionProvider(key).notifier,
     );
+    // Every run states its terms once, here: an unattended one pins what the
+    // user reviewed so each of the pipeline's context reloads is checked
+    // against it, a user-driven one pins nothing. Setting it on both paths is
+    // what stops a pin outliving the run that wanted it.
+    if (requireConfigFingerprint == null) {
+      sessionNotifier.clearReviewedContext();
+    } else {
+      sessionNotifier.pinReviewedContext(
+        configFingerprint: requireConfigFingerprint,
+      );
+    }
     sessionNotifier.clearVoteSubmissionProgressForJobStart();
     final generation = ++_nextGeneration;
     state = VotingSubmissionJobState(
@@ -604,14 +609,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           _failIfRoundClosed(key: key, generation: generation, round: round)) {
         return;
       }
-      if (_failIfConfigUnreviewed(
-        key: key,
-        generation: generation,
-        requireConfigFingerprint: requireConfigFingerprint,
-        session: loadedSession,
-      )) {
-        return;
-      }
 
       await sessionNotifier.ensureWalletReadyForVoting();
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -629,27 +626,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       var activeSession = afterWalletSync ?? loadedSession;
-      // The session above held the round status cached before the stall; the
-      // wait is what refetches it. This is the first look at the fresh one,
-      // so the automatic retry checks it again before any submission work.
-      if (afterWalletSyncRecovery &&
-          _failIfRoundClosed(
-            key: key,
-            generation: generation,
-            round: activeSession.round,
-          )) {
-        return;
-      }
-      // The wait reloads the context, so this is the config the run will
-      // actually submit under — the one that has to match what was reviewed.
-      if (_failIfConfigUnreviewed(
-        key: key,
-        generation: generation,
-        requireConfigFingerprint: requireConfigFingerprint,
-        session: activeSession,
-      )) {
-        return;
-      }
       final completedEligibilitySession =
           await _ensureEligibilityForCompletedSession(
             key: key,
@@ -1475,30 +1451,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _walletSyncRecoveryInFlight = false;
       releaseBackgroundWork();
     }
-  }
-
-  /// Fails an automatic retry running under a configuration the user did not
-  /// review.
-  ///
-  /// Returns whether the job was failed, so the caller can stop. A manual
-  /// retry passes no fingerprint and is unaffected.
-  bool _failIfConfigUnreviewed({
-    required VotingSessionKey key,
-    required int generation,
-    required String? requireConfigFingerprint,
-    required VotingSessionState session,
-  }) {
-    if (requireConfigFingerprint == null) return false;
-    final fingerprint = session.config?.sourceFingerprint;
-    if (fingerprint == null || fingerprint == requireConfigFingerprint) {
-      return false;
-    }
-    _failJob(
-      key: key,
-      generation: generation,
-      message: _votingConfigChangedDuringRecoveryMessage,
-    );
-    return true;
   }
 
   /// Fails an automatic retry whose round is no longer safe to submit into.

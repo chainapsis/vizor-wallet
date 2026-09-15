@@ -40,7 +40,8 @@ class VotingShareTrackingRegistry {
   /// lease, so sidecar reads cannot outlive the state they are inspecting.
   VoidCallback? beginDiscovery() => beginBackgroundWork();
 
-  /// Counts destructive wipes of the wallet's durable data.
+  /// Counts committed destructive changes to the wallet's durable data —
+  /// a full reset, or one account's wallet rows being deleted.
   ///
   /// Quiescence only holds work off while the wipe runs; once it resumes,
   /// background work that pinned state from before the wipe has no other way
@@ -51,8 +52,9 @@ class VotingShareTrackingRegistry {
   int get walletDataGeneration => _walletDataGeneration;
   int _walletDataGeneration = 0;
 
-  /// Called by wallet reset once the durable data is gone — including the
-  /// failed-cleanup path, where the deletion has still committed.
+  /// Called once durable wallet data is gone — by wallet reset, including
+  /// the failed-cleanup path where the deletion still committed, and by
+  /// account deletion as soon as the Rust delete returns.
   void notifyWalletDataDeleted() => _walletDataGeneration++;
 
   void addRestoreRequestListener(VoidCallback listener) {

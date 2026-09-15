@@ -757,6 +757,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         accountUuid: uuid,
       );
       migrationRevocation.commit();
+      // The account's wallet rows are gone from here on. Publishing the new
+      // account list is several awaits away and can still fail, so voting
+      // background work is told now rather than left to infer it from a list
+      // that may never lose this UUID.
+      ref.read(votingShareTrackingRegistryProvider).notifyWalletDataDeleted();
       log(
         'removeAccount: rust delete complete in '
         '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
@@ -1025,8 +1030,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     var dbDeleted = false;
+    var primaryDbDeleted = false;
     try {
-      await _deleteExistingDb(dbPath);
+      await _deleteExistingDb(
+        dbPath,
+        onPrimaryDeleted: () => primaryDbDeleted = true,
+      );
       dbDeleted = true;
       for (final revocation in migrationRevocations) {
         revocation.commit();
@@ -1085,7 +1094,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final error = firstError;
     if (error != null) {
       Error.throwWithStackTrace(
-        WalletResetException(cause: error, dbDeleted: dbDeleted),
+        // The primary file alone decides this: it is what a retry could no
+        // longer find, and what a resumed reader could re-create.
+        WalletResetException(
+          cause: error,
+          dbDeleted: dbDeleted || primaryDbDeleted,
+        ),
         firstStackTrace ?? StackTrace.current,
       );
     }
@@ -1659,12 +1673,24 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return normalizedNetwork;
   }
 
-  Future<void> _deleteExistingDb(String dbPath) async {
+  /// Deletes the wallet database and everything that trails it.
+  ///
+  /// [onPrimaryDeleted] fires as soon as the primary database file is gone —
+  /// it is first in [walletDbCleanupPaths] — and before any companion path is
+  /// touched. Once that file is deleted the wipe has committed, so a later
+  /// `-wal`, voting-sidecar, or receive-cache deletion that throws must not
+  /// leave the reset looking recoverable: callers that resume background work
+  /// on that reading would let a stale reader re-create the database.
+  Future<void> _deleteExistingDb(
+    String dbPath, {
+    void Function()? onPrimaryDeleted,
+  }) async {
     for (final path in walletDbCleanupPaths(dbPath)) {
       final file = File(path);
       if (file.existsSync()) {
         file.deleteSync();
       }
+      if (path == dbPath) onPrimaryDeleted?.call();
     }
   }
 }

@@ -3724,12 +3724,49 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throw StateError('Voting work is paused for wallet changes.');
     }
     try {
-      return await _loadContextWithCache(
+      final context = await _loadContextWithCache(
         roundId,
         checkStaleAction: checkStaleAction,
       );
+      _throwIfReviewedContextMoved(context);
+      return context;
     } finally {
       release();
+    }
+  }
+
+  /// Conditions an unattended caller had reviewed and will not let a reloaded
+  /// context change under it. See [pinReviewedContext].
+  String? _reviewedConfigFingerprint;
+
+  /// Fails every later action of an unattended run whose context moved.
+  ///
+  /// Submission is a pipeline of actions and each one reloads through
+  /// [_loadContext], so a config refresh or a round closing partway through
+  /// would otherwise be picked up silently between two steps. A caller that
+  /// is acting on the user's behalf without them watching pins what they
+  /// reviewed, and every reload after that either matches it or fails.
+  ///
+  /// A user-driven action pins nothing: they are present for the result.
+  void pinReviewedContext({required String configFingerprint}) {
+    _reviewedConfigFingerprint = configFingerprint;
+  }
+
+  void clearReviewedContext() {
+    _reviewedConfigFingerprint = null;
+  }
+
+  void _throwIfReviewedContextMoved(_VotingSessionContext context) {
+    final reviewedFingerprint = _reviewedConfigFingerprint;
+    if (reviewedFingerprint == null) return;
+    if (context.config.sourceFingerprint != reviewedFingerprint) {
+      throw const _VotingReviewedConfigChanged();
+    }
+    if (!shouldTrackPendingVotingShares(
+      context.round,
+      now: ref.read(votingHomeClockProvider)(),
+    )) {
+      throw const _VotingRoundEnded();
     }
   }
 
@@ -4691,6 +4728,20 @@ bool isVotingWalletSyncStalled(Object? error) =>
 /// [isVotingWalletSyncStalled]: it must never be confused with a stall, which
 /// carries an automatic retry.
 bool isVotingRoundEnded(Object? error) => error is _VotingRoundEnded;
+
+/// Whether an error means the voting configuration changed under an
+/// unattended run. Typed for the same reason as [isVotingWalletSyncStalled].
+bool isVotingReviewedConfigChanged(Object? error) =>
+    error is _VotingReviewedConfigChanged;
+
+class _VotingReviewedConfigChanged implements Exception {
+  const _VotingReviewedConfigChanged();
+
+  @override
+  String toString() =>
+      'The voting configuration changed while the wallet was catching up. '
+      'Review your vote and submit again.';
+}
 
 class _VotingRoundEnded implements Exception {
   const _VotingRoundEnded({this.readiness});
