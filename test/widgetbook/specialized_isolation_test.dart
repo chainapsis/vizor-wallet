@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
@@ -62,6 +65,52 @@ void main() {
     'Migration schedule': buildMigrationScheduleGalleryCase,
     'Migration signing': buildMigrationKeystoneCombinedSignGalleryCase,
   };
+  Future<void> checkIdleUnlock(WidgetTester tester) async {
+    final field = find.byType(EditableText);
+    final container = ProviderScope.containerOf(
+      tester.element(field),
+      listen: false,
+    );
+    // Building the real notifier would throw before reaching native IO.
+    expect(container.read(appSecurityProvider).isUnlocked, isFalse);
+    expect(container.exists(appBootstrapProvider), isFalse);
+    for (final password in ['PreviewPassword1!', 'AnotherPassword2!']) {
+      await tester.enterText(field, password);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+      await advance(tester);
+      expect(find.text('Incorrect password. Try again.'), findsOneWidget);
+      expect(container.exists(appBootstrapProvider), isFalse);
+      expectIsolated();
+      expect(tester.takeException(), isNull);
+    }
+    await disposeTree(tester);
+    await advance(tester);
+    expectIsolated();
+  }
+
+  for (final badge in [true, false]) {
+    for (final motion in ['Animated', 'Reduced']) {
+      testWidgets(
+        'idle migration unlock isolates badge=$badge motion=$motion',
+        (tester) async {
+          await pumpUseCase(
+            tester,
+            buildMigrationVirtualUnlockGalleryCase,
+            knobs: {'Migration badge': '$badge', 'Motion': motion},
+          );
+          await checkIdleUnlock(tester);
+        },
+      );
+    }
+  }
+  testWidgets('legacy migration unlock isolates manual submission', (
+    tester,
+  ) async {
+    await pumpUseCase(tester, buildIronwoodMigrationPrivacyLockUseCase);
+    await checkIdleUnlock(tester);
+  });
+
   for (final surface in surfaces.entries) {
     for (final action in {
       'Activity': '/activity',

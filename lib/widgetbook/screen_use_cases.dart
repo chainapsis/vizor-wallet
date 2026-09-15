@@ -43,7 +43,6 @@ import '../src/features/migration/providers/ironwood_migration_announcement_prov
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
-import '../src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
@@ -88,6 +87,7 @@ import '../src/services/biometric_unlock.dart';
 import 'support/wb_layout.dart';
 import 'support/wb_sidebar.dart';
 import 'support/wb_migration_service.dart';
+import 'migration_use_cases.dart' show migrationVirtualUnlockFixture;
 import '../src/features/migration/services/ironwood_migration_service.dart';
 
 const _previewMnemonic =
@@ -250,8 +250,9 @@ Widget buildUnlockLoginUseCase(BuildContext context) {
 }
 
 Widget buildIronwoodMigrationPrivacyLockUseCase(BuildContext context) {
-  return const ProviderScope(
-    child: WbDesktopWindowBox(child: IronwoodMigrationVirtualUnlockScreen()),
+  return migrationVirtualUnlockFixture(
+    showMigrationInProgress: true,
+    reducedMotion: false,
   );
 }
 

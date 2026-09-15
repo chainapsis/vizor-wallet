@@ -554,17 +554,10 @@ Widget migrationVirtualUnlockFixture({
   required bool showMigrationInProgress,
   required bool reducedMotion,
 }) {
-  return ProviderScope(
-    child: Builder(
-      builder: (BuildContext context) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(disableAnimations: reducedMotion),
-        child: WbDesktopWindowBox(
-          child: IronwoodMigrationVirtualUnlockScreen(
-            showMigrationInProgress: showMigrationInProgress,
-          ),
-        ),
-      ),
-    ),
+  return migrationVirtualUnlockSubmitFixture(
+    state: MigrationVirtualUnlockCase.idle,
+    showMigrationInProgress: showMigrationInProgress,
+    reducedMotion: reducedMotion,
   );
 }
 
@@ -1825,6 +1818,8 @@ Widget migrationOptionsSelectionFixture({
 /// screen owns and calls its `onSubmit` rather than typing.
 Widget migrationVirtualUnlockSubmitFixture({
   required MigrationVirtualUnlockCase state,
+  bool showMigrationInProgress = true,
+  bool reducedMotion = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -1842,9 +1837,14 @@ Widget migrationVirtualUnlockSubmitFixture({
       password: state == MigrationVirtualUnlockCase.policyError
           ? _migrationPreviewNonAsciiPassword
           : _migrationPreviewUnlockPassword,
-      child: const WbDesktopWindowBox(
-        child: IronwoodMigrationVirtualUnlockScreen(
-          showMigrationInProgress: true,
+      child: Builder(
+        builder: (context) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: reducedMotion),
+          child: WbDesktopWindowBox(
+            child: IronwoodMigrationVirtualUnlockScreen(
+              showMigrationInProgress: showMigrationInProgress,
+            ),
+          ),
         ),
       ),
     ),
