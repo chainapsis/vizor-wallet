@@ -26,41 +26,34 @@ The shielded birthday and compact-block RPC construction are unchanged.
 
 ## Internal address scheduling
 
-The supported non-external receiver list still includes all generated candidates.
-New addresses always receive a genesis lookup, even if historical usage is already
-known. For lists of at most 20 addresses, every address is refreshed as before.
-For larger lists:
+Internal/change addresses are queried at import or first discovery from height
+zero, regardless of the periodic schedule. Known internal addresses are queried
+together after 20 new blocks since their oldest successful lookup. A completion
+of `tip + 1 = 1001` becomes due at tip 1020, not 1021. Discovering a new address
+does not postpone an older address's refresh. After the grouped refresh succeeds,
+the completion heights align to the current tip again.
 
-- Unused, recently funded, and unknown/unmined-receipt addresses remain frequent.
-- Only internal/change addresses whose latest known receipt is at least 100 blocks
-  old enter the sweep. Standalone/imported addresses are never throttled by this
-  policy, even if they have old receipts.
-- At most 20 checked old internal addresses are selected per refresh, ordered by
-  their oldest successful UTXO completion height (then address for deterministic
-  ties). Old addresses already checked at this tip are skipped. Repeated same-tip
-  refreshes can therefore drain the remaining old addresses without repeating the
-  ones just checked.
-- Frequent and swept addresses use separate batches, so an old checkpoint does
-  not widen the frequent addresses' query range. All batches remain at most 20.
-- Only successful storage advances completion; cancellation/retry and cache
-  rebuilding preserve sweep progress. No new persisted cursor or migration is
-  added. A failed age lookup falls back to frequent refresh for every address.
+This applies to small and large accounts and does not depend on whether an
+address has been used. The previous age query, 100-block recent-address rule,
+and rotating 20-address sweep are removed. Like main, each group uses a single
+multi-address RPC; unchecked and checked addresses remain separate so discovery
+does not rewind existing addresses. Standalone/imported receivers outside the
+internal scope keep their ordinary refresh frequency.
 
-For example, 180 old checked internal addresses plus 20 frequent candidates need
-2 UTXO requests per normal advancing-tip refresh instead of 10. This counts UTXO
-requests only: spend-history RPCs may offset part of the saving, and no mainnet
-latency improvement is claimed. With a stable set of N old addresses, all are
-selected within ceil(N/20) successful advancing-tip refreshes. Discovery of a
-reused old address can be delayed by that rotation; it is never excluded forever.
-The policy does not assume that the account is used exclusively in Vizor.
+The existing completion map is reused without a new state field or migration.
+Planning alone never advances the schedule, and unchanged plans do not write the
+cache. Cancellation or failed storage leaves the lookup due; successful storage
+precedes completion. Cache rebuilding preserves progress. A wallet rewind clears
+completion and therefore triggers genesis discovery again.
 
-The DB-backed regression fixture with 180 old unspent internal outputs schedules
-10 -> 2 UTXO RPCs and retains 180 -> 180 actionable spend-history requests, for
-190 -> 182 combined planned requests. It also processes a spend at an address
-excluded from that UTXO sweep. These are deterministic request counts, not a
-network latency benchmark; unbounded ephemeral requests that enhancement skips
-are excluded from the count.
-
+An additional payment to a known internal address in another wallet may remain
+undiscovered until the next periodic lookup. The nominal interval is 20 blocks;
+offline time, failed queries, and supported address discovery limits can delay it
+further. Existing outputs retain their independent spend watches. Reducing UTXO
+polling therefore does not imply a matching reduction in total RPCs or sync time.
+For an unchanged address set over 20 successful one-block syncs, internal UTXO
+polling goes from 20 grouped calls to one. This is a scheduling count, not a
+mainnet latency benchmark.
 
 ## Spend tracking
 

@@ -1414,36 +1414,16 @@ async fn refresh_utxos(
             .iter()
             .map(|address| address.address.as_str())
             .collect::<BTreeSet<_>>();
-        let non_external_receivers = db
+        let mut internal_addresses = std::collections::HashSet::new();
+        let non_external_addresses: Vec<String> = db
             .get_transparent_receivers(account_id, true, true)
             .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
-            .collect::<Vec<_>>();
-        let old_received = if non_external_receivers.len() > 20 {
-            old_transparent_receive_addresses(
-                db_data_path,
-                account_id,
-                u64::from(u32::from(tip_height)),
-            )
-            .unwrap_or_else(|error| {
-                log::warn!(
-                    "internal address age lookup failed; retaining frequent refresh: {error}"
-                );
-                std::collections::HashSet::new()
-            })
-        } else {
-            std::collections::HashSet::new()
-        };
-        let mut old_internal_addresses = std::collections::HashSet::new();
-        let non_external_addresses: Vec<String> = non_external_receivers
-            .into_iter()
             .map(|(addr, metadata)| {
                 let query_address = addr.encode(&query_network);
-                if metadata.scope() == Some(TransparentKeyScope::INTERNAL)
-                    && old_received.contains(&addr.encode(&network))
-                {
-                    old_internal_addresses.insert(query_address.clone());
+                if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
+                    internal_addresses.insert(query_address.clone());
                 }
                 query_address
             })
@@ -1457,15 +1437,16 @@ async fn refresh_utxos(
             &non_external_addresses,
             account_birthday_height,
             u64::from(u32::from(safety_start_height)),
-            &old_internal_addresses,
+            &internal_addresses,
             u64::from(u32::from(tip_height)),
         )
         .unwrap_or_else(|error| {
             log::warn!("non-external UTXO planning failed; querying from genesis: {error}");
-            non_external_addresses
-                .chunks(20)
-                .map(|addresses| (addresses.to_vec(), 0))
-                .collect()
+            if non_external_addresses.is_empty() {
+                Vec::new()
+            } else {
+                vec![(non_external_addresses.clone(), 0)]
+            }
         });
         for (addresses, start) in non_external_batches {
             refreshes.push(TransparentRefresh {
@@ -1603,41 +1584,6 @@ fn mark_transparent_receive_cache_dirty(db_data_path: &str, account_uuid: &str) 
             e
         );
     }
-}
-
-/// Only addresses with known, mined receipts older than the recent window qualify.
-/// Never infer inactivity from an unused address or an unknown/unmined receipt.
-fn old_transparent_receive_addresses(
-    db_path: &str,
-    account_id: AccountUuid,
-    tip: u64,
-) -> Result<std::collections::HashSet<String>, SyncError> {
-    const RECENT_INTERNAL_RECEIVE_BLOCKS: u64 = 100;
-    let Some(cutoff) = tip.checked_sub(RECENT_INTERNAL_RECEIVE_BLOCKS) else {
-        return Ok(std::collections::HashSet::new());
-    };
-    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
-        .map_err(SyncError::db)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT a.cached_transparent_receiver_address
-         FROM addresses a
-         JOIN accounts acct ON acct.id = a.account_id
-         JOIN transparent_received_outputs u ON u.address_id = a.id
-         JOIN transactions t ON t.id_tx = u.transaction_id
-         WHERE acct.uuid = ?1 AND a.cached_transparent_receiver_address IS NOT NULL
-         GROUP BY a.id
-         HAVING COUNT(t.mined_height) = COUNT(*) AND MAX(t.mined_height) <= ?2",
-        )
-        .map_err(|e| SyncError::db(format!("internal address age query: {e}")))?;
-    let rows = stmt
-        .query_map(
-            params![account_id.expose_uuid().as_bytes().as_slice(), cutoff],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| SyncError::db(format!("internal address age rows: {e}")))?;
-    rows.collect::<Result<_, _>>()
-        .map_err(|e| SyncError::db(format!("internal address age decode: {e}")))
 }
 
 fn account_birthday_height(db_path: &str, account_id: AccountUuid) -> Result<u64, SyncError> {
