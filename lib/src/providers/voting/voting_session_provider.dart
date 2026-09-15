@@ -510,6 +510,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on _StaleVotingSessionAction {
       return const VotingSnapshotWarmupResult.stale(reason: 'context-changed');
     } on _VotingRoundEnded catch (e) {
+      final readiness = e.readiness;
+      if (readiness != null) {
+        // The wait published `waitingForWalletSync` before the round closed,
+        // and warmup runs outside _enqueue, so nothing else clears it.
+        _setWalletSyncReadinessState(
+          context: context,
+          readiness: readiness,
+          waiting: false,
+        );
+      }
       debugPrint(
         '[zcash] Voting: snapshot bundle precompute abandoned '
         'round=${context.round.roundId} reason=round-ended',
@@ -3784,7 +3794,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     var waited = false;
     final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
     final noProgressTimer = Stopwatch()..start();
-    int? lastScannedHeight;
+    // A high-water mark, not the previous value: a sync that rewinds and
+    // rescans the same range — a continuity error exhausting Rust's rewind
+    // budget on every retried run — moves this frontier both ways forever
+    // without the wallet ever getting closer to the snapshot. Same rule the
+    // engine tracker applies to its own marks.
+    int? maxReadinessHeight;
     // Scoped to this wait: the high-water marks must not outlive it (see
     // VotingWalletSyncProgressTracker).
     final progressTracker = VotingWalletSyncProgressTracker();
@@ -3824,12 +3839,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final engineProgressed = progressTracker.observe(
         ref.read(votingWalletSyncProgressSampleProvider).call(),
       );
-      if (lastScannedHeight == null ||
-          readiness.scannedHeight != lastScannedHeight ||
-          engineProgressed) {
+      final readinessAdvanced =
+          maxReadinessHeight == null ||
+          readiness.scannedHeight > maxReadinessHeight;
+      if (readinessAdvanced) maxReadinessHeight = readiness.scannedHeight;
+      if (readinessAdvanced || engineProgressed) {
         noProgressTimer.reset();
       }
-      lastScannedHeight = readiness.scannedHeight;
 
       if (!loggedWait) {
         loggedWait = true;

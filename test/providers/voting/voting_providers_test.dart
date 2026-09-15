@@ -3108,6 +3108,37 @@ void main() {
     expect(isVotingRoundEnded(state.error?.cause), isTrue);
   });
 
+  test('a frontier that rewinds and rescans the same range stalls', () async {
+    // A continuity error exhausting Rust's rewind budget on every retried run
+    // moves the frontier both ways forever without the wallet ever getting
+    // closer to the snapshot. Only passing the high-water mark is progress.
+    final rust = FakeVotingRustApi();
+    final readiness = _OscillatingVotingWalletSyncReadinessChecker(
+      high: 100,
+      low: 90,
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      extraOverrides: [
+        votingWalletSyncMaxWaitProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+    expect(state.phase, VotingSessionPhase.error);
+    expect(isVotingWalletSyncStalled(state.error?.cause), isTrue);
+  });
+
   test('engine progress keeps a pinned frontier from stalling', () async {
     // Tip-priority ranges scan first, so the contiguous frontier can stay
     // pinned during a healthy catch-up. The engine sample is the signal.
@@ -14224,6 +14255,35 @@ class FakeVotingWalletSyncReadinessChecker
       scannedHeight: snapshotHeight,
       snapshotHeight: snapshotHeight,
       chainTipHeight: snapshotHeight,
+    );
+  }
+}
+
+/// Reports a frontier that rewinds and rescans the same range forever, never
+/// passing its previous high-water mark.
+class _OscillatingVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  _OscillatingVotingWalletSyncReadinessChecker({
+    required this.high,
+    required this.low,
+  });
+
+  final int high;
+  final int low;
+  int calls = 0;
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    final scanned = calls.isEven ? high : low;
+    calls++;
+    return VotingWalletSyncReadiness(
+      scannedHeight: scanned,
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: snapshotHeight + 7,
     );
   }
 }
