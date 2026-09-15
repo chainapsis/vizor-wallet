@@ -185,6 +185,9 @@ class _MobileSecretPassphraseScreenState
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
     return SensitivePrivacyOverlay(
+      // Protect only while the phrase is actually on screen. Before reveal the
+      // card shows no words, so blanking its screenshot and blurring the app
+      // switcher there is needless friction. Matches the `_onScreenshot` guard.
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
