@@ -78,6 +78,15 @@ class VotingShareTrackingRegistry {
         (_accountQuiescenceDepths[accountUuid] ?? 0) > 0;
   }
 
+  /// Whether any account is being mutated, regardless of which one.
+  ///
+  /// The companion of an unscoped [beginBackgroundWork] lease: work that reads
+  /// wallet-wide state — the shared scan frontier, the wallet birthday — is
+  /// invalidated by a mutation of *any* account, not only its own, so it has
+  /// to test the same boundary its lease is taken against.
+  bool get isAnyAccountQuiesced =>
+      _globalQuiescenceDepth > 0 || _accountQuiescenceDepths.isNotEmpty;
+
   /// Blocks matching background work until paired with [resume].
   ///
   /// Global calls are reference counted so overlapping owners cannot release

@@ -254,20 +254,17 @@ class VotingPirWarmupCoordinator {
         return false;
       }
 
-      final ready = await _waitForWalletScannedToSnapshot(
+      final skipReason = await _waitForWalletScannedToSnapshot(
         dbPath: dbPath,
         accountUuid: accountUuid,
         network: endpoint.networkName,
         snapshotHeight: round.snapshotHeight,
       );
-      if (!ready) {
-        final reason = _isWalletMutationInProgress(accountUuid)
-            ? 'wallet-mutation-in-progress'
-            : 'wallet-sync-timeout';
+      if (skipReason != null) {
         debugPrint(
           '[zcash] Voting: PIR cache warmup skipped '
           'round=${round.roundId} snapshot=${round.snapshotHeight} '
-          'reason=$reason',
+          'reason=$skipReason',
         );
         return false;
       }
@@ -343,7 +340,11 @@ class VotingPirWarmupCoordinator {
     }
   }
 
-  Future<bool> _waitForWalletScannedToSnapshot({
+  /// Waits for the shared scanner to cover [snapshotHeight].
+  ///
+  /// Returns null once the wallet is ready, or the reason warm-up was
+  /// abandoned.
+  Future<String?> _waitForWalletScannedToSnapshot({
     required String dbPath,
     required String accountUuid,
     required String network,
@@ -354,15 +355,26 @@ class VotingPirWarmupCoordinator {
     final maxWait = _ref.read(votingPirWarmupSyncMaxWaitProvider);
     final deadline = Stopwatch()..start();
     while (true) {
-      if (_isWalletMutationInProgress(accountUuid)) return false;
+      if (_isWalletMutationInProgress(accountUuid)) {
+        return 'wallet-mutation-in-progress';
+      }
       final readiness = await checker.check(
         dbPath: dbPath,
         network: network,
         snapshotHeight: snapshotHeight,
       );
-      if (_isWalletMutationInProgress(accountUuid)) return false;
-      if (readiness.isReady) return true;
-      if (deadline.elapsed >= maxWait) return false;
+      if (_isWalletMutationInProgress(accountUuid)) {
+        return 'wallet-mutation-in-progress';
+      }
+      if (readiness.isReady) return null;
+      // Permanent for this round: no account in the wallet starts early
+      // enough for the shared scanner to ever reach the snapshot, so polling
+      // to the timeout would burn the full wait on every screen entry and
+      // never succeed.
+      if (readiness.walletBirthdayAfterSnapshot) {
+        return 'wallet-birthday-after-snapshot';
+      }
+      if (deadline.elapsed >= maxWait) return 'wallet-sync-timeout';
       await Future<void>.delayed(pollInterval);
     }
   }

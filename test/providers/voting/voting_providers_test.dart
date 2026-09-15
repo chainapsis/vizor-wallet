@@ -3605,6 +3605,75 @@ void main() {
     expect(state.error, isNull);
   });
 
+  test(
+    'restoring an older account clears a settled birthday rejection',
+    () async {
+      // The birthday-after-snapshot error resolves no weight and is presented
+      // as terminal — the poll UI offers no eligibility retry — so importing an
+      // account that lowers the wallet birthday below the snapshot has to be
+      // what re-runs the gate. Otherwise the session stays stuck as not
+      // eligible on a wallet that now covers the round.
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(
+        ready: true,
+        walletBirthdayHeight: 999999,
+      );
+      final accountSetProvider =
+          NotifierProvider<_WalletAccountSetNotifier, String>(
+            _WalletAccountSetNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: Duration.zero,
+        extraOverrides: [
+          votingWalletAccountSetProvider.overrideWith(
+            (ref) => ref.watch(accountSetProvider),
+          ),
+        ],
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final rejected = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(rejected.error?.isEligibilityFailure, isTrue);
+      expect(rejected.walletBirthdayAfterSnapshot, isTrue);
+      expect(rejected.eligibleWeightZatoshi, isNull);
+
+      // An import that preserves the active account: same UUID, older wallet
+      // birthday.
+      readiness.walletBirthdayHeight = 0;
+      container
+          .read(accountSetProvider.notifier)
+          .set('account-1,account-2,account-3');
+
+      VotingSessionState? recovered;
+      for (var i = 0; i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final state = container.read(votingSessionProvider(kRoundId)).value;
+        if (state != null && state.hasConfirmedVotingEligibility) {
+          recovered = state;
+          break;
+        }
+      }
+
+      expect(
+        recovered,
+        isNotNull,
+        reason: 'the terminal birthday rejection was never re-checked',
+      );
+      expect(recovered!.error, isNull);
+      expect(recovered.walletBirthdayAfterSnapshot, isFalse);
+    },
+  );
+
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(
@@ -11581,6 +11650,65 @@ void main() {
   );
 
   test(
+    'deleting another account drains the wallet-wide precompute first',
+    () async {
+      // The plan precompute persists is derived from wallet-wide readiness —
+      // the shared scan frontier and the wallet birthday — so deleting any
+      // account invalidates it, not only the one it runs for. An
+      // account-scoped lease let it run on past a sibling's deletion and
+      // write a plan computed against a wallet that no longer existed.
+      final hotkeyGenerationGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        hotkeyGenerationGate: hotkeyGenerationGate,
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        hotkeyStore: FakeVotingHotkeyStore(null),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      final precompute = notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      await rust.hotkeyGenerationStarted.future;
+
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var drained = false;
+      final drain = registry
+          .quiesceAndDrain(accountUuid: 'account-2')
+          .then((_) => drained = true);
+
+      try {
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          drained,
+          isFalse,
+          reason: 'deletion did not wait for the running precompute',
+        );
+      } finally {
+        if (!hotkeyGenerationGate.isCompleted) {
+          hotkeyGenerationGate.complete();
+        }
+        await Future.wait([precompute, drain]);
+      }
+      expect(drained, isTrue);
+
+      // And it stays blocked: a fresh pass started inside another account's
+      // quiescence must not begin either.
+      final passesBefore = rust.snapshotBundlePrecomputeAccounts.length;
+      final blocked = await notifier.precomputeSnapshotBundles(
+        accountUuid: 'account-1',
+      );
+      expect(blocked.isReady, isFalse);
+      expect(rust.snapshotBundlePrecomputeAccounts.length, passesBefore);
+      registry.resume(accountUuid: 'account-2');
+    },
+  );
+
+  test(
     'destructive drain stops waiting precompute before it restarts sync',
     () async {
       final readiness = _VotingWalletSyncDrainRaceReadinessChecker();
@@ -12412,6 +12540,38 @@ void main() {
       expect(hotkeyStore.hotkey, isNull);
       expect(rust.setupCalls, 0);
       expect(rust.snapshotBundlePrecomputeAccounts, isEmpty);
+    },
+  );
+
+  test(
+    'background PIR cache warmup gives up on a wallet born after the snapshot',
+    () async {
+      // Permanently unreachable readiness, so polling to the timeout would
+      // burn the full wait on every polls/detail-screen entry and never
+      // succeed. Failed warm-ups are not cached, so it would repeat forever.
+      final rust = FakeVotingRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(
+        ready: false,
+        walletBirthdayHeight: 999999,
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: const Duration(milliseconds: 10),
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        extraOverrides: [
+          votingPirWarmupSyncMaxWaitProvider.overrideWithValue(
+            const Duration(milliseconds: 200),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingPirWarmupProvider).maybeWarmActiveRounds();
+
+      // One look, then out — not a poll loop run to the deadline.
+      expect(readiness.calls, 1);
+      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
     },
   );
 

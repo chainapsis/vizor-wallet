@@ -318,9 +318,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // resolved yet — and _enqueue puts it behind that action in the queue.
     final actionInFlight = _runningActionGeneration != null;
     final current = state.value;
-    // Nothing resolved and nothing running: the session's next action runs
-    // the gate itself, against the new account set.
+    // A settled birthday-after-snapshot failure resolves no weight, but it is
+    // presented as terminal — the poll UI offers no eligibility retry — so an
+    // import that lowers the wallet birthday below the snapshot would leave
+    // the session stuck as not eligible with nothing to re-run the gate.
+    final settledBirthdayFailure =
+        current != null && current.walletBirthdayAfterSnapshot;
+    // Nothing resolved, nothing settled and nothing running: the session's
+    // next action runs the gate itself, against the new account set.
     if (!actionInFlight &&
+        !settledBirthdayFailure &&
         (current == null || current.eligibleWeightZatoshi == null)) {
       return;
     }
@@ -525,9 +532,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final delays = ref.read(votingSnapshotWarmupRetryDelaysProvider);
     final coordinator = ref.read(votingSnapshotWarmupProvider);
     for (var attempt = 0; ; attempt++) {
+      // Unscoped lease. The plan this persists is derived from wallet-wide
+      // readiness — the shared scan frontier and the wallet birthday — so a
+      // deletion of any account, not just this one, must drain it before it
+      // prunes scan state. An account-scoped lease left this running past a
+      // sibling account's deletion and wrote a plan computed against a wallet
+      // that no longer existed.
       final releaseBackgroundWork = ref
           .read(votingShareTrackingRegistryProvider)
-          .beginBackgroundWork(accountUuid: context.accountUuid);
+          .beginBackgroundWork();
       if (releaseBackgroundWork == null) {
         debugPrint(
           '[zcash] Voting: snapshot bundle precompute skipped '
@@ -3165,9 +3178,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (_backgroundDelegationProofPrecomputes.containsKey(precomputeKey)) {
       return;
     }
+    // Unscoped for the same reason as the snapshot-bundle precompute it
+    // follows: these proofs are built against that wallet-wide plan.
     final releaseBackgroundWork = ref
         .read(votingShareTrackingRegistryProvider)
-        .beginBackgroundWork(accountUuid: context.accountUuid);
+        .beginBackgroundWork();
     if (releaseBackgroundWork == null) {
       debugPrint(
         '[zcash] Voting: background delegation proof skipped '
@@ -3863,10 +3878,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }) async {
     VotingWalletSyncReadiness? lastReadiness;
     void throwIfBackgroundWorkQuiesced() {
+      // Wallet-wide, not context-scoped: readiness is computed from the
+      // shared scan frontier and the wallet birthday, so deleting *another*
+      // account invalidates this wait just as much as deleting this one.
       if (stopIfVotingBackgroundWorkQuiesced &&
-          ref
-              .read(votingShareTrackingRegistryProvider)
-              .isQuiesced(context.accountUuid)) {
+          ref.read(votingShareTrackingRegistryProvider).isAnyAccountQuiesced) {
         throw _VotingBackgroundWorkQuiesced(readiness: lastReadiness);
       }
     }
