@@ -317,6 +317,19 @@ fn client_protocol_error(error: ClientError) -> SyncError {
     SyncError::parse(format!("Enhance PIR: {error}"))
 }
 
+/// Validated before route selection, so a plaintext endpoint is rejected on
+/// every route rather than only the direct one. Tor conceals the client from
+/// the service, but the exit-to-service hop is still the open network.
+fn secure_endpoint_uri(url: &str) -> Result<http::Uri, SyncError> {
+    let uri = url
+        .parse::<http::Uri>()
+        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
+    if uri.scheme_str() != Some("https") {
+        return Err(SyncError::parse("Enhance PIR transport requires HTTPS"));
+    }
+    Ok(uri)
+}
+
 async fn routed_request(
     method: Method,
     url: &str,
@@ -327,6 +340,7 @@ async fn routed_request(
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
     }
+    let uri = secure_endpoint_uri(url)?;
     if crate::network_privacy::is_tor_desired() {
         let client = crate::network_privacy::tor_client_for_route(true, || should_exit())
             .await
@@ -344,9 +358,6 @@ async fn routed_request(
                     "Tor route changed before Enhance PIR request",
                 ))
             })?;
-        let uri = url
-            .parse()
-            .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
         let request = async {
             match method {
                 Method::GET => {
@@ -392,12 +403,6 @@ async fn routed_request(
         return Ok(response.into_body());
     }
 
-    let uri = url
-        .parse::<http::Uri>()
-        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
-    if uri.scheme_str() != Some("https") {
-        return Err(SyncError::parse("Enhance PIR transport requires HTTPS").into());
-    }
     let connector = HttpsConnectorBuilder::new()
         .with_webpki_roots()
         .https_only()
@@ -565,6 +570,19 @@ mod tests {
                 Err(EnhancePirRunError::ExitRequested)
             ));
             assert!(retain_coverage_on_refresh_failure(Ok(()), covered).unwrap());
+        }
+    }
+
+    #[test]
+    fn every_route_requires_an_https_endpoint() {
+        assert!(secure_endpoint_uri(DEFAULT_MAINNET_ENDPOINT).is_ok());
+        for url in [
+            "http://enhance-pir.valargroup.dev",
+            "http://127.0.0.1:8080",
+            "enhance-pir.valargroup.dev",
+            "not a url",
+        ] {
+            assert!(secure_endpoint_uri(url).is_err(), "accepted {url}");
         }
     }
 

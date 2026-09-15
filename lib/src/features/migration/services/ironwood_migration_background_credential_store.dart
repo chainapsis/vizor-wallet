@@ -533,11 +533,10 @@ class IronwoodMigrationBackgroundLifecycle {
 
   Future<void> resumeAfterMutation() async {
     if (!_isIOS && !_isAndroid) return;
-    final scopedLeaseId = _scopedLeaseId;
     // Reserve before awaiting the channel so concurrent resumes cannot select
     // the same lease. Retries within this call keep using the reserved ID.
     final leaseId =
-        scopedLeaseId ??
+        _scopedLeaseId ??
         (_quiescenceLeaseIds.isNotEmpty
             ? _quiescenceLeaseIds.removeFirst()
             : _newQuiescenceLeaseId());
@@ -565,7 +564,11 @@ class IronwoodMigrationBackgroundLifecycle {
         }
       }
       if (!released) {
-        if (id != scopedLeaseId) _pendingResumeLeaseIds.add(id);
+        // Retain every unreleased ID, scoped ones included: a one-shot scoped
+        // zone never runs again, so dropping its ID would leave the native
+        // gate paused for the rest of the process. A zone that does retry
+        // re-selects the same ID and the set union above collapses the two.
+        _pendingResumeLeaseIds.add(id);
         lastError =
             releaseError ?? StateError('Native resume was not attempted.');
       }
