@@ -35,6 +35,8 @@ import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
+import 'support/wb_migration_service.dart';
 
 /// Which of the four Keystone migration signing screens a preview renders.
 ///
@@ -66,6 +68,7 @@ Widget migrationKeystoneSignFixture({
       : null;
   return ProviderScope(
     overrides: [
+      ..._migrationSidebarOverrides,
       appBootstrapProvider.overrideWithValue(
         _keystoneSignBootstrap(_keystoneSignAccountState),
       ),
@@ -133,7 +136,7 @@ class _MigrationKeystoneSignHarnessState
       routes: [
         GoRoute(path: _signRoute(widget.step), builder: (_, _) => _screen()),
         for (final path in const [
-          '/home',
+          ...wbSidebarPaths,
           '/migration/options',
           '/migration/fast/review',
           '/migration/immediate/review',
@@ -612,15 +615,13 @@ class _MigrationDesktopRouteHarness extends StatefulWidget {
 class _MigrationDesktopRouteHarnessState
     extends State<_MigrationDesktopRouteHarness> {
   static const _exitRoutes = [
-    '/home',
+    ...wbSidebarPaths,
     '/migration/intro',
     '/migration/options',
     '/migration/private/status',
     '/migration/private/schedule',
     '/migration/private/preparation-schedule',
     '/migration/immediate/review',
-    '/activity',
-    '/settings',
   ];
 
   late final GoRouter _router;
@@ -672,6 +673,8 @@ Widget _migrationDesktopScope({
 }) {
   return ProviderScope(
     overrides: [
+      ironwoodMigrationServiceProvider.overrideWithValue(WbMigrationService()),
+      ..._migrationSidebarOverrides,
       appBootstrapProvider.overrideWithValue(
         _keystoneSignBootstrap(_migrationAccountState),
       ),
@@ -800,7 +803,21 @@ class _MigrationPreviewCoordinator extends IronwoodMigrationCoordinator {
   @override
   IronwoodMigrationCoordinatorState build() =>
       const IronwoodMigrationCoordinatorState();
+
+  @override
+  Future<void> stop({required String accountUuid, required String runId}) async {}
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
 }
+
+final _migrationSidebarOverrides = [
+  wbSidebarActions,
+  wbPostMigrationState,
+  ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+    const IronwoodHomeMigrationCtaState.hidden(),
+  ),
+];
 
 // --- Deterministic status data ---------------------------------------------
 

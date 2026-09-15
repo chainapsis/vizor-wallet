@@ -14,6 +14,7 @@ import '../screen_use_cases.dart';
 import '../support/wb_layout.dart';
 import '../support/wb_state.dart';
 import 'scanner_gallery.dart' show buildScannerMigrationGalleryCase;
+import '../support/wb_fake_scanner_platform.dart';
 
 /// The Ironwood migration gallery: one use case per surface, each knob
 /// dispatching to the fixtures in `screen_use_cases.dart` so figma_compare and
@@ -1544,6 +1545,7 @@ Widget _migrationKeystoneSignGalleryCase(
         : MigrationKeystoneSignStage.preparing,
   );
   if (stage == MigrationKeystoneSignStage.scanning && scanStep != null) {
+    WbFakeUrScanRustApi.install();
     return buildScannerMigrationGalleryCase(context, step: scanStep);
   }
   final roundSplit = rounds && requestQrReachable

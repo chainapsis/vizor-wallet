@@ -34,6 +34,7 @@ import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
 import '../src/providers/voting/voting_participation_provider.dart';
 import '../src/providers/voting/voting_pir_warmup_provider.dart';
+import '../src/providers/voting/voting_tree_sync_provider.dart';
 import '../src/providers/voting/voting_poll_eligibility_provider.dart';
 import '../src/providers/voting/voting_round_visibility_provider.dart';
 import '../src/providers/voting/voting_rounds_provider.dart';
@@ -51,6 +52,7 @@ import '../src/rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../src/rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../src/rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
 
 // ---------------------------------------------------------------------------
 // Review step
@@ -1338,7 +1340,13 @@ Widget _votingScreenHost({
     // would turn a preview's error state back into a spinner.
     retry: (_, _) => null,
     overrides: [..._previewShellOverrides(), ...overrides],
-    child: _VotingScreenHostApp(builder: builder),
+    child: Builder(
+      builder: (context) => VotingExternalUriLauncherScope(
+        launcher: VotingExternalUriLauncherScope.maybeOf(context) ??
+            _previewExternalUriNoop,
+        child: _VotingScreenHostApp(builder: builder),
+      ),
+    ),
   );
 }
 
@@ -1366,7 +1374,7 @@ class _VotingScreenHostAppState extends State<_VotingScreenHostApp> {
         builder: (context, _) => widget.builder(context),
       ),
       for (final path in const [
-        '/home',
+        ...wbSidebarPaths,
         '/voting/keystone/scan',
         '/voting/poll/:roundId',
         '/voting/poll/:roundId/review',
@@ -1374,12 +1382,19 @@ class _VotingScreenHostAppState extends State<_VotingScreenHostApp> {
         '/voting/poll/:roundId/submitted',
         '/voting/poll/:roundId/results',
       ])
-        GoRoute(
-          path: path,
-          builder: (_, _) => _VotingPreviewRouteTarget(path: path),
-        ),
+        if (path != '/voting')
+          GoRoute(
+            path: path,
+            builder: (_, _) => _VotingPreviewRouteTarget(path: path),
+          ),
     ],
   );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1417,6 +1432,9 @@ class _VotingPreviewRouteTarget extends StatelessWidget {
 /// network, or migration I/O.
 List<Override> _previewShellOverrides() {
   return [
+    wbSidebarActions,
+    wbPostMigrationState,
+    votingTreePreSyncProvider.overrideWith(_PreviewVotingTreePreSync.new),
     appBootstrapProvider.overrideWithValue(_previewBootstrap),
     syncProvider.overrideWith(_PreviewSyncNotifier.new),
     networkPrivacyProvider.overrideWith(_PreviewNetworkPrivacyNotifier.new),
@@ -1440,6 +1458,13 @@ class _PreviewVotingPirWarmup extends VotingPirWarmupCoordinator {
 
   @override
   Future<void> maybeWarmActiveRounds() async {}
+}
+
+class _PreviewVotingTreePreSync extends VotingTreePreSyncService {
+  _PreviewVotingTreePreSync(super.ref);
+
+  @override
+  Future<void> preSyncRound(String roundId) async {}
 }
 
 final _previewBootstrap = AppBootstrapState(

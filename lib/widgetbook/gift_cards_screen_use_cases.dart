@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/screens/payment_links_local_page.dart';
@@ -1306,10 +1307,7 @@ Widget giftCardsMobileBodyFixture({
 }) {
   return WbFrame(
     layout: WbLayout.mobile,
-    // `_leavePaymentLinks` asks `context.canPop()` / `go`, and the widgetbook
-    // host is not a router; this detached instance answers both.
-    child: InheritedGoRouter(
-      goRouter: _giftCardsPreviewRouter,
+    child: _GiftCardsPreviewRouter(
       child: _GiftCardsMobileBody(
         page: page,
         hasCards: hasCards,
@@ -1522,17 +1520,46 @@ final _giftCardsFundingQuote = PaymentLinkFundingQuote(
   claimFeeReserveZatoshi: BigInt.from(20000),
 );
 
-/// Answers `canPop()` / `push` for fixtures whose widgets reach for the router;
-/// the widgetbook host is not one.
-final GoRouter _giftCardsPreviewRouter = GoRouter(
-  routes: [
-    GoRoute(path: '/', builder: (_, _) => const SizedBox.shrink()),
-    GoRoute(
-      path: '/send/keystone/scan',
-      builder: (_, _) => const SizedBox.shrink(),
-    ),
-  ],
-);
+class _GiftCardsPreviewRouter extends StatefulWidget {
+  const _GiftCardsPreviewRouter({required this.child});
+  final Widget child;
+
+  @override
+  State<_GiftCardsPreviewRouter> createState() => _GiftCardsPreviewRouterState();
+}
+
+class _GiftCardsPreviewRouterState extends State<_GiftCardsPreviewRouter> {
+  late final GoRouter _router = GoRouter(
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => widget.child),
+      GoRoute(path: '/home', builder: (_, _) => const Center(child: Text('Preview: /home'))),
+      GoRoute(
+        path: '/send/keystone/scan',
+        builder: (context, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Signature scanning is unavailable in this preview.'),
+              AppButton(
+                onPressed: () => context.pop(),
+                child: const Text('Back to QR'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
 
 // --- Keystone signing overlay ----------------------------------------------
 
@@ -1563,8 +1590,7 @@ Widget giftCardsKeystoneSigningFixture({
       ),
       syncProvider.overrideWith(_GiftCardsKeystoneSyncNotifier.new),
     ],
-    child: InheritedGoRouter(
-      goRouter: _giftCardsPreviewRouter,
+    child: _GiftCardsPreviewRouter(
       child: WbFrame(
         layout: wbCompiledLaneLayout,
         child: PaymentLinkKeystoneSigningOverlay(

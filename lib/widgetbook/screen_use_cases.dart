@@ -86,6 +86,9 @@ import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
 import 'support/wb_layout.dart';
+import 'support/wb_sidebar.dart';
+import 'support/wb_migration_service.dart';
+import '../src/features/migration/services/ironwood_migration_service.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -2419,6 +2422,34 @@ Widget _buildIronwoodMigrationUseCase({
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
     overrides: [
+      ironwoodMigrationServiceProvider.overrideWithValue(WbMigrationService()),
+      ironwoodMigrationInputsProvider.overrideWithValue(IronwoodMigrationInputs(
+        ironwoodActiveAtTip: true,
+        network: 'main',
+        accountUuid: accountState.activeAccountUuid,
+        accountName: data.accountName,
+        profilePictureId: data.profilePictureId,
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isBackgroundMode: false,
+        isSyncComplete: false,
+        hasSyncFailure: false,
+        orchardBalance: data.amountZatoshi,
+        orchardPendingBalance: BigInt.zero,
+        ironwoodBalance: BigInt.zero,
+        ironwoodPendingBalance: BigInt.zero,
+      )),
+      walletDbPathGetterProvider.overrideWithValue(() async => '/preview/wallet.db'),
+      orchardMigrationStatusGetterProvider.overrideWithValue(({
+        required String dbPath,
+        required String network,
+        required String accountUuid,
+      }) async => previewStatus ?? _previewPrivateMigrationStatus()),
+      wbSidebarActions,
+      wbPostMigrationState,
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        const IronwoodHomeMigrationCtaState.hidden(),
+      ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       syncProvider.overrideWith(
@@ -3243,6 +3274,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
     _router = GoRouter(
       initialLocation: widget.initialLocation,
       routes: [
+        for (final path in wbSidebarPaths)
+          if (!const ['/home', '/activity', '/settings'].contains(path))
+            GoRoute(path: path, builder: (_, _) => wbSidebarDestination(path)),
         GoRoute(path: '/migration', redirect: (_, _) => '/migration/intro'),
         GoRoute(
           path: '/migration/intro',
@@ -4975,6 +5009,27 @@ class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
 
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;
+
+  @override
+  Future<void> stop({required String accountUuid, required String runId}) async {}
+
+  @override
+  Future<void> startSoftwareMigration({
+    required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  }) async {}
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {}
+
+  @override
+  Future<void> retry(String accountUuid, {rust_sync.MigrationStatus? status}) async {}
+
+  @override
+  Future<void> resumeSoftwarePreparation({
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) async {}
 
   @override
   IronwoodMigrationCoordinatorState build() {
