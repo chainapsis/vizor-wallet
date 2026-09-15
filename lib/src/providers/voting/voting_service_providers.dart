@@ -240,10 +240,16 @@ class VotingWalletSyncProgressSample {
     required this.percentage,
     required this.scannedHeight,
     required this.isSyncing,
+    this.phase = '',
+    this.phaseCompletedUnits = 0,
+    this.phaseTotalUnits = 0,
   });
 
   final double percentage;
   final int scannedHeight;
+  final String phase;
+  final int phaseCompletedUnits;
+  final int phaseTotalUnits;
 
   /// Whether the engine is actually running. Sync state is also republished
   /// from a standing start when work *stops* — locking the wallet resets it
@@ -270,6 +276,9 @@ final votingWalletSyncProgressSampleProvider =
             percentage: sync.percentage,
             scannedHeight: sync.scannedHeight,
             isSyncing: sync.isSyncing,
+            phase: sync.phase,
+            phaseCompletedUnits: sync.phaseCompletedUnits,
+            phaseTotalUnits: sync.phaseTotalUnits,
           );
         } catch (_) {
           return null;
@@ -296,9 +305,16 @@ final votingWalletSyncProgressSampleProvider =
 /// an in-session reimport, a tail-repair pass), which is real work at a
 /// lower height range. The tracker rebases onto that epoch so its subsequent
 /// forward movement registers normally.
+///
+/// Measurable preparation phases, such as the active-account transparent UTXO
+/// refresh, intentionally preserve percentage and scanned height. Their raw
+/// completed-unit counters are tracked separately by phase. High-water marks
+/// reject counter resets and replays, so a repeatedly restarting sync cannot
+/// postpone a genuine stall forever.
 class VotingWalletSyncProgressTracker {
   double? _maxPercentage;
   int? _maxScannedHeight;
+  final Map<String, int> _maxPreparationCompletedUnits = {};
 
   bool observe(VotingWalletSyncProgressSample? sample) {
     if (sample == null) return false;
@@ -307,8 +323,10 @@ class VotingWalletSyncProgressTracker {
     if (maxPercentage == null || maxScannedHeight == null) {
       _maxPercentage = sample.percentage;
       _maxScannedHeight = sample.scannedHeight;
+      _observePreparationProgress(sample);
       return false;
     }
+    final preparationAdvanced = _observePreparationProgress(sample);
     if (sample.scannedHeight < maxScannedHeight) {
       // Only a running engine can start a new scan epoch. An idle engine
       // reporting a lower height is a state reset, not work — locking the
@@ -325,12 +343,27 @@ class VotingWalletSyncProgressTracker {
     }
     final advanced =
         sample.percentage > maxPercentage ||
-        sample.scannedHeight > maxScannedHeight;
+        sample.scannedHeight > maxScannedHeight ||
+        preparationAdvanced;
     if (sample.percentage > maxPercentage) _maxPercentage = sample.percentage;
     if (sample.scannedHeight > maxScannedHeight) {
       _maxScannedHeight = sample.scannedHeight;
     }
     return advanced;
+  }
+
+  bool _observePreparationProgress(VotingWalletSyncProgressSample sample) {
+    if (!sample.isSyncing ||
+        !isSyncPreparationPhase(sample.phase) ||
+        sample.phaseTotalUnits <= 0) {
+      return false;
+    }
+    final previous = _maxPreparationCompletedUnits[sample.phase];
+    if (previous != null && sample.phaseCompletedUnits <= previous) {
+      return false;
+    }
+    _maxPreparationCompletedUnits[sample.phase] = sample.phaseCompletedUnits;
+    return previous != null || sample.phaseCompletedUnits > 0;
   }
 }
 

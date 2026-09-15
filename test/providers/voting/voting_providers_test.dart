@@ -3093,6 +3093,57 @@ void main() {
     expect(state.walletSyncStalled, isFalse);
   });
 
+  test('preparation progress keeps a pinned frontier from stalling', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: const [
+        VotingWalletSyncReadiness(
+          scannedHeight: 100,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+      ],
+    );
+    var completedUnits = 0;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 5),
+      walletSyncProgressSample: () => VotingWalletSyncProgressSample(
+        percentage: 0,
+        scannedHeight: 100,
+        isSyncing: true,
+        phase: kSyncPhaseActiveUtxo,
+        phaseCompletedUnits: completedUnits++,
+        phaseTotalUnits: 100,
+      ),
+      extraOverrides: [
+        votingWalletSyncMaxWaitProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
+      ],
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    unawaited(
+      container.read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation(),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(readiness.calls, greaterThan(3));
+    expect(state.phase, VotingSessionPhase.waitingForWalletSync);
+    expect(state.walletSyncStalled, isFalse);
+  });
+
   test('wallet sync wait aborts stale account before queued action', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(

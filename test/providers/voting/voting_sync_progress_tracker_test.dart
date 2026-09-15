@@ -1,14 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 
 VotingWalletSyncProgressSample _sample({
   double percentage = 0,
   int scannedHeight = 0,
   bool isSyncing = true,
+  String phase = '',
+  int phaseCompletedUnits = 0,
+  int phaseTotalUnits = 0,
 }) => VotingWalletSyncProgressSample(
   percentage: percentage,
   scannedHeight: scannedHeight,
   isSyncing: isSyncing,
+  phase: phase,
+  phaseCompletedUnits: phaseCompletedUnits,
+  phaseTotalUnits: phaseTotalUnits,
 );
 
 void main() {
@@ -62,6 +69,90 @@ void main() {
     tracker.observe(_sample(percentage: 0, scannedHeight: 100));
 
     expect(tracker.observe(_sample(percentage: 0.5, scannedHeight: 100)), false);
+  });
+
+  test('advancing preparation units count while scan progress is pinned', () {
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(
+      _sample(
+        scannedHeight: 100,
+        phase: kSyncPhaseActiveUtxo,
+        phaseCompletedUnits: 1,
+        phaseTotalUnits: 10,
+      ),
+    );
+
+    expect(
+      tracker.observe(
+        _sample(
+          scannedHeight: 100,
+          phase: kSyncPhaseActiveUtxo,
+          phaseCompletedUnits: 2,
+          phaseTotalUnits: 10,
+        ),
+      ),
+      true,
+    );
+  });
+
+  test('preparation counter resets and replays are not progress', () {
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(
+      _sample(
+        scannedHeight: 100,
+        phase: kSyncPhaseActiveUtxo,
+        phaseCompletedUnits: 2,
+        phaseTotalUnits: 10,
+      ),
+    );
+
+    expect(
+      tracker.observe(
+        _sample(
+          scannedHeight: 100,
+          phase: kSyncPhaseActiveUtxo,
+          phaseCompletedUnits: 0,
+          phaseTotalUnits: 10,
+        ),
+      ),
+      false,
+    );
+    expect(
+      tracker.observe(
+        _sample(
+          scannedHeight: 100,
+          phase: kSyncPhaseActiveUtxo,
+          phaseCompletedUnits: 2,
+          phaseTotalUnits: 10,
+        ),
+      ),
+      false,
+    );
+  });
+
+  test('idle preparation counters are not progress', () {
+    final tracker = VotingWalletSyncProgressTracker();
+    tracker.observe(
+      _sample(
+        scannedHeight: 100,
+        phase: kSyncPhaseActiveUtxo,
+        phaseCompletedUnits: 1,
+        phaseTotalUnits: 10,
+      ),
+    );
+
+    expect(
+      tracker.observe(
+        _sample(
+          scannedHeight: 100,
+          isSyncing: false,
+          phase: kSyncPhaseActiveUtxo,
+          phaseCompletedUnits: 2,
+          phaseTotalUnits: 10,
+        ),
+      ),
+      false,
+    );
   });
 
   test('a running engine rewinding the frontier rebases onto the new epoch', () {
