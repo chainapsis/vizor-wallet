@@ -615,7 +615,13 @@ Widget votingActivePollFixture(
       ),
     ),
   };
-  return VotingDisplayTimeScope(now: wbVotingReferenceDate, child: framed);
+  return VotingDisplayTimeScope(
+    now: wbVotingReferenceDate,
+    child: VotingExternalUriLauncherScope(
+      launcher: (_) async {},
+      child: framed,
+    ),
+  );
 }
 
 VotingDraftState _activePollDraft(

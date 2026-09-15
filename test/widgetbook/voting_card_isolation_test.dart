@@ -14,6 +14,7 @@ void main() {
   for (final entry in <String, WidgetBuilder>{
     'Proposal': buildVotingProposalCardCase,
     'Result': buildVotingResultCardCase,
+    'Active poll': buildVotingActivePollCase,
   }.entries) {
     testWidgets(
       '${entry.key} mobile card keeps phone geometry on wide canvas',
