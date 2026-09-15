@@ -282,6 +282,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// voting UI stays enabled until some later foreground action happens to
   /// run the readiness check. Adding an account with an older birthday is the
   /// same event in the other direction, and re-checking covers both.
+  /// The account set changed and the re-check has not run yet, because
+  /// voting work was quiesced when it tried. See
+  /// [_revalidateEligibilityForAccountSetChange].
+  bool _accountSetRevalidationPending = false;
+
   void _registerWalletAccountSetListener() {
     if (_walletAccountSetListenerRegistered) return;
     _walletAccountSetListenerRegistered = true;
@@ -289,6 +294,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (previous == null || previous == next) return;
       unawaited(_revalidateEligibilityForAccountSetChange());
     });
+    // Account deletion publishes the new account set *inside* its quiescence,
+    // and broadcasts a restore request once it resumes voting work. That is
+    // the signal a deferred re-check waits for.
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    registry.addRestoreRequestListener(_onVotingWorkRestored);
+    ref.onDispose(() {
+      registry.removeRestoreRequestListener(_onVotingWorkRestored);
+    });
+  }
+
+  void _onVotingWorkRestored() {
+    if (!_accountSetRevalidationPending) return;
+    unawaited(_revalidateEligibilityForAccountSetChange());
   }
 
   Future<void> _revalidateEligibilityForAccountSetChange() async {
@@ -303,9 +321,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // that path and rebuilds the session from scratch.
     if (accountUuid == null || accountUuid != _sessionAccountUuid) return;
     if (_isDisposed) return;
-    // Publishes its own error state rather than throwing: this runs
-    // unawaited, from a listener.
+
+    // Stays armed until an attempt actually gets to run. Account removal
+    // publishes the changed account set while it still holds the voting
+    // quiescence, so the first attempt usually cannot take a lease: running
+    // anyway would replace the session with "Voting work is paused for wallet
+    // changes" instead of the new eligibility, and nothing would retry it.
+    _accountSetRevalidationPending = true;
+    final registry = ref.read(votingShareTrackingRegistryProvider);
+    final lease = registry.beginBackgroundWork();
+    if (lease == null) return;
+    // Released immediately: this only probes the boundary, and holding a lease
+    // here would block the very mutation that is trying to drain.
+    lease();
+
     await _enqueue(_refreshEligibleWeightUnlocked);
+    if (_isDisposed) return;
+    // A mutation that started while the refresh was in flight could have hit
+    // the same gate, so only a run that ends outside quiescence disarms this.
+    // Re-checking once more than necessary is harmless; missing the change is
+    // not.
+    final settled = registry.beginBackgroundWork();
+    if (settled == null) return;
+    settled();
+    _accountSetRevalidationPending = false;
   }
 
   Future<void> _refreshSessionAccountFromActiveAccount() async {

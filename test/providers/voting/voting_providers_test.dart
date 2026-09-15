@@ -3394,6 +3394,78 @@ void main() {
     },
   );
 
+  test('the account-set re-check waits for account deletion to release voting '
+      'work', () async {
+    // Account removal publishes the changed account set while it still
+    // holds the voting quiescence and only resumes afterwards. Re-checking
+    // inside that window cannot take a background-work lease, and running
+    // anyway would replace the session with the paused-for-wallet-changes
+    // error instead of the new eligibility.
+    final rust = FakeVotingRustApi();
+    final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+    final accountSetProvider =
+        NotifierProvider<_WalletAccountSetNotifier, String>(
+          _WalletAccountSetNotifier.new,
+        );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: Duration.zero,
+      extraOverrides: [
+        votingWalletAccountSetProvider.overrideWith(
+          (ref) => ref.watch(accountSetProvider),
+        ),
+      ],
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.refreshEligibleWeight();
+    final callsBeforeDeletion = readiness.calls;
+
+    // Deletion order: quiesce, publish the new account set, then resume and
+    // request a restore.
+    final registry = container.read(votingShareTrackingRegistryProvider);
+    await registry.quiesceAndDrain(accountUuid: 'account-2');
+    readiness.walletBirthdayHeight = 999999;
+    container.read(accountSetProvider.notifier).set('account-1');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    // Nothing ran inside the quiescence, and nothing was published.
+    expect(readiness.calls, callsBeforeDeletion);
+    final duringQuiescence = container
+        .read(votingSessionProvider(kRoundId))
+        .value!;
+    expect(duringQuiescence.error, isNull);
+
+    registry.resume(accountUuid: 'account-2');
+    registry.requestRestore();
+
+    VotingSessionState? rejected;
+    for (var i = 0; i < 200; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final state = container.read(votingSessionProvider(kRoundId)).value;
+      if (state != null && state.hasError) {
+        rejected = state;
+        break;
+      }
+    }
+
+    expect(
+      rejected,
+      isNotNull,
+      reason: 'the deferred re-check never ran after voting work resumed',
+    );
+    expect(rejected!.error?.isEligibilityFailure, isTrue);
+    expect(rejected.error?.message, contains('birthday block'));
+  });
+
   test('an unchanged account set does not re-check eligibility', () async {
     // The listener must react to the set changing, not to every rebuild of
     // the account provider.
