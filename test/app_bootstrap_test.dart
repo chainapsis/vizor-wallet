@@ -1,8 +1,13 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('AccountInfo.fromJson normalizes legacy profile picture ids', () {
     final account = AccountInfo.fromJson({
       'uuid': 'account-1',
@@ -143,4 +148,114 @@ void main() {
       expect(AppBootstrapState.empty.syncKeepAwakePromptSeen, isFalse);
     },
   );
+
+  group('private Ironwood recovery preference', () {
+    AppSecureStore storeWith(Map<String, String> values) {
+      FlutterSecureStorage.setMockInitialValues(values);
+      return AppSecureStore.testing(storage: const FlutterSecureStorage());
+    }
+
+    test('migrates the legacy secure-store flag on first read', () async {
+      final storage = storeWith({kLegacyEnhancePirEnabledKey: 'true'});
+      final preferences = _FakeEnhancePirStore();
+
+      final enabled = await readEnhancePirEnabledPreference(
+        storage,
+        preferences: preferences,
+      );
+
+      expect(enabled, isTrue);
+      expect(preferences.saved, isTrue);
+      expect(await storage.readPlain(kLegacyEnhancePirEnabledKey), isNull);
+    });
+
+    test('records an explicit off so the legacy key is read once', () async {
+      final storage = storeWith({});
+      final preferences = _FakeEnhancePirStore();
+
+      expect(
+        await readEnhancePirEnabledPreference(
+          storage,
+          preferences: preferences,
+        ),
+        isFalse,
+      );
+      expect(preferences.saved, isFalse);
+      expect(preferences.writes, 1);
+    });
+
+    test('prefers the saved preference over the legacy flag', () async {
+      final storage = storeWith({kLegacyEnhancePirEnabledKey: 'true'});
+      final preferences = _FakeEnhancePirStore(saved: false);
+
+      expect(
+        await readEnhancePirEnabledPreference(
+          storage,
+          preferences: preferences,
+        ),
+        isFalse,
+      );
+      expect(preferences.writes, 0);
+      expect(
+        await storage.readPlain(kLegacyEnhancePirEnabledKey),
+        'true',
+        reason: 'the legacy key is only dropped by an actual migration',
+      );
+    });
+
+    test('degrades to off when the preference store fails', () async {
+      final storage = storeWith({kLegacyEnhancePirEnabledKey: 'true'});
+
+      expect(
+        await readEnhancePirEnabledPreference(
+          storage,
+          preferences: _FailingEnhancePirStore(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('keeps the migrated value when the write fails', () async {
+      final storage = storeWith({kLegacyEnhancePirEnabledKey: 'true'});
+
+      expect(
+        await readEnhancePirEnabledPreference(
+          storage,
+          preferences: _FakeEnhancePirStore(writeThrows: true),
+        ),
+        isTrue,
+      );
+      expect(
+        await storage.readPlain(kLegacyEnhancePirEnabledKey),
+        'true',
+        reason: 'a failed migration must stay retryable on the next launch',
+      );
+    });
+  });
+}
+
+class _FakeEnhancePirStore implements EnhancePirPreferenceStore {
+  _FakeEnhancePirStore({this.saved, this.writeThrows = false});
+
+  bool? saved;
+  final bool writeThrows;
+  var writes = 0;
+
+  @override
+  Future<bool?> readEnabled() async => saved;
+
+  @override
+  Future<void> writeEnabled(bool enabled) async {
+    writes++;
+    if (writeThrows) throw StateError('write failed');
+    saved = enabled;
+  }
+}
+
+class _FailingEnhancePirStore implements EnhancePirPreferenceStore {
+  @override
+  Future<bool?> readEnabled() async => throw StateError('read failed');
+
+  @override
+  Future<void> writeEnabled(bool enabled) async {}
 }
