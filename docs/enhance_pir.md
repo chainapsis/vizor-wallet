@@ -1,77 +1,159 @@
 # Private Ironwood transaction enhancement
 
-Vizor can privately complete incoming and outgoing Ironwood transaction details discovered by compact sync. The feature is off by default and is available on mainnet under **Settings → Privacy → Private Ironwood recovery**. Testnet and regtest do not expose the setting because they do not have a matching enhancement service.
+Private Ironwood recovery is off by default and available on mainnet under
+**Settings → Privacy → Private Ironwood recovery**. It uses randomized iPIR queries
+for protected Ironwood transactions. Durable transaction-wide protection withholds
+ordinary `GetTransaction(txid)` enhancement independently of whether private work
+is active, suspended, or already finished. Mixed-pool transactions and the existing
+status/address-history paths retain their backend routing rules.
 
-When enabled, Vizor queries by Ironwood commitment-tree position through iPIR+SP. It suppresses lightwalletd `GetTransaction(txid)` enhancement only for transactions protected by the independent position queue. Non-Ironwood transactions and ordinary status/address-history requests keep their existing behavior.
+## Shared client and build inputs
 
-## Build inputs
+Vizor supplies application policy and its existing direct/Tor transport. The
+`zakura-pir-enhance` client owns endpoint construction, initialization decoding,
+parameter checks, generation binding, row coalescing, and record extraction.
+Its optional `wallet` feature provides anchor conversion, scanned-state acceptance,
+and mapping records to the original captured request identities:
 
-The Cargo manifest pins [`zakura-core/wallet-libraries#18`](https://github.com/zakura-core/wallet-libraries/pull/18) at:
-
-```text
-fb17c6a3489d6b53a63fc3e35c960a528d52bb10
+```toml
+[dependencies.zakura-pir-enhance]
+git = "https://github.com/zakura-core/wallet-libraries.git"
+rev = "8df21dfd8f61da72a1af4df61efd648f51c18210"
+default-features = false
+features = ["wallet"]
 ```
 
-The wallet dependency exposes the `zakura-pir-enhance` client, incoming memo authentication, outgoing OVK recovery, durable recovery queues, and selective transaction-protection markers.
+The backend depends on the separate `zakura-pir-enhance-types` crate. It does not
+depend on the client, so enabling the client's wallet adapter cannot create a
+cycle. SQLite remains a test dependency of the shared client.
 
-The default service is:
+The default service is `https://enhance-pir.valargroup.dev`.
+`VIZOR_ENHANCE_PIR_URL` overrides it; `VIZOR_MEMO_PIR_URL` is the compatibility
+fallback. HTTP endpoints are rejected. The local setup limit is 65,536 logical
+rows, independent of the server's advertised resource requirements.
 
-```text
-https://enhance-pir.valargroup.dev
-```
+## Recovery behavior
 
-Set `VIZOR_ENHANCE_PIR_URL` to use another HTTPS deployment. `VIZOR_MEMO_PIR_URL` remains a temporary compatibility fallback. Plain HTTP endpoints are rejected.
+1. Fetch and inspect a pending generation without allocating PIR setup.
+2. Check network policy, resource limits, and its anchor against locally scanned
+   block hash and Ironwood tree size. Wait when the anchor has not been scanned;
+   invalidate mismatched sessions.
+3. Allocate setup only after wallet acceptance. Each batch remains bound to its
+   immutable generation. Duplicate positions and shared rows are coalesced by the
+   client; successful results can be written before a later row fails.
+4. Apply records through `EnhancePirWrite` using captured request identities.
+   Incoming/outgoing note recovery is authenticated against wallet context.
+   Schema-7 transaction metadata remains trusted indexer data under the existing
+   backend rules. A service failure never authorizes public fallback.
+5. For rediscovery, reuse `MemoryBlockSource` or fetch the requested height through
+   the ordinary trusted LWD compact-block path. Apply valid partial reconstruction
+   and retain unresolved jobs. Missing funding/anchor context and outgoing
+   non-recovery remain incomplete suspensions.
+6. Reread durable work after progress. Active deferred work retries through normal
+   foreground polling even at an unchanged chain tip. Suspensions alone do not
+   trigger network work. Initialization refresh is limited to once per minute for
+   the current wallet, and accepted older coverage can run while a pending newer
+   anchor awaits scanning.
 
-## Behavior
+No application write lock or database transaction spans network I/O. Counts are
+logged in aggregate; local transaction/action identities are not sent to PIR.
 
-1. Vizor loads and validates one atomic `/v1/enhance/init` response containing the
-   immutable generation, scheme parameters, and published setup material. A
-   recovering wallet caches that response while scanning toward its anchor
-   instead of downloading it after every compact-block batch.
-2. The generation remains pinned in every query and response, and Vizor rejects
-   initialization above its local 65,536-row setup budget.
-3. No PIR setup is allocated and no private query is sent until the advertised
-   block hash and Ironwood tree size agree with the locally scanned chain.
-4. Requests sharing a packed row are coalesced locally.
-5. Returned records are authenticated against compact-scanned state. Incoming details use the incoming viewing key; outgoing details use candidate funding accounts' external outgoing viewing keys.
-6. Successful work is logged only as aggregate counts.
+## Preference transitions and status
 
-PIR transport and service failures do not fail compact synchronization. Vizor
-keeps the durable enhancement queue private, defers further service attempts
-for the current sync, and retries on a later sync. It does not fall back to a
-transaction-ID request for protected Ironwood transactions. Locking or resetting
-the wallet, changing sync mode, and restarting sync for a privacy-setting change
-cancel route acquisition and in-flight PIR HTTP work along with the rest of the
-sync session. A reset cancels that work but does not turn the setting off.
+Changing the setting blocks repeated interaction and new foreground starts,
+quiesces native preparation, and waits for foreground sync to stop. Only then does
+it persist the install preference, change Rust mode, publish visible state, and
+resume eligible work with newly configured handles. Old batches are discarded.
+Ordinary enhancement and fee-parent requests check cancellation before dispatch
+and after completion. A dispatched request cannot be recalled, but cancellation
+prevents subsequent queued dispatch.
 
-The setting is install-scoped: it is chosen once and applies to every wallet on
-the device. It is stored in shared preferences rather than the secure-store
-bucket that a wallet reset wipes, so deleting the last account, resetting after
-a forgotten password, or reimporting a wallet all leave it untouched, and the
-next wallet's first sync runs on the route the user chose. This is deliberately
-the opposite of the Tor route preference, which a reset removes as
-anti-forensics. Installs upgrading from the earlier build carry their saved
-value over from the legacy `vizor_enhance_pir_enabled` secure-store key on the
-first launch.
+A quiescence timeout or preference-write failure leaves the committed mode
+unchanged and displays a retry message. The preference lives outside secure-store
+reset data and is retained when deleting accounts, resetting, or reimporting.
+Existing saved choices are migrated from the legacy secure-store key at bootstrap.
+Enabling recovery does not initiate a rescan; it processes durable schema-7 work,
+including metadata backfill and rediscovery obligations. Previously disclosed
+transaction IDs cannot be made private retroactively.
 
-Enabling the setting does not rescan or reprocess past history. It protects future compact scanning and future seed-recovery work. Details previously fetched by transaction ID remain stored, and that earlier disclosure cannot be undone.
+`get_enhance_recovery_status` returns flat query, rediscovery, and suspension counts
+from durable work, plus current-wallet transient service state. Both settings
+layouts show progress and suspension counts. Suspended-only work is **incomplete
+recovery**. **No pending private recovery** means that no PIR obligations remain;
+ordinary LWD fallback requests can still be pending or retrying.
 
-## Verification commands
+## Verification and generation
 
-From `rust/`:
+From `rust/`, run `cargo test --lib wallet::sync_engine::enhance` for the affected
+Rust tests. From the project root:
 
 ```sh
-cargo check
-cargo test
-cargo test deployed_endpoint_accepts_and_decodes_a_private_query -- --ignored --nocapture
+python3 scripts/generate-frb.py
+fvm flutter analyze
+fvm flutter test test/providers/enhance_pir_provider_test.dart test/providers/sync_provider_test.dart test/features/settings/settings_screen_test.dart
+fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile test/features/settings/mobile_settings_screen_test.dart
 ```
 
-The ignored live test validates the deployed generation and completes one randomized dummy query without using a wallet position.
+FRB 2.11 cannot parse the compiler's expanded `pin!` `super let` syntax in the
+voting dependency. The generation wrapper normalizes that expansion for parsing
+only. It changes neither dependency sources nor compiled program semantics.
 
-## Privacy boundary
+Deterministic visual fixtures are `settings-recovery`,
+`settings-recovery-changing`, and `mobile-settings-recovery`. Render with
+`scripts/figma-compare.sh widget --scenario <id> --theme dark`, adding
+`--form-factor mobile` for the mobile fixture.
 
-- The enhancement service receives randomized PIR queries rather than explicit transaction IDs or commitment-tree positions.
-- Timing and the number of row queries remain observable. Vizor does not add cover traffic.
-- Tor routing follows the app-wide foreground network policy and fails closed when Tor is requested but unavailable.
-- Disabling the setting restores standard lightwalletd transaction enhancement.
-- An enabled setting persists on disk across wallet resets, so it is durable local evidence that this installation uses private recovery.
+The client and wallet-library patches are pinned to shared revision
+`8df21dfd8f61da72a1af4df61efd648f51c18210`; no absolute local library paths are required.
+The existing locally modified voting checkout
+was preserved. This checkout's manifest resolves `zcash_voting 5.0.0` from the
+registry; verification used that resolution without changing voting sources. Any
+local voting override used by another development environment remains a separate
+portability prerequisite.
+
+Deterministic tests do not validate deployed end-to-end recovery. Live service
+smoke tests and heavy regtest/device suites remain separate acceptance steps.
+Timing and query counts remain observable; Vizor does not add cover traffic.
+
+## Review fixes
+
+- Snapshot refresh failures retain a revalidated older session and process its
+  covered records. Cancellation still exits immediately; uncovered work retries
+  under the existing one-minute initialization backoff.
+- Recovery-setting quiescence and cleanup have bounded deadlines. Native iOS
+  callbacks check their own lease before pausing managers; releasing an expired
+  lease wakes its drain waiter without cancelling an admitted broadcast. Each
+  transition uses a distinct scoped lease, including retries.
+- Ordinary enhancement runs before completion even without a new scan batch,
+  covering newly exposed fallback work and disabling private recovery at the tip.
+- `scripts/test-ios-migration-outbox-gate.sh` exercises lease retirement and late
+  callbacks alongside the existing broadcast/drain tests. Provider tests execute
+  the real setting transition with a controlled native channel.
+
+### Accepted traffic-analysis limitation
+
+Batch coalescing is intentionally retained without padding. For two known,
+distinct covered positions, one request indicates a shared packed row and two
+requests indicate different rows. The PIR service does not learn the row index
+from this count, but it can learn relationships between queries when batch size
+is known. Query counts also depend on duplicates, coverage, and early termination.
+This leakage is accepted for now to reduce PIR computation and bandwidth; Vizor
+makes no fixed-volume, timing-unlinkability, or row-relationship privacy claim.
+See the shared integration document's accepted batch traffic-analysis section.
+Custom transports return opaque checked `ResponseBody` values; both direct and
+Tor routes stream chunks through the request-provided collector.
+
+Rediscovery first reuses the current in-memory compact-block batch. When the
+required block is no longer cached, Vizor downloads a trailing 100-block range
+ending at that height. This avoids an isolated one-block request but remains an
+accepted limitation: an informed lightwalletd can infer that the range endpoint
+is the rediscovery height. No transaction ID is disclosed by this request.
+
+### Typed policy and partial progress
+
+Vizor supplies its typed `WalletNetwork` to the safe shared wallet adapter, which
+derives the network identifier and NU6.3 activation height. An unscheduled upgrade,
+pre-activation anchor, or wrong advertised network cannot authorize setup.
+The shared batch stream processes covered rows before reporting uncovered positions
+and yields cancellation for remaining covered positions lazily. Uncovered work is
+retained for a later snapshot; only authenticated backend routing can require LWD.

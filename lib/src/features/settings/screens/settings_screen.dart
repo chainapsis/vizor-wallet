@@ -499,6 +499,9 @@ class _SettingsList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
+    final changingRecovery =
+        ref.watch(enhancePirTransitionProvider) == 'Changing setting…';
+    final recoveryStatus = ref.watch(enhancePirStatusTextProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -604,8 +607,12 @@ class _SettingsList extends ConsumerWidget {
               const SizedBox(height: AppSpacing.sm),
               _EnhancePirPrivacyControl(
                 enabled: enhancePirEnabled,
-                onToggle: () =>
-                    unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+                status: recoveryStatus,
+                onToggle: changingRecovery
+                    ? null
+                    : () => unawaited(
+                        ref.read(enhancePirProvider.notifier).toggle(),
+                      ),
               ),
             ],
           ],
@@ -1067,10 +1074,12 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
   const _EnhancePirPrivacyControl({
     required this.enabled,
     required this.onToggle,
+    required this.status,
   });
 
   final bool enabled;
-  final VoidCallback onToggle;
+  final VoidCallback? onToggle;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
@@ -1136,11 +1145,21 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
             ),
           ),
         ),
+        if (status.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            status,
+            key: const ValueKey('settings_recovery_progress'),
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
         const SizedBox(height: AppSpacing.xs),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+            'Privately completes Ironwood incoming and outgoing details during recovery. Timing and query counts remain visible to the service.',
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

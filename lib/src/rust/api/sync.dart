@@ -1123,6 +1123,14 @@ Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
   claimTxids: claimTxids,
 );
 
+Future<EnhanceRecoveryStatus> getEnhanceRecoveryStatus({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncGetEnhanceRecoveryStatus(
+  dbPath: dbPath,
+  network: network,
+);
+
 /// Flat address-validation result for the Dart side.
 ///
 /// `wrong_network` marks the one case where `is_valid` is false but the input
@@ -1297,6 +1305,38 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
+}
+
+/// Durable pending work, including obligations that cannot currently be retried.
+class EnhanceRecoveryStatus {
+  final int queries;
+  final int rediscovery;
+  final int suspended;
+  final String serviceState;
+
+  const EnhanceRecoveryStatus({
+    required this.queries,
+    required this.rediscovery,
+    required this.suspended,
+    required this.serviceState,
+  });
+
+  @override
+  int get hashCode =>
+      queries.hashCode ^
+      rediscovery.hashCode ^
+      suspended.hashCode ^
+      serviceState.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EnhanceRecoveryStatus &&
+          runtimeType == other.runtimeType &&
+          queries == other.queries &&
+          rediscovery == other.rediscovery &&
+          suspended == other.suspended &&
+          serviceState == other.serviceState;
 }
 
 class ExecuteProposalResult {

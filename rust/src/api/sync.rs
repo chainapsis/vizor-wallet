@@ -2946,3 +2946,18 @@ pub fn get_payment_link_spend_evidence(
         })
     })
 }
+
+/// Durable pending work, including obligations that cannot currently be retried.
+pub struct EnhanceRecoveryStatus {
+    pub queries: u32,
+    pub rediscovery: u32,
+    pub suspended: u32,
+    pub service_state: String,
+}
+pub fn get_enhance_recovery_status(
+    db_path: String,
+    network: String,
+) -> Result<EnhanceRecoveryStatus, String> {
+    let network = keys::parse_network(&network)?;
+    sync_engine::enhance_recovery_status(&db_path, network)
+}

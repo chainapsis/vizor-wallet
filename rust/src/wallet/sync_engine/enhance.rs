@@ -29,8 +29,8 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        enhance_pir::EnhancementMode, wallet::decrypt_and_store_transaction,
-        TransactionDataRequest, TransactionStatus, WalletRead, WalletWrite,
+        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
+        WalletRead, WalletWrite,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -56,16 +56,11 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    enhance_pir_enabled: bool,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
-    db.set_enhancement_mode(if enhance_pir_enabled {
-        EnhancementMode::PrivateIronwood
-    } else {
-        EnhancementMode::Standard
-    });
 
-    backfill_stored_fees(client, db, db_path).await?;
+    backfill_stored_fees(client, db, db_path, should_exit).await?;
 
     for _ in 0..3 {
         let requests = db
@@ -89,6 +84,9 @@ pub(super) async fn run_enhancement(
         }
 
         for req in &requests {
+            if should_exit() {
+                return Ok(());
+            }
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
@@ -97,7 +95,12 @@ pub(super) async fn run_enhancement(
                         continue;
                     }
 
-                    match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
+                    match cancelable(
+                        lwd::get_transaction(client, txid.as_ref().to_vec()),
+                        should_exit,
+                    )
+                    .await
+                    {
                         Ok(raw) => {
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
@@ -118,7 +121,9 @@ pub(super) async fn run_enhancement(
                                                 "sync: decrypt_and_store_transaction failed: {e}"
                                             );
                                         }
-                                        if let Err(e) = fill_missing_fee(client, db_path, &tx).await
+                                        if let Err(e) =
+                                            fill_missing_fee(client, db_path, &tx, should_exit)
+                                                .await
                                         {
                                             log::warn!(
                                                 "sync: fee enhancement failed for {txid_str}: {e}"
@@ -178,15 +183,21 @@ pub(super) async fn run_enhancement(
                     let start = u32::from(req.block_range_start()) as u64;
                     let end = u32::from(end_height) as u64;
 
-                    match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1))
-                        .await
+                    match cancelable(
+                        lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1)),
+                        should_exit,
+                    )
+                    .await
                     {
                         Ok(mut stream) => {
                             let mut fee_client = client.clone();
                             loop {
-                                match lwd::next_stream_message(
-                                    &mut stream,
-                                    "get_taddress_txids stream",
+                                match cancelable(
+                                    lwd::next_stream_message(
+                                        &mut stream,
+                                        "get_taddress_txids stream",
+                                    ),
+                                    should_exit,
                                 )
                                 .await
                                 {
@@ -218,6 +229,7 @@ pub(super) async fn run_enhancement(
                                                         &mut fee_client,
                                                         db_path,
                                                         &tx,
+                                                        should_exit,
                                                     )
                                                     .await
                                                     {
@@ -255,12 +267,16 @@ async fn backfill_stored_fees(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &WalletDatabase,
     db_path: &str,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     for txid in stored_transaction_ids_missing_fee(db_path)? {
+        if should_exit() {
+            return Ok(());
+        }
         let txid_str = format!("{txid}");
         match db.get_transaction(txid) {
             Ok(Some(tx)) => {
-                if let Err(e) = fill_missing_fee(client, db_path, &tx).await {
+                if let Err(e) = fill_missing_fee(client, db_path, &tx, should_exit).await {
                     log::warn!("sync: stored fee enhancement failed for {txid_str}: {e}");
                 }
             }
@@ -306,6 +322,7 @@ async fn fill_missing_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     if !should_fill_missing_fee(db_path, tx)? {
         return Ok(());
@@ -316,7 +333,7 @@ async fn fill_missing_fee(
     // that fee too so these rows do not remain in the backfill query forever.
     let prevout_values = match tx.transparent_bundle() {
         Some(bundle) if !bundle.vin.is_empty() => {
-            let values = fetch_transparent_prevout_values(client, tx).await?;
+            let values = fetch_transparent_prevout_values(client, tx, should_exit).await?;
             if values.is_empty() {
                 return Ok(());
             }
@@ -337,6 +354,7 @@ async fn fill_missing_fee(
 async fn fetch_transparent_prevout_values(
     client: &mut CompactTxStreamerClient<Channel>,
     tx: &Transaction,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<BTreeMap<OutPoint, Zatoshis>, SyncError> {
     let Some(bundle) = tx.transparent_bundle() else {
         return Ok(BTreeMap::new());
@@ -352,7 +370,12 @@ async fn fetch_transparent_prevout_values(
             continue;
         }
 
-        let parent_raw = match lwd::get_transaction(client, outpoint.hash().to_vec()).await {
+        let parent_raw = match cancelable(
+            lwd::get_transaction(client, outpoint.hash().to_vec()),
+            should_exit,
+        )
+        .await
+        {
             Ok(raw) => raw,
             Err(e) => {
                 log::warn!(
@@ -784,5 +807,83 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+}
+
+/// Cancellation is checked before dispatch and after completion, and dropping
+/// the request future interrupts an in-flight wait. No queued request survives.
+async fn cancelable<T, E: CancelError>(
+    request: impl std::future::Future<Output = Result<T, E>>,
+    should_exit: &impl Fn() -> bool,
+) -> Result<T, E> {
+    if should_exit() {
+        return Err(E::cancelled());
+    }
+    let result = tokio::select! {
+        biased;
+        _ = super::watch_for_exit(should_exit) => return Err(E::cancelled()),
+        result = request => result,
+    };
+    if should_exit() {
+        return Err(E::cancelled());
+    }
+    result
+}
+
+trait CancelError {
+    fn cancelled() -> Self;
+}
+impl CancelError for SyncError {
+    fn cancelled() -> Self {
+        Self::other("enhancement cancelled")
+    }
+}
+impl CancelError for Status {
+    fn cancelled() -> Self {
+        Self::cancelled("enhancement cancelled")
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    #[tokio::test]
+    async fn cancelled_public_batch_never_dispatches_the_next_transaction() {
+        let cancelled = AtomicBool::new(false);
+        let dispatched = AtomicUsize::new(0);
+        let exit = || cancelled.load(Ordering::SeqCst);
+        let first = cancelable(
+            async {
+                dispatched.fetch_add(1, Ordering::SeqCst);
+                cancelled.store(true, Ordering::SeqCst);
+                Ok::<_, SyncError>(())
+            },
+            &exit,
+        )
+        .await;
+        assert!(first.is_err());
+        let second = cancelable(
+            async {
+                dispatched.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, SyncError>(())
+            },
+            &exit,
+        )
+        .await;
+        assert!(second.is_err());
+        assert_eq!(dispatched.load(Ordering::SeqCst), 1);
+    }
+    #[tokio::test]
+    async fn cancellation_drops_a_waiting_public_request() {
+        let cancelled = AtomicBool::new(false);
+        let exit = || cancelled.load(Ordering::SeqCst);
+        let request = cancelable(std::future::pending::<Result<(), SyncError>>(), &exit);
+        let cancel = async {
+            tokio::task::yield_now().await;
+            cancelled.store(true, Ordering::SeqCst);
+        };
+        let (result, _) = tokio::join!(request, cancel);
+        assert!(result.is_err());
     }
 }

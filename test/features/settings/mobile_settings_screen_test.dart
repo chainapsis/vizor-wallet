@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
@@ -144,9 +145,11 @@ Widget _app({
   double textScale = 1,
   String network = 'main',
   bool enhancePirEnabled = false,
+  String recoveryStatus = '',
 }) {
   return ProviderScope(
     overrides: [
+      enhancePirStatusTextProvider.overrideWithValue(recoveryStatus),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
           accountState: accountState,
@@ -284,6 +287,20 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets('mobile recovery displays incomplete obligations', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(recoveryStatus: 'Incomplete recovery · 3 suspended'),
+    );
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_recovery_progress')),
+      200,
+    );
+    expect(find.text('Incomplete recovery\n3 suspended'), findsOneWidget);
+  });
+
   testWidgets('Settings always opens coinholder voting', (tester) async {
     await tester.pumpWidget(_routedApp());
     await tester.pumpAndSettle();

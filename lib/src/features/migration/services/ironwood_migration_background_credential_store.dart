@@ -468,6 +468,8 @@ class IronwoodMigrationBackgroundLifecycle {
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
        _isIOS = isIOS ?? Platform.isIOS,
+       // Android does not register this MethodChannel yet. Keep production
+       // lifecycle calls disabled there until the native lease API exists.
        _isAndroid = isAndroid ?? false,
        _resumeRetryDelays =
            resumeRetryDelays ??
@@ -496,6 +498,11 @@ class IronwoodMigrationBackgroundLifecycle {
     String leaseId,
     Future<T> Function() action,
   ) => runZoned(action, zoneValues: {_quiescenceLeaseZoneKey: leaseId});
+
+  /// Gives a new mutation its own lease, independent of wall-clock changes or
+  /// other callers. Cleanup and late callbacks remain scoped to this identity.
+  static Future<T> runWithNewQuiescenceLease<T>(Future<T> Function() action) =>
+      runWithQuiescenceLease(_newQuiescenceLeaseId(), action);
 
   String? get _scopedLeaseId =>
       Zone.current[_quiescenceLeaseZoneKey] as String?;

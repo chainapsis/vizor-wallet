@@ -33,6 +33,9 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final enhancePirEnabled = ref.watch(enhancePirProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
+    final changingRecovery =
+        ref.watch(enhancePirTransitionProvider) == 'Changing setting…';
+    final recoveryStatus = ref.watch(enhancePirStatusTextProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(
       state,
@@ -174,14 +177,20 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
               button: true,
               toggled: enhancePirEnabled,
               label: 'Private Ironwood recovery',
-              onTap: () =>
-                  unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+              onTap: changingRecovery
+                  ? null
+                  : () => unawaited(
+                      ref.read(enhancePirProvider.notifier).toggle(),
+                    ),
               excludeSemantics: true,
               child: GestureDetector(
                 key: const ValueKey('mobile_settings_enhance_pir_row'),
                 behavior: HitTestBehavior.opaque,
-                onTap: () =>
-                    unawaited(ref.read(enhancePirProvider.notifier).toggle()),
+                onTap: changingRecovery
+                    ? null
+                    : () => unawaited(
+                        ref.read(enhancePirProvider.notifier).toggle(),
+                      ),
                 child: SizedBox(
                   height: _rowHeight,
                   child: Padding(
@@ -206,12 +215,14 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                         Expanded(
                           child: Text(
                             'Private Ironwood recovery',
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.labelLarge.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
                         ),
+                        const SizedBox(width: AppSpacing.xs),
                         Text(
                           enhancePirEnabled ? 'On' : 'Off',
                           key: const ValueKey(
@@ -229,7 +240,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                             'mobile_settings_enhance_pir_toggle',
                           ),
                           enabled: enhancePirEnabled,
-                          interactive: true,
+                          interactive: !changingRecovery,
                           thumbKey: const ValueKey(
                             'mobile_settings_enhance_pir_toggle_thumb',
                           ),
@@ -240,10 +251,18 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 ),
               ),
             ),
+          if (enhancePirAvailable && recoveryStatus.isNotEmpty)
+            Text(
+              recoveryStatus.replaceFirst(' · ', '\n'),
+              key: const ValueKey('mobile_settings_recovery_progress'),
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
           if (enhancePirAvailable) const SizedBox(height: AppSpacing.sm),
           if (enhancePirAvailable)
             Text(
-              'Privately completes future Ironwood incoming and outgoing details during recovery. It does not reprocess past history, and timing and query counts remain visible to the service.',
+              'Privately completes Ironwood incoming and outgoing details during recovery. Timing and query counts remain visible to the service.',
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
               ),

@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -25,6 +26,22 @@ import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  testWidgets('recovery status keeps active and suspended counts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          enhancePirStatusTextProvider.overrideWithValue(
+            'Recovering · 12 pending · 3 suspended',
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Recovering · 12 pending · 3 suspended'), findsOneWidget);
+  });
+
   test('uninstall setting is supported only on macOS and Linux', () {
     expect(settingsUninstallSupported(platform: TargetPlatform.macOS), isTrue);
     expect(settingsUninstallSupported(platform: TargetPlatform.linux), isTrue);

@@ -35,12 +35,30 @@ class SharedPreferencesEnhancePirStore implements EnhancePirPreferenceStore {
   @override
   Future<void> writeEnabled(bool enabled) async {
     final preferences = await SharedPreferences.getInstance();
-    final saved = await preferences.setBool(
-      kEnhancePirEnabledPreferenceKey,
-      enabled,
-    );
-    if (!saved) {
-      throw StateError('Could not save the private Ironwood recovery setting.');
+    final previous = preferences.getBool(kEnhancePirEnabledPreferenceKey);
+    try {
+      final saved = await preferences.setBool(
+        kEnhancePirEnabledPreferenceKey,
+        enabled,
+      );
+      if (!saved) {
+        throw StateError(
+          'Could not save the private Ironwood recovery setting.',
+        );
+      }
+    } catch (_) {
+      // SharedPreferences changes its memory cache before the platform write.
+      // Restore that cache as well as the last committed value on failure.
+      try {
+        if (previous == null) {
+          await preferences.remove(kEnhancePirEnabledPreferenceKey);
+        } else {
+          await preferences.setBool(kEnhancePirEnabledPreferenceKey, previous);
+        }
+      } catch (_) {
+        // Preserve the original write failure; the visible/Rust mode is unchanged.
+      }
+      rethrow;
     }
   }
 }

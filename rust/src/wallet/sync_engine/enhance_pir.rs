@@ -1,351 +1,329 @@
-//! Private completion of Ironwood transactions discovered by compact scanning.
-//!
-//! The server sees randomized iPIR queries, never a transaction ID or note
-//! position. Snapshot metadata is accepted only after its block hash and
-//! Ironwood tree size agree with the wallet's locally scanned chain state.
-
-use std::collections::BTreeMap;
-use std::future::Future;
-use std::time::Duration;
-
+//! Application policy and transport for shared private recovery.
+use super::{
+    block_source::MemoryBlockSource, lwd::DirectRouteConnector, SyncError, WalletDatabase,
+};
+use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use bytes::Bytes;
+use futures::StreamExt;
 use http::{Method, Request, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use zakura_pir_enhance::client::record_in_row;
-use zakura_pir_enhance::{
-    AcceptedAnchor, ClientError, ClientResourceLimits, EnhanceGeneration, EnhanceSession,
-    GenerationAcceptance, QuerySession, RECORDS_PER_ROW,
+use std::{
+    future::Future,
+    time::{Duration, Instant},
 };
-use zcash_client_backend::data_api::enhance_pir::{
-    EnhancePirRead, EnhancePirSnapshotAnchor, EnhancePirSnapshotStatus, EnhancePirStoreResult,
-    EnhancePirWork, EnhancePirWrite,
+use tonic::transport::Channel;
+use zakura_pir_enhance::transport::{self, BoundedBody, PendingClient};
+use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
+use zakura_pir_enhance::{ClientError, ClientResourceLimits, EnhanceGeneration};
+use zcash_client_backend::{
+    data_api::enhance_pir::{
+        EnhancePirRead, EnhancePirStoreResult, EnhancePirWrite, IronwoodEnhanceDiscoveryRequest,
+        IronwoodEnhanceDiscoveryResult,
+    },
+    proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
-
-use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
-
-use super::{lwd::DirectRouteConnector, SyncError, WalletDatabase};
-
+use zcash_protocol::consensus::BlockHeight;
 const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
 const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_SESSION_BYTES: usize = 1024 * 1024;
-const MAX_PIR_BODY_BYTES: usize = 16 * 1024 * 1024;
-/// Bounds deterministic PIR setup work on the least-capable supported client.
 const MAX_LOGICAL_ROWS: u64 = 65_536;
+const REDISCOVERY_COVER_BLOCKS: u32 = 100;
 
-/// Per-sync cached PIR state. A validated immutable generation is reused while
-/// the wallet scans toward its anchor instead of redownloading parameters for
-/// every compact-block batch.
-pub(super) struct EnhancePirSync {
-    network: WalletNetwork,
-    endpoint: Option<String>,
-    pending_session: Option<EnhanceSession>,
-    session: Option<QuerySession>,
-    deferred: bool,
+fn rediscovery_cover_start(height: BlockHeight) -> BlockHeight {
+    BlockHeight::from_u32(
+        u32::from(height).saturating_sub(REDISCOVERY_COVER_BLOCKS.saturating_sub(1)),
+    )
 }
 
+pub(super) struct EnhancePirSync {
+    network: WalletNetwork,
+    db_path: String,
+    endpoint: Option<String>,
+    pending_session: Option<PendingClient>,
+    session: Option<transport::Client>,
+    deferred: bool,
+    attempted_discovery: Vec<IronwoodEnhanceDiscoveryRequest>,
+}
 #[derive(Debug)]
 pub(super) enum EnhancePirRunError {
     ExitRequested,
     Failed(SyncError),
 }
-
 impl From<SyncError> for EnhancePirRunError {
-    fn from(error: SyncError) -> Self {
-        Self::Failed(error)
+    fn from(e: SyncError) -> Self {
+        Self::Failed(e)
     }
 }
-
+impl From<ClientError> for EnhancePirRunError {
+    fn from(e: ClientError) -> Self {
+        match e {
+            ClientError::Cancelled => Self::ExitRequested,
+            e => Self::Failed(client_protocol_error(e)),
+        }
+    }
+}
+struct RoutedTransport<'a, F>(&'a F);
+impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
+    async fn execute(
+        &self,
+        request: transport::Request,
+    ) -> Result<transport::ResponseBody, ClientError> {
+        let collector = request.response_body();
+        let response = routed_request(
+            match request.method {
+                transport::Method::Get => Method::GET,
+                transport::Method::Post => Method::POST,
+            },
+            &request.url,
+            request.body,
+            collector,
+            self.0,
+        )
+        .await;
+        if (self.0)() {
+            return Err(ClientError::Cancelled);
+        }
+        response.map_err(|e| match e {
+            EnhancePirRunError::ExitRequested => ClientError::Cancelled,
+            EnhancePirRunError::Failed(e) => ClientError::Transport(e.to_string()),
+        })
+    }
+}
 impl EnhancePirSync {
-    pub(super) fn new(network: WalletNetwork, enabled: bool) -> Self {
-        let endpoint = (enabled && network == WalletNetwork::Main).then(|| {
-            std::env::var(ENDPOINT_ENV)
-                .or_else(|_| std::env::var(LEGACY_ENDPOINT_ENV))
-                .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.to_owned())
-        });
+    pub(super) fn new(network: WalletNetwork, enabled: bool, db_path: &str) -> Self {
         Self {
             network,
-            endpoint,
+            db_path: db_path.into(),
+            endpoint: (enabled && network == WalletNetwork::Main).then(|| {
+                std::env::var(ENDPOINT_ENV)
+                    .or_else(|_| std::env::var(LEGACY_ENDPOINT_ENV))
+                    .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.into())
+            }),
             pending_session: None,
             session: None,
             deferred: false,
+            attempted_discovery: Vec::new(),
         }
     }
-
     pub(super) fn enabled(&self) -> bool {
         self.endpoint.is_some()
     }
-
-    /// Defers optional service work until a new full-sync session while
-    /// preserving private enhancement mode for the durable queue.
     pub(super) fn defer(&mut self) {
         self.deferred = true;
+        set_phase(&self.db_path, "retrying_later");
     }
-
+    fn acceptance(
+        &self,
+        db: &WalletDatabase,
+        generation: &EnhanceGeneration,
+    ) -> Result<Acceptance, EnhancePirRunError> {
+        Ok(zakura_pir_enhance::wallet::acceptance(
+            db,
+            generation,
+            &self.network,
+            ClientResourceLimits::new(MAX_LOGICAL_ROWS),
+        )
+        .map_err(|e| SyncError::db(e.to_string()))??)
+    }
     pub(super) async fn run(
         &mut self,
         db: &mut WalletDatabase,
+        lwd: &mut CompactTxStreamerClient<Channel>,
+        cached: Option<&MemoryBlockSource>,
         should_exit: &impl Fn() -> bool,
     ) -> Result<(), EnhancePirRunError> {
         if should_exit() {
             return Err(EnhancePirRunError::ExitRequested);
         }
-        if self.endpoint.is_none() || self.deferred {
+        if !self.enabled() || self.deferred {
             return Ok(());
         }
-        let work = db
-            .enhance_pir_work()
-            .map_err(|error| SyncError::db(format!("enhance_pir_work: {error}")))?;
-        let mut rediscovery_count = 0usize;
-        let mut suspended_count = 0usize;
-        let requests = work
-            .into_iter()
-            .filter_map(|work| match work {
-                EnhancePirWork::Query(request) => Some(request),
-                EnhancePirWork::Rediscover(_) => {
-                    rediscovery_count += 1;
-                    None
-                }
-                EnhancePirWork::Suspended(_) => {
-                    suspended_count += 1;
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        if rediscovery_count > 0 || suspended_count > 0 {
-            log::info!(
-                "sync: Enhance PIR has {rediscovery_count} rediscovery and {suspended_count} suspended durable work item(s)"
-            );
-        }
-        if requests.is_empty() {
-            return Ok(());
-        }
-
-        if self.session.is_none() {
-            let endpoint = self.endpoint.as_deref().expect("checked above").to_owned();
-            let network = self.network;
-            initialize_once(&mut self.pending_session, async {
-                let init = fetch_init(&endpoint, should_exit).await?;
-                let acceptance = generation_acceptance(network, &init.generation)?;
-                acceptance
-                    .validate(&init.generation)
-                    .map_err(client_protocol_error)?;
-                Ok::<_, EnhancePirRunError>(init)
-            })
-            .await?;
-
-            let pending = self.pending_session.as_ref().expect("initialized above");
-            match snapshot_status(db, &pending.generation)? {
-                EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
-                EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch().into()),
-                EnhancePirSnapshotStatus::Accepted => {}
+        let work = PreparedWork::new(
+            db.enhance_pir_work()
+                .map_err(|e| SyncError::db(e.to_string()))?,
+        );
+        for request in work.rediscover {
+            // Partial reconstruction can leave active jobs at the same height.
+            // Retry those on the next foreground poll, not every scan batch.
+            if self.attempted_discovery.contains(&request) {
+                continue;
             }
+            self.attempted_discovery.push(request);
             if should_exit() {
                 return Err(EnhancePirRunError::ExitRequested);
             }
-            let init = self.pending_session.take().expect("checked above");
-            let acceptance = generation_acceptance(self.network, &init.generation)?;
-            self.session =
-                Some(QuerySession::from_session(init, &acceptance).map_err(client_protocol_error)?);
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-        }
-        let session = self.session.as_ref().expect("initialized above");
-        let generation = session.generation();
-        match snapshot_status(db, generation)? {
-            EnhancePirSnapshotStatus::NotYetScanned => return Ok(()),
-            EnhancePirSnapshotStatus::Mismatch => return Err(snapshot_mismatch().into()),
-            EnhancePirSnapshotStatus::Accepted => {}
-        }
-
-        // One returned row can satisfy up to RECORDS_PER_ROW pending notes. We
-        // group locally so duplicate row queries do not create linkable traffic.
-        let mut rows = BTreeMap::<u64, Vec<_>>::new();
-        for request in requests {
-            let position = u64::from(request.position());
-            if position < session.generation().ironwood_tree_size {
-                rows.entry(position / RECORDS_PER_ROW as u64)
-                    .or_default()
-                    .push(request);
-            }
-        }
-
-        let mut stored = 0usize;
-        let mut non_recoverable = 0usize;
-        let row_count = rows.len();
-        for requests in rows.into_values() {
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-            let position = u64::from(requests[0].position());
-            let (query, _) = session
-                .prepare_position(position)
-                .map_err(client_protocol_error)?;
-            let response = routed_request(
-                Method::POST,
-                &endpoint_path(
-                    self.endpoint.as_deref().expect("configured"),
-                    "/v1/enhance/query",
-                )?,
-                query.body().to_vec(),
-                MAX_PIR_BODY_BYTES,
-                should_exit,
-            )
-            .await?;
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-            let row = session
-                .decode(query, &response)
-                .map_err(client_protocol_error)?;
-
-            for request in requests {
-                if should_exit() {
-                    return Err(EnhancePirRunError::ExitRequested);
-                }
-                let position = u64::from(request.position());
-                let slot = position as usize % RECORDS_PER_ROW;
-                let wire_record = record_in_row(&row, slot).map_err(client_protocol_error)?;
-                let result = with_wallet_db_write_lock(
-                    "sync_engine.enhance_pir.apply_ironwood_enhance_record",
-                    || db.apply_ironwood_enhance_record(request, &wire_record),
-                )
-                .map_err(|error| SyncError::db(format!("apply Enhance PIR record: {error}")))?;
-                stored += usize::from(result == EnhancePirStoreResult::Stored);
-                non_recoverable += usize::from(result == EnhancePirStoreResult::NotRecoverable);
-                if result == EnhancePirStoreResult::Rejected {
-                    return Err(SyncError::parse(
-                        "Enhance PIR record failed wallet authentication",
+            let downloaded;
+            let block =
+                if let Some(block) = cached.and_then(|source| source.block_at(request.height)) {
+                    block
+                } else {
+                    // Fetch a trailing cover range rather than one isolated block.
+                    // Accepted limitation: the requested height remains the range endpoint,
+                    // so an informed lightwalletd can still infer the height of interest.
+                    downloaded = await_request_with_cancel(
+                        super::lwd::download_blocks(
+                            lwd,
+                            rediscovery_cover_start(request.height),
+                            request.height,
+                            self.network,
+                        ),
+                        should_exit,
+                        "rediscovery download timed out",
                     )
-                    .into());
+                    .await?;
+                    downloaded
+                        .block_at(request.height)
+                        .ok_or_else(|| SyncError::parse("rediscovery block missing"))?
+                };
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
+            let result = with_wallet_db_write_lock("enhance_pir.rediscover", || {
+                db.rebuild_ironwood_enhancement(request, block)
+            })
+            .map_err(|e| SyncError::db(e.to_string()))?;
+            if matches!(result, IronwoodEnhanceDiscoveryResult::Rejected) {
+                return Err(SyncError::parse("rediscovery block rejected").into());
+            }
+        }
+        let work = PreparedWork::new(
+            db.enhance_pir_work()
+                .map_err(|e| SyncError::db(e.to_string()))?,
+        );
+        if work.query_count() == 0 {
+            return Ok(());
+        }
+        // Always revalidate after scans and rewinds, including cached coverage.
+        if let Some(session) = &self.session {
+            match self.acceptance(db, session.generation())? {
+                Acceptance::Accepted(_) => {}
+                Acceptance::WaitingForScanning => {
+                    set_phase(&self.db_path, "waiting_for_scanning");
+                    return Ok(());
+                }
+                Acceptance::Mismatch => {
+                    self.session = None;
+                    self.pending_session = None;
+                    return Err(SyncError::parse("snapshot anchor mismatch").into());
                 }
             }
         }
-
-        if row_count > 0 {
-            // Counts are useful demo evidence without recording txids or note positions.
-            log::info!(
-                "sync: Enhance PIR privately stored {stored} Ironwood enhancement(s) and retired {non_recoverable} authenticated non-recoverable action(s) in {row_count} row query/queries"
-            );
+        let uncovered = self.session.as_ref().is_none_or(|session| {
+            work.positions()
+                .any(|p| p >= session.generation().ironwood_tree_size)
+        });
+        set_phase(
+            &self.db_path,
+            if uncovered {
+                "waiting_for_snapshot"
+            } else {
+                "recovering"
+            },
+        );
+        let route = RoutedTransport(should_exit);
+        // Refresh is opportunistic: it must not suppress already accepted coverage.
+        let refresh = async {
+            if uncovered && self.pending_session.is_none() && refresh_due(&self.db_path) {
+                mark_refresh(&self.db_path);
+                self.pending_session = Some(
+                    PendingClient::fetch(&route, self.endpoint.as_deref().expect("enabled"))
+                        .await?,
+                );
+            }
+            if let Some(pending) = &self.pending_session {
+                match self.acceptance(db, pending.generation())? {
+                    Acceptance::Accepted(acceptance) => {
+                        if should_exit() {
+                            return Err(EnhancePirRunError::ExitRequested);
+                        }
+                        let pending = self.pending_session.take().expect("pending");
+                        // A stale service replica must not replace usable coverage
+                        // with an older, smaller snapshot of the accepted chain.
+                        if self.session.as_ref().is_none_or(|current| {
+                            pending.generation().ironwood_tree_size
+                                > current.generation().ironwood_tree_size
+                        }) {
+                            self.session = Some(pending.accept(&acceptance)?);
+                        }
+                    }
+                    Acceptance::WaitingForScanning => {
+                        set_phase(&self.db_path, "waiting_for_scanning");
+                    }
+                    Acceptance::Mismatch => {
+                        self.pending_session = None;
+                        return Err(SyncError::parse("snapshot anchor mismatch").into());
+                    }
+                }
+            }
+            Ok(())
         }
+        .await;
+        if !retain_coverage_on_refresh_failure(refresh, self.session.is_some())? {
+            self.pending_session = None;
+            set_phase(&self.db_path, "retrying_later");
+        }
+        let Some(session) = &self.session else {
+            return Ok(());
+        };
+        let results = session.query_batch(&route, work.positions());
+        futures::pin_mut!(results);
+        while let Some(result) = results.next().await {
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
+            let record = match result.record {
+                Err(ClientError::OutsideCoverage(_)) => continue,
+                result => result?,
+            };
+            for (request, record) in work.map_record(result.position, record) {
+                let result = with_wallet_db_write_lock("enhance_pir.apply", || {
+                    db.apply_ironwood_enhance_record(request, &record)
+                })
+                .map_err(|e| SyncError::db(e.to_string()))?;
+                if result == EnhancePirStoreResult::Rejected {
+                    return Err(SyncError::parse("PIR record failed wallet authentication").into());
+                }
+            }
+        }
+        let remaining = PreparedWork::new(
+            db.enhance_pir_work()
+                .map_err(|e| SyncError::db(e.to_string()))?,
+        );
+        log::info!("sync: private recovery has {} active queries, {} rediscovery jobs, and {} suspended obligations", remaining.query_count(), remaining.rediscover.len(), remaining.suspended);
         Ok(())
     }
 }
-
-async fn initialize_once<T, E>(
-    cached: &mut Option<T>,
-    initialize: impl Future<Output = Result<T, E>>,
-) -> Result<(), E> {
-    if cached.is_none() {
-        *cached = Some(initialize.await?);
+/// A bad candidate cannot invalidate a separately revalidated current session.
+/// Cancellation always wins, even when old coverage remains usable.
+fn retain_coverage_on_refresh_failure(
+    refresh: Result<(), EnhancePirRunError>,
+    has_coverage: bool,
+) -> Result<bool, EnhancePirRunError> {
+    match refresh {
+        Ok(()) => Ok(true),
+        Err(EnhancePirRunError::Failed(error)) if has_coverage => {
+            log::warn!("sync: snapshot refresh failed; retaining accepted coverage: {error}");
+            Ok(false)
+        }
+        Err(error) => Err(error),
     }
-    Ok(())
-}
-
-async fn fetch_init(
-    endpoint: &str,
-    should_exit: &impl Fn() -> bool,
-) -> Result<EnhanceSession, EnhancePirRunError> {
-    if !endpoint.starts_with("https://") {
-        return Err(SyncError::parse("Enhance PIR endpoint must use an https:// URL").into());
-    }
-    let session = routed_request(
-        Method::GET,
-        &endpoint_path(endpoint, "/v1/enhance/init")?,
-        Vec::new(),
-        MAX_SESSION_BYTES,
-        should_exit,
-    )
-    .await?;
-    let session: EnhanceSession = serde_json::from_slice(&session)
-        .map_err(|error| SyncError::parse(format!("Enhance PIR session JSON: {error}")))?;
-    Ok(session)
-}
-
-fn snapshot_status(
-    db: &WalletDatabase,
-    generation: &EnhanceGeneration,
-) -> Result<EnhancePirSnapshotStatus, SyncError> {
-    db.enhance_pir_snapshot_status(EnhancePirSnapshotAnchor {
-        height: BlockHeight::from(u32::try_from(generation.anchor_height).map_err(|_| {
-            SyncError::parse("Enhance PIR anchor height exceeds the supported range")
-        })?),
-        block_hash: parse_display_block_hash(&generation.anchor_block_hash)?,
-        ironwood_tree_size: generation.ironwood_tree_size,
-    })
-    .map_err(|error| SyncError::db(format!("enhance_pir_snapshot_status: {error}")))
-}
-
-fn generation_acceptance(
-    network: WalletNetwork,
-    generation: &EnhanceGeneration,
-) -> Result<GenerationAcceptance, SyncError> {
-    let block_hash: [u8; 32] = hex::decode(&generation.anchor_block_hash)
-        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR anchor hash: {error}")))?
-        .try_into()
-        .map_err(|_| SyncError::parse("invalid Enhance PIR anchor hash length"))?;
-    Ok(GenerationAcceptance::new(
-        match network {
-            WalletNetwork::Main => "main",
-            WalletNetwork::Test => "test",
-            WalletNetwork::Regtest => "regtest",
-        },
-        u64::from(u32::from(
-            network
-                .activation_height(NetworkUpgrade::Nu6_3)
-                .ok_or_else(|| SyncError::parse("NU6.3 activation height is unavailable"))?,
-        )),
-        AcceptedAnchor::new(
-            generation.anchor_height,
-            block_hash,
-            generation.ironwood_tree_size,
-        ),
-        ClientResourceLimits::new(MAX_LOGICAL_ROWS),
-    ))
-}
-
-fn snapshot_mismatch() -> SyncError {
-    SyncError::parse("Enhance PIR snapshot anchor disagrees with the locally scanned chain")
-}
-
-fn parse_display_block_hash(hash: &str) -> Result<BlockHash, SyncError> {
-    let mut bytes = hex::decode(hash)
-        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR anchor hash: {error}")))?;
-    if bytes.len() != 32 {
-        return Err(SyncError::parse("invalid Enhance PIR anchor hash length"));
-    }
-    bytes.reverse();
-    Ok(BlockHash::from_slice(&bytes))
-}
-
-fn endpoint_path(endpoint: &str, path: &str) -> Result<String, SyncError> {
-    let endpoint = endpoint.trim_end_matches('/');
-    if !endpoint.starts_with("https://") {
-        return Err(SyncError::parse(
-            "Enhance PIR endpoint must use an https:// URL",
-        ));
-    }
-    Ok(format!("{endpoint}{path}"))
 }
 
 fn client_protocol_error(error: ClientError) -> SyncError {
-    SyncError::parse(format!("Enhance PIR protocol validation failed: {error}"))
+    SyncError::parse(format!("Enhance PIR: {error}"))
 }
 
 async fn routed_request(
     method: Method,
     url: &str,
     body: Vec<u8>,
-    body_limit: usize,
+    collector: BoundedBody,
     should_exit: &impl Fn() -> bool,
-) -> Result<Vec<u8>, EnhancePirRunError> {
+) -> Result<transport::ResponseBody, EnhancePirRunError> {
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
     }
@@ -376,7 +354,7 @@ async fn routed_request(
                         .http_get(
                             uri,
                             |builder| builder,
-                            |incoming| tor_body_limited(incoming, body_limit),
+                            |incoming| tor_body_limited(incoming, collector),
                             0,
                             |_| None,
                         )
@@ -391,7 +369,7 @@ async fn routed_request(
                                     .header(http::header::CONTENT_TYPE, "application/octet-stream")
                             },
                             Full::new(Bytes::from(body)),
-                            |incoming| tor_body_limited(incoming, body_limit),
+                            |incoming| tor_body_limited(incoming, collector),
                             0,
                             |_| None,
                         )
@@ -442,7 +420,7 @@ async fn routed_request(
                 response.status()
             )));
         }
-        read_body_limited(response.status(), response.into_body(), body_limit).await
+        read_body_limited(response.status(), response.into_body(), collector).await
     };
     await_request_with_cancel(request, should_exit, "Enhance PIR HTTPS request timed out").await
 }
@@ -469,84 +447,168 @@ async fn await_request_with_cancel<T>(
 
 async fn tor_body_limited(
     mut body: Incoming,
-    limit: usize,
-) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
-    let mut bytes = Vec::new();
+    mut bytes: BoundedBody,
+) -> Result<transport::ResponseBody, zcash_client_backend::tor::Error> {
     while let Some(frame) = body.frame().await {
         let frame = frame.map_err(zcash_client_backend::tor::http::HttpError::from)?;
         if let Some(data) = frame.data_ref() {
-            if bytes.len().saturating_add(data.len()) > limit {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Enhance PIR HTTP body exceeds limit",
-                )
-                .into());
-            }
-            bytes.extend_from_slice(data);
+            bytes.extend(data).map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+            })?;
         }
     }
-    Ok(bytes)
+    Ok(bytes.finish())
 }
 
 async fn read_body_limited(
     status: StatusCode,
     mut body: Incoming,
-    limit: usize,
-) -> Result<Vec<u8>, SyncError> {
+    mut bytes: BoundedBody,
+) -> Result<transport::ResponseBody, SyncError> {
     debug_assert!(status.is_success());
-    let mut bytes = Vec::new();
     while let Some(frame) = body.frame().await {
         let frame = frame
             .map_err(|error| SyncError::net(format!("read Enhance PIR response body: {error}")))?;
         if let Some(data) = frame.data_ref() {
-            if bytes.len().saturating_add(data.len()) > limit {
-                return Err(SyncError::parse("Enhance PIR HTTP body exceeds limit"));
-            }
-            bytes.extend_from_slice(data);
+            bytes.extend(data).map_err(client_protocol_error)?;
         }
     }
-    Ok(bytes)
+    Ok(bytes.finish())
+}
+
+#[derive(Default)]
+struct ServiceState {
+    path: String,
+    phase: String,
+    last_refresh: Option<Instant>,
+}
+static SERVICE: std::sync::Mutex<Option<ServiceState>> = std::sync::Mutex::new(None);
+pub(super) fn begin_session(path: &str) {
+    let mut state = SERVICE.lock().unwrap_or_else(|e| e.into_inner());
+    if state.as_ref().is_none_or(|s| s.path != path) {
+        *state = Some(ServiceState {
+            path: path.into(),
+            ..Default::default()
+        });
+    }
+    state.as_mut().unwrap().phase.clear();
+}
+fn set_phase(path: &str, phase: &str) {
+    let mut state = SERVICE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(state) = state.as_mut().filter(|s| s.path == path) {
+        state.phase = phase.into();
+    }
+}
+fn refresh_due(path: &str) -> bool {
+    SERVICE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|s| s.path == path)
+        .and_then(|s| s.last_refresh)
+        .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
+}
+fn mark_refresh(path: &str) {
+    if let Some(state) = SERVICE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+        .filter(|s| s.path == path)
+    {
+        state.last_refresh = Some(Instant::now());
+    }
+}
+pub(super) fn phase(path: &str) -> String {
+    SERVICE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|s| s.path == path)
+        .map(|s| s.phase.clone())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::Arc;
-
     use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
 
-    #[tokio::test]
-    async fn initialization_is_reused_while_waiting_for_the_anchor() {
-        let calls = AtomicUsize::new(0);
-        let mut cached = None;
+    struct StaticTransport(Vec<u8>);
+    impl transport::Transport for StaticTransport {
+        async fn execute(
+            &self,
+            request: transport::Request,
+        ) -> Result<transport::ResponseBody, ClientError> {
+            let mut body = request.response_body();
+            body.extend(&self.0)?;
+            Ok(body.finish())
+        }
+    }
 
-        initialize_once(&mut cached, async {
-            calls.fetch_add(1, Ordering::Relaxed);
-            Ok::<_, ()>("first")
-        })
-        .await
-        .unwrap();
-        initialize_once(&mut cached, async {
-            calls.fetch_add(1, Ordering::Relaxed);
-            Ok::<_, ()>("replacement")
-        })
-        .await
-        .unwrap();
+    #[test]
+    fn refresh_failure_preserves_coverage_but_never_swallows_cancellation() {
+        for message in [
+            "initialization HTTP failure",
+            "snapshot anchor mismatch",
+            "invalid setup",
+        ] {
+            let failure = || Err(EnhancePirRunError::Failed(SyncError::parse(message)));
+            assert!(!retain_coverage_on_refresh_failure(failure(), true).unwrap());
+            assert!(retain_coverage_on_refresh_failure(failure(), false).is_err());
+        }
+        for covered in [false, true] {
+            assert!(matches!(
+                retain_coverage_on_refresh_failure(Err(EnhancePirRunError::ExitRequested), covered),
+                Err(EnhancePirRunError::ExitRequested)
+            ));
+            assert!(retain_coverage_on_refresh_failure(Ok(()), covered).unwrap());
+        }
+    }
 
-        assert_eq!(cached, Some("first"));
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    #[test]
+    fn only_mainnet_is_enabled() {
+        assert!(EnhancePirSync::new(WalletNetwork::Main, true, "test").enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Main, false, "test").enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Test, true, "test").enabled());
+        assert!(!EnhancePirSync::new(WalletNetwork::Regtest, true, "test").enabled());
+    }
+
+    #[test]
+    fn rediscovery_uses_a_trailing_hundred_block_cover_range() {
+        assert_eq!(
+            rediscovery_cover_start(BlockHeight::from_u32(1_000)),
+            BlockHeight::from_u32(901),
+        );
+        assert_eq!(
+            rediscovery_cover_start(BlockHeight::from_u32(50)),
+            BlockHeight::from_u32(0),
+        );
+    }
+
+    #[test]
+    fn refresh_is_rate_limited_across_foreground_sessions() {
+        begin_session("refresh-test");
+        assert!(refresh_due("refresh-test"));
+        mark_refresh("refresh-test");
+        begin_session("refresh-test");
+        assert!(!refresh_due("refresh-test"));
+        begin_session("new-wallet");
+        assert!(refresh_due("new-wallet"));
+        assert_eq!(phase("refresh-test"), "");
     }
 
     #[tokio::test]
-    async fn pending_request_stops_when_sync_exit_is_requested() {
-        let exit = Arc::new(AtomicBool::new(false));
-        let flip = exit.clone();
-        let flipping = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+    async fn cancellation_drops_an_in_flight_pir_request() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flip = cancelled.clone();
+        let should_exit = || cancelled.load(Ordering::Acquire);
+        let cancelling = tokio::spawn(async move {
+            tokio::task::yield_now().await;
             flip.store(true, Ordering::Release);
         });
-        let should_exit = || exit.load(Ordering::Acquire);
-        let started = tokio::time::Instant::now();
 
         let result = await_request_with_cancel(
             std::future::pending::<Result<(), SyncError>>(),
@@ -556,87 +618,17 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(EnhancePirRunError::ExitRequested)));
-        assert!(started.elapsed() < Duration::from_secs(1));
-        flipping.await.unwrap();
+        cancelling.await.unwrap();
     }
 
     #[tokio::test]
-    async fn request_failures_remain_distinct_from_sync_exit() {
-        let result = await_request_with_cancel(
-            async { Err::<(), _>(SyncError::net("service unavailable")) },
-            &|| false,
-            "unused timeout",
+    async fn malformed_initialization_response_is_rejected() {
+        let result = PendingClient::fetch(
+            &StaticTransport(b"not a valid initialization document".to_vec()),
+            "https://example.test",
         )
         .await;
 
-        assert!(matches!(
-            result,
-            Err(EnhancePirRunError::Failed(error))
-                if error.to_string().contains("service unavailable")
-        ));
-    }
-
-    #[test]
-    fn deferring_service_work_preserves_private_mode() {
-        let mut enhance_pir = EnhancePirSync::new(WalletNetwork::Main, true);
-
-        enhance_pir.defer();
-
-        assert!(enhance_pir.enabled());
-        assert!(enhance_pir.deferred);
-    }
-
-    #[test]
-    fn only_enabled_mainnet_uses_enhance_pir() {
-        assert!(EnhancePirSync::new(WalletNetwork::Main, true).enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Main, false).enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Test, true).enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Regtest, true).enabled());
-    }
-
-    #[test]
-    fn endpoint_requires_https() {
-        assert!(endpoint_path("http://example.test", "/v1/enhance/init").is_err());
-        assert_eq!(
-            endpoint_path("https://example.test/", "/v1/enhance/init").unwrap(),
-            "https://example.test/v1/enhance/init"
-        );
-    }
-
-    #[test]
-    fn display_block_hash_is_converted_to_internal_byte_order() {
-        let bytes: [u8; 32] = std::array::from_fn(|index| index as u8);
-        let expected = BlockHash::from_slice(&bytes);
-        assert_eq!(
-            parse_display_block_hash(&expected.to_string()).unwrap(),
-            expected,
-        );
-    }
-
-    /// Manual smoke test for the deployed demo service. It issues a randomized
-    /// cover query, so running it never discloses a wallet position.
-    #[tokio::test]
-    #[ignore = "requires the deployed Enhance-PIR demo endpoint"]
-    async fn deployed_endpoint_accepts_and_decodes_a_private_query() {
-        // Production sync installs this while opening lightwalletd; this test
-        // intentionally exercises the PIR transport in isolation.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let init = fetch_init(DEFAULT_MAINNET_ENDPOINT, &|| false)
-            .await
-            .unwrap();
-        let acceptance = generation_acceptance(WalletNetwork::Main, &init.generation).unwrap();
-        let session = QuerySession::from_session(init, &acceptance).unwrap();
-        let query = session.prepare_dummy().unwrap();
-        let response = routed_request(
-            Method::POST,
-            &endpoint_path(DEFAULT_MAINNET_ENDPOINT, "/v1/enhance/query").unwrap(),
-            query.body().to_vec(),
-            MAX_PIR_BODY_BYTES,
-            &|| false,
-        )
-        .await
-        .unwrap();
-
-        session.decode(query, &response).unwrap();
+        assert!(matches!(result, Err(ClientError::Json(_))));
     }
 }
