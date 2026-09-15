@@ -2035,9 +2035,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             epoch != _sensitiveStateEpoch) {
           return;
         }
-        recoveryRestart = _recoveryRestartGate.shouldRestart(
-          (recovery?.queries ?? 0) + (recovery?.rediscovery ?? 0),
-        );
+        // A null status means the read bailed out — locked, no active
+        // account, or a wallet mutation pause — not that the queue drained.
+        // Leave the gate's deadline alone rather than clearing it.
+        recoveryRestart =
+            recovery != null &&
+            _recoveryRestartGate.shouldRestart(
+              recovery.queries + recovery.rediscovery,
+            );
       }
       if (shouldStartSyncForPolledTip(
         current,
