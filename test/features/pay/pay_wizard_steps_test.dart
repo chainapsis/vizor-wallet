@@ -18,6 +18,8 @@ import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_page.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _recentAddress = '0x1111111111111111111111111111111111111111';
 const _unknownAddress = '0x2222222222222222222222222222222222222222';
@@ -136,6 +138,34 @@ void main() {
       payContactsForAddress([contact], _solanaAddress.replaceFirst('N', 'n')),
       isEmpty,
     );
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    for (final mode in SwapAmountInputMode.values) {
+      await tester.pumpWidget(
+        _harness(
+          PayAmountStep(
+            state: _amountState.copyWith(receiveAmountInputMode: mode),
+            controller: controller,
+            focusNode: focusNode,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
+            onOpenAssetSelector: () {},
+          ),
+        ),
+      );
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('pay_amount_input')),
+      );
+    }
   });
 
   group('PayAddContactModal', () {

@@ -602,7 +602,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey('request_amount_input')),
-      '0.5',
+      ',5',
     );
     await _settle(tester);
 

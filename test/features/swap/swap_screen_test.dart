@@ -67,6 +67,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
@@ -124,6 +126,34 @@ void main() {
     final parts = splitSwapSummaryAmountText(r'999K $SHIT', _testShitAsset);
     expect(parts.amount, '999K');
     expect(parts.symbol, r'$SHIT');
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _FakeSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
   });
 
   testWidgets('review summary fits a long pay amount via FittedBox', (
@@ -4357,6 +4387,66 @@ void main() {
 
     expect(swapProvider.requests.single.slippageBps, 125);
   });
+
+  testWidgets(
+    'custom slippage normalizes leading decimals without relaxing limits',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['0.555', '1234']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(sessionStore.savedPreferences?.slippageBps, 50);
+    },
+  );
 
   testWidgets('custom slippage outside range disables update', (tester) async {
     await _setDesktopViewport(tester);
