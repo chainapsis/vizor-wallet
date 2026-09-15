@@ -3466,6 +3466,78 @@ void main() {
     expect(rejected.error?.message, contains('birthday block'));
   });
 
+  test(
+    'an account-set change re-checks behind an action that is already running',
+    () async {
+      // An action that has passed the birthday gate is not held by the
+      // deletion drain, so it publishes an eligible state computed against an
+      // account set that no longer exists. Nothing is resolved when the set
+      // changes, so the re-check has to be queued on the in-flight action
+      // rather than skipped.
+      final rust = _GatedEligibilityRustApi();
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+      final accountSetProvider =
+          NotifierProvider<_WalletAccountSetNotifier, String>(
+            _WalletAccountSetNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: Duration.zero,
+        extraOverrides: [
+          votingWalletAccountSetProvider.overrideWith(
+            (ref) => ref.watch(accountSetProvider),
+          ),
+        ],
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      final inFlight = notifier.refreshEligibleWeight();
+      await rust.started.future;
+      // Past the gate, nothing published yet.
+      expect(
+        container
+            .read(votingSessionProvider(kRoundId))
+            .value!
+            .eligibleWeightZatoshi,
+        isNull,
+      );
+
+      // The oldest account is deleted while that action is parked.
+      readiness.walletBirthdayHeight = 999999;
+      container.read(accountSetProvider.notifier).set('account-1');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      rust.release.complete();
+      await inFlight;
+
+      VotingSessionState? rejected;
+      for (var i = 0; i < 200; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final state = container.read(votingSessionProvider(kRoundId)).value;
+        if (state != null && state.hasError) {
+          rejected = state;
+          break;
+        }
+      }
+
+      expect(
+        rejected,
+        isNotNull,
+        reason: 'the in-flight action published eligibility unchallenged',
+      );
+      expect(rejected!.error?.isEligibilityFailure, isTrue);
+      expect(rejected.error?.message, contains('birthday block'));
+    },
+  );
+
   test('an unchanged account set does not re-check eligibility', () async {
     // The listener must react to the set changing, not to every rebuild of
     // the account provider.
@@ -13185,6 +13257,25 @@ class _PollEligibilitySyncNotifier extends SyncNotifier {
       scannedHeight: scannedHeight,
     ),
   );
+}
+
+/// Holds the first eligibility check open, so a session action can be parked
+/// *past* the wallet-birthday gate while the account set changes underneath
+/// it.
+class _GatedEligibilityRustApi extends FakeVotingRustApi {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) async {
+    if (!started.isCompleted) {
+      started.complete();
+      await release.future;
+    }
+    return super.checkVotingEligibility(ctx: ctx);
+  }
 }
 
 class _GatedPollEligibilityRustApi extends FakeVotingRustApi {

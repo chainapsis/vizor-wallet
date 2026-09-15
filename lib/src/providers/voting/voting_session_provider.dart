@@ -310,9 +310,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> _revalidateEligibilityForAccountSetChange() async {
+    // Read before the first await. An action that is already running passed
+    // the birthday gate with the *old* wallet birthday and is not held by the
+    // deletion drain once _loadContext has released its lease, so it will
+    // publish an eligible state computed against an account set that no
+    // longer exists. The re-check has to follow it even though nothing is
+    // resolved yet — and _enqueue puts it behind that action in the queue.
+    final actionInFlight = _runningActionGeneration != null;
     final current = state.value;
-    // Nothing resolved yet: the session's next action runs the gate anyway.
-    if (current == null || current.eligibleWeightZatoshi == null) return;
+    // Nothing resolved and nothing running: the session's next action runs
+    // the gate itself, against the new account set.
+    if (!actionInFlight &&
+        (current == null || current.eligibleWeightZatoshi == null)) {
+      return;
+    }
     final context = _currentContext;
     // A running submission owns its account and its own recovery path.
     if (context != null && _activeSubmissionOwnsContext(context)) return;
