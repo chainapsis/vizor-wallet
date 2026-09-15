@@ -30,7 +30,10 @@ An incremental UTXO response cannot establish whether an older output was spent.
 Recovered transactions without full bytes are queued for enhancement in the same
 transaction as UTXO storage. The existing full-transaction processor installs
 durable spend detection. Completed address history requests advance that search;
-decoding/storage failure must not mark a range checked.
+decoding/storage failure must not mark a range checked. Such failures are logged
+and other requests continue. A failed address is skipped for the remaining queue
+passes of that enhancement invocation and retried by a later invocation. Network
+failures retain the existing sync retry behavior.
 
 `spend-index` is not enabled in the resolved dependency graph. This code uses
 the existing address-based spend detection and does not change server RPCs.

@@ -58,6 +58,8 @@ pub(super) async fn run_enhancement(
     network: WalletNetwork,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
+    // Retry a failed address on a later invocation, not in all three queue passes.
+    let mut failed_addresses: HashSet<String> = HashSet::new();
 
     backfill_stored_fees(client, db, db_path).await?;
 
@@ -78,7 +80,7 @@ pub(super) async fn run_enhancement(
             break;
         }
 
-        for req in &requests {
+        'requests: for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
@@ -165,11 +167,19 @@ pub(super) async fn run_enhancement(
                         &network,
                         &req.address(),
                     );
+                    if failed_addresses.contains(&addr_str) {
+                        continue;
+                    }
                     let start = u32::from(req.block_range_start()) as u64;
                     let end = u32::from(end_height) as u64;
 
-                    match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1))
-                        .await
+                    match lwd::get_taddress_txids(
+                        client,
+                        addr_str.clone(),
+                        start,
+                        end.saturating_sub(1),
+                    )
+                    .await
                     {
                         Ok(mut stream) => {
                             let mut fee_client = client.clone();
@@ -181,33 +191,17 @@ pub(super) async fn run_enhancement(
                                 .await
                                 {
                                     Ok(Some(raw)) => {
-                                        let mined_height =
-                                            mined_height_from_raw_height(raw.height)?;
-                                        // Empty or malformed payloads must not advance
-                                        // the durable address-search completion.
-                                        let tx =
-                                            Transaction::read(&raw.data[..], BranchId::Sapling)
-                                                .map_err(|e| {
-                                                    SyncError::parse(format!(
-                                                        "Transaction::read (addr): {e}"
-                                                    ))
-                                                })?;
-                                        with_wallet_db_write_lock(
-                                            "sync_engine.enhance.decrypt_and_store_transaction",
-                                            || {
-                                                decrypt_and_store_transaction(
-                                                    &network,
-                                                    db,
-                                                    &tx,
-                                                    mined_height,
-                                                )
-                                            },
-                                        )
-                                        .map_err(|e| {
-                                            SyncError::db(format!(
-                                                "decrypt_and_store_transaction (addr): {e}"
-                                            ))
-                                        })?;
+                                        let processed = store_address_transaction(
+                                            &network, db, &raw.data, raw.height,
+                                        );
+                                        let tx = match processed {
+                                            Ok(tx) => tx,
+                                            Err(error) => {
+                                                log::warn!("sync: address transaction processing failed; leaving range unchecked for retry: {error}");
+                                                failed_addresses.insert(addr_str.clone());
+                                                continue 'requests;
+                                            }
+                                        };
                                         if let Err(e) =
                                             fill_missing_fee(&mut fee_client, db_path, &tx).await
                                         {
@@ -224,10 +218,13 @@ pub(super) async fn run_enhancement(
                             // Only advance after the complete stream has been
                             // decoded and stored. Otherwise long-offline wallets
                             // repeat the first bounded spend-search range forever.
-                            with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
-                                db.notify_address_checked(req.clone(), end_height - 1)
-                            })
-                            .map_err(|e| SyncError::db(format!("notify_address_checked: {e}")))?;
+                            if let Err(error) = with_wallet_db_write_lock(
+                                "sync_engine.notify_address_checked",
+                                || db.notify_address_checked(req.clone(), end_height - 1),
+                            ) {
+                                log::warn!("sync: address completion write failed; retrying on a later sync: {error}");
+                                failed_addresses.insert(addr_str);
+                            }
                         }
                         Err(e) => return Err(e),
                     }
@@ -236,6 +233,23 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+/// Parse and store before allowing the caller to acknowledge an address range.
+fn store_address_transaction(
+    network: &WalletNetwork,
+    db: &mut WalletDatabase,
+    bytes: &[u8],
+    raw_height: u64,
+) -> Result<Transaction, SyncError> {
+    let mined_height = mined_height_from_raw_height(raw_height)?;
+    let tx = Transaction::read(bytes, BranchId::Sapling)
+        .map_err(|e| SyncError::parse(format!("Transaction::read (addr): {e}")))?;
+    with_wallet_db_write_lock("sync_engine.enhance.decrypt_and_store_transaction", || {
+        decrypt_and_store_transaction(network, db, &tx, mined_height)
+    })
+    .map_err(|e| SyncError::db(format!("decrypt_and_store_transaction (addr): {e}")))?;
+    Ok(tx)
 }
 
 /// Backfills fees for stored transactions whose status requests are dormant
