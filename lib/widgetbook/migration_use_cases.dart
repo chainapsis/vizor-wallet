@@ -616,7 +616,10 @@ class _MigrationDesktopRouteHarnessState
   static const _exitRoutes = [
     ...wbSidebarPaths,
     '/migration/intro',
+    '/migration/how-it-works',
+    '/migration/what-to-expect',
     '/migration/options',
+    '/migration/private/review',
     '/migration/private/status',
     '/migration/private/schedule',
     '/migration/private/preparation-schedule',

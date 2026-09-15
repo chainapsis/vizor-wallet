@@ -464,6 +464,36 @@ void main() {
     await _drainFixtureTimers(tester);
   });
 
+  testWidgets('desktop fallback flow buttons reach isolated destinations', (
+    tester,
+  ) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    for (final scenario in [
+      ('About Ironwood', 'Next', 1, '/migration/how-it-works'),
+      ('How it works', 'Next', 3, '/migration/what-to-expect'),
+      ('What to expect', 'Next', 1, '/migration/options'),
+      ('Migration options', 'Select & review', 1, '/migration/private/review'),
+      ('How it works', 'Ironwood Pool', 1, '/migration/intro'),
+      ('What to expect', 'How Migration Works', 1, '/migration/how-it-works'),
+      ('Migration options', 'About Migration', 1, '/migration/what-to-expect'),
+    ]) {
+      await pumpUseCase(tester, buildMigrationFlowGalleryCase, knobs: {
+        'Layout': 'Desktop',
+        'Flow data': 'No account yet',
+        'Step': scenario.$1,
+      });
+      for (var tap = 0; tap < scenario.$3; tap++) {
+        await tester.tap(find.text(scenario.$2));
+        for (var frame = 0; frame < 10; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(tester.takeException(), isNull, reason: scenario.$1);
+      }
+      expect(find.text('Navigated to ${scenario.$4}'), findsOneWidget);
+      await _drainFixtureTimers(tester);
+    }
+  });
+
   testWidgets('prepare gate reaches every redirect and toast', (tester) async {
     // Pixel fingerprints cannot separate these: the gate always renders the
     // same loading shell and only its toast copy and redirect differ.
