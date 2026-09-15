@@ -55,6 +55,17 @@ final _delegationSetupRetryPolicy = VotingRetryPolicy(
   shouldRetry: (error) => votingRustExceptionOf(error)?.retryable ?? false,
 );
 
+/// The complete identity of a resolved voting configuration.
+///
+/// Three fingerprints, not one: a refresh from the same source can leave
+/// [ResolvedVotingConfig.sourceFingerprint] untouched while the trusted keys
+/// or the dynamic config move under it — endpoints, authenticated rounds,
+/// protocol settings. Same triple the session's own context cache key is
+/// built from, so "the config I reviewed" means the same thing in both.
+String votingConfigIdentity(rust_config.ResolvedVotingConfig config) =>
+    '${config.sourceFingerprint}|${config.trustedKeyFingerprint}'
+    '|${config.dynamicConfigFingerprint}';
+
 /// Whether an authenticated round is still safe for automatic share recovery.
 bool shouldTrackPendingVotingShares(VotingRoundDetails round, {DateTime? now}) {
   final status = round.status.trim().toLowerCase();
@@ -3737,7 +3748,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   /// Conditions an unattended caller had reviewed and will not let a reloaded
   /// context change under it. See [pinReviewedContext].
-  String? _reviewedConfigFingerprint;
+  String? _reviewedConfigIdentity;
 
   /// Fails every later action of an unattended run whose context moved.
   ///
@@ -3748,18 +3759,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// reviewed, and every reload after that either matches it or fails.
   ///
   /// A user-driven action pins nothing: they are present for the result.
-  void pinReviewedContext({required String configFingerprint}) {
-    _reviewedConfigFingerprint = configFingerprint;
+  void pinReviewedContext({required String configIdentity}) {
+    _reviewedConfigIdentity = configIdentity;
   }
 
   void clearReviewedContext() {
-    _reviewedConfigFingerprint = null;
+    _reviewedConfigIdentity = null;
   }
 
   void _throwIfReviewedContextMoved(_VotingSessionContext context) {
-    final reviewedFingerprint = _reviewedConfigFingerprint;
-    if (reviewedFingerprint == null) return;
-    if (context.config.sourceFingerprint != reviewedFingerprint) {
+    final reviewedIdentity = _reviewedConfigIdentity;
+    if (reviewedIdentity == null) return;
+    if (votingConfigIdentity(context.config) != reviewedIdentity) {
       throw const _VotingReviewedConfigChanged();
     }
     if (!shouldTrackPendingVotingShares(

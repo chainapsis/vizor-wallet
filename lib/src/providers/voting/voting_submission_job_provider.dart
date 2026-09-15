@@ -298,7 +298,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   int? _walletSyncRecoveryGeneration;
   int? _walletSyncRecoverySnapshotHeight;
   VotingRoundDetails? _walletSyncRecoveryRound;
-  String? _walletSyncRecoveryConfigFingerprint;
+  String? _walletSyncRecoveryConfigIdentity;
   Map<int, int>? _walletSyncRecoveryDraftChoices;
   int? _walletSyncRecoveryWalletDataGeneration;
 
@@ -339,7 +339,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> retry({
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
-    String? requireConfigFingerprint,
+    String? requireConfigIdentity,
   }) async {
     _cancelWalletSyncRecovery();
     _releaseGuard();
@@ -349,7 +349,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _key,
       afterWalletSyncRecovery: afterWalletSyncRecovery,
       requireDraftChoices: requireDraftChoices,
-      requireConfigFingerprint: requireConfigFingerprint,
+      requireConfigIdentity: requireConfigIdentity,
     );
   }
 
@@ -367,7 +367,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionKey key, {
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
-    String? requireConfigFingerprint,
+    String? requireConfigIdentity,
   }) {
     _cancelWalletSyncRecovery();
     _confirmedDraftChoices = null;
@@ -382,11 +382,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // user reviewed so each of the pipeline's context reloads is checked
     // against it, a user-driven one pins nothing. Setting it on both paths is
     // what stops a pin outliving the run that wanted it.
-    if (requireConfigFingerprint == null) {
+    if (requireConfigIdentity == null) {
       sessionNotifier.clearReviewedContext();
     } else {
       sessionNotifier.pinReviewedContext(
-        configFingerprint: requireConfigFingerprint,
+        configIdentity: requireConfigIdentity,
       );
     }
     sessionNotifier.clearVoteSubmissionProgressForJobStart();
@@ -402,7 +402,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         afterWalletSyncRecovery: afterWalletSyncRecovery,
         requireDraftChoices: requireDraftChoices,
-        requireConfigFingerprint: requireConfigFingerprint,
+        requireConfigIdentity: requireConfigIdentity,
       ),
     );
   }
@@ -536,7 +536,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
-    String? requireConfigFingerprint,
+    String? requireConfigIdentity,
   }) async {
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
@@ -1200,7 +1200,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final stalled = isVotingWalletSyncStalled(session.error?.cause);
     final snapshotHeight = session.walletSnapshotHeight;
     final round = session.round;
-    final configFingerprint = session.config?.sourceFingerprint;
+    final config = session.config;
     final confirmedChoices = _confirmedDraftChoices;
     _failJob(
       key: key,
@@ -1210,7 +1210,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (!stalled ||
         snapshotHeight == null ||
         round == null ||
-        configFingerprint == null ||
+        config == null ||
         confirmedChoices == null) {
       return;
     }
@@ -1219,7 +1219,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       generation: generation,
       snapshotHeight: snapshotHeight,
       round: round,
-      configFingerprint: configFingerprint,
+      configIdentity: votingConfigIdentity(config),
       confirmedChoices: confirmedChoices,
     );
   }
@@ -1238,13 +1238,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     required int snapshotHeight,
     required VotingRoundDetails round,
-    required String configFingerprint,
+    required String configIdentity,
     required Map<int, int> confirmedChoices,
   }) {
     _walletSyncRecoveryGeneration = generation;
     _walletSyncRecoverySnapshotHeight = snapshotHeight;
     _walletSyncRecoveryRound = round;
-    _walletSyncRecoveryConfigFingerprint = configFingerprint;
+    _walletSyncRecoveryConfigIdentity = configIdentity;
     _walletSyncRecoveryDraftChoices = confirmedChoices;
     _walletSyncRecoveryWalletDataGeneration = ref
         .read(votingShareTrackingRegistryProvider)
@@ -1262,7 +1262,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoveryGeneration = null;
     _walletSyncRecoverySnapshotHeight = null;
     _walletSyncRecoveryRound = null;
-    _walletSyncRecoveryConfigFingerprint = null;
+    _walletSyncRecoveryConfigIdentity = null;
     _walletSyncRecoveryDraftChoices = null;
     _walletSyncRecoveryWalletDataGeneration = null;
     _walletSyncRecoveryRetryOnUnlock = false;
@@ -1309,9 +1309,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     // AsyncLoading with no value, and reading that as a changed fingerprint
     // would cancel recovery for a reload that lands on the same config;
     // _walletSyncRecoveryConfigIsReviewed parks the tick meanwhile.
-    final liveFingerprint = _liveVotingConfigFingerprint();
-    if (liveFingerprint != null &&
-        liveFingerprint != _walletSyncRecoveryConfigFingerprint) {
+    final liveIdentity = _liveVotingConfigIdentity();
+    if (liveIdentity != null &&
+        liveIdentity != _walletSyncRecoveryConfigIdentity) {
       return true;
     }
     if (_walletSyncRecoveryWalletDataGeneration !=
@@ -1327,8 +1327,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     );
   }
 
-  String? _liveVotingConfigFingerprint() =>
-      ref.read(votingConfigProvider).value?.sourceFingerprint;
+  String? _liveVotingConfigIdentity() {
+    final config = ref.read(votingConfigProvider).value;
+    return config == null ? null : votingConfigIdentity(config);
+  }
 
   /// Whether the config in force right now is the one the user reviewed.
   ///
@@ -1338,9 +1340,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   /// a resolved fingerprint that matches, and an unresolved one parks the
   /// tick with the arming intact.
   bool _walletSyncRecoveryConfigIsReviewed() {
-    final liveFingerprint = _liveVotingConfigFingerprint();
-    return liveFingerprint != null &&
-        liveFingerprint == _walletSyncRecoveryConfigFingerprint;
+    final liveIdentity = _liveVotingConfigIdentity();
+    return liveIdentity != null &&
+        liveIdentity == _walletSyncRecoveryConfigIdentity;
   }
 
   /// Only a loaded account list that no longer holds this account counts:
@@ -1433,13 +1435,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       // account drains this probe too, so it must also hold it off.
       if (registry.isAnyAccountQuiesced) return;
       final confirmedChoices = _walletSyncRecoveryDraftChoices;
-      final reviewedFingerprint = _walletSyncRecoveryConfigFingerprint;
+      final reviewedIdentity = _walletSyncRecoveryConfigIdentity;
       _cancelWalletSyncRecovery();
       unawaited(
         retry(
           afterWalletSyncRecovery: true,
           requireDraftChoices: confirmedChoices,
-          requireConfigFingerprint: reviewedFingerprint,
+          requireConfigIdentity: reviewedIdentity,
         ),
       );
     } catch (error, stackTrace) {
