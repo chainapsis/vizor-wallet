@@ -613,6 +613,57 @@ void main() {
     );
   });
 
+  testWidgets('mobile passphrase defaults hidden and reveals fixture words', (
+    tester,
+  ) async {
+    await pumpUseCase(
+      tester,
+      buildOnboardingSecretPassphraseGalleryCase,
+      knobs: {'Layout': _mobile},
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Reveal phrase'), findsOneWidget);
+    expect(
+      find.text('You are about to see your\nSecret Passphrase.'),
+      findsOneWidget,
+    );
+    expect(find.text('Continue'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Reveal phrase'), findsNothing);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(
+      find.text('You are about to see your\nSecret Passphrase.'),
+      findsNothing,
+    );
+    final blockedPreview = find.ancestor(
+      of: find.byKey(const ValueKey('mobile_secret_passphrase_primary')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is IgnorePointer && widget.ignoring,
+      ),
+    );
+    expect(blockedPreview, findsWidgets);
+    await disposeTree(tester);
+    await pumpUseCase(
+      tester,
+      buildOnboardingSecretPassphraseGalleryCase,
+      knobs: {'Layout': _mobile, 'State': 'Revealed'},
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Continue'), findsOneWidget);
+    await disposeTree(tester);
+    await pumpUseCase(
+      tester,
+      buildOnboardingSecretPassphraseGalleryCase,
+      knobs: {'Layout': _mobile, 'State': 'Hidden'},
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Reveal phrase'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mobile single-axis knobs cover every option distinctly', (
     tester,
   ) async {

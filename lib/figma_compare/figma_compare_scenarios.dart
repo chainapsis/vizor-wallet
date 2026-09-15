@@ -9,6 +9,7 @@ import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
+import '../widgetbook/onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/payment_link_mobile_use_cases.dart';
 import '../widgetbook/payment_link_use_cases.dart';
@@ -813,6 +814,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-address-types',
+    description: 'Mobile address education (Figma 4752:24608)',
+    builder: buildOnboardingMobileAddressTypesUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-secret-passphrase-hidden',
+    description: 'Mobile pre-reveal warning (Figma 4394:81938)',
+    builder: buildMobileSecretPassphraseHiddenUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-things-to-know',
+    description: 'Mobile privacy education (Figma 4752:24673)',
+    builder: buildOnboardingMobileThingsToKnowUseCase,
     desktop: false,
     mobile: true,
   ),

@@ -69,7 +69,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   }
 }
 
-/// Step 4 — Figma `Onboarding 2 Address Type` (4394:81701).
+/// Step 4 — Figma `New Wallet02` (4752:24608).
 class MobileAddressTypesScreen extends StatelessWidget {
   const MobileAddressTypesScreen({super.key});
 
@@ -80,6 +80,8 @@ class MobileAddressTypesScreen extends StatelessWidget {
       progress: mobileCreateProgress(4),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
+      contentGap: 32,
+      bottomAreaPadding: _educationActionPadding(context),
       // Line break matches the Figma subtitle wrap.
       subtitle:
           'Zcash has two addresses types.\nOne for Privacy, one for Transparency.',
@@ -90,10 +92,11 @@ class MobileAddressTypesScreen extends StatelessWidget {
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
-      child: _SurfaceInfoCard(
+      child: _EducationSections(
+        separateCards: true,
         sections: [
           _InfoSection(
-            iconName: AppIcons.shieldKeyhole,
+            iconName: AppIcons.shieldKeyholeOutline,
             iconColor: colors.icon.brandCrimson,
             title: 'Shielded Address',
             trailing: const _AddressChip(
@@ -101,7 +104,6 @@ class MobileAddressTypesScreen extends StatelessWidget {
               sample: 'vt42...',
               emphasized: true,
             ),
-            // Line break after "legacy)." matches the frame's wrap.
             body:
                 'Address starts with u1 (or zs for legacy).\nOnly you can '
                 'see your account balance and transaction history.',
@@ -122,7 +124,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
   }
 }
 
-/// Step 5 — Figma `Onboarding 3 Things to know` (4394:81851).
+/// Step 5 — Figma `New Wallet03` (4752:24673).
 class MobileThingsToKnowScreen extends StatelessWidget {
   const MobileThingsToKnowScreen({super.key});
 
@@ -133,6 +135,8 @@ class MobileThingsToKnowScreen extends StatelessWidget {
       progress: mobileCreateProgress(5),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Things to know',
+      contentGap: 32,
+      bottomAreaPadding: _educationActionPadding(context),
       subtitle: 'Before you dive in.',
       bottomArea: AppButton(
         key: const ValueKey('mobile_things_to_know_continue'),
@@ -141,7 +145,8 @@ class MobileThingsToKnowScreen extends StatelessWidget {
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
-      child: _SurfaceInfoCard(
+      child: _EducationSections(
+        separateCards: false,
         sections: [
           _InfoSection(
             iconName: AppIcons.time,
@@ -154,7 +159,7 @@ class MobileThingsToKnowScreen extends StatelessWidget {
                 'up.',
           ),
           _InfoSection(
-            iconName: AppIcons.shieldKeyhole,
+            iconName: AppIcons.shieldKeyholeOutline,
             iconColor: colors.icon.accent,
             title: 'How to keep privacy',
             body:
@@ -268,56 +273,78 @@ class _InfoSection {
   }
 }
 
-class _SurfaceInfoCard extends StatelessWidget {
-  const _SurfaceInfoCard({required this.sections});
+// Include the device's safe area in the 48 px bottom margin, rather than
+// adding it twice. Larger accessibility/system insets remain respected.
+EdgeInsets _educationActionPadding(BuildContext context) => EdgeInsets.fromLTRB(
+  16,
+  12,
+  16,
+  48 - MediaQuery.paddingOf(context).bottom.clamp(0, 34),
+);
+
+class _EducationSections extends StatelessWidget {
+  const _EducationSections({
+    required this.sections,
+    required this.separateCards,
+  });
 
   final List<_InfoSection> sections;
+  final bool separateCards;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Figma `Main` card (4394:81701): 20 px side / 44 px vertical
-    // padding, 16 between a section title and its body, and 36 on each
-    // side of the divider.
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: separateCards ? 0 : 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (var i = 0; i < sections.length; i++) ...[
-            if (i > 0)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 36),
-                child: Container(height: 1, color: colors.border.subtle),
+            if (i > 0) SizedBox(height: separateCards ? 16 : 24),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: separateCards ? 36 : 4,
               ),
-            Row(
-              children: [
-                AppIcon(
-                  sections[i].iconName,
-                  size: 24,
-                  color: sections[i].iconColor,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    sections[i].title,
-                    style: AppTypography.bodyLarge.copyWith(
-                      color: colors.text.accent,
+              decoration: separateCards
+                  ? BoxDecoration(
+                      color: colors.background.ground,
+                      borderRadius: BorderRadius.circular(AppRadii.large),
+                    )
+                  : null,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      AppIcon(
+                        sections[i].iconName,
+                        size: 24,
+                        color: sections[i].iconColor,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          sections[i].title,
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: colors.text.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (sections[i].trailing != null) sections[i].trailing!,
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text.rich(
+                    sections[i].bodySpan(
+                      AppTypography.bodyMedium.copyWith(
+                        color: colors.text.primary,
+                      ),
                     ),
                   ),
-                ),
-                if (sections[i].trailing != null) sections[i].trailing!,
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text.rich(
-              sections[i].bodySpan(
-                AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+                ],
               ),
             ),
           ],
@@ -342,21 +369,20 @@ class _AddressChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final bg = emphasized
-        ? colors.background.homeCard
+        ? colors.background.inverse
         : colors.background.raised;
-    // The prefix sits on its own little badge — crimson for the shielded
-    // chip, dark for the transparent chip — with white prefix text, per
-    // the Figma address-type chips.
+    // The prefix uses a crimson badge for shielded and an inverse badge
+    // for transparent addresses.
     final badgeBg = emphasized
         ? colors.background.brandCrimsonStrong
-        : colors.background.homeCard;
-    final textColor = emphasized ? colors.text.homeCard : colors.text.primary;
+        : colors.background.inverse;
+    final textColor = emphasized ? colors.text.inverse : colors.text.primary;
     // Figma `Card Top` chip: 37 px pill, Code M address, 8 px inset.
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -370,7 +396,7 @@ class _AddressChip extends StatelessWidget {
             child: Text(
               prefix,
               style: AppTypography.codeSmall.copyWith(
-                color: colors.text.homeCard,
+                color: emphasized ? colors.text.homeCard : colors.text.inverse,
               ),
             ),
           ),
