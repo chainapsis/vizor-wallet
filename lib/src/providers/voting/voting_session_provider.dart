@@ -324,6 +324,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     // the session stuck as not eligible with nothing to re-run the gate.
     final settledBirthdayFailure =
         current != null && current.walletBirthdayAfterSnapshot;
+    // A plan that already records a completed vote keeps its completed-vote
+    // presentation, and the proposal detail screen gates that presentation on
+    // current eligibility. Attaching a terminal birthday error here would
+    // therefore hide a vote that did happen. Any proposal still open in that
+    // plan runs the gate itself on its next action, so the answer is
+    // deferred, not lost.
+    if (current?.roundPlan?.completedForDisplay ?? false) return;
     // Nothing resolved, nothing settled and nothing running: the session's
     // next action runs the gate itself, against the new account set.
     if (!actionInFlight &&

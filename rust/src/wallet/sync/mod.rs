@@ -113,8 +113,8 @@ pub use transactions::{
 pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor, get_transaction_data_requests,
     get_transaction_detail, get_transaction_history, get_unmined_txids_with_mined_output_evidence,
-    get_wallet_balance, get_wallet_balances, get_wallet_birthday_height, ExportBirthdayAnchor,
-    TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    get_wallet_balance, get_wallet_balances, ExportBirthdayAnchor, TransactionDetail,
+    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
     WalletBalanceAvailability,
 };
 
@@ -384,40 +384,69 @@ fn is_completed_sync_status(
         && last_completed_height == Some(chain_tip_height)
 }
 
+/// The wallet-wide heights every readiness question is answered from, read
+/// under a single SQLite snapshot.
+///
+/// The scan frontier and the wallet birthday are one consistency boundary: the
+/// scanner applies every account UFVK to each block, so an account mutation
+/// moves both together. Reading them through separate connections can pair a
+/// pre-mutation birthday with a post-mutation frontier — a wallet state that
+/// never existed, and one that reads as eligible when the surviving wallet
+/// starts after the round snapshot.
+pub(crate) struct WalletSyncSnapshot {
+    /// `None` until the wallet has enough data to place a frontier at all.
+    pub scanned_height: Option<u64>,
+    pub chain_tip_height: Option<u64>,
+    /// Earliest recovery birthday across every account; `None` for a wallet
+    /// with no accounts.
+    pub wallet_birthday_height: Option<u64>,
+}
+
 /// Reads only the two wallet heights needed for status and completion checks.
 ///
 /// `WalletSummary` uses `birthday - 1` before the first block has been fully
 /// scanned, so preserve that behavior when `block_fully_scanned` has no value.
 pub(crate) fn wallet_scan_heights(db: &mut WalletDatabase) -> Result<Option<(u64, u64)>, String> {
-    wallet_scan_heights_in_snapshot(db, || {})
+    let snapshot = wallet_sync_snapshot_in(db, || {})?;
+    Ok(snapshot
+        .scanned_height
+        .zip(snapshot.chain_tip_height)
+        .map(|(scanned, chain_tip)| (scanned, chain_tip)))
 }
 
-fn wallet_scan_heights_in_snapshot(
+/// Reads the scan frontier and the wallet birthday from one snapshot.
+pub(crate) fn get_wallet_sync_snapshot(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<WalletSyncSnapshot, String> {
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    wallet_sync_snapshot_in(&mut db, || {})
+}
+
+fn wallet_sync_snapshot_in(
     db: &mut WalletDatabase,
     after_chain_height: impl FnOnce(),
-) -> Result<Option<(u64, u64)>, String> {
+) -> Result<WalletSyncSnapshot, String> {
     // The callback is a deterministic test seam: the first SELECT has fixed
     // the SQLite snapshot before a concurrent writer is allowed to commit.
     // Production callers always pass a no-op.
     let mut after_chain_height = Some(after_chain_height);
     db.transactionally(|db| {
-        let Some(chain_tip_height) = db.chain_height()? else {
-            return Ok(None);
-        };
+        let chain_tip_height = db.chain_height()?;
         if let Some(after_chain_height) = after_chain_height.take() {
             after_chain_height();
         }
+        let birthday_height = db.get_wallet_birthday()?;
         let scanned_height = match db.block_fully_scanned()? {
-            Some(block) => u32::from(block.block_height()) as u64,
-            None => {
-                let Some(birthday_height) = db.get_wallet_birthday()? else {
-                    return Ok(None);
-                };
-                u32::from(birthday_height).saturating_sub(1) as u64
-            }
+            Some(block) => Some(u32::from(block.block_height()) as u64),
+            None => birthday_height.map(|b| u32::from(b).saturating_sub(1) as u64),
         };
 
-        Ok(Some((scanned_height, u32::from(chain_tip_height) as u64)))
+        Ok(WalletSyncSnapshot {
+            scanned_height,
+            chain_tip_height: chain_tip_height.map(|h| u32::from(h) as u64),
+            wallet_birthday_height: birthday_height.map(|h| u32::from(h) as u64),
+        })
     })
     .map_err(|e: zcash_client_sqlite::error::SqliteClientError| format!("{e}"))
 }
@@ -838,7 +867,7 @@ mod tests {
         update_chain_tip(db_path, WalletNetwork::Regtest, 1_100).unwrap();
 
         let mut db = open_wallet_db_for_read(db_path, WalletNetwork::Regtest).unwrap();
-        let heights = wallet_scan_heights_in_snapshot(&mut db, || {
+        let snapshot = wallet_sync_snapshot_in(&mut db, || {
             let writer = rusqlite::Connection::open(db_path).unwrap();
             writer
                 .execute("UPDATE accounts SET birthday_height = 500", [])
@@ -846,7 +875,14 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(heights, Some((999, 1_100)));
+        assert_eq!(
+            (snapshot.scanned_height, snapshot.chain_tip_height),
+            (Some(999), Some(1_100))
+        );
+        // The birthday is read after the seam fires, so this is what proves
+        // the whole readiness view comes from one snapshot rather than
+        // pairing a pre-mutation birthday with a post-mutation frontier.
+        assert_eq!(snapshot.wallet_birthday_height, Some(1_000));
         let updated_birthday: u32 = rusqlite::Connection::open(db_path)
             .unwrap()
             .query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {

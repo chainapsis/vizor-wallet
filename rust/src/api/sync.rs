@@ -2517,10 +2517,15 @@ pub fn get_export_birthday_height(
 /// Voting readiness is wallet-wide: the scan engine applies every registered
 /// account UFVK to each scanned block. The minimum wallet birthday therefore
 /// matches the scope of the scan frontier used by the readiness check.
+///
+/// Read through the same snapshot helper `get_sync_status` reads its heights
+/// from, so both answers come from one definition of the wallet even though
+/// each bridge call is its own transaction.
 pub fn get_wallet_birthday_height(db_path: String, network: String) -> Result<u64, String> {
     catch(|| {
-        let _network = parse_network_and_migrate(&db_path, &network)?;
-        wallet_sync::get_wallet_birthday_height(&db_path)?
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_wallet_sync_snapshot(&db_path, network)?
+            .wallet_birthday_height
             .ok_or_else(|| "Wallet birthday not found".to_string())
     })
 }

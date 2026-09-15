@@ -3606,6 +3606,122 @@ void main() {
   });
 
   test(
+    'a completed vote is not re-checked when the account set changes',
+    () async {
+      // The proposal detail screen gates its completed-vote presentation on
+      // current eligibility, so attaching a terminal birthday error to a plan
+      // that records a completed vote would hide a vote that did happen. The
+      // open proposal here still runs the gate on its own next action.
+      final rust = FakeVotingRustApi();
+      final completedPlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+        roundPlanSequence: [completedPlan, completedPlan],
+      );
+      final readiness = _MutableVotingWalletSyncReadinessChecker(ready: true);
+      final accountSetProvider =
+          NotifierProvider<_WalletAccountSetNotifier, String>(
+            _WalletAccountSetNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: recoveryApi,
+        walletSyncReadinessChecker: readiness,
+        walletSyncPollInterval: Duration.zero,
+        extraOverrides: [
+          votingWalletAccountSetProvider.overrideWith(
+            (ref) => ref.watch(accountSetProvider),
+          ),
+        ],
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      await notifier.refreshEligibleWeight();
+      expect(
+        container
+            .read(votingSessionProvider(kRoundId))
+            .value!
+            .roundPlan
+            ?.completedForDisplay,
+        isTrue,
+        reason: 'the fixture never reached a completed round plan',
+      );
+      final callsBefore = readiness.calls;
+
+      readiness.walletBirthdayHeight = 999999;
+      container.read(accountSetProvider.notifier).set('account-1');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(readiness.calls, callsBefore);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.error,
+        isNull,
+      );
+    },
+  );
+
+  test('readiness rereads the birthday around the scan read', () async {
+    // The scan frontier and the wallet birthday are one consistency boundary.
+    // A deletion committing between the two reads would otherwise pair the
+    // pre-deletion birthday with the post-deletion frontier and report a
+    // wallet that never existed — one that reads as eligible.
+    final birthdays = <int>[0, 999999, 999999, 999999];
+    var birthdayReads = 0;
+    var scanReads = 0;
+
+    final readiness = await readBracketedWalletSyncReadiness(
+      snapshotHeight: 123,
+      readWalletBirthdayHeight: () async => birthdays[birthdayReads++],
+      readScanHeights: () async {
+        scanReads++;
+        return (scanned: 123, chainTip: 130);
+      },
+    );
+
+    // The first bracket disagreed (0 then 999999), so that pair was discarded
+    // and the whole read taken again rather than published.
+    expect(birthdayReads, 4);
+    expect(scanReads, 2);
+    expect(readiness.walletBirthdayHeight, 999999);
+    expect(readiness.walletBirthdayAfterSnapshot, isTrue);
+    expect(readiness.isReady, isFalse);
+  });
+
+  test('a birthday that keeps moving resolves to the stricter value', () async {
+    // Nothing can produce a consistent pair here, and the safe direction is
+    // to reject: a spurious rejection is corrected by the account-set
+    // re-check, a spurious pass is not.
+    var next = 0;
+    final readiness = await readBracketedWalletSyncReadiness(
+      snapshotHeight: 123,
+      readWalletBirthdayHeight: () async {
+        next++;
+        return next.isEven ? 999999 : 0;
+      },
+      readScanHeights: () async => (scanned: 123, chainTip: 130),
+      attempts: 2,
+    );
+
+    expect(readiness.walletBirthdayHeight, 999999);
+    expect(readiness.isReady, isFalse);
+  });
+
+  test(
     'restoring an older account clears a settled birthday rejection',
     () async {
       // The birthday-after-snapshot error resolves no weight and is presented

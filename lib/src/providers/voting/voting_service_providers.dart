@@ -499,24 +499,72 @@ class FrbVotingWalletSyncReadinessChecker
     implements VotingWalletSyncReadinessChecker {
   const FrbVotingWalletSyncReadinessChecker();
 
+  /// How many times a disagreeing bracket is retried before the stricter
+  /// birthday is taken. An account mutation holds the voting quiescence for
+  /// far less than three readiness reads, so reaching the cap means something
+  /// other than a single mutation is churning the account set.
+  static const int consistencyAttempts = 3;
+
   @override
   Future<VotingWalletSyncReadiness> check({
     required String dbPath,
     required String network,
     required int snapshotHeight,
-  }) async {
-    final results = await Future.wait<Object>([
-      rust_sync.getSyncStatus(dbPath: dbPath, network: network),
-      rust_sync.getWalletBirthdayHeight(dbPath: dbPath, network: network),
-    ]);
-    final status = results[0] as rust_sync.SyncProgress;
-    final birthdayHeight = results[1] as BigInt;
-    return VotingWalletSyncReadiness(
-      scannedHeight: status.scannedHeight.toInt(),
+  }) {
+    return readBracketedWalletSyncReadiness(
       snapshotHeight: snapshotHeight,
-      chainTipHeight: status.chainTipHeight.toInt(),
-      walletBirthdayHeight: birthdayHeight.toInt(),
+      readWalletBirthdayHeight: () async =>
+          (await rust_sync.getWalletBirthdayHeight(
+            dbPath: dbPath,
+            network: network,
+          )).toInt(),
+      readScanHeights: () async {
+        final status = await rust_sync.getSyncStatus(
+          dbPath: dbPath,
+          network: network,
+        );
+        return (
+          scanned: status.scannedHeight.toInt(),
+          chainTip: status.chainTipHeight.toInt(),
+        );
+      },
     );
+  }
+}
+
+/// Reads the scan frontier and the wallet birthday as one consistent view.
+///
+/// The two are one consistency boundary: the scanner applies every account
+/// UFVK to each block, so adding or removing an account moves both. Read
+/// concurrently, they can pair a pre-mutation birthday with a post-mutation
+/// frontier — a wallet that never existed, and one that reads as eligible
+/// when the surviving wallet starts after the snapshot.
+///
+/// Rust reads both heights from a single SQLite snapshot, but Dart cannot
+/// hold that transaction open across two bridge calls, so the scan read is
+/// bracketed instead: a birthday that is unchanged on both sides of it did
+/// not move while it ran.
+Future<VotingWalletSyncReadiness> readBracketedWalletSyncReadiness({
+  required int snapshotHeight,
+  required Future<int> Function() readWalletBirthdayHeight,
+  required Future<({int scanned, int chainTip})> Function() readScanHeights,
+  int attempts = FrbVotingWalletSyncReadinessChecker.consistencyAttempts,
+}) async {
+  for (var attempt = 1; ; attempt++) {
+    final before = await readWalletBirthdayHeight();
+    final heights = await readScanHeights();
+    final after = await readWalletBirthdayHeight();
+    if (before == after || attempt >= attempts) {
+      return VotingWalletSyncReadiness(
+        scannedHeight: heights.scanned,
+        snapshotHeight: snapshotHeight,
+        chainTipHeight: heights.chainTip,
+        // Out of attempts: take the later, stricter birthday. Rejecting a
+        // wallet that may cover the snapshot is corrected by the account-set
+        // re-check; letting one through that does not cover it is not.
+        walletBirthdayHeight: before > after ? before : after,
+      );
+    }
   }
 }
 

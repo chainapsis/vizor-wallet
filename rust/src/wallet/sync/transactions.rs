@@ -813,22 +813,6 @@ fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Opti
     .map_err(|e| format!("Query error: {e}"))
 }
 
-/// Returns the earliest recovery birthday across every account in the wallet.
-///
-/// Voting readiness is wallet-wide: the scan engine applies every registered
-/// account UFVK to each scanned block, so the minimum birthday matches the
-/// scope of the scan frontier the readiness check reads.
-///
-/// `None` means the wallet holds no accounts.
-pub(crate) fn get_wallet_birthday_height(db_path: &str) -> Result<Option<u64>, String> {
-    let conn = open_readonly_conn(db_path)?;
-    conn.query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
-        row.get::<_, Option<u32>>(0)
-            .map(|height| height.map(u64::from))
-    })
-    .map_err(|e| format!("Query error: {e}"))
-}
-
 pub(crate) fn get_transaction_detail(
     db_path: &str,
     network: WalletNetwork,
@@ -3028,28 +3012,6 @@ mod tests {
             rusqlite::params![account.as_bytes().as_slice(), birthday_height],
         )
         .unwrap();
-    }
-
-    #[test]
-    fn wallet_birthday_height_returns_earliest_account_birthday() {
-        // Readiness is wallet-wide: the scan frontier covers every account,
-        // so the minimum birthday is the one it starts from.
-        let db = fresh_history_db();
-        set_account_birthday(&db, test_account_uuid(), 120_000);
-        set_account_birthday(&db, second_test_account_uuid(), 80_000);
-
-        let got = get_wallet_birthday_height(db.path().to_str().unwrap()).unwrap();
-
-        assert_eq!(got, Some(80_000));
-    }
-
-    #[test]
-    fn wallet_birthday_height_is_none_without_accounts() {
-        let db = fresh_history_db();
-
-        let got = get_wallet_birthday_height(db.path().to_str().unwrap()).unwrap();
-
-        assert_eq!(got, None);
     }
 
     #[test]
