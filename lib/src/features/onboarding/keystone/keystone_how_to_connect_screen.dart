@@ -11,7 +11,12 @@ import '../../../core/widgets/app_icon.dart';
 import 'keystone_onboarding_flow.dart';
 
 class KeystoneHowToConnectScreen extends ConsumerWidget {
-  const KeystoneHowToConnectScreen({super.key});
+  const KeystoneHowToConnectScreen({
+    super.key,
+    this.onOpenFirmware = _openKeystoneFirmware,
+  });
+
+  final VoidCallback onOpenFirmware;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,15 +26,16 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
         routePath: '/welcome',
       ),
       bodyPadding: EdgeInsets.zero,
-      child: _HeroLayout(ref: ref),
+      child: _HeroLayout(ref: ref, onOpenFirmware: onOpenFirmware),
     );
   }
 }
 
 class _HeroLayout extends StatelessWidget {
-  const _HeroLayout({required this.ref});
+  const _HeroLayout({required this.ref, required this.onOpenFirmware});
 
   final WidgetRef ref;
+  final VoidCallback onOpenFirmware;
 
   static const double _contentAreaWidth = 420;
   static const double _contentPaddingX = 12;
@@ -50,7 +56,11 @@ class _HeroLayout extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    const Expanded(child: _OnPageContent()),
+                    Expanded(
+                      child: _OnPageContent(
+                        onOpenFirmware: onOpenFirmware,
+                      ),
+                    ),
                     _ButtonStack(ref: ref),
                   ],
                 ),
@@ -64,18 +74,20 @@ class _HeroLayout extends StatelessWidget {
 }
 
 class _OnPageContent extends StatelessWidget {
-  const _OnPageContent();
+  const _OnPageContent({required this.onOpenFirmware});
+
+  final VoidCallback onOpenFirmware;
 
   static const double _sectionGap = 32;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _TitleBlock(),
-        SizedBox(height: _sectionGap),
-        _KeystoneInstructionsPanel(),
+        const _TitleBlock(),
+        const SizedBox(height: _sectionGap),
+        _KeystoneInstructionsPanel(onOpenFirmware: onOpenFirmware),
       ],
     );
   }
@@ -139,7 +151,9 @@ class _TitleBlock extends StatelessWidget {
 }
 
 class _KeystoneInstructionsPanel extends StatelessWidget {
-  const _KeystoneInstructionsPanel();
+  const _KeystoneInstructionsPanel({required this.onOpenFirmware});
+
+  final VoidCallback onOpenFirmware;
 
   static const double _minHeight = 392;
   static const _radius = BorderRadius.all(Radius.circular(24));
@@ -175,19 +189,21 @@ class _KeystoneInstructionsPanel extends StatelessWidget {
           BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
         ],
       ),
-      child: const Column(
+      child: Column(
         children: [
           _InstructionSection(
             iconName: AppIcons.importWallet,
             stepNumber: 1,
             title: 'Check Keystone firmware',
             body: null,
-            action: _FirmwareBodyWithLink(),
+            action: _FirmwareBodyWithLink(
+              onOpenFirmware: onOpenFirmware,
+            ),
           ),
-          SizedBox(height: AppSpacing.md),
-          _Divider(),
-          SizedBox(height: AppSpacing.md),
-          _InstructionSection(
+          const SizedBox(height: AppSpacing.md),
+          const _Divider(),
+          const SizedBox(height: AppSpacing.md),
+          const _InstructionSection(
             iconName: AppIcons.qr,
             stepNumber: 2,
             title: 'Prepare to connect',
@@ -295,7 +311,9 @@ class _InstructionHeader extends StatelessWidget {
 }
 
 class _FirmwareBodyWithLink extends StatelessWidget {
-  const _FirmwareBodyWithLink();
+  const _FirmwareBodyWithLink({required this.onOpenFirmware});
+
+  final VoidCallback onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -305,14 +323,14 @@ class _FirmwareBodyWithLink extends StatelessWidget {
     return Text.rich(
       TextSpan(
         style: bodyStyle,
-        children: const [
-          TextSpan(
+        children: [
+          const TextSpan(
             text:
                 'Make sure your Keystone is on the latest Cypherpunk firmware. ',
           ),
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: _FirmwareInlineLink(),
+            child: _FirmwareInlineLink(onOpenFirmware: onOpenFirmware),
           ),
         ],
       ),
@@ -321,7 +339,9 @@ class _FirmwareBodyWithLink extends StatelessWidget {
 }
 
 class _FirmwareInlineLink extends StatelessWidget {
-  const _FirmwareInlineLink();
+  const _FirmwareInlineLink({required this.onOpenFirmware});
+
+  final VoidCallback onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +350,7 @@ class _FirmwareInlineLink extends StatelessWidget {
       link: true,
       label: 'Download Keystone firmware',
       child: AppButton(
-        onPressed: _openKeystoneFirmware,
+        onPressed: onOpenFirmware,
         variant: AppButtonVariant.ghost,
         size: AppButtonSize.small,
         height: 24,

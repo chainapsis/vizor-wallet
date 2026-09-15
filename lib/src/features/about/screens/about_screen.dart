@@ -18,6 +18,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
+import '../about_content.dart' show AboutUrlLauncher;
 
 const _utilityContentWidth = 420.0;
 const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
@@ -62,7 +63,9 @@ const _legalParagraphs = [
 ];
 
 class AboutScreen extends StatelessWidget {
-  const AboutScreen({super.key});
+  const AboutScreen({super.key, this.urlLauncher = _launchAboutUrl});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -70,11 +73,11 @@ class AboutScreen extends StatelessWidget {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: const _UtilityPane(
+        child: _UtilityPane(
           // Design: back chevron sits 16px into the pane, same as settings.
           // The 16px inset is the AppPaneToolbar default.
-          toolbar: AppPaneToolbar(),
-          child: _AboutContent(),
+          toolbar: const AppPaneToolbar(),
+          child: _AboutContent(urlLauncher: urlLauncher),
         ),
       ),
     );
@@ -116,25 +119,30 @@ class PrivacyPolicyScreen extends StatelessWidget {
 }
 
 class _AboutContent extends StatelessWidget {
-  const _AboutContent();
+  const _AboutContent({required this.urlLauncher});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Opacity(opacity: 0.5, child: VizorWordmark(width: 74, height: 27.925)),
-        SizedBox(height: AppSpacing.base),
-        _UtilityPageTitle(
+        const Opacity(
+          opacity: 0.5,
+          child: VizorWordmark(width: 74, height: 27.925),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        const _UtilityPageTitle(
           title: 'About Vizor Wallet',
           subtitle: kVizorAboutVersionLabel,
         ),
-        SizedBox(height: AppSpacing.base),
-        _UtilitySurface(
+        const SizedBox(height: AppSpacing.base),
+        const _UtilitySurface(
           child: _UtilityParagraphList(paragraphs: _aboutParagraphs),
         ),
-        SizedBox(height: AppSpacing.base),
-        _AboutLinkRow(),
+        const SizedBox(height: AppSpacing.base),
+        _AboutLinkRow(urlLauncher: urlLauncher),
       ],
     );
   }
@@ -410,11 +418,13 @@ class _UtilityParagraph extends StatelessWidget {
 }
 
 class _AboutLinkRow extends StatelessWidget {
-  const _AboutLinkRow();
+  const _AboutLinkRow({required this.urlLauncher});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: double.infinity,
       child: Wrap(
         alignment: WrapAlignment.center,
@@ -426,12 +436,14 @@ class _AboutLinkRow extends StatelessWidget {
             icon: AppIcons.github,
             semanticsLabel: 'Open Vizor GitHub',
             url: _vizorGithubUrl,
+            urlLauncher: urlLauncher,
           ),
           _AboutLinkButton(
             label: 'Website',
             icon: AppIcons.globe,
             semanticsLabel: 'Open Vizor website',
             url: _vizorWebsiteUrl,
+            urlLauncher: urlLauncher,
           ),
         ],
       ),
@@ -445,6 +457,7 @@ class _AboutLinkButton extends StatelessWidget {
     required this.icon,
     required this.semanticsLabel,
     required this.url,
+    required this.urlLauncher,
   });
 
   // Figma buttons stack: 24px ghost pills with a 16px icon and Label M.
@@ -454,6 +467,7 @@ class _AboutLinkButton extends StatelessWidget {
   final String icon;
   final String semanticsLabel;
   final String url;
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +476,7 @@ class _AboutLinkButton extends StatelessWidget {
       link: true,
       label: semanticsLabel,
       child: AppButton(
-        onPressed: () => unawaited(_launchAboutUrl(url)),
+        onPressed: () => unawaited(urlLauncher(url)),
         variant: AppButtonVariant.ghost,
         size: AppButtonSize.medium,
         height: _height,

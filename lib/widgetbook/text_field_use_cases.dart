@@ -174,6 +174,31 @@ class _InteractiveTextFieldDemoState extends State<_InteractiveTextFieldDemo> {
   }
 }
 
+/// One live text field on the component ground, behind the gallery
+/// playground.
+Widget textFieldPlaygroundFixture(
+  BuildContext context, {
+  required bool multiline,
+  required AppTextFieldTone tone,
+  required bool showLeading,
+  required bool showClearButton,
+  String messageText = '',
+}) {
+  return _fieldFrame(
+    context,
+    Center(
+      child: _InteractiveTextFieldDemo(
+        multiline: multiline,
+        tone: tone,
+        showLeading: showLeading,
+        showClearButton: showClearButton,
+        messageText: messageText,
+      ),
+    ),
+    reserveMessageSpace: true,
+  );
+}
+
 Widget buildTextFieldInteractiveUseCase(BuildContext context) {
   final multiline = context.knobs.boolean(
     label: 'Text area',
@@ -202,17 +227,12 @@ Widget buildTextFieldInteractiveUseCase(BuildContext context) {
     initialValue: '',
   );
 
-  return _fieldFrame(
+  return textFieldPlaygroundFixture(
     context,
-    Center(
-      child: _InteractiveTextFieldDemo(
-        multiline: multiline,
-        tone: tone,
-        showLeading: showLeading,
-        showClearButton: showClearButton,
-        messageText: messageText,
-      ),
-    ),
-    reserveMessageSpace: true,
+    multiline: multiline,
+    tone: tone,
+    showLeading: showLeading,
+    showClearButton: showClearButton,
+    messageText: messageText,
   );
 }

@@ -17,7 +17,9 @@ import '../../about_content.dart';
 /// the shared paragraphs on a surface card, and the Github / Website
 /// links. Copy comes from `about_content.dart` (shared with desktop).
 class MobileAboutScreen extends StatelessWidget {
-  const MobileAboutScreen({super.key});
+  const MobileAboutScreen({super.key, this.urlLauncher = launchAboutUrl});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -65,12 +67,14 @@ class MobileAboutScreen extends StatelessWidget {
                         label: 'Github',
                         iconName: AppIcons.link,
                         url: kVizorGithubUrl,
+                        urlLauncher: urlLauncher,
                       ),
                       const SizedBox(width: AppSpacing.md),
                       _LinkButton(
                         label: 'Website',
                         iconName: AppIcons.endpoint,
                         url: kVizorWebsiteUrl,
+                        urlLauncher: urlLauncher,
                       ),
                     ],
                   ),
@@ -166,11 +170,13 @@ class _LinkButton extends StatelessWidget {
     required this.label,
     required this.iconName,
     required this.url,
+    required this.urlLauncher,
   });
 
   final String label;
   final String iconName;
   final String url;
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +187,7 @@ class _LinkButton extends StatelessWidget {
       label: '$label link',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => unawaited(launchAboutUrl(url)),
+        onTap: () => unawaited(urlLauncher(url)),
         child: SizedBox(
           height: 44,
           child: Row(

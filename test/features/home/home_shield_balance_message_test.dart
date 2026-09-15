@@ -1,8 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('shield runner defaults to the production wallet operation', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    expect(
+      container.read(transparentShieldingRunnerProvider),
+      same(shieldTransparentSoftwareBalance),
+    );
+  });
   group('shieldBalanceBroadcastStatusMessage', () {
     test('returns null after completed broadcast', () {
       expect(

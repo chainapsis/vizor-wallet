@@ -17,7 +17,7 @@ Future<void> startWindowsUpdateDownload({
   if (privacy.torEnabled) {
     final choice = await showDialog<_WindowsUpdatePrivacyChoice>(
       context: context,
-      builder: (_) => const _WindowsUpdatePrivacyChoiceDialog(),
+      builder: (_) => const WindowsUpdatePrivacyChoiceDialog(),
     );
     if (!context.mounted || choice == null) return;
 
@@ -92,12 +92,13 @@ Future<void> _showUpdateError(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) => _WindowsUpdateErrorDialog(title: title, message: message),
+    builder: (_) => WindowsUpdateErrorDialog(title: title, message: message),
   );
 }
 
-class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
-  const _WindowsUpdatePrivacyChoiceDialog();
+/// Asks whether the Windows update download should keep using Tor.
+class WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
+  const WindowsUpdatePrivacyChoiceDialog({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -143,8 +144,13 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
   }
 }
 
-class _WindowsUpdateErrorDialog extends StatelessWidget {
-  const _WindowsUpdateErrorDialog({required this.title, required this.message});
+/// Reports a Windows update download failure.
+class WindowsUpdateErrorDialog extends StatelessWidget {
+  const WindowsUpdateErrorDialog({
+    required this.title,
+    required this.message,
+    super.key,
+  });
 
   final String title;
   final String message;

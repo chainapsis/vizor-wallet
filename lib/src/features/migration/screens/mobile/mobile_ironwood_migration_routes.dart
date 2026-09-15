@@ -10,6 +10,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewParts,
     this.previewSurface,
     this.privateMigrationSupported,
+    this.openReleaseNotes = _openIronwoodReleaseNotes,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final MobileIronwoodMigrationPreviewSurface? previewSurface;
   final bool? privateMigrationSupported;
+  final MobileIronwoodReleaseNotesLauncher openReleaseNotes;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -41,6 +43,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewImmediatePlan: previewImmediatePlan,
         previewParts: previewParts,
         privateMigrationSupported: privateMigrationSupported,
+        openReleaseNotes: openReleaseNotes,
         status: previewStatus,
       );
     }
@@ -55,6 +58,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewImmediatePlan: previewImmediatePlan,
       previewParts: previewParts,
       privateMigrationSupported: privateMigrationSupported,
+      openReleaseNotes: openReleaseNotes,
       status: null,
     );
   }
@@ -69,6 +73,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewImmediatePlan,
     required this.previewParts,
     required this.privateMigrationSupported,
+    required this.openReleaseNotes,
     this.status,
   });
 
@@ -79,6 +84,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final bool? privateMigrationSupported;
+  final MobileIronwoodReleaseNotesLauncher openReleaseNotes;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -97,7 +103,10 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         !previewMode &&
         (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
     return switch (step) {
-      MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
+      MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(
+        data: data,
+        openReleaseNotes: openReleaseNotes,
+      ),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(

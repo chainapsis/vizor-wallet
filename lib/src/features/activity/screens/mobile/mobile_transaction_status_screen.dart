@@ -85,6 +85,7 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
     required this.args,
     this.historyLoader,
     this.detailLoader,
+    this.explorerLauncher,
     super.key,
   });
 
@@ -97,6 +98,10 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
   /// Test seam — production reads the wallet DB through Rust.
   @visibleForTesting
   final MobileTxDetailLoader? detailLoader;
+
+  /// Preview/test seam — production opens the configured external explorer.
+  @visibleForTesting
+  final ZcashExplorerLauncher? explorerLauncher;
 
   @override
   ConsumerState<MobileTransactionStatusScreen> createState() =>
@@ -298,6 +303,7 @@ class _MobileTransactionStatusScreenState
       txidHex: widget.args.txidHex,
       txidOrder: ZcashExplorerTxidOrder.protocol,
       customTemplate: ref.read(zcashExplorerProvider),
+      launcher: widget.explorerLauncher,
     );
     if (launched || !mounted) return;
     await Clipboard.setData(ClipboardData(text: widget.args.txidHex));

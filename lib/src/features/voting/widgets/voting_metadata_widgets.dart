@@ -10,6 +10,49 @@ import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 
+typedef VotingExternalUriLauncher = Future<void> Function(Uri uri);
+
+/// Optional reference time for deterministic presentation. Without a scope,
+/// live voting screens continue to use the current local time.
+class VotingDisplayTimeScope extends InheritedWidget {
+  const VotingDisplayTimeScope({
+    required this.now,
+    required super.child,
+    super.key,
+  });
+
+  final DateTime now;
+
+  static DateTime nowOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<VotingDisplayTimeScope>()?.now ??
+      DateTime.now();
+
+  @override
+  bool updateShouldNotify(VotingDisplayTimeScope oldWidget) =>
+      now != oldWidget.now;
+}
+
+class VotingExternalUriLauncherScope extends InheritedWidget {
+  const VotingExternalUriLauncherScope({
+    required this.launcher,
+    required super.child,
+    super.key,
+  });
+
+  final VotingExternalUriLauncher launcher;
+
+  static VotingExternalUriLauncher? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<VotingExternalUriLauncherScope>()
+        ?.launcher;
+  }
+
+  @override
+  bool updateShouldNotify(VotingExternalUriLauncherScope oldWidget) {
+    return launcher != oldWidget.launcher;
+  }
+}
+
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
 
@@ -60,7 +103,10 @@ class VotingForumLinkButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppButton(
       onPressed: () {
-        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+        final launcher =
+            VotingExternalUriLauncherScope.maybeOf(context) ??
+            _launchVotingExternalUri;
+        unawaited(launcher(uri));
       },
       variant: AppButtonVariant.ghost,
       size: size,
@@ -77,6 +123,10 @@ class VotingForumLinkButton extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _launchVotingExternalUri(Uri uri) async {
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class VotingProposalMetadataRow extends StatelessWidget {

@@ -32,11 +32,20 @@ import 'activity_transaction_status_screen.dart';
 /// widget tests can avoid the Rust FFI.
 typedef ActivityHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+typedef ActivityTransactionDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      rust_sync.TransactionInfo transaction,
+    );
 
 class ActivityScreen extends ConsumerStatefulWidget {
-  const ActivityScreen({this.historyLoader, super.key});
+  const ActivityScreen({
+    this.historyLoader,
+    this.transactionDetailLoader,
+    super.key,
+  });
 
   final ActivityHistoryLoader? historyLoader;
+  final ActivityTransactionDetailLoader? transactionDetailLoader;
 
   @override
   ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
@@ -267,6 +276,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     if (accountUuid == null) return null;
 
     try {
+      final loader = widget.transactionDetailLoader;
+      if (loader != null) return loader(transaction);
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted ||

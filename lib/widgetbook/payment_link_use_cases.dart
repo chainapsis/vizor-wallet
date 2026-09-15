@@ -24,6 +24,7 @@ import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
+import 'support/wb_layout.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _message = 'Hey there! Welcome to the Shielded\nWorld ;)';
@@ -221,7 +222,7 @@ class PaymentLinkDesktopPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox.fromSize(
+      child: WbDesktopWindowBox(
         size: _previewWindowSize,
         child: AppDesktopShell(
           sidebar: const _PaymentLinkPreviewSidebar(),
@@ -763,7 +764,7 @@ class _PaymentLinkMotionDesktopPreviewState
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox.fromSize(
+      child: WbDesktopWindowBox(
         size: _previewWindowSize,
         child: ColoredBox(
           color: context.colors.background.window,
@@ -909,7 +910,7 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox.fromSize(
+      child: WbDesktopWindowBox(
         size: _previewWindowSize,
         child: AppDesktopShell(
           sidebar: const _PaymentLinkPreviewSidebar(),
@@ -1133,7 +1134,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox.fromSize(
+      child: WbDesktopWindowBox(
         size: _previewWindowSize,
         child: AppDesktopShell(
           sidebar: const _PaymentLinkPreviewSidebar(),

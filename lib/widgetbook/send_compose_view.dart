@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/amount_price_loading_bar.dart';
-import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_text_field.dart';
-import '../../../core/widgets/comma_to_dot_input_formatter.dart';
-import '../../../core/widgets/decimal_amount_input_formatter.dart';
+import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_button.dart';
+import '../src/core/widgets/amount_price_loading_bar.dart';
+import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_text_field.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
 
 /// Recipient address type used to choose the leading icon.
 ///
@@ -67,6 +67,9 @@ class SendComposeView extends StatelessWidget {
     this.reviewEnabled = false,
     this.reviewLabel = 'Review',
     this.onReview,
+    this.onRecipientChanged,
+    this.onAmountChanged,
+    this.onMemoChanged,
     this.onContactsPressed,
     this.onAddMemo,
     this.formWidth = 396,
@@ -107,6 +110,9 @@ class SendComposeView extends StatelessWidget {
   final bool reviewEnabled;
   final String reviewLabel;
   final VoidCallback? onReview;
+  final ValueChanged<String>? onRecipientChanged;
+  final ValueChanged<String>? onAmountChanged;
+  final ValueChanged<String>? onMemoChanged;
   final VoidCallback? onContactsPressed;
   final VoidCallback? onAddMemo;
 
@@ -132,8 +138,8 @@ class SendComposeView extends StatelessWidget {
     final colors = context.colors;
     final amountErrorText =
         amountError != null && amountError!.trim().isNotEmpty
-        ? amountError
-        : null;
+            ? amountError
+            : null;
 
     final fields = Column(
       mainAxisSize: MainAxisSize.min,
@@ -157,14 +163,14 @@ class SendComposeView extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : null;
-        final minHeight = height == null
-            ? 0.0
-            : height < (_containerVerticalPadding * 2)
-            ? 0.0
-            : height - (_containerVerticalPadding * 2);
+        final height =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : null;
+        final minHeight =
+            height == null
+                ? 0.0
+                : height < (_containerVerticalPadding * 2)
+                ? 0.0
+                : height - (_containerVerticalPadding * 2);
 
         return Center(
           child: SizedBox(
@@ -253,6 +259,7 @@ class SendComposeView extends StatelessWidget {
       leading: AppIcon(leadingName, size: 20, color: leadingColor),
       showClearButton: true,
       keyboardType: TextInputType.text,
+      onChanged: onRecipientChanged,
     );
   }
 
@@ -260,22 +267,23 @@ class SendComposeView extends StatelessWidget {
     final colors = context.colors;
     final hasText = amountText.isNotEmpty;
     final isError = amountError != null && amountError!.trim().isNotEmpty;
-    final amountValueColor = isError
-        ? colors.text.destructive
-        : hasText
-        ? colors.text.accent
-        : colors.text.muted;
+    final amountValueColor =
+        isError
+            ? colors.text.destructive
+            : hasText
+            ? colors.text.accent
+            : colors.text.muted;
     final amountAffixStyle = AppTypography.labelLarge.copyWith(
       color: amountValueColor,
     );
-    final amountIconColor = isError
-        ? colors.icon.destructive
-        : hasText
-        ? colors.icon.accent
-        : colors.icon.regular;
-    final amountIconName = amountInputIsUsd
-        ? AppIcons.moneyBag
-        : AppIcons.zcash;
+    final amountIconColor =
+        isError
+            ? colors.icon.destructive
+            : hasText
+            ? colors.icon.accent
+            : colors.icon.regular;
+    final amountIconName =
+        amountInputIsUsd ? AppIcons.moneyBag : AppIcons.zcash;
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
@@ -306,6 +314,7 @@ class SendComposeView extends StatelessWidget {
       inlineSuffixStyle: amountAffixStyle,
       showClearButton: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: onAmountChanged,
       inputFormatters: [
         const CommaToDotInputFormatter(),
         DecimalAmountInputFormatter(
@@ -342,9 +351,8 @@ class SendComposeView extends StatelessWidget {
           ),
           initialValue: memoText,
           hintText: memoHint,
-          tone: isError
-              ? AppTextFieldTone.destructive
-              : AppTextFieldTone.neutral,
+          tone:
+              isError ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
           borderColor: isError ? colors.border.utilityDestructive : null,
           leading: AppIcon(
             AppIcons.users,
@@ -360,6 +368,7 @@ class SendComposeView extends StatelessWidget {
           showClearButton: true,
           clearButtonRequiresText: false,
           clearButtonSemanticLabel: 'Close message',
+          onChanged: onMemoChanged,
         );
     }
   }

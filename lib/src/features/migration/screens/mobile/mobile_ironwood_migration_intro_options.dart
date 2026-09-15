@@ -1,9 +1,13 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobileMigrationIntro extends StatelessWidget {
-  const _MobileMigrationIntro({required this.data});
+  const _MobileMigrationIntro({
+    required this.data,
+    required this.openReleaseNotes,
+  });
 
   final IronwoodMigrationFlowData data;
+  final MobileIronwoodReleaseNotesLauncher openReleaseNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +93,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       variant: AppButtonVariant.ghost,
                       expand: true,
                       height: 50,
-                      onPressed: () => _openIronwoodReleaseNotes(),
+                      onPressed: () => unawaited(openReleaseNotes()),
                       leading: const AppIcon(AppIcons.link, size: 18),
                       child: const Text('Official release note'),
                     ),

@@ -637,7 +637,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     if (skippedCount > 0) {
       final continueToReview = await showDialog<bool>(
         context: context,
-        builder: (_) => _SkippedQuestionsDialog(
+        builder: (_) => SkippedQuestionsDialog(
           skippedCount: skippedCount,
           totalCount: widget.proposals.length,
         ),
@@ -907,10 +907,12 @@ class _DesktopVotedPollHeader extends StatelessWidget {
   }
 }
 
-class _SkippedQuestionsDialog extends StatelessWidget {
-  const _SkippedQuestionsDialog({
+/// Confirms leaving questions unanswered before signing a ballot.
+class SkippedQuestionsDialog extends StatelessWidget {
+  const SkippedQuestionsDialog({
     required this.skippedCount,
     required this.totalCount,
+    super.key,
   });
 
   final int skippedCount;
@@ -1410,7 +1412,9 @@ class _PollSummary extends StatelessWidget {
             ),
             if (endDate != null) ...[
               const _MetaText('·'),
-              _MetaText(_daysLeftLabel(endDate!)),
+              _MetaText(
+                _daysLeftLabel(endDate!, VotingDisplayTimeScope.nowOf(context)),
+              ),
             ],
           ],
         ),
@@ -2018,8 +2022,7 @@ DateTime? _roundEndDate(Map<String, dynamic> json) {
   return parseFlexibleDate(json['vote_end_time']);
 }
 
-String _daysLeftLabel(DateTime endDate) {
-  final now = DateTime.now();
+String _daysLeftLabel(DateTime endDate, DateTime now) {
   final localEnd = endDate.toLocal();
   final today = DateTime(now.year, now.month, now.day);
   final endDay = DateTime(localEnd.year, localEnd.month, localEnd.day);

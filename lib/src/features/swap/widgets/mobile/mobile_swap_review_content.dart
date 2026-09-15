@@ -199,12 +199,16 @@ class _ReviewRow extends StatelessWidget {
       height: 32,
       child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
-            child: Text(
-              label,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xxs),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.secondary,
+                ),
               ),
             ),
           ),

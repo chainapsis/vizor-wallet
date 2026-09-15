@@ -1,6 +1,8 @@
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,13 +20,16 @@ import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
+import '../src/features/send/services/send_flow.dart'
+    show kWrongNetworkAddressMessage;
 import '../src/features/send/services/send_proving_key_warmup.dart';
-import '../src/features/send/widgets/send_compose_view.dart';
+import 'send_compose_view.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
+import 'support/wb_layout.dart';
 
 // A long memo that exceeds the 512-byte cap, used to preview the over-limit
 // error state.
@@ -36,142 +41,396 @@ const _longMemo =
 
 const _sampleUnifiedAddress = 'u112344123478129718 … 1238312779jkasdy';
 
-/// Empty / default compose state — placeholders, collapsed memo card,
-/// disabled Review. (Toggle the Widgetbook theme to see dark mode.)
-Widget buildSendEmptyUseCase(BuildContext context) {
-  return const _SendPageFrame(child: SendComposeView());
-}
+/// Recipient the filled compose previews put in the "Send to" field.
+const kSendComposeFixtureAddress = _sampleUnifiedAddress;
 
-/// Shielded recipient, amount entered, memo expanded, Review enabled.
-Widget buildSendShieldedFilledUseCase(BuildContext context) {
-  return const _SendPageFrame(
+/// Memo over the 512-byte cap, with the counter and error the screen shows.
+const kSendComposeFixtureLongMemo = _longMemo;
+const kSendComposeFixtureMemoCounter = '-32/512';
+const kSendComposeFixtureMemoError = 'Message is too long';
+
+/// Amount-field error the composer shows when the spend exceeds the balance.
+const kSendComposeFixtureAmountError = 'Insufficient shielded balance';
+
+/// Parameterised desktop compose preview: the real [SendComposeView] on the
+/// `_SendPageFrame` shell.
+///
+/// Every default mirrors `SendComposeView`'s own, so the builders below stay
+/// one-line delegates whose renders are unchanged.
+Widget sendComposeFixture({
+  String recipientText = '',
+  SendPoolRoute route = SendPoolRoute.unknown,
+  String amountText = '',
+  bool amountInputIsUsd = false,
+  String? amountConversionText = r'$ 0',
+  bool amountConversionLoading = false,
+  bool amountFocused = false,
+  String? amountError,
+  SendMemoMode memoMode = SendMemoMode.prompt,
+  String memoText = '',
+  String memoCounter = '512/512',
+  String? memoError,
+  bool reviewEnabled = false,
+}) {
+  return _SendPageFrame(
     child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '125.12',
-      amountConversionText: r'$ 8,758.40',
-      amountFocused: true,
-      memoMode: SendMemoMode.expanded,
-      reviewEnabled: true,
+      recipientText: recipientText,
+      route: route,
+      amountText: amountText,
+      amountInputIsUsd: amountInputIsUsd,
+      amountConversionText: amountConversionText,
+      amountConversionLoading: amountConversionLoading,
+      amountFocused: amountFocused,
+      amountError: amountError,
+      memoMode: memoMode,
+      memoText: memoText,
+      memoCounter: memoCounter,
+      memoError: memoError,
+      reviewEnabled: reviewEnabled,
     ),
   );
 }
 
-/// Shielded recipient with a memo over the 512-byte limit: destructive tone,
-/// "Message is too long", Review disabled.
-Widget buildSendMemoTooLongUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '125.12',
-      amountConversionText: r'$ 8,758.40',
-      amountFocused: true,
-      memoMode: SendMemoMode.expanded,
-      memoText: _longMemo,
-      memoCounter: '-32/512',
-      memoError: 'Message is too long',
-    ),
+/// Empty / default compose state — placeholders, collapsed memo card,
+/// disabled Review. (Toggle the Widgetbook theme to see dark mode.)
+Widget buildSendEmptyUseCase(BuildContext context) => sendComposeFixture();
+
+/// Shielded recipient, amount entered, memo expanded, Review enabled.
+Widget buildSendShieldedFilledUseCase(BuildContext context) {
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: r'$ 8,758.40',
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    reviewEnabled: true,
   );
 }
 
 /// Transparent recipient: memo hidden, Review enabled.
 Widget buildSendTransparentUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToTransparent,
-      amountText: '125.12',
-      amountConversionText: r'$ 8,758.40',
-      amountFocused: true,
-      memoMode: SendMemoMode.transparentUnavailable,
-      reviewEnabled: true,
-    ),
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToTransparent,
+    amountText: '125.12',
+    amountConversionText: r'$ 8,758.40',
+    amountFocused: true,
+    memoMode: SendMemoMode.transparentUnavailable,
+    reviewEnabled: true,
   );
 }
 
 /// A contact-backed address is filled, but the picker affordance stays as
 /// `Contacts ›`.
 Widget buildSendContactSelectedUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '125.12',
-      amountConversionText: r'$ 8,758.40',
-      amountFocused: true,
-      memoMode: SendMemoMode.expanded,
-      reviewEnabled: true,
-    ),
-  );
-}
-
-Widget buildSendPriceLoadingUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '125.12',
-      amountConversionText: null,
-      amountConversionLoading: true,
-      amountFocused: true,
-      memoMode: SendMemoMode.expanded,
-      reviewEnabled: true,
-    ),
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: r'$ 8,758.40',
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    reviewEnabled: true,
   );
 }
 
 Widget buildSendUsdInputUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '512.24',
-      amountInputIsUsd: true,
-      amountConversionText: '125.12 ZEC',
-      amountFocused: true,
-      memoMode: SendMemoMode.expanded,
-      reviewEnabled: true,
-    ),
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '512.24',
+    amountInputIsUsd: true,
+    amountConversionText: '125.12 ZEC',
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    reviewEnabled: true,
   );
 }
 
 Widget buildSendNotEnoughUseCase(BuildContext context) {
-  return const _SendPageFrame(
-    child: SendComposeView(
-      recipientText: _sampleUnifiedAddress,
-      route: SendPoolRoute.shieldedToShielded,
-      amountText: '50,012.24',
-      amountInputIsUsd: true,
-      amountConversionText: '651.12 ZEC',
-      amountFocused: true,
-      amountError: 'Insufficient shielded balance',
-      memoMode: SendMemoMode.expanded,
-    ),
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '50,012.24',
+    amountInputIsUsd: true,
+    amountConversionText: '651.12 ZEC',
+    amountFocused: true,
+    amountError: 'Insufficient shielded balance',
+    memoMode: SendMemoMode.expanded,
+  );
+}
+
+/// Parameterised mobile send wizard preview: the real [MobileSendScreen]
+/// behind deterministic provider overrides and injected Rust seams.
+///
+/// The builders below are one-line delegates onto it, each keeping the
+/// arguments it already passed, so their renders are unchanged.
+Widget mobileSendFixture({
+  List<AddressBookContact> contacts = const [],
+  Map<String, AccountInfo> ownAccountAddresses = const {},
+  String? initialRecipient,
+  String? initialAddressType,
+  String? initialAmount,
+  String? initialFiatAmount,
+  MobileSendAmountInputMode initialAmountInputMode =
+      MobileSendAmountInputMode.zec,
+  String? initialAmountError,
+  bool initialAmountReady = false,
+  bool initialAmountStep = false,
+  bool initialReview = false,
+  BigInt? initialFeeZatoshi,
+  bool refreshReviewFeeOnInit = false,
+  bool useRouteSteps = false,
+  String? initialMemo,
+  String? initialContactLabel,
+  String? initialContactPictureId,
+  bool initialRecipientFocused = false,
+  bool isPaymentRequest = false,
+  String? paymentRequestLabel,
+  BigInt? requestedAmountZatoshi,
+  MobileSendFeeEstimator estimateFee = _widgetbookEstimateFee,
+}) {
+  return _MobileSendHarness(
+    contacts: contacts,
+    ownAccountAddresses: ownAccountAddresses,
+    initialRecipient: initialRecipient,
+    initialAddressType: initialAddressType,
+    initialAmount: initialAmount,
+    initialFiatAmount: initialFiatAmount,
+    initialAmountInputMode: initialAmountInputMode,
+    initialAmountError: initialAmountError,
+    initialAmountReady: initialAmountReady,
+    initialAmountStep: initialAmountStep,
+    initialReview: initialReview,
+    initialFeeZatoshi: initialFeeZatoshi,
+    refreshReviewFeeOnInit: refreshReviewFeeOnInit,
+    useRouteSteps: useRouteSteps,
+    initialMemo: initialMemo,
+    initialContactLabel: initialContactLabel,
+    initialContactPictureId: initialContactPictureId,
+    initialRecipientFocused: initialRecipientFocused,
+    isPaymentRequest: isPaymentRequest,
+    paymentRequestLabel: paymentRequestLabel,
+    requestedAmountZatoshi: requestedAmountZatoshi,
+    estimateFee: estimateFee,
+  );
+}
+
+/// Recipient addresses the preview validator resolves to each address type.
+const kMobileSendUnifiedAddress = _mobileShieldedAddress;
+const kMobileSendSaplingAddress =
+    'zs1saplingaddress00000000000000000000000000'
+    '000000000000000000000000000q6d4x2';
+const kMobileSendTransparentAddress = _mobileTransparentAddress;
+const kMobileSendTexAddress = 'tex1s2rt77ggv6q989lr23rrx8mzva7gnzqsurw2jw';
+const kMobileSendInvalidAddress = 'not-an-address';
+
+/// Well-formed, but for another Zcash network — the validator answers
+/// `wrongNetwork`, which is its own sentence under the field.
+const kMobileSendWrongNetworkAddress =
+    'utest1wrongnetwork0000000000000000000000000'
+    '00000000000000000000000000000k64x';
+
+/// Contacts the recipient step lists.
+const kMobileSendPreviewContacts = _mobileSendContacts;
+
+/// The own-account map `ownAccountAddressesProvider` hands the review step.
+const kMobileSendOwnAccountAddresses = {
+  _mobileShieldedAddress: _mobileSendOwnAccount,
+};
+
+// --- Mobile send wizard, per step -------------------------------------------
+
+/// What the payer has typed into the recipient field, named by the branch the
+/// address validator takes on it.
+enum MobileSendRecipientAddressCase {
+  empty,
+  unified,
+  sapling,
+  transparent,
+  tex,
+  invalid,
+  wrongNetwork,
+}
+
+/// The address each recipient case seeds; null leaves the field empty.
+String? mobileSendRecipientAddressFor(MobileSendRecipientAddressCase address) {
+  return switch (address) {
+    MobileSendRecipientAddressCase.empty => null,
+    MobileSendRecipientAddressCase.unified => kMobileSendUnifiedAddress,
+    MobileSendRecipientAddressCase.sapling => kMobileSendSaplingAddress,
+    MobileSendRecipientAddressCase.transparent => kMobileSendTransparentAddress,
+    MobileSendRecipientAddressCase.tex => kMobileSendTexAddress,
+    MobileSendRecipientAddressCase.invalid => kMobileSendInvalidAddress,
+    MobileSendRecipientAddressCase.wrongNetwork =>
+      kMobileSendWrongNetworkAddress,
+  };
+}
+
+/// The wizard's recipient step.
+Widget mobileSendRecipientFixture({
+  MobileSendRecipientAddressCase address = MobileSendRecipientAddressCase.empty,
+  bool listContacts = false,
+  bool fieldFocused = false,
+}) {
+  return mobileSendFixture(
+    contacts: listContacts ? kMobileSendPreviewContacts : const [],
+    initialRecipient: mobileSendRecipientAddressFor(address),
+    initialRecipientFocused: fieldFocused,
+  );
+}
+
+/// How much the payer has entered on the amount step.
+enum MobileSendAmountCase { empty, entered, notEnough }
+
+/// The wizard's amount step.
+///
+/// The `/send/amount` route (`MobileSendAmountScreen`) forwards its args to
+/// exactly these props plus `useRouteSteps` / `initialAmountStep`, which only
+/// change where Back goes, so the route is seeded here rather than previewed
+/// as a second, pixel-identical case.
+Widget mobileSendAmountFixture({
+  MobileSendAmountCase amount = MobileSendAmountCase.empty,
+  MobileSendAmountInputMode unit = MobileSendAmountInputMode.zec,
+}) {
+  final usd = unit == MobileSendAmountInputMode.usd;
+  return mobileSendFixture(
+    initialRecipient: kMobileSendUnifiedAddress,
+    initialAmount: switch (amount) {
+      MobileSendAmountCase.empty => '',
+      MobileSendAmountCase.entered => usd ? '12' : '24.312',
+      MobileSendAmountCase.notEnough => '243.12',
+    },
+    initialFiatAmount: !usd
+        ? null
+        : switch (amount) {
+            MobileSendAmountCase.empty => '',
+            MobileSendAmountCase.entered => '120.12',
+            MobileSendAmountCase.notEnough => '17018.40',
+          },
+    initialAmountInputMode: unit,
+    initialAmountError: amount == MobileSendAmountCase.notEnough
+        ? 'Not enough ZEC'
+        : null,
+    initialAmountReady: amount == MobileSendAmountCase.entered,
+    initialContactLabel: 'Contact label',
+    initialContactPictureId: 'pfp-02',
+  );
+}
+
+/// Where the review step's fee estimate lands.
+enum MobileSendReviewFeeCase {
+  ready,
+  refreshing,
+  notEnough,
+  syncing,
+  unavailable,
+}
+
+/// Who the review step names as the recipient.
+enum MobileSendReviewIdentityCase { address, contact, ownAccount }
+
+/// Whether this send answers a ZIP-321 request, and whether the reviewed
+/// amount is the one the request asked for.
+enum MobileSendReviewRequestCase { none, matching, differentAmount }
+
+/// Amount the review step is composed with, in ZEC and in zatoshi.
+const _mobileSendReviewAmountText = '123.12';
+final _mobileSendReviewAmountZatoshi = BigInt.from(12_312_000_000);
+
+/// Fee estimator per review case: a fee for the ready row, a never-completing
+/// call for the refreshing row, and the error strings the screen's own
+/// branches match on (`insufficient`, `sync`, anything else).
+MobileSendFeeEstimator _mobileSendReviewFeeEstimator(
+  MobileSendReviewFeeCase fee,
+) {
+  return ({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String toAddress,
+    required BigInt amountZatoshi,
+    String? memo,
+  }) {
+    return switch (fee) {
+      MobileSendReviewFeeCase.ready => Future<BigInt>.value(BigInt.from(10000)),
+      MobileSendReviewFeeCase.refreshing => Completer<BigInt>().future,
+      MobileSendReviewFeeCase.notEnough => Future<BigInt>.error(
+        Exception('InsufficientFunds'),
+      ),
+      MobileSendReviewFeeCase.syncing => Future<BigInt>.error(
+        Exception('Wallet sync is still finishing'),
+      ),
+      MobileSendReviewFeeCase.unavailable => Future<BigInt>.error(
+        Exception('Fee estimation failed'),
+      ),
+    };
+  };
+}
+
+/// The wizard's review step.
+///
+/// Every case but [MobileSendReviewFeeCase.ready] re-estimates on init, which
+/// is how the `/send/review` route (`MobileSendReviewScreen`) enters it —
+/// `refreshReviewFeeOnInit` plus the draft args' fee.
+Widget mobileSendReviewFixture({
+  MobileSendReviewFeeCase fee = MobileSendReviewFeeCase.ready,
+  MobileSendReviewIdentityCase identity = MobileSendReviewIdentityCase.contact,
+  MobileSendReviewRequestCase request = MobileSendReviewRequestCase.none,
+  bool memo = false,
+}) {
+  final refreshes = fee != MobileSendReviewFeeCase.ready;
+  return mobileSendFixture(
+    ownAccountAddresses: identity == MobileSendReviewIdentityCase.ownAccount
+        ? kMobileSendOwnAccountAddresses
+        : const {},
+    initialRecipient: kMobileSendUnifiedAddress,
+    initialAmount: _mobileSendReviewAmountText,
+    initialReview: true,
+    refreshReviewFeeOnInit: refreshes,
+    useRouteSteps: refreshes,
+    estimateFee: _mobileSendReviewFeeEstimator(fee),
+    initialMemo: memo ? 'Zcash is a privacy-focused digital currency' : null,
+    initialContactLabel: identity == MobileSendReviewIdentityCase.contact
+        ? 'Contact label'
+        : null,
+    initialContactPictureId: identity == MobileSendReviewIdentityCase.contact
+        ? 'pfp-02'
+        : null,
+    isPaymentRequest: request != MobileSendReviewRequestCase.none,
+    paymentRequestLabel: request == MobileSendReviewRequestCase.none
+        ? null
+        : 'Blue Door Coffee',
+    requestedAmountZatoshi: switch (request) {
+      MobileSendReviewRequestCase.none => null,
+      MobileSendReviewRequestCase.matching => _mobileSendReviewAmountZatoshi,
+      MobileSendReviewRequestCase.differentAmount => BigInt.from(5_000_000),
+    },
   );
 }
 
 Widget buildMobileSendRecipientEmptyUseCase(BuildContext context) {
-  return const _MobileSendHarness();
+  return mobileSendFixture();
 }
 
 Widget buildMobileSendRecipientFocusedUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     contacts: _mobileSendContacts,
     initialRecipientFocused: true,
   );
 }
 
 Widget buildMobileSendRecipientContactsUseCase(BuildContext context) {
-  return const _MobileSendHarness(contacts: _mobileSendContacts);
+  return mobileSendFixture(contacts: _mobileSendContacts);
 }
 
 Widget buildMobileSendRecipientFilledUseCase(BuildContext context) {
-  return const _MobileSendHarness(initialRecipient: _mobileShieldedAddress);
+  return mobileSendFixture(initialRecipient: _mobileShieldedAddress);
 }
 
 Widget buildMobileSendAmountEmptyUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '',
     initialContactLabel: 'Contact label',
@@ -195,7 +454,7 @@ Widget buildMobileSendAmountOwnAccountUseCase(BuildContext context) {
   return _mobileSendAmountCaptureFrame(
     context,
     const _MobileSendHarness(
-      ownAccounts: {
+      ownAccountAddresses: {
         _mobileShieldedAddress: AccountInfo(
           uuid: 'savings',
           name: 'Savings',
@@ -221,7 +480,7 @@ Widget _mobileSendAmountCaptureFrame(BuildContext context, Widget child) {
 }
 
 Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '243.12',
     initialAmountError: 'Not enough ZEC',
@@ -231,7 +490,7 @@ Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
 }
 
 Widget buildMobileSendAmountReadyUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '24.312',
     initialAmountReady: true,
@@ -241,7 +500,7 @@ Widget buildMobileSendAmountReadyUseCase(BuildContext context) {
 }
 
 Widget buildMobileSendAmountUsdUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '12',
     initialFiatAmount: '120.12',
@@ -253,7 +512,7 @@ Widget buildMobileSendAmountUsdUseCase(BuildContext context) {
 }
 
 Widget buildMobileSendReviewDefaultUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '123.12',
     initialReview: true,
@@ -263,7 +522,7 @@ Widget buildMobileSendReviewDefaultUseCase(BuildContext context) {
 }
 
 Widget buildMobileSendReviewWithMemoUseCase(BuildContext context) {
-  return const _MobileSendHarness(
+  return mobileSendFixture(
     initialRecipient: _mobileShieldedAddress,
     initialAmount: '123.12',
     initialReview: true,
@@ -273,56 +532,46 @@ Widget buildMobileSendReviewWithMemoUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileSendQrScanUseCase(BuildContext context) {
-  return const _MobileSendScanFrame(
+/// Inline messages `resolveScannedZcashAddress` rejects a scan with; quoted
+/// from `mobile_send_scan_screen.dart`, which is where the payer reads them.
+const kMobileSendScanNotZcashMessage = "This QR code isn't a Zcash address.";
+const kMobileSendScanWrongNetworkMessage = '$kWrongNetworkAddressMessage.';
+
+/// The card `showMobileSendScanSheet` mounts, with the camera stubbed.
+///
+/// [error] replaces the caption once a scan has been rejected; the card only
+/// renders it over a live camera.
+Widget mobileSendQrScanFixture({
+  required AddressQrCameraStatus status,
+  String? error,
+}) {
+  return _MobileSendScanFrame(
     child: MobileAddressScanCardContent(
-      key: ValueKey('mobile_send_qr_scan_card'),
-      status: AddressQrCameraStatus.active,
-      cameraView: _MobileSendScanCameraPreview(),
+      key: const ValueKey('mobile_send_qr_scan_card'),
+      status: status,
+      cameraView: const _MobileSendScanCameraPreview(),
+      error: error,
       onTorch: _noop,
       onClose: _noop,
       onRetry: _noop,
     ),
   );
+}
+
+Widget buildMobileSendQrScanUseCase(BuildContext context) {
+  return mobileSendQrScanFixture(status: AddressQrCameraStatus.active);
 }
 
 Widget buildMobileSendQrScanLoadingUseCase(BuildContext context) {
-  return const _MobileSendScanFrame(
-    child: MobileAddressScanCardContent(
-      key: ValueKey('mobile_send_qr_scan_card'),
-      status: AddressQrCameraStatus.loading,
-      cameraView: _MobileSendScanCameraPreview(),
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
-  );
+  return mobileSendQrScanFixture(status: AddressQrCameraStatus.loading);
 }
 
 Widget buildMobileSendQrScanRequestingUseCase(BuildContext context) {
-  return const _MobileSendScanFrame(
-    child: MobileAddressScanCardContent(
-      key: ValueKey('mobile_send_qr_scan_card'),
-      status: AddressQrCameraStatus.requesting,
-      cameraView: _MobileSendScanCameraPreview(),
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
-  );
+  return mobileSendQrScanFixture(status: AddressQrCameraStatus.requesting);
 }
 
 Widget buildMobileSendQrScanDeniedUseCase(BuildContext context) {
-  return const _MobileSendScanFrame(
-    child: MobileAddressScanCardContent(
-      key: ValueKey('mobile_send_qr_scan_card'),
-      status: AddressQrCameraStatus.denied,
-      cameraView: _MobileSendScanCameraPreview(),
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
-  );
+  return mobileSendQrScanFixture(status: AddressQrCameraStatus.denied);
 }
 
 /// Desktop window chrome (sidebar + pane + back link) wrapping the compose
@@ -335,33 +584,35 @@ class _SendPageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 1080.0;
-        final height = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 720.0;
+    return WbDesktopWindowBox(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : 1080.0;
+          final height = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : 720.0;
 
-        return SizedBox(
-          width: width,
-          height: height,
-          child: AppDesktopShell(
-            sidebar: const _PreviewSendSidebar(),
-            pane: AppDesktopPane(
-              padding: EdgeInsets.zero,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _PreviewSendPaneToolbar(),
-                  Expanded(child: child),
-                ],
+          return SizedBox(
+            width: width,
+            height: height,
+            child: AppDesktopShell(
+              sidebar: const _PreviewSendSidebar(),
+              pane: AppDesktopPane(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _PreviewSendPaneToolbar(),
+                    Expanded(child: child),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -369,65 +620,101 @@ class _SendPageFrame extends StatelessWidget {
 class _MobileSendHarness extends StatelessWidget {
   const _MobileSendHarness({
     this.contacts = const [],
-    this.ownAccounts = const {},
+    this.ownAccountAddresses = const {},
     this.initialRecipient,
+    this.initialAddressType,
     this.initialAmount,
     this.initialFiatAmount,
     this.initialAmountInputMode = MobileSendAmountInputMode.zec,
     this.initialAmountError,
     this.initialAmountReady = false,
+    this.initialAmountStep = false,
     this.initialReview = false,
+    this.initialFeeZatoshi,
+    this.refreshReviewFeeOnInit = false,
+    this.useRouteSteps = false,
     this.initialMemo,
     this.initialContactLabel,
     this.initialContactPictureId,
     this.initialRecipientFocused = false,
+    this.isPaymentRequest = false,
+    this.paymentRequestLabel,
+    this.requestedAmountZatoshi,
+    this.estimateFee = _widgetbookEstimateFee,
   });
 
   final List<AddressBookContact> contacts;
-  final Map<String, AccountInfo> ownAccounts;
+  final Map<String, AccountInfo> ownAccountAddresses;
   final String? initialRecipient;
+  final String? initialAddressType;
   final String? initialAmount;
   final String? initialFiatAmount;
   final MobileSendAmountInputMode initialAmountInputMode;
   final String? initialAmountError;
   final bool initialAmountReady;
+  final bool initialAmountStep;
   final bool initialReview;
+  final BigInt? initialFeeZatoshi;
+  final bool refreshReviewFeeOnInit;
+  final bool useRouteSteps;
   final String? initialMemo;
   final String? initialContactLabel;
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
+  final bool isPaymentRequest;
+  final String? paymentRequestLabel;
+  final BigInt? requestedAmountZatoshi;
+  final MobileSendFeeEstimator estimateFee;
 
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
+      // Riverpod 3 retries a failed provider on a backoff timer; nothing here
+      // is allowed to fail, and a preview must not leave one running.
+      retry: (_, _) => null,
       overrides: [
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
         sendProvingKeyWarmupProvider.overrideWithValue(() {}),
-        ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
         syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(
           _WidgetbookAddressBookRepository(contacts),
         ),
+        // The real provider reads the wallet DB path and then Rust; seeded
+        // here so the review step can name an own-account recipient.
+        ownAccountAddressesProvider.overrideWith(
+          (ref) async => ownAccountAddresses,
+        ),
       ],
-      child: SizedBox(
-        width: 393,
-        height: 852,
-        child: MobileSendScreen(
-          initialRecipient: initialRecipient,
-          initialAmount: initialAmount,
-          initialFiatAmount: initialFiatAmount,
-          initialAmountInputMode: initialAmountInputMode,
-          initialAmountError: initialAmountError,
-          initialAmountReady: initialAmountReady,
-          initialReview: initialReview,
-          initialMemo: initialMemo,
-          initialContactLabel: initialContactLabel,
-          initialContactPictureId: initialContactPictureId,
-          initialRecipientFocused: initialRecipientFocused,
-          loadWalletDbPath: () async => '/tmp/widgetbook-zcash-wallet.db',
-          validateAddress: _widgetbookValidateAddress,
-          estimateFee: _widgetbookEstimateFee,
+      child: WbScaleDownBox(
+        size: const Size(393, 852),
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MobileSendScreen(
+            useRouteSteps: useRouteSteps,
+            initialRecipient: initialRecipient,
+            initialAddressType: initialAddressType,
+            initialAmount: initialAmount,
+            initialFiatAmount: initialFiatAmount,
+            initialAmountInputMode: initialAmountInputMode,
+            initialAmountError: initialAmountError,
+            initialAmountReady: initialAmountReady,
+            initialAmountStep: initialAmountStep,
+            initialReview: initialReview,
+            initialFeeZatoshi: initialFeeZatoshi,
+            refreshReviewFeeOnInit: refreshReviewFeeOnInit,
+            initialMemo: initialMemo,
+            initialContactLabel: initialContactLabel,
+            initialContactPictureId: initialContactPictureId,
+            initialRecipientFocused: initialRecipientFocused,
+            isPaymentRequest: isPaymentRequest,
+            paymentRequestLabel: paymentRequestLabel,
+            requestedAmountZatoshi: requestedAmountZatoshi,
+            loadWalletDbPath: () async => '/tmp/widgetbook-zcash-wallet.db',
+            validateAddress: _widgetbookValidateAddress,
+            estimateFee: estimateFee,
+          ),
         ),
       ),
     );
@@ -442,24 +729,27 @@ class _MobileSendScanFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      width: 393,
-      height: 852,
-      child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
-          viewPadding: EdgeInsets.only(top: 55),
-        ),
-        child: ColoredBox(
-          color: colors.background.neutralScrim,
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(),
-                MobileModalCard(child: child),
-              ],
+    return WbScaleDownBox(
+      size: const Size(393, 852),
+      child: SizedBox(
+        width: 393,
+        height: 852,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(393, 852),
+            viewPadding: EdgeInsets.only(top: 55),
+          ),
+          child: ColoredBox(
+            color: colors.background.neutralScrim,
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  MobileModalCard(child: child),
+                ],
+              ),
             ),
           ),
         ),
@@ -528,6 +818,15 @@ final _mobileSendBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+/// The second account the review step names when the recipient is the
+/// wallet's own address.
+const _mobileSendOwnAccount = AccountInfo(
+  uuid: 'widgetbook-send-savings',
+  name: 'Savings',
+  order: 1,
+  profilePictureId: 'pfp-05',
+);
+
 const _mobileSendContacts = [
   AddressBookContact(
     id: 'contact-label-1',
@@ -585,20 +884,35 @@ const _mobileSendContacts = [
   ),
 ];
 
+/// Preview stand-in for Rust address validation: the recipient's prefix picks
+/// the address type, so a fixture selects a branch by the address it seeds.
 Future<rust_sync.AddressValidationResult> _widgetbookValidateAddress({
   required String address,
   required String network,
 }) async {
-  if (address.startsWith('t1')) {
+  const invalid = rust_sync.AddressValidationResult(
+    isValid: false,
+    addressType: '',
+    wrongNetwork: false,
+  );
+  if (address.startsWith('utest1') || address.startsWith('ztestsapling')) {
     return const rust_sync.AddressValidationResult(
-      isValid: true,
-      addressType: 'transparent',
-      wrongNetwork: false,
+      isValid: false,
+      addressType: '',
+      wrongNetwork: true,
     );
   }
-  return const rust_sync.AddressValidationResult(
+  final type = switch (address) {
+    _ when address.startsWith('t1') => 'transparent',
+    _ when address.startsWith('tex1') => 'tex',
+    _ when address.startsWith('zs1') => 'sapling',
+    _ when address.startsWith('u1') => 'unified',
+    _ => null,
+  };
+  if (type == null) return invalid;
+  return rust_sync.AddressValidationResult(
     isValid: true,
-    addressType: 'unified',
+    addressType: type,
     wrongNetwork: false,
   );
 }
@@ -791,4 +1105,31 @@ class _PreviewSendPaneToolbar extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget buildSendMemoTooLongUseCase(BuildContext context) {
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: r'$ 8,758.40',
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    memoText: _longMemo,
+    memoCounter: '-32/512',
+    memoError: 'Message is too long',
+  );
+}
+
+Widget buildSendPriceLoadingUseCase(BuildContext context) {
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: null,
+    amountConversionLoading: true,
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    reviewEnabled: true,
+  );
 }

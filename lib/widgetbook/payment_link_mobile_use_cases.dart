@@ -25,6 +25,7 @@ import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import '../src/providers/account_provider.dart';
+import 'support/wb_layout.dart';
 
 const _mobilePreviewSize = Size(393, 773);
 const _mobileDeviceSize = Size(393, 852);
@@ -784,27 +785,33 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
         final frameSize = showDeviceInsets
             ? _mobileDeviceSize
             : _mobilePreviewSize;
+        // `scaleDown` inside the LayoutBuilder: the builder still measures the
+        // real canvas (so the 852 device frame is chosen at the capture
+        // viewport, scale 1.0) and only the chosen box is shrunk to fit.
         return Center(
-          child: SizedBox.fromSize(
+          child: WbScaleDownBox(
             size: frameSize,
-            child: ColoredBox(
-              color: context.colors.background.window,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    top: showDeviceInsets ? _mobileStatusBarHeight : 0,
-                  ),
-                  child: SizedBox.fromSize(
-                    key: const ValueKey('mobile_payment_link_preview_frame'),
-                    size: _mobilePreviewSize,
-                    child: MediaQuery(
-                      data: MediaQuery.of(
-                        context,
-                      ).copyWith(size: _mobilePreviewSize),
-                      child: ColoredBox(
-                        color: context.colors.background.window,
-                        child: child,
+            child: SizedBox.fromSize(
+              size: frameSize,
+              child: ColoredBox(
+                color: context.colors.background.window,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: showDeviceInsets ? _mobileStatusBarHeight : 0,
+                    ),
+                    child: SizedBox.fromSize(
+                      key: const ValueKey('mobile_payment_link_preview_frame'),
+                      size: _mobilePreviewSize,
+                      child: MediaQuery(
+                        data: MediaQuery.of(
+                          context,
+                        ).copyWith(size: _mobilePreviewSize),
+                        child: ColoredBox(
+                          color: context.colors.background.window,
+                          child: child,
+                        ),
                       ),
                     ),
                   ),

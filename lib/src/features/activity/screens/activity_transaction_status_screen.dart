@@ -56,10 +56,40 @@ class ActivityTransactionStatusArgs {
   final GiftCardActivityMetadata? giftCard;
 }
 
+/// Loads the transaction history; injectable so widget tests can avoid
+/// the Rust FFI.
+typedef ActivityTxHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+
+/// Loads one transaction's detail; injectable for widget tests.
+typedef ActivityTxDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      String accountUuid,
+      rust_sync.TransactionInfo transaction,
+    );
+
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
-  const ActivityTransactionStatusScreen({super.key, required this.args});
+  const ActivityTransactionStatusScreen({
+    super.key,
+    required this.args,
+    this.historyLoader,
+    this.detailLoader,
+    this.explorerLauncher,
+  });
 
   final ActivityTransactionStatusArgs args;
+
+  /// Test seam — production reads the wallet DB through Rust.
+  @visibleForTesting
+  final ActivityTxHistoryLoader? historyLoader;
+
+  /// Test seam — production reads the wallet DB through Rust.
+  @visibleForTesting
+  final ActivityTxDetailLoader? detailLoader;
+
+  /// Preview/test seam — production opens the configured external explorer.
+  @visibleForTesting
+  final ZcashExplorerLauncher? explorerLauncher;
 
   @override
   ConsumerState<ActivityTransactionStatusScreen> createState() =>
@@ -91,6 +121,37 @@ class _ActivityTransactionStatusScreenState
     });
   }
 
+  Future<List<rust_sync.TransactionInfo>> _loadHistory(
+    String accountUuid, {
+    String? dbPath,
+    String? network,
+  }) async {
+    final loader = widget.historyLoader;
+    if (loader != null) return loader(accountUuid);
+    return rust_sync.getTransactionHistory(
+      dbPath: dbPath!,
+      network: network!,
+      accountUuid: accountUuid,
+    );
+  }
+
+  Future<rust_sync.TransactionDetail?> _loadDetail(
+    String accountUuid,
+    rust_sync.TransactionInfo transaction, {
+    String? dbPath,
+    String? network,
+  }) async {
+    final loader = widget.detailLoader;
+    if (loader != null) return loader(accountUuid, transaction);
+    return rust_sync.getTransactionDetail(
+      dbPath: dbPath!,
+      network: network!,
+      accountUuid: accountUuid,
+      txidHex: transaction.txidHex,
+      txKind: transaction.txKind,
+    );
+  }
+
   Future<void> _loadTransaction({bool showLoading = false}) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     _activeAccountUuid = accountUuid;
@@ -112,12 +173,17 @@ class _ActivityTransactionStatusScreenState
     }
 
     try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final txs = await rust_sync.getTransactionHistory(
+      // Resolve once per refresh, as before the preview seams were added. A
+      // wallet reset can replace the DB name, so this must not be cached for
+      // the lifetime of the screen.
+      final needsProductionDb =
+          widget.historyLoader == null || widget.detailLoader == null;
+      final endpoint = needsProductionDb ? ref.read(rpcEndpointProvider) : null;
+      final dbPath = needsProductionDb ? await getWalletDbPath() : null;
+      final txs = await _loadHistory(
+        accountUuid,
         dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
+        network: endpoint?.networkName,
       );
       if (!mounted) return;
       if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
@@ -135,12 +201,11 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = await rust_sync.getTransactionDetail(
+          detail = await _loadDetail(
+            accountUuid,
+            tx,
             dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            txidHex: tx.txidHex,
-            txKind: tx.txKind,
+            network: endpoint?.networkName,
           );
         } catch (e, st) {
           log('ActivityTransactionStatus: detail load failed: $e\n$st');
@@ -252,6 +317,7 @@ class _ActivityTransactionStatusScreenState
       txidHex: widget.args.txidHex,
       txidOrder: ZcashExplorerTxidOrder.protocol,
       customTemplate: ref.read(zcashExplorerProvider),
+      launcher: widget.explorerLauncher,
     );
     if (launched || !mounted) return;
     copyTextWithToast(

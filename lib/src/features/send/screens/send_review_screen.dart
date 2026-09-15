@@ -40,10 +40,22 @@ import '../widgets/send_verify_address_overlay.dart';
 
 export '../services/send_flow.dart' show KeystoneBroadcastArgs, SendReviewArgs;
 
+typedef SendReviewProposalDisposer = Future<bool> Function(SendReviewArgs args);
+
 class SendReviewScreen extends ConsumerStatefulWidget {
-  const SendReviewScreen({super.key, required this.args});
+  const SendReviewScreen({
+    super.key,
+    required this.args,
+    this.proposalDisposer,
+    this.confirmationEnabled = true,
+  });
 
   final SendReviewArgs args;
+  final SendReviewProposalDisposer? proposalDisposer;
+
+  /// Hosts without transaction execution (for example previews) can disable
+  /// confirmation while retaining review and back navigation.
+  final bool confirmationEnabled;
 
   @override
   ConsumerState<SendReviewScreen> createState() => _SendReviewScreenState();
@@ -106,6 +118,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   Future<bool> _scheduleDiscard() {
     _proposalAbandoned = true;
     final args = _reviewArgs;
+    final proposalDisposer = widget.proposalDisposer;
     return _discardFuture ??=
         () async {
           try {
@@ -113,6 +126,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           } catch (_) {
             // A failed creator still needs idempotent proposal cleanup.
           }
+          if (proposalDisposer != null) return proposalDisposer(args);
           return discardSendProposal(
             proposalId: args.proposalId,
             sendFlowId: args.sendFlowId,
@@ -624,7 +638,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? AppIcons.qr
                             : AppIcons.donation,
                         onConfirm:
-                            _cancelling ||
+                            !widget.confirmationEnabled ||
+                                _cancelling ||
                                 (_proposalAbandoned && !_reviewRecoveryFailed)
                             ? null
                             : () => unawaited(_handleSend()),
@@ -656,7 +671,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? AppIcons.qr
                             : AppIcons.plane,
                         onConfirm:
-                            _cancelling ||
+                            !widget.confirmationEnabled ||
+                                _cancelling ||
                                 (_proposalAbandoned && !_reviewRecoveryFailed)
                             ? null
                             : () => unawaited(_handleSend()),

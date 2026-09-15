@@ -147,16 +147,19 @@ class MobileVotingStatusScreen extends StatelessWidget {
     super.key,
     required this.roundId,
     this.accountUuid,
+    this.onOpenKeystoneFirmware,
   });
 
   final String roundId;
   final String? accountUuid;
+  final VoidCallback? onOpenKeystoneFirmware;
 
   @override
   Widget build(BuildContext context) {
     return VotingStatusView(
       roundId: roundId,
       accountUuid: accountUuid,
+      onOpenKeystoneFirmware: onOpenKeystoneFirmware,
       requireCurrentRouteForConfirmation: true,
       contentHorizontalPadding: AppSpacing.sm,
       submissionProgressBuilder: (_, presentation) =>

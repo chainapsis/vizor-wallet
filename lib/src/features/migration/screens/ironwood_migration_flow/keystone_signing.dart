@@ -10,6 +10,7 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -17,6 +18,7 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +28,7 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
       previewStartScanning: previewStartScanning,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -36,6 +39,7 @@ class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -43,6 +47,7 @@ class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +58,7 @@ class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
       previewStartScanning: previewStartScanning,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -64,6 +70,8 @@ class MobileIronwoodMigrationKeystoneImmediateSignScreen
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
+    this.openCameraSettings,
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -71,6 +79,8 @@ class MobileIronwoodMigrationKeystoneImmediateSignScreen
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
+  final KeystoneCameraSettingsOpener? openCameraSettings;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +92,8 @@ class MobileIronwoodMigrationKeystoneImmediateSignScreen
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
       previewStartScanning: previewStartScanning,
+      openCameraSettings: openCameraSettings,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -95,6 +107,8 @@ class MobileIronwoodMigrationKeystoneCombinedSignScreen
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
+    this.openCameraSettings,
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -104,6 +118,8 @@ class MobileIronwoodMigrationKeystoneCombinedSignScreen
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
+  final KeystoneCameraSettingsOpener? openCameraSettings;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +132,8 @@ class MobileIronwoodMigrationKeystoneCombinedSignScreen
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
       previewStartScanning: previewStartScanning,
+      openCameraSettings: openCameraSettings,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -135,28 +153,37 @@ class MobileIronwoodMigrationKeystoneCombinedSignEntry {
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
+    this.onOpenFirmware,
     super.key,
   });
 
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
     return _IronwoodMigrationKeystonePrivateSignScreen(
       step: _KeystonePrivateSignStep.denominations,
       approvedSchedule: approvedSchedule,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
 
 class IronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
-  const IronwoodMigrationKeystoneBatchSignScreen({super.key});
+  const IronwoodMigrationKeystoneBatchSignScreen({
+    this.onOpenFirmware,
+    super.key,
+  });
+
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
     return _IronwoodMigrationKeystonePrivateSignScreen(
       step: _KeystonePrivateSignStep.batch,
       approvedSchedule: [],
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -169,6 +196,7 @@ class MobileIronwoodMigrationKeystoneDenominationSignScreen
     this.initialAccountUuid,
     this.previewRequest,
     this.previewUrParts = const [],
+    this.onOpenFirmware,
     super.key,
   });
 
@@ -177,6 +205,7 @@ class MobileIronwoodMigrationKeystoneDenominationSignScreen
   final String? initialAccountUuid;
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +217,7 @@ class MobileIronwoodMigrationKeystoneDenominationSignScreen
       initialAccountUuid: initialAccountUuid,
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -208,11 +238,13 @@ class MobileIronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
   const MobileIronwoodMigrationKeystoneBatchSignScreen({
     this.previewRequest,
     this.previewUrParts = const [],
+    this.onOpenFirmware,
     super.key,
   });
 
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
+  final VoidCallback? onOpenFirmware;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +254,7 @@ class MobileIronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
       mobileLayout: true,
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
+      onOpenFirmware: onOpenFirmware,
     );
   }
 }
@@ -238,6 +271,8 @@ class _IronwoodMigrationKeystonePrivateSignScreen
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
+    this.openCameraSettings,
+    this.onOpenFirmware,
   });
 
   final _KeystonePrivateSignStep step;
@@ -249,6 +284,8 @@ class _IronwoodMigrationKeystonePrivateSignScreen
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
+  final KeystoneCameraSettingsOpener? openCameraSettings;
+  final VoidCallback? onOpenFirmware;
 
   @override
   ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> createState() =>
@@ -1242,6 +1279,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 secondaryLabel: 'Cancel',
                 onSecondary: () => unawaited(_returnToReview()),
                 qrSize: 200,
+                onOpenFirmware: widget.onOpenFirmware,
               ),
             ),
       child: showingScanner
@@ -1390,6 +1428,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           // percentage instead of the card's small bottom bar.
           showScanProgress: false,
           onControlsReady: _handleScannerControlsReady,
+          openCameraSettings: widget.openCameraSettings,
         ),
       ),
       scannerMessage:
@@ -1691,6 +1730,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 behavior: HitTestBehavior.opaque,
                 child: KeystoneScanHelpOverlay(
                   visible: _urParts.isNotEmpty && !proofFailed,
+                  onOpenFirmware: widget.onOpenFirmware,
                   child: KeystonePcztQrStage(
                     phase: KeystonePcztQrStagePhase.ready,
                     urParts: _urParts,

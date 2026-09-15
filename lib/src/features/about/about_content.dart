@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:url_launcher/url_launcher.dart';
 
+typedef AboutUrlLauncher = Future<void> Function(String url);
+
 /// Copy and link targets shared by the desktop and mobile About /
 /// legal screens, so the two form factors cannot drift apart.
 class AboutParagraph {

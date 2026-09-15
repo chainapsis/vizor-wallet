@@ -540,6 +540,29 @@ void main() {
     expect(rustApi.discardCalls, hasLength(1));
   });
 
+  testWidgets('dispose uses an injected proposal disposer', (tester) async {
+    final disposedArgs = <SendReviewArgs>[];
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        proposalDisposer: (args) async {
+          disposedArgs.add(args);
+          return true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+
+    expect(disposedArgs, hasLength(1));
+    expect(disposedArgs.single.proposalId, BigInt.one);
+    expect(disposedArgs.single.sendFlowId, 'test-send-flow');
+    expect(rustApi.discardCalls, isEmpty);
+  });
+
   testWidgets('cancel waits for refreshed balance before exposing Send', (
     tester,
   ) async {
@@ -1476,6 +1499,7 @@ Widget _harness(
   List<Object?>? scanExtras,
   Listenable? routerRefresh,
   _FakeSyncNotifier? syncNotifier,
+  SendReviewProposalDisposer? proposalDisposer,
   bool cancelScan = false,
   String initialLocation = '/send/review',
 }) {
@@ -1491,7 +1515,10 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/review',
-        builder: (_, _) => SendReviewScreen(args: args),
+        builder: (_, _) => SendReviewScreen(
+          args: args,
+          proposalDisposer: proposalDisposer,
+        ),
       ),
       GoRoute(
         path: '/send/keystone/scan',

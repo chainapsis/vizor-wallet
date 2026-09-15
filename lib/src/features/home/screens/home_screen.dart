@@ -64,8 +64,21 @@ const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
 
 final homeMigrationCtaPulseMotionEnabledProvider = Provider<bool>((_) => true);
 
+typedef HomeTransactionDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      rust_sync.TransactionInfo transaction,
+      String accountUuid,
+    );
+
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.transactionDetailLoader,
+    this.releaseNotesLauncher,
+  });
+
+  final HomeTransactionDetailLoader? transactionDetailLoader;
+  final Future<void> Function()? releaseNotesLauncher;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -147,7 +160,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     try {
-      final result = await shieldTransparentSoftwareBalance(
+      final result = await ref.read(transparentShieldingRunnerProvider)(
         ref: ref,
         accountUuid: accountUuid,
         logContext: 'HomeScreen',
@@ -379,6 +392,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               data: (_) => _HomePane(
+                transactionDetailLoader: widget.transactionDetailLoader,
                 sync: sync,
                 hasActivitySyncData: hasActivitySyncData,
                 isActivityLoading: isActivityLoading,
@@ -427,8 +441,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onStartMigration: () => unawaited(
                   _openIronwoodMigration(visibleIronwoodAnnouncement),
                 ),
-                onOpenReleaseNotes: () =>
-                    unawaited(_openIronwoodReleaseNotes()),
+                onOpenReleaseNotes: () => unawaited(
+                  (widget.releaseNotesLauncher ?? _openIronwoodReleaseNotes)(),
+                ),
               ),
             ),
         ],
@@ -470,6 +485,7 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.onRetrySync,
     required this.ironwoodMigrationCta,
     required this.onIronwoodMigrationCta,
+    this.transactionDetailLoader,
   });
 
   final SyncState sync;
@@ -495,6 +511,7 @@ class _HomePane extends ConsumerStatefulWidget {
   final VoidCallback onRetrySync;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
   final VoidCallback onIronwoodMigrationCta;
+  final HomeTransactionDetailLoader? transactionDetailLoader;
 
   @override
   ConsumerState<_HomePane> createState() => _HomePaneState();
@@ -808,6 +825,9 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   ) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return null;
+
+    final loader = widget.transactionDetailLoader;
+    if (loader != null) return loader(transaction, accountUuid);
 
     try {
       final dbPath = await getWalletDbPath();

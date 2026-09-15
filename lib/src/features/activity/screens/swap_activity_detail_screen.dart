@@ -12,12 +12,14 @@ class SwapActivityDetailScreen extends ConsumerStatefulWidget {
     required this.swapIntentId,
     this.returnTarget = SwapActivityReturnTarget.activity,
     this.autoSignZecDeposit = false,
+    this.launchExternalUri,
     super.key,
   });
 
   final String swapIntentId;
   final SwapActivityReturnTarget returnTarget;
   final bool autoSignZecDeposit;
+  final Future<void> Function(Uri uri)? launchExternalUri;
 
   @override
   ConsumerState<SwapActivityDetailScreen> createState() =>
@@ -46,6 +48,7 @@ class _SwapActivityDetailScreenState
           intentId: widget.swapIntentId,
           returnTarget: widget.returnTarget,
           autoSignZecDeposit: widget.autoSignZecDeposit,
+          launchExternalUri: widget.launchExternalUri,
         ),
       ),
     );

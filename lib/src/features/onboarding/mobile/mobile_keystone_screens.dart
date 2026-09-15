@@ -15,7 +15,7 @@ import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart'
     show AnimatedUrScannerView, ScanResult;
 import '../../address_scan/widgets/mobile_address_scan_card.dart';
-import '../../about/about_content.dart' show launchAboutUrl;
+import '../../about/about_content.dart' show AboutUrlLauncher, launchAboutUrl;
 import '../keystone/keystone_onboarding_flow.dart'
     show
         KeystoneOnboardingStep,
@@ -31,7 +31,12 @@ const _keystoneFirmwareUrl = 'https://keyst.one/firmware';
 /// Step 1 — Figma `Keystone 1` (4654:71439): firmware check and the
 /// connect preparation steps.
 class MobileKeystoneIntroScreen extends StatelessWidget {
-  const MobileKeystoneIntroScreen({super.key});
+  const MobileKeystoneIntroScreen({
+    super.key,
+    this.urlLauncher = launchAboutUrl,
+  });
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +66,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
                   title: '1. Check Keystone firmware',
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                const _FirmwareBodyWithLink(),
+                _FirmwareBodyWithLink(urlLauncher: urlLauncher),
               ],
             ),
           ),
@@ -128,7 +133,9 @@ class _KeystoneIntroCard extends StatelessWidget {
 }
 
 class _FirmwareBodyWithLink extends StatelessWidget {
-  const _FirmwareBodyWithLink();
+  const _FirmwareBodyWithLink({required this.urlLauncher});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -138,14 +145,14 @@ class _FirmwareBodyWithLink extends StatelessWidget {
     return Text.rich(
       TextSpan(
         style: bodyStyle,
-        children: const [
-          TextSpan(
+        children: [
+          const TextSpan(
             text:
                 'Make sure your Keystone is on the latest Cypherpunk firmware. ',
           ),
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: _FirmwareInlineLink(),
+            child: _FirmwareInlineLink(urlLauncher: urlLauncher),
           ),
         ],
       ),
@@ -154,7 +161,9 @@ class _FirmwareBodyWithLink extends StatelessWidget {
 }
 
 class _FirmwareInlineLink extends StatelessWidget {
-  const _FirmwareInlineLink();
+  const _FirmwareInlineLink({required this.urlLauncher});
+
+  final AboutUrlLauncher urlLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +178,7 @@ class _FirmwareInlineLink extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         iconGap: AppSpacing.xxs,
         leading: const AppIcon(AppIcons.link),
-        onPressed: () => unawaited(launchAboutUrl(_keystoneFirmwareUrl)),
+        onPressed: () => unawaited(urlLauncher(_keystoneFirmwareUrl)),
         child: const Text('link'),
       ),
     );
