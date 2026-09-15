@@ -280,6 +280,42 @@ Widget buildRequestMobileResultShieldedUseCase(BuildContext context) =>
       RequestModalStep.result,
     );
 
+Widget buildRequestModalStepOneEmptyUseCase(BuildContext context) =>
+    _desktopCase(ReceiveRequestFixture.empty, RequestModalStep.compose);
+
+Widget buildRequestModalStepOneAmountUseCase(BuildContext context) =>
+    _desktopCase(ReceiveRequestFixture.amount, RequestModalStep.compose);
+
+Widget buildRequestModalStepOneTransparentUseCase(BuildContext context) =>
+    _desktopCase(
+      ReceiveRequestFixture.transparentAddress,
+      RequestModalStep.compose,
+    );
+
+Widget buildRequestModalStepOneAmountErrorUseCase(BuildContext context) =>
+    _desktopCase(ReceiveRequestFixture.amountError, RequestModalStep.compose);
+
+Widget buildRequestModalStepTwoTransparentUseCase(BuildContext context) =>
+    _desktopCase(
+      ReceiveRequestFixture.transparentAddress,
+      RequestModalStep.result,
+    );
+
+Widget buildRequestMobileComposeEmptyUseCase(BuildContext context) =>
+    _mobileCase(ReceiveRequestFixture.empty, RequestModalStep.compose);
+
+Widget buildRequestMobileComposeUsdUseCase(BuildContext context) =>
+    _mobileCase(ReceiveRequestFixture.amountInUsd, RequestModalStep.compose);
+
+Widget buildRequestMobileResultTransparentUseCase(BuildContext context) =>
+    _mobileCase(
+      ReceiveRequestFixture.transparentAddress,
+      RequestModalStep.result,
+    );
+
+Widget buildRequestMobileEntryUseCase(BuildContext context) =>
+    buildReceiveMobileShieldedUseCase(context);
+
 // ─── Frames ──────────────────────────────────────────────────────────
 
 Widget _desktop(

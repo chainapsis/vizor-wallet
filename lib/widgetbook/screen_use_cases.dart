@@ -85,6 +85,7 @@ import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
 import 'support/wb_layout.dart';
+import 'onboarding_use_cases.dart';
 import 'support/wb_sidebar.dart';
 import 'support/wb_migration_service.dart';
 import 'migration_use_cases.dart' show migrationVirtualUnlockFixture;
@@ -5590,3 +5591,80 @@ class _GiftCardPreviewSyncNotifier extends _PreviewSyncNotifier {
     }
   }
 }
+
+Widget buildMobileAccountsManyUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(_accountsManyState);
+}
+
+Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
+  final transactions = _previewGiftCardActivityTransactions();
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: transactions,
+    ),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
+Widget buildMobileHomeNoActivityUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(orchardBalance: BigInt.from(14312000000)),
+  );
+}
+
+Widget buildMobileHomeNoBalanceKeystoneUseCase(BuildContext context) {
+  const accountUuid = 'preview-keystone-account';
+  final account = AccountState(
+    accounts: const [
+      AccountInfo(
+        uuid: accountUuid,
+        name: 'Keystone Vault',
+        order: 0,
+        isHardware: true,
+        profilePictureId: 'pfp-02',
+      ),
+    ],
+    activeAccountUuid: accountUuid,
+    activeAddress: 'u1widgetbookkeystoneaddress',
+  );
+  return _buildMobileHomeUseCase(
+    accountState: account,
+    syncState: _homeSyncedState(accountUuid: accountUuid),
+  );
+}
+
+Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: _previewGiftCardActivityTransactions(),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
+List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
+  return [
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-redeemed',
+      kind: 'received',
+      seconds: 1800000011,
+    ),
+    _giftCardActivityTx(
+      txidHex: 'preview-gift-card-created',
+      kind: 'sent',
+      seconds: 1800000010,
+    ),
+  ];
+}
+
+Widget buildLostPasswordCountdownUseCase(BuildContext context) =>
+    onboardingLostPasswordFixture(countdownSeconds: 3, claimsInFlight: 0);
+
+Widget buildLostPasswordEnabledUseCase(BuildContext context) =>
+    onboardingLostPasswordFixture(countdownSeconds: 0, claimsInFlight: 0);

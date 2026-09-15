@@ -1,4 +1,7 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'package:flutter/material.dart';
+import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
@@ -125,4 +128,115 @@ String buttonFixtureLabelForSize(AppButtonSize size) {
     AppButtonSize.medium => 'Review',
     AppButtonSize.small => 'Copy',
   };
+}
+
+Widget buildButtonPrimaryLargeUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.primary,
+      size: AppButtonSize.large,
+    );
+Widget buildButtonPrimaryMediumUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.primary,
+      size: AppButtonSize.medium,
+    );
+Widget buildButtonPrimarySmallUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.primary,
+      size: AppButtonSize.small,
+    );
+Widget buildButtonSecondaryLargeUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.secondary,
+      size: AppButtonSize.large,
+    );
+Widget buildButtonSecondaryMediumUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.secondary,
+      size: AppButtonSize.medium,
+    );
+Widget buildButtonSecondarySmallUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.secondary,
+      size: AppButtonSize.small,
+    );
+Widget buildButtonGhostLargeUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.ghost,
+      size: AppButtonSize.large,
+    );
+Widget buildButtonGhostMediumUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.ghost,
+      size: AppButtonSize.medium,
+    );
+Widget buildButtonGhostSmallUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.ghost,
+      size: AppButtonSize.small,
+    );
+Widget buildButtonDestructiveLargeUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.destructive,
+      size: AppButtonSize.large,
+    );
+Widget buildButtonDestructiveMediumUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.destructive,
+      size: AppButtonSize.medium,
+    );
+Widget buildButtonDestructiveSmallUseCase(BuildContext context) =>
+    buttonSingleFixture(
+      context,
+      variant: AppButtonVariant.destructive,
+      size: AppButtonSize.small,
+    );
+
+Widget buildButtonInteractiveUseCase(BuildContext context) {
+  final variant = context.knobs.object.dropdown<AppButtonVariant>(
+    label: 'Variant',
+    options: AppButtonVariant.values,
+    initialOption: AppButtonVariant.primary,
+    labelBuilder: (v) => v.name,
+  );
+  final size = context.knobs.object.segmented<AppButtonSize>(
+    label: 'Size',
+    options: AppButtonSize.values,
+    initialOption: AppButtonSize.large,
+    labelBuilder: (s) => s.name,
+  );
+  final enabled = context.knobs.boolean(label: 'Enabled', initialValue: true);
+  final showLeading = context.knobs.boolean(
+    label: 'Leading icon',
+    initialValue: true,
+  );
+  final showTrailing = context.knobs.boolean(
+    label: 'Trailing icon',
+    initialValue: true,
+  );
+  final label = context.knobs.string(
+    label: 'Label',
+    initialValue: 'Create New Wallet',
+  );
+
+  return buttonSingleFixture(
+    context,
+    variant: variant,
+    size: size,
+    enabled: enabled,
+    leadingIcon: showLeading,
+    trailingIcon: showTrailing,
+    label: label,
+  );
 }

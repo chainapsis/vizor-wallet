@@ -1106,3 +1106,30 @@ class _PreviewSendPaneToolbar extends StatelessWidget {
     );
   }
 }
+
+Widget buildSendMemoTooLongUseCase(BuildContext context) {
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: r'$ 8,758.40',
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    memoText: _longMemo,
+    memoCounter: '-32/512',
+    memoError: 'Message is too long',
+  );
+}
+
+Widget buildSendPriceLoadingUseCase(BuildContext context) {
+  return sendComposeFixture(
+    recipientText: _sampleUnifiedAddress,
+    route: SendPoolRoute.shieldedToShielded,
+    amountText: '125.12',
+    amountConversionText: null,
+    amountConversionLoading: true,
+    amountFocused: true,
+    memoMode: SendMemoMode.expanded,
+    reviewEnabled: true,
+  );
+}

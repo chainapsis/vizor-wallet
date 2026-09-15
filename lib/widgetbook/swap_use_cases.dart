@@ -49,6 +49,7 @@ import '../src/features/swap/widgets/swap_review_page_content.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
 import 'support/wb_layout.dart';
+import 'address_scan_use_cases.dart';
 import 'support/wb_sidebar.dart';
 import 'support/wb_address_book_repository.dart';
 import '../src/providers/account_provider.dart';
@@ -2892,3 +2893,87 @@ class _SwapMobileDepositFrame extends StatelessWidget {
     );
   }
 }
+
+Widget buildSwapPageFigmaNode1UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.page,
+      fixture: SwapComposerFixture.payAmountActive,
+    );
+Widget buildSwapPageFigmaNode2UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.page,
+      fixture: SwapComposerFixture.receiveAmountActive,
+    );
+Widget buildSwapPageFigmaNode3UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.page,
+      fixture: SwapComposerFixture.amountEntered,
+    );
+Widget buildSwapPageFigmaNode6UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.page,
+      fixture: SwapComposerFixture.fiatValueInput,
+    );
+Widget buildSwapPageUnsupportedFiatUseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.page,
+      fixture: SwapComposerFixture.unsupportedFiatPrice,
+    );
+Widget buildSwapWidgetFigmaNode1UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.payAmountActive,
+    );
+Widget buildSwapWidgetFigmaNode2UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.receiveAmountActive,
+    );
+Widget buildSwapWidgetFigmaNode3UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.amountEntered,
+    );
+Widget buildSwapWidgetFigmaNode5UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.directionSwitched,
+    );
+Widget buildSwapWidgetFigmaNode6UseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.fiatValueInput,
+    );
+Widget buildSwapWidgetUnsupportedFiatUseCase(BuildContext context) =>
+    swapComposerFixture(
+      frame: SwapComposerFrame.widget,
+      fixture: SwapComposerFixture.unsupportedFiatPrice,
+    );
+Widget buildSwapAddressModalFigmaNode7UseCase(BuildContext context) =>
+    swapAddressEditFixture();
+Widget buildSwapSlippageModalUseCase(BuildContext context) =>
+    swapSlippageFixture(value: SwapSlippageValue.presetHalf);
+Widget buildSwapSlippageModalCustomUseCase(BuildContext context) =>
+    swapSlippageFixture(value: SwapSlippageValue.custom);
+Widget buildSwapSlippageModalInvalidUseCase(BuildContext context) =>
+    swapSlippageFixture(value: SwapSlippageValue.outOfRange);
+Widget buildSwapAssetModalUseCase(BuildContext context) =>
+    swapAssetSelectorFixture();
+Widget buildSwapAssetModalEmptyUseCase(BuildContext context) =>
+    swapAssetSelectorFixture(query: SwapAssetModalQuery.noMatch);
+Widget buildSwapAddressScanModalPermissionUseCase(BuildContext context) =>
+    addressQrScanModalFixture(camera: AddressScanModalCamera.requesting);
+Widget buildMobileSwapAddressScanRequestingUseCase(BuildContext context) =>
+    mobileAddressScanCardFixture(camera: AddressScanCardCamera.requesting);
+Widget buildSwapAddressScanModalDeniedUseCase(BuildContext context) =>
+    addressQrScanModalFixture(camera: AddressScanModalCamera.denied);
+Widget buildMobileSwapAddressScanDeniedUseCase(BuildContext context) =>
+    mobileAddressScanCardFixture(camera: AddressScanCardCamera.denied);
+Widget buildSwapAddressScanModalActiveUseCase(BuildContext context) =>
+    addressQrScanModalFixture(camera: AddressScanModalCamera.active);
+Widget buildMobileSwapAddressScanActiveUseCase(BuildContext context) =>
+    mobileAddressScanCardFixture(camera: AddressScanCardCamera.active);
+Widget buildSwapAddressScanModalLoadingUseCase(BuildContext context) =>
+    addressQrScanModalFixture(camera: AddressScanModalCamera.loading);
+Widget buildMobileSwapAddressScanLoadingUseCase(BuildContext context) =>
+    mobileAddressScanCardFixture(camera: AddressScanCardCamera.loading);

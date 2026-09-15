@@ -1,4 +1,7 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'package:flutter/material.dart';
+import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
@@ -193,5 +196,43 @@ Widget textFieldPlaygroundFixture(
       ),
     ),
     reserveMessageSpace: true,
+  );
+}
+
+Widget buildTextFieldInteractiveUseCase(BuildContext context) {
+  final multiline = context.knobs.boolean(
+    label: 'Text area',
+    initialValue: false,
+  );
+  final showLeading = context.knobs.boolean(
+    label: 'Leading icon',
+    initialValue: true,
+  );
+  final showClearButton = context.knobs.boolean(
+    label: 'Clear button',
+    initialValue: true,
+  );
+  final tone = context.knobs.object.dropdown<AppTextFieldTone>(
+    label: 'Tone',
+    options: const [
+      AppTextFieldTone.neutral,
+      AppTextFieldTone.brandCrimson,
+      AppTextFieldTone.destructive,
+    ],
+    initialOption: AppTextFieldTone.neutral,
+    labelBuilder: (value) => value.name,
+  );
+  final messageText = context.knobs.string(
+    label: 'Message text',
+    initialValue: '',
+  );
+
+  return textFieldPlaygroundFixture(
+    context,
+    multiline: multiline,
+    tone: tone,
+    showLeading: showLeading,
+    showClearButton: showClearButton,
+    messageText: messageText,
   );
 }
