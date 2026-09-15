@@ -40,6 +40,21 @@ class VotingShareTrackingRegistry {
   /// lease, so sidecar reads cannot outlive the state they are inspecting.
   VoidCallback? beginDiscovery() => beginBackgroundWork();
 
+  /// Counts destructive wipes of the wallet's durable data.
+  ///
+  /// Quiescence only holds work off while the wipe runs; once it resumes,
+  /// background work that pinned state from before the wipe has no other way
+  /// to tell that the wallet it was reading is gone. The account list is not
+  /// that signal: a wipe that deletes the database and then fails a later
+  /// cleanup step never publishes the empty account state, so a stale reader
+  /// would go on to re-create what the reset just removed.
+  int get walletDataGeneration => _walletDataGeneration;
+  int _walletDataGeneration = 0;
+
+  /// Called by wallet reset once the durable data is gone — including the
+  /// failed-cleanup path, where the deletion has still committed.
+  void notifyWalletDataDeleted() => _walletDataGeneration++;
+
   void addRestoreRequestListener(VoidCallback listener) {
     _restoreRequestListeners.add(listener);
   }

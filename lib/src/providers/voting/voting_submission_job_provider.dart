@@ -29,6 +29,12 @@ const _votingRoundClosedDuringRecoveryMessage =
     'This voting round closed before the wallet finished catching up to its '
     'snapshot block.';
 
+/// Shown when an automatic retry finds the voting configuration no longer the
+/// one the round was reviewed under.
+const _votingConfigChangedDuringRecoveryMessage =
+    'The voting configuration changed while the wallet was catching up. '
+    'Review your vote and submit again.';
+
 /// Shown when an automatic retry finds the ballot no longer the one it was
 /// armed against. The user reviews and submits the new one themselves.
 const _votingBallotChangedDuringRecoveryMessage =
@@ -300,6 +306,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   VotingRoundDetails? _walletSyncRecoveryRound;
   String? _walletSyncRecoveryConfigFingerprint;
   Map<int, int>? _walletSyncRecoveryDraftChoices;
+  int? _walletSyncRecoveryWalletDataGeneration;
 
   /// The ballot as it stood when this job started, captured before the wallet
   /// wait so a later edit cannot be mistaken for what the user confirmed.
@@ -338,6 +345,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> retry({
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
+    String? requireConfigFingerprint,
   }) async {
     _cancelWalletSyncRecovery();
     _releaseGuard();
@@ -347,6 +355,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _key,
       afterWalletSyncRecovery: afterWalletSyncRecovery,
       requireDraftChoices: requireDraftChoices,
+      requireConfigFingerprint: requireConfigFingerprint,
     );
   }
 
@@ -364,6 +373,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionKey key, {
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
+    String? requireConfigFingerprint,
   }) {
     _cancelWalletSyncRecovery();
     _confirmedDraftChoices = null;
@@ -387,6 +397,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         generation: generation,
         afterWalletSyncRecovery: afterWalletSyncRecovery,
         requireDraftChoices: requireDraftChoices,
+        requireConfigFingerprint: requireConfigFingerprint,
       ),
     );
   }
@@ -520,6 +531,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
     bool afterWalletSyncRecovery = false,
     Map<int, int>? requireDraftChoices,
+    String? requireConfigFingerprint,
   }) async {
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
@@ -592,6 +604,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           _failIfRoundClosed(key: key, generation: generation, round: round)) {
         return;
       }
+      if (_failIfConfigUnreviewed(
+        key: key,
+        generation: generation,
+        requireConfigFingerprint: requireConfigFingerprint,
+        session: loadedSession,
+      )) {
+        return;
+      }
 
       await sessionNotifier.ensureWalletReadyForVoting();
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -618,6 +638,16 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             round: activeSession.round,
           )) {
+        return;
+      }
+      // The wait reloads the context, so this is the config the run will
+      // actually submit under — the one that has to match what was reviewed.
+      if (_failIfConfigUnreviewed(
+        key: key,
+        generation: generation,
+        requireConfigFingerprint: requireConfigFingerprint,
+        session: activeSession,
+      )) {
         return;
       }
       final completedEligibilitySession =
@@ -1240,6 +1270,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoveryRound = round;
     _walletSyncRecoveryConfigFingerprint = configFingerprint;
     _walletSyncRecoveryDraftChoices = confirmedChoices;
+    _walletSyncRecoveryWalletDataGeneration = ref
+        .read(votingShareTrackingRegistryProvider)
+        .walletDataGeneration;
     _walletSyncRecoveryTimer?.cancel();
     _walletSyncRecoveryTimer = Timer.periodic(
       ref.read(votingWalletSyncRecoveryPollIntervalProvider),
@@ -1255,6 +1288,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _walletSyncRecoveryRound = null;
     _walletSyncRecoveryConfigFingerprint = null;
     _walletSyncRecoveryDraftChoices = null;
+    _walletSyncRecoveryWalletDataGeneration = null;
     _walletSyncRecoveryRetryOnUnlock = false;
   }
 
@@ -1278,6 +1312,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   /// - The voting configuration changed: another source can authenticate the
   ///   same round ID against endpoints and proposal definitions the user
   ///   never reviewed.
+  /// - The wallet data was wiped: a reset bumps the registry's wallet-data
+  ///   generation, which is the one signal that survives a wipe whose later
+  ///   cleanup failed and so never published an empty account list. The
+  ///   account check below is the ordinary case; this is the honest one.
   /// - The account is gone: a full wallet reset removes it, and this
   ///   notifier is not auto-disposed, so a surviving timer would re-create
   ///   the wallet DB name and file that the reset just deleted.
@@ -1298,6 +1336,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final liveFingerprint = _liveVotingConfigFingerprint();
     if (liveFingerprint != null &&
         liveFingerprint != _walletSyncRecoveryConfigFingerprint) {
+      return true;
+    }
+    if (_walletSyncRecoveryWalletDataGeneration !=
+        ref.read(votingShareTrackingRegistryProvider).walletDataGeneration) {
       return true;
     }
     if (_walletSyncRecoveryAccountRemoved()) return true;
@@ -1415,11 +1457,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       // account drains this probe too, so it must also hold it off.
       if (registry.isAnyAccountQuiesced) return;
       final confirmedChoices = _walletSyncRecoveryDraftChoices;
+      final reviewedFingerprint = _walletSyncRecoveryConfigFingerprint;
       _cancelWalletSyncRecovery();
       unawaited(
         retry(
           afterWalletSyncRecovery: true,
           requireDraftChoices: confirmedChoices,
+          requireConfigFingerprint: reviewedFingerprint,
         ),
       );
     } catch (error, stackTrace) {
@@ -1431,6 +1475,30 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _walletSyncRecoveryInFlight = false;
       releaseBackgroundWork();
     }
+  }
+
+  /// Fails an automatic retry running under a configuration the user did not
+  /// review.
+  ///
+  /// Returns whether the job was failed, so the caller can stop. A manual
+  /// retry passes no fingerprint and is unaffected.
+  bool _failIfConfigUnreviewed({
+    required VotingSessionKey key,
+    required int generation,
+    required String? requireConfigFingerprint,
+    required VotingSessionState session,
+  }) {
+    if (requireConfigFingerprint == null) return false;
+    final fingerprint = session.config?.sourceFingerprint;
+    if (fingerprint == null || fingerprint == requireConfigFingerprint) {
+      return false;
+    }
+    _failJob(
+      key: key,
+      generation: generation,
+      message: _votingConfigChangedDuringRecoveryMessage,
+    );
+    return true;
   }
 
   /// Fails an automatic retry whose round is no longer safe to submit into.

@@ -893,16 +893,24 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
+    var walletDataDeleted = false;
     try {
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
       await _resetWalletWithShareTrackingStopped();
+      walletDataDeleted = true;
       resumeClaimLifecycle = true;
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
+      // Not restoring means the deletion committed: the wipe is done even
+      // though a later cleanup step failed, and no empty account state was
+      // ever published. Voting background work pinned from before the wipe
+      // has to hear that, or it will re-create what was just deleted.
+      walletDataDeleted = !restoreAfterFailure;
       resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      if (walletDataDeleted) shareTracking.notifyWalletDataDeleted();
       if (resumeClaimLifecycle) claimLifecycle.resume();
       shareTracking.resume();
       if (restoreAfterFailure) shareTracking.requestRestore();
