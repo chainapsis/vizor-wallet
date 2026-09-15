@@ -272,7 +272,8 @@ void main() {
         );
         expect(
           button.onPressed != null,
-          confirm != GiftCardsReviewConfirm.disabled,
+          confirm == GiftCardsReviewConfirm.create ||
+              confirm == GiftCardsReviewConfirm.retry,
           reason: '$layout / $confirm',
         );
       }
@@ -493,6 +494,31 @@ void main() {
             .toList(),
         otherKnobs: lane,
       );
+      for (final claim in GiftCardsClaimAction.values) {
+        await pumpUseCase(
+          tester,
+          buildGiftCardsReceivedGalleryCase,
+          knobs: {...lane, 'Claim': giftCardsClaimActionLabel(claim)},
+        );
+        final label = switch (claim) {
+          GiftCardsClaimAction.claiming => 'Claiming...',
+          GiftCardsClaimAction.retry => 'Try again',
+          _ =>
+            layout == WbLayout.mobile
+                ? 'Claim the gift'
+                : 'Claim the gift card',
+        };
+        final button = tester.widget<AppButton>(
+          find.ancestor(of: find.text(label), matching: find.byType(AppButton)),
+        );
+        expect(
+          button.onPressed != null,
+          claim == GiftCardsClaimAction.claim ||
+              claim == GiftCardsClaimAction.retry,
+          reason: '$layout / $claim',
+        );
+        expect(tester.takeException(), isNull);
+      }
       await expectKnobOptionsRenderDistinctly(
         tester,
         buildGiftCardsReceivedGalleryCase,

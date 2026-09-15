@@ -435,7 +435,12 @@ Widget giftCardsReviewFixture({
   final cardAmountText = '$amountText ZEC';
   final cardFeeText = smallAmounts ? '0.0002 ZEC' : '0.04 ZEC';
   final totalAmountText = smallAmounts ? '0.0012 ZEC' : '4.49 ZEC';
-  final onConfirm = confirm == GiftCardsReviewConfirm.disabled ? null : _noop;
+  final onConfirm = switch (confirm) {
+    GiftCardsReviewConfirm.creating ||
+    GiftCardsReviewConfirm.saving ||
+    GiftCardsReviewConfirm.disabled => null,
+    GiftCardsReviewConfirm.create || GiftCardsReviewConfirm.retry => _noop,
+  };
   final label = switch (confirm) {
     GiftCardsReviewConfirm.creating => 'Creating...',
     GiftCardsReviewConfirm.retry => 'Try saving again',
@@ -610,7 +615,10 @@ Widget giftCardsReceivedFixture({
             waitingStatusLabel: 'Wait 5:00 to claim',
           );
   } else {
-    final onClaim = claim == GiftCardsClaimAction.disabled ? null : _noop;
+    final onClaim = switch (claim) {
+      GiftCardsClaimAction.claiming || GiftCardsClaimAction.disabled => null,
+      GiftCardsClaimAction.claim || GiftCardsClaimAction.retry => _noop,
+    };
     final claimLabel = switch (claim) {
       GiftCardsClaimAction.claiming => 'Claiming...',
       GiftCardsClaimAction.retry => 'Try again',
