@@ -24,6 +24,17 @@ import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
+/// Shown when an automatic retry finds the round no longer open.
+const _votingRoundClosedDuringRecoveryMessage =
+    'This voting round closed before the wallet finished catching up to its '
+    'snapshot block.';
+
+/// Shown when an automatic retry finds the ballot no longer the one it was
+/// armed against. The user reviews and submits the new one themselves.
+const _votingBallotChangedDuringRecoveryMessage =
+    'Your vote changed while the wallet was catching up. Review it and submit '
+    'again.';
+
 enum VotingSubmissionJobStatus {
   idle,
   running,
@@ -324,12 +335,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _startJob(_key);
   }
 
-  Future<void> retry({bool afterWalletSyncRecovery = false}) async {
+  Future<void> retry({
+    bool afterWalletSyncRecovery = false,
+    Map<int, int>? requireDraftChoices,
+  }) async {
     _cancelWalletSyncRecovery();
     _releaseGuard();
     _keystoneSigningRound = null;
     state = VotingSubmissionJobState(key: _key);
-    _startJob(_key, afterWalletSyncRecovery: afterWalletSyncRecovery);
+    _startJob(
+      _key,
+      afterWalletSyncRecovery: afterWalletSyncRecovery,
+      requireDraftChoices: requireDraftChoices,
+    );
   }
 
   void dismiss() {
@@ -342,7 +360,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = VotingSubmissionJobState(key: _key, generation: ++_nextGeneration);
   }
 
-  void _startJob(VotingSessionKey key, {bool afterWalletSyncRecovery = false}) {
+  void _startJob(
+    VotingSessionKey key, {
+    bool afterWalletSyncRecovery = false,
+    Map<int, int>? requireDraftChoices,
+  }) {
     _cancelWalletSyncRecovery();
     _confirmedDraftChoices = null;
     _cancelCompletionPoll();
@@ -364,6 +386,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         key: key,
         generation: generation,
         afterWalletSyncRecovery: afterWalletSyncRecovery,
+        requireDraftChoices: requireDraftChoices,
       ),
     );
   }
@@ -496,6 +519,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required VotingSessionKey key,
     required int generation,
     bool afterWalletSyncRecovery = false,
+    Map<int, int>? requireDraftChoices,
   }) async {
     try {
       final sessionProvider = votingSubmissionSessionProvider(key);
@@ -535,6 +559,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         rethrow;
       }
       if (!_isCurrentJob(key: key, generation: generation)) return;
+      // An automatic retry carries the ballot it was armed against. Loading
+      // the draft is asynchronous, and the user can be back on the editable
+      // proposal screen while it runs, so a change between the recovery
+      // check and this read must still stop the submission.
+      if (requireDraftChoices != null &&
+          !mapEquals(requireDraftChoices, draft.choices)) {
+        _failJob(
+          key: key,
+          generation: generation,
+          message: _votingBallotChangedDuringRecoveryMessage,
+        );
+        return;
+      }
       _confirmedDraftChoices = Map<int, int>.unmodifiable(draft.choices);
       if (_canCompleteSessionWithoutDraft(loadedSession, draft)) {
         _completeJob(key: key, generation: generation);
@@ -549,21 +586,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       // Only the recovery-started run re-validates the round: it is the one
-      // nobody asked for, and the session reload above is the first fresh
-      // round status since the stall. A round that closed — early or at its
-      // deadline — while the poll was parked must not be submitted into.
+      // nobody asked for. A round that closed — early or at its deadline —
+      // while the poll was parked must not be submitted into.
       if (afterWalletSyncRecovery &&
-          !shouldTrackPendingVotingShares(
-            round,
-            now: ref.read(votingHomeClockProvider)(),
-          )) {
-        _failJob(
-          key: key,
-          generation: generation,
-          message:
-              'This voting round closed before the wallet finished catching '
-              'up to its snapshot block.',
-        );
+          _failIfRoundClosed(key: key, generation: generation, round: round)) {
         return;
       }
 
@@ -583,6 +609,17 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
 
       var activeSession = afterWalletSync ?? loadedSession;
+      // The session above held the round status cached before the stall; the
+      // wait is what refetches it. This is the first look at the fresh one,
+      // so the automatic retry checks it again before any submission work.
+      if (afterWalletSyncRecovery &&
+          _failIfRoundClosed(
+            key: key,
+            generation: generation,
+            round: activeSession.round,
+          )) {
+        return;
+      }
       final completedEligibilitySession =
           await _ensureEligibilityForCompletedSession(
             key: key,
@@ -1254,8 +1291,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     )) {
       return true;
     }
-    if (_walletSyncRecoveryConfigFingerprint !=
-        ref.read(votingConfigProvider).value?.sourceFingerprint) {
+    // Only a *resolved* config counts. An ordinary refresh publishes
+    // AsyncLoading with no value, and reading that as a changed fingerprint
+    // would cancel recovery for a reload that lands on the same config.
+    final liveFingerprint = ref
+        .read(votingConfigProvider)
+        .value
+        ?.sourceFingerprint;
+    if (liveFingerprint != null &&
+        liveFingerprint != _walletSyncRecoveryConfigFingerprint) {
       return true;
     }
     if (_walletSyncRecoveryAccountRemoved()) return true;
@@ -1354,8 +1398,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       // Any-account, matching the unscoped lease: deleting a different
       // account drains this probe too, so it must also hold it off.
       if (registry.isAnyAccountQuiesced) return;
+      final confirmedChoices = _walletSyncRecoveryDraftChoices;
       _cancelWalletSyncRecovery();
-      unawaited(retry(afterWalletSyncRecovery: true));
+      unawaited(
+        retry(
+          afterWalletSyncRecovery: true,
+          requireDraftChoices: confirmedChoices,
+        ),
+      );
     } catch (error, stackTrace) {
       // Best effort: a failed probe just waits for the next tick.
       debugPrint(
@@ -1365,6 +1415,29 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _walletSyncRecoveryInFlight = false;
       releaseBackgroundWork();
     }
+  }
+
+  /// Fails an automatic retry whose round is no longer safe to submit into.
+  ///
+  /// Returns whether the job was failed, so the caller can stop.
+  bool _failIfRoundClosed({
+    required VotingSessionKey key,
+    required int generation,
+    required VotingRoundDetails? round,
+  }) {
+    if (round != null &&
+        shouldTrackPendingVotingShares(
+          round,
+          now: ref.read(votingHomeClockProvider)(),
+        )) {
+      return false;
+    }
+    _failJob(
+      key: key,
+      generation: generation,
+      message: _votingRoundClosedDuringRecoveryMessage,
+    );
+    return true;
   }
 
   void _failJob({
