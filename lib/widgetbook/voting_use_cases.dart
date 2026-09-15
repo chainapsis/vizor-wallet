@@ -1265,12 +1265,20 @@ Widget _votingCardFrame({
   required String title,
   required Widget child,
 }) {
+  final isolatedChild = VotingExternalUriLauncherScope(
+    launcher: (_) async {},
+    child: child,
+  );
   if (layout == WbLayout.mobile) {
-    return MobileVotingScaffold(
-      title: title,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        child: child,
+    return WbFrame(
+      layout: WbLayout.mobile,
+      child: MobileVotingScaffold(
+        title: title,
+        onBack: _previewNoop,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: isolatedChild,
+        ),
       ),
     );
   }
@@ -1282,7 +1290,7 @@ Widget _votingCardFrame({
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          child: child,
+          child: isolatedChild,
         ),
       ),
     ),
