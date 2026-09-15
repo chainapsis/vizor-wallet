@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
@@ -419,6 +420,30 @@ void main() {
   testWidgets('voting config settings covers sources, load state and rounds', (
     tester,
   ) async {
+    if (!_desktopLane) {
+      for (final axis in <String, List<String>>{
+        'Sources': VotingConfigSourcesCase.values
+            .map(votingConfigSourcesLabel)
+            .toList(),
+        'Config': VotingConfigLoadCase.values
+            .map(votingConfigLoadLabel)
+            .toList(),
+        'Editor': VotingConfigEditorCase.values
+            .map(votingConfigEditorLabel)
+            .toList(),
+        'Test rounds': ['true', 'false'],
+      }.entries) {
+        await expectSettledOptionsDistinct(
+          tester,
+          buildVotingSettingsSheetCase,
+          label: axis.key,
+          optionLabels: axis.value,
+          otherKnobs: {'Layout': 'Mobile'},
+        );
+      }
+      await disposeTree(tester);
+      return;
+    }
     const desktop = 'Desktop';
     await expectSettledOptionsDistinct(
       tester,
@@ -543,17 +568,53 @@ void main() {
       (context) => ValueListenableBuilder(
         valueListenable: editor,
         builder: (context, value, _) => votingConfigSettingsFixture(
-          layout: WbLayout.desktop,
+          layout: wbCompiledLaneLayout,
           editor: value,
         ),
       ),
     );
     await settle();
-    expect(find.text('Static config URL'), findsOneWidget);
+    expect(
+      find.text(_desktopLane ? 'Static config URL' : 'Source URL'),
+      findsOneWidget,
+    );
     expect(find.text('Edit custom source'), findsNothing);
+    if (!_desktopLane) {
+      expect(
+        tester
+            .widget<AppTextField>(
+              find.byKey(const ValueKey('mobile_voting_source_name')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+    }
     editor.value = VotingConfigEditorCase.editingSource;
     await settle();
-    expect(find.text('Edit custom source'), findsOneWidget);
+    if (_desktopLane) {
+      expect(find.text('Edit custom source'), findsOneWidget);
+    } else {
+      expect(find.text('Source URL'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppTextField>(
+              find.byKey(const ValueKey('mobile_voting_source_name')),
+            )
+            .controller!
+            .text,
+        'Community',
+      );
+      expect(
+        tester
+            .widget<AppTextField>(
+              find.byKey(const ValueKey('mobile_voting_source_url')),
+            )
+            .controller!
+            .text,
+        startsWith('https://vote.example.org/static.json'),
+      );
+    }
     await disposeTree(tester);
   });
 
@@ -856,12 +917,22 @@ void main() {
           .toList(),
       otherKnobs: {'Layout': lane},
     );
-    await expectBoolKnobDistinct(
-      tester,
-      buildVotingProposalCardCase,
-      label: 'Skipped status',
-      otherKnobs: {'Layout': lane},
-    );
+    // Isolate the status from badges that can ellipsize it at phone width.
+    for (final skipped in [true, false]) {
+      await pumpProposalCard({
+        'Skipped status': '$skipped',
+        'Metadata': 'None',
+      });
+      expect(
+        find.textContaining('Skipped'),
+        skipped ? findsOneWidget : findsNothing,
+      );
+      if (skipped) {
+        await tester.ensureVisible(find.textContaining('Skipped'));
+        await tester.pump();
+        expect(find.textContaining('Skipped').hitTestable(), findsOneWidget);
+      }
+    }
     if (wbCompiledLaneLayout == WbLayout.desktop) {
       // Only the desktop card reads `titleCollapsedMaxLines`.
       await expectKnobOptionsRenderDistinctly(
@@ -1042,8 +1113,8 @@ void main() {
     tester,
   ) async {
     final lane = _lane;
-    // Taller than the default canvas: the mobile frame sizes itself from the
-    // MediaQuery, and a second proposal only fits below the phone fold.
+    // A large workbench must not change the phone viewport. Capture below
+    // the fold as well so answer changes in later proposals remain observable.
     const tall = Size(1400, 2400);
     Future<void> expectActiveAxisDistinct(
       String label,
@@ -1059,7 +1130,20 @@ void main() {
           canvasSize: tall,
         );
         expect(tester.takeException(), isNull, reason: '$label / $option');
-        final fingerprint = await useCaseFingerprint(tester);
+        var fingerprint = await useCaseFingerprint(tester);
+        if (!_desktopLane && find.byType(Scrollable).evaluate().isNotEmpty) {
+          final scrollable = find.byType(Scrollable).first;
+          final position = tester.state<ScrollableState>(scrollable).position;
+          while (position.pixels < position.maxScrollExtent) {
+            final previous = position.pixels;
+            await tester.drag(scrollable, const Offset(0, -500));
+            // Some eligibility states animate indefinitely.
+            await tester.pump(const Duration(seconds: 1));
+            await tester.pump();
+            fingerprint += await useCaseFingerprint(tester);
+            if (position.pixels <= previous) break;
+          }
+        }
         expect(seen[fingerprint], isNull, reason: "'$label' / $option");
         seen[fingerprint] = option;
       }

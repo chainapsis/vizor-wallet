@@ -315,6 +315,8 @@ void main() {
   testWidgets('desktop home announcement persists only in preview memory', (
     tester,
   ) async {
+    // Desktop-only interaction: the mobile announcement has its own tests.
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
     final platformCalls = <MethodCall>[];
     final messenger =

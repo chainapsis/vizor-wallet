@@ -89,9 +89,13 @@ Widget votingVotedPollFixture({
   );
   return switch (frame) {
     VotingVotedPollFrame.desktop => _votingDesktopPreviewShell(content),
-    VotingVotedPollFrame.mobile => MobileVotingScaffold(
-      title: 'Voted',
-      child: content,
+    VotingVotedPollFrame.mobile => WbFrame(
+      layout: WbLayout.mobile,
+      child: MobileVotingScaffold(
+        title: 'Voted',
+        onBack: _previewNoop,
+        child: content,
+      ),
     ),
   };
 }
@@ -289,9 +293,12 @@ Widget votingConfigSettingsFixture({
       editor,
       layout,
       layout == WbLayout.mobile
-          ? const MobileModalOverlay(
-              background: MobileVotingPollsScreen(),
-              child: MobileVotingConfigSettingsSheet(),
+          ? const WbFrame(
+              layout: WbLayout.mobile,
+              child: MobileModalOverlay(
+                background: MobileVotingPollsScreen(),
+                child: MobileVotingConfigSettingsSheet(),
+              ),
             )
           : WbFrame(
               layout: WbLayout.desktop,
@@ -560,10 +567,13 @@ Widget votingActivePollFixture(
   );
   return switch (frame) {
     VotingActivePollFrame.desktop => _votingDesktopPreviewShell(content),
-    VotingActivePollFrame.mobile => _mobileVotingFullPagePreview(
-      context,
-      MobileVotingScaffold(title: 'Coinholder voting', child: content),
-      size: MediaQuery.sizeOf(context),
+    VotingActivePollFrame.mobile => WbFrame(
+      layout: WbLayout.mobile,
+      child: MobileVotingScaffold(
+        title: 'Coinholder voting',
+        onBack: _previewNoop,
+        child: content,
+      ),
     ),
   };
 }
@@ -854,15 +864,18 @@ Widget votingMobileKeystoneSigningFixture({
   bool canSkip = true,
 }) {
   return ProviderScope(
-    child: MobileKeystoneVotingSigningScreen(
-      presentation: _previewKeystonePresentation(
-        bundles: bundles,
-        memos: memos,
-        canSkip: canSkip,
+    child: WbFrame(
+      layout: WbLayout.mobile,
+      child: MobileKeystoneVotingSigningScreen(
+        presentation: _previewKeystonePresentation(
+          bundles: bundles,
+          memos: memos,
+          canSkip: canSkip,
+        ),
+        scannerBuilder: _previewVotingScanner,
+        forceScannerActiveForTesting: true,
+        startInScannerForTesting: startInScanner,
       ),
-      scannerBuilder: _previewVotingScanner,
-      forceScannerActiveForTesting: true,
-      startInScannerForTesting: startInScanner,
     ),
   );
 }
