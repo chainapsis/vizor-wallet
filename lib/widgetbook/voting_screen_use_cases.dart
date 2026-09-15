@@ -194,6 +194,7 @@ Widget votingConfirmationFixture({
     _ => _PreviewEligibleWeightRefresh.pending,
   };
   return _votingScreenHost(
+    key: ValueKey((layout, session, outcome)),
     overrides: [
       _previewConfirmationSessionProvider.overrideWith(
         () => _PreviewConfirmationSessionNotifier(initialSession),
@@ -367,6 +368,7 @@ Widget votingStatusFixture({
     pirFailure: _statusPirFailure(problem),
   );
   return _votingStatusScreen(
+    key: ValueKey((layout, step, account, problem, voteProgress)),
     layout: layout,
     session: problem == VotingStatusProblemCase.couldNotStart
         ? const AsyncValue<VotingSessionState>.loading()
@@ -668,12 +670,14 @@ const _previewVotingKeystoneUr =
     'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 Widget _votingStatusScreen({
+  Key? key,
   required WbLayout layout,
   required AsyncValue<VotingSessionState> session,
   required VotingSubmissionJobState job,
   String? startError,
 }) {
   return _votingScreenHost(
+    key: key,
     overrides: [
       votingSubmissionJobsProvider.overrideWith(
         () => _PreviewVotingSubmissionJobsNotifier(

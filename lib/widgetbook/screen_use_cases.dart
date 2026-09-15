@@ -2506,6 +2506,7 @@ Widget _buildIronwoodMigrationUseCase({
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
+    key: ValueKey((initialLocation, step)),
     overrides: [
       ironwoodMigrationServiceProvider.overrideWithValue(WbMigrationService()),
       ironwoodMigrationInputsProvider.overrideWithValue(IronwoodMigrationInputs(

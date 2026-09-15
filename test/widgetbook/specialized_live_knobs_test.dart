@@ -8,7 +8,7 @@ import 'package:zcash_wallet/widgetbook/support/wb_layout.dart';
 import '../figma_compare/figma_compare_font_loader.dart';
 import 'support/wb_gallery_harness.dart';
 
-// Compare the visible copy reached by live knob edits with a fresh mount of
+// Compare visible copy and text styling after live knob edits with a fresh mount of
 // that same state. The second pass never unmounts the gallery between edits.
 Future<void> expectLiveStates(
   WidgetTester tester,
@@ -24,7 +24,7 @@ Future<void> expectLiveStates(
 
   List<String> copy() => tester
       .widgetList<Text>(find.byType(Text))
-      .map((text) => text.data ?? text.textSpan!.toPlainText())
+      .map((text) => '${text.data ?? text.textSpan!.toPlainText()} | ${text.style}')
       .toList();
 
   final expected = <List<String>>[];
@@ -54,6 +54,45 @@ Future<void> expectLiveStates(
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+  testWidgets('desktop migration follows live Step changes', (tester) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    await expectLiveStates(tester, buildMigrationFlowGalleryCase, [
+      for (final step in [
+        'About Ironwood',
+        'How it works',
+        'What to expect',
+        'Migration options',
+      ])
+        {'Layout': 'Desktop', 'Step': step},
+    ]);
+  });
+  testWidgets('voting status resets progress on backward Step changes', (
+    tester,
+  ) async {
+    await expectLiveStates(tester, buildVotingStatusCase, [
+      for (final step in [
+        'Preparing',
+        // Mobile groups preparing and delegating into the same visible step.
+        if (wbCompiledLaneLayout == WbLayout.desktop) 'Delegating',
+        'Casting votes',
+        'Submitting shares',
+        'Finalizing',
+      ])
+        {'Layout': wbLayoutLabel(wbCompiledLaneLayout), 'Step': step},
+    ]);
+  });
+  testWidgets('voting confirmation refresh follows live Outcome changes', (
+    tester,
+  ) async {
+    await expectLiveStates(tester, buildVotingConfirmationCase, [
+      for (final outcome in [
+        'Checking eligibility',
+        'Eligibility not confirmed',
+        'Refresh failed (Retry)',
+      ])
+        {'Layout': wbLayoutLabel(wbCompiledLaneLayout), 'Outcome': outcome},
+    ]);
+  });
   testWidgets('mobile migration status returns from redirecting route knobs', (
     tester,
   ) async {
