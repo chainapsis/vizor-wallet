@@ -1412,7 +1412,9 @@ class _PollSummary extends StatelessWidget {
             ),
             if (endDate != null) ...[
               const _MetaText('·'),
-              _MetaText(_daysLeftLabel(endDate!)),
+              _MetaText(
+                _daysLeftLabel(endDate!, VotingDisplayTimeScope.nowOf(context)),
+              ),
             ],
           ],
         ),
@@ -2020,8 +2022,7 @@ DateTime? _roundEndDate(Map<String, dynamic> json) {
   return parseFlexibleDate(json['vote_end_time']);
 }
 
-String _daysLeftLabel(DateTime endDate) {
-  final now = DateTime.now();
+String _daysLeftLabel(DateTime endDate, DateTime now) {
   final localEnd = endDate.toLocal();
   final today = DateTime(now.year, now.month, now.day);
   final endDay = DateTime(localEnd.year, localEnd.month, localEnd.day);

@@ -1,4 +1,5 @@
-/// Keep active rounds in the future, stable throughout one preview session.
-final wbVotingActiveEndDate = DateTime.now().add(const Duration(days: 7));
+/// Fixed local calendar dates keep captures stable across days and time zones.
+final wbVotingReferenceDate = DateTime(2026, 8, 17, 12);
+final wbVotingActiveEndDate = DateTime(2026, 8, 24, 12);
 
-final wbVotingActiveEndTime = wbVotingActiveEndDate.toUtc().toIso8601String();
+final wbVotingActiveEndTime = wbVotingActiveEndDate.toIso8601String();

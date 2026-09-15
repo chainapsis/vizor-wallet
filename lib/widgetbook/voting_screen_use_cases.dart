@@ -1348,7 +1348,10 @@ Widget _votingScreenHost({
       builder: (context) => VotingExternalUriLauncherScope(
         launcher: VotingExternalUriLauncherScope.maybeOf(context) ??
             _previewExternalUriNoop,
-        child: _VotingScreenHostApp(builder: builder),
+        child: VotingDisplayTimeScope(
+          now: wbVotingReferenceDate,
+          child: _VotingScreenHostApp(builder: builder),
+        ),
       ),
     ),
   );

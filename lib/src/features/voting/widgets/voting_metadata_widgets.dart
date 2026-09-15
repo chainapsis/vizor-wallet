@@ -12,6 +12,26 @@ import '../voting_flow_models.dart';
 
 typedef VotingExternalUriLauncher = Future<void> Function(Uri uri);
 
+/// Optional reference time for deterministic presentation. Without a scope,
+/// live voting screens continue to use the current local time.
+class VotingDisplayTimeScope extends InheritedWidget {
+  const VotingDisplayTimeScope({
+    required this.now,
+    required super.child,
+    super.key,
+  });
+
+  final DateTime now;
+
+  static DateTime nowOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<VotingDisplayTimeScope>()?.now ??
+      DateTime.now();
+
+  @override
+  bool updateShouldNotify(VotingDisplayTimeScope oldWidget) =>
+      now != oldWidget.now;
+}
+
 class VotingExternalUriLauncherScope extends InheritedWidget {
   const VotingExternalUriLauncherScope({
     required this.launcher,

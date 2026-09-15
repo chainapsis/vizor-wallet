@@ -604,7 +604,7 @@ Widget votingActivePollFixture(
     draft: _activePollDraft(answers, proposalList),
     onChoice: (_, _) {},
   );
-  return switch (frame) {
+  final framed = switch (frame) {
     VotingActivePollFrame.desktop => _votingDesktopPreviewShell(content),
     VotingActivePollFrame.mobile => WbFrame(
       layout: WbLayout.mobile,
@@ -615,6 +615,7 @@ Widget votingActivePollFixture(
       ),
     ),
   };
+  return VotingDisplayTimeScope(now: wbVotingReferenceDate, child: framed);
 }
 
 VotingDraftState _activePollDraft(
