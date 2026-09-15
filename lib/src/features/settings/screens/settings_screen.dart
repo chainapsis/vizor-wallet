@@ -1163,7 +1163,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            'Experimental. Privately completes Ironwood incoming and outgoing details during recovery. Timing and query counts remain visible to the service.',
+            'Experimental. Privately fetches transaction enhancements prohibiting servers from learning your transaction IDs. Timing and query counts remain visible to the service.',
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
