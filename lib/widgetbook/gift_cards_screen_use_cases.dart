@@ -1316,6 +1316,14 @@ Widget giftCardsMobileBodyFixture({
   return WbFrame(
     layout: WbLayout.mobile,
     child: _GiftCardsPreviewRouter(
+      key: ValueKey((
+        page,
+        hasCards,
+        keystoneOverlay,
+        navigationLocked,
+        claimSession,
+        pendingFundingMetadata,
+      )),
       child: _GiftCardsMobileBody(
         page: page,
         hasCards: hasCards,
@@ -1529,7 +1537,7 @@ final _giftCardsFundingQuote = PaymentLinkFundingQuote(
 );
 
 class _GiftCardsPreviewRouter extends StatefulWidget {
-  const _GiftCardsPreviewRouter({required this.child});
+  const _GiftCardsPreviewRouter({required this.child, super.key});
   final Widget child;
 
   @override

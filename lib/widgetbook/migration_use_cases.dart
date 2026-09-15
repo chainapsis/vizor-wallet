@@ -456,6 +456,7 @@ enum MigrationPreparationOutputCase { mixed, migration, change, continuation }
 /// redirect its inputs produce.
 Widget migrationPrepareGateFixture({required MigrationPrepareGateCase gate}) {
   return _migrationDesktopScope(
+    key: ValueKey(gate),
     inputs: _migrationInputs(
       ironwoodActiveAtTip: gate != MigrationPrepareGateCase.notAvailable,
       isSyncing: gate == MigrationPrepareGateCase.syncing,
@@ -480,6 +481,7 @@ Widget migrationPrivateStatusAsyncFixture({
   required MigrationStatusDataCase data,
 }) {
   return _migrationDesktopScope(
+    key: ValueKey(data),
     inputs: _migrationInputs(),
     statusGetter: data == MigrationStatusDataCase.unavailable
         ? _failingMigrationStatus
@@ -502,6 +504,7 @@ Widget migrationScheduleFixture({
       ? _migrationSchedulePreviewStatus(rowStatus)
       : null;
   return _migrationDesktopScope(
+    key: ValueKey((data, rowStatus, overlay, canStop)),
     inputs: _migrationInputs(),
     statusGetter: data == MigrationScheduleDataCase.unavailable
         ? _failingMigrationStatus
@@ -536,6 +539,7 @@ Widget migrationPreparationScheduleFixture({
     _ => null,
   };
   return _migrationDesktopScope(
+    key: ValueKey((data, txStatus, output)),
     inputs: _migrationInputs(),
     statusGetter: data == MigrationPreparationDataCase.unavailable
         ? _failingMigrationStatus
@@ -572,6 +576,7 @@ Widget migrationFlowStepFixture({
   bool fallbackData = false,
 }) {
   return _migrationDesktopScope(
+    key: ValueKey((step, fallbackData)),
     inputs: _migrationInputs(
       accountUuid: fallbackData ? null : _migrationPreviewAccountUuid,
     ),
@@ -1211,6 +1216,7 @@ Widget migrationMobileLiveStepFixture({
   final accountState = _migrationMobileAccountState(account);
   final keystone = account == MigrationMobileAccountCase.keystone;
   return ProviderScope(
+    key: ValueKey((step, account, partStatus, recovery)),
     overrides: _migrationMobileOverrides(
       accountState,
       coordinator: recovery == MigrationMobileRecoveryCase.credentialRecovery
@@ -1259,6 +1265,7 @@ Widget migrationMobileScheduleFixture({
       ? _migrationSchedulePendingPreviewStatus(rowStatus)
       : _migrationSchedulePreviewStatus(rowStatus);
   return ProviderScope(
+    key: ValueKey((preparation, pending, data, rowStatus, txStatus, output)),
     overrides: _migrationMobileOverrides(
       _migrationMobileAccountState(MigrationMobileAccountCase.software),
       statusGetter: data == MigrationScheduleDataCase.unavailable
@@ -1806,6 +1813,7 @@ Widget migrationOptionsSelectionFixture({
   required MigrationOptionSelectionCase selection,
 }) {
   return _migrationDesktopScope(
+    key: ValueKey(selection),
     inputs: _migrationInputs(),
     child: _MigrationTapOnMount(
       keys: selection == MigrationOptionSelectionCase.immediate

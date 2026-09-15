@@ -24,7 +24,10 @@ Future<void> expectLiveStates(
 
   List<String> copy() => tester
       .widgetList<Text>(find.byType(Text))
-      .map((text) => '${text.data ?? text.textSpan!.toPlainText()} | ${text.style}')
+      .map(
+        (text) =>
+            '${text.data ?? text.textSpan!.toPlainText()} | ${text.style}',
+      )
       .toList();
 
   final expected = <List<String>>[];
@@ -54,6 +57,72 @@ Future<void> expectLiveStates(
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+  testWidgets('migration schedule follows live rows and data', (tester) async {
+    await expectLiveStates(tester, buildMigrationScheduleGalleryCase, [
+      {
+        'Layout': wbLayoutLabel(wbCompiledLaneLayout),
+        'Row status': 'Scheduled',
+        'Data': 'Schedule',
+      },
+      {
+        'Layout': wbLayoutLabel(wbCompiledLaneLayout),
+        'Row status': 'Completed',
+        'Data': 'Schedule',
+      },
+      {
+        'Layout': wbLayoutLabel(wbCompiledLaneLayout),
+        'Row status': 'Completed',
+        'Data': 'Loading',
+      },
+      {
+        'Layout': wbLayoutLabel(wbCompiledLaneLayout),
+        'Row status': 'Completed',
+        'Data': 'Unavailable',
+      },
+    ]);
+  });
+  testWidgets('preparation schedule follows live outputs', (tester) async {
+    await expectLiveStates(
+      tester,
+      buildMigrationPreparationScheduleGalleryCase,
+      [
+        for (final output in [
+          'For migration',
+          'Stays in Orchard',
+          'Used in next round',
+        ])
+          {'Layout': wbLayoutLabel(wbCompiledLaneLayout), 'Output': output},
+      ],
+    );
+  });
+  testWidgets('desktop fallback flow follows live steps', (tester) async {
+    if (wbCompiledLaneLayout != WbLayout.desktop) return;
+    await expectLiveStates(tester, buildMigrationFlowGalleryCase, [
+      for (final step in ['How it works', 'Migration options'])
+        {'Layout': 'Desktop', 'Flow data': 'No account yet', 'Step': step},
+    ]);
+  });
+  testWidgets('mobile live migration follows step and account changes', (
+    tester,
+  ) async {
+    await expectLiveStates(tester, buildMigrationMobileLiveStepsGalleryCase, [
+      {'Step': 'Preparing', 'Account': 'Software', 'Part status': 'Active'},
+      {'Step': 'Migrating', 'Account': 'Software', 'Part status': 'Active'},
+      {'Step': 'Migrating', 'Account': 'Keystone', 'Part status': 'Needs input'},
+    ]);
+  });
+  testWidgets('gift-card body follows live page changes', (tester) async {
+    await expectLiveStates(tester, buildGiftCardsMobileBodyGalleryCase, [
+      for (final page in ['Home', 'Amount', 'Message', 'Review'])
+        {'Page': page},
+    ]);
+  });
+  testWidgets('gift-card body follows live metadata changes', (tester) async {
+    await expectLiveStates(tester, buildGiftCardsMobileBodyGalleryCase, [
+      for (final metadata in ['Saved', 'Retry saving'])
+        {'Page': 'Review', 'Funding metadata': metadata},
+    ]);
+  });
   testWidgets('desktop migration follows live Step changes', (tester) async {
     if (wbCompiledLaneLayout != WbLayout.desktop) return;
     await expectLiveStates(tester, buildMigrationFlowGalleryCase, [
