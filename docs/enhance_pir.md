@@ -109,10 +109,13 @@ FRB 2.11 cannot parse the compiler's expanded `pin!` `super let` syntax in the
 voting dependency. The generation wrapper normalizes that expansion for parsing
 only. It changes neither dependency sources nor compiled program semantics.
 
-Deterministic visual fixtures are `settings-recovery`,
-`settings-recovery-changing`, and `mobile-settings-recovery`. Render with
+Deterministic visual fixtures are `settings-recovery` and
+`settings-recovery-changing` on desktop, and `mobile-settings-footer` and
+`mobile-settings-recovery-changing` on mobile. `mobile-settings-footer` is the
+mobile view at rest — it already scrolls to the group holding the control, so
+there is no separate `mobile-settings-recovery` fixture. Render with
 `scripts/figma-compare.sh widget --scenario <id> --theme dark`, adding
-`--form-factor mobile` for the mobile fixture.
+`--form-factor mobile` for the mobile fixtures.
 
 The client and wallet-library patches are pinned to shared revision
 `8df21dfd8f61da72a1af4df61efd648f51c18210`; no absolute local library paths are required.

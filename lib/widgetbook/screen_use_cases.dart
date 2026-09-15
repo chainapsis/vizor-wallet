@@ -5435,6 +5435,15 @@ class _GiftCardPreviewSyncNotifier extends _PreviewSyncNotifier {
   }
 }
 
+/// Steady state of the private recovery control. The mobile counterpart is
+/// `buildMobileSettingsFooterUseCase`, which already scrolls to the same
+/// group, so there is no separate mobile fixture.
+Widget buildSettingsRecoveryUseCase(BuildContext context) =>
+    _buildSettingsMainUseCase(
+      const NetworkPrivacyState.off(),
+      initialScrollOffset: 900,
+    );
+
 Widget buildSettingsRecoveryChangingUseCase(BuildContext context) =>
     _buildSettingsMainUseCase(
       const NetworkPrivacyState.off(),
