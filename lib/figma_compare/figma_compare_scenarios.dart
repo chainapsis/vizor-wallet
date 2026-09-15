@@ -710,19 +710,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildImportCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
-    id: 'settings-recovery',
-    description: 'Private recovery with active and suspended work',
-    builder: buildSettingsRecoveryUseCase,
-  ),
-  FigmaCompareScenario(
     id: 'settings-recovery-changing',
     description: 'Private recovery setting transition',
     builder: buildSettingsRecoveryChangingUseCase,
   ),
   FigmaCompareScenario(
-    id: 'mobile-settings-recovery',
-    description: 'Mobile recovery waiting for snapshot',
-    builder: buildMobileSettingsRecoveryUseCase,
+    id: 'mobile-settings-recovery-changing',
+    description: 'Mobile private recovery setting transition',
+    builder: buildMobileSettingsRecoveryChangingUseCase,
     desktop: false,
     mobile: true,
   ),

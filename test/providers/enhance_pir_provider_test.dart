@@ -322,54 +322,6 @@ void main() {
     expect(source.isCompleted, isFalse);
     expect(reported, isTrue);
   });
-  test('suspended obligations remain visible alongside active progress', () {
-    expect(
-      recoveryStatusText(
-        const EnhanceRecoveryStatus(
-          queries: 0,
-          rediscovery: 0,
-          suspended: 3,
-          serviceState: '',
-        ),
-      ),
-      'Incomplete recovery · 3 suspended',
-    );
-    expect(
-      recoveryStatusText(
-        const EnhanceRecoveryStatus(
-          queries: 2,
-          rediscovery: 1,
-          suspended: 3,
-          serviceState: 'waiting_for_snapshot',
-        ),
-      ),
-      'Waiting for a newer snapshot · 3 pending · 3 suspended',
-    );
-    expect(
-      recoveryStatusText(
-        const EnhanceRecoveryStatus(
-          queries: 0,
-          rediscovery: 0,
-          suspended: 0,
-          serviceState: 'retrying_later',
-        ),
-      ),
-      'No pending private recovery',
-    );
-    expect(
-      recoveryStatusText(
-        const EnhanceRecoveryStatus(
-          queries: 2,
-          rediscovery: 1,
-          suspended: 3,
-          serviceState: '',
-        ),
-        enabled: false,
-      ),
-      'Recovery paused · 3 pending · 3 suspended',
-    );
-  });
-
   test('masquerade builds cannot enable the production PIR service', () {
     expect(
       isEnhancePirAvailableForNetwork('main', isMasquerade: true),

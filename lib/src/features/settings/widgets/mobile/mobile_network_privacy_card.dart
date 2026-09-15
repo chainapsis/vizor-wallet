@@ -33,9 +33,8 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final enhancePirEnabled = ref.watch(enhancePirProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
-    final changingRecovery =
-        ref.watch(enhancePirTransitionProvider) == 'Changing setting…';
-    final recoveryStatus = ref.watch(enhancePirStatusTextProvider);
+    final recoveryTransition = ref.watch(enhancePirTransitionProvider);
+    final changingRecovery = recoveryTransition == 'Changing setting…';
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(
       state,
@@ -251,10 +250,12 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 ),
               ),
             ),
-          if (enhancePirAvailable && recoveryStatus.isNotEmpty)
+          // Feedback for the user's own toggle only; recovery queue counts are
+          // deliberately not surfaced — see _EnhancePirPrivacyControl.
+          if (enhancePirAvailable && recoveryTransition != null)
             Text(
-              recoveryStatus.replaceFirst(' · ', '\n'),
-              key: const ValueKey('mobile_settings_recovery_progress'),
+              recoveryTransition,
+              key: const ValueKey('mobile_settings_enhance_pir_transition'),
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
               ),
@@ -262,7 +263,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           if (enhancePirAvailable) const SizedBox(height: AppSpacing.sm),
           if (enhancePirAvailable)
             Text(
-              'Privately completes Ironwood incoming and outgoing details during recovery. Timing and query counts remain visible to the service.',
+              'Experimental. Privately completes Ironwood incoming and outgoing details during recovery. Timing and query counts remain visible to the service.',
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
               ),

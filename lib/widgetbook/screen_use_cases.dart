@@ -748,12 +748,15 @@ Widget buildSettingsSupportVizorUseCase(BuildContext context) {
 /// The version still comes from VIZOR_RELEASE_VERSION, just as in a release.
 Widget buildMobileSettingsFooterUseCase(BuildContext context) =>
     _buildMobileSettingsFooterUseCase();
-Widget _buildMobileSettingsFooterUseCase({String recoveryStatus = ''}) {
+Widget _buildMobileSettingsFooterUseCase({bool recoveryChanging = false}) {
   return ProviderScope(
     overrides: [
-      enhancePirStatusTextProvider.overrideWithValue(recoveryStatus),
-      if (recoveryStatus.isNotEmpty)
+      if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
+        enhancePirTransitionProvider.overrideWith(
+          _PreviewEnhancePirChanging.new,
+        ),
+      ],
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -934,17 +937,16 @@ Widget buildSettingsTorFailedUseCase(BuildContext context) {
 Widget _buildSettingsMainUseCase(
   NetworkPrivacyState networkPrivacyState, {
   double initialScrollOffset = 0,
-  String recoveryStatus = '',
+  bool recoveryChanging = false,
 }) {
   return ProviderScope(
     overrides: [
-      enhancePirStatusTextProvider.overrideWithValue(recoveryStatus),
-      if (recoveryStatus.isNotEmpty)
+      if (recoveryChanging) ...[
         enhancePirProvider.overrideWith(_PreviewEnhancePirEnabled.new),
-      if (recoveryStatus == 'Changing setting…')
         enhancePirTransitionProvider.overrideWith(
           _PreviewEnhancePirChanging.new,
         ),
+      ],
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState, initialLocation: '/settings'),
       ),
@@ -5430,22 +5432,14 @@ class _GiftCardPreviewSyncNotifier extends _PreviewSyncNotifier {
   }
 }
 
-Widget buildSettingsRecoveryUseCase(BuildContext context) =>
-    _buildSettingsMainUseCase(
-      const NetworkPrivacyState.off(),
-      recoveryStatus: 'Recovering · 12 pending · 3 suspended',
-      initialScrollOffset: 900,
-    );
 Widget buildSettingsRecoveryChangingUseCase(BuildContext context) =>
     _buildSettingsMainUseCase(
       const NetworkPrivacyState.off(),
-      recoveryStatus: 'Changing setting…',
+      recoveryChanging: true,
       initialScrollOffset: 900,
     );
-Widget buildMobileSettingsRecoveryUseCase(BuildContext context) =>
-    _buildMobileSettingsFooterUseCase(
-      recoveryStatus: 'Waiting for a newer snapshot · 12 pending · 3 suspended',
-    );
+Widget buildMobileSettingsRecoveryChangingUseCase(BuildContext context) =>
+    _buildMobileSettingsFooterUseCase(recoveryChanging: true);
 
 class _PreviewEnhancePirEnabled extends EnhancePirNotifier {
   @override
