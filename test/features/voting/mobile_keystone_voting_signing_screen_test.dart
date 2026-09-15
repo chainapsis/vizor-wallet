@@ -11,7 +11,11 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.da
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
+
   testWidgets('uses the mobile Keystone two-step signing presentation', (
     tester,
   ) async {
@@ -20,7 +24,7 @@ void main() {
     expect(find.text('Step 1/2'), findsOneWidget);
     expect(find.text('Scan with Keystone'), findsOneWidget);
     expect(find.text('2 of 3 remaining bundles'), findsOneWidget);
-    expect(find.text('Bundle 1 of 3'), findsOneWidget);
+    expect(find.text('Bundle 2 of 3'), findsOneWidget);
     expect(find.text('Amount: 1.25000000 ZEC.'), findsOneWidget);
     expect(find.text('Skip unsigned bundles'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
@@ -94,7 +98,7 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Next voting bundle'));
     await tester.pump();
 
-    expect(find.text('Bundle 2 of 3'), findsOneWidget);
+    expect(find.text('Bundle 3 of 3'), findsOneWidget);
     _expectFullyPainted(tester, 'Amount: 0.75000000 ZEC.');
   });
 
@@ -122,6 +126,76 @@ void main() {
     _expectFullyPainted(tester, 'Amount: 13.00000000 ZEC.');
     expect(tester.takeException(), isNull);
   });
+
+  for (final textScale in [1.5, 2.0]) {
+    testWidgets('keeps compact signing usable at ${textScale}x text', (
+      tester,
+    ) async {
+      var skipped = false;
+      await _pumpSigningScreen(
+        tester,
+        viewport: const Size(320, 568),
+        textScale: textScale,
+        onSkipRemainingBundles: () => skipped = true,
+      );
+      expect(tester.takeException(), isNull);
+
+      final next = find.byKey(
+        const ValueKey('mobile_voting_keystone_get_signature'),
+      );
+      final skip = find.byKey(
+        const ValueKey('mobile_voting_keystone_auxiliary_action'),
+      );
+      final nextRect = tester.getRect(next);
+      final skipRect = tester.getRect(skip);
+      expect(nextRect.top, greaterThanOrEqualTo(0));
+      expect(skipRect.bottom, lessThanOrEqualTo(568));
+      expect(next.hitTestable(), findsOneWidget);
+      expect(skip.hitTestable(), findsOneWidget);
+      _expectFullyPainted(tester, 'Next step');
+      _expectFullyPainted(tester, 'Skip unsigned bundles');
+      final skipLabel = tester.getRect(find.text('Skip unsigned bundles'));
+      expect(skipRect.intersect(skipLabel), skipLabel);
+
+      await tester.ensureVisible(find.text('Amount: 1.25000000 ZEC.'));
+      await tester.pump();
+      _expectFullyPainted(tester, 'Amount: 1.25000000 ZEC.');
+      _expectWithinScrollViewport(tester, find.text('Amount: 1.25000000 ZEC.'));
+
+      final pager = find.bySemanticsLabel('Next voting bundle');
+      await tester.ensureVisible(pager);
+      await tester.pump();
+      expect(pager.hitTestable(), findsOneWidget);
+      await tester.tap(pager);
+      await tester.pump();
+      await tester.ensureVisible(find.text('Amount: 0.75000000 ZEC.'));
+      await tester.pump();
+      _expectFullyPainted(tester, 'Amount: 0.75000000 ZEC.');
+      _expectWithinScrollViewport(tester, find.text('Amount: 0.75000000 ZEC.'));
+
+      final qr = find.byKey(const ValueKey('mobile_voting_keystone_qr_frame'));
+      await tester.ensureVisible(qr);
+      await tester.pump();
+      _expectWithinScrollViewport(tester, qr);
+      expect(tester.getSize(qr).width, greaterThanOrEqualTo(120));
+      expect(tester.getRect(next), nextRect);
+      expect(tester.getRect(skip), skipRect);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(skip);
+      expect(skipped, isTrue);
+      await tester.tap(next);
+      await tester.pump();
+      expect(find.text('Step 2/2'), findsOneWidget);
+    });
+  }
+}
+
+void _expectWithinScrollViewport(WidgetTester tester, Finder finder) {
+  final viewport = tester.getRect(find.byType(Scrollable));
+  final content = tester.getRect(finder);
+  expect(content.top, greaterThanOrEqualTo(viewport.top));
+  expect(content.bottom, lessThanOrEqualTo(viewport.bottom));
 }
 
 /// Builds the memo string `zcash_voting`'s `display_memo()` produces: a fixed
@@ -150,6 +224,7 @@ void _expectFullyPainted(WidgetTester tester, String text) {
     text: TextSpan(text: text, style: paragraph.text.style),
     textDirection: TextDirection.ltr,
     textAlign: TextAlign.center,
+    textScaler: paragraph.textScaler,
   )..layout(maxWidth: paragraph.size.width);
 
   expect(
@@ -159,6 +234,7 @@ void _expectFullyPainted(WidgetTester tester, String text) {
         '"$text" is clipped: the paragraph paints '
         '${paragraph.size.height}px of ${unclamped.height}px',
   );
+  unclamped.dispose();
 }
 
 Future<void> _pumpSigningScreen(
@@ -166,8 +242,12 @@ Future<void> _pumpSigningScreen(
   Future<void> Function(List<int>)? onSigned,
   bool interactiveScanner = false,
   Size viewport = const Size(393, 852),
+  double textScale = 1,
   List<VotingKeystoneBatchMemo>? memos,
+  VoidCallback? onSkipRemainingBundles,
 }) async {
+  tester.platformDispatcher.textScaleFactorTestValue = textScale;
+  addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = viewport;
   addTearDown(tester.view.reset);
@@ -180,27 +260,27 @@ Future<void> _pumpSigningScreen(
           data: AppThemeData.dark,
           child: MobileKeystoneVotingSigningScreen(
             presentation: VotingKeystoneStatusPresentation(
-              bundleIndex: 0,
+              bundleIndex: memos?.first.bundleIndex ?? 1,
               urParts: const [_previewVotingUr],
               batchMemos:
                   memos ??
                   [
                     VotingKeystoneBatchMemo(
-                      bundleIndex: 0,
+                      bundleIndex: 1,
                       bundleCount: 3,
                       displayMemo: _votingDisplayMemo(amount: '1.25000000'),
                     ),
                     VotingKeystoneBatchMemo(
-                      bundleIndex: 1,
+                      bundleIndex: 2,
                       bundleCount: 3,
                       displayMemo: _votingDisplayMemo(amount: '0.75000000'),
                     ),
                   ],
-              batchMessageCount: 2,
-              batchTotalCount: 3,
-              canSkipRemainingBundles: true,
+              batchMessageCount: memos?.length ?? 2,
+              batchTotalCount: memos?.first.bundleCount ?? 3,
+              canSkipRemainingBundles: (memos?.first.bundleIndex ?? 1) > 0,
               onSigned: onSigned ?? _noopSigned,
-              onSkipRemainingBundles: _noop,
+              onSkipRemainingBundles: onSkipRemainingBundles ?? _noop,
             ),
             scannerBuilder: (_, complete, progress, _) => GestureDetector(
               key: const ValueKey('fake_voting_scanner'),
