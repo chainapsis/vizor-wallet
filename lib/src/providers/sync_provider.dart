@@ -1776,7 +1776,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await IronwoodMigrationBackgroundLifecycle.runWithNewQuiescenceLease(
       () async {
         final lifecycle = _recoveryLifecycle;
-        final previousWork = _walletMutationSyncPauseSnapshot();
         WalletMutationSyncPause? pause;
         try {
           await waitForRecoveryQuiescence(
@@ -1797,13 +1796,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // The toggle changes which obligations are retryable at all, so
           // the previous attempt's backoff no longer describes this wallet.
           _recoveryRestartGate.reset();
-          resumeAfterWalletMutation(
-            pause ?? previousWork,
-            forceRestart:
-                !_requiresUnlock &&
-                _isInForeground &&
-                (ref.read(accountProvider).value?.hasAccounts ?? false),
-          );
+          // Release only a pause this transition actually took. `quiesce()`
+          // can fail before one exists, and a `pauseForWalletMutation` that
+          // throws has already released its own. Decrementing the shared
+          // counter here would consume an overlapping account deletion's
+          // pause and start sync while it is still deleting.
+          final acquired = pause;
+          if (acquired != null) {
+            resumeAfterWalletMutation(
+              acquired,
+              forceRestart:
+                  !_requiresUnlock &&
+                  _isInForeground &&
+                  (ref.read(accountProvider).value?.hasAccounts ?? false),
+            );
+          }
         }
       },
     );

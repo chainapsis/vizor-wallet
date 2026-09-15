@@ -103,6 +103,14 @@ class _RealSync extends SyncNotifier {
 
 /// Records restart attempts without touching Rust or the wallet DB.
 class _RestartSync extends SyncNotifier {
+  _RestartSync({
+    IronwoodMigrationBackgroundLifecycle? lifecycle,
+    Duration transitionTimeout = const Duration(seconds: 120),
+  }) : super(
+         recoveryLifecycle: lifecycle,
+         recoveryTransitionTimeout: transitionTimeout,
+       );
+
   int starts = 0;
   @override
   Future<SyncState> build() async => SyncState();
@@ -212,7 +220,9 @@ void main() {
         await change;
         expect(leases.length, 2);
         expect(leases[0].split(':').skip(1), leases[1].split(':').skip(1));
-        expect(sync.resumes, 1);
+        // A transition that never acquired a pause must not release one: the
+        // stalled branch fails inside `quiesce()`, before `pause` exists.
+        expect(sync.resumes, stalled ? 0 : 1);
         if (stalled) {
           expect(native.isCompleted, isFalse);
           expect(store.value, isNull);
@@ -224,6 +234,8 @@ void main() {
           await notifier.toggle();
           expect(leases.length, 4);
           expect(leases[0], isNot(leases[2]));
+          // The retry does take a pause, so it releases exactly that one.
+          expect(sync.resumes, 1);
         }
         expect(api.cancellations, 1);
         expect(api.running, isFalse);
@@ -333,6 +345,43 @@ void main() {
       final toggle = await sync.pauseForWalletMutation();
       sync.resumeAfterWalletMutation(toggle, forceRestart: true);
       expect(sync.starts, 1);
+    });
+
+    test('a transition that never paused cannot release a deletion', () async {
+      const channel = MethodChannel('test/overlap-lifecycle');
+      // Never answers, so `quiesce()` times out before a pause is taken.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (call) => Completer<bool>().future,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final stalling = _RestartSync(
+        lifecycle: IronwoodMigrationBackgroundLifecycle(
+          channel: channel,
+          isIOS: true,
+          isAndroid: false,
+          resumeRetryDelays: const [Duration.zero],
+        ),
+        transitionTimeout: const Duration(milliseconds: 20),
+      );
+      final overlapContainer = setup(_Store(), stalling, hasAccount: true);
+      addTearDown(overlapContainer.dispose);
+      await overlapContainer.read(syncProvider.future);
+
+      final deletion = await stalling.pauseForWalletMutation();
+      await expectLater(
+        stalling.withRecoverySettingPaused(() async {}),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      expect(stalling.starts, 0, reason: 'deletion still owns the wallet DB');
+      // The deletion's pause survived, so releasing it is what restarts.
+      stalling.resumeAfterWalletMutation(deletion, forceRestart: true);
+      expect(stalling.starts, 1);
     });
   });
 
