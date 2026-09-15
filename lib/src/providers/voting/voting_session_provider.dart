@@ -3787,7 +3787,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final sessionInvalidated = _sessionInvalidated.future;
     while (true) {
       throwIfBackgroundWorkQuiesced();
-      throwIfRoundEnded();
       _throwIfContextStale(context, 'wallet-sync-wait');
       final readiness = await ref
           .read(votingWalletSyncReadinessCheckerProvider)
@@ -3808,6 +3807,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _throwIfContextStale(context, 'wallet-sync-ready');
         return;
       }
+      // Checked only once the wallet is *not* ready: an already-scanned
+      // wallet still passes through this gate after the round closes, and
+      // the caller — a read-only eligibility refresh on a past round, say —
+      // decides for itself what an ended round means.
+      throwIfRoundEnded();
 
       final engineProgressed = progressTracker.observe(
         ref.read(votingWalletSyncProgressSampleProvider).call(),

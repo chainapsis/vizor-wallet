@@ -267,7 +267,6 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
-
   final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
