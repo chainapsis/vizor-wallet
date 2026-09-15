@@ -695,6 +695,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // deletion. The pause holds until the wallet rows are gone.
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
+      // Re-read after the drains, not only at entry. Voting quiescence starts
+      // at the line above, so between the entry check and here a submission
+      // can still begin — a stalled job's own sync-recovery retry needs no
+      // user action to do it — and it would hold a guard this method had
+      // already looked past. Refusing now is the same refusal, one beat late.
+      ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
       claimLifecycle.resume();
@@ -902,6 +908,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
+      // See [removeAccount]: the entry check cannot cover the window before
+      // voting quiescence begins, so the guard is read again here.
+      ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
       await _resetWalletWithShareTrackingStopped();
       walletDataDeleted = true;
       resumeClaimLifecycle = true;
