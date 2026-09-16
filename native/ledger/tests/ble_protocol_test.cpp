@@ -55,7 +55,10 @@ int main() {
   assert(HasSuccessStatus({0x90, 0}));
   assert(!HasSuccessStatus({0x69, 0x85}));
   Rejects([] { RequireSuccess({0x55, 0x15}); }, "locked");
+  Rejects([] { RequireSuccess({0x69, 0x82}); }, "locked");
+  Rejects([] { RequireSuccess({0x53, 0x03}); }, "locked");
   Rejects([] { RequireSuccess({0x69, 0x85}); }, "rejected");
+  Rejects([] { RequireSuccess({0x55, 0x01}); }, "rejected");
   Rejects([] { RequireSuccess({0x69, 0x01}); }, "device_busy");
   Rejects([] { RequireSuccess({}); });
   const auto app = DecodeAppInfo(

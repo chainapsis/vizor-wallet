@@ -126,7 +126,7 @@ inline bool HasSuccessStatus(const Bytes& response) {
 inline void RequireSuccess(const Bytes& response) {
   const auto status = ReadU16(response, response.size() < 2 ? 0 : response.size() - 2);
   if (status == 0x9000) return;
-  if (status == 0x5515) {
+  if (status == 0x5515 || status == 0x6982 || status == 0x5303) {
     throw Error("locked", "Unlock your Ledger and reopen the Zcash app.");
   }
   if (status == 0x6985 || status == 0x5501) {
