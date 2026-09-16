@@ -9,12 +9,14 @@ import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
 
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private lateinit var ledgerMobileHandler: LedgerMobileHandler
     private lateinit var sensitiveClipboardHandler: SensitiveClipboardHandler
     private var incomingUriChannel: MethodChannel? = null
     private val pendingIncomingUris = mutableListOf<String>()
@@ -120,6 +122,17 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, result ->
             deviceOwnerAuthHandler.handle(call, result)
         }
+        ledgerMobileHandler = LedgerMobileHandler(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.METHOD_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            ledgerMobileHandler.handle(call, result)
+        }
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.EVENT_CHANNEL
+        ).setStreamHandler(ledgerMobileHandler)
         sensitiveClipboardHandler = SensitiveClipboardHandler(this)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -246,6 +259,25 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (
+            ::ledgerMobileHandler.isInitialized &&
+            ledgerMobileHandler.onRequestPermissionsResult(requestCode, grantResults)
+        ) {
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onDestroy() {
+        if (::ledgerMobileHandler.isInitialized) ledgerMobileHandler.close()
+        super.onDestroy()
     }
 
     override fun onResume() {
