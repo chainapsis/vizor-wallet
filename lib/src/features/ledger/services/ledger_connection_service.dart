@@ -1,3 +1,5 @@
+import 'dart:developer' show log;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -67,7 +69,19 @@ class LedgerConnectionService {
             return bluetooth(mobile);
           }, refresh: refreshBluetooth),
         };
-        await _recordSuccess(account, transport);
+        try {
+          await _recordSuccess(account, transport);
+        } catch (error, stackTrace) {
+          // The caller's operation may already have signed or broadcast. A
+          // preference write must never turn that success into a retryable
+          // failure or replay the operation over another transport.
+          log(
+            'Failed to persist the successful Ledger transport.',
+            name: 'LedgerConnectionService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
         return result;
       } catch (error) {
         // Once the caller's operation has begun, another transport must not

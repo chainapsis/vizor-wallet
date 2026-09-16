@@ -326,6 +326,42 @@ void main() {
   );
 
   test(
+    'metadata persistence failure preserves a completed operation result',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.automatic,
+          deviceModel: 'Nano X',
+        ),
+      )..recordError = StateError('secure storage unavailable');
+      final ble = _FakeBleService();
+      final container = _container(notifier: notifier, ble: ble);
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      var operationCalls = 0;
+
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async {
+              operationCalls++;
+              return 'already-broadcast';
+            },
+            bluetooth: (_) async {
+              operationCalls++;
+              return 'unexpected-replay';
+            },
+          );
+
+      expect(result, 'already-broadcast');
+      expect(operationCalls, 1);
+      expect(notifier.recordAttempts, 1);
+      expect(ble.connectCalls, 0);
+    },
+  );
+
+  test(
     'Automatic never replays a started Bluetooth operation over USB',
     () async {
       final notifier = _FakeAccountNotifier(
@@ -600,6 +636,8 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   final AccountInfo initial;
   final recordedTransports = <LedgerConnectionTransport>[];
+  var recordAttempts = 0;
+  Object? recordError;
 
   @override
   FutureOr<AccountState> build() =>
@@ -613,6 +651,8 @@ class _FakeAccountNotifier extends AccountNotifier {
     String? deviceName,
     String? deviceModel,
   }) async {
+    recordAttempts++;
+    if (recordError case final error?) throw error;
     recordedTransports.add(transport);
     final current = state.requireValue;
     state = AsyncData(
