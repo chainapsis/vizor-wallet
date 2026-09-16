@@ -85,6 +85,141 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testCancelledOpenAppDrainsBeforeAnotherTransportOperation() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "open app reached transport")
+    transport.onExchange = { started.fulfill() }
+    var results: [Any?] = []
+
+    handler.handle(
+      FlutterMethodCall(methodName: "openZcashApp", arguments: nil)
+    ) { results.append($0) }
+    await fulfillment(of: [started], timeout: 2)
+
+    handler.handle(
+      FlutterMethodCall(methodName: "cancelSigning", arguments: nil)
+    ) { value in
+      XCTAssertNil(value)
+    }
+    XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "cancelled")
+
+    handler.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.disconnects, 0)
+    XCTAssertEqual(transport.commands, [LedgerMobileProtocol.openZcashAppCommand])
+
+    transport.onExchange = nil
+    transport.complete("9000")
+    let deadline = Date().addingTimeInterval(2)
+    var disconnected = false
+    while !disconnected && Date() < deadline {
+      await Task.yield()
+      handler.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) {
+        disconnected = $0 == nil
+      }
+    }
+    XCTAssertTrue(disconnected)
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual(transport.commands.count, 1)
+    XCTAssertEqual(transport.disconnects, 1)
+  }
+
+  @MainActor
+  func testOpenAppRecoversFromExpectedDisconnectWithoutCancellingResult() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "open app reached transport")
+    transport.onExchange = { started.fulfill() }
+    let completed = expectation(description: "open app completed after reconnect")
+    var received: Any?
+
+    handler.handle(
+      FlutterMethodCall(methodName: "openZcashApp", arguments: nil)
+    ) { value in
+      received = value
+      completed.fulfill()
+    }
+    await fulfillment(of: [started], timeout: 2)
+
+    transport.simulateDisconnect()
+    await Task.yield()
+    transport.responses = ["01055a6361736805332e392e3201029000"]
+    transport.onExchange = nil
+    transport.complete("9000")
+
+    await fulfillment(of: [completed], timeout: 2)
+    XCTAssertNil(received as? FlutterError)
+    XCTAssertEqual((received as? [String: String])?["name"], "Zcash")
+    XCTAssertEqual(transport.reconnects, 1)
+    XCTAssertEqual(transport.commands.count, 2)
+  }
+
+  @MainActor
+  func testCurrentAppUsesTrackedCancellationSlot() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "current app reached transport")
+    transport.onExchange = { started.fulfill() }
+    var results: [Any?] = []
+
+    handler.handle(
+      FlutterMethodCall(methodName: "currentApp", arguments: nil)
+    ) { results.append($0) }
+    await fulfillment(of: [started], timeout: 2)
+    handler.handle(
+      FlutterMethodCall(methodName: "cancelSigning", arguments: nil)
+    ) { value in
+      XCTAssertNil(value)
+    }
+    handler.handle(
+      FlutterMethodCall(methodName: "currentApp", arguments: nil)
+    ) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+
+    XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "cancelled")
+    transport.onExchange = nil
+    transport.complete("01055a6361736805332e392e3201029000")
+    let deadline = Date().addingTimeInterval(2)
+    while transport.hasPendingExchange && Date() < deadline {
+      await Task.yield()
+    }
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual(transport.commands.count, 1)
+  }
+
+  @MainActor
+  func testCloseDefersDisconnectUntilPendingExchangeDrains() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "UFVK reached transport")
+    transport.onExchange = { started.fulfill() }
+    var results: [Any?] = []
+    handler.handle(ufvkCall) { results.append($0) }
+    await fulfillment(of: [started], timeout: 2)
+
+    handler.close()
+    XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "cancelled")
+    XCTAssertEqual(transport.disconnects, 0)
+
+    transport.onExchange = nil
+    transport.complete("6985")
+    let deadline = Date().addingTimeInterval(2)
+    while transport.disconnects == 0 && Date() < deadline {
+      await Task.yield()
+    }
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual(transport.disconnects, 1)
+    XCTAssertFalse(transport.isConnected)
+  }
+
+  @MainActor
   func testUfvkKeepsNormalMultiCommandResponses() async {
     let transport = PendingLedgerTransport()
     let handler = LedgerMobileHandler(transport: transport)
@@ -447,8 +582,12 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var commands: [[UInt8]] = []
   var responses: [String] = []
   var disconnects = 0
+  var reconnects = 0
   var onExchange: (() -> Void)?
   private var pending: CheckedContinuation<String, Error>?
+  private var disconnectedCallback: EmptyResponse?
+
+  var hasPendingExchange: Bool { pending != nil }
 
   func complete(_ response: String) {
     let continuation = pending
@@ -466,6 +605,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?,
     success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
     isConnected = true
+    self.disconnectedCallback = disconnectedCallback
     success(peripheral)
   }
   func disconnect(completion: OptionalBleErrorResponse?) {
@@ -477,7 +617,12 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func stopScanning() {}
   func scan(duration: TimeInterval, callback: @escaping PeripheralsWithServicesResponse,
     stopped: @escaping OptionalBleErrorResponse) { XCTFail("Unexpected scan") }
-  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
+  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
+    reconnects += 1
+    isConnected = true
+    self.disconnectedCallback = disconnectedCallback
+    return peripheral
+  }
   func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
   func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
   func exchange(apdu: APDU, callback: @escaping (Result<String, BleTransportError>) -> Void) { XCTFail("unused") }
@@ -492,4 +637,9 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func getAppAndVersion() async throws -> AppInfo { fatalError("unused") }
   func openAppIfNeeded(_ name: String, completion: @escaping (Result<Void, Error>) -> Void) { XCTFail("unused") }
   func openAppIfNeeded(_ name: String) async throws { XCTFail("unused") }
+
+  func simulateDisconnect() {
+    isConnected = false
+    disconnectedCallback?()
+  }
 }

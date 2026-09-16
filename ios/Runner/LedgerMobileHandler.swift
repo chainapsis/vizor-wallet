@@ -26,6 +26,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var exchangeTaskGeneration: Int?
   private var exchangeResult: FlutterResult?
   private var exchangeGeneration = 0
+  private var exchangeRecoversFromDisconnect = false
   private var appPreparationGeneration = 0
 
   init(transport: BleTransportProtocol? = nil) {
@@ -86,10 +87,19 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       code: "cancelled",
       message: "The Ledger operation was cancelled."
     )
-    if let transport = transportStorage, transport.isConnected {
-      transport.disconnect(completion: nil)
-    }
     connectedDevice = nil
+    guard let transport = transportStorage else { return }
+    guard let pendingTask = exchangeTask else {
+      if transport.isConnected { transport.disconnect(completion: nil) }
+      return
+    }
+    // BleTransport cannot disconnect while an SDK exchange is waiting for its
+    // device callback. Cancellation resolves Dart immediately, but teardown
+    // must keep the transport alive until that callback drains.
+    Task { @MainActor in
+      await pendingTask.value
+      if transport.isConnected { transport.disconnect(completion: nil) }
+    }
   }
 
   private func ensureTransport() -> BleTransportProtocol {
@@ -370,6 +380,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func handleDisconnected() {
     connectedDevice = nil
+    if exchangeRecoversFromDisconnect { return }
     cancelExchangeOperation(
       code: "disconnected",
       message: "The Ledger disconnected. Reconnect and try again.",
@@ -379,13 +390,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func currentApp(_ result: @escaping FlutterResult) {
     guard requireConnected(result) != nil else { return }
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      do {
-        result(try await readCurrentApp().asFlutterMap())
-      } catch {
-        completeFailure(result, error: error)
-      }
+    startExchange(result: result) { [self] in
+      try await readCurrentApp().asFlutterMap()
     }
   }
 
@@ -393,36 +399,31 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     guard let device = requireConnected(result) else { return }
     let transport = ensureTransport()
     let generation = appPreparationGeneration
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      do {
-        let app = try await LedgerMobileAppSwitchCoordinator().openZcashApp(
-          openApplication: {
-            let response = try await self.exchangeRaw(
-              LedgerMobileProtocol.openZcashAppCommand
-            )
-            try LedgerMobileProtocol.requireSuccess(response)
-          },
-          isConnected: { transport.isConnected },
-          reconnect: {
-            let connected = try await transport.connect(
-              toPeripheralID: device,
-              disconnectedCallback: { [weak self] in
-                DispatchQueue.main.async {
-                  self?.handleDisconnected()
-                }
+    startExchange(result: result, recoversFromDisconnect: true) { [self] in
+      let app = try await LedgerMobileAppSwitchCoordinator().openZcashApp(
+        openApplication: {
+          let response = try await exchangeRaw(
+            LedgerMobileProtocol.openZcashAppCommand
+          )
+          try LedgerMobileProtocol.requireSuccess(response)
+        },
+        isConnected: { transport.isConnected },
+        reconnect: {
+          let connected = try await transport.connect(
+            toPeripheralID: device,
+            disconnectedCallback: { [weak self] in
+              DispatchQueue.main.async {
+                self?.handleDisconnected()
               }
-            )
-            self.connectedDevice = connected
-          },
-          readCurrentApp: { try await self.readCurrentApp() },
-          isCancelled: { self.appPreparationGeneration != generation }
-        )
-        connectedDevice = device
-        result(app.asFlutterMap())
-      } catch {
-        completeFailure(result, error: error)
-      }
+            }
+          )
+          connectedDevice = connected
+        },
+        readCurrentApp: { try await readCurrentApp() },
+        isCancelled: { appPreparationGeneration != generation }
+      )
+      connectedDevice = device
+      return app.asFlutterMap()
     }
   }
 
@@ -456,13 +457,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       let firstResponse = try await exchange(first)
       responses.append(firstResponse)
       guard firstResponse.hasSuccessStatus, firstResponse.count >= 4 else {
-        return responses
+        return responses.asFlutterResponses()
       }
 
       let expectedPayloadLength =
         2 + (Int(firstResponse[0]) << 8) + Int(firstResponse[1])
       guard expectedPayloadLength <= LedgerMobileProtocol.maxUfvkResponse else {
-        return responses
+        return responses.asFlutterResponses()
       }
 
       var payloadLength = firstResponse.count - LedgerMobileProtocol.statusSize
@@ -472,17 +473,18 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         guard response.hasSuccessStatus,
           response.count > LedgerMobileProtocol.statusSize
         else {
-          return responses
+          return responses.asFlutterResponses()
         }
         payloadLength += response.count - LedgerMobileProtocol.statusSize
       }
-      return responses
+      return responses.asFlutterResponses()
     }
   }
 
   private func startExchange(
     result: @escaping FlutterResult,
-    operation: @escaping () async throws -> [[UInt8]]
+    recoversFromDisconnect: Bool = false,
+    operation: @escaping () async throws -> Any
   ) {
     guard exchangeTask == nil else {
       result(pendingExchangeError())
@@ -493,20 +495,22 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     let generation = exchangeGeneration
     exchangeResult = result
     exchangeTaskGeneration = generation
+    exchangeRecoversFromDisconnect = recoversFromDisconnect
     exchangeTask = Task { @MainActor [weak self] in
       guard let self else { return }
       defer {
         if exchangeTaskGeneration == generation {
           exchangeTask = nil
           exchangeTaskGeneration = nil
+          exchangeRecoversFromDisconnect = false
         }
       }
 
       do {
         try Task.checkCancellation()
-        let responses = try await operation()
+        let value = try await operation()
         try Task.checkCancellation()
-        finishExchange(generation: generation, value: responses.asFlutterResponses())
+        finishExchange(generation: generation, value: value)
       } catch is CancellationError {
         finishExchange(
           generation: generation,
