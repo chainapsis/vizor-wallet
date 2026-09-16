@@ -1,5 +1,13 @@
 # Ledger connection and shielding behavior
 
+## Mobile account setup
+
+Mobile Ledger onboarding adds accounts only to an existing wallet with a
+configured passcode and an unlocked session. The Ledger routes and account
+import enforce this policy even when opened directly; first-account setup must
+use another supported onboarding method. Desktop Ledger password setup is
+unchanged.
+
 ## Connection and cancellation
 
 Automatic transport fallback is limited to device readiness. Once the caller's

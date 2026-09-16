@@ -189,6 +189,94 @@ void main() {
     });
   }
 
+  for (final scenario in ['fresh', 'unconfigured', 'locked']) {
+    final bootstrap = _bootstrap(
+      accounts: scenario == 'fresh'
+          ? const []
+          : const [AccountInfo(uuid: 'software', name: 'Main', order: 0)],
+      passwordConfigured: scenario != 'unconfigured',
+      unlocked: scenario != 'locked',
+    );
+    for (final route in mobileOnboardingRoutes().whereType<GoRoute>().where(
+      (route) => route.path.startsWith('/onboarding/ledger'),
+    )) {
+      testWidgets('${route.path} rejects $scenario wallet with valid extras', (
+        tester,
+      ) async {
+        const account = LedgerDeviceAccount(
+          ufvk: 'test-ufvk',
+          seedFingerprint: [1],
+          accountIndex: 0,
+          appVersion: '1',
+        );
+        final router = GoRouter(
+          initialLocation: route.path,
+          initialExtra: route.path.endsWith('/birthday')
+              ? const LedgerBirthdayArgs(account: account)
+              : const LedgerCustomiseAccountArgs(
+                  account: account,
+                  birthdayHeight: 1,
+                ),
+          routes: [
+            route,
+            GoRoute(
+              path: '/welcome',
+              builder: (_, _) => const Text('setup-required'),
+            ),
+            GoRoute(
+              path: '/unlock',
+              builder: (_, _) => const Text('unlock-required'),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(scenario == 'fresh' ? 'setup-required' : 'unlock-required'),
+          findsOneWidget,
+        );
+      });
+    }
+    test(
+      'Ledger import rejects $scenario wallet before storage or Rust access',
+      () async {
+        final container = ProviderContainer(
+          overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .importLedgerAccount(
+                name: 'Ledger',
+                ufvk: 'test-ufvk',
+                seedFingerprint: [1],
+                zip32Index: 0,
+                birthdayHeight: 1,
+              ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              'Set up and unlock your wallet before adding a Ledger account.',
+            ),
+          ),
+        );
+        expect(
+          container.read(accountProvider).requireValue.accounts.length,
+          bootstrap.initialAccountState.accounts.length,
+        );
+      },
+    );
+  }
+
   testWidgets('discovers, connects, and exports the selected Ledger', (
     tester,
   ) async {
@@ -493,6 +581,7 @@ Widget _ledgerHarness({
 AppBootstrapState _bootstrap({
   required List<AccountInfo> accounts,
   bool passwordConfigured = true,
+  bool unlocked = true,
   String network = 'main',
 }) => AppBootstrapState(
   initialLocation: '/onboarding/method',
@@ -503,7 +592,7 @@ AppBootstrapState _bootstrap({
   themeMode: ThemeMode.light,
   privacyModeEnabled: false,
   isPasswordConfigured: passwordConfigured,
-  isUnlocked: true,
+  isUnlocked: unlocked,
   passwordRotationRecoveryFailed: false,
 );
 

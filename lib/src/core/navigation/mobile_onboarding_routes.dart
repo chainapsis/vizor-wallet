@@ -1,5 +1,9 @@
-import 'package:flutter/cupertino.dart' show CupertinoPage;
+import 'package:flutter/cupertino.dart' show BuildContext, CupertinoPage;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../providers/account_provider.dart';
+import '../../providers/app_security_provider.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -205,6 +209,7 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/onboarding/ledger',
+    redirect: (context, _) => _mobileLedgerRedirect(context),
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: const MobileLedgerConnectScreen(),
@@ -212,8 +217,9 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/onboarding/ledger/birthday',
-    redirect: (_, state) =>
-        state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger',
+    redirect: (context, state) async =>
+        await _mobileLedgerRedirect(context) ??
+        (state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger'),
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: MobileLedgerBirthdayScreen(
@@ -223,8 +229,11 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/onboarding/ledger/customise-account',
-    redirect: (_, state) =>
-        state.extra is LedgerCustomiseAccountArgs ? null : '/onboarding/ledger',
+    redirect: (context, state) async =>
+        await _mobileLedgerRedirect(context) ??
+        (state.extra is LedgerCustomiseAccountArgs
+            ? null
+            : '/onboarding/ledger'),
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: MobileLedgerCustomiseAccountScreen(
@@ -239,3 +248,14 @@ List<RouteBase> mobileOnboardingRoutes() => [
     redirect: (_, _) => '/onboarding/keystone',
   ),
 ];
+
+// First-account Ledger setup has no passcode flow on mobile. Check live
+// state, not the startup snapshot, so reset/lock cannot bypass this policy.
+Future<String?> _mobileLedgerRedirect(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final accounts = await container.read(accountProvider.future);
+  if (accounts.accounts.isEmpty) return '/welcome';
+  final security = container.read(appSecurityProvider);
+  if (!security.isPasswordConfigured || !security.isUnlocked) return '/unlock';
+  return null;
+}

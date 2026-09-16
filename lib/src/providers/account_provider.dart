@@ -15,6 +15,7 @@ import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
@@ -1413,6 +1414,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceModel,
   }) async {
     try {
+      // Mobile Ledger onboarding only adds accounts to a configured wallet.
+      // Enforce this at the mutation boundary as well as in navigation.
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        final security = ref.read(appSecurityProvider);
+        if (state.value == null ||
+            state.value!.accounts.isEmpty ||
+            !security.isPasswordConfigured ||
+            !security.isUnlocked) {
+          throw StateError(
+            'Set up and unlock your wallet before adding a Ledger account.',
+          );
+        }
+      }
       final accountName = normalizeAccountName(name);
       validateAccountName(accountName);
       if (!isKnownProfilePictureId(profilePictureId)) {
