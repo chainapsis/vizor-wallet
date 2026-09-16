@@ -65,3 +65,24 @@ fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mob
 권한 재요청 UX, OS 페어링 삭제 안내, 기존 계정의 장치 재지정 UI는 승인된 계획대로 후속 범위다. 이번 변경은 해당 오류가 자동 재연결 루프에 들어가지 않도록 분류를 보존한다. Windows/Linux USB 및 Rust 서명·브로드캐스트 구현은 변경하지 않았다.
 
 로컬 통합 대상은 `codex/ledger-bluetooth-audit`이며 `main`이나 원격 브랜치가 아니다.
+
+## 추가 리뷰 후 스캔 수명 수정
+
+기존 완료 보고 이후 독립 리뷰에서, Bluetooth off 처리의 큐 제거가
+`Scan` 타이머를 취소하지 않아 빠른 on/재검색 뒤 이전 타이머가 새 검색을
+중단하는 P2 회귀를 확인했다. `cdc8d6037`에서 수정했다.
+
+- 큐에서 제거하거나 이전 세대 작업을 거절할 때 `discard()`를 호출한다.
+- `Scan.discard()`는 종료 상태를 먼저 설정하고 timeout/expiry 타이머,
+  discovery/expired/stopped 콜백 및 검색 결과를 해제한다.
+- 종료된 스캔의 늦은 timeout, 예약된 expiry 종료, 발견 이벤트 및
+  stop/start 호출은 무시한다. 정상 종료는 기존처럼 한 번 통지한다.
+- 시작되지 않은 스캔을 버릴 때는 진행 중인 다른 검색을 중단하지 않는다.
+
+실제 Scan/Queue와 radio 대역을 사용하는 회귀 테스트에서 큐 수정 전
+3개 테스트가 실패하는 것을 확인했고, 수정 후 추가한 expiry 경합 테스트까지
+새 테스트 5개 모두 통과했다. 전체 SDK 14개, 공용 Apple handler 35개 통과.
+macOS debug 및 iOS Simulator debug (`VIZOR_FORM_FACTOR=mobile`) 빌드 성공.
+재리뷰와 최종 리뷰에서 이 수정 범위의 추가 결함은 없었다.
+단일 원인 수정 커밋으로 유지하여 기존 커밋을 재작성하지 않았다.
+실물 Ledger 무선 테스트는 이번에도 수행하지 않았다.
