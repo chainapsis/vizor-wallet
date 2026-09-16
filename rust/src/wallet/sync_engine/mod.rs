@@ -10,6 +10,7 @@ use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
     chain::{self, error::Error as ChainError, scan_cached_blocks},
+    ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
     wallet::ConfirmationsPolicy,
     WalletCommitmentTrees, WalletRead, WalletWrite,
@@ -44,6 +45,7 @@ use {
     zcash_script::script,
 };
 
+mod address_history;
 mod block_source;
 mod enhance;
 mod gift_card_funding;
@@ -52,6 +54,8 @@ mod error;
 mod lwd;
 pub(crate) mod mempool;
 mod tip_cache;
+#[cfg(test)]
+mod transparent_recovery_tests;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
@@ -1051,6 +1055,7 @@ fn queue_witness_repairs_if_needed(
 }
 
 async fn repair_anchor_root_mismatch_if_needed(
+    db_data_path: &str,
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -1151,6 +1156,7 @@ async fn repair_anchor_root_mismatch_if_needed(
 
         let current_tip =
             block_height_from_u64(current_tip_height, "current lightwalletd chain tip")?;
+        invalidate_transparent_checks_before_rewind(db_data_path)?;
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
@@ -1262,6 +1268,7 @@ struct TransparentRefresh {
 }
 
 struct TransparentRefreshCompletion {
+    non_external_addresses: Vec<String>,
     child_indices: Vec<u32>,
     next_sweep_offset: Option<usize>,
 }
@@ -1374,7 +1381,7 @@ async fn refresh_utxos(
                         .map(|address| address.address.clone())
                         .collect(),
                     child_indices: Vec::new(),
-                    start_height: u64::from(u32::from(safety_start_height)),
+                    start_height: 0,
                     next_sweep_offset: None,
                 }]
             }
@@ -1399,6 +1406,7 @@ async fn refresh_utxos(
                 label,
                 account_uuid: account_uuid.clone(),
                 completion: Some(TransparentRefreshCompletion {
+                    non_external_addresses: Vec::new(),
                     child_indices: batch.child_indices,
                     next_sweep_offset: batch.next_sweep_offset,
                 }),
@@ -1409,22 +1417,51 @@ async fn refresh_utxos(
             .iter()
             .map(|address| address.address.as_str())
             .collect::<BTreeSet<_>>();
+        let mut internal_addresses = std::collections::HashSet::new();
         let non_external_addresses: Vec<String> = db
             .get_transparent_receivers(account_id, true, true)
             .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
-            .map(|(addr, _)| addr.encode(&query_network))
+            .map(|(addr, metadata)| {
+                let query_address = addr.encode(&query_network);
+                if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
+                    internal_addresses.insert(query_address.clone());
+                }
+                query_address
+            })
             .filter(|addr| !external_selected.contains(addr.as_str()))
             .collect();
 
-        if !non_external_addresses.is_empty() {
+        let non_external_batches = transparent_receive_cache::plan_non_external_utxo_refresh(
+            db_data_path,
+            network,
+            &account_uuid,
+            &non_external_addresses,
+            account_birthday_height,
+            u64::from(u32::from(safety_start_height)),
+            &internal_addresses,
+            u64::from(u32::from(tip_height)),
+        )
+        .unwrap_or_else(|error| {
+            log::warn!("non-external UTXO planning failed; querying from genesis: {error}");
+            if non_external_addresses.is_empty() {
+                Vec::new()
+            } else {
+                vec![(non_external_addresses.clone(), 0)]
+            }
+        });
+        for (addresses, start) in non_external_batches {
             refreshes.push(TransparentRefresh {
-                addresses: non_external_addresses,
-                start_height: safety_start_height,
+                completion: Some(TransparentRefreshCompletion {
+                    non_external_addresses: addresses.clone(),
+                    child_indices: Vec::new(),
+                    next_sweep_offset: None,
+                }),
+                addresses,
+                start_height: block_height_from_u64(start, "non-external UTXO start")?,
                 label: "transparent non-external UTXOs".to_string(),
-                account_uuid,
-                completion: None,
+                account_uuid: account_uuid.clone(),
             });
         }
     }
@@ -1513,6 +1550,17 @@ fn update_transparent_refresh_cache_metadata(
         mark_transparent_receive_cache_dirty(db_data_path, &downloaded.refresh.account_uuid);
     }
     if let Some(completion) = downloaded.refresh.completion.as_ref() {
+        if !completion.non_external_addresses.is_empty() {
+            if let Err(error) = transparent_receive_cache::mark_non_external_utxo_refresh_complete(
+                db_data_path,
+                network,
+                &downloaded.refresh.account_uuid,
+                &completion.non_external_addresses,
+                u64::from(u32::from(tip_height)) + 1,
+            ) {
+                log::warn!("failed to mark internal UTXO lookup complete: {error}");
+            }
+        }
         if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
             db_data_path,
             network,
@@ -1651,6 +1699,13 @@ fn store_transparent_outputs(
             for batch in downloaded {
                 for output in &batch.outputs {
                     tx_db.put_received_transparent_utxo(output)?;
+                    // The UTXO RPC does not provide full transaction data. Fetch it
+                    // once through enhancement so the backend registers spend
+                    // detection (and recognizes coinbase outputs) before we rely
+                    // on incremental lookups. Queue insertion shares this commit.
+                    // The backend skips transactions whose raw bytes are already
+                    // stored; avoid decoding those bytes on every UTXO refresh.
+                    tx_db.queue_tx_retrieval(std::iter::once(*output.outpoint().txid()), None)?;
                 }
             }
             Ok(())
@@ -1881,12 +1936,19 @@ fn should_refresh_tip_before_completion(
     validation_required || validation_age >= FINAL_TIP_REFRESH_MIN_AGE
 }
 
+fn invalidate_transparent_checks_before_rewind(db_data_path: &str) -> Result<(), SyncError> {
+    transparent_receive_cache::invalidate_utxo_checks(db_data_path)
+        .map_err(|error| SyncError::db(format!("invalidate UTXO checks before rewind: {error}")))
+}
+
 fn truncate_wallet_to_height(
+    db_data_path: &str,
     db: &mut WalletDatabase,
     requested_height: BlockHeight,
     fresh_tip_height: BlockHeight,
     operation: &'static str,
 ) -> Result<BlockHeight, SyncError> {
+    invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
             db.truncate_to_height(height)
@@ -1962,12 +2024,14 @@ fn confirmed_reorg_rewind_target(fresh_tip_height: BlockHeight) -> Result<BlockH
 }
 
 fn rewind_for_confirmed_tip_reorg(
+    db_data_path: &str,
     db: &mut WalletDatabase,
     fresh_tip_height: u64,
 ) -> Result<(BlockHeight, Vec<ScanRange>, u64), SyncError> {
     let fresh_height = block_height_from_u64(fresh_tip_height, "reorg lightwalletd chain tip")?;
     let requested_height = confirmed_reorg_rewind_target(fresh_height)?;
     let actual_height = truncate_wallet_to_height(
+        db_data_path,
         db,
         requested_height,
         fresh_height,
@@ -2396,7 +2460,7 @@ async fn run_payment_link_claim_sync_once(
                 return Err(lagging_lightwalletd_tip(db_tip_height, initial_tip.height));
             }
             RefreshedTipRelation::Reorg => {
-                rewind_for_confirmed_tip_reorg(&mut db, initial_tip.height)?;
+                rewind_for_confirmed_tip_reorg(db_data_path, &mut db, initial_tip.height)?;
             }
             RefreshedTipRelation::Advanced
             | RefreshedTipRelation::Unchanged
@@ -2456,6 +2520,7 @@ async fn run_payment_link_claim_sync_once(
                     let fresh_height =
                         block_height_from_u64(fresh_tip.height, "payment-link reorg tip")?;
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
+                    invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
                         db.truncate_to_height(height)
                     })?;
@@ -2560,6 +2625,7 @@ async fn run_payment_link_claim_sync_once(
                     block_height_from_u64(requested_height, "payment-link scan rewind target")?;
                 let fresh_tip =
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
+                invalidate_transparent_checks_before_rewind(db_data_path)?;
                 truncate_wallet_with(requested, fresh_tip, |height| db.truncate_to_height(height))?;
             }
         }
@@ -2670,7 +2736,7 @@ async fn run_sync_impl(
             }
             main_rewinds_this_run += 1;
             let (actual_height, _, pending_blocks) =
-                rewind_for_confirmed_tip_reorg(&mut db, tip.height)?;
+                rewind_for_confirmed_tip_reorg(db_data_path, &mut db, tip.height)?;
             log::warn!(
                 "[{}] sync: initial tip proved a reorg; rewound to {} and \
                  queued {} block(s) toward tip {}",
@@ -3051,7 +3117,11 @@ async fn run_sync_impl(
                             main_rewinds_this_run += 1;
                             prefetch = None;
                             let (actual_height, repair_ranges, pending_blocks) =
-                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                                rewind_for_confirmed_tip_reorg(
+                                    db_data_path,
+                                    &mut db,
+                                    fresh_tip.height,
+                                )?;
                             log::warn!(
                                 "[{}] sync: periodic tip proved a reorg; rewound to {} \
                                  and queued {} block(s) toward tip {}",
@@ -3167,7 +3237,11 @@ async fn run_sync_impl(
                             main_rewinds_this_run += 1;
                             prefetch = None;
                             let (actual_height, repair_ranges, repair_pending_blocks) =
-                                rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                                rewind_for_confirmed_tip_reorg(
+                                    db_data_path,
+                                    &mut db,
+                                    fresh_tip.height,
+                                )?;
                             log::warn!(
                                 "[{}] sync: final tip proved a reorg; rewound to {} \
                                  and queued {} block(s) toward tip {}",
@@ -3204,6 +3278,7 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
+                    db_data_path,
                     &mut client,
                     &mut db,
                     network,
@@ -3539,6 +3614,7 @@ async fn run_sync_impl(
                     // failure as fatal.
                     let target =
                         block_height_from_u64(requested_rewind_height, "scan rewind target")?;
+                    invalidate_transparent_checks_before_rewind(db_data_path)?;
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
@@ -3710,7 +3786,7 @@ async fn run_sync_impl(
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -3827,7 +3903,11 @@ async fn run_sync_impl(
                         main_rewinds_this_run += 1;
                         prefetch = None;
                         let (actual_height, repair_ranges, pending_blocks) =
-                            rewind_for_confirmed_tip_reorg(&mut db, fresh_tip.height)?;
+                            rewind_for_confirmed_tip_reorg(
+                                db_data_path,
+                                &mut db,
+                                fresh_tip.height,
+                            )?;
                         log::warn!(
                             "[{}] sync: post-batch tip proved a reorg; rewound to {} \
                                  and queued {} block(s) toward tip {}",
@@ -4118,7 +4198,9 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_enhancement(&mut client, &mut db, db_data_path, network).await {
+            if let Err(error) =
+                run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await
+            {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
                     elapsed(),
