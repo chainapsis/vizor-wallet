@@ -13,10 +13,10 @@ classification does not authorize merging the collection into main.
 | Slice | Status | Why it can target the collection |
 | --- | --- | --- |
 | C01 USB/protocol | Merged, #695 | Foundation already present |
-| C02 account import and signer dispatch | In review, #696 | Depends on merged C01; signer refactor is in progress |
+| C02 account import and signer dispatch | In review, #696 | Depends on merged C01; signer dispatch and interrupted-setup recovery are implemented |
 | C04 Apple BLE | Draft, #700 | Swift adapter, registrations and native dependencies are self-contained |
 | C05 Android BLE | Draft, #698 | Kotlin adapter, permissions and native dependencies are self-contained |
-| C06a shared native BLE protocol | Preparing | Platform-neutral framing, response assembly and operation gate, with host tests |
+| C06a shared native BLE protocol | Draft, #701 | Platform-neutral framing, response assembly and operation gate, with host tests |
 
 C04 and C05 were originally stacked on C03. Their own native patches apply
 unchanged to the collection and have been rebased to target it directly.
@@ -28,8 +28,8 @@ app-wide minimum to Android 11 (API 30). Those remain release constraints.
 
 | Slice | Initial base | Merge condition |
 | --- | --- | --- |
-| C06b Windows BLE | C06a | After C06a merges, rebase its Windows-only commit onto the collection |
-| C07 Linux BLE | C06a | After C06a merges, rebase its Linux-only commit onto the collection |
+| C06b Windows BLE, draft #702 | C06a, #701 | After C06a merges, rebase its Windows-only commit onto the collection |
+| C07 Linux BLE, draft #703 | C06a, #701 | After C06a merges, rebase its Linux-only commit onto the collection |
 
 C06a owns `native/ledger/ble_protocol.h`, `ble_operation_gate.h` and their
 transport-neutral tests. Windows and Linux reuse these headers, but do not
