@@ -14,7 +14,6 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
-import '../../ledger/services/ledger_account_service.dart';
 import '../create/account_persona_generator.dart';
 import '../ledger/ledger_setup_args.dart';
 import '../shared/customise_account_mutation.dart';
@@ -26,7 +25,7 @@ import 'mobile_onboarding_scaffold.dart';
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
 
-/// Mobile account personalisation shared by create, import, and Keystone.
+/// Mobile account personalisation shared by create, import, Keystone, and Ledger.
 /// The original create design is captured by Figma light/dark default frames
 /// 6125:117635 / 6132:117807 and keyboard/error frames 6125:117233 /
 /// 6132:117773.
@@ -248,6 +247,7 @@ class _MobileCustomiseAccountScreenState
             SetPasswordFlow.create => mobileCreateProgress(8),
             SetPasswordFlow.importWallet => mobileImportProgress(5),
             SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
+            SetPasswordFlow.importLedger => kMobileLedgerCustomiseProgress,
             SetPasswordFlow.importWalletLink => throw StateError(
               'Wallet Link does not use account customisation.',
             ),
@@ -302,17 +302,13 @@ class MobileLedgerCustomiseAccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileCustomiseAccountScreen(
-      progress: 0.75,
-      onBack: () => context.pop(),
-      onFinish: (name, profilePictureId) async {
-        await ref.read(ledgerAccountImporterProvider)(
-          name: name,
+      args: CustomiseAccountArgs(
+        setupArgs: SetPasswordScreenArgs.importLedger(
           account: args.account,
           birthdayHeight: args.birthdayHeight,
-          profilePictureId: profilePictureId,
-        );
-        if (context.mounted) context.go('/home');
-      },
+        ),
+        pendingPassword: args.pendingPassword,
+      ),
     );
   }
 }

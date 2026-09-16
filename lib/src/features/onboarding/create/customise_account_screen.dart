@@ -210,6 +210,9 @@ class _CustomiseAccountScreenState
       return OnboardingBackTarget.route(
         label: 'Set Password',
         routePath: switch (args.flow) {
+          SetPasswordFlow.importLedger => throw StateError(
+            'Desktop Ledger uses its dedicated setup routes.',
+          ),
           SetPasswordFlow.create => OnboardingStep.setPassword.routePath,
           SetPasswordFlow.importWallet => '/import/set-password',
           SetPasswordFlow.importKeystone =>
@@ -223,6 +226,9 @@ class _CustomiseAccountScreenState
     }
     return OnboardingBackTarget.route(
       label: switch (args.flow) {
+        SetPasswordFlow.importLedger => throw StateError(
+          'Desktop Ledger uses its dedicated setup routes.',
+        ),
         SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
         SetPasswordFlow.importWallet =>
           ImportOnboardingStep.walletBirthdayHeight.label,
@@ -265,6 +271,9 @@ class _CustomiseAccountScreenState
     }
 
     final pane = switch (widget.args!.flow) {
+      SetPasswordFlow.importLedger => throw StateError(
+        'Desktop Ledger uses its dedicated setup routes.',
+      ),
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: _isSubmitting ? null : _backTarget,
         overlay: profilePictureOverlay,

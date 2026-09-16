@@ -81,7 +81,7 @@ void main() {
       expect(find.text('Connect Ledger'), findsOneWidget);
     });
 
-    testWidgets('hides Ledger for first-run or unconfigured wallets', (
+    testWidgets('shows Ledger for first-run or unconfigured wallets', (
       tester,
     ) async {
       for (final bootstrap in [
@@ -100,7 +100,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Connect Ledger'), findsNothing);
+        expect(find.text('Connect Ledger'), findsOneWidget);
       }
     });
 
@@ -194,11 +194,12 @@ void main() {
       accounts: scenario == 'fresh'
           ? const []
           : const [AccountInfo(uuid: 'software', name: 'Main', order: 0)],
-      passwordConfigured: scenario != 'unconfigured',
+      passwordConfigured: scenario == 'locked',
       unlocked: scenario != 'locked',
     );
     for (final route in mobileOnboardingRoutes().whereType<GoRoute>().where(
-      (route) => route.path.startsWith('/onboarding/ledger'),
+      (route) =>
+          scenario == 'locked' && route.path.startsWith('/onboarding/ledger'),
     )) {
       testWidgets('${route.path} rejects $scenario wallet with valid extras', (
         tester,

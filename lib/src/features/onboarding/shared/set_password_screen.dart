@@ -145,6 +145,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           ref,
           () async {
             switch (args.flow) {
+              case SetPasswordFlow.importLedger:
+                throw StateError(
+                  'Desktop Ledger uses its dedicated setup routes.',
+                );
               case SetPasswordFlow.create:
                 await accountNotifier.createAccountFromMnemonic(
                   mnemonic: args.requiredMnemonic,
@@ -271,6 +275,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           );
 
     return switch (standardArgs.flow) {
+      SetPasswordFlow.importLedger => throw StateError(
+        'Desktop Ledger uses its dedicated setup routes.',
+      ),
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: backTarget,
         child: content,
@@ -291,6 +298,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   String _backLabel(SetPasswordFlow flow) => switch (flow) {
+    SetPasswordFlow.importLedger => throw StateError(
+      'Desktop Ledger uses its dedicated setup routes.',
+    ),
     SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
     SetPasswordFlow.importWallet =>
       ImportOnboardingStep.walletBirthdayHeight.label,

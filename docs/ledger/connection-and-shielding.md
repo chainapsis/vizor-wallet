@@ -2,11 +2,15 @@
 
 ## Mobile account setup
 
-Mobile Ledger onboarding adds accounts only to an existing wallet with a
-configured passcode and an unlocked session. The Ledger routes and account
-import enforce this policy even when opened directly; first-account setup must
-use another supported onboarding method. Desktop Ledger password setup is
-unchanged.
+Mobile Ledger onboarding supports first-account setup and adding accounts to an
+existing wallet. A first import goes through the shared six-digit passcode and
+account customisation flow, prepares secure storage before import, commits the
+passcode after success, and continues to biometric setup. Failed imports roll
+back the pending passcode setup. Existing configured wallets skip passcode setup.
+The mutation requires either an unlocked configured wallet or a first-account
+setup session actually prepared by the security provider; route extras cannot
+bypass it. Pairing metadata is carried through every setup step.
+Desktop Ledger password setup is unchanged.
 
 ## Connection and cancellation
 

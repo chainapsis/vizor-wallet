@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_birthday_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 
 const _account = LedgerDeviceAccount(
   ufvk: 'uview-ledger',
@@ -42,11 +43,11 @@ void main() {
           ),
         ),
         GoRoute(
-          path: '/onboarding/ledger/customise-account',
+          path: '/onboarding/customise-account',
           builder: (_, state) {
-            final args = state.extra! as LedgerCustomiseAccountArgs;
+            final args = state.extra! as CustomiseAccountArgs;
             return Text(
-              'customise-${args.account.accountIndex}-${args.birthdayHeight}',
+              'customise-${args.setupArgs.ledgerAccount!.accountIndex}-${args.setupArgs.importBirthdayHeight}',
             );
           },
         ),

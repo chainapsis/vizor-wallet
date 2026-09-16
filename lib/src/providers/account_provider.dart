@@ -1414,14 +1414,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceModel,
   }) async {
     try {
-      // Mobile Ledger onboarding only adds accounts to a configured wallet.
-      // Enforce this at the mutation boundary as well as in navigation.
+      // A first mobile account requires a prepared passcode session. Existing
+      // wallets must be unlocked; route arguments alone never authorize import.
       if (kAppFormFactor == AppFormFactor.mobile) {
         final security = ref.read(appSecurityProvider);
-        if (state.value == null ||
-            state.value!.accounts.isEmpty ||
-            !security.isPasswordConfigured ||
-            !security.isUnlocked) {
+        final firstAccount = state.value?.accounts.isEmpty == true;
+        final preparedSetup = ref
+            .read(appSecurityProvider.notifier)
+            .hasPreparedPasswordSetup;
+        if (!(security.isPasswordConfigured && security.isUnlocked) &&
+            !(firstAccount && preparedSetup)) {
           throw StateError(
             'Set up and unlock your wallet before adding a Ledger account.',
           );

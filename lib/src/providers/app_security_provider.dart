@@ -104,10 +104,22 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   final AppSecureStore _store;
   bool _isPasswordSetupPrepared = false;
   int? _passwordSetupSessionGeneration;
+  int? _passwordSetupRequestGeneration;
+  int? _passwordSetupLifecycleGeneration;
   int _lifecycleGeneration = 0;
   int _unlockRequestGeneration = 0;
   int _confirmRequestGeneration = 0;
   int? _pendingUnlockSessionGeneration;
+
+  /// True only while this notifier owns an active, prepared setup session.
+  /// Provider state remains unconfigured until the account import commits.
+  bool get hasPreparedPasswordSetup =>
+      _isPasswordSetupPrepared &&
+      _passwordSetupRequestGeneration == _unlockRequestGeneration &&
+      _passwordSetupLifecycleGeneration == _lifecycleGeneration &&
+      _passwordSetupSessionGeneration != null &&
+      _store.isSessionGenerationCurrent(_passwordSetupSessionGeneration!) &&
+      _store.hasSessionPassword;
 
   @override
   AppSecurityState build() {
@@ -162,6 +174,8 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     await _store.configurePassword(password);
     _isPasswordSetupPrepared = true;
     _passwordSetupSessionGeneration = _store.sessionGeneration;
+    _passwordSetupRequestGeneration = requestGeneration;
+    _passwordSetupLifecycleGeneration = lifecycleGeneration;
     if (_store.enforcesSessionGeneration &&
         (lifecycleGeneration != _lifecycleGeneration ||
             requestGeneration != _unlockRequestGeneration ||

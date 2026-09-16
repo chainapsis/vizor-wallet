@@ -2,7 +2,6 @@ import 'package:flutter/cupertino.dart' show BuildContext, CupertinoPage;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -249,13 +248,10 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
 ];
 
-// First-account Ledger setup has no passcode flow on mobile. Check live
-// state, not the startup snapshot, so reset/lock cannot bypass this policy.
+// Fresh wallets may export a Ledger account before configuring a passcode.
+// The account mutation separately requires a prepared setup or unlocked wallet.
 Future<String?> _mobileLedgerRedirect(BuildContext context) async {
   final container = ProviderScope.containerOf(context, listen: false);
-  final accounts = await container.read(accountProvider.future);
-  if (accounts.accounts.isEmpty) return '/welcome';
   final security = container.read(appSecurityProvider);
-  if (!security.isPasswordConfigured || !security.isUnlocked) return '/unlock';
-  return null;
+  return security.requiresUnlock ? '/unlock' : null;
 }

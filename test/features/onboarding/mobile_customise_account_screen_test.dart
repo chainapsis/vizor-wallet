@@ -24,6 +24,15 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 const _mnemonic = 'stub mnemonic words';
 
 const _setupArgsByFlow = <SetPasswordScreenArgs>[
+  SetPasswordScreenArgs.importLedger(
+    account: LedgerDeviceAccount(
+      ufvk: 'ledger-test',
+      seedFingerprint: [1],
+      accountIndex: 0,
+      appVersion: '1',
+    ),
+    birthdayHeight: 2500000,
+  ),
   SetPasswordScreenArgs.create(mnemonic: _mnemonic),
   SetPasswordScreenArgs.importWallet(
     mnemonic: _mnemonic,
@@ -434,6 +443,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          accountProvider.overrideWith(_RecordingAccountNotifier.new),
+          syncProvider.overrideWith(_NoopSyncNotifier.new),
           ledgerAccountImporterProvider.overrideWithValue(({
             required name,
             required account,
@@ -454,10 +465,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.bySemanticsLabel('Back'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
     expect(
       tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
-      isTrue,
+      isFalse,
     );
 
     await tester.enterText(
