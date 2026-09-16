@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `require_mainnet`, `to_device_app`
+// These functions are ignored because they are not marked as `pub`: `ledger_account_fingerprint`, `require_mainnet`, `to_device_app`
 
 /// Read the application currently running on the connected Ledger device.
 Future<LedgerDeviceApp> ledgerDeviceApp() =>
@@ -33,6 +33,53 @@ Future<String> ledgerExportUfvk({
   accountIndex: accountIndex,
   network: network,
 );
+
+/// Export an account's UFVK and derivation metadata after device approval.
+/// The Ledger app does not export the ZIP-32 seed fingerprint. The synthetic
+/// hash here fills the DB derivation slot; it cannot identify a seed or device.
+Future<LedgerAccountExport> ledgerExportAccount({
+  required int accountIndex,
+  required String network,
+}) => RustLib.instance.api.crateApiLedgerLedgerExportAccount(
+  accountIndex: accountIndex,
+  network: network,
+);
+
+/// Viewing-key material for one approved Ledger account; never a spending key.
+class LedgerAccountExport {
+  final String ufvk;
+
+  /// Synthetic account-scoped DB metadata, not the real ZIP-32 seed fingerprint.
+  final Uint8List seedFingerprint;
+  final int accountIndex;
+
+  /// USB product name, for display only; not a device identity.
+  final String? deviceModel;
+
+  const LedgerAccountExport({
+    required this.ufvk,
+    required this.seedFingerprint,
+    required this.accountIndex,
+    this.deviceModel,
+  });
+
+  @override
+  int get hashCode =>
+      ufvk.hashCode ^
+      seedFingerprint.hashCode ^
+      accountIndex.hashCode ^
+      deviceModel.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LedgerAccountExport &&
+          runtimeType == other.runtimeType &&
+          ufvk == other.ufvk &&
+          seedFingerprint == other.seedFingerprint &&
+          accountIndex == other.accountIndex &&
+          deviceModel == other.deviceModel;
+}
 
 /// The application currently running on the connected Ledger device.
 class LedgerDeviceApp {

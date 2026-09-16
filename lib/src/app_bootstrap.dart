@@ -214,6 +214,16 @@ class AppSyncSnapshot {
   );
 }
 
+/// A password verifier without any account or wallet DB is an onboarding
+/// remnant rather than a wallet, so startup may drop it safely.
+bool shouldClearOrphanedPasswordVerifier({
+  required bool isPasswordConfigured,
+  required bool hasWallet,
+  required bool walletDbExists,
+}) {
+  return isPasswordConfigured && !hasWallet && !walletDbExists;
+}
+
 Future<AppBootstrapState> loadAppBootstrap() async {
   final storage = AppSecureStore.instance;
 
@@ -258,7 +268,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
-    final isPasswordConfigured = await storage.isPasswordConfigured();
+    var isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
     final databaseExists = rust_wallet.walletExists(dbPath: dbPath);
@@ -296,12 +306,30 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final rustAddressesByUuid = <String, String>{};
     if (rust_wallet.walletExists(dbPath: dbPath)) {
       try {
+        final legacyKeystoneAccounts = legacyKeystoneAccountsForBackfill(
+          storedAccounts,
+        );
+        if (legacyKeystoneAccounts.isNotEmpty) {
+          await rust_wallet.backfillLegacyHardwareAccounts(
+            dbPath: dbPath,
+            network: network,
+            accounts: legacyKeystoneAccounts,
+          );
+        }
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
           network: network,
         );
         rustAccounts = listed.indexed.map((entry) {
           final (index, account) = entry;
+          final hardwareSignerKind = HardwareSignerKind.fromJson(
+            account.hardwareSignerKind,
+          );
+          if (account.isHardware != (hardwareSignerKind != null)) {
+            throw StateError(
+              'Rust account ${account.uuid} returned inconsistent hardware signer metadata.',
+            );
+          }
           rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
           return mergeBootstrappedAccountInfo(
@@ -310,6 +338,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               name: account.name,
               order: index,
               isHardware: account.isHardware,
+              hardwareSignerKind: hardwareSignerKind,
+              birthdayHeight: account.birthdayHeight,
+              zip32AccountIndex: account.zip32AccountIndex,
               isSeedAnchor: account.isSeedAnchor,
             ),
             storedAccount: stored,
@@ -328,6 +359,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         ? null
         : rustAddressesByUuid[activeAccountUuid];
     final hasWallet = accounts.isNotEmpty;
+    if (shouldClearOrphanedPasswordVerifier(
+      isPasswordConfigured: isPasswordConfigured,
+      hasWallet: hasWallet,
+      walletDbExists: rust_wallet.walletExists(dbPath: dbPath),
+    )) {
+      log('bootstrap: clearing password verifier left without any account');
+      try {
+        await storage.clearPasswordConfiguration();
+        isPasswordConfigured = false;
+      } catch (e) {
+        log('bootstrap: failed to clear orphaned password verifier: $e');
+      }
+    }
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
     if (isUnlocked &&
@@ -400,6 +444,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   }
 }
 
+@visibleForTesting
+List<rust_wallet.LegacyHardwareAccount> legacyKeystoneAccountsForBackfill(
+  Iterable<AccountInfo> accounts,
+) => accounts
+    .where((account) => account.isKeystone)
+    .map(
+      (account) => rust_wallet.LegacyHardwareAccount(
+        accountUuid: account.uuid,
+        hardwareSignerKind: HardwareSignerKind.keystone.name,
+      ),
+    )
+    .toList(growable: false);
+
 String _walletDbMigrationFailureMessage(Object error) {
   final message = error.toString().toLowerCase();
   if (message.contains('seedrequired') ||
@@ -449,8 +506,17 @@ AccountInfo mergeBootstrappedAccountInfo({
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
     order: storedAccount?.order ?? order,
-    // Rust can recover Keystone accounts when older stored metadata lost this bit.
-    isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
+    isHardware: rustAccount.isHardware,
+    hardwareSignerKind: rustAccount.hardwareSignerKind,
+    birthdayHeight: rustAccount.birthdayHeight,
+    zip32AccountIndex: rustAccount.zip32AccountIndex,
+    ledgerConnectionPreference:
+        storedAccount?.ledgerConnectionPreference ??
+        LedgerConnectionPreference.automatic,
+    ledgerLastTransport: storedAccount?.ledgerLastTransport,
+    ledgerDeviceId: storedAccount?.ledgerDeviceId,
+    ledgerDeviceName: storedAccount?.ledgerDeviceName,
+    ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,

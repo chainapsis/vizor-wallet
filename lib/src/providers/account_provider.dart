@@ -1296,6 +1296,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
         birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.keystone.name,
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;
@@ -1306,6 +1307,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
@@ -1322,6 +1326,135 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       log('importKeystoneAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Import a Ledger-backed account using the UFVK approved on the device.
+  Future<void> importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importLedgerAccount(
+          name: name,
+          ufvk: ufvk,
+          seedFingerprint: seedFingerprint,
+          zip32Index: zip32Index,
+          birthdayHeight: birthdayHeight,
+          profilePictureId: profilePictureId,
+          connectionTransport: connectionTransport,
+          ledgerDeviceId: ledgerDeviceId,
+          ledgerDeviceName: ledgerDeviceName,
+          ledgerDeviceModel: ledgerDeviceModel,
+        ),
+      );
+
+  Future<void> _importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) async {
+    try {
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
+      final prev = state.value ?? const AccountState();
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+
+      final result = await rust_wallet.importHardwareAccount(
+        dbPath: dbPath,
+        network: network,
+        name: accountName,
+        ufvkString: ufvk,
+        seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index,
+        birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.ledger.name,
+      );
+      final accountUuid = result.accountUuid;
+      final address = result.unifiedAddress;
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: prev.accounts.length,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
+        ledgerLastTransport: connectionTransport,
+        ledgerDeviceId: ledgerDeviceId,
+        ledgerDeviceName: ledgerDeviceName,
+        ledgerDeviceModel: ledgerDeviceModel,
+        profilePictureId: normalizedProfilePictureId,
+      );
+      final updated = [...prev.accounts, newAccount];
+      try {
+        await _storage.writeString(_activeAccountKey, accountUuid);
+        await _saveAccounts(updated);
+      } catch (_) {
+        try {
+          await _saveAccounts(prev.accounts);
+        } catch (e, st) {
+          log('importLedgerAccount: failed to restore account list: $e\n$st');
+        }
+        try {
+          if (prev.activeAccountUuid == null) {
+            await _storage.delete(_activeAccountKey);
+          } else {
+            await _storage.writeString(
+              _activeAccountKey,
+              prev.activeAccountUuid!,
+            );
+          }
+        } catch (e, st) {
+          log('importLedgerAccount: failed to restore active account: $e\n$st');
+        }
+        await _rollbackUnpersistedHardwareAccount(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+        rethrow;
+      }
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: accountUuid,
+          activeAddress: address,
+        ),
+      );
+      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+    } catch (e, st) {
+      log('importLedgerAccount: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -1383,6 +1516,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               seedFingerprint: input.seedFingerprint ?? const [],
               zip32Index: input.zip32AccountIndex,
               birthdayHeight: BigInt.from(input.birthdayHeight),
+              hardwareSignerKind: HardwareSignerKind.keystone.name,
             );
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
@@ -1552,6 +1686,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return false;
   }
 
+  HardwareSignerKind? hardwareSignerKindForAccount(String uuid) {
+    final accounts = state.value?.accounts ?? const <AccountInfo>[];
+    for (final account in accounts) {
+      if (account.uuid == uuid) return account.hardwareSignerKind;
+    }
+    return null;
+  }
+
+  bool isKeystoneAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.keystone;
+
+  bool isLedgerAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.ledger;
+
   /// Get the mnemonic for the active account.
   Future<String?> getActiveMnemonic() async {
     final uuid = state.value?.activeAccountUuid;
@@ -1581,6 +1729,25 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   // ======================== Helpers ========================
+
+  Future<void> _rollbackUnpersistedHardwareAccount({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    try {
+      await rust_wallet.deleteAccount(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      );
+    } catch (e, st) {
+      log(
+        'rollbackUnpersistedHardwareAccount: failed for $accountUuid: '
+        '$e\n$st',
+      );
+    }
+  }
 
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());
