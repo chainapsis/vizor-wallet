@@ -44,19 +44,21 @@ class LedgerMobileHandler(
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
 ) : EventChannel.StreamHandler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var connectionJob: Job? = null
-    private var connectionResult: MethodChannel.Result? = null
+    private var operation: DeviceRequest? = null
+    private var closed = false
+    private var discoveryGeneration = 0L
     private var discoveryJob: Job? = null
     private var eventSink: EventChannel.EventSink? = null
     private var discoveryRequested = false
     private val discoveredDevices = mutableMapOf<String, DiscoveryDevice>()
     private var connectedDevice: ConnectedDevice? = null
     private var permissionResult: MethodChannel.Result? = null
-    private var signingJob: Job? = null
-    private var signingResult: MethodChannel.Result? = null
-    private var signingGeneration = 0L
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
+        if (closed) {
+            result.error("cancelled", "Ledger connection was closed.", null)
+            return
+        }
         when (call.method) {
             "requestPermissions" -> requestPermissions(result)
             "startDiscovery" -> startDiscovery(result)
@@ -76,6 +78,7 @@ class LedgerMobileHandler(
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+        if (closed) return
         eventSink = events
         if (discoveryRequested && discoveryJob == null) beginDiscovery()
     }
@@ -94,9 +97,15 @@ class LedgerMobileHandler(
     }
 
     fun close() {
-        cancelConnection()
+        if (closed) return
+        closed = true
         stopDiscovery()
-        cancelSigningOperation()
+        eventSink = null
+        permissionResult?.error("cancelled", "Ledger connection was closed.", null)
+        permissionResult = null
+        // Cleanup outlives this Activity, but no channel result does.
+        disconnect(null)
+        operation?.cancelResult()
         scope.cancel()
     }
 
@@ -117,7 +126,7 @@ class LedgerMobileHandler(
     }
 
     private fun startDiscovery(result: MethodChannel.Result) {
-        if (connectionJob != null || signingJob != null) {
+        if (sdkJobs[dmk] != null) {
             result.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
@@ -132,7 +141,6 @@ class LedgerMobileHandler(
             result.error("unavailable", "This Android device does not support Bluetooth LE.", null)
             return
         }
-        discoveryJob?.cancel()
         discoveredDevices.clear()
         discoveryRequested = true
         if (eventSink != null) beginDiscovery()
@@ -140,52 +148,75 @@ class LedgerMobileHandler(
     }
 
     private fun beginDiscovery() {
-        discoveryJob?.cancel()
-        discoveryJob = scope.launch {
-            dmk.startDiscoveringDevices().collect { update ->
-                when (update) {
-                    is DiscoveryResult.DevicesDiscovered -> {
-                        update.devices
-                            .filter { it.connectivityType is ConnectivityType.Bluetooth }
-                            .filter { it.ledgerDevice.bleInformation != null }
-                            .forEach { discoveredDevices[it.uid] = it }
-                        emit(
-                            mapOf(
-                                "type" to "devices",
-                                "devices" to discoveredDevices.values.map {
-                                    mapOf("id" to it.uid, "name" to it.name, "model" to it.ledgerDevice.name)
-                                },
-                            ),
+        if (sdkJobs[dmk] != null) {
+            discoveryRequested = false
+            emitError("unavailable", "A Ledger operation is already active.")
+            return
+        }
+        val generation = ++discoveryGeneration
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                dmk.startDiscoveringDevices().collect { update ->
+                    currentCoroutineContext().ensureActive()
+                    if (generation != discoveryGeneration || closed) return@collect
+                    when (update) {
+                        is DiscoveryResult.DevicesDiscovered -> {
+                            update.devices
+                                .filter { it.connectivityType is ConnectivityType.Bluetooth }
+                                .filter { it.ledgerDevice.bleInformation != null }
+                                .forEach { discoveredDevices[it.uid] = it }
+                            emit(
+                                mapOf(
+                                    "type" to "devices",
+                                    "devices" to discoveredDevices.values.map {
+                                        mapOf("id" to it.uid, "name" to it.name, "model" to it.ledgerDevice.name)
+                                    },
+                                ),
+                            )
+                        }
+                        DiscoveryResult.Ended -> emit(mapOf("type" to "ended"))
+                        DiscoveryResult.Failure.BluetoothDisabled -> emitError(
+                            "bluetooth_off",
+                            "Turn on Bluetooth to find Ledger devices.",
                         )
+                        DiscoveryResult.Failure.BluetoothPermissionNotGranted -> emitError(
+                            "permission_denied",
+                            "Bluetooth permission is required to find Ledger devices.",
+                        )
+                        DiscoveryResult.Failure.LocationDisabled -> emitError(
+                            "permission_denied",
+                            "Location must be enabled for Bluetooth discovery on this Android version.",
+                        )
+                        DiscoveryResult.Failure.BluetoothBleNotSupported -> emitError(
+                            "unavailable",
+                            "This Android device does not support Bluetooth LE.",
+                        )
+                        is DiscoveryResult.Failure.Unknown -> emitError("unavailable", update.message)
                     }
-                    DiscoveryResult.Ended -> emit(mapOf("type" to "ended"))
-                    DiscoveryResult.Failure.BluetoothDisabled -> emitError(
-                        "bluetooth_off",
-                        "Turn on Bluetooth to find Ledger devices.",
-                    )
-                    DiscoveryResult.Failure.BluetoothPermissionNotGranted -> emitError(
-                        "permission_denied",
-                        "Bluetooth permission is required to find Ledger devices.",
-                    )
-                    DiscoveryResult.Failure.LocationDisabled -> emitError(
-                        "permission_denied",
-                        "Location must be enabled for Bluetooth discovery on this Android version.",
-                    )
-                    DiscoveryResult.Failure.BluetoothBleNotSupported -> emitError(
-                        "unavailable",
-                        "This Android device does not support Bluetooth LE.",
-                    )
-                    is DiscoveryResult.Failure.Unknown -> emitError("unavailable", update.message)
+                }
+            } catch (_: CancellationException) {
+                // stopDiscovery owns invalidation and SDK shutdown.
+            } catch (_: Exception) {
+                if (generation == discoveryGeneration && !closed) {
+                    emitError("unavailable", "Could not discover Ledger devices. Try again.")
                 }
             }
         }
+        discoveryJob = job
+        sdkJobs[dmk] = job
+        job.invokeOnCompletion {
+            if (discoveryJob === job) discoveryJob = null
+            if (sdkJobs[dmk] === job) sdkJobs.remove(dmk)
+        }
+        job.start()
     }
 
     private fun stopDiscovery() {
+        discoveryGeneration++
+        val wasDiscovering = discoveryJob != null || discoveryRequested
         discoveryJob?.cancel()
-        discoveryJob = null
         discoveryRequested = false
-        dmk.stopDiscoveringDevices()
+        if (wasDiscovering) dmk.stopDiscoveringDevices()
     }
 
     private fun connect(call: MethodCall, result: MethodChannel.Result) {
@@ -194,46 +225,22 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        if (connectionJob != null || signingJob != null) {
-            result.error("unavailable", "A Ledger operation is already active.", null)
-            return
-        }
-        // The onboarding scan is optional: a fresh handler must also be able to
-        // connect using only the ID persisted with the account.
-        stopDiscovery()
-        connectionResult = result
-        val job = scope.launch(start = CoroutineStart.LAZY) {
-            try {
-                val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
-                currentCoroutineContext().ensureActive()
-                when (val connection = dmk.connectDevice(device)) {
-                    is ConnectionResult.Connected -> {
-                        if (connectionResult == null) {
-                            withContext(NonCancellable) { dmk.disconnectDevice(connection.device) }
-                        } else {
-                            connectedDevice = connection.device
-                            takeConnectionResult()?.success(null)
-                        }
-                    }
-                    is ConnectionResult.Disconnected -> {
-                        takeConnectionResult()?.let { connectionFailure(it, connection.failure) }
+        launchOperation(result) { request ->
+            val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
+            currentCoroutineContext().ensureActive()
+            when (val connection = dmk.connectDevice(device)) {
+                is ConnectionResult.Connected -> {
+                    if (!request.pending) {
+                        withContext(NonCancellable) { dmk.disconnectDevice(connection.device) }
+                    } else {
+                        currentCoroutineContext().ensureActive()
+                        connectedDevice = connection.device
+                        request.success(null)
                     }
                 }
-            } catch (_: CancellationException) {
-                takeConnectionResult()?.error("cancelled", "Ledger connection was cancelled.", null)
-            } catch (error: LedgerDiscoveryException) {
-                takeConnectionResult()?.error(error.code, error.message, null)
-            } catch (_: SecurityException) {
-                takeConnectionResult()?.error(
-                    "permission_denied", "Bluetooth permission is required to connect to Ledger.", null,
-                )
-            } catch (_: Exception) {
-                takeConnectionResult()?.error("unavailable", "Could not connect to Ledger. Try again.", null)
+                is ConnectionResult.Disconnected -> connectionFailure(request, connection.failure)
             }
         }
-        connectionJob = job
-        job.invokeOnCompletion { if (connectionJob === job) connectionJob = null }
-        job.start()
     }
 
     private suspend fun rediscoverDevice(deviceId: String): DiscoveryDevice {
@@ -273,104 +280,101 @@ class LedgerMobileHandler(
         }
     }
 
-    private fun takeConnectionResult(): MethodChannel.Result? {
-        val result = connectionResult
-        connectionResult = null
-        return result
-    }
-
-    private fun cancelConnection() {
-        takeConnectionResult()?.error("cancelled", "Ledger connection was cancelled.", null)
-        connectionJob?.cancel()
-    }
-
     private class LedgerDiscoveryException(val code: String, message: String) : Exception(message)
 
-    private fun disconnect(result: MethodChannel.Result) {
-        cancelConnection()
-        cancelSigningOperation()
-        val device = connectedDevice
-        connectedDevice = null
-        if (device == null) {
-            result.success(null)
+    private fun disconnect(result: MethodChannel.Result?) {
+        val previous = operation
+        if (previous?.cleanup == true) {
+            result?.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
-        scope.launch {
-            dmk.disconnectDevice(device)
-            result.success(null)
+        previous?.cancel()
+        stopDiscovery()
+        val scan = discoveryJob
+        val device = connectedDevice
+        connectedDevice = null
+        // Reserve the slot synchronously, including while the cancelled SDK
+        // request drains. Cleanup itself cannot be cancelled by UI navigation.
+        launchOperation(result, cleanup = true) { request ->
+            previous?.job?.join()
+            scan?.join()
+            if (device != null) dmk.disconnectDevice(device)
+            request.success(null)
         }
     }
 
     private fun currentApp(result: MethodChannel.Result) {
-        val device = requireConnected(result) ?: return
-        scope.launch {
-            when (val operation = dmk.executeCommand(device.uid, GetAppAndVersionCommand())) {
-                is DeviceOperationResult.Success -> result.success(operation.value.asFlutterMap())
-                is DeviceOperationResult.Failure -> operationFailure(result, operation.reason)
-            }
+        launchOperation(result) { request ->
+            val device = requireConnected(request) ?: return@launchOperation
+            queryApp(device, request)
+        }
+    }
+
+    private suspend fun queryApp(device: ConnectedDevice, request: DeviceRequest) {
+        currentCoroutineContext().ensureActive()
+        val app = dmk.executeCommand(device.uid, GetAppAndVersionCommand())
+        currentCoroutineContext().ensureActive()
+        when (app) {
+            is DeviceOperationResult.Success -> request.success(app.value.asFlutterMap())
+            is DeviceOperationResult.Failure -> operationFailure(request, app.reason)
         }
     }
 
     private fun openZcashApp(result: MethodChannel.Result) {
-        val device = requireConnected(result) ?: return
-        scope.launch {
+        launchOperation(result) { request ->
+            val device = requireConnected(request) ?: return@launchOperation
             val terminal = dmk.executeDeviceAction(device.uid, OpenApplicationDeviceAction("Zcash"))
                 .first { it is DeviceActionResult.Success || it is DeviceActionResult.Failure }
+            currentCoroutineContext().ensureActive()
             when (terminal) {
-                is DeviceActionResult.Failure -> operationFailure(result, terminal.reason)
-                is DeviceActionResult.Success -> {
-                    when (val app = dmk.executeCommand(device.uid, GetAppAndVersionCommand())) {
-                        is DeviceOperationResult.Success -> result.success(app.value.asFlutterMap())
-                        is DeviceOperationResult.Failure -> operationFailure(result, app.reason)
-                    }
-                }
+                is DeviceActionResult.Failure -> operationFailure(request, terminal.reason)
+                is DeviceActionResult.Success -> queryApp(device, request)
                 is DeviceActionResult.IntermediateValue -> error("terminal flow predicate")
             }
         }
     }
 
     private fun exchangeUfvk(call: MethodCall, result: MethodChannel.Result) {
-        val device = requireConnected(result) ?: return
         val first = parseCommand(call.argument("first"), result) ?: return
         val continuation = parseCommand(call.argument("continuation"), result) ?: return
-        launchExchange(result) { generation ->
+        launchOperation(result) { request ->
+            val device = requireConnected(request) ?: return@launchOperation
             val responses = mutableListOf<ByteArray>()
-            val firstResponse = exchange(device.uid, first, generation) ?: return@launchExchange
+            val firstResponse = exchange(device.uid, first, request) ?: return@launchOperation
             responses += firstResponse
             if (!firstResponse.hasSuccessStatus()) {
-                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
-                return@launchExchange
+                request.success(responses.map { it.asUnsignedList() })
+                return@launchOperation
             }
             if (firstResponse.size < 4) {
-                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
-                return@launchExchange
+                request.success(responses.map { it.asUnsignedList() })
+                return@launchOperation
             }
             val expectedPayloadLength = 2 + ((firstResponse[0].toInt() and 0xff) shl 8) +
                 (firstResponse[1].toInt() and 0xff)
             if (expectedPayloadLength > MAX_UFVK_RESPONSE) {
-                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
-                return@launchExchange
+                request.success(responses.map { it.asUnsignedList() })
+                return@launchOperation
             }
             var payloadLength = firstResponse.size - 2
             while (payloadLength < expectedPayloadLength) {
-                val response = exchange(device.uid, continuation, generation) ?: return@launchExchange
+                val response = exchange(device.uid, continuation, request) ?: return@launchOperation
                 responses += response
                 if (!response.hasSuccessStatus()) {
-                    finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
-                    return@launchExchange
+                    request.success(responses.map { it.asUnsignedList() })
+                    return@launchOperation
                 }
                 if (response.size == APDU_STATUS_SIZE) {
-                    finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
-                    return@launchExchange
+                    request.success(responses.map { it.asUnsignedList() })
+                    return@launchOperation
                 }
                 payloadLength += response.size - 2
             }
-            finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+            request.success(responses.map { it.asUnsignedList() })
         }
     }
 
     private fun exchangeApdus(call: MethodCall, result: MethodChannel.Result) {
-        val device = requireConnected(result) ?: return
         val values = call.argument<List<*>>("commands")
         if (values.isNullOrEmpty()) {
             result.error("unavailable", "Ledger signing APDU list is empty or invalid.", null)
@@ -381,92 +385,93 @@ class LedgerMobileHandler(
             val command = parseCommand(value as? Map<*, *>, result) ?: return
             commands += command
         }
-        launchExchange(result) { generation ->
+        launchOperation(result) { request ->
+            val device = requireConnected(request) ?: return@launchOperation
             val responses = mutableListOf<ByteArray>()
             for (command in commands) {
-                val response = exchange(device.uid, command, generation) ?: return@launchExchange
+                val response = exchange(device.uid, command, request) ?: return@launchOperation
                 responses += response
                 if (!response.hasSuccessStatus()) break
             }
-            finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+            request.success(responses.map { it.asUnsignedList() })
         }
     }
 
-    // UFVK export and signing share one APDU owner, including while a cancelled
-    // SDK callback is still draining. Only job completion releases this slot.
-    private fun launchExchange(result: MethodChannel.Result, block: suspend (Long) -> Unit) {
-        if (signingJob != null || connectionJob != null) {
-            result.error("unavailable", "A Ledger operation is already active.", null)
+    // Every device command uses this owner, not just signing APDUs. Completion
+    // of a cancelled SDK job (not delivery of its cancellation result) releases
+    // the slot. Main-thread confinement makes result delivery exactly-once.
+    private fun launchOperation(
+        result: MethodChannel.Result?,
+        cleanup: Boolean = false,
+        block: suspend (DeviceRequest) -> Unit,
+    ) {
+        val sdkJob = sdkJobs[dmk]
+        if (!cleanup && (operation != null || (sdkJob != null && sdkJob !== discoveryJob))) {
+            result?.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
-        val generation = ++signingGeneration
-        signingResult = result
-        val job = scope.launch(start = CoroutineStart.LAZY) {
+        stopDiscovery()
+        val scan = discoveryJob
+        val request = DeviceRequest(result, cleanup)
+        val job = scope.launch(
+            context = if (cleanup) NonCancellable else kotlin.coroutines.EmptyCoroutineContext,
+            start = CoroutineStart.LAZY,
+        ) {
             try {
-                block(generation)
+                if (cleanup) sdkJob?.join()
+                scan?.join()
+                currentCoroutineContext().ensureActive()
+                block(request)
             } catch (_: CancellationException) {
-                finishSigningCancelled(generation)
+                request.cancelResult()
+            } catch (error: LedgerDiscoveryException) {
+                request.error(error.code, error.message, null)
+            } catch (_: SecurityException) {
+                request.error("permission_denied", "Bluetooth permission is required to connect to Ledger.", null)
             } catch (_: Exception) {
-                takeSigningResult(generation)?.error(
-                    "unavailable", "Could not exchange data with Ledger. Try again.", null,
-                )
+                request.error("unavailable", "Could not communicate with Ledger. Try again.", null)
             }
         }
-        signingJob = job
+        request.job = job
+        operation = request
+        sdkJobs[dmk] = job
         job.invokeOnCompletion {
-            // Also runs if cancellation happened before the coroutine started.
-            if (signingJob === job) {
-                finishSigningCancelled(generation)
-                signingJob = null
-            }
+            request.cancelResult() // Includes cancellation before dispatch.
+            if (operation === request) operation = null
+            if (sdkJobs[dmk] === job) sdkJobs.remove(dmk)
         }
         job.start()
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
-        cancelConnection()
-        cancelSigningOperation()
+        operation?.let { if (!it.cleanup) it.cancel() }
         result.success(null)
     }
 
-    private fun cancelSigningOperation() {
-        val pending = signingResult ?: return
-        signingGeneration++
-        signingResult = null
-        val job = signingJob
-        pending.error("cancelled", "Ledger signing was cancelled.", null)
-        job?.cancel()
-    }
+    private class DeviceRequest(
+        private var result: MethodChannel.Result?,
+        val cleanup: Boolean,
+    ) : MethodChannel.Result {
+        lateinit var job: Job
+        val pending: Boolean get() = result != null
 
-    private fun finishSigningSuccess(generation: Long, value: Any) {
-        val result = takeSigningResult(generation) ?: return
-        result.success(value)
-    }
-
-    private fun finishSigningFailure(
-        generation: Long,
-        reason: DeviceOperationFailureReason,
-    ) {
-        val result = takeSigningResult(generation) ?: return
-        operationFailure(result, reason)
-    }
-
-    private fun finishSigningCancelled(generation: Long) {
-        val result = takeSigningResult(generation) ?: return
-        result.error("cancelled", "Ledger signing was cancelled.", null)
-    }
-
-    private fun takeSigningResult(generation: Long): MethodChannel.Result? {
-        if (generation != signingGeneration) return null
-        val result = signingResult ?: return null
-        signingResult = null
-        return result
+        private fun takeResult(): MethodChannel.Result? = result.also { result = null }
+        override fun success(value: Any?) { takeResult()?.success(value) }
+        override fun error(code: String, message: String?, details: Any?) {
+            takeResult()?.error(code, message, details)
+        }
+        override fun notImplemented() { takeResult()?.notImplemented() }
+        fun cancelResult() { error("cancelled", "Ledger operation was cancelled.", null) }
+        fun cancel() {
+            cancelResult()
+            job.cancel()
+        }
     }
 
     private suspend fun exchange(
         uid: String,
         command: ApduCommand,
-        generation: Long,
+        request: DeviceRequest,
     ): ByteArray? {
         currentCoroutineContext().ensureActive()
         val operation = sendApdu(uid, command)
@@ -474,7 +479,7 @@ class LedgerMobileHandler(
         return when (operation) {
             is DeviceOperationResult.Success -> operation.value
             is DeviceOperationResult.Failure -> {
-                finishSigningFailure(generation, operation.reason)
+                operationFailure(request, operation.reason)
                 null
             }
         }
@@ -598,6 +603,10 @@ class LedgerMobileHandler(
     )
 
     companion object {
+        // DMK survives Activity recreation. A new handler must also wait for
+        // the previous handler's non-cooperative command/cleanup to finish.
+        // Accessed only on Main; entries are removed on actual job completion.
+        private val sdkJobs = mutableMapOf<DeviceManagementKitApi, Job>()
         const val METHOD_CHANNEL = "com.zcash.wallet/ledger_mobile"
         const val EVENT_CHANNEL = "com.zcash.wallet/ledger_mobile/discovery"
         private const val PERMISSION_REQUEST = 0x4c45

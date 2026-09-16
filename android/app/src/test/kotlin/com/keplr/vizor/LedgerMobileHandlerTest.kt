@@ -1,6 +1,17 @@
 package com.keplr.vizor
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import org.robolectric.Robolectric
+import org.robolectric.Shadows.shadowOf
+import io.flutter.plugin.common.EventChannel
+import com.ledger.devicemanagement.api.command.Command
+import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
+import com.ledger.devicemanagement.api.deviceaction.DeviceAction
+import com.ledger.devicemanagement.api.deviceaction.DeviceActionResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import com.ledger.devicemanagement.api.DeviceOperationResult
 import com.ledger.devicemanagement.api.DeviceOperationFailureReason
 import com.ledger.devicemanagement.api.apdu.ApduPayload
@@ -362,6 +373,271 @@ class LedgerMobileHandlerTest {
             assertEquals(listOf(listOf(105, 133)), rejected.value)
             assertEquals(1, rejected.completions)
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun useReadiness(
+        query: suspend () -> DeviceOperationResult<AppAndVersion> = {
+            DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2"))
+        },
+        open: () -> Flow<DeviceActionResult<Unit>> = { flowOf(DeviceActionResult.Success(Unit)) },
+        disconnect: suspend () -> Unit = {},
+    ) {
+        handler.close()
+        dispatcher.scheduler.runCurrent()
+        `when`(connected.uid).thenReturn("connected-id")
+        `when`(dmk.getConnectedDevices()).thenReturn(listOf(connected))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun <T> executeCommand(
+                deviceUid: String, command: Command<T>,
+            ): DeviceOperationResult<T> = query() as DeviceOperationResult<T>
+            override fun <T> executeDeviceAction(
+                deviceUid: String, deviceAction: DeviceAction<T>,
+            ): Flow<DeviceActionResult<T>> = open() as Flow<DeviceActionResult<T>>
+            override suspend fun disconnectDevice(device: ConnectedDevice) = disconnect()
+        }
+        handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+    }
+
+    @Test fun readinessCancellationMatrixCompletesEachResultOnceAndAllowsRetry() = runTest(dispatcher) {
+        for (method in listOf("currentApp", "openZcashApp")) {
+            for (action in listOf("cancelSigning", "disconnect", "close")) {
+                for (dispatch in listOf(false, true)) {
+                    var calls = 0
+                    useReadiness(
+                        query = { calls++; awaitCancellation() },
+                        open = { flow { calls++; awaitCancellation() } },
+                    )
+                    val pending = call(method)
+                    if (dispatch) runCurrent()
+                    if (action == "close") handler.close() else call(action)
+                    runCurrent()
+                    assertEquals(if (dispatch) 1 else 0, calls)
+                    assertEquals("cancelled", pending.error)
+                    assertEquals(1, pending.completions)
+                    if (action != "close") {
+                        val retry = call(method)
+                        runCurrent()
+                        assertEquals(0, retry.completions)
+                        call("cancelSigning")
+                        runCurrent()
+                        assertEquals(1, retry.completions)
+                    } else {
+                        assertEquals("cancelled", call(method).error)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun readinessOwnsTheDeviceAgainstEveryOtherCommandUntilDrain() = runTest(dispatcher) {
+        for (method in listOf("currentApp", "openZcashApp")) {
+            var pending: Continuation<DeviceOperationResult<AppAndVersion>>? = null
+            useReadiness(query = { suspendCoroutine { pending = it } })
+            val first = call(method)
+            runCurrent()
+            assertNotNull(pending)
+            for (cancel in listOf(false, true)) {
+                if (cancel) call("cancelSigning")
+                for (other in listOf("connect", "currentApp", "openZcashApp", "startDiscovery")) {
+                    assertEquals("$method blocks $other", "unavailable", call(other).error)
+                }
+                assertEquals("unavailable", exchangeCall().error)
+                assertEquals("unavailable", exchangeCall("exchangeApdus").error)
+            }
+            pending!!.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")))
+            runCurrent()
+            assertEquals("cancelled", first.error)
+            assertEquals(1, first.completions)
+            val retry = call(method)
+            runCurrent()
+            pending!!.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")))
+            runCurrent()
+            assertEquals(mapOf("name" to "Zcash", "version" to "3.9.2"), retry.value)
+            assertEquals(1, retry.completions)
+        }
+    }
+
+    @Test fun apduAndConnectionOwnersAlsoBlockReadiness() = runTest(dispatcher) {
+        useExchange { awaitCancellation() }
+        exchangeCall()
+        runCurrent()
+        assertEquals("unavailable", call("currentApp").error)
+        assertEquals("unavailable", call("openZcashApp").error)
+        call("cancelSigning")
+        runCurrent()
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flow { awaitCancellation() })
+        call("connect")
+        runCurrent()
+        assertEquals("unavailable", call("currentApp").error)
+        assertEquals("unavailable", call("openZcashApp").error)
+    }
+
+    @Test fun cancelledAppApprovalCannotStartTheVersionQuery() = runTest(dispatcher) {
+        var queries = 0
+        useReadiness(
+            query = { queries++; DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")) },
+            open = { flow {
+                call("cancelSigning")
+                emit(DeviceActionResult.Success(Unit))
+            } },
+        )
+        val result = call("openZcashApp")
+        runCurrent()
+        assertEquals(0, queries)
+        assertEquals("cancelled", result.error)
+        assertEquals(1, result.completions)
+    }
+
+    @Test fun readinessErrorsAndEmptyAppActionAlwaysSettleAndReleaseTheSlot() = runTest(dispatcher) {
+        for (method in listOf("currentApp", "openZcashApp")) {
+            var failOnce = true
+            useReadiness(query = {
+                if (failOnce) { failOnce = false; throw IllegalStateException("SDK failure") }
+                DeviceOperationResult.Failure(DeviceOperationFailureReason.DeviceLocked)
+            })
+            val thrown = call(method)
+            runCurrent()
+            assertEquals("unavailable", thrown.error)
+            assertEquals(1, thrown.completions)
+            val locked = call(method)
+            runCurrent()
+            assertEquals("locked", locked.error)
+            assertEquals(1, locked.completions)
+        }
+        useReadiness(open = { emptyFlow() })
+        val empty = call("openZcashApp")
+        runCurrent()
+        assertEquals("unavailable", empty.error)
+        assertEquals(1, empty.completions)
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
+    }
+
+    @Test fun disconnectDrainsOldCommandAndBlocksNewWorkThroughNativeCleanup() = runTest(dispatcher) {
+        var query: Continuation<DeviceOperationResult<AppAndVersion>>? = null
+        var cleanup: Continuation<Unit>? = null
+        useReadiness(
+            query = { suspendCoroutine { query = it } },
+            disconnect = { suspendCoroutine { cleanup = it } },
+        )
+        val abandoned = call("currentApp")
+        runCurrent()
+        val disconnect = call("disconnect")
+        runCurrent()
+        assertNull(cleanup)
+        assertEquals("cancelled", abandoned.error)
+        assertEquals("unavailable", call("connect").error)
+        query!!.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")))
+        runCurrent()
+        assertNotNull(cleanup)
+        assertEquals("unavailable", call("currentApp").error)
+        assertEquals("unavailable", call("disconnect").error)
+        call("cancelSigning") // Cleanup must continue even after another UI cancel.
+        assertEquals(0, disconnect.completions)
+        handler.close()
+        assertEquals("cancelled", disconnect.error)
+        assertEquals(1, disconnect.completions)
+        cleanup!!.resume(Unit)
+        runCurrent()
+        assertEquals(1, disconnect.completions)
+        assertEquals(1, abandoned.completions)
+    }
+
+    @Test fun disconnectFailureCompletesItsResultAndAllowsRetry() = runTest(dispatcher) {
+        useReadiness(disconnect = { throw IllegalStateException("disconnect failed") })
+        call("currentApp")
+        runCurrent()
+        val disconnect = call("disconnect")
+        runCurrent()
+        assertEquals("unavailable", disconnect.error)
+        assertEquals(1, disconnect.completions)
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
+    }
+
+    @Test fun closeCompletesPermissionRequestAndIgnoresLateGrant() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler = LedgerMobileHandler(activity, dmk)
+        val result = call("requestPermissions")
+        assertEquals(0, result.completions)
+        handler.close()
+        assertEquals("cancelled", result.error)
+        assertEquals(1, result.completions)
+        handler.onRequestPermissionsResult(0x4c45, intArrayOf(PackageManager.PERMISSION_GRANTED))
+        assertEquals(1, result.completions)
+        activity.finish()
+    }
+
+    @Test fun stoppedDiscoveryDrainsBeforeReconnectAndCannotPublishToNewListener() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        `when`(dmk.isBluetoothBleSupported()).thenReturn(true)
+        var drain: Continuation<Unit>? = null
+        var scans = 0
+        `when`(dmk.startDiscoveringDevices()).thenAnswer {
+            scans++
+            if (scans == 1) flow {
+                suspendCoroutine<Unit> { drain = it }
+                emit(DiscoveryResult.DevicesDiscovered(listOf(saved.copy(uid = "stale"))))
+            } else flowOf(DiscoveryResult.DevicesDiscovered(listOf(saved)))
+        }
+        `when`(dmk.connectDevice(saved)).thenReturn(ConnectionResult.Connected(connected))
+        handler = LedgerMobileHandler(activity, dmk)
+        val oldSink = mock(EventChannel.EventSink::class.java)
+        val newSink = mock(EventChannel.EventSink::class.java)
+        handler.onListen(null, oldSink)
+        assertNull(call("startDiscovery").error)
+        runCurrent()
+        handler.onCancel(null)
+        handler.onListen(null, newSink)
+        val connection = call("connect")
+        runCurrent()
+        assertEquals(1, scans)
+        drain!!.resume(Unit)
+        runCurrent()
+        assertEquals(2, scans)
+        verifyNoInteractions(oldSink, newSink)
+        assertNull(connection.error)
+        assertEquals(1, connection.completions)
+        activity.finish()
+    }
+
+    @Test fun recreatedHandlerCannotBypassOldSdkCleanup() = runTest(dispatcher) {
+        var pending: Continuation<ConnectionResult>? = null
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(saved))))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult =
+                suspendCoroutine { pending = it }
+        }
+        handler.close()
+        runCurrent()
+        handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+        val old = call("connect")
+        runCurrent()
+        handler.close()
+        handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+        assertEquals("unavailable", call("connect").error)
+        assertEquals("unavailable", call("currentApp").error)
+        pending!!.resume(ConnectionResult.Connected(connected))
+        runCurrent()
+        assertEquals("cancelled", old.error)
+        assertEquals(1, old.completions)
+        verify(dmk).disconnectDevice(connected)
+        val retry = call("connect")
+        runCurrent()
+        pending!!.resume(ConnectionResult.Connected(connected))
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
     }
 
 }

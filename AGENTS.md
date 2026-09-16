@@ -670,6 +670,15 @@ Keep desktop and mobile consistent when cancelling signing, not merely closing t
 - Vote: preserve saved partial signatures and resume unsigned bundles.
 - For transaction proposals, finish input-lock release and balance refresh before allowing retry.
 
+Android Ledger device work must use `LedgerMobileHandler.launchOperation`,
+including app queries and app-opening approval, not only signing APDUs. Register
+ownership before dispatch, settle each MethodChannel result once, and retain the
+SDK-wide exclusion until the job actually completes after cancellation. Discovery
+and disconnect cleanup also participate in exclusion across Activity recreation.
+Dart preparation uses `ledgerDeviceRequestsProvider`: capture before the first
+await and check before starting the next stage or publishing a result. Do not
+apply this cancellable device policy to already-submitted durable broadcasts.
+
 ### Hardware Wallet (Keystone) Send Flow
 
 Normal hardware sends use Keystone's signatures-only batch protocol, even for
