@@ -14,6 +14,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_signing_progress.dart';
+import '../services/ledger_diagnostics.dart';
 import 'ledger_device_app_prompt.dart';
 
 enum LedgerSigningModalPhase {
@@ -105,6 +106,9 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => LedgerSigningStage.finishing,
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
+    ledgerTrace(
+      'ui phase=${phase.name} stage=${stage.name} round=$roundNumber/$roundCount',
+    );
     var title = failed ? failure!.title : stage.title;
     var message = failed ? failure!.message : stage.message;
     var statusLabel = failed ? failure!.statusLabel : stage.status;

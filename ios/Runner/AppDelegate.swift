@@ -64,6 +64,9 @@ import UIKit
       name: "com.zcash.wallet/ledger_mobile/signing_progress",
       binaryMessenger: messenger
     )
+    ledgerMobileHandler.onDiagnostic = { line in
+      signingProgressChannel.invokeMethod("diagnostic", arguments: line)
+    }
     ledgerMobileHandler.onSigningProgress = { requestId, phase in
       signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
     }

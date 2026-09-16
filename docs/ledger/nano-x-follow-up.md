@@ -57,3 +57,50 @@ Do not treat the signing-phase UI improvement as a fix for this device failure.
 - [Separate action and review memory budgets](https://github.com/LedgerHQ/app-zcash/commit/12542bb41bcc307057b4613b60ed70cc6b76bf7f)
 
 Related UI analysis: [Signing phase guidance](signing-phase-guidance.md).
+
+## Debug instrumentation and Android reproduction
+
+The investigation branch adds debug-only `[LedgerTrace]` metadata:
+
+- Dart: UI stage/round, attempt generation, readiness/version, validation,
+  wallet-path lookup, connection, APDU-plan command count/byte total, review-busy
+  retries and signature finalization. UTC timestamps distinguish host preparation
+  from the native exchange. UI lines can repeat on rebuild; they are not attempts.
+- Android/Apple BLE: monotonic timestamps, batch request ID, command sequence,
+  CLA/INS/P1/P2, byte count, response status word, elapsed round-trip time, and
+  cancellation/connection results. Native diagnostics are also forwarded to Dart.
+- USB debug Rust builds: APDU header, sizes, status word and round-trip timing.
+  Rust logs follow the platform logger, not the Flutter console on Apple platforms.
+
+No new logs contain account UUIDs, device identifiers, addresses, amounts, memo
+text, keys, raw commands/responses, signatures or exception messages. Sizes and
+counts still reveal transaction shape. Logging is off in release builds. Logging
+may affect timing, so failure to reproduce with diagnostics is not proof of a fix.
+No timeout, automatic retry, device polling, or APDU ordering changes are added.
+
+Android procedure (real phone, not an emulator):
+
+1. Enable USB debugging on the phone, connect it to this Mac and accept the phone's
+   debugging prompt. Find its ID with `~/Library/Android/sdk/platform-tools/adb devices`.
+2. From the repository root, start `scripts/capture-ledger-android.sh DEVICE_ID` in
+   one terminal. It prints its output path, includes phone model/OS, and captures
+   only `[LedgerTrace]` lines. It does not clear system logs or overwrite a file.
+3. In another terminal run
+   `fvm flutter run -d DEVICE_ID --dart-define=VIZOR_FORM_FACTOR=mobile`.
+   Use the debug build; a store/release build does not emit these diagnostics.
+4. Unlock Nano X, open Zcash and reproduce the same Bluetooth signing flow. Start
+   with the original power condition. If review appears normally, reject on the
+   Ledger rather than approving/broadcasting merely to test the pre-review stall.
+5. If it reboots, note the approximate time, app stage, last device screen,
+   responsiveness and whether the phone reports disconnection. Keep capture
+   running for 10–15 seconds. If possible, retry once after unlocking/reopening
+   Zcash (without restarting Vizor), then stop capture with Ctrl-C.
+6. Send the capture file plus Ledger OS/Zcash versions, whether Nano X was on
+   battery or charging, and what happened on retry. After the first trace is
+   analyzed, compare the same request under external power/USB as appropriate.
+
+Interpretation: `apdu_start` without its matching `apdu_end`/`apdu_error` means the
+host is still waiting on that exchange; it does **not** by itself distinguish
+radio failure, device computation, or power failure. `review_boundary` precedes
+both final validation and device approval. Metadata alone cannot prove heap or
+stack exhaustion, which may require an instrumented device-app build.

@@ -134,6 +134,9 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "com.zcash.wallet/ledger_mobile/signing_progress"
         )
+        ledgerMobileHandler.onDiagnostic = { line ->
+            signingProgressChannel.invokeMethod("diagnostic", line)
+        }
         ledgerMobileHandler.onSigningProgress = { requestId, phase ->
             signingProgressChannel.invokeMethod("progress", mapOf("requestId" to requestId, "phase" to phase))
         }

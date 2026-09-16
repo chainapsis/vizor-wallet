@@ -43,6 +43,8 @@ final class LedgerMobileHandlerTests: XCTestCase {
     connect(handler)
     var phases: [String] = []
     handler.onSigningProgress = { _, phase in phases.append(phase) }
+    var diagnostics: [String] = []
+    handler.onDiagnostic = { diagnostics.append($0) }
     let started = expectation(description: "review sent")
     let finished = expectation(description: "exchange finished")
     transport.onExchange = { started.fulfill() }
@@ -55,6 +57,8 @@ final class LedgerMobileHandlerTests: XCTestCase {
     transport.complete("9000")
     await fulfillment(of: [finished], timeout: 2)
     XCTAssertEqual(phases, ["sending", "reviewing", "finishing"])
+    XCTAssertTrue(diagnostics.contains { $0.contains("apdu_start") && $0.contains("header=e0:56:01:01") })
+    XCTAssertTrue(diagnostics.contains { $0.contains("apdu_end") && $0.contains("sw=9000") })
     handler.close()
   }
 

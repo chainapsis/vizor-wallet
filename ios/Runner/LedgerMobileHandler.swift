@@ -51,6 +51,18 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   static let eventChannelName = "com.zcash.wallet/ledger_mobile/discovery"
 
   var onSigningProgress: ((String, String) -> Void)?
+  var onDiagnostic: ((String) -> Void)?
+  private var diagnosticSequence = 0
+
+  // Metadata only: never include command/response payloads or SDK error descriptions.
+  private func trace(_ message: String) {
+    #if DEBUG
+    let line = "[LedgerTrace][apple] uptime_ms=\(Int(ProcessInfo.processInfo.systemUptime * 1000)) \(message)"
+    NSLog("%@", line)
+    onDiagnostic?(line)
+    #endif
+  }
+
 
   private var transportStorage: BleTransportProtocol?
   private var bluetoothState: CBManagerState = .unknown
@@ -85,6 +97,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    trace("method=\(call.method) exchange_pending=\(exchangeTask != nil) callback_pending=\(transportCallbackPending)")
     switch call.method {
     case "requestPermissions":
       requestPermissions(result)
@@ -575,6 +588,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func handleDisconnected(generation: Int) {
+    trace("disconnected generation=\(generation) current=\(connectionGeneration) exchange_pending=\(exchangeTask != nil)")
     guard generation == connectionGeneration else { return }
     connectedDevice = nil
     if exchangeRecoversFromDisconnect { return }
@@ -711,13 +725,17 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       let report: (String) -> Void = { phase in
         if let progressId { self.onSigningProgress?(progressId, phase) }
       }
+      trace("batch_start request=\(progressId ?? "none") commands=\(commands.count)")
       report("sending")
       defer { signingReadyAt = Date().addingTimeInterval(4) }
       var responses: [[UInt8]] = []
       for command in commands {
         try Task.checkCancellation()
         let startsReview = (command.ins == 0x56 || command.ins == 0x58) && command.p2 == 1
-        if startsReview { report("reviewing") }
+        if startsReview {
+          trace("review_boundary request=\(progressId ?? "none")")
+          report("reviewing")
+        }
         let response = try await exchange(command)
         if startsReview && response.hasSuccessStatus { report("finishing") }
         responses.append(response)
@@ -799,6 +817,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     guard let pending = exchangeResult else { return }
     exchangeGeneration += 1
     exchangeResult = nil
+    trace("cancel code=\(code) exchange_pending=\(exchangeTask != nil)")
     // BleTransport 1.0.1 cannot interrupt an exchange already waiting for a
     // device response. Keep the task occupied until that callback drains, but
     // invalidate its generation now so no late response reaches Dart.
@@ -834,11 +853,27 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     // Apply this to app/UFVK queries as well as subsequent signatures.
     if let readyAt = signingReadyAt {
       let remaining = readyAt.timeIntervalSinceNow
-      if remaining > 0 { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+      if remaining > 0 {
+        trace("cooldown_wait ms=\(Int(remaining * 1000))")
+        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+      }
     }
     try Task.checkCancellation()
-    let response = try await ensureTransport().exchange(apdu: APDU(data: command))
-    return try LedgerMobileProtocol.bytes(fromHex: response)
+    diagnosticSequence += 1
+    let sequence = diagnosticSequence
+    let started = ProcessInfo.processInfo.systemUptime
+    let header = command.prefix(4).map { String(format: "%02x", $0) }.joined(separator: ":")
+    trace("apdu_start seq=\(sequence) header=\(header) bytes=\(command.count)")
+    do {
+      let response = try await ensureTransport().exchange(apdu: APDU(data: command))
+      let bytes = try LedgerMobileProtocol.bytes(fromHex: response)
+      let status = bytes.count >= 2 ? bytes.suffix(2).map { String(format: "%02x", $0) }.joined() : "short"
+      trace("apdu_end seq=\(sequence) ms=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) response_bytes=\(bytes.count) sw=\(status) cancelled=\(Task.isCancelled)")
+      return bytes
+    } catch {
+      trace("apdu_error seq=\(sequence) ms=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) type=\(type(of: error)) cancelled=\(Task.isCancelled)")
+      throw error
+    }
   }
 
   private func requireConnected(
