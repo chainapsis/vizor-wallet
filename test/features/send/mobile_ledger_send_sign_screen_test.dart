@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -445,20 +446,33 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(
-      find.text('Review Transaction 1 of 2 on your Ledger'),
-      findsOneWidget,
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(LedgerSigningModal)),
     );
-    expect(find.text('Waiting for approval · 1 of 2'), findsOneWidget);
+    final firstProgress = container
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin('account-1');
+    firstProgress('sending');
+    await tester.pump();
+    expect(find.text('Sending to Ledger'), findsOneWidget);
+    firstProgress('reviewing');
+    await tester.pump();
+    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Transaction 1 of 2'), findsOneWidget);
 
     first.complete(const [4]);
     await tester.pump();
     await tester.pump();
-    expect(
-      find.text('Review Transaction 2 of 2 on your Ledger'),
-      findsOneWidget,
-    );
-    expect(find.text('Waiting for approval · 2 of 2'), findsOneWidget);
+    final secondProgress = container
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin('account-1');
+    firstProgress('finishing');
+    await tester.pump();
+    expect(find.text('Preparing transaction'), findsOneWidget);
+    secondProgress('reviewing');
+    await tester.pump();
+    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Transaction 2 of 2'), findsOneWidget);
 
     second.complete(const [8]);
     await tester.pumpAndSettle();

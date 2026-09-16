@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1292,20 +1293,14 @@ void main() {
 
     await tester.tap(find.text('Confirm with Ledger'));
     await _flushRealAsync(tester);
-    expect(
-      find.text('Review Transaction 1 of 2 on your Ledger'),
-      findsOneWidget,
-    );
+    expect(find.text('Transaction 1 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
     ]);
 
     firstApproval.complete([9, 1]);
     await _flushRealAsync(tester);
-    expect(
-      find.text('Review Transaction 2 of 2 on your Ledger'),
-      findsOneWidget,
-    );
+    expect(find.text('Transaction 2 of 2'), findsOneWidget);
     expect(signingRequests, const [
       [1, 4],
       [2, 4],
@@ -1447,7 +1442,7 @@ void main() {
 
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
-        expect(find.text('Review on your Ledger'), findsOneWidget);
+        expect(find.text('Check your Ledger'), findsOneWidget);
 
         switch (dismissal) {
           case 'button':
@@ -1595,7 +1590,7 @@ void main() {
 
     firstSignerResult.complete(_fakeSignatureBytes);
     await _flushRealAsync(tester);
-    expect(find.text('Review on your Ledger'), findsOneWidget);
+    expect(find.text('Check your Ledger'), findsOneWidget);
     expect(operationService.checkpoints, isEmpty);
 
     secondSignerResult.complete(_fakeSignatureBytes);
@@ -1841,7 +1836,7 @@ void main() {
 
     await tester.tap(find.text('Confirm with Ledger'));
     await _flushRealAsync(tester);
-    expect(find.text('Saving signed transaction'), findsOneWidget);
+    expect(find.text('Finishing transaction'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(LedgerSigningModal),
@@ -1856,7 +1851,7 @@ void main() {
     await tester.tapAt(overlayRect.topLeft + const Offset(8, 8));
     await tester.pump();
 
-    expect(find.text('Saving signed transaction'), findsOneWidget);
+    expect(find.text('Finishing transaction'), findsOneWidget);
     expect(find.text('send-route'), findsNothing);
     expect(cancelCount, 0);
     expect(rustApi.discardCalls, isEmpty);
@@ -2463,8 +2458,13 @@ Widget _harness(
       if (useFallback)
         rpcEndpointFailoverProvider.overrideWith(_FallbackRoute.new),
       if (ledgerSigner != null)
-        ledgerPcztSignerProvider.overrideWithValue(
-          (_, pcztBytes) => ledgerSigner(pcztBytes),
+        ledgerPcztSignerProvider.overrideWith(
+          (ref) => (accountUuid, pcztBytes) {
+            ref.read(ledgerSigningProgressProvider.notifier).begin(accountUuid)(
+              'reviewing',
+            );
+            return ledgerSigner(pcztBytes);
+          },
         ),
       if (ledgerCanceller != null)
         ledgerOperationCancellerProvider.overrideWithValue(ledgerCanceller),

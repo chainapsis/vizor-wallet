@@ -633,6 +633,14 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
+    sign_pczt_with_progress(pczt_bytes, &|_| {})
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn sign_pczt_with_progress(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str),
+) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
         return Err(
@@ -670,7 +678,8 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
-    transport.send_pczt(&commands)?;
+    transport.send_pczt_with_progress(&commands, progress)?;
+    progress("finishing");
 
     let signatures = requests
         .into_iter()
@@ -690,11 +699,27 @@ pub fn sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> 
     Err(unsupported_platform())
 }
 
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub fn sign_pczt_with_progress(
+    _pczt_bytes: &[u8],
+    _progress: &dyn Fn(&str),
+) -> Result<Vec<SpendAuthSignature>, String> {
+    Err(unsupported_platform())
+}
+
 /// Streams one PCZT to Ledger for a single transaction review, requests every
 /// transparent and Orchard-family signature it requires, verifies those
 /// signatures through the PCZT Signer role, and returns the signed PCZT.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    sign_pczt_full_with_progress(pczt_bytes, &|_| {})
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn sign_pczt_full_with_progress(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str),
+) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     let commands = serialize_pczt(&parsed)?;
 
@@ -730,7 +755,8 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
-    transport.send_pczt(&commands)?;
+    transport.send_pczt_with_progress(&commands, progress)?;
+    progress("finishing");
 
     // Request transparent signatures first, matching the order in which the app
     // receives the PCZT bundles. The device resets its signing state only after
@@ -765,6 +791,14 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt_full(_pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    Err(unsupported_platform())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub fn sign_pczt_full_with_progress(
+    _pczt_bytes: &[u8],
+    _progress: &dyn Fn(&str),
+) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
 

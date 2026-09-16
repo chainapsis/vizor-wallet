@@ -20,6 +20,57 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test(
+    'native progress is scoped to the active request and ignored after cancellation',
+    () async {
+      final reply = Completer<Object?>();
+      String? requestId;
+      final phases = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'cancelSigning') return null;
+            requestId = (call.arguments as Map)['progressId'] as String;
+            return reply.future;
+          });
+      Future<void> emit(String id, String phase) async {
+        final done = Completer<void>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              'com.zcash.wallet/ledger_mobile/signing_progress',
+              const StandardMethodCodec().encodeMethodCall(
+                MethodCall('progress', {'requestId': id, 'phase': phase}),
+              ),
+              (_) => done.complete(),
+            );
+        await done.future;
+      }
+
+      final pending = service.exchangeApdusWithProgress([
+        LedgerApduCommand(
+          cla: 0xe0,
+          ins: 0x58,
+          p1: 0,
+          p2: 1,
+          data: Uint8List.fromList([0]),
+        ),
+      ], phases.add);
+      final expectation = expectLater(pending, throwsA(_cancelledFailure));
+      await Future<void>.delayed(Duration.zero);
+      await emit('unrelated', 'finishing');
+      await emit(requestId!, 'sending');
+      await emit(requestId!, 'reviewing');
+      expect(phases, ['sending', 'reviewing']);
+      await service.cancelSigning();
+      await emit(requestId!, 'finishing');
+      reply.complete([
+        [0x90, 0],
+      ]);
+      await expectation;
+      await emit(requestId!, 'finishing');
+      expect(phases, ['sending', 'reviewing']);
+    },
+  );
+
   for (final method in ['connect', 'currentApp', 'openZcashApp']) {
     for (final cancel in ['cancelSigning', 'disconnect']) {
       test('$cancel ignores a late $method response', () async {

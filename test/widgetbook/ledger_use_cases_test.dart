@@ -44,8 +44,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Review Transaction 2 of 3 on your Ledger'), findsOne);
-    expect(find.text('Waiting for approval · 2 of 3'), findsOne);
+    expect(find.text('Check your Ledger'), findsOne);
+    expect(find.text('Transaction 2 of 3'), findsOne);
     expect(find.text('Zcash · Ledger'), findsOne);
     expect(tester.takeException(), isNull);
   });
@@ -58,6 +58,7 @@ void main() {
       (_) => buildLedgerSigningPreview(
         phase: LedgerSigningModalPhase.failed,
         readiness: LedgerSigningPlaygroundReadiness.failed,
+        failureMode: LedgerSigningPlaygroundFailure.reconnect,
       ),
     );
 
@@ -120,7 +121,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Approve voting delegation'), findsOne);
+    expect(find.text('Voting delegation'), findsOne);
     expect(find.text('Bundle 2 of 3'), findsOne);
     expect(find.text('Round 7 delegation memo'), findsOne);
     expect(find.byKey(const ValueKey('ledger_voting_signing_panel')), findsOne);
@@ -132,7 +133,7 @@ void main() {
       find.byKey(const ValueKey('ledger_voting_preview_advance')),
     );
     await tester.pump();
-    expect(find.text('Waiting for Ledger approval'), findsOne);
+    expect(find.text('Check your Ledger'), findsOne);
 
     await tester.tap(
       find.byKey(const ValueKey('ledger_voting_preview_advance')),

@@ -118,8 +118,8 @@ void main() {
       expect(
         find.text(
           checkpointGate == null && !cached
-              ? 'Sending transaction'
-              : 'Saving signed transaction',
+              ? 'Finishing transaction'
+              : 'Finishing transaction',
         ),
         findsOneWidget,
       );
@@ -128,8 +128,8 @@ void main() {
       expect(
         find.text(
           checkpointGate == null && !cached
-              ? 'Sending transaction'
-              : 'Saving signed transaction',
+              ? 'Finishing transaction'
+              : 'Finishing transaction',
         ),
         findsOneWidget,
       );

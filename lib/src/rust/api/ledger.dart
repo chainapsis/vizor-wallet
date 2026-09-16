@@ -235,6 +235,21 @@ Future<void> ledgerAckSignedOperation({
   operationId: operationId,
 );
 
+/// USB signing with coarse progress and one terminal result, without polling the device.
+Stream<LedgerSigningEvent> ledgerSignWithProgress({
+  required String dbPath,
+  required String accountUuid,
+  required List<int> pcztBytes,
+  required String network,
+  required bool compact,
+}) => RustLib.instance.api.crateApiLedgerLedgerSignWithProgress(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  pcztBytes: pcztBytes,
+  network: network,
+  compact: compact,
+);
+
 /// Public account material approved by the user on the Ledger device.
 class LedgerAccountExport {
   final String ufvk;
@@ -450,6 +465,38 @@ class LedgerSignedOperationBroadcastResult {
           status == other.status &&
           message == other.message &&
           requiresAck == other.requiresAck;
+}
+
+/// Operation-local signing events. Closing the observer must not cancel signing.
+class LedgerSigningEvent {
+  final String phase;
+  final Uint8List? signedPczt;
+  final List<LedgerActionSig> signatures;
+  final String? error;
+
+  const LedgerSigningEvent({
+    required this.phase,
+    this.signedPczt,
+    required this.signatures,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      signedPczt.hashCode ^
+      signatures.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LedgerSigningEvent &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          signedPczt == other.signedPczt &&
+          signatures == other.signatures &&
+          error == other.error;
 }
 
 class LedgerUfvkApduPlan {

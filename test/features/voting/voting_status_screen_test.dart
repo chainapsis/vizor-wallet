@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -74,6 +75,51 @@ import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
 void main() {
+  testWidgets(
+    'Ledger voting stages ignore another account and defer approval guidance',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container
+          .read(ledgerSigningProgressProvider.notifier)
+          .begin('another-account')('reviewing');
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: const Scaffold(
+                body: LedgerVotingSigningPanel(
+                  accountUuid: 'voting-account',
+                  displayMemo: 'Delegation memo',
+                  bundleIndex: 0,
+                  bundleCount: 1,
+                  onCancel: null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Preparing voting delegation'), findsOneWidget);
+      expect(find.text('Check your Ledger'), findsNothing);
+      expect(find.text('Approve voting delegation'), findsNothing);
+      final progress = container
+          .read(ledgerSigningProgressProvider.notifier)
+          .begin('voting-account');
+      progress('sending');
+      await tester.pump();
+      expect(find.text('Sending to Ledger'), findsOneWidget);
+      progress('reviewing');
+      await tester.pump();
+      expect(find.text('Check your Ledger'), findsOneWidget);
+      progress('finishing');
+      await tester.pump();
+      expect(find.text('Finishing voting delegation'), findsOneWidget);
+    },
+  );
+
   setUpAll(() {
     RustLib.initMock(api: _RustApiFake());
   });
@@ -520,7 +566,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
     }
-    expect(find.text('Approve on your Ledger'), findsOneWidget);
+    expect(find.text('Voting with Ledger'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ledger_voting_signing_panel')),
       findsOneWidget,
@@ -4170,9 +4216,9 @@ void main() {
         find.byKey(const ValueKey('ledger_voting_signing_panel')),
         findsOneWidget,
       );
-      expect(find.text('Approve on your Ledger'), findsOneWidget);
+      expect(find.text('Voting with Ledger'), findsOneWidget);
       expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
-      expect(find.text('Waiting for Ledger approval'), findsOneWidget);
+      expect(find.text('Preparing voting delegation'), findsOneWidget);
       expect(find.text('Signing with Keystone'), findsNothing);
       expect(find.text('Signing with Ledger'), findsOneWidget);
       expect(find.text('platform submission progress'), findsNothing);

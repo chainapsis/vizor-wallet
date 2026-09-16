@@ -130,6 +130,13 @@ class MainActivity : FlutterFragmentActivity() {
             sensitiveClipboardHandler.handle(call, result)
         }
         ledgerMobileHandler = LedgerMobileHandler(this)
+        val signingProgressChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.zcash.wallet/ledger_mobile/signing_progress"
+        )
+        ledgerMobileHandler.onSigningProgress = { requestId, phase ->
+            signingProgressChannel.invokeMethod("progress", mapOf("requestId" to requestId, "phase" to phase))
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             LedgerMobileHandler.METHOD_CHANNEL

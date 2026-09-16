@@ -101,6 +101,14 @@ abstract interface class LedgerMobileBleService {
   Future<void> cancelSigning();
 }
 
+/// Optional progress capability; existing test/custom transports remain compatible.
+abstract interface class LedgerProgressBleService {
+  Future<List<Uint8List>> exchangeApdusWithProgress(
+    List<rust_ledger.LedgerApduCommand> commands,
+    void Function(String) onProgress,
+  );
+}
+
 /// Method channel shared by every native Ledger Bluetooth runner.
 const kLedgerMobileMethodChannel = 'com.zcash.wallet/ledger_mobile';
 
@@ -108,11 +116,43 @@ final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
   return MethodChannelLedgerMobileBleService();
 });
 
-class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
+class MethodChannelLedgerMobileBleService
+    implements LedgerMobileBleService, LedgerProgressBleService {
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
            reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
+
+  static const _progressChannel = MethodChannel(
+    'com.zcash.wallet/ledger_mobile/signing_progress',
+  );
+  static int _nextProgressId = 0;
+  static final _progressObservers = <String, void Function(String)>{};
+
+  @override
+  Future<List<Uint8List>> exchangeApdusWithProgress(
+    List<rust_ledger.LedgerApduCommand> commands,
+    void Function(String) onProgress,
+  ) async {
+    final generation = _operationGeneration;
+    final id = '${++_nextProgressId}';
+    _progressChannel.setMethodCallHandler((call) async {
+      if (call.method != 'progress' || call.arguments is! Map) return;
+      final arguments = call.arguments as Map;
+      final phase = arguments['phase'];
+      if (phase is String) {
+        _progressObservers[arguments['requestId']]?.call(phase);
+      }
+    });
+    _progressObservers[id] = (phase) {
+      if (generation == _operationGeneration) onProgress(phase);
+    };
+    try {
+      return await _exchangeApdus(commands, progressId: id);
+    } finally {
+      _progressObservers.remove(id);
+    }
+  }
 
   static const _methods = MethodChannel(kLedgerMobileMethodChannel);
   static const _events = EventChannel(
@@ -235,7 +275,12 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   @override
   Future<List<Uint8List>> exchangeApdus(
     List<rust_ledger.LedgerApduCommand> commands,
-  ) async {
+  ) => _exchangeApdus(commands);
+
+  Future<List<Uint8List>> _exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands, {
+    String? progressId,
+  }) async {
     final generation = _operationGeneration;
     try {
       if (commands.isEmpty) {
@@ -251,6 +296,7 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
         _checkOperationActive(generation);
         final responses = await _invokeApduResponses('exchangeApdus', {
           'commands': pending.map(_encodeCommand).toList(growable: false),
+          'progressId': ?progressId,
         });
         _checkOperationActive(generation);
         if (responses.isEmpty) return completed;

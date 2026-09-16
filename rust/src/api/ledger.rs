@@ -449,3 +449,60 @@ mod tests {
         assert!(require_mainnet("regtest").unwrap_err().contains("mainnet"));
     }
 }
+
+/// Operation-local signing events. Closing the observer must not cancel signing.
+pub struct LedgerSigningEvent {
+    pub phase: String,
+    pub signed_pczt: Option<Vec<u8>>,
+    pub signatures: Vec<LedgerActionSig>,
+    pub error: Option<String>,
+}
+
+/// USB signing with coarse progress and one terminal result, without polling the device.
+pub fn ledger_sign_with_progress(
+    db_path: String,
+    account_uuid: String,
+    pczt_bytes: Vec<u8>,
+    network: String,
+    compact: bool,
+    sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
+) {
+    let progress = |phase: &str| {
+        let _ = sink.add(LedgerSigningEvent {
+            phase: phase.into(),
+            signed_pczt: None,
+            signatures: vec![],
+            error: None,
+        });
+    };
+    let result = (|| -> Result<LedgerSigningEvent, String> {
+        let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
+        ledger::validate_pczt_account(&pczt_bytes, expected)?;
+        let (signed_pczt, signatures) = if compact {
+            (
+                None,
+                to_action_sigs(ledger::sign_pczt_with_progress(&pczt_bytes, &progress)?)?,
+            )
+        } else {
+            (
+                Some(ledger::sign_pczt_full_with_progress(
+                    &pczt_bytes,
+                    &progress,
+                )?),
+                vec![],
+            )
+        };
+        Ok(LedgerSigningEvent {
+            phase: "complete".into(),
+            signed_pczt,
+            signatures,
+            error: None,
+        })
+    })();
+    let _ = sink.add(result.unwrap_or_else(|error| LedgerSigningEvent {
+        phase: "failed".into(),
+        signed_pczt: None,
+        signatures: vec![],
+        error: Some(error),
+    }));
+}

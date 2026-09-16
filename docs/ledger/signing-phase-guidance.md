@@ -1,6 +1,7 @@
 # Ledger signing phase guidance analysis
 
-2026-09-16. Code inspection only; proposed copy and event boundaries are not implemented.
+2026-09-16. Four-stage guidance implemented after the inventory and proposal below.
+The inventory records the pre-change UI; the implementation section records the new behavior.
 Scope: transaction approval on desktop/mobile, plus the separate voting approval UI.
 Account import/public viewing-key export is a separate onboarding flow.
 
@@ -17,7 +18,7 @@ Voting uses `LedgerVotingSigningPanel`, not the shared card.
 macOS supports USB/BLE; Windows/Linux USB; iOS/Android BLE in current product code.
 Form factor controls presentation; active transport controls connection instructions.
 
-## Exact shared card inventory
+## Pre-change shared card inventory
 
 | Phase | Title | Status | Body |
 | --- | --- | --- | --- |
@@ -123,20 +124,29 @@ existing title/status area without repeating the same information three times.
   Check the device screen.` No extra phase or automatic signing retry; elapsed time
   alone does not establish device health or failure.
 
-## Implementation outline for a later change
+## Implementation
 
-- Add one per-attempt progress model shared by card/voting UI; scope to operation,
-  round and generation so late responses cannot overwrite cancellation or retries.
-- Emit host phases from connection/readiness/signing services and flow owners.
-- BLE needs progress events from Apple/Android native loops: the current method
-  call returns the entire response list only when the operation finishes.
-- USB needs Rust progress events from plan/transport/signature validation via FRB.
-  macOS BLE should use the BLE events, not the desktop USB path.
-- Do not add concurrent device polling, replay signatures, alter APDU ordering,
-  weaken validation, or change durable-operation/cancellation ownership for UI updates.
-- Test delayed planning/upload/review/finalization, consecutive rounds, failure,
-  cancel/retry and late events on desktop/mobile lanes; use deterministic UI states.
-  Physical Nano X timing verification remains deferred, separately tracked.
+- `ledger_signing_progress.dart` owns the account-scoped stage and attempt generation.
+  Late events after cancellation, disposal or a newer attempt are ignored; stages
+  advance monotonically within an attempt, including review-busy transport retries.
+- Shared signing cards and voting consume this model. Preparing includes host work;
+  existing app-opening action prompts remain. Voting headings no longer ask for
+  approval while preparing. Transaction/bundle counts remain independent of stage.
+- USB uses an FRB stream with operation-local progress and one terminal result.
+  The final packet of `CommandPackets.finishes_pczt` emits reviewing immediately
+  before exchange; a successful exchange sequence emits finishing before signatures.
+- Apple/Android BLE emit progress over a separate method channel, keyed to the
+  existing batch request. The final Orchard V5 (`0x56`) or Ironwood V6 (`0x58`)
+  bundle command with `p2 == 1` marks the review boundary; its successful response
+  marks finishing. The existing sequential APDU batch, retries, validation and
+  cancellation ownership remain intact. macOS BLE uses these same native events.
+- Review is a protocol boundary, not an exact screen-ready signal. Device validation
+  can still run before the prompt appears; the copy explicitly says “when prompted.”
+- No additional device polling, split batches, percentages, timers or automatic
+  signing retries were introduced. Physical Nano X timing/reboot verification is
+  deferred in `nano-x-follow-up.md`; this UI change does not claim to fix that issue.
+- Regression coverage includes live stage changes, account isolation, cancel/retry
+  and late events, consecutive mobile rounds, and native review/response ordering.
 
 Copy audit CSVs named by AGENTS.md were not present in this checkout. Draft copy
 uses sentence case; consult those audits if restored before implementation.
