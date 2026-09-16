@@ -19,9 +19,9 @@ void Rejects(const std::function<void()>& action, const char* code = "unavailabl
 
 int main() {
   using namespace ledger_ble;
-  const Bytes command = {0xb0, 0x01, 0, 0};
+  const Bytes command = GetAppAndVersionCommand();
   assert((FrameApdu(command, 20) ==
-          std::vector<Bytes>{{0x05, 0, 0, 0, 4, 0xb0, 1, 0, 0}}));
+          std::vector<Bytes>{{0x05, 0, 0, 0, 5, 0xb0, 1, 0, 0, 0}}));
   for (const size_t mtu : {20, 64, 244}) {
     Bytes response(8192, 0x42);
     response[response.size() - 2] = 0x90;

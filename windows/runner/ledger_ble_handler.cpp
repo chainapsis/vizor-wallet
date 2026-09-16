@@ -570,6 +570,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     {
       std::lock_guard lock(session_mutex_);
       session = std::exchange(session_, nullptr);
+      connected_id_.clear();
     }
     if (session) session->Close();
   }
@@ -668,7 +669,10 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         ExchangePackets(session, {{0x08, 0, 0, 0, 0}}, operation, true),
         session->gatt_session.MaxPduSize());
     Check(operation);
-    connected_id_ = id;
+    {
+      std::lock_guard lock(session_mutex_);
+      connected_id_ = id;
+    }
   }
 
   Bytes ExchangePackets(const std::shared_ptr<Session>& session,
@@ -726,11 +730,16 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
   }
 
   ledger_ble::AppInfo ReadApp(uint64_t operation) {
-    return ledger_ble::DecodeAppInfo(Exchange({0xb0, 0x01, 0, 0}, operation));
+    return ledger_ble::DecodeAppInfo(
+        Exchange(ledger_ble::GetAppAndVersionCommand(), operation));
   }
 
   ledger_ble::AppInfo OpenZcash(uint64_t operation) {
-    const auto id = connected_id_;
+    std::string id;
+    {
+      std::lock_guard lock(session_mutex_);
+      id = connected_id_;
+    }
     if (id.empty()) throw Error("disconnected", "Connect a Ledger before opening Zcash.");
     try {
       ledger_ble::RequireSuccess(Exchange({0xe0, 0xd8, 0, 0, 5, 'Z', 'c', 'a', 's', 'h'}, operation));

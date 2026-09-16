@@ -143,6 +143,8 @@ struct AppInfo {
   std::string version;
 };
 
+inline Bytes GetAppAndVersionCommand() { return {0xb0, 0x01, 0, 0, 0}; }
+
 inline AppInfo DecodeAppInfo(const Bytes& response) {
   RequireSuccess(response);
   if (response.size() < 5 || response[0] != 1) {
