@@ -61,6 +61,11 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   String? _error;
   String? _connectingDeviceId;
   var _generation = 0;
+  bool _closing = false;
+  bool _connectionTransferred = false;
+
+  bool _isCurrent(int generation) =>
+      mounted && !_closing && generation == _generation;
 
   @override
   void initState() {
@@ -70,10 +75,32 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
 
   @override
   void dispose() {
-    _generation++;
+    _abandonConnection();
     unawaited(_subscription?.cancel());
     unawaited(_bestEffortStopDiscovery(widget.service));
     super.dispose();
+  }
+
+  void _abandonConnection() {
+    _closing = true;
+    _generation++;
+    if (_connectingDeviceId != null && !_connectionTransferred) {
+      _connectingDeviceId = null;
+      unawaited(_cancelConnection());
+    }
+  }
+
+  Future<void> _cancelConnection() async {
+    try {
+      await widget.service.cancelSigning();
+    } catch (_) {
+      // The dismissed picker must not publish native cancellation failures.
+    }
+  }
+
+  void _close() {
+    _abandonConnection();
+    widget.onClose();
   }
 
   Future<void> _stopDiscovery() async {
@@ -91,11 +118,12 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
     final generation = ++_generation;
     try {
       await _stopDiscovery();
+      if (!_isCurrent(generation)) return;
       // A connected Ledger no longer advertises itself, so starting another
       // scan while retaining the previous picker session can hide that device.
       // Entering this sheet starts a fresh device-selection session.
       await widget.service.disconnect();
-      if (!mounted || generation != _generation) return;
+      if (!_isCurrent(generation)) return;
       setState(() {
         _state = _DiscoveryState.requestingPermission;
         _devices = const [];
@@ -103,7 +131,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
         _connectingDeviceId = null;
       });
       final granted = await widget.service.requestPermissions();
-      if (!mounted || generation != _generation) return;
+      if (!_isCurrent(generation)) return;
       if (!granted) {
         setState(() {
           _state = _DiscoveryState.failed;
@@ -123,7 +151,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   }
 
   void _handleUpdate(int generation, LedgerDiscoveryUpdate update) {
-    if (!mounted || generation != _generation) return;
+    if (!_isCurrent(generation)) return;
     switch (update) {
       case LedgerDevicesDiscovered(:final devices):
         setState(() {
@@ -142,7 +170,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   }
 
   void _handleFailure(int generation, Object error) {
-    if (!mounted || generation != _generation) return;
+    if (!_isCurrent(generation)) return;
     final message = switch (error) {
       LedgerMobileException(failure: LedgerMobileFailure.bluetoothOff) =>
         'Turn on Bluetooth, then try again.',
@@ -159,18 +187,22 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   }
 
   Future<void> _connect(LedgerBleDevice device) async {
-    if (_connectingDeviceId != null) return;
+    if (_closing || _connectingDeviceId != null) return;
+    final generation = ++_generation;
     setState(() {
       _connectingDeviceId = device.id;
       _error = null;
     });
     try {
       await _stopDiscovery();
+      if (!_isCurrent(generation)) return;
       await widget.service.connect(device);
-      if (!mounted) return;
+      if (!_isCurrent(generation)) return;
+      // Successful selection transfers the connection to the parent screen.
+      _connectionTransferred = true;
       widget.onSelected(device);
     } catch (error) {
-      _handleFailure(_generation, error);
+      _handleFailure(generation, error);
     }
   }
 
@@ -178,66 +210,71 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final busy = _connectingDeviceId != null;
-    return MobileModalScaffold(
-      key: const ValueKey('mobile_ledger_device_sheet'),
-      title: 'Select your Ledger',
-      onClose: widget.onClose,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (_devices.isNotEmpty)
-            ..._devices.map(
-              (device) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: _LedgerDeviceRow(
-                  device: device,
-                  connecting: _connectingDeviceId == device.id,
-                  enabled: !busy,
-                  onTap: () => unawaited(_connect(device)),
-                ),
+    return PopScope<LedgerBleDevice>(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) _abandonConnection();
+      },
+      child: MobileModalScaffold(
+        key: const ValueKey('mobile_ledger_device_sheet'),
+        title: 'Select your Ledger',
+        onClose: _close,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
               ),
-            )
-          else if (_state == _DiscoveryState.requestingPermission ||
-              _state == _DiscoveryState.scanning)
-            const _StatusMessage(
-              key: ValueKey('mobile_ledger_scanning'),
-              iconName: AppIcons.loader,
-              title: 'Scanning for Ledger devices',
-              message: 'This can take a few seconds.',
-            )
-          else if (_state == _DiscoveryState.empty)
-            const _StatusMessage(
-              key: ValueKey('mobile_ledger_empty'),
-              iconName: AppIcons.search,
-              title: 'No Ledger devices found',
-              message: 'Check that your Ledger is unlocked and try again.',
-            )
-          else
-            _StatusMessage(
-              key: const ValueKey('mobile_ledger_discovery_error'),
-              iconName: AppIcons.warningCircle,
-              title: 'Could not find your Ledger',
-              message: _error ?? 'Try again.',
             ),
-          if (_state == _DiscoveryState.empty ||
-              _state == _DiscoveryState.failed) ...[
             const SizedBox(height: AppSpacing.sm),
-            AppButton(
-              key: const ValueKey('mobile_ledger_discovery_retry'),
-              onPressed: busy ? null : () => unawaited(_startDiscovery()),
-              variant: AppButtonVariant.secondary,
-              child: const Text('Try again'),
-            ),
+            if (_devices.isNotEmpty)
+              ..._devices.map(
+                (device) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: _LedgerDeviceRow(
+                    device: device,
+                    connecting: _connectingDeviceId == device.id,
+                    enabled: !busy,
+                    onTap: () => unawaited(_connect(device)),
+                  ),
+                ),
+              )
+            else if (_state == _DiscoveryState.requestingPermission ||
+                _state == _DiscoveryState.scanning)
+              const _StatusMessage(
+                key: ValueKey('mobile_ledger_scanning'),
+                iconName: AppIcons.loader,
+                title: 'Scanning for Ledger devices',
+                message: 'This can take a few seconds.',
+              )
+            else if (_state == _DiscoveryState.empty)
+              const _StatusMessage(
+                key: ValueKey('mobile_ledger_empty'),
+                iconName: AppIcons.search,
+                title: 'No Ledger devices found',
+                message: 'Check that your Ledger is unlocked and try again.',
+              )
+            else
+              _StatusMessage(
+                key: const ValueKey('mobile_ledger_discovery_error'),
+                iconName: AppIcons.warningCircle,
+                title: 'Could not find your Ledger',
+                message: _error ?? 'Try again.',
+              ),
+            if (_state == _DiscoveryState.empty ||
+                _state == _DiscoveryState.failed) ...[
+              const SizedBox(height: AppSpacing.sm),
+              AppButton(
+                key: const ValueKey('mobile_ledger_discovery_retry'),
+                onPressed: busy ? null : () => unawaited(_startDiscovery()),
+                variant: AppButtonVariant.secondary,
+                child: const Text('Try again'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

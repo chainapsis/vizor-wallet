@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_s
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -439,6 +440,112 @@ void main() {
     expect(ble.permissionCalls, 3);
   });
 
+  for (final stage in ['stopDiscovery', 'connect']) {
+    testWidgets(
+      'closing picker during $stage cancels without selecting a late device',
+      (tester) async {
+        final ble = _FakeBleService();
+        var selections = 0;
+        var closes = 0;
+        await tester.pumpWidget(
+          AppTheme(
+            data: AppThemeData.light,
+            child: MaterialApp(
+              home: MobileLedgerDeviceSheet(
+                service: ble,
+                onSelected: (_) => selections++,
+                onClose: () => closes++,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        ble.emit(
+          const LedgerDevicesDiscovered([
+            LedgerBleDevice(id: 'stax', name: 'Rowan Ledger', model: 'Stax'),
+          ]),
+        );
+        await tester.pump();
+        final pending = Completer<void>();
+        if (stage == 'connect') {
+          ble.pendingConnect = pending.future;
+        } else {
+          ble.pendingStop = pending.future;
+        }
+        await tester.tap(find.text('Rowan Ledger'));
+        await tester.pump();
+        await tester.tap(find.bySemanticsLabel('Close'));
+        await tester.pump();
+        expect(closes, 1);
+        expect(ble.cancelCalls, 1);
+        pending.complete();
+        await tester.pump();
+        expect(selections, 0);
+        if (stage == 'stopDiscovery') expect(ble.connectedIds, isEmpty);
+        await tester.pumpWidget(const SizedBox());
+        expect(ble.cancelCalls, 1);
+      },
+    );
+  }
+
+  testWidgets(
+    'disposing picker while initial discovery stops cannot disconnect a later session',
+    (tester) async {
+      final pending = Completer<void>();
+      final ble = _FakeBleService()..pendingStop = pending.future;
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: MaterialApp(
+            home: MobileLedgerDeviceSheet(
+              service: ble,
+              onSelected: (_) {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(const SizedBox());
+      pending.complete();
+      await tester.pump();
+      expect(ble.disconnectCalls, 0);
+      expect(ble.permissionCalls, 0);
+    },
+  );
+
+  testWidgets(
+    'route dismissal cancels before the picker exit animation finishes',
+    (tester) async {
+      final pending = Completer<void>();
+      final ble = _FakeBleService()..pendingConnect = pending.future;
+      await tester.pumpWidget(
+        _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      ble.emit(
+        const LedgerDevicesDiscovered([
+          LedgerBleDevice(id: 'stax', name: 'Rowan Ledger', model: 'Stax'),
+        ]),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Rowan Ledger'));
+      await tester.pump();
+      Navigator.of(tester.element(find.byType(MobileLedgerDeviceSheet))).pop();
+      expect(ble.cancelCalls, 1);
+      pending.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(MobileLedgerDeviceSheet), findsNothing);
+      expect(find.byType(MobileLedgerConnectScreen), findsOneWidget);
+      expect(ble.cancelCalls, 1);
+    },
+  );
+
   testWidgets('stops discovery when the device sheet closes', (tester) async {
     final ble = _FakeBleService();
     await tester.pumpWidget(
@@ -494,6 +601,7 @@ void main() {
     await tester.tap(find.text('Rowan Ledger'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(ble.connectedIds, ['stax']);
+    expect(ble.cancelCalls, 0);
 
     await openPickerAndDiscover();
     expect(
@@ -623,6 +731,9 @@ class _FakeBleService implements LedgerMobileBleService {
   int permissionCalls = 0;
   int stopCalls = 0;
   int disconnectCalls = 0;
+  int cancelCalls = 0;
+  Future<void>? pendingConnect;
+  Future<void>? pendingStop;
 
   @override
   String? connectedDeviceId;
@@ -632,6 +743,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> connect(LedgerBleDevice device) async {
     calls.add('connect');
+    if (pendingConnect != null) await pendingConnect;
     connectedIds.add(device.id);
     connectedDeviceId = device.id;
   }
@@ -664,7 +776,9 @@ class _FakeBleService implements LedgerMobileBleService {
   ) async => const [];
 
   @override
-  Future<void> cancelSigning() async {}
+  Future<void> cancelSigning() async {
+    cancelCalls++;
+  }
 
   @override
   Future<bool> requestPermissions() async {
@@ -683,6 +797,7 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<void> stopDiscovery() async {
     calls.add('stopDiscovery');
     stopCalls++;
+    if (pendingStop != null) await pendingStop;
     final threshold = failCleanupStopsAfter;
     if (threshold != null && stopCalls > threshold) {
       throw const LedgerMobileException(
