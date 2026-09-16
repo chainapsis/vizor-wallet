@@ -45,6 +45,7 @@ class LedgerMobileHandler(
     private val activity: Activity,
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
 ) : EventChannel.StreamHandler {
+    var onSigningProgress: ((String, String) -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var operation: DeviceRequest? = null
     private var closed = false
@@ -430,11 +431,18 @@ class LedgerMobileHandler(
             val command = parseCommand(value as? Map<*, *>, result) ?: return
             commands += command
         }
+        val progressId = call.argument<String>("progressId")
         launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
+            fun report(phase: String) { progressId?.let { onSigningProgress?.invoke(it, phase) } }
+            report("sending")
             val responses = mutableListOf<ByteArray>()
             for (command in commands) {
+                currentCoroutineContext().ensureActive()
+                val startsReview = (command.ins == 0x56 || command.ins == 0x58) && command.p2 == 1
+                if (startsReview) report("reviewing")
                 val response = exchange(device.uid, command, request) ?: return@launchOperation
+                if (startsReview && response.hasSuccessStatus()) report("finishing")
                 responses += response
                 if (!response.hasSuccessStatus()) break
             }

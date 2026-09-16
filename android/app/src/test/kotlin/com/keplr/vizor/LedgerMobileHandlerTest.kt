@@ -319,6 +319,46 @@ class LedgerMobileHandlerTest {
         "data" to ByteArray(size) { it.toByte() },
     )
 
+    @Test fun reviewProgressPrecedesApprovalAndFinishingFollowsSuccess() = runTest(dispatcher) {
+        val events = mutableListOf<String>()
+        var response: Continuation<DeviceOperationResult<ByteArray>>? = null
+        useExchange {
+            events += "exchange"
+            suspendCoroutine { response = it }
+        }
+        handler.onSigningProgress = { id, phase ->
+            assertEquals("attempt-1", id)
+            events += phase
+        }
+        val result = Result()
+        handler.handle(MethodCall("exchangeApdus", mapOf(
+            "progressId" to "attempt-1",
+            "commands" to listOf(signingCommand(0) + ("p2" to 1)),
+        )), result)
+        runCurrent()
+        assertEquals(listOf("sending", "reviewing", "exchange"), events)
+        assertEquals(0, result.completions)
+        response!!.resume(DeviceOperationResult.Success(byteArrayOf(0x90.toByte(), 0)))
+        runCurrent()
+        assertEquals(listOf("sending", "reviewing", "exchange", "finishing"), events)
+        assertEquals(1, result.completions)
+        assertNull(result.error)
+    }
+
+    @Test fun rejectedReviewDoesNotReportFinishing() = runTest(dispatcher) {
+        val events = mutableListOf<String>()
+        useExchange { DeviceOperationResult.Success(byteArrayOf(0x69, 0x85.toByte())) }
+        handler.onSigningProgress = { _, phase -> events += phase }
+        val result = Result()
+        handler.handle(MethodCall("exchangeApdus", mapOf(
+            "progressId" to "attempt-2",
+            "commands" to listOf(signingCommand(0) + mapOf("ins" to 0x56, "p2" to 1)),
+        )), result)
+        runCurrent()
+        assertEquals(listOf("sending", "reviewing"), events)
+        assertEquals(1, result.completions)
+    }
+
     @Test fun signingPayloadBoundariesPreserveOneApduAndResponsePerCommand() = runTest(dispatcher) {
         val sizes = listOf(0, 254, 255)
         val sent = mutableListOf<ByteArray>()

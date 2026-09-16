@@ -11,6 +11,53 @@ import XCTest
 @testable import Runner
 
 final class LedgerMobileHandlerTests: XCTestCase {
+  @MainActor
+  func testSigningProgressPrecedesReviewResponseAndStopsAfterCancellation() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    var phases: [String] = []
+    handler.onSigningProgress = { id, phase in
+      XCTAssertEqual(id, "attempt-1")
+      phases.append(phase)
+    }
+    let started = expectation(description: "review request reached transport")
+    transport.onExchange = { started.fulfill() }
+    let command: [String: Any] = ["cla": 0xe0, "ins": 0x58, "p1": 0, "p2": 1, "data": [0]]
+    handler.handle(FlutterMethodCall(methodName: "exchangeApdus", arguments: [
+      "commands": [command], "progressId": "attempt-1"
+    ])) { _ in }
+    await fulfillment(of: [started], timeout: 2)
+    XCTAssertEqual(phases, ["sending", "reviewing"])
+    handler.handle(FlutterMethodCall(methodName: "cancelSigning", arguments: nil)) { _ in }
+    transport.complete("9000")
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(phases, ["sending", "reviewing"])
+    handler.close()
+  }
+
+  @MainActor
+  func testSigningFinishesOnlyAfterReviewResponse() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    var phases: [String] = []
+    handler.onSigningProgress = { _, phase in phases.append(phase) }
+    let started = expectation(description: "review sent")
+    let finished = expectation(description: "exchange finished")
+    transport.onExchange = { started.fulfill() }
+    let command: [String: Any] = ["cla": 0xe0, "ins": 0x56, "p1": 1, "p2": 1, "data": [0]]
+    handler.handle(FlutterMethodCall(methodName: "exchangeApdus", arguments: [
+      "commands": [command], "progressId": "attempt-2"
+    ])) { _ in finished.fulfill() }
+    await fulfillment(of: [started], timeout: 2)
+    XCTAssertEqual(phases, ["sending", "reviewing"])
+    transport.complete("9000")
+    await fulfillment(of: [finished], timeout: 2)
+    XCTAssertEqual(phases, ["sending", "reviewing", "finishing"])
+    handler.close()
+  }
+
   func testInvalidPairingIsDistinctFromRejectionAndDisconnection() {
     let invalid = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue)
     XCTAssertTrue(ledgerPairingInformationIsInvalid(invalid))

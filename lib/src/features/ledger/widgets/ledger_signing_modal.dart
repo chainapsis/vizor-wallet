@@ -13,6 +13,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_app_readiness_service.dart';
+import '../services/ledger_signing_progress.dart';
 import 'ledger_device_app_prompt.dart';
 
 enum LedgerSigningModalPhase {
@@ -51,6 +52,7 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
     this.accountUuid,
+    this.signingStage,
     this.roundFeeNotice,
     this.roundNumber = 1,
     this.roundCount = 1,
@@ -72,6 +74,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onFailureAction;
   final String cancelLabel;
   final String? accountUuid;
+  final LedgerSigningStage? signingStage;
   final String? roundFeeNotice;
   final int roundNumber;
   final int roundCount;
@@ -91,47 +94,23 @@ class LedgerSigningModal extends ConsumerWidget {
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
     final error = failed && failure!.isError;
-    var title = switch (phase) {
-      LedgerSigningModalPhase.preparing => 'Preparing for Ledger',
-      LedgerSigningModalPhase.awaitingDevice => 'Review on your Ledger',
-      LedgerSigningModalPhase.saving => 'Saving signed transaction',
-      LedgerSigningModalPhase.broadcasting => 'Sending transaction',
-      LedgerSigningModalPhase.failed => failure!.title,
-    };
-    var message = switch (phase) {
-      LedgerSigningModalPhase.preparing =>
-        'Vizor is preparing the transaction for secure device review.',
+    final progress = ref.watch(ledgerSigningProgressProvider);
+    final stage = switch (phase) {
+      LedgerSigningModalPhase.preparing => LedgerSigningStage.preparing,
       LedgerSigningModalPhase.awaitingDevice =>
-        'Review every transaction detail on the device, then approve or reject it.',
-      LedgerSigningModalPhase.saving =>
-        'Keep Vizor open while the signed transaction is saved securely.',
-      LedgerSigningModalPhase.broadcasting =>
-        'Keep Vizor open while the transaction is sent.',
-      LedgerSigningModalPhase.failed => failure!.message,
+        signingStage ??
+            (progress?.accountUuid == accountUuid ? progress?.stage : null) ??
+            LedgerSigningStage.preparing,
+      LedgerSigningModalPhase.saving ||
+      LedgerSigningModalPhase.broadcasting => LedgerSigningStage.finishing,
+      LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
-
-    var statusLabel = switch (phase) {
-      LedgerSigningModalPhase.preparing => 'Preparing transaction',
-      LedgerSigningModalPhase.awaitingDevice => 'Waiting for approval',
-      LedgerSigningModalPhase.saving => 'Securing transaction',
-      LedgerSigningModalPhase.broadcasting => 'Broadcasting to the network',
-      LedgerSigningModalPhase.failed => failure!.statusLabel,
-    };
+    var title = failed ? failure!.title : stage.title;
+    var message = failed ? failure!.message : stage.message;
+    var statusLabel = failed ? failure!.statusLabel : stage.status;
     if (roundCount > 1) {
       final progress = 'Transaction $roundNumber of $roundCount';
-      if (phase == LedgerSigningModalPhase.preparing) {
-        title = 'Preparing $progress';
-        statusLabel = progress;
-      } else if (phase == LedgerSigningModalPhase.awaitingDevice) {
-        title = 'Review $progress on your Ledger';
-        statusLabel = 'Waiting for approval · $roundNumber of $roundCount';
-        message =
-            'Approve this transaction on the device. Vizor will request the next transaction separately.';
-      } else if (phase == LedgerSigningModalPhase.saving) {
-        statusLabel = roundFeeNotice == null
-            ? 'Securing both signed transactions'
-            : 'Securing signed transaction';
-      }
+      if (!failed) statusLabel = progress;
     }
     if (phase == LedgerSigningModalPhase.failed &&
         failure!.showDeviceAppPrompt &&
@@ -140,7 +119,9 @@ class LedgerSigningModal extends ConsumerWidget {
       statusLabel = 'Action needed';
       message = readiness.message!;
     }
-    if (phase == LedgerSigningModalPhase.awaitingDevice) {
+    if ((phase == LedgerSigningModalPhase.awaitingDevice ||
+            phase == LedgerSigningModalPhase.preparing) &&
+        stage == LedgerSigningStage.preparing) {
       switch (readiness.phase) {
         case LedgerAppReadinessPhase.checkingDevice:
           title = 'Checking your Ledger';
@@ -162,8 +143,8 @@ class LedgerSigningModal extends ConsumerWidget {
     }
     final actionLabel = failed
         ? failure!.actionLabel
-        : phase == LedgerSigningModalPhase.saving
-        ? 'Saving'
+        : stage == LedgerSigningStage.finishing
+        ? 'Finishing'
         : 'Waiting';
     final showDeviceAppPrompt = switch (phase) {
       LedgerSigningModalPhase.saving ||

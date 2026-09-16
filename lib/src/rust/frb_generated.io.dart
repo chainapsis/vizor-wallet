@@ -80,6 +80,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_api_voting_observability_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<LedgerSigningEvent>
+  dco_decode_StreamSink_ledger_signing_event_Sse(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -531,6 +535,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LedgerSignedOperationBroadcastResult
   dco_decode_ledger_signed_operation_broadcast_result(dynamic raw);
+
+  @protected
+  LedgerSigningEvent dco_decode_ledger_signing_event(dynamic raw);
 
   @protected
   LedgerUfvkApduPlan dco_decode_ledger_ufvk_apdu_plan(dynamic raw);
@@ -1328,6 +1335,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<LedgerSigningEvent>
+  sse_decode_StreamSink_ledger_signing_event_Sse(SseDeserializer deserializer);
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
@@ -1921,6 +1932,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LedgerSignedOperationBroadcastResult
   sse_decode_ledger_signed_operation_broadcast_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerSigningEvent sse_decode_ledger_signing_event(
     SseDeserializer deserializer,
   );
 
@@ -2934,6 +2950,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_ledger_signing_event_Sse(
+    RustStreamSink<LedgerSigningEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
@@ -3650,6 +3672,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ledger_signed_operation_broadcast_result(
     LedgerSignedOperationBroadcastResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_signing_event(
+    LedgerSigningEvent self,
     SseSerializer serializer,
   );
 

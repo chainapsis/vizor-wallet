@@ -50,6 +50,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   static let methodChannelName = "com.zcash.wallet/ledger_mobile"
   static let eventChannelName = "com.zcash.wallet/ledger_mobile/discovery"
 
+  var onSigningProgress: ((String, String) -> Void)?
+
   private var transportStorage: BleTransportProtocol?
   private var bluetoothState: CBManagerState = .unknown
   private var eventSink: FlutterEventSink?
@@ -704,11 +706,20 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       result(invalidApduError())
       return
     }
+    let progressId = (call.arguments as? [String: Any])?["progressId"] as? String
     startExchange(result: result) { [self] in
+      let report: (String) -> Void = { phase in
+        if let progressId { self.onSigningProgress?(progressId, phase) }
+      }
+      report("sending")
       defer { signingReadyAt = Date().addingTimeInterval(4) }
       var responses: [[UInt8]] = []
       for command in commands {
+        try Task.checkCancellation()
+        let startsReview = (command.ins == 0x56 || command.ins == 0x58) && command.p2 == 1
+        if startsReview { report("reviewing") }
         let response = try await exchange(command)
+        if startsReview && response.hasSuccessStatus { report("finishing") }
         responses.append(response)
         if !response.hasSuccessStatus { break }
       }

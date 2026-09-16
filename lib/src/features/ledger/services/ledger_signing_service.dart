@@ -1,6 +1,5 @@
-import 'ledger_signing_status_gate.dart';
-export 'ledger_signing_status_gate.dart';
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,9 +7,14 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
+import 'ledger_signing_progress.dart';
+import 'ledger_signing_status_gate.dart';
+
+export 'ledger_signing_status_gate.dart';
 
 typedef LedgerPcztSigner =
     Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
@@ -69,6 +73,7 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
 ) {
   final requests = ref.watch(ledgerDeviceRequestsProvider);
   return () => requests.cancelWhile(() async {
+    ref.read(ledgerSigningProgressProvider.notifier).cancel();
     ref.read(ledgerMobileSigningStatusGateProvider).cancelPending();
     try {
       await ref.read(ledgerRustOperationCancellerProvider)();
@@ -100,6 +105,12 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
   );
   return (accountUuid, pcztBytes) async {
     final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    final progress = ref
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin(accountUuid);
     capability.requireSupported();
     final dbPath = await loadWalletDbPath();
     check();
@@ -107,12 +118,14 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
-          usb: () => rust_ledger.ledgerSignPcztFull(
+          usb: () async => (await _signUsbWithProgress(
+            progress: progress,
+            compact: false,
             dbPath: dbPath,
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
-          ),
+          )).signedPczt!,
           bluetooth: (mobile) async {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
               () async {
@@ -125,7 +138,11 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       network: networkName,
                     );
                 check();
-                final responses = await mobile.exchangeApdus(plan.commands);
+                final responses = await _exchangeWithProgress(
+                  mobile,
+                  plan.commands,
+                  progress,
+                );
                 check();
                 return rust_ledger.ledgerFinalizeMobilePcztFullSigning(
                   dbPath: dbPath,
@@ -146,6 +163,10 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
   final sign = ref.watch(ledgerPcztTransportSignerProvider);
   return (accountUuid, pcztBytes) async {
     final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    ref.read(ledgerSigningProgressProvider.notifier).begin(accountUuid);
     await validate(pcztBytes);
     check();
     return sign(accountUuid, pcztBytes);
@@ -162,6 +183,12 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
   );
   return (accountUuid, pcztBytes) async {
     final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    final progress = ref
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin(accountUuid);
     capability.requireSupported();
     final dbPath = await loadWalletDbPath();
     check();
@@ -169,17 +196,20 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
-          usb: () => rust_ledger.ledgerSignPczt(
+          usb: () async => (await _signUsbWithProgress(
+            progress: progress,
+            compact: true,
             dbPath: dbPath,
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
-          ),
+          )).signatures,
           bluetooth: (mobile) => ref
               .read(ledgerMobileSigningStatusGateProvider)
               .run(
                 () => _signMobileVotingPczt(
                   check: check,
+                  progress: progress,
                   mobile: mobile,
                   dbPath: dbPath,
                   accountUuid: accountUuid,
@@ -208,6 +238,7 @@ final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
 
 Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required void Function() check,
+  required void Function(String) progress,
   required LedgerMobileBleService mobile,
   required String dbPath,
   required String accountUuid,
@@ -222,7 +253,11 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     network: networkName,
   );
   check();
-  final responses = await mobile.exchangeApdus(plan.commands);
+  final responses = await _exchangeWithProgress(
+    mobile,
+    plan.commands,
+    progress,
+  );
   check();
   return rust_ledger.ledgerFinalizeMobilePcztSigning(
     dbPath: dbPath,
@@ -231,4 +266,53 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     network: networkName,
     responses: responses,
   );
+}
+
+Future<List<Uint8List>> _exchangeWithProgress(
+  LedgerMobileBleService mobile,
+  List<rust_ledger.LedgerApduCommand> commands,
+  void Function(String) progress,
+) async {
+  if (mobile is LedgerProgressBleService) {
+    return (mobile as LedgerProgressBleService).exchangeApdusWithProgress(
+      commands,
+      progress,
+    );
+  }
+  // Custom/test transports without native events cannot claim review is visible.
+  progress('sending');
+  final responses = await mobile.exchangeApdus(commands);
+  progress('finishing');
+  return responses;
+}
+
+Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
+  required String dbPath,
+  required String accountUuid,
+  required List<int> pcztBytes,
+  required String network,
+  required bool compact,
+  required void Function(String) progress,
+}) async {
+  rust_ledger.LedgerSigningEvent? result;
+  await for (final event in rust_ledger.ledgerSignWithProgress(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    pcztBytes: pcztBytes,
+    network: network,
+    compact: compact,
+  )) {
+    if (event.error case final error?) {
+      throw StateError(error);
+    }
+    if (event.phase == 'complete') {
+      result = event;
+    } else {
+      progress(event.phase);
+    }
+  }
+  if (result == null) {
+    throw StateError('Ledger signing ended without a result.');
+  }
+  return result;
 }

@@ -167,13 +167,23 @@ impl LedgerTransport {
         decode_ufvk_chunks(&chunks)
     }
 
-    pub(super) fn send_pczt(&self, commands: &[CommandPackets]) -> Result<(), String> {
+    pub(super) fn send_pczt_with_progress(
+        &self,
+        commands: &[CommandPackets],
+        progress: &dyn Fn(&str),
+    ) -> Result<(), String> {
+        progress("sending");
         for command in commands {
             let total = command.packets.len();
             if total == 0 {
                 return Err("Ledger PCZT command has no packets".into());
             }
             for (index, packet) in command.packets.iter().enumerate() {
+                // The response to the final bundle packet can wait for user review.
+                // Emit before exchange, not after its approval-bearing response.
+                if command.finishes_pczt && index + 1 == total {
+                    progress("reviewing");
+                }
                 self.exchange(
                     command.instruction,
                     packet_p1(index, total),

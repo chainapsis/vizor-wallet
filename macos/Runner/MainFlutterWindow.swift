@@ -1105,6 +1105,13 @@ class MainFlutterWindow: NSWindow {
       name: LedgerMobileHandler.methodChannelName,
       binaryMessenger: messenger
     )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    handler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
     methodChannel.setMethodCallHandler { call, result in
       handler.handle(call, result: result)
     }

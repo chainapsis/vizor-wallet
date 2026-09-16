@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,7 +55,7 @@ void main() {
       await _walkToApproveAndCreate(tester, settle: false);
       expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
       expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
-      expect(find.text('Review on your Ledger'), findsOneWidget);
+      expect(find.text('Check your Ledger'), findsOneWidget);
       ledger.storage.writeGate = Completer<void>();
       signing.complete([3]);
       for (var i = 0; i < 5; i++) {
@@ -278,7 +279,15 @@ Future<void> _pumpMobilePaymentLinks(
           paymentLinkLedgerFundingServiceProvider.overrideWithValue(
             ledger.service,
           ),
-        if (signer != null) ledgerPcztSignerProvider.overrideWithValue(signer),
+        if (signer != null)
+          ledgerPcztSignerProvider.overrideWith(
+            (ref) => (accountUuid, pcztBytes) {
+              ref
+                  .read(ledgerSigningProgressProvider.notifier)
+                  .begin(accountUuid)('reviewing');
+              return signer(accountUuid, pcztBytes);
+            },
+          ),
         ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         paymentLinkOperationsProvider.overrideWithValue(
           operations ?? _FakePaymentLinkOperations(),
