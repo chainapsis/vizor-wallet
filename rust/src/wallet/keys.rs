@@ -34,6 +34,7 @@ use crate::wallet::{
 pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
     "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
+const DUPLICATE_LEDGER_ACCOUNT_MESSAGE: &str = "This Ledger account is already in your wallet.";
 const KEY_SOURCE_KEYSTONE: &str = "vizor.hardware.keystone.v1";
 pub(crate) const KEY_SOURCE_LEDGER: &str = "vizor.hardware.ledger.v1";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
@@ -534,7 +535,10 @@ pub fn import_hardware_account(
             .map_err(|e| {
                 map_account_import_error(
                     e,
-                    DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    match hardware_signer_kind {
+                        HardwareSignerKind::Keystone => DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                        HardwareSignerKind::Ledger => DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
+                    },
                     "Failed to import hardware account",
                 )
             })?;
@@ -2330,6 +2334,17 @@ mod tests {
 
     #[test]
     fn test_import_hardware_duplicate_ufvk_returns_user_message() {
+        assert_hardware_duplicate_message(
+            HardwareSignerKind::Keystone,
+            DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+        );
+        assert_hardware_duplicate_message(
+            HardwareSignerKind::Ledger,
+            DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
+        );
+    }
+
+    fn assert_hardware_duplicate_message(signer: HardwareSignerKind, expected: &str) {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -2352,28 +2367,28 @@ mod tests {
         import_hardware_account(
             db_path_str,
             WalletNetwork::Main,
-            "Keystone",
+            signer.as_str(),
             &ufvk_string,
             &seed_fingerprint,
             u32::from(account_index),
             None,
-            HardwareSignerKind::Keystone,
+            signer,
         )
         .unwrap();
 
         let error = import_hardware_account(
             db_path_str,
             WalletNetwork::Main,
-            "Keystone",
+            signer.as_str(),
             &ufvk_string,
             &seed_fingerprint,
             u32::from(account_index),
             None,
-            HardwareSignerKind::Keystone,
+            signer,
         )
-        .expect_err("duplicate Keystone UFVK import should fail");
+        .expect_err("duplicate hardware UFVK import should fail");
 
-        assert_eq!(error, DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE);
+        assert_eq!(error, expected);
     }
 
     #[test]

@@ -39,6 +39,39 @@ const _setupArgsByFlow = <SetPasswordScreenArgs>[
 ];
 
 void main() {
+  testWidgets('Ledger duplicate error preserves branding and permits retry', (
+    tester,
+  ) async {
+    var attempts = 0;
+    Future<void> failImport(String name, String profilePictureId) async {
+      attempts++;
+      throw Exception('This Ledger account is already in your wallet.');
+    }
+
+    await tester.pumpWidget(
+      _harness(
+        MobileCustomiseAccountScreen(progress: 0.75, onFinish: failImport),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final submit = find.byKey(
+      const ValueKey('mobile_customise_account_continue'),
+    );
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('This Ledger account is already in your wallet.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('This Keystone account is already in your wallet.'),
+      findsNothing,
+    );
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+  });
+
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first

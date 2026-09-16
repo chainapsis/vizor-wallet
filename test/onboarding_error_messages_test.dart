@@ -3,6 +3,16 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_error_mes
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  test('preserves Ledger duplicate account copy from Rust', () {
+    expect(
+      onboardingSubmitErrorMessage(
+        const _FakeAnyhowException(
+          'This Ledger account is already in your wallet.',
+        ),
+      ),
+      'This Ledger account is already in your wallet.',
+    );
+  });
   test('shows wallet creation block height error without technical detail', () {
     const error = WalletCreationCurrentBlockHeightException('network down');
 

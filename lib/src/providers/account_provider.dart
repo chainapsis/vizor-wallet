@@ -60,6 +60,9 @@ const _duplicateSoftwareAccountImportMessage =
 const _duplicateKeystoneAccountImportMessage =
     'This Keystone account is already in your wallet.';
 
+const _duplicateLedgerAccountImportMessage =
+    'This Ledger account is already in your wallet.';
+
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
 
@@ -1833,6 +1836,7 @@ bool isWalletLinkDuplicateImportError(Object error) {
   final message = _normalizedExceptionMessage(error);
   return message == _duplicateSoftwareAccountImportMessage ||
       message == _duplicateKeystoneAccountImportMessage ||
+      message == _duplicateLedgerAccountImportMessage ||
       (message.contains('account corresponding to the data provided') &&
           message.contains('already exists in the wallet'));
 }

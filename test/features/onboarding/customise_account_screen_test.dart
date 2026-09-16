@@ -15,6 +15,43 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args
 import 'package:zcash_wallet/src/features/onboarding/shared/set_password_screen.dart';
 
 void main() {
+  testWidgets('Ledger duplicate error preserves branding and permits retry', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var attempts = 0;
+    Future<void> failImport(String name, String profilePictureId) async {
+      attempts++;
+      throw Exception('This Ledger account is already in your wallet.');
+    }
+
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen.ledger(
+          onFinish: failImport,
+          ledgerBackTarget: null,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final submit = find.byKey(
+      const ValueKey('customise_account_finish_button'),
+    );
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('This Ledger account is already in your wallet.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('This Keystone account is already in your wallet.'),
+      findsNothing,
+    );
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+  });
+
   setUpAll(_loadAppFonts);
 
   test('customise account is the final create-onboarding step', () {

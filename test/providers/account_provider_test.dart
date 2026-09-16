@@ -435,6 +435,14 @@ void main() {
   test('wallet link duplicate import errors are recognized', () {
     expect(
       isWalletLinkDuplicateImportError(
+        const _FakeAnyhowException(
+          'This Ledger account is already in your wallet.',
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      isWalletLinkDuplicateImportError(
         Exception('This account is already in your wallet.'),
       ),
       isTrue,
