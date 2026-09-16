@@ -669,23 +669,30 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> updateLedgerConnectionPreference(
     String uuid,
     LedgerConnectionPreference preference,
-  ) async {
+  ) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
     final prev = state.value ?? const AccountState();
     final target = prev.accounts.where((account) => account.uuid == uuid);
     if (target.isEmpty || !target.single.isLedger) {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
     }
-    final updated = prev.accounts
-        .map(
-          (account) => account.uuid == uuid
-              ? account.copyWith(ledgerConnectionPreference: preference)
-              : account,
-        )
-        .toList(growable: false);
+    AccountInfo updatePreference(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(ledgerConnectionPreference: preference)
+        : account;
+    final updated = prev.accounts.map(updatePreference).toList(growable: false);
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    if (!ref.mounted) return;
+    // This is a UI-state merge, independent of Linux secret-session policy.
+    // A metadata write must not undo a lock or account switch on any platform.
+    final current = state.value ?? const AccountState();
+    state = AsyncData(
+      current.copyWith(
+        accounts: current.accounts
+            .map(updatePreference)
+            .toList(growable: false),
+      ),
+    );
     log('updateLedgerConnectionPreference: $uuid → ${preference.name}');
-  }
+  });
 
   Future<void> recordLedgerConnection({
     required String uuid,
@@ -693,28 +700,35 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? deviceId,
     String? deviceName,
     String? deviceModel,
-  }) async {
+  }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
     final prev = state.value ?? const AccountState();
     final target = prev.accounts.where((account) => account.uuid == uuid);
     if (target.isEmpty || !target.single.isLedger) {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
     }
-    final updated = prev.accounts
-        .map(
-          (account) => account.uuid == uuid
-              ? account.copyWith(
-                  ledgerLastTransport: transport,
-                  ledgerDeviceId: deviceId,
-                  ledgerDeviceName: deviceName,
-                  ledgerDeviceModel: deviceModel,
-                )
-              : account,
-        )
-        .toList(growable: false);
+    AccountInfo updateConnection(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(
+            ledgerLastTransport: transport,
+            ledgerDeviceId: deviceId,
+            ledgerDeviceName: deviceName,
+            ledgerDeviceModel: deviceModel,
+          )
+        : account;
+    final updated = prev.accounts.map(updateConnection).toList(growable: false);
     await _saveAccounts(updated);
-    state = AsyncData(prev.copyWith(accounts: updated));
+    if (!ref.mounted) return;
+    // This is a UI-state merge, independent of Linux secret-session policy.
+    // A metadata write must not undo a lock or account switch on any platform.
+    final current = state.value ?? const AccountState();
+    state = AsyncData(
+      current.copyWith(
+        accounts: current.accounts
+            .map(updateConnection)
+            .toList(growable: false),
+      ),
+    );
     log('recordLedgerConnection: $uuid → ${transport.name}');
-  }
+  });
 
   /// Remove an account from the wallet.
   ///

@@ -300,11 +300,15 @@ Future<AppBootstrapState> loadAppBootstrap() async {
           storedAccounts,
         );
         if (legacyHardwareAccounts.isNotEmpty) {
-          await rust_wallet.backfillLegacyHardwareAccounts(
-            dbPath: dbPath,
-            network: network,
-            accounts: legacyHardwareAccounts,
-          );
+          try {
+            await rust_wallet.backfillLegacyHardwareAccounts(
+              dbPath: dbPath,
+              network: network,
+              accounts: legacyHardwareAccounts,
+            );
+          } catch (e) {
+            log('bootstrap: failed to backfill legacy hardware accounts: $e');
+          }
         }
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,

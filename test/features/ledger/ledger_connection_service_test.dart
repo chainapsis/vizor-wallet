@@ -24,7 +24,11 @@ void main() {
         ),
       );
       final ble = _FakeBleService();
-      final container = _container(notifier: notifier, ble: ble);
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        usbReady: false,
+      );
       addTearDown(container.dispose);
       await container.read(accountProvider.future);
 
@@ -32,7 +36,7 @@ void main() {
           .read(ledgerConnectionServiceProvider)
           .run(
             accountUuid: 'ledger-1',
-            usb: () => throw StateError('No Ledger HID device'),
+            usb: () => throw StateError('operation must not start'),
             bluetooth: (_) async => 'signed-over-ble',
           );
 
@@ -43,6 +47,44 @@ void main() {
       ]);
     },
   );
+
+  for (final metadataFailure in [false, true]) {
+    test(
+      'does not replay an operation (metadata failure: $metadataFailure)',
+      () async {
+        final notifier = _FakeAccountNotifier(
+          _ledgerAccount(
+            preference: LedgerConnectionPreference.automatic,
+            deviceModel: 'Nano X',
+          ),
+        )..failRecording = metadataFailure;
+        final ble = _FakeBleService();
+        final container = _container(notifier: notifier, ble: ble);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        final operation = container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () async {
+                if (!metadataFailure) {
+                  throw StateError(
+                    'Ledger HID disconnected after signing started',
+                  );
+                }
+                return 'signed';
+              },
+              bluetooth: (_) async => fail('must not replay'),
+            );
+        if (metadataFailure) {
+          expect(await operation, 'signed');
+        } else {
+          await expectLater(operation, throwsStateError);
+        }
+        expect(ble.connectCalls, 0);
+      },
+    );
+  }
 
   test('explicit USB never probes Bluetooth', () async {
     final notifier = _FakeAccountNotifier(
@@ -139,6 +181,7 @@ ProviderContainer _container({
   required _FakeAccountNotifier notifier,
   required _FakeBleService ble,
   TargetPlatform platform = TargetPlatform.macOS,
+  bool usbReady = true,
 }) {
   return ProviderContainer(
     overrides: [
@@ -148,7 +191,7 @@ ProviderContainer _container({
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.usb,
-      ).overrideWithValue(const _ReadyDevice()),
+      ).overrideWithValue(_ReadyDevice(available: usbReady)),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.bluetooth,
       ).overrideWithValue(const _ReadyDevice()),
@@ -190,12 +233,15 @@ AppBootstrapState _bootstrap(AccountInfo account) => AppBootstrapState(
 );
 
 class _ReadyDevice implements LedgerAppReadinessDevice {
-  const _ReadyDevice();
+  const _ReadyDevice({this.available = true});
+  final bool available;
 
   @override
   Future<LedgerDeviceAppSnapshot> queryZcashApp() async =>
-      const LedgerDeviceAppSnapshot(
-        status: LedgerDeviceAppStatus.open,
+      LedgerDeviceAppSnapshot(
+        status: available
+            ? LedgerDeviceAppStatus.open
+            : LedgerDeviceAppStatus.disconnected,
         version: '3.9.2',
       );
 
@@ -207,6 +253,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier(this.initial);
 
   final AccountInfo initial;
+  bool failRecording = false;
   final recordedTransports = <LedgerConnectionTransport>[];
 
   @override
@@ -221,6 +268,7 @@ class _FakeAccountNotifier extends AccountNotifier {
     String? deviceName,
     String? deviceModel,
   }) async {
+    if (failRecording) throw StateError('metadata write failed');
     recordedTransports.add(transport);
     final current = state.requireValue;
     state = AsyncData(

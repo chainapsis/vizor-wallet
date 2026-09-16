@@ -1,3 +1,5 @@
+import 'dart:developer' show log;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,17 +36,34 @@ class LedgerConnectionService {
     Object? lastConnectionError;
 
     for (final transport in candidates) {
+      var operationStarted = false;
       try {
         final result = switch (transport) {
-          LedgerConnectionTransport.usb => await _runUsb(usb),
-          LedgerConnectionTransport.bluetooth => await _runBluetooth(
-            account,
-            bluetooth,
-          ),
+          LedgerConnectionTransport.usb => await _runUsb(() {
+            operationStarted = true;
+            return usb();
+          }),
+          LedgerConnectionTransport.bluetooth => await _runBluetooth(account, (
+            mobile,
+          ) {
+            operationStarted = true;
+            return bluetooth(mobile);
+          }),
         };
-        await _recordSuccess(account, transport);
+        try {
+          await _recordSuccess(account, transport);
+        } catch (error, stackTrace) {
+          log(
+            'Failed to persist the successful Ledger transport.',
+            name: 'LedgerConnectionService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
         return result;
       } catch (error) {
+        // Only connection preparation may fall back; never replay an operation.
+        if (operationStarted) rethrow;
         if (!_isConnectionFailure(error)) rethrow;
         lastConnectionError = error;
       }
@@ -160,6 +179,10 @@ class LedgerConnectionService {
 
   static bool _isConnectionFailure(Object error) {
     if (error is LedgerConnectionRequiredException) return true;
+    if (error is LedgerAppReadinessException) {
+      return error.failure == LedgerAppReadinessFailure.disconnected ||
+          error.failure == LedgerAppReadinessFailure.unavailable;
+    }
     if (error is LedgerMobileException) {
       return switch (error.failure) {
         LedgerMobileFailure.disconnected ||
