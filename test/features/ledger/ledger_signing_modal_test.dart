@@ -145,6 +145,10 @@ void main() {
           _ => 'Finishing transaction',
         };
         expect(find.text(expected), findsOneWidget);
+        if (phase == 'sending') {
+          expect(find.text('Preparing to sign'), findsOneWidget);
+          expect(find.text('Please wait'), findsNothing);
+        }
         expect(find.text('Open the Zcash app'), findsOneWidget);
       }
     },

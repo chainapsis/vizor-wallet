@@ -69,6 +69,9 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
       'Review and approve when prompted on your Ledger.',
     LedgerSigningStage.finishing => 'Keep Vizor open.',
   };
-  String get status =>
-      this == LedgerSigningStage.reviewing ? 'Review on device' : 'Please wait';
+  String get status => switch (this) {
+    LedgerSigningStage.sending => 'Preparing to sign',
+    LedgerSigningStage.reviewing => 'Review on device',
+    _ => 'Please wait',
+  };
 }
