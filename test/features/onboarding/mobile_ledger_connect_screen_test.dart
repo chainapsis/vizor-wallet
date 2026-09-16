@@ -245,9 +245,24 @@ void main() {
     await tester.ensureVisible(advanced);
     await tester.tap(advanced);
     await tester.pumpAndSettle();
+    for (final invalid in ['101', '', '999999999999999999999999']) {
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+        invalid,
+      );
+      final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Account index must be between 0 and 100.'),
+        findsOneWidget,
+      );
+      expect(connectorCalls, 0);
+    }
     await tester.enterText(
       find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-      '12',
+      '100',
     );
     final enabledImport = find.byKey(
       const ValueKey('mobile_ledger_import_button'),
@@ -269,9 +284,9 @@ void main() {
 
     accountApproval.complete(
       const LedgerDeviceAccount(
-        ufvk: 'uview-12',
+        ufvk: 'uview-100',
         seedFingerprint: [1, 2, 3],
-        accountIndex: 12,
+        accountIndex: 100,
         appVersion: '3.9.2',
       ),
     );
@@ -279,7 +294,7 @@ void main() {
 
     expect(find.text('birthday-route-bluetooth-Nano X'), findsOneWidget);
     expect(connectorCalls, 1);
-    expect(requestedIndex, 12);
+    expect(requestedIndex, 100);
     expect(
       find.byKey(const ValueKey('mobile_ledger_account_name_field')),
       findsNothing,

@@ -158,15 +158,28 @@ void main() {
       find.byKey(const ValueKey('ledger_advanced_options_disclosure')),
     );
     await tester.pumpAndSettle();
+    for (final invalid in ['101', '', '999999999999999999999999']) {
+      await tester.enterText(
+        find.byKey(const ValueKey('ledger_account_index_field')),
+        invalid,
+      );
+      await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Account index must be between 0 and 100.'),
+        findsOneWidget,
+      );
+      expect(requestedIndex, isNull);
+    }
     await tester.enterText(
       find.byKey(const ValueKey('ledger_account_index_field')),
-      '12',
+      '100',
     );
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('birthday-uview-ledger-12'), findsOneWidget);
-    expect(requestedIndex, 12);
+    expect(find.text('birthday-uview-ledger-100'), findsOneWidget);
+    expect(requestedIndex, 100);
   });
 
   testWidgets(

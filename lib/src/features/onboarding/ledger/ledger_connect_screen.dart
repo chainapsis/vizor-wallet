@@ -12,6 +12,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -180,13 +181,13 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
   }
 
   int? _validatedAccountIndex() {
-    final accountIndex = int.tryParse(_accountIndexController.text);
-    if (accountIndex != null &&
-        accountIndex >= 0 &&
-        accountIndex < 0x80000000) {
+    final accountIndex = parseLedgerOnboardingAccountIndex(
+      _accountIndexController.text,
+    );
+    if (accountIndex != null) {
       return accountIndex;
     }
-    setState(() => _error = 'Account index must be between 0 and 2147483647.');
+    setState(() => _error = kLedgerOnboardingAccountIndexError);
     return null;
   }
 
@@ -295,7 +296,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                         const SizedBox(height: AppSpacing.sm),
                         AppTextField(
                           key: const ValueKey('ledger_account_index_field'),
-                          label: 'Ledger account index',
+                          label: kLedgerOnboardingAccountIndexLabel,
                           controller: _accountIndexController,
                           enabled: !_busy,
                           keyboardType: TextInputType.number,

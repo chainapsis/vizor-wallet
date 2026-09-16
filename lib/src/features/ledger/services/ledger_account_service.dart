@@ -4,6 +4,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import '../ledger_onboarding_policy.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_mobile_ble_service.dart';
 
@@ -65,6 +66,9 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
   required LedgerConnectionTransport transport,
   LedgerBleDevice? bluetoothDevice,
 }) async {
+  if (!isLedgerOnboardingAccountIndexValid(accountIndex)) {
+    throw Exception(kLedgerOnboardingAccountIndexError);
+  }
   final capability = ref.watch(ledgerStaticCapabilityProvider);
   final networkName = ref.watch(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
