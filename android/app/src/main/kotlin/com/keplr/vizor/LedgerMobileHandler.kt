@@ -69,9 +69,9 @@ class LedgerMobileHandler(
     private val discoveredDevices = initialDiscoveredDevices.toMutableMap()
     private var connectedDevice: ConnectedDevice? = initialConnectedDevice
     private var permissionResult: MethodChannel.Result? = null
-    private var exchangeJob: Job? = null
-    private var exchangeResult: MethodChannel.Result? = null
-    private var exchangeGeneration = 0L
+    private var operationJob: Job? = null
+    private var operationResult: MethodChannel.Result? = null
+    private var operationGeneration = 0L
     private val connectionMutex = Mutex()
     private var connectionToClose: ConnectedDevice? = null
 
@@ -121,7 +121,7 @@ class LedgerMobileHandler(
 
     fun close() {
         stopDiscovery()
-        val exchangeToDrain = cancelExchangeOperation()
+        val exchangeToDrain = cancelOperation()
         permissionResult?.error("cancelled", "The Ledger permission request was cancelled.", null)
         permissionResult = null
         val device = connectionToClose ?: connectedDevice
@@ -235,7 +235,7 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        val exchangeToDrain = cancelExchangeOperation()
+        val exchangeToDrain = cancelOperation()
         scope.launch { connectionMutex.withLock {
             try {
                 exchangeToDrain?.join()
@@ -301,7 +301,7 @@ class LedgerMobileHandler(
     }
 
     private fun disconnect(result: MethodChannel.Result) {
-        val exchangeToDrain = cancelExchangeOperation()
+        val exchangeToDrain = cancelOperation()
         scope.launch { connectionMutex.withLock {
             exchangeToDrain?.join()
             val device = connectionToClose ?: connectedDevice
@@ -318,25 +318,35 @@ class LedgerMobileHandler(
 
     private fun currentApp(result: MethodChannel.Result) {
         val device = requireConnected(result) ?: return
-        scope.launch {
+        startOperation(result) { generation ->
             when (val operation = dmk.executeCommand(device.uid, GetAppAndVersionCommand())) {
-                is DeviceOperationResult.Success -> result.success(operation.value.asFlutterMap())
-                is DeviceOperationResult.Failure -> operationFailure(result, operation.reason)
+                is DeviceOperationResult.Success -> operation.value.asFlutterMap()
+                is DeviceOperationResult.Failure -> {
+                    finishOperationFailure(generation, operation.reason)
+                    null
+                }
             }
         }
     }
 
     private fun openZcashApp(result: MethodChannel.Result) {
         val device = requireConnected(result) ?: return
-        scope.launch {
+        startOperation(result) { generation ->
             val terminal = dmk.executeDeviceAction(device.uid, OpenApplicationDeviceAction("Zcash"))
                 .first { it is DeviceActionResult.Success || it is DeviceActionResult.Failure }
+            currentCoroutineContext().ensureActive()
             when (terminal) {
-                is DeviceActionResult.Failure -> operationFailure(result, terminal.reason)
+                is DeviceActionResult.Failure -> {
+                    finishOperationFailure(generation, terminal.reason)
+                    null
+                }
                 is DeviceActionResult.Success -> {
                     when (val app = dmk.executeCommand(device.uid, GetAppAndVersionCommand())) {
-                        is DeviceOperationResult.Success -> result.success(app.value.asFlutterMap())
-                        is DeviceOperationResult.Failure -> operationFailure(result, app.reason)
+                        is DeviceOperationResult.Success -> app.value.asFlutterMap()
+                        is DeviceOperationResult.Failure -> {
+                            finishOperationFailure(generation, app.reason)
+                            null
+                        }
                     }
                 }
                 is DeviceActionResult.IntermediateValue -> error("terminal flow predicate")
@@ -348,101 +358,103 @@ class LedgerMobileHandler(
         val device = requireConnected(result) ?: return
         val first = parseCommand(call.argument("first"), result) ?: return
         val continuation = parseCommand(call.argument("continuation"), result) ?: return
-        startExchange(result) { generation ->
+        startOperation(result) { generation ->
             val responses = mutableListOf<ByteArray>()
-            val firstResponse = exchange(device.uid, first, generation) ?: return@startExchange null
+            val firstResponse = exchange(device.uid, first, generation) ?: return@startOperation null
             responses += firstResponse
             if (!firstResponse.hasSuccessStatus() || firstResponse.size < 4) {
-                return@startExchange responses
+                return@startOperation responses.map { it.asUnsignedList() }
             }
             val expectedPayloadLength = 2 + ((firstResponse[0].toInt() and 0xff) shl 8) +
                 (firstResponse[1].toInt() and 0xff)
-            if (expectedPayloadLength > MAX_UFVK_RESPONSE) return@startExchange responses
+            if (expectedPayloadLength > MAX_UFVK_RESPONSE) {
+                return@startOperation responses.map { it.asUnsignedList() }
+            }
             var payloadLength = firstResponse.size - APDU_STATUS_SIZE
             while (payloadLength < expectedPayloadLength) {
-                val response = exchange(device.uid, continuation, generation) ?: return@startExchange null
+                val response = exchange(device.uid, continuation, generation) ?: return@startOperation null
                 responses += response
                 if (!response.hasSuccessStatus() || response.size == APDU_STATUS_SIZE) {
-                    return@startExchange responses
+                    return@startOperation responses.map { it.asUnsignedList() }
                 }
                 payloadLength += response.size - APDU_STATUS_SIZE
             }
-            responses
+            responses.map { it.asUnsignedList() }
         }
     }
 
-    private fun startExchange(
+    private fun startOperation(
         result: MethodChannel.Result,
-        operation: suspend (Long) -> List<ByteArray>?,
+        operation: suspend (Long) -> Any?,
     ) {
-        if (exchangeJob != null) {
+        if (operationJob != null) {
             result.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
-        val generation = ++exchangeGeneration
-        exchangeResult = result
+        val generation = ++operationGeneration
+        operationResult = result
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 currentCoroutineContext().ensureActive()
-                val responses = operation(generation)
+                val value = operation(generation)
                 currentCoroutineContext().ensureActive()
-                if (responses != null) {
-                    finishExchangeSuccess(generation, responses.map { it.asUnsignedList() })
+                if (value != null) {
+                    finishOperationSuccess(generation, value)
                 }
             } catch (_: CancellationException) {
-                finishExchangeCancelled(generation)
+                finishOperationCancelled(generation)
             } catch (_: Exception) {
-                takeExchangeResult(generation)?.error(
+                takeOperationResult(generation)?.error(
                     "unavailable", "Could not complete the Ledger operation. Reconnect and try again.", null,
                 )
             } finally {
-                if (exchangeJob === coroutineContext[Job]) exchangeJob = null
+                if (operationJob === coroutineContext[Job]) operationJob = null
             }
         }
-        exchangeJob = job
+        operationJob = job
         job.start()
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
-        cancelExchangeOperation()
+        cancelOperation()
         result.success(null)
     }
 
-    private fun cancelExchangeOperation(): Job? {
-        val job = exchangeJob
-        val pending = exchangeResult
+    private fun cancelOperation(): Job? {
+        val job = operationJob
+        val pending = operationResult
         if (pending != null) {
-            exchangeGeneration++
-            exchangeResult = null
+            operationGeneration++
+            operationResult = null
             pending.error("cancelled", "The Ledger operation was cancelled.", null)
             job?.cancel()
         }
         return job
     }
 
-    private fun finishExchangeSuccess(generation: Long, value: Any) {
-        val result = takeExchangeResult(generation) ?: return
+    private fun finishOperationSuccess(generation: Long, value: Any) {
+        val result = takeOperationResult(generation) ?: return
         result.success(value)
     }
 
-    private fun finishExchangeFailure(
+    private fun finishOperationFailure(
         generation: Long,
         reason: DeviceOperationFailureReason,
     ) {
-        val result = takeExchangeResult(generation) ?: return
+        val result = takeOperationResult(generation) ?: return
         operationFailure(result, reason)
     }
 
-    private fun finishExchangeCancelled(generation: Long) {
-        val result = takeExchangeResult(generation) ?: return
+    private fun finishOperationCancelled(generation: Long) {
+        val result = takeOperationResult(generation) ?: return
         result.error("cancelled", "The Ledger operation was cancelled.", null)
     }
 
-    private fun takeExchangeResult(generation: Long): MethodChannel.Result? {
-        if (generation != exchangeGeneration) return null
-        val result = exchangeResult ?: return null
-        exchangeResult = null
-        exchangeJob = null
+    private fun takeOperationResult(generation: Long): MethodChannel.Result? {
+        if (generation != operationGeneration) return null
+        val result = operationResult ?: return null
+        operationResult = null
+        operationJob = null
         return result
     }
 
@@ -457,7 +469,7 @@ class LedgerMobileHandler(
         return when (operation) {
             is DeviceOperationResult.Success -> operation.value
             is DeviceOperationResult.Failure -> {
-                finishExchangeFailure(generation, operation.reason)
+                finishOperationFailure(generation, operation.reason)
                 null
             }
         }

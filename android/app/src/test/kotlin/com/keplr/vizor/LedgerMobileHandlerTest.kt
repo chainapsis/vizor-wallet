@@ -3,20 +3,24 @@ package com.keplr.vizor
 import android.app.Activity
 import com.ledger.devicemanagement.DeviceManagementKitApi
 import com.ledger.devicemanagement.api.DeviceOperationResult
+import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
 import com.ledger.devicemanagement.api.connection.ConnectedDevice
 import com.ledger.devicemanagement.api.connection.ConnectionResult
 import com.ledger.devicemanagement.api.device.LedgerDevice
 import com.ledger.devicemanagement.api.discovery.ConnectivityType
 import com.ledger.devicemanagement.api.discovery.DiscoveryDevice
+import com.ledger.devicemanagement.api.deviceaction.DeviceActionResult
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.lang.reflect.Proxy
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.flow
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -53,6 +57,53 @@ class LedgerMobileHandlerTest {
     }
 
     @Test
+    fun cancelledCurrentAppRetainsTheOperationSlotUntilCallbackDrains() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk)
+        val original = reply(handler, MethodCall("currentApp", null))
+
+        assertEquals(1, sdk.appCommands)
+        assertEquals("unavailable", reply(handler, MethodCall("currentApp", null)).error)
+        reply(handler, MethodCall("cancelSigning", null))
+
+        assertEquals("cancelled", original.error)
+        assertEquals("unavailable", reply(handler, MethodCall("currentApp", null)).error)
+        assertEquals(1, sdk.appCommands)
+
+        sdk.completeApp()
+        val fresh = reply(handler, MethodCall("currentApp", null))
+        sdk.completeApp()
+
+        assertEquals(mapOf("name" to "Zcash", "version" to "3.9.3"), fresh.value)
+        assertEquals(2, sdk.appCommands)
+        assertEquals(1, original.completions)
+        handler.close()
+    }
+
+    @Test
+    fun cancelledOpenAppDrainsBeforeDisconnecting() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk)
+        val original = reply(handler, MethodCall("openZcashApp", null))
+
+        assertEquals(1, sdk.openActions)
+        reply(handler, MethodCall("cancelSigning", null))
+        val disconnect = reply(handler, MethodCall("disconnect", null))
+
+        assertEquals("cancelled", original.error)
+        assertEquals(0, disconnect.completions)
+        assertTrue(sdk.connectionCalls.isEmpty())
+
+        sdk.completeOpen()
+
+        assertEquals(1, disconnect.completions)
+        assertEquals(listOf("disconnect"), sdk.connectionCalls)
+        assertEquals(0, sdk.appCommands)
+        assertEquals(1, original.completions)
+        handler.close()
+    }
+
+    @Test
     fun normalUfvkChunksComplete() {
         val sdk = PendingLedgerSdk()
         val handler = handler(sdk)
@@ -62,6 +113,20 @@ class LedgerMobileHandlerTest {
         assertEquals(listOf(listOf(0, 3, 117, 0x90, 0), listOf(102, 118, 0x90, 0)), ufvk.value)
         assertEquals(1, ufvk.completions)
         assertEquals(2, sdk.commands)
+        handler.close()
+    }
+
+    @Test
+    fun rejectedUfvkResponseKeepsUnsignedFlutterBytes() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk)
+        sdk.responses.add(bytes(0x69, 0x85))
+
+        val ufvk = reply(handler, ufvkCall())
+
+        assertEquals(listOf(listOf(0x69, 0x85)), ufvk.value)
+        assertEquals(1, ufvk.completions)
+        assertEquals(1, sdk.commands)
         handler.close()
     }
 
@@ -235,10 +300,14 @@ class LedgerMobileHandlerTest {
     // radio, a Flutter engine, a Ledger, or arbitrary coroutine delays.
     private class PendingLedgerSdk {
         var commands = 0
+        var appCommands = 0
+        var openActions = 0
         val connectionCalls = mutableListOf<String>()
         var connectError: Exception? = null
         val responses = ArrayDeque<ByteArray>()
         private var pending: Continuation<DeviceOperationResult<ByteArray>>? = null
+        private var pendingApp: Continuation<DeviceOperationResult<AppAndVersion>>? = null
+        private var pendingOpen: Continuation<DeviceActionResult<Unit>>? = null
         val device = ConnectedDevice(
             "test-ledger", "Test Ledger", LedgerDevice.NanoX, ConnectivityType.Bluetooth(-50),
         )
@@ -276,6 +345,22 @@ class LedgerMobileHandlerTest {
                         COROUTINE_SUSPENDED
                     }
                 }
+                "executeCommand" -> {
+                    appCommands++
+                    check(pendingApp == null)
+                    @Suppress("UNCHECKED_CAST")
+                    val continuation = args.last() as Continuation<DeviceOperationResult<AppAndVersion>>
+                    pendingApp = continuation
+                    COROUTINE_SUSPENDED
+                }
+                "executeDeviceAction" -> flow {
+                    openActions++
+                    val terminal = suspendCoroutine<DeviceActionResult<Unit>> { continuation ->
+                        check(pendingOpen == null)
+                        pendingOpen = continuation
+                    }
+                    emit(terminal)
+                }
                 else -> error("Unexpected SDK call: ${method.name}")
             }
         } as DeviceManagementKitApi
@@ -284,6 +369,18 @@ class LedgerMobileHandlerTest {
             val continuation = checkNotNull(pending)
             pending = null
             continuation.resume(DeviceOperationResult.Success(response))
+        }
+
+        fun completeApp() {
+            val continuation = checkNotNull(pendingApp)
+            pendingApp = null
+            continuation.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.3")))
+        }
+
+        fun completeOpen() {
+            val continuation = checkNotNull(pendingOpen)
+            pendingOpen = null
+            continuation.resume(DeviceActionResult.Success(Unit))
         }
     }
 
