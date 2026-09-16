@@ -113,17 +113,8 @@ class _SwapLedgerSigningOverlayState
       if (existingOperation != null) {
         _operationCheckpointed = true;
         if (existingOperation.state == 'result_pending_ack') {
-          final txid = existingOperation.txid?.trim() ?? '';
-          final status = existingOperation.status?.trim() ?? '';
-          if (txid.isEmpty || status.isEmpty) {
-            throw StateError('Ledger deposit result is incomplete.');
-          }
-          _pendingBroadcastResult = LedgerSignedOperationBroadcastResult(
-            operationId: operationId,
-            txid: txid,
-            status: status,
-            message: existingOperation.message,
-            requiresAck: true,
+          _pendingBroadcastResult = _broadcastResultFromMetadata(
+            existingOperation,
           );
           await _completeProviderCheckpoint(_pendingBroadcastResult!);
           return;
@@ -200,10 +191,18 @@ class _SwapLedgerSigningOverlayState
     if (_phase != LedgerSigningModalPhase.failed || _isBroadcasting) return;
     if (_operationCheckpointed) {
       setState(() {
+        _phase = LedgerSigningModalPhase.saving;
         _error = null;
       });
       try {
-        final pendingResult = _pendingBroadcastResult;
+        var pendingResult = _pendingBroadcastResult;
+        if (pendingResult == null) {
+          final existingOperation = await _findExistingOperation(_operationId!);
+          if (existingOperation?.state == 'result_pending_ack') {
+            pendingResult = _broadcastResultFromMetadata(existingOperation!);
+            _pendingBroadcastResult = pendingResult;
+          }
+        }
         if (pendingResult != null) {
           await _completeProviderCheckpoint(pendingResult);
         } else {
@@ -303,7 +302,7 @@ class _SwapLedgerSigningOverlayState
         _error = null;
       });
     }
-    LedgerSignedOperationBroadcastResult result;
+    late final LedgerSignedOperationBroadcastResult result;
     try {
       final draft = _draft;
       final saplingParams = _saplingParams;
@@ -316,13 +315,6 @@ class _SwapLedgerSigningOverlayState
             ? saplingParams?.outputPath
             : null,
       );
-      if (draft != null) {
-        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-          draft: draft,
-          status: result.status,
-        );
-        _draft = null;
-      }
     } catch (error) {
       final terminal = isTerminalLedgerSignedOperationError(error);
       final draft = _draft;
@@ -341,11 +333,36 @@ class _SwapLedgerSigningOverlayState
       rethrow;
     }
     if (!_hasBroadcastTxid(result)) {
+      final draft = _draft;
+      _draft = null;
+      if (draft != null) {
+        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+          draft: draft,
+          status: result.status,
+        );
+      }
       throw StateError(
         result.message ?? 'The ZEC deposit could not be broadcast.',
       );
     }
     _pendingBroadcastResult = result;
+    final draft = _draft;
+    _draft = null;
+    if (draft != null) {
+      try {
+        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+          draft: draft,
+          status: result.status,
+        );
+      } catch (error, stackTrace) {
+        // The durable outbox result is authoritative after broadcast. Proposal
+        // cleanup must not turn a sent transaction back into a signing error.
+        log(
+          'SwapLedgerSigning: post-broadcast draft settlement failed: '
+          '$error\n$stackTrace',
+        );
+      }
+    }
     try {
       await ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (e) {
@@ -359,7 +376,7 @@ class _SwapLedgerSigningOverlayState
   ) async {
     if (mounted) {
       setState(() {
-        _phase = LedgerSigningModalPhase.broadcasting;
+        _phase = LedgerSigningModalPhase.saving;
         _error = null;
       });
     }
@@ -388,6 +405,23 @@ class _SwapLedgerSigningOverlayState
         result.txid.trim().isNotEmpty,
       _ => false,
     };
+  }
+
+  LedgerSignedOperationBroadcastResult _broadcastResultFromMetadata(
+    LedgerSignedOperationMetadata operation,
+  ) {
+    final txid = operation.txid?.trim() ?? '';
+    final status = operation.status?.trim() ?? '';
+    if (txid.isEmpty || status.isEmpty) {
+      throw StateError('Ledger deposit result is incomplete.');
+    }
+    return LedgerSignedOperationBroadcastResult(
+      operationId: operation.operationId,
+      txid: txid,
+      status: status,
+      message: operation.message,
+      requiresAck: true,
+    );
   }
 
   Future<LedgerSignedOperationMetadata?> _findExistingOperation(
@@ -487,24 +521,50 @@ class _SwapLedgerSigningOverlayState
     final canLeave = !_isBroadcasting;
     final legacyOrchardRecoveryUnavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final pendingBroadcastResult = _pendingBroadcastResult;
+    final postBroadcastRecovery = pendingBroadcastResult != null;
+    final broadcastConfirmed =
+        pendingBroadcastResult?.status ==
+            SwapDepositBroadcastStatus.broadcasted ||
+        pendingBroadcastResult?.status ==
+            SwapDepositBroadcastStatus.broadcastedStorageFailed;
     final modal = LedgerSigningModal(
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
-      failure: _phase == LedgerSigningModalPhase.failed
-          ? LedgerSigningFailurePresentation(
-              title: legacyOrchardRecoveryUnavailable
-                  ? 'Ledger app update required'
-                  : 'Ledger signing failed',
-              statusLabel: legacyOrchardRecoveryUnavailable
-                  ? 'Recovery unavailable'
-                  : 'Action needed',
-              message: _error ?? 'Ledger signing could not be completed.',
-              showDeviceAppPrompt: !legacyOrchardRecoveryUnavailable,
-              actionLabel: legacyOrchardRecoveryUnavailable
-                  ? null
-                  : 'Try again',
-            )
-          : null,
+      failure:
+          _phase == LedgerSigningModalPhase.failed
+              ? LedgerSigningFailurePresentation(
+                title:
+                    postBroadcastRecovery
+                        ? broadcastConfirmed
+                            ? 'Transaction sent'
+                            : 'Transaction status pending'
+                        : legacyOrchardRecoveryUnavailable
+                        ? 'Ledger app update required'
+                        : 'Ledger signing failed',
+                statusLabel:
+                    postBroadcastRecovery
+                        ? 'Saving transaction'
+                        : legacyOrchardRecoveryUnavailable
+                        ? 'Recovery unavailable'
+                        : 'Action needed',
+                message:
+                    postBroadcastRecovery
+                        ? broadcastConfirmed
+                            ? 'The transaction was sent, but Vizor could not finish saving it.'
+                            : 'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'
+                        : _error ?? 'Ledger signing could not be completed.',
+                showDeviceAppPrompt:
+                    !postBroadcastRecovery && !legacyOrchardRecoveryUnavailable,
+                showConnectionPicker: !postBroadcastRecovery,
+                actionLabel:
+                    legacyOrchardRecoveryUnavailable
+                        ? null
+                        : postBroadcastRecovery
+                        ? 'Retry saving'
+                        : 'Try again',
+              )
+              : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to activity',
       onFailureAction:

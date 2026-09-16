@@ -31,6 +31,7 @@ class LedgerSigningFailurePresentation {
     required this.showDeviceAppPrompt,
     this.actionLabel,
     this.isError = true,
+    this.showConnectionPicker = true,
   });
 
   final String title;
@@ -39,6 +40,7 @@ class LedgerSigningFailurePresentation {
   final bool showDeviceAppPrompt;
   final String? actionLabel;
   final bool isError;
+  final bool showConnectionPicker;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -279,6 +281,7 @@ class LedgerSigningModal extends ConsumerWidget {
             ),
           ),
           if (failed &&
+              failure!.showConnectionPicker &&
               account != null &&
               ledgerSupportsUsb(ref.watch(ledgerTargetPlatformProvider))) ...[
             const SizedBox(height: AppSpacing.sm),

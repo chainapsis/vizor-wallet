@@ -117,7 +117,7 @@ void main() {
       );
       expect(
         find.text(
-          checkpointGate == null
+          checkpointGate == null && !cached
               ? 'Sending transaction'
               : 'Saving signed transaction',
         ),
@@ -127,7 +127,7 @@ void main() {
       await tester.pump();
       expect(
         find.text(
-          checkpointGate == null
+          checkpointGate == null && !cached
               ? 'Sending transaction'
               : 'Saving signed transaction',
         ),
