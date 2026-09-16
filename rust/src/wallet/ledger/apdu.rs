@@ -1,5 +1,6 @@
 const UFVK_RESPONSE_LIMIT: usize = 8 * 1024;
 const MAX_APDU_DATA: usize = 255;
+const RESPONSE_OK: u16 = 0x9000;
 
 pub(crate) const ZCASH_CLA: u8 = 0xe0;
 pub(crate) const GET_VK: u8 = 0x50;
@@ -83,6 +84,30 @@ pub(crate) fn decode_ufvk_chunks(chunks: &[Vec<u8>]) -> Result<String, String> {
         .map_err(|_| "Ledger UFVK response is not valid UTF-8".into())
 }
 
+/// Decode status-bearing responses returned by native Bluetooth adapters.
+/// Every response is checked before its payload joins the UFVK stream.
+pub(crate) fn decode_raw_ufvk_responses(responses: &[Vec<u8>]) -> Result<String, String> {
+    if responses.is_empty() {
+        return Err("Ledger UFVK response is missing".into());
+    }
+    let chunks = responses
+        .iter()
+        .map(|response| decode_raw_response(response))
+        .collect::<Result<Vec<_>, _>>()?;
+    decode_ufvk_chunks(&chunks)
+}
+
+fn decode_raw_response(response: &[u8]) -> Result<Vec<u8>, String> {
+    if response.len() < 2 {
+        return Err("Ledger APDU response was too short to contain a status word".into());
+    }
+    let status = u16::from_be_bytes([response[response.len() - 2], response[response.len() - 1]]);
+    if status != RESPONSE_OK {
+        return Err(map_status_word(status));
+    }
+    Ok(response[..response.len() - 2].to_vec())
+}
+
 pub(crate) fn ufvk_expected_len(first_chunk: &[u8]) -> Result<usize, String> {
     if first_chunk.len() < 2 {
         return Err("Ledger UFVK response is missing its length prefix".into());
@@ -161,6 +186,26 @@ mod tests {
         assert!(decode_ufvk_chunks(&[vec![0, 5, b'u']])
             .unwrap_err()
             .contains("before the declared length"));
+    }
+
+    #[test]
+    fn raw_ufvk_responses_are_status_checked_and_reassembled() {
+        let responses = vec![
+            vec![0, 5, b'u', b'v', 0x90, 0],
+            vec![b'i', b'e', b'w', 0x90, 0],
+        ];
+        assert_eq!(decode_raw_ufvk_responses(&responses).unwrap(), "uview");
+        assert!(decode_raw_ufvk_responses(&[vec![0x69, 0x85]])
+            .unwrap_err()
+            .contains("rejected"));
+        assert!(decode_raw_ufvk_responses(&[vec![0, 5, b'u', 0x90, 0]])
+            .unwrap_err()
+            .contains("before the declared length"));
+        assert!(
+            decode_raw_ufvk_responses(&[vec![0, 5, b'u', 0x90, 0], vec![0x90, 0]])
+                .unwrap_err()
+                .contains("before the declared length")
+        );
     }
 
     #[test]

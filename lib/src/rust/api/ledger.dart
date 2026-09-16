@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ledger_account_fingerprint`, `require_mainnet`, `to_device_app`
+// These functions are ignored because they are not marked as `pub`: `ledger_account_fingerprint`, `require_account_index`, `require_mainnet`, `to_apdu_command`, `to_device_app`, `validate_ufvk`
 
 /// Read the application currently running on the connected Ledger device.
 Future<LedgerDeviceApp> ledgerDeviceApp() =>
@@ -21,19 +21,6 @@ Future<LedgerDeviceApp> ledgerOpenZcashApp() =>
 void ledgerCancelOperation() =>
     RustLib.instance.api.crateApiLedgerLedgerCancelOperation();
 
-/// Export the UFVK for the selected mainnet account after device approval.
-///
-/// The request includes the shielded `m/32'/133'/account'` and transparent
-/// `m/44'/133'/account'` derivation paths. This does not import an account into
-/// the wallet or return seed/spending keys.
-Future<String> ledgerExportUfvk({
-  required int accountIndex,
-  required String network,
-}) => RustLib.instance.api.crateApiLedgerLedgerExportUfvk(
-  accountIndex: accountIndex,
-  network: network,
-);
-
 /// Export an account's UFVK and derivation metadata after device approval.
 /// The Ledger app does not export the ZIP-32 seed fingerprint. The synthetic
 /// hash here fills the DB derivation slot; it cannot identify a seed or device.
@@ -43,6 +30,25 @@ Future<LedgerAccountExport> ledgerExportAccount({
 }) => RustLib.instance.api.crateApiLedgerLedgerExportAccount(
   accountIndex: accountIndex,
   network: network,
+);
+
+/// Build the Zcash app's UFVK request without opening a desktop transport.
+Future<LedgerUfvkApduPlan> ledgerBuildUfvkApduPlan({
+  required int accountIndex,
+}) => RustLib.instance.api.crateApiLedgerLedgerBuildUfvkApduPlan(
+  accountIndex: accountIndex,
+);
+
+/// Parse status-bearing Bluetooth responses and produce the same public
+/// account metadata as the USB export path.
+Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
+  required int accountIndex,
+  required String network,
+  required List<Uint8List> responses,
+}) => RustLib.instance.api.crateApiLedgerLedgerParseMobileUfvkResponses(
+  accountIndex: accountIndex,
+  network: network,
+  responses: responses,
 );
 
 /// Viewing-key material for one approved Ledger account; never a spending key.
@@ -81,6 +87,39 @@ class LedgerAccountExport {
           deviceModel == other.deviceModel;
 }
 
+/// One transport-neutral APDU command. Native Bluetooth adapters own only the
+/// session and byte exchange; Rust remains the Zcash protocol authority.
+class LedgerApduCommand {
+  final int cla;
+  final int ins;
+  final int p1;
+  final int p2;
+  final Uint8List data;
+
+  const LedgerApduCommand({
+    required this.cla,
+    required this.ins,
+    required this.p1,
+    required this.p2,
+    required this.data,
+  });
+
+  @override
+  int get hashCode =>
+      cla.hashCode ^ ins.hashCode ^ p1.hashCode ^ p2.hashCode ^ data.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LedgerApduCommand &&
+          runtimeType == other.runtimeType &&
+          cla == other.cla &&
+          ins == other.ins &&
+          p1 == other.p1 &&
+          p2 == other.p2 &&
+          data == other.data;
+}
+
 /// The application currently running on the connected Ledger device.
 class LedgerDeviceApp {
   final String appName;
@@ -98,4 +137,23 @@ class LedgerDeviceApp {
           runtimeType == other.runtimeType &&
           appName == other.appName &&
           appVersion == other.appVersion;
+}
+
+/// The first UFVK request and its continuation command.
+class LedgerUfvkApduPlan {
+  final LedgerApduCommand first;
+  final LedgerApduCommand continuation;
+
+  const LedgerUfvkApduPlan({required this.first, required this.continuation});
+
+  @override
+  int get hashCode => first.hashCode ^ continuation.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LedgerUfvkApduPlan &&
+          runtimeType == other.runtimeType &&
+          first == other.first &&
+          continuation == other.continuation;
 }

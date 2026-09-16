@@ -11,7 +11,7 @@ or sign/broadcast transactions.
 | --- | --- |
 | `ledger_device_app` | Open a fresh USB session and read the current app name/version. |
 | `ledger_open_zcash_app` | If needed, close another app, observe the dashboard, open Zcash, reconnect and verify the app name. |
-| `ledger_export_ufvk` | Request the selected account's UFVK after device approval; reject non-mainnet requests before device access. |
+| `ledger_export_account` | Request the selected account's UFVK and import metadata after device approval; reject non-mainnet requests before device access. |
 | `ledger_cancel_operation` | Cancel the current generation of host-side device work. |
 
 The UFVK request encodes `m/32'/133'/account'` and
@@ -25,10 +25,15 @@ The importer never requests seed material through these APIs. A viewing key is
 still sensitive because it enables wallet-history inspection; the API returns it
 to its caller without logging or persisting it.
 
+C02 added `ledger_export_account`. C03 removes the superseded string-only
+`ledger_export_ufvk` bridge, which had no application callers. The lower-level
+Rust `get_ufvk` helper remains for the planned diagnostic/canary consumers.
+
 ## USB lifecycle
 
-- macOS, Windows and Linux use Ledger HID with vendor ID `2c97` and usage page
-  `ffa0`. The first matching device is used; there is no multi-device picker.
+- All desktop platforms require Ledger HID vendor ID `2c97`. macOS and Windows
+  require usage page `ffa0`; Linux selects interface 0. The first matching device
+  is used; there is no multi-device picker.
 - Device operations serialize through one mutex and open fresh HID sessions.
   Closing or opening an app reconnects because USB may disappear during a switch.
 - An active operation has a five-minute budget, with 100 ms HID read polling to
