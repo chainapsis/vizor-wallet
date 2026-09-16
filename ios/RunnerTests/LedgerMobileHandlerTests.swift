@@ -23,6 +23,73 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testPickerCancellationDrainsLateConnectBeforeReconnect() async {
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    transport.deferDisconnectCompletion = true
+    let handler = LedgerMobileHandler(transport: transport)
+    var results: [Any?] = []
+    connect(handler) { results.append($0) }
+    handler.handle(FlutterMethodCall(methodName: "cancelSigning", arguments: nil)) { XCTAssertNil($0) }
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual((results[0] as? FlutterError)?.code, "cancelled")
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    XCTAssertEqual(transport.connects, 1)
+    transport.completeConnect()
+    XCTAssertEqual(transport.disconnects, 1)
+    XCTAssertEqual(results.count, 1)
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    handler.handle(ufvkCall) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    XCTAssertTrue(transport.commands.isEmpty)
+    transport.completeDisconnect()
+    transport.deferConnectCompletion = false
+    connect(handler)
+    XCTAssertEqual(transport.connects, 2)
+    XCTAssertTrue(transport.isConnected)
+    handler.close()
+    transport.completeDisconnect()
+  }
+
+  @MainActor
+  func testPickerCancellationIgnoresLateConnectFailure() async {
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    let handler = LedgerMobileHandler(transport: transport)
+    var results: [Any?] = []
+    connect(handler) { results.append($0) }
+    handler.handle(FlutterMethodCall(methodName: "cancelSigning", arguments: nil)) { XCTAssertNil($0) }
+    transport.failConnect()
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual((results[0] as? FlutterError)?.code, "cancelled")
+    XCTAssertEqual(transport.disconnects, 0)
+    transport.deferConnectCompletion = false
+    connect(handler)
+    XCTAssertEqual(transport.connects, 2)
+    handler.close()
+  }
+
+  @MainActor
+  func testCancelledConnectRetriesFailedCleanupBeforeNewConnection() async {
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    transport.disconnectFailures = 1
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler) { _ in }
+    handler.handle(FlutterMethodCall(methodName: "cancelSigning", arguments: nil)) { XCTAssertNil($0) }
+    transport.completeConnect()
+    XCTAssertTrue(transport.isConnected)
+    XCTAssertEqual(transport.disconnects, 1)
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    XCTAssertEqual(transport.disconnects, 2)
+    XCTAssertEqual(transport.connects, 1)
+    XCTAssertFalse(transport.isConnected)
+    transport.deferConnectCompletion = false
+    connect(handler)
+    XCTAssertEqual(transport.connects, 2)
+    handler.close()
+  }
+
+  @MainActor
   func testCancelledSigningDoesNotSendRemainingCommands() async {
     let transport = PendingLedgerTransport()
     let handler = LedgerMobileHandler(transport: transport)
@@ -839,6 +906,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   private var pending: CheckedContinuation<String, Error>?
   private var disconnectedCallbacks: [EmptyResponse] = []
   private var deferredConnect: (PeripheralIdentifier, PeripheralResponse)?
+  private var deferredConnectFailure: BleErrorResponse?
   private var deferredDisconnectCompletion: OptionalBleErrorResponse?
 
   var hasPendingExchange: Bool { pending != nil }
@@ -864,6 +932,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     if let disconnectedCallback { disconnectedCallbacks.append(disconnectedCallback) }
     if deferConnectCompletion {
       deferredConnect = (peripheral, success)
+      deferredConnectFailure = failure
     } else {
       success(peripheral)
     }
@@ -872,7 +941,15 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func completeConnect() {
     guard let deferred = deferredConnect else { return }
     deferredConnect = nil
+    deferredConnectFailure = nil
     deferred.1(deferred.0)
+  }
+  func failConnect() {
+    let failure = deferredConnectFailure
+    deferredConnect = nil
+    deferredConnectFailure = nil
+    isConnected = false
+    failure?(BleTransportError.connectError(description: "Late failure"))
   }
   func disconnect(completion: OptionalBleErrorResponse?) {
     XCTAssertNil(pending, "Must not enter the SDK's pending-disconnect wait")

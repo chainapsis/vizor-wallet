@@ -68,6 +68,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var exchangeGeneration = 0
   private var exchangeRecoversFromDisconnect = false
   private var appPreparationGeneration = 0
+  private var connectCallbackPending = false
+  private var cancelledConnectionNeedsDisconnect = false
   private var transportCallbackPending = false
   private var transportCallbackResult: FlutterResult?
   private var closeDisconnectPending = false
@@ -226,6 +228,11 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     guard LedgerMobileTransportOwnership.shared.claim(transport: transport, owner: self) else {
       (LedgerMobileTransportOwnership.shared.owner(transport: transport) as? LedgerMobileHandler)?
         .scheduleCloseRetry(transport)
+      result(pendingExchangeError())
+      return nil
+    }
+    if cancelledConnectionNeedsDisconnect {
+      drainCancelledConnection(transport)
       result(pendingExchangeError())
       return nil
     }
@@ -463,6 +470,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
 
     stopDiscovery()
+    connectCallbackPending = true
     transportCallbackPending = true
     transportCallbackResult = result
     connectionGeneration += 1
@@ -484,12 +492,17 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func finishConnect(connected: PeripheralIdentifier?, error: Error?) {
-    guard transportCallbackPending else { return }
+    guard connectCallbackPending else { return }
+    connectCallbackPending = false
     transportCallbackPending = false
     let result = transportCallbackResult
     transportCallbackResult = nil
     if isClosing {
       if let transportStorage { finishClosing(transportStorage) }
+      return
+    }
+    if cancelledConnectionNeedsDisconnect {
+      if let transportStorage { drainCancelledConnection(transportStorage) }
       return
     }
     if let error {
@@ -498,6 +511,24 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
     connectedDevice = connected
     result?(nil)
+  }
+
+  // Cancellation completes Dart immediately, but retains native ownership until
+  // the SDK connect callback drains and any late successful link disconnects.
+  private func drainCancelledConnection(_ transport: BleTransportProtocol) {
+    guard !transportCallbackPending else { return }
+    guard transport.isConnected else {
+      cancelledConnectionNeedsDisconnect = false
+      return
+    }
+    transportCallbackPending = true
+    transport.disconnect { [self] error in
+      transportCallbackPending = false
+      cancelledConnectionNeedsDisconnect = error != nil && transport.isConnected
+      if isClosing { finishClosing(transport) }
+      // On failure the next public operation retries cleanup and remains busy;
+      // it must never reconnect or send an APDU on the cancelled link.
+    }
   }
 
   private func disconnect(_ result: @escaping FlutterResult) {
@@ -744,7 +775,16 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     // App switching may disconnect BLE without cancelling the user's request.
     // Explicit Cancel, disconnect and close must invalidate preparation even
     // before the first operation APDU exists.
-    if cancelPreparation { appPreparationGeneration += 1 }
+    if cancelPreparation {
+      appPreparationGeneration += 1
+      if connectCallbackPending, let pending = transportCallbackResult {
+        cancelledConnectionNeedsDisconnect = true
+        connectionGeneration += 1
+        connectedDevice = nil
+        transportCallbackResult = nil
+        pending(flutterError(code: code, message: message))
+      }
+    }
     guard let pending = exchangeResult else { return }
     exchangeGeneration += 1
     exchangeResult = nil
