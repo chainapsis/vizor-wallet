@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_recovery.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
@@ -155,6 +156,55 @@ void main() {
       expect(persistenceCalls, 1);
       expect(operations.acknowledgeCalls, 1);
       expect(operations.state, 'completed');
+    },
+  );
+
+  testWidgets(
+    'Back requests recovery after releasing a checkpointed operation claim',
+    (tester) async {
+      final operations = _StatefulOperationService();
+      final signing = _HardwareSigningService(settlementFailures: 1);
+      var signerCalls = 0;
+      var persistenceCalls = 0;
+      var cancelCalls = 0;
+
+      final container = await _pumpOverlay(
+        tester,
+        intent: _intent(payMode: true),
+        operations: operations,
+        signing: signing,
+        sign: (_, _) async {
+          signerCalls++;
+          return const [3];
+        },
+        persist: (_, _) async => persistenceCalls++,
+        onCompleted: (_) async => fail('Back must leave recovery in charge.'),
+        onCancelled: () => cancelCalls++,
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Retry saving').evaluate().isNotEmpty,
+      );
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+      expect(persistenceCalls, 0);
+      expect(operations.acknowledgeCalls, 0);
+
+      await tester.tap(find.text('Back to activity'));
+      await _pumpUntil(tester, () => operations.state == 'completed');
+
+      expect(cancelCalls, 1);
+      expect(signing.settlementStatuses, [
+        SwapDepositBroadcastStatus.broadcasted,
+        SwapDepositBroadcastStatus.broadcasted,
+      ]);
+      expect(signerCalls, 1);
+      expect(operations.checkpointCalls, 1);
+      expect(operations.broadcastCalls, 1);
+      expect(persistenceCalls, 1);
+      expect(operations.acknowledgeCalls, 1);
     },
   );
 
@@ -538,7 +588,7 @@ void main() {
   });
 }
 
-Future<void> _pumpOverlay(
+Future<ProviderContainer> _pumpOverlay(
   WidgetTester tester, {
   required SwapIntent intent,
   required _StatefulOperationService operations,
@@ -550,21 +600,35 @@ Future<void> _pumpOverlay(
 }) async {
   await tester.binding.setSurfaceSize(const Size(1200, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap),
-        ledgerDepositResultPersistenceProvider.overrideWithValue(persist),
-        ledgerPcztSignerProvider.overrideWithValue(sign),
-        ledgerOperationCancellerProvider.overrideWithValue(() async {}),
-        ledgerSignedOperationServiceProvider.overrideWithValue(operations),
-        swapHardwareSigningServiceProvider.overrideWithValue(signing),
-        syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap),
+      ledgerDepositResultPersistenceProvider.overrideWithValue(persist),
+      ledgerDepositRecoveryProvider.overrideWithValue(
+        ({required operation, required result}) => persist(
+          intent,
+          SwapHardwareBroadcastResult(
+            txHash: result.txid,
+            status: result.status,
+            message: result.message,
           ),
         ),
-      ],
+      ),
+      ledgerPcztSignerProvider.overrideWithValue(sign),
+      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+      ledgerSignedOperationServiceProvider.overrideWithValue(operations),
+      swapHardwareSigningServiceProvider.overrideWithValue(signing),
+      syncProvider.overrideWith(
+        () => FakeSyncNotifier(
+          SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+        ),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
       child: MaterialApp(
         home: Scaffold(
           body: RepaintBoundary(
@@ -582,6 +646,7 @@ Future<void> _pumpOverlay(
       ),
     ),
   );
+  return container;
 }
 
 Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {

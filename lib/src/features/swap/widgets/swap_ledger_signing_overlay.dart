@@ -11,6 +11,7 @@ import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
+import '../../ledger/services/ledger_operation_recovery.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -566,7 +567,18 @@ class _SwapLedgerSigningOverlayState
       _releaseOperationClaim();
       return;
     }
+    final shouldRecoverCheckpoint = _operationCheckpointed;
+    final recoveryCoordinator = shouldRecoverCheckpoint
+        ? ref.read(ledgerOperationRecoveryCoordinatorProvider)
+        : null;
     _releaseOperationClaim();
+    if (recoveryCoordinator != null) {
+      unawaited(
+        recoveryCoordinator.recover().catchError((Object error, StackTrace st) {
+          log('SwapLedgerSigning.cancelRecovery: ERROR: $error\n$st');
+        }),
+      );
+    }
     widget.onCancel();
   }
 
