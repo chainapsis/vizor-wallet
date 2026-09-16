@@ -43,6 +43,7 @@ using Result = flutter::MethodResult<Value>;
 using ledger_ble::Bytes;
 using ledger_ble::Error;
 using Deadline = std::optional<std::chrono::steady_clock::time_point>;
+constexpr auto kAppSwitchResponseTimeout = 2s;
 
 const Value* Field(const Value* value, const char* key) {
   if (!value) return nullptr;
@@ -260,7 +261,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
 
   void CheckDeadline(const Deadline& deadline) const {
     if (deadline && std::chrono::steady_clock::now() >= *deadline) {
-      throw Error("unavailable", "Ledger app recovery timed out.");
+      throw Error("transition_timeout", "Ledger app recovery timed out.");
     }
   }
 
@@ -296,6 +297,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
              std::chrono::milliseconds timeout = 30s,
              Deadline absolute_deadline = std::nullopt) {
     auto deadline = std::chrono::steady_clock::now() + timeout;
+    const bool transition_timeout = absolute_deadline.has_value();
     if (absolute_deadline && *absolute_deadline < deadline) {
       deadline = *absolute_deadline;
     }
@@ -308,7 +310,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       if (!cancellation && std::chrono::steady_clock::now() >= deadline) {
         try { async.Cancel(); } catch (...) {}
         cancellation = Error(
-            "unavailable",
+            transition_timeout ? "transition_timeout" : "unavailable",
             "The Ledger Bluetooth request timed out. Reconnect and try again.");
       }
       std::this_thread::sleep_for(25ms);
@@ -760,7 +762,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             *deadline - std::chrono::steady_clock::now());
         if (remaining <= 0ms) {
-          throw Error("unavailable", "Ledger app recovery timed out.");
+          throw Error("transition_timeout", "Ledger app recovery timed out.");
         }
         write_timeout = remaining;
       }
@@ -783,7 +785,8 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     for (;;) {
       Check(operation);
       if (std::chrono::steady_clock::now() >= response_deadline) {
-        throw Error("unavailable", "Ledger did not respond. Finish or reject its pending request, then reconnect.");
+        throw Error(deadline ? "transition_timeout" : "unavailable",
+                    "Ledger did not respond. Finish or reject its pending request, then reconnect.");
       }
       Bytes packet;
       {
@@ -794,7 +797,8 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         });
         Check(operation);
         if (!ready) {
-          throw Error("unavailable", "Ledger did not respond. Finish or reject its pending request, then reconnect.");
+          throw Error(deadline ? "transition_timeout" : "unavailable",
+                      "Ledger did not respond. Finish or reject its pending request, then reconnect.");
         }
         if (session->failure) throw *session->failure;
         if (!session->connected) throw Error("disconnected", "The Ledger disconnected. Reconnect and try again.");
@@ -844,6 +848,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         const auto app = ReadApp(operation, deadline, true);
         if (matches(app)) return app;
       } catch (const Error& error) {
+        if (error.code == "transition_timeout") break;
         if (error.code != "disconnected" && error.code != "device_busy") throw;
         if (error.code == "disconnected") CloseSession();
       }
@@ -858,6 +863,24 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
                                    ". Check your Ledger and try again.");
   }
 
+  void SendAppSwitchCommand(const Bytes& command, uint64_t operation) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + kAppSwitchResponseTimeout;
+    std::optional<Bytes> response;
+    try {
+      response = Exchange(command, operation, deadline, true);
+    } catch (const Error& error) {
+      Check(operation);
+      if (error.code != "transition_timeout" &&
+          error.code != "disconnected") {
+        throw;
+      }
+      CloseSession();
+      return;
+    }
+    ledger_ble::RequireSuccess(*response);
+  }
+
   ledger_ble::AppInfo OpenZcash(uint64_t operation) {
     std::string id;
     {
@@ -865,18 +888,13 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       id = connected_id_;
     }
     if (id.empty()) throw Error("disconnected", "Connect a Ledger before opening Zcash.");
-    const auto current = ReadApp(operation);
+    const auto current = WaitForApp(
+        id, operation, [](const ledger_ble::AppInfo&) { return true; },
+        "the current Ledger app");
     if (current.name == "Zcash") return current;
 
     if (!ledger_ble::IsDashboardApp(current.name)) {
-      try {
-        ledger_ble::RequireSuccess(
-            Exchange(ledger_ble::CloseAppCommand(), operation));
-      } catch (const Error& error) {
-        Check(operation);
-        if (error.code != "disconnected" && error.code != "device_busy") throw;
-        if (error.code == "disconnected") CloseSession();
-      }
+      SendAppSwitchCommand(ledger_ble::CloseAppCommand(), operation);
       WaitForApp(id, operation,
                  [](const ledger_ble::AppInfo& app) {
                    return ledger_ble::IsDashboardApp(app.name);
@@ -884,14 +902,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
                  "the Ledger dashboard");
     }
 
-    try {
-      ledger_ble::RequireSuccess(
-          Exchange(ledger_ble::OpenZcashAppCommand(), operation));
-    } catch (const Error& error) {
-      Check(operation);
-      if (error.code != "disconnected" && error.code != "device_busy") throw;
-      if (error.code == "disconnected") CloseSession();
-    }
+    SendAppSwitchCommand(ledger_ble::OpenZcashAppCommand(), operation);
     // Opening the app is sent exactly once. App switching may drop the link;
     // only reconnect and observe that same Windows device during recovery.
     return WaitForApp(id, operation,
