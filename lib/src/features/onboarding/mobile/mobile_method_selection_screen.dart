@@ -115,7 +115,7 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
                         iconName: AppIcons.ledger,
                         label: 'Connect Ledger',
                         illustration:
-                            'assets/illustrations/method_import_card_bg.png',
+                            'assets/illustrations/method_ledger_card_bg.png',
                         onTap: () => context.push('/onboarding/ledger'),
                       ),
                     ],

@@ -28,6 +28,7 @@ import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
+import 'mobile_method_selection_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -58,6 +59,13 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-method-selection-ledger',
+    description: 'Mobile method selection with Ledger available',
+    builder: buildMobileMethodSelectionCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'ledger-onboarding-sidebar',
     description: 'Desktop Ledger import sidebar illustration',
