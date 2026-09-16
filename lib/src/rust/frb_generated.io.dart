@@ -5,6 +5,7 @@
 
 import 'api/gift_card_tracking.dart';
 import 'api/keystone.dart';
+import 'api/ledger.dart';
 import 'api/network_privacy.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
@@ -505,6 +506,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
+
+  @protected
+  LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -1838,6 +1842,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeystoneSigningRequest sse_decode_keystone_signing_request(
     SseDeserializer deserializer,
   );
+
+  @protected
+  LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
@@ -3487,6 +3494,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_keystone_signing_request(
     KeystoneSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_device_app(
+    LedgerDeviceApp self,
     SseSerializer serializer,
   );
 
