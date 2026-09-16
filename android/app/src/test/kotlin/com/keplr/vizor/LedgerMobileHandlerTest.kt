@@ -5,7 +5,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
-import org.robolectric.shadows.ShadowLog
 import io.flutter.plugin.common.EventChannel
 import com.ledger.devicemanagement.api.command.Command
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
@@ -406,12 +405,6 @@ class LedgerMobileHandlerTest {
         runCurrent()
         assertEquals("unavailable", result.error)
         assertEquals(1, result.completions)
-        val diagnostics = ShadowLog.getLogsForTag("VizorLedger").joinToString("\n") { it.msg }
-        assertTrue(diagnostics.contains("exception stage=sendApdu apdu=1"))
-        assertTrue(diagnostics.contains("exceptionType=java.lang.IllegalStateException"))
-        assertTrue(diagnostics.contains("LedgerMobileHandlerTest"))
-        // Exception messages can embed sensitive SDK payloads.
-        assertFalse(diagnostics.contains("SDK failure"))
         val retry = exchangeCall()
         runCurrent()
         assertNull(retry.error)

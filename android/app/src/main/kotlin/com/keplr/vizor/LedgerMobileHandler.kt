@@ -4,8 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.SystemClock
-import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.ledger.devicemanagement.DeviceManagementKitApi
 import com.ledger.devicemanagement.api.DeviceOperationFailureReason
@@ -228,13 +226,9 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        launchOperation(result, name = "connect") { request ->
-            request.stage = "discoverDevice"
-            request.trace("connect discoveryCached=${discoveredDevices.containsKey(deviceId)}")
+        launchOperation(result) { request ->
             val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
             currentCoroutineContext().ensureActive()
-            request.stage = "connectDevice"
-            request.trace("SDK connect start")
             when (val connection = dmk.connectDevice(device)) {
                 is ConnectionResult.Connected -> {
                     if (!request.pending) {
@@ -292,7 +286,6 @@ class LedgerMobileHandler(
     private fun disconnect(result: MethodChannel.Result?) {
         val previous = operation
         if (previous?.cleanup == true) {
-            Log.w(LOG_TAG, "disconnect blocked: active=${previous.label}")
             result?.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
@@ -303,18 +296,16 @@ class LedgerMobileHandler(
         connectedDevice = null
         // Reserve the slot synchronously, including while the cancelled SDK
         // request drains. Cleanup itself cannot be cancelled by UI navigation.
-        launchOperation(result, name = "disconnect", cleanup = true) { request ->
+        launchOperation(result, cleanup = true) { request ->
             previous?.job?.join()
             scan?.join()
-            request.stage = "disconnectDevice"
-            request.trace("SDK disconnect hasDevice=${device != null}")
             if (device != null) dmk.disconnectDevice(device)
             request.success(null)
         }
     }
 
     private fun currentApp(result: MethodChannel.Result) {
-        launchOperation(result, name = "currentApp") { request ->
+        launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
             queryApp(device, request)
         }
@@ -322,24 +313,17 @@ class LedgerMobileHandler(
 
     private suspend fun queryApp(device: ConnectedDevice, request: DeviceRequest) {
         currentCoroutineContext().ensureActive()
-        request.stage = "GetAppAndVersion"
-        request.trace("app query start")
         val app = dmk.executeCommand(device.uid, GetAppAndVersionCommand())
         currentCoroutineContext().ensureActive()
         when (app) {
-            is DeviceOperationResult.Success -> {
-                request.trace("app query success zcash=${app.value.appName == "Zcash"} version=${app.value.appVersion.filter { it.isDigit() || it == '.' }.take(32)}")
-                request.success(app.value.asFlutterMap())
-            }
+            is DeviceOperationResult.Success -> request.success(app.value.asFlutterMap())
             is DeviceOperationResult.Failure -> operationFailure(request, app.reason)
         }
     }
 
     private fun openZcashApp(result: MethodChannel.Result) {
-        launchOperation(result, name = "openZcashApp") { request ->
+        launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
-            request.stage = "OpenApplication"
-            request.trace("open Zcash start")
             val terminal = dmk.executeDeviceAction(device.uid, OpenApplicationDeviceAction("Zcash"))
                 .first { it is DeviceActionResult.Success || it is DeviceActionResult.Failure }
             currentCoroutineContext().ensureActive()
@@ -354,7 +338,7 @@ class LedgerMobileHandler(
     private fun exchangeUfvk(call: MethodCall, result: MethodChannel.Result) {
         val first = parseCommand(call.argument("first"), result) ?: return
         val continuation = parseCommand(call.argument("continuation"), result) ?: return
-        launchOperation(result, name = "exchangeUfvk") { request ->
+        launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
             val responses = mutableListOf<ByteArray>()
             val firstResponse = exchange(device.uid, first, request) ?: return@launchOperation
@@ -402,10 +386,9 @@ class LedgerMobileHandler(
             val command = parseCommand(value as? Map<*, *>, result) ?: return
             commands += command
         }
-        launchOperation(result, name = "exchangeApdus") { request ->
+        launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
             val responses = mutableListOf<ByteArray>()
-            request.trace("signing batch commands=${commands.size}")
             for (command in commands) {
                 val response = exchange(device.uid, command, request) ?: return@launchOperation
                 responses += response
@@ -420,20 +403,17 @@ class LedgerMobileHandler(
     // the slot. Main-thread confinement makes result delivery exactly-once.
     private fun launchOperation(
         result: MethodChannel.Result?,
-        name: String,
         cleanup: Boolean = false,
         block: suspend (DeviceRequest) -> Unit,
     ) {
         val sdkJob = sdkJobs[dmk]
         if (!cleanup && (operation != null || (sdkJob != null && sdkJob !== discoveryJob))) {
-            Log.w(LOG_TAG, "$name blocked: active=${operation?.label} sdkBusy=${sdkJob != null}")
             result?.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
         stopDiscovery()
         val scan = discoveryJob
-        val request = DeviceRequest(result, cleanup, "${++nextOperationId}:$name")
-        request.trace("start cachedConnection=${connectedDevice != null} waitingForDiscovery=${scan != null}")
+        val request = DeviceRequest(result, cleanup)
         val job = scope.launch(
             context = if (cleanup) NonCancellable else kotlin.coroutines.EmptyCoroutineContext,
             start = CoroutineStart.LAZY,
@@ -442,17 +422,14 @@ class LedgerMobileHandler(
                 if (cleanup) sdkJob?.join()
                 scan?.join()
                 currentCoroutineContext().ensureActive()
-                request.trace("SDK work started")
                 block(request)
             } catch (_: CancellationException) {
                 request.cancelResult()
             } catch (error: LedgerDiscoveryException) {
                 request.error(error.code, error.message, null)
-            } catch (error: SecurityException) {
-                request.traceException(error)
+            } catch (_: SecurityException) {
                 request.error("permission_denied", "Bluetooth permission is required to connect to Ledger.", null)
-            } catch (error: Exception) {
-                request.traceException(error)
+            } catch (_: Exception) {
                 request.error("unavailable", "Could not communicate with Ledger. Try again.", null)
             }
         }
@@ -461,7 +438,6 @@ class LedgerMobileHandler(
         sdkJobs[dmk] = job
         job.invokeOnCompletion {
             request.cancelResult() // Includes cancellation before dispatch.
-            request.trace("SDK job completed; releasing slot")
             if (operation === request) operation = null
             if (sdkJobs[dmk] === job) sdkJobs.remove(dmk)
         }
@@ -469,7 +445,6 @@ class LedgerMobileHandler(
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
-        Log.i(LOG_TAG, "cancelSigning active=${operation?.label} cleanup=${operation?.cleanup}")
         operation?.let { if (!it.cleanup) it.cancel() }
         result.success(null)
     }
@@ -477,39 +452,13 @@ class LedgerMobileHandler(
     private class DeviceRequest(
         private var result: MethodChannel.Result?,
         val cleanup: Boolean,
-        val label: String,
     ) : MethodChannel.Result {
-        private val startedAt = SystemClock.elapsedRealtime()
-        var apduIndex = 0
-        var stage = "prepare"
-
-        fun trace(message: String) {
-            Log.i(LOG_TAG, "$label +${SystemClock.elapsedRealtime() - startedAt}ms $message")
-        }
-
-        fun traceException(error: Throwable) {
-            trace("exception stage=$stage apdu=$apduIndex")
-            // SDK exception messages can contain raw APDUs or device identifiers.
-            // Preserve types and stack frames (including causes), never messages.
-            val seen = mutableSetOf<Throwable>()
-            var cause: Throwable? = error
-            while (cause != null && seen.add(cause)) {
-                Log.e(LOG_TAG, "$label exceptionType=${cause.javaClass.name}")
-                cause.stackTrace.forEach { Log.e(LOG_TAG, "$label at $it") }
-                cause = cause.cause
-            }
-        }
-
         lateinit var job: Job
         val pending: Boolean get() = result != null
 
         private fun takeResult(): MethodChannel.Result? = result.also { result = null }
-        override fun success(value: Any?) {
-            if (pending) trace("result=success stage=$stage")
-            takeResult()?.success(value)
-        }
+        override fun success(value: Any?) { takeResult()?.success(value) }
         override fun error(code: String, message: String?, details: Any?) {
-            if (pending) trace("result=error code=$code stage=$stage")
             takeResult()?.error(code, message, details)
         }
         override fun notImplemented() { takeResult()?.notImplemented() }
@@ -526,22 +475,10 @@ class LedgerMobileHandler(
         request: DeviceRequest,
     ): ByteArray? {
         currentCoroutineContext().ensureActive()
-        request.apduIndex++
-        request.stage = "sendApdu"
-        val startedAt = SystemClock.elapsedRealtime()
-        request.trace("apdu=${request.apduIndex} start cla=${command.cla.toString(16)} ins=${command.ins.toString(16)} p1=${command.p1.toString(16)} p2=${command.p2.toString(16)} dataBytes=${command.data.size}")
         val operation = sendApdu(uid, command)
         currentCoroutineContext().ensureActive()
         return when (operation) {
-            is DeviceOperationResult.Success -> {
-                val response = operation.value
-                val status = if (response.size >= APDU_STATUS_SIZE) {
-                    (((response[response.size - 2].toInt() and 0xff) shl 8) or
-                        (response.last().toInt() and 0xff)).toString(16).padStart(4, '0')
-                } else "missing"
-                request.trace("apdu=${request.apduIndex} end elapsedMs=${SystemClock.elapsedRealtime() - startedAt} responseBytes=${response.size} sw=$status")
-                response
-            }
+            is DeviceOperationResult.Success -> operation.value
             is DeviceOperationResult.Failure -> {
                 operationFailure(request, operation.reason)
                 null
@@ -606,7 +543,6 @@ class LedgerMobileHandler(
     }
 
     private fun operationFailure(result: MethodChannel.Result, reason: DeviceOperationFailureReason) {
-        (result as? DeviceRequest)?.trace("SDK failure type=${reason.javaClass.simpleName}")
         when (reason) {
             DeviceOperationFailureReason.DeviceLocked -> result.error(
                 "locked",
@@ -674,9 +610,6 @@ class LedgerMobileHandler(
     )
 
     companion object {
-        private const val LOG_TAG = "VizorLedger"
-        private var nextOperationId = 0L
-
         // DMK survives Activity recreation. A new handler must also wait for
         // the previous handler's non-cooperative command/cleanup to finish.
         // Accessed only on Main; entries are removed on actual job completion.
