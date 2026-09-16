@@ -734,22 +734,10 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         Exchange(ledger_ble::GetAppAndVersionCommand(), operation));
   }
 
-  ledger_ble::AppInfo OpenZcash(uint64_t operation) {
-    std::string id;
-    {
-      std::lock_guard lock(session_mutex_);
-      id = connected_id_;
-    }
-    if (id.empty()) throw Error("disconnected", "Connect a Ledger before opening Zcash.");
-    try {
-      ledger_ble::RequireSuccess(Exchange({0xe0, 0xd8, 0, 0, 5, 'Z', 'c', 'a', 's', 'h'}, operation));
-    } catch (const Error& error) {
-      Check(operation);
-      if (error.code != "disconnected" && error.code != "device_busy") throw;
-      if (error.code == "disconnected") CloseSession();
-    }
-    // Opening the app is sent exactly once. App switching may drop the link;
-    // only reconnect and observe that same Windows device during recovery.
+  ledger_ble::AppInfo WaitForApp(
+      const std::string& id, uint64_t operation,
+      const std::function<bool(const ledger_ble::AppInfo&)>& matches,
+      const char* expected) {
     const auto deadline = std::chrono::steady_clock::now() + 10s;
     while (std::chrono::steady_clock::now() < deadline) {
       Check(operation);
@@ -764,7 +752,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         }
         if (!connected) Connect(id, operation);
         const auto app = ReadApp(operation);
-        if (app.name == "Zcash") return app;
+        if (matches(app)) return app;
       } catch (const Error& error) {
         if (error.code != "disconnected" && error.code != "device_busy") throw;
         if (error.code == "disconnected") CloseSession();
@@ -772,7 +760,51 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       std::this_thread::sleep_for(200ms);
     }
     Check(operation);
-    throw Error("unavailable", "Vizor could not resume after opening Zcash. Open Zcash on your Ledger and try again.");
+    throw Error("unavailable", std::string("Vizor could not resume at ") + expected +
+                                   ". Check your Ledger and try again.");
+  }
+
+  ledger_ble::AppInfo OpenZcash(uint64_t operation) {
+    std::string id;
+    {
+      std::lock_guard lock(session_mutex_);
+      id = connected_id_;
+    }
+    if (id.empty()) throw Error("disconnected", "Connect a Ledger before opening Zcash.");
+    const auto current = ReadApp(operation);
+    if (current.name == "Zcash") return current;
+
+    if (!ledger_ble::IsDashboardApp(current.name)) {
+      try {
+        ledger_ble::RequireSuccess(
+            Exchange(ledger_ble::CloseAppCommand(), operation));
+      } catch (const Error& error) {
+        Check(operation);
+        if (error.code != "disconnected" && error.code != "device_busy") throw;
+        if (error.code == "disconnected") CloseSession();
+      }
+      WaitForApp(id, operation,
+                 [](const ledger_ble::AppInfo& app) {
+                   return ledger_ble::IsDashboardApp(app.name);
+                 },
+                 "the Ledger dashboard");
+    }
+
+    try {
+      ledger_ble::RequireSuccess(
+          Exchange(ledger_ble::OpenZcashAppCommand(), operation));
+    } catch (const Error& error) {
+      Check(operation);
+      if (error.code != "disconnected" && error.code != "device_busy") throw;
+      if (error.code == "disconnected") CloseSession();
+    }
+    // Opening the app is sent exactly once. App switching may drop the link;
+    // only reconnect and observe that same Windows device during recovery.
+    return WaitForApp(id, operation,
+                      [](const ledger_ble::AppInfo& app) {
+                        return app.name == "Zcash";
+                      },
+                      "the Zcash app");
   }
 
   HWND window_;

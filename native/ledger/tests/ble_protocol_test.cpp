@@ -22,6 +22,14 @@ int main() {
   const Bytes command = GetAppAndVersionCommand();
   assert((FrameApdu(command, 20) ==
           std::vector<Bytes>{{0x05, 0, 0, 0, 5, 0xb0, 1, 0, 0, 0}}));
+  assert((CloseAppCommand() == Bytes{0xb0, 0xa7, 0, 0, 0}));
+  assert((OpenZcashAppCommand() ==
+          Bytes{0xe0, 0xd8, 0, 0, 5, 'Z', 'c', 'a', 's', 'h'}));
+  assert(IsDashboardApp("BOLOS"));
+  assert(IsDashboardApp("OLOS"));
+  assert(IsDashboardApp(std::string("OLOS\0", 5)));
+  assert(!IsDashboardApp("Bitcoin"));
+  assert(!IsDashboardApp("Zcash"));
   for (const size_t mtu : {20, 64, 244}) {
     Bytes response(8192, 0x42);
     response[response.size() - 2] = 0x90;

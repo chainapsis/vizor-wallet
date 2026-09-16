@@ -145,6 +145,16 @@ struct AppInfo {
 
 inline Bytes GetAppAndVersionCommand() { return {0xb0, 0x01, 0, 0, 0}; }
 
+inline Bytes CloseAppCommand() { return {0xb0, 0xa7, 0, 0, 0}; }
+
+inline Bytes OpenZcashAppCommand() {
+  return {0xe0, 0xd8, 0, 0, 5, 'Z', 'c', 'a', 's', 'h'};
+}
+
+inline bool IsDashboardApp(const std::string& name) {
+  return name == "BOLOS" || name == "OLOS" || name == std::string("OLOS\0", 5);
+}
+
 inline AppInfo DecodeAppInfo(const Bytes& response) {
   RequireSuccess(response);
   if (response.size() < 5 || response[0] != 1) {
