@@ -114,6 +114,50 @@ class LedgerMobileHandlerTest {
     }
 
     @Test
+    fun disconnectAndReconnectWaitForCancelledApduCallbackToDrain() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk, discovered = mapOf(sdk.discovery.uid to sdk.discovery))
+        val original = reply(handler, ufvkCall())
+
+        val disconnect = reply(handler, MethodCall("disconnect", null))
+        val reconnect = reply(
+            handler,
+            MethodCall("connect", mapOf("deviceId" to sdk.discovery.uid)),
+        )
+
+        assertEquals("cancelled", original.error)
+        assertEquals(0, disconnect.completions)
+        assertEquals(0, reconnect.completions)
+        assertTrue(sdk.connectionCalls.isEmpty())
+
+        // The SDK callback ignores coroutine cancellation. Neither teardown
+        // nor reuse may enter DMK until that callback actually returns.
+        sdk.complete(bytes(0, 3, 117, 0x90, 0))
+
+        assertEquals(1, original.completions)
+        assertEquals(1, disconnect.completions)
+        assertEquals(1, reconnect.completions)
+        assertEquals(listOf("disconnect", "connect"), sdk.connectionCalls)
+        handler.close()
+    }
+
+    @Test
+    fun connectClosesExistingDeviceBeforeOpeningSelectedDevice() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk, discovered = mapOf(sdk.discovery.uid to sdk.discovery))
+
+        val connect = reply(
+            handler,
+            MethodCall("connect", mapOf("deviceId" to sdk.discovery.uid)),
+        )
+
+        assertNull(connect.error)
+        assertEquals(1, connect.completions)
+        assertEquals(listOf("disconnect", "connect"), sdk.connectionCalls)
+        handler.close()
+    }
+
+    @Test
     fun nullableDeviceNameFailureRequestsGattTeardownBeforeReuse() {
         val sdk = PendingLedgerSdk().apply { connectError = NullPointerException("name") }
         val handler = handler(sdk, discovered = mapOf(sdk.discovery.uid to sdk.discovery))
@@ -124,7 +168,7 @@ class LedgerMobileHandlerTest {
         )
 
         assertEquals("disconnected", connect.error)
-        assertEquals(listOf("connect", "disconnect"), sdk.connectionCalls)
+        assertEquals(listOf("disconnect", "connect", "disconnect"), sdk.connectionCalls)
         handler.close()
     }
 

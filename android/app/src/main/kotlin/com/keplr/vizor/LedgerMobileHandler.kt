@@ -121,7 +121,7 @@ class LedgerMobileHandler(
 
     fun close() {
         stopDiscovery()
-        cancelExchangeOperation()
+        val exchangeToDrain = cancelExchangeOperation()
         permissionResult?.error("cancelled", "The Ledger permission request was cancelled.", null)
         permissionResult = null
         val device = connectionToClose ?: connectedDevice
@@ -132,7 +132,10 @@ class LedgerMobileHandler(
         }
         scope.launch(NonCancellable) {
             try {
-                connectionMutex.withLock { closeConnection(device) }
+                connectionMutex.withLock {
+                    exchangeToDrain?.join()
+                    closeConnection(device)
+                }
             } catch (_: Exception) {
                 // The Activity is already closing. Keep teardown best-effort;
                 // a later handler still waits for DMK/GATT state before reuse.
@@ -232,9 +235,15 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
+        val exchangeToDrain = cancelExchangeOperation()
         scope.launch { connectionMutex.withLock {
             try {
-                connectionToClose?.let { closeConnection(it) }
+                exchangeToDrain?.join()
+                val previousDevice = connectionToClose ?: connectedDevice
+                if (previousDevice != null) {
+                    connectedDevice = null
+                    closeConnection(previousDevice)
+                }
                 when (val connection = dmk.connectDevice(device)) {
                     is ConnectionResult.Connected -> {
                         connectedDevice = connection.device
@@ -292,8 +301,9 @@ class LedgerMobileHandler(
     }
 
     private fun disconnect(result: MethodChannel.Result) {
-        cancelExchangeOperation()
+        val exchangeToDrain = cancelExchangeOperation()
         scope.launch { connectionMutex.withLock {
+            exchangeToDrain?.join()
             val device = connectionToClose ?: connectedDevice
             connectedDevice = null
             try {
@@ -398,13 +408,16 @@ class LedgerMobileHandler(
         result.success(null)
     }
 
-    private fun cancelExchangeOperation() {
-        val pending = exchangeResult ?: return
-        exchangeGeneration++
-        exchangeResult = null
+    private fun cancelExchangeOperation(): Job? {
         val job = exchangeJob
-        pending.error("cancelled", "The Ledger operation was cancelled.", null)
-        job?.cancel()
+        val pending = exchangeResult
+        if (pending != null) {
+            exchangeGeneration++
+            exchangeResult = null
+            pending.error("cancelled", "The Ledger operation was cancelled.", null)
+            job?.cancel()
+        }
+        return job
     }
 
     private fun finishExchangeSuccess(generation: Long, value: Any) {
