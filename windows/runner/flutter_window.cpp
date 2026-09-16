@@ -460,6 +460,8 @@ bool FlutterWindow::OnCreate() {
       });
   velopack_update_channel_ =
       CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
+  ledger_ble_handler_ = std::make_unique<LedgerBleHandler>(
+      GetHandle(), flutter_controller_->engine()->messenger());
   payment_uri_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
@@ -496,6 +498,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
+    ledger_ble_handler_.reset();
     camera_permission_channel_.reset();
     device_owner_auth_channel_.reset();
     velopack_update_channel_.reset();
@@ -510,6 +513,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (ledger_ble_handler_ &&
+      ledger_ble_handler_->HandleWindowMessage(message, wparam)) {
+    return 0;
+  }
   if (activation_message_ != 0 && message == activation_message_) {
     PresentPrimaryWindow(hwnd);
     return kSingleInstanceActivationAcknowledged;

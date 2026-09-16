@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "win32_window.h"
+#include "ledger_ble_handler.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -39,6 +40,7 @@ class FlutterWindow : public Win32Window {
       device_owner_auth_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       velopack_update_channel_;
+  std::unique_ptr<LedgerBleHandler> ledger_ble_handler_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       payment_uri_channel_;
   std::vector<std::string> pending_payment_uris_;

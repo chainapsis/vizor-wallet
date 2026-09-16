@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "ledger_ble_handler.cpp"
   "main.cpp"
   "payment_uri_handoff.cpp"
   "payment_uri_protocol.cpp"
@@ -112,6 +113,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "credui.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "runtimeobject.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "shell32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "version.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "winhttp.lib")
