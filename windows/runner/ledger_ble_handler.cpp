@@ -190,6 +190,10 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     StopDiscovery();
     Cancel("cancelled", "Ledger Bluetooth has closed.");
     closed_ = true;
+    if (pending_disconnect_result_) {
+      pending_disconnect_result_->Error("cancelled", "Ledger Bluetooth has closed.");
+      pending_disconnect_result_.reset();
+    }
     if (!gate_.busy()) CloseSession();
     sink_.reset();
     methods_->SetMethodCallHandler(nullptr);
@@ -261,8 +265,12 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         promise->set_exception(std::current_exception());
       }
     });
-    while (future.wait_for(25ms) != std::future_status::ready) Check(operation);
-    Check(operation);
+    // Leave the posted callback as the promise's sole owner. If the handler
+    // closes or the UI queue is dropped, its destruction breaks the promise
+    // instead of leaving this worker blocked forever.
+    promise.reset();
+    // Once the UI factory has created a WinRT operation, hand it to Await even
+    // if cancellation raced with this handoff so Await can cancel and drain it.
     return future.get();
   }
 
@@ -270,17 +278,21 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
   auto Await(Async async, uint64_t operation,
              std::chrono::milliseconds timeout = 30s) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::optional<Error> cancellation;
     while (async.Status() == winrt::Windows::Foundation::AsyncStatus::Started) {
-      if (closed_ || !gate_.IsActive(operation)) {
-        async.Cancel();
-        Check(operation);
+      if (!cancellation && (closed_ || !gate_.IsActive(operation))) {
+        try { async.Cancel(); } catch (...) {}
+        cancellation = Error("cancelled", "The Ledger operation was cancelled.");
       }
-      if (std::chrono::steady_clock::now() >= deadline) {
-        async.Cancel();
-        throw Error("unavailable", "The Ledger Bluetooth request timed out. Reconnect and try again.");
+      if (!cancellation && std::chrono::steady_clock::now() >= deadline) {
+        try { async.Cancel(); } catch (...) {}
+        cancellation = Error(
+            "unavailable",
+            "The Ledger Bluetooth request timed out. Reconnect and try again.");
       }
       std::this_thread::sleep_for(25ms);
     }
+    if (cancellation) throw *cancellation;
     Check(operation);
     auto value = [&] {
       try {
@@ -331,6 +343,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
             }
             self->active_result_.reset();
           }
+          self->CompletePendingDisconnect();
           self->gate_.Finish(operation);
         });
         if (apartment_initialized) winrt::uninit_apartment();
@@ -354,6 +367,13 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       session = session_;
     }
     if (session) session->changed.notify_all();
+  }
+
+  void CompletePendingDisconnect() {
+    if (!pending_disconnect_result_) return;
+    CloseSession();
+    pending_disconnect_result_->Success();
+    pending_disconnect_result_.reset();
   }
 
   void Handle(const flutter::MethodCall<Value>& call, std::unique_ptr<Result> result) {
@@ -381,8 +401,17 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         Cancel("cancelled", "The Ledger operation was cancelled.");
         result->Success();
       } else if (name == "disconnect") {
+        if (pending_disconnect_result_) {
+          result->Error("unavailable", "The Ledger connection is already closing.");
+          return;
+        }
         Cancel("disconnected", "The Ledger disconnected. Reconnect and try again.");
-        Run([this](uint64_t) { CloseSession(); return Value(); }, std::move(result));
+        if (gate_.busy()) {
+          pending_disconnect_result_ = std::move(result);
+        } else {
+          CloseSession();
+          result->Success();
+        }
       } else if (name == "connect") {
         const auto* id = Field(call.arguments(), "deviceId");
         if (!id || !std::holds_alternative<std::string>(*id) || std::get<std::string>(*id).empty()) {
@@ -747,6 +776,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
   std::unique_ptr<flutter::EventSink<Value>> sink_;
   ledger_ble::OperationGate gate_;
   std::unique_ptr<Result> active_result_;
+  std::unique_ptr<Result> pending_disconnect_result_;
   std::mutex session_mutex_;
   std::shared_ptr<Session> session_;
   std::string connected_id_;
