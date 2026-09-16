@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,98 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  for (final phase in ['query', 'open']) {
+    for (final fails in [false, true]) {
+      test(
+        'cancel during $phase suppresses late ${fails ? 'failure' : 'success'} and state',
+        () async {
+          final requests = LedgerDeviceRequests();
+          final pending = Completer<LedgerDeviceAppSnapshot>();
+          final states = <LedgerAppReadinessState>[];
+          var openCalls = 0;
+          final service = LedgerAppReadinessService(
+            requests: requests,
+            onState: states.add,
+            device: _ControlledDevice(
+              query: () async => phase == 'query'
+                  ? pending.future
+                  : const LedgerDeviceAppSnapshot(
+                      status: LedgerDeviceAppStatus.dashboard,
+                    ),
+              open: () {
+                openCalls++;
+                return pending.future;
+              },
+            ),
+          );
+          final result = service.ensureReady();
+          final expectation = expectLater(
+            result,
+            throwsA(
+              isA<LedgerMobileException>().having(
+                (error) => error.failure,
+                'failure',
+                LedgerMobileFailure.cancelled,
+              ),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          requests.cancel();
+          final stateCount = states.length;
+          if (fails) {
+            pending.completeError(StateError('late SDK error'));
+          } else {
+            pending.complete(
+              const LedgerDeviceAppSnapshot(
+                status: LedgerDeviceAppStatus.dashboard,
+              ),
+            );
+          }
+          await expectation;
+          expect(states.length, stateCount);
+          expect(openCalls, phase == 'query' ? 0 : 1);
+        },
+      );
+    }
+  }
+
+  test(
+    'older readiness request cannot overwrite the latest transport state',
+    () async {
+      final requests = LedgerDeviceRequests();
+      final pending = Completer<LedgerDeviceAppSnapshot>();
+      final states = <LedgerAppReadinessState>[];
+      final old = LedgerAppReadinessService(
+        requests: requests,
+        onState: states.add,
+        device: _ControlledDevice(
+          query: () => pending.future,
+          open: () => throw StateError('unexpected'),
+        ),
+      );
+      final latest = LedgerAppReadinessService(
+        requests: requests,
+        onState: states.add,
+        device: _FakeDevice([
+          const LedgerDeviceAppSnapshot(
+            status: LedgerDeviceAppStatus.open,
+            version: '3.9.2',
+          ),
+        ]),
+      );
+      final expectation = expectLater(
+        old.ensureReady(),
+        throwsA(isA<LedgerMobileException>()),
+      );
+      expect(await latest.ensureReady(), '3.9.2');
+      final last = states.last;
+      pending.completeError(StateError('old failure'));
+      await expectation;
+      expect(states.last, same(last));
+      expect(states.last.phase, LedgerAppReadinessPhase.ready);
+    },
+  );
+
   test(
     'Linux USB permission failure is not mistaken for device rejection',
     () async {
@@ -309,4 +403,14 @@ class _FakeMobileBleService implements LedgerMobileBleService {
 
   @override
   Future<void> stopDiscovery() async {}
+}
+
+class _ControlledDevice implements LedgerAppReadinessDevice {
+  _ControlledDevice({required this.query, required this.open});
+  final Future<LedgerDeviceAppSnapshot> Function() query;
+  final Future<LedgerDeviceAppSnapshot> Function() open;
+  @override
+  Future<LedgerDeviceAppSnapshot> queryZcashApp() => query();
+  @override
+  Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() => open();
 }

@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,105 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test(
+    'cancellation during transport metadata persistence suppresses signed result',
+    () async {
+      final pending = Completer<void>();
+      final started = Completer<void>();
+      final notifier =
+          _FakeAccountNotifier(
+              _ledgerAccount(
+                preference: LedgerConnectionPreference.bluetooth,
+                deviceModel: 'Flex',
+              ),
+            )
+            ..recordGate = pending.future
+            ..recordStarted = started;
+      final container = _container(
+        notifier: notifier,
+        ble: _FakeBleService(),
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final result = container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'unexpected',
+            bluetooth: (_) async => 'signed',
+          );
+      final expectation = expectLater(
+        result,
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (e) => e.failure,
+            'failure',
+            LedgerMobileFailure.cancelled,
+          ),
+        ),
+      );
+      await started.future;
+      container.read(ledgerDeviceRequestsProvider).cancel();
+      pending.complete();
+      await expectation;
+    },
+  );
+
+  for (final stage in ['connect', 'disconnect', 'currentApp']) {
+    test('cancellation during $stage prevents readiness and signing', () async {
+      final pending = Completer<void>();
+      final ble = _FakeBleService()
+        ..pauseStage = stage
+        ..pause = pending.future;
+      if (stage == 'disconnect') {
+        ble._connectedDeviceId = 'another-device';
+      }
+      if (stage == 'currentApp') ble._connectedDeviceId = 'device-1';
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Flex',
+        ),
+      );
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      var signed = false;
+      final result = container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'unexpected',
+            bluetooth: (_) async {
+              signed = true;
+              return 'signed';
+            },
+          );
+      final expectation = expectLater(
+        result,
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (e) => e.failure,
+            'failure',
+            LedgerMobileFailure.cancelled,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      container.read(ledgerDeviceRequestsProvider).cancel();
+      pending.complete();
+      await expectation;
+      expect(signed, isFalse);
+      expect(notifier.recordedTransports, isEmpty);
+      if (stage == 'disconnect') expect(ble.connectCalls, 0);
+    });
+  }
+
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
     for (final preference in LedgerConnectionPreference.values) {
       for (final usbReady in [true, false]) {
@@ -349,6 +449,8 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   final AccountInfo initial;
   bool failRecording = false;
+  Future<void>? recordGate;
+  Completer<void>? recordStarted;
   final recordedTransports = <LedgerConnectionTransport>[];
 
   @override
@@ -363,6 +465,8 @@ class _FakeAccountNotifier extends AccountNotifier {
     String? deviceName,
     String? deviceModel,
   }) async {
+    recordStarted?.complete();
+    if (recordGate != null) await recordGate;
     if (failRecording) throw StateError('metadata write failed');
     recordedTransports.add(transport);
     final current = state.requireValue;
@@ -382,6 +486,8 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeBleService implements LedgerMobileBleService {
+  String? pauseStage;
+  Future<void>? pause;
   var connectCalls = 0;
   var disconnectCalls = 0;
   final connectedDeviceIds = <String>[];
@@ -393,6 +499,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> connect(LedgerBleDevice device) async {
     connectCalls++;
+    if (pauseStage == 'connect') await pause;
     connectedDeviceIds.add(device.id);
     _connectedDeviceId = device.id;
   }
@@ -400,12 +507,15 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> disconnect() async {
     disconnectCalls++;
+    if (pauseStage == 'disconnect') await pause;
     _connectedDeviceId = null;
   }
 
   @override
-  Future<LedgerMobileAppInfo> currentApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+  Future<LedgerMobileAppInfo> currentApp() async {
+    if (pauseStage == 'currentApp') await pause;
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+  }
 
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() => currentApp();

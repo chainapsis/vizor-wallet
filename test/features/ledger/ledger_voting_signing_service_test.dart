@@ -174,6 +174,27 @@ void main() {
   });
 
   test(
+    'Rust cancellation failure still cancels the mobile operation',
+    () async {
+      final mobile = _CancellationBleService();
+      final container = ProviderContainer(
+        overrides: [
+          ledgerRustOperationCancellerProvider.overrideWithValue(
+            () async => throw StateError('Rust failed'),
+          ),
+          ledgerMobileBleServiceProvider.overrideWithValue(mobile),
+        ],
+      );
+      addTearDown(container.dispose);
+      await expectLater(
+        container.read(ledgerOperationCancellerProvider)(),
+        throwsStateError,
+      );
+      expect(mobile.cancelCalls, 1);
+    },
+  );
+
+  test(
     'cancellation waits for Rust before cancelling the mobile transport',
     () async {
       final rustCancellation = Completer<void>();

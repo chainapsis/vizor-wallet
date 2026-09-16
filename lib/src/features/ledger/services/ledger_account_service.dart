@@ -6,6 +6,7 @@ import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
 import '../ledger_onboarding_policy.dart';
 import 'ledger_app_readiness_service.dart';
+import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 
 class LedgerDeviceAccount {
@@ -66,6 +67,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
   required LedgerConnectionTransport transport,
   LedgerBleDevice? bluetoothDevice,
 }) async {
+  final check = ref.read(ledgerDeviceRequestsProvider).capture();
   if (!isLedgerOnboardingAccountIndexValid(accountIndex)) {
     throw Exception(kLedgerOnboardingAccountIndexError);
   }
@@ -81,8 +83,10 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
   final appVersion = await ref
       .read(ledgerAppReadinessServiceForTransportProvider(transport))
       .ensureReady();
+  check();
   final account = transport == LedgerConnectionTransport.bluetooth
       ? await _exportMobileAccount(
+          check: check,
           mobile: ref.read(ledgerMobileBleServiceProvider),
           accountIndex: accountIndex,
           networkName: networkName,
@@ -91,6 +95,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
           accountIndex: accountIndex,
           network: networkName,
         );
+  check();
   return LedgerDeviceAccount(
     ufvk: account.ufvk,
     seedFingerprint: account.seedFingerprint,
@@ -102,6 +107,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
 }
 
 Future<rust_ledger.LedgerAccountExport> _exportMobileAccount({
+  required void Function() check,
   required LedgerMobileBleService mobile,
   required int accountIndex,
   required String networkName,
@@ -109,7 +115,9 @@ Future<rust_ledger.LedgerAccountExport> _exportMobileAccount({
   final plan = await rust_ledger.ledgerBuildUfvkApduPlan(
     accountIndex: accountIndex,
   );
+  check();
   final responses = await mobile.exchangeUfvk(plan);
+  check();
   return rust_ledger.ledgerParseMobileUfvkResponses(
     accountIndex: accountIndex,
     network: networkName,

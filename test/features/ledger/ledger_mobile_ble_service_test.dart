@@ -20,6 +20,42 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  for (final method in ['connect', 'currentApp', 'openZcashApp']) {
+    for (final cancel in ['cancelSigning', 'disconnect']) {
+      test('$cancel ignores a late $method response', () async {
+        final pending = Completer<Object?>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == cancel) return null;
+              return pending.future;
+            });
+        final Future<Object?> result = switch (method) {
+          'connect' => service.connect(
+            const LedgerBleDevice(
+              id: 'old-device',
+              name: 'Ledger',
+              model: 'Flex',
+            ),
+          ),
+          'currentApp' => service.currentApp(),
+          _ => service.requestOpenZcashApp(),
+        };
+        final expectation = expectLater(result, throwsA(_cancelledFailure));
+        await Future<void>.delayed(Duration.zero);
+        if (cancel == 'disconnect') {
+          await service.disconnect();
+        } else {
+          await service.cancelSigning();
+        }
+        pending.complete(
+          method == 'connect' ? null : {'name': 'Zcash', 'version': '3.9.2'},
+        );
+        await expectation;
+        expect(service.connectedDeviceId, isNull);
+      });
+    }
+  }
+
   test(
     'invalid pairing retains recovery metadata across the native channel',
     () async {

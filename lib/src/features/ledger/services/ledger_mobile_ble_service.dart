@@ -163,11 +163,13 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
 
   @override
   Future<void> connect(LedgerBleDevice device) async {
+    final generation = _operationGeneration;
     await _invokeVoid('connect', <String, Object>{
       'deviceId': device.id,
       'deviceName': device.name,
       'deviceModel': device.model,
     });
+    _checkOperationActive(generation);
     _connectedDeviceId = device.id;
   }
 
@@ -180,10 +182,13 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
+    final generation = _operationGeneration;
     try {
       final value = await _invokeMap('currentApp');
+      _checkOperationActive(generation);
       return _decodeApp(value);
     } on LedgerMobileException catch (error) {
+      _checkOperationActive(generation);
       if (error.failure == LedgerMobileFailure.disconnected) {
         _connectedDeviceId = null;
       }
@@ -193,7 +198,9 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() async {
+    final generation = _operationGeneration;
     final value = await _invokeMap('openZcashApp');
+    _checkOperationActive(generation);
     return _decodeApp(value);
   }
 

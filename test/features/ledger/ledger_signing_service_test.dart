@@ -1,9 +1,38 @@
+import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 
 void main() {
+  test('cancelled support validation never opens a transport', () async {
+    final validation = Completer<void>();
+    var signed = false;
+    final container = ProviderContainer(
+      overrides: [
+        ledgerPcztSupportValidatorProvider.overrideWithValue(
+          (_) => validation.future,
+        ),
+        ledgerPcztTransportSignerProvider.overrideWithValue((_, _) async {
+          signed = true;
+          return [1];
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final pending = container.read(ledgerPcztSignerProvider)('account', [1]);
+    final expectation = expectLater(
+      pending,
+      throwsA(isA<LedgerMobileException>()),
+    );
+    container.read(ledgerDeviceRequestsProvider).cancel();
+    validation.complete();
+    await expectation;
+    expect(signed, isFalse);
+  });
+
   test('release validation runs before the Ledger transport signer', () async {
     final events = <String>[];
     final container = ProviderContainer(

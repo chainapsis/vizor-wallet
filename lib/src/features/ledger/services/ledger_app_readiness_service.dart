@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -121,6 +122,7 @@ final ledgerAppReadinessServiceProvider = Provider<LedgerAppReadinessService>((
   ref,
 ) {
   return LedgerAppReadinessService(
+    requests: ref.watch(ledgerDeviceRequestsProvider),
     device: ref.watch(ledgerAppReadinessDeviceProvider),
     onState: ref.read(ledgerAppReadinessStateProvider.notifier).update,
   );
@@ -129,6 +131,7 @@ final ledgerAppReadinessServiceProvider = Provider<LedgerAppReadinessService>((
 final ledgerAppReadinessServiceForTransportProvider =
     Provider.family<LedgerAppReadinessService, LedgerConnectionTransport>(
       (ref, transport) => LedgerAppReadinessService(
+        requests: ref.watch(ledgerDeviceRequestsProvider),
         device: ref.watch(
           ledgerAppReadinessDeviceForTransportProvider(transport),
         ),
@@ -137,16 +140,20 @@ final ledgerAppReadinessServiceForTransportProvider =
     );
 
 class LedgerAppReadinessService {
-  const LedgerAppReadinessService({
+  LedgerAppReadinessService({
+    LedgerDeviceRequests? requests,
     required LedgerAppReadinessDevice device,
     required void Function(LedgerAppReadinessState state) onState,
-  }) : _device = device,
+  }) : _requests = requests ?? LedgerDeviceRequests(),
+       _device = device,
        _onState = onState;
 
+  final LedgerDeviceRequests _requests;
   final LedgerAppReadinessDevice _device;
   final void Function(LedgerAppReadinessState state) _onState;
 
   Future<String> ensureReady() async {
+    final check = _requests.beginReadiness();
     _onState(
       const LedgerAppReadinessState.inProgress(
         LedgerAppReadinessPhase.checkingDevice,
@@ -155,6 +162,7 @@ class LedgerAppReadinessService {
 
     try {
       var snapshot = await _device.queryZcashApp();
+      check();
       if (snapshot.status == LedgerDeviceAppStatus.dashboard ||
           snapshot.status == LedgerDeviceAppStatus.other) {
         _onState(
@@ -163,12 +171,14 @@ class LedgerAppReadinessService {
           ),
         );
         snapshot = await _device.requestOpenZcashApp();
+        check();
       }
 
       final version = _requireOpenAndSupported(snapshot);
       _onState(LedgerAppReadinessState.ready(version));
       return version;
     } catch (error) {
+      check(); // A cancelled/superseded request must not overwrite newer UI.
       final failure = _classifyError(error);
       _onState(
         LedgerAppReadinessState.failed(

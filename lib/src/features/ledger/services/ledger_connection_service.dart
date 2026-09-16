@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
+import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_status_gate.dart';
 
@@ -32,25 +33,30 @@ class LedgerConnectionService {
     required Future<T> Function() usb,
     required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
   }) async {
+    final check = _ref.read(ledgerDeviceRequestsProvider).capture();
     final account = _account(accountUuid);
     final candidates = _candidates(account);
     Object? lastConnectionError;
 
     for (final transport in candidates) {
+      check();
       var operationStarted = false;
       try {
         final result = switch (transport) {
-          LedgerConnectionTransport.usb => await _runUsb(() {
+          LedgerConnectionTransport.usb => await _runUsb(check, () {
             operationStarted = true;
             return usb();
           }),
-          LedgerConnectionTransport.bluetooth => await _runBluetooth(account, (
-            mobile,
-          ) {
-            operationStarted = true;
-            return bluetooth(mobile);
-          }),
+          LedgerConnectionTransport.bluetooth => await _runBluetooth(
+            check,
+            account,
+            (mobile) {
+              operationStarted = true;
+              return bluetooth(mobile);
+            },
+          ),
         };
+        check();
         try {
           await _recordSuccess(account, transport);
         } catch (error, stackTrace) {
@@ -61,8 +67,10 @@ class LedgerConnectionService {
             stackTrace: stackTrace,
           );
         }
+        check();
         return result;
       } catch (error) {
+        check();
         // Only connection preparation may fall back; never replay an operation.
         if (operationStarted) rethrow;
         if (!_isConnectionFailure(error)) rethrow;
@@ -109,7 +117,10 @@ class LedgerConnectionService {
     };
   }
 
-  Future<T> _runUsb<T>(Future<T> Function() operation) async {
+  Future<T> _runUsb<T>(
+    void Function() check,
+    Future<T> Function() operation,
+  ) async {
     await _ref
         .read(
           ledgerAppReadinessServiceForTransportProvider(
@@ -117,14 +128,17 @@ class LedgerConnectionService {
           ),
         )
         .ensureReady();
+    check();
     return operation();
   }
 
   Future<T> _runBluetooth<T>(
+    void Function() check,
     AccountInfo account,
     Future<T> Function(LedgerMobileBleService mobile) operation,
   ) async {
     await _ref.read(ledgerMobileSigningStatusGateProvider).waitUntilReady();
+    check();
     final deviceId = account.ledgerDeviceId;
     if (deviceId == null) {
       throw const LedgerConnectionRequiredException(
@@ -150,18 +164,25 @@ class LedgerConnectionService {
     );
     if (platform == TargetPlatform.macOS) {
       await mobile.disconnect();
+      check();
       await mobile.connect(device);
+      check();
     } else if (mobile.connectedDeviceId != device.id) {
       if (mobile.connectedDeviceId != null) {
         await mobile.disconnect();
+        check();
       }
       await mobile.connect(device);
+      check();
     } else {
       try {
         await mobile.currentApp();
+        check();
       } on LedgerMobileException catch (error) {
+        check();
         if (error.failure != LedgerMobileFailure.disconnected) rethrow;
         await mobile.connect(device);
+        check();
       }
     }
     await _ref
@@ -171,6 +192,7 @@ class LedgerConnectionService {
           ),
         )
         .ensureReady();
+    check();
     return operation(mobile);
   }
 
