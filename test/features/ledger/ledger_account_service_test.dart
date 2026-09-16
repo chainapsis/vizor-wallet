@@ -1,11 +1,17 @@
 import 'dart:async';
-
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
   for (final pendingPassword in [null, 'Password1!']) {
@@ -116,6 +122,55 @@ void main() {
     expect(notifier.importedDeviceModel, 'Nano X');
   });
 
+  test(
+    'Bluetooth account export connects and verifies the selected device first',
+    () async {
+      final events = <String>[];
+      const selected = LedgerBleDevice(
+        id: 'device-b',
+        name: 'Ledger B',
+        model: 'Nano X',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+          ledgerMobileBleServiceProvider.overrideWithValue(_UnusedBleService()),
+          ledgerBluetoothSessionConnectorProvider.overrideWithValue((
+            device,
+          ) async {
+            events.add('connect:${device.id}');
+            return '3.9.3';
+          }),
+          ledgerMobileAccountExporterProvider.overrideWithValue(({
+            required mobile,
+            required accountIndex,
+            required networkName,
+          }) async {
+            expect(events, ['connect:device-b']);
+            events.add('export:$accountIndex:$networkName');
+            return LedgerAccountExport(
+              ufvk: 'uview-device-b',
+              seedFingerprint: Uint8List.fromList([1, 2, 3]),
+              accountIndex: accountIndex,
+            );
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final account = await container.read(
+        ledgerBluetoothAccountConnectorProvider,
+      )(7, selected);
+
+      expect(events, ['connect:device-b', 'export:7:main']);
+      expect(account.ufvk, 'uview-device-b');
+      expect(account.appVersion, '3.9.3');
+      expect(account.deviceId, 'device-b');
+      expect(account.deviceName, 'Ledger B');
+    },
+  );
+
   for (final sameUfvk in [true, false]) {
     test(
       'duplicate check compares UFVK, not account index: $sameUfvk',
@@ -160,6 +215,25 @@ void main() {
       },
     );
   }
+}
+
+AppBootstrapState _bootstrap() => AppBootstrapState(
+  initialLocation: '/welcome',
+  initialAccountState: const AccountState(),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.light,
+  privacyModeEnabled: false,
+  isPasswordConfigured: false,
+  isUnlocked: false,
+  passwordRotationRecoveryFailed: false,
+);
+
+class _UnusedBleService implements LedgerMobileBleService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw StateError('Unexpected BLE call: ${invocation.memberName}');
 }
 
 class _CapturingAccountNotifier extends AccountNotifier {

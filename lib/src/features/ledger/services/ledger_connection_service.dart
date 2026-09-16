@@ -24,6 +24,17 @@ class LedgerConnectionService {
 
   final Ref _ref;
 
+  /// Connects the Ledger selected during Bluetooth account onboarding and
+  /// verifies that its Zcash app is ready before any account data is read.
+  Future<String> connectBluetoothDevice(LedgerBleDevice device) async {
+    final platform = _ref.read(ledgerTargetPlatformProvider);
+    _requireBluetoothSupport(device.model, platform);
+    final mobile = _ref.read(ledgerMobileBleServiceProvider);
+    await _requireBluetoothPermission(mobile, platform);
+    await _connectSelectedDevice(mobile, device, platform: platform);
+    return _ensureBluetoothReady();
+  }
+
   Future<void> reconnect(String accountUuid) => run<void>(
     accountUuid: accountUuid,
     refreshBluetooth: true,
@@ -126,26 +137,10 @@ class LedgerConnectionService {
       );
     }
     final platform = _ref.read(ledgerTargetPlatformProvider);
-    if (ledgerBluetoothTransportCapabilityForModel(
-          model: account.ledgerDeviceModel,
-          platform: platform,
-        ) ==
-        LedgerBluetoothCapability.unsupported) {
-      throw LedgerConnectionRequiredException(
-        '${account.ledgerDeviceModel ?? 'This Ledger model'} does not support Bluetooth.',
-      );
-    }
+    _requireBluetoothSupport(account.ledgerDeviceModel, platform);
 
     final mobile = _ref.read(ledgerMobileBleServiceProvider);
-    if (isLedgerMobilePlatform(platform)) {
-      // Only onboarding asked before; a revoked permission otherwise surfaces
-      // as a generic discovery failure.
-      if (!await mobile.requestPermissions()) {
-        throw const LedgerConnectionRequiredException(
-          'Allow Bluetooth for Vizor in Settings, then try again.',
-        );
-      }
-    }
+    await _requireBluetoothPermission(mobile, platform);
     final device = LedgerBleDevice(
       id: deviceId,
       name: account.ledgerDeviceName ?? 'Ledger',
@@ -154,42 +149,20 @@ class LedgerConnectionService {
     if (refresh) {
       await mobile.cancelSigning();
       await mobile.disconnect();
-      try {
-        final found = await mobile
-            .discoverDevices()
-            .asyncExpand<LedgerBleDevice>((update) {
-              if (update is LedgerDiscoveryFailed) throw update.error;
-              return Stream.fromIterable(
-                update is LedgerDevicesDiscovered
-                    ? update.devices
-                    : <LedgerBleDevice>[],
-              );
-            })
-            .where((candidate) => candidate.id == deviceId)
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: (sink) {
-                sink.addError(
-                  const LedgerConnectionRequiredException(
-                    'We could not find your Ledger. Keep it nearby, unlocked, and Bluetooth enabled, then try again.',
-                  ),
-                );
-                sink.close();
-              },
-            )
-            .first;
-        await mobile.connect(found);
-      } finally {
-        await mobile.stopDiscovery();
-      }
+      await _discoverAndConnect(mobile, deviceId);
     } else if (platform == TargetPlatform.macOS) {
       await mobile.disconnect();
       await mobile.connect(device);
     } else if (mobile.connectedDeviceId != device.id) {
+      final hadLiveSession = mobile.connectedDeviceId != null;
       if (mobile.connectedDeviceId != null) {
         await mobile.disconnect();
       }
-      await mobile.connect(device);
+      if (platform == TargetPlatform.android && !hadLiveSession) {
+        await _discoverAndConnect(mobile, deviceId);
+      } else {
+        await mobile.connect(device);
+      }
     } else {
       try {
         await mobile.currentApp();
@@ -198,15 +171,100 @@ class LedgerConnectionService {
         await mobile.connect(device);
       }
     }
-    await _ref
-        .read(
-          ledgerAppReadinessServiceForTransportProvider(
-            LedgerConnectionTransport.bluetooth,
-          ),
-        )
-        .ensureReady();
+    await _ensureBluetoothReady();
     return operation(mobile);
   }
+
+  void _requireBluetoothSupport(String? model, TargetPlatform platform) {
+    if (ledgerBluetoothTransportCapabilityForModel(
+          model: model,
+          platform: platform,
+        ) ==
+        LedgerBluetoothCapability.unsupported) {
+      throw LedgerConnectionRequiredException(
+        '${model ?? 'This Ledger model'} does not support Bluetooth.',
+      );
+    }
+  }
+
+  Future<void> _requireBluetoothPermission(
+    LedgerMobileBleService mobile,
+    TargetPlatform platform,
+  ) async {
+    if (!isLedgerMobilePlatform(platform)) return;
+    // Onboarding may have asked earlier, but permission can be revoked before
+    // a later reconnect.
+    if (!await mobile.requestPermissions()) {
+      throw const LedgerConnectionRequiredException(
+        'Allow Bluetooth for Vizor in Settings, then try again.',
+      );
+    }
+  }
+
+  Future<void> _connectSelectedDevice(
+    LedgerMobileBleService mobile,
+    LedgerBleDevice device, {
+    required TargetPlatform platform,
+  }) async {
+    if (platform == TargetPlatform.macOS) {
+      await mobile.disconnect();
+      await mobile.connect(device);
+      return;
+    }
+    if (mobile.connectedDeviceId == device.id) {
+      try {
+        await mobile.currentApp();
+        return;
+      } on LedgerMobileException catch (error) {
+        if (error.failure != LedgerMobileFailure.disconnected) rethrow;
+      }
+    } else if (mobile.connectedDeviceId != null) {
+      await mobile.disconnect();
+    }
+    await mobile.connect(device);
+  }
+
+  Future<void> _discoverAndConnect(
+    LedgerMobileBleService mobile,
+    String deviceId,
+  ) async {
+    try {
+      final device = await mobile
+          .discoverDevices()
+          .asyncExpand<LedgerBleDevice>((update) {
+            if (update is LedgerDiscoveryFailed) throw update.error;
+            return Stream.fromIterable(
+              update is LedgerDevicesDiscovered
+                  ? update.devices
+                  : <LedgerBleDevice>[],
+            );
+          })
+          .where((candidate) => candidate.id == deviceId)
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: (sink) {
+              sink.addError(
+                const LedgerConnectionRequiredException(
+                  'We could not find your Ledger. Keep it nearby, unlocked, and Bluetooth enabled, then try again.',
+                ),
+              );
+              sink.close();
+            },
+          )
+          .first;
+      await mobile.connect(device);
+    } finally {
+      await mobile.stopDiscovery();
+    }
+  }
+
+  Future<String> _ensureBluetoothReady() => _ref
+      .read(
+        ledgerAppReadinessServiceForTransportProvider(
+          LedgerConnectionTransport.bluetooth,
+        ),
+      )
+      .ensureReady();
 
   Future<void> _recordSuccess(
     AccountInfo account,

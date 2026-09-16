@@ -452,6 +452,73 @@ void main() {
       expect(ble.connectedDeviceId, 'device-1');
     },
   );
+
+  test(
+    'account onboarding switches from Ledger A to the selected Ledger B',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService().._connectedDeviceId = 'device-a';
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.iOS,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final version = await container
+          .read(ledgerConnectionServiceProvider)
+          .connectBluetoothDevice(
+            const LedgerBleDevice(
+              id: 'device-b',
+              name: 'Ledger B',
+              model: 'Nano X',
+            ),
+          );
+
+      expect(version, '3.9.3');
+      expect(ble.recoveryEvents, ['permission', 'disconnect', 'connect']);
+      expect(ble.connectedDeviceIds, ['device-b']);
+      expect(ble.connectedDeviceId, 'device-b');
+    },
+  );
+
+  test(
+    'Android cold start discovers the saved peer before connecting',
+    () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'unexpected',
+            bluetooth: (_) async => 'connected-after-discovery',
+          );
+
+      expect(result, 'connected-after-discovery');
+      expect(ble.recoveryEvents, ['permission', 'discover', 'connect', 'stop']);
+      expect(ble.connectedDeviceIds, ['device-1']);
+    },
+  );
 }
 
 ProviderContainer _container({

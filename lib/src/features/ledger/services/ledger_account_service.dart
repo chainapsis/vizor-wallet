@@ -8,6 +8,7 @@ import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
+import 'ledger_connection_service.dart';
 import 'ledger_mobile_ble_service.dart';
 
 class LedgerDeviceAccount {
@@ -41,6 +42,14 @@ typedef LedgerBluetoothAccountConnector =
       int accountIndex,
       LedgerBleDevice device,
     );
+typedef LedgerBluetoothSessionConnector =
+    Future<String> Function(LedgerBleDevice device);
+typedef LedgerMobileAccountExporter =
+    Future<rust_ledger.LedgerAccountExport> Function({
+      required LedgerMobileBleService mobile,
+      required int accountIndex,
+      required String networkName,
+    });
 
 typedef LedgerAccountImporter =
     Future<void> Function({
@@ -129,6 +138,14 @@ final ledgerBluetoothAccountConnectorProvider =
       );
     });
 
+final ledgerBluetoothSessionConnectorProvider =
+    Provider<LedgerBluetoothSessionConnector>((ref) {
+      return ref.read(ledgerConnectionServiceProvider).connectBluetoothDevice;
+    });
+
+final ledgerMobileAccountExporterProvider =
+    Provider<LedgerMobileAccountExporter>((_) => _exportMobileAccount);
+
 Future<LedgerDeviceAccount> _connectLedgerAccount(
   Ref ref, {
   required int accountIndex,
@@ -137,21 +154,25 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
 }) async {
   ref.read(ledgerStaticCapabilityProvider).requireSupported();
   final networkName = ref.read(rpcEndpointProvider).networkName;
-  final appVersion =
+  final appVersion = switch (transport) {
+    LedgerConnectionTransport.usb =>
       await ref
           .read(ledgerAppReadinessServiceForTransportProvider(transport))
-          .ensureReady();
-  final account =
-      transport == LedgerConnectionTransport.bluetooth
-          ? await _exportMobileAccount(
-            mobile: ref.read(ledgerMobileBleServiceProvider),
-            accountIndex: accountIndex,
-            networkName: networkName,
-          )
-          : await rust_ledger.ledgerExportAccount(
-            accountIndex: accountIndex,
-            network: networkName,
-          );
+          .ensureReady(),
+    LedgerConnectionTransport.bluetooth => await ref.read(
+      ledgerBluetoothSessionConnectorProvider,
+    )(bluetoothDevice ?? (throw ArgumentError.notNull('bluetoothDevice'))),
+  };
+  final account = transport == LedgerConnectionTransport.bluetooth
+      ? await ref.read(ledgerMobileAccountExporterProvider)(
+          mobile: ref.read(ledgerMobileBleServiceProvider),
+          accountIndex: accountIndex,
+          networkName: networkName,
+        )
+      : await rust_ledger.ledgerExportAccount(
+          accountIndex: accountIndex,
+          network: networkName,
+        );
   final usbModel = account.deviceModel?.trim();
   return LedgerDeviceAccount(
     ufvk: account.ufvk,
