@@ -41,6 +41,9 @@ to its caller without logging or persisting it.
 - Cancellation targets the currently active Rust operation. It has no caller
   token, does not cancel a queued request, and is a no-op before a request becomes
   active. C03's caller coordination must prevent overlapping user intents.
+- The cancellation bridge is synchronous and only updates atomic state. It does
+  not enter the device-operation mutex or wait for an FRB worker, so a busy worker
+  pool cannot defer cancellation until a later operation becomes active.
 - A new operation uses a new generation. A previous cancellation must not cancel
   the next request. Locked/rejected/not-installed device errors remain explicit.
 - The existing bounded `0x6901` retry policy retries only the rejected exchange.

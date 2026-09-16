@@ -17,7 +17,8 @@ Future<LedgerDeviceApp> ledgerOpenZcashApp() =>
     RustLib.instance.api.crateApiLedgerLedgerOpenZcashApp();
 
 /// Cancel the Ledger operation currently waiting for device interaction.
-Future<void> ledgerCancelOperation() =>
+/// Runs on the caller's FFI invocation so busy device workers cannot delay it.
+void ledgerCancelOperation() =>
     RustLib.instance.api.crateApiLedgerLedgerCancelOperation();
 
 /// Export the UFVK for the selected mainnet account after device approval.

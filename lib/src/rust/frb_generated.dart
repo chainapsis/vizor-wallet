@@ -788,7 +788,7 @@ abstract class RustLibApi extends BaseApi {
     required BigInt voteEndTimeSeconds,
   });
 
-  Future<void> crateApiLedgerLedgerCancelOperation();
+  void crateApiLedgerLedgerCancelOperation();
 
   Future<LedgerDeviceApp> crateApiLedgerLedgerDeviceApp();
 
@@ -6015,17 +6015,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiLedgerLedgerCancelOperation() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
+  void crateApiLedgerLedgerCancelOperation() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
+          return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
             funcId: 121,
-            port: port_,
-          );
+          )!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,

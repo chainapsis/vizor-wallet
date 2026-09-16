@@ -1,6 +1,7 @@
 //! Device and USB protocol entry points for the Ledger Zcash app.
 
 use crate::wallet::ledger;
+use flutter_rust_bridge::frb;
 
 /// The application currently running on the connected Ledger device.
 pub struct LedgerDeviceApp {
@@ -19,6 +20,8 @@ pub fn ledger_open_zcash_app() -> Result<LedgerDeviceApp, String> {
 }
 
 /// Cancel the Ledger operation currently waiting for device interaction.
+/// Runs on the caller's FFI invocation so busy device workers cannot delay it.
+#[frb(sync)]
 pub fn ledger_cancel_operation() {
     ledger::cancel_operation();
 }
