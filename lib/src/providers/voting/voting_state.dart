@@ -312,13 +312,13 @@ class VotingSessionState {
     this.walletChainTipHeight,
     this.isHardwareAccount = false,
     this.hardwareSignerKind,
+    List<rust_delegate.KeystoneSigningRequest> ledgerSigningRequests = const [],
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
     Map<int, rust_wire.KeystoneSignatureRecord> keystoneSignatures = const {},
     List<rust_delegate.KeystoneSigningRequest> keystoneSigningRequests =
         const [],
-    List<rust_delegate.KeystoneSigningRequest> ledgerSigningRequests = const [],
     this.keystoneScanError,
     this.terminalDelegationNotice,
     this.currentBundleIndex,
@@ -400,14 +400,14 @@ class VotingSessionState {
     bool clearWalletSyncReadiness = false,
     bool? isHardwareAccount,
     HardwareSignerKind? hardwareSignerKind,
+    List<rust_delegate.KeystoneSigningRequest>? ledgerSigningRequests,
+    bool clearLedgerSigningRequest = false,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
     Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
     List<rust_delegate.KeystoneSigningRequest>? keystoneSigningRequests,
     bool clearKeystoneSigningRequest = false,
-    List<rust_delegate.KeystoneSigningRequest>? ledgerSigningRequests,
-    bool clearLedgerSigningRequest = false,
     String? keystoneScanError,
     String? terminalDelegationNotice,
     bool clearTerminalDelegationNotice = false,
@@ -453,6 +453,9 @@ class VotingSessionState {
       keystoneSigningRequests: clearKeystoneSigningRequest
           ? const []
           : keystoneSigningRequests ?? this.keystoneSigningRequests,
+      terminalDelegationNotice: clearTerminalDelegationNotice
+          ? null
+          : terminalDelegationNotice ?? this.terminalDelegationNotice,
       ledgerSigningRequests: clearLedgerSigningRequest
           ? const []
           : ledgerSigningRequests ?? this.ledgerSigningRequests,

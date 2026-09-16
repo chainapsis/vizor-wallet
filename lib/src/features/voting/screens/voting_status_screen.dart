@@ -284,6 +284,32 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         .skipRemainingKeystoneBundles(key);
   }
 
+  /// The platform progress screens' view of one ratcheted frame.
+  ///
+  /// Only the active step has a ring and a line of its own, and each step
+  /// reads the projection it owns.
+  VotingSubmissionProgressPresentation _submissionPresentation(
+    VotingProgressView progress, {
+    String? warning,
+  }) {
+    // Null until the delegation step has bundles to count.
+    final authority = progress.authorityOrNull;
+    return VotingSubmissionProgressPresentation(
+      activeStep: progress.step,
+      activeStepProgress: switch (progress.step) {
+        VotingSubmissionProgressStep.provingAuthority => authority?.fraction,
+        VotingSubmissionProgressStep.castingVotes => progress.ballot.fraction,
+        VotingSubmissionProgressStep.finalizing => null,
+      },
+      activeStepDetail: switch (progress.step) {
+        VotingSubmissionProgressStep.provingAuthority => authority?.detail,
+        VotingSubmissionProgressStep.castingVotes => progress.ballot.detail,
+        VotingSubmissionProgressStep.finalizing => null,
+      },
+      warning: warning,
+    );
+  }
+
   Future<void> _cancelLedgerSigning() async {
     final key = _selectedJobKey();
     if (key == null) return;
@@ -484,7 +510,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           );
         }
         return VotingStatusContent(
-          phase: phase,
+          phase: _phaseForStep(phase, progress.step),
           horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail:
               ballot.detail ??
@@ -935,25 +961,31 @@ class VotingStatusContent extends StatelessWidget {
                   submissionJobInFlight &&
                   phase == VotingSessionPhase.ledgerSigning &&
                   ledgerSigningBundleIndex != null) ...[
-                LedgerVotingSigningPanel(
-                  displayMemo: ledgerDisplayMemo ?? '',
-                  bundleIndex: ledgerSigningBundleIndex!,
-                  bundleCount: ledgerSigningBundleCount,
-                  onCancel: onCancelLedger,
+                PaymentUriBusySurfaceHold(
+                  child: LedgerVotingSigningPanel(
+                    displayMemo: ledgerDisplayMemo ?? '',
+                    bundleIndex: ledgerSigningBundleIndex!,
+                    bundleCount: ledgerSigningBundleCount,
+                    onCancel: onCancelLedger,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
-              if (isHardwareAccount && !isLedgerAccount)
+              if (isHardwareAccount)
                 _StepRow(
-                  label: 'Signing with Keystone',
-                  active: phase == VotingSessionPhase.keystoneSigning,
-                  complete: _after(VotingSessionPhase.keystoneSigning),
-                ),
-              if (isLedgerAccount)
-                _StepRow(
-                  label: 'Signing with Ledger',
-                  active: phase == VotingSessionPhase.ledgerSigning,
-                  complete: _after(VotingSessionPhase.ledgerSigning),
+                  label: isLedgerAccount
+                      ? 'Signing with Ledger'
+                      : 'Signing with Keystone',
+                  active:
+                      phase ==
+                      (isLedgerAccount
+                          ? VotingSessionPhase.ledgerSigning
+                          : VotingSessionPhase.keystoneSigning),
+                  complete: _after(
+                    isLedgerAccount
+                        ? VotingSessionPhase.ledgerSigning
+                        : VotingSessionPhase.keystoneSigning,
+                  ),
                 ),
               _StepRow(
                 label: 'Proving voting authority',

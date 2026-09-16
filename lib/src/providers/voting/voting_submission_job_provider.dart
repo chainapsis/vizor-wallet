@@ -78,7 +78,7 @@ class VotingSubmissionJobState {
   final String? ledgerDisplayMemo;
   final int? ledgerBundleIndex;
   final int ledgerBundleCount;
-  final List<rust_wire.DraftVote>? pendingDraftVotes;
+  final List<VotingDraftVote>? pendingDraftVotes;
   final List<int> pendingProposalIds;
   final bool pendingRecoveryWithoutDraft;
 
@@ -108,7 +108,7 @@ class VotingSubmissionJobState {
     int? ledgerBundleIndex,
     bool clearLedgerBundleIndex = false,
     int? ledgerBundleCount,
-    List<rust_wire.DraftVote>? pendingDraftVotes,
+    List<VotingDraftVote>? pendingDraftVotes,
     bool clearPendingDraftVotes = false,
     List<int>? pendingProposalIds,
     bool? pendingRecoveryWithoutDraft,
@@ -999,7 +999,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     _setRunning(key: key, generation: generation);
     final beforeDelegation = _sessionForJob(key);
-    if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
+    if (_sessionNeedsDelegation(beforeDelegation)) {
       if (signerKind == HardwareSignerKind.ledger) {
         await sessionNotifier.delegatePendingBundlesWithLedgerSignatures();
       } else {
@@ -1205,9 +1205,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
-      clearLedgerDisplayMemo: true,
-      clearLedgerBundleIndex: true,
-      ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
       pendingRecoveryWithoutDraft: false,
@@ -1246,9 +1243,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       keystoneBatchMessageCount: 0,
       keystoneBatchTotalCount: 0,
       clearKeystoneQrError: true,
-      clearLedgerDisplayMemo: true,
-      clearLedgerBundleIndex: true,
-      ledgerBundleCount: 0,
       clearPendingDraftVotes: true,
       pendingProposalIds: const [],
       pendingRecoveryWithoutDraft: false,

@@ -561,7 +561,7 @@ extension VotingHardwareSignatureRustApi on VotingRustApi {
     bundleIndices: bundleIndices,
   );
 
-  Future<rust_api.ApiKeystoneSignatureBatchResult> storeHardwareSignatures({
+  Future<void> storeHardwareSignatures({
     required String dbPath,
     required String accountUuid,
     required String roundId,
@@ -581,23 +581,6 @@ extension VotingHardwareSignatureRustApi on VotingRustApi {
     dbPath: dbPath,
     accountUuid: accountUuid,
     roundId: roundId,
-  );
-
-  Stream<rust_api.ApiDelegationProofEvent>
-  buildProveDelegationPayloadWithHardwareSignatureWithProgress({
-    required rust_api.ApiVotingRoundContext ctx,
-    required List<String> pirServerUrls,
-    required List<int> storedHotkeySecret,
-    required int bundleIndex,
-    required List<int> signature,
-    required List<int> sighash,
-  }) => buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
-    ctx: ctx,
-    pirServerUrls: pirServerUrls,
-    storedHotkeySecret: storedHotkeySecret,
-    bundleIndex: bundleIndex,
-    keystoneSig: signature,
-    keystoneSighash: sighash,
   );
 }
 

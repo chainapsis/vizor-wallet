@@ -465,6 +465,10 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
     crate::wallet::voting::snapshot_changes::record(db_path, height);
     let result = with_wallet_db_write_lock("sync.rewind_to_height", || {
         let mut db = open_wallet_db(db_path, network)?;
+        // Invalidate before truncation, just as the sync-engine rewind paths do.
+        // If SQLite fails afterward, replaying lookups is safe; stale completion
+        // records after a successful rewind could skip transparent recovery.
+        super::transparent_receive_cache::invalidate_utxo_checks(db_path)?;
         crate::wallet::sync_engine::ledger_discovery::truncate(
             db_path,
             &mut db,

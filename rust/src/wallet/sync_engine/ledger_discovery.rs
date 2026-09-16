@@ -92,8 +92,8 @@ pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result
     Ok(())
 }
 
-/// Invalidate first, so even a crash during rewind cannot retain a stale completion.
-/// Caller owns the wallet write lock, as for the original truncate operation.
+/// Invalidate Ledger discovery before truncating. The caller first invalidates
+/// the shared UTXO cache and owns the wallet write lock.
 pub(crate) fn truncate(
     db_path: &str,
     db: &mut WalletDatabase,
@@ -105,28 +105,11 @@ pub(crate) fn truncate(
 }
 
 pub(super) fn invalidate_for_rewind(
-    db_path: &str,
+    _db_path: &str,
     db: &mut WalletDatabase,
     height: BlockHeight,
 ) -> Result<(), zcash_client_sqlite::error::SqliteClientError> {
-    // Extension transactions permit DML only; initialize our schema on a
-    // separate connection before entering the wallet transaction.
-    let conn = rusqlite::Connection::open(db_path)?;
-    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)?;
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS ext_vizor_transparent_refresh_epoch (
-        id INTEGER PRIMARY KEY CHECK(id=0), epoch INTEGER NOT NULL)",
-        [],
-    )?;
-    drop(conn);
     db.transactionally_with_extension(|_, ext| {
-        // Commit invalidation before truncating. A crash or failed truncate may
-        // cause extra bounded queries, but must never leave stale query heights.
-        ext.execute(
-            "INSERT INTO ext_vizor_transparent_refresh_epoch(id,epoch) VALUES(0,1)
-             ON CONFLICT(id) DO UPDATE SET epoch=epoch+1",
-            [],
-        )?;
         let exists: bool = ext.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
             [TABLE],
@@ -681,7 +664,7 @@ mod tests {
     }
     #[test]
     fn rewind_invalidates_both_query_caches_even_after_discovery_anchor() {
-        use crate::wallet::transparent_receive_cache::{self as cache, RefreshScope};
+        use crate::wallet::transparent_receive_cache::{self as cache};
         let (_dir, path, id, mut db, _) = ledger_fixture();
         let uuid = id.expose_uuid().to_string();
         let external = vec![keys::ExternalTransparentAddress {
@@ -709,18 +692,23 @@ mod tests {
         };
         plan_external();
         plan_internal();
-        for scope in [RefreshScope::External, RefreshScope::Internal] {
-            cache::mark_scoped_utxo_refresh_complete(
-                &path,
-                WalletNetwork::Main,
-                &uuid,
-                scope,
-                &[0],
-                2_600_001,
-                None,
-            )
-            .unwrap();
-        }
+        cache::mark_utxo_refresh_batch_complete(
+            &path,
+            WalletNetwork::Main,
+            &uuid,
+            &[0],
+            2_600_001,
+            None,
+        )
+        .unwrap();
+        cache::mark_non_external_utxo_refresh_complete(
+            &path,
+            WalletNetwork::Main,
+            &uuid,
+            &["internal".into()],
+            2_600_001,
+        )
+        .unwrap();
         assert_eq!(plan_external()[0].start_height, 2_599_901);
         assert_eq!(plan_internal()[0].start_height, 2_599_901);
         // An early recovery anchor remains valid across this later rewind.
@@ -737,19 +725,18 @@ mod tests {
             )
             .unwrap();
         }
+        cache::invalidate_utxo_checks(&path).unwrap();
         invalidate_for_rewind(&path, &mut db, BlockHeight::from_u32(2_550_000)).unwrap();
         assert!(load(&path, id, 0).unwrap().is_some());
         assert_eq!(plan_external()[0].start_height, 0);
         assert_eq!(plan_internal()[0].start_height, 0);
-        // A subsequent successful batch can advance normally in the new epoch.
-        cache::mark_scoped_utxo_refresh_complete(
+        // A subsequent successful batch can advance normally after invalidation.
+        cache::mark_non_external_utxo_refresh_complete(
             &path,
             WalletNetwork::Main,
             &uuid,
-            RefreshScope::Internal,
-            &[0],
+            &["internal".into()],
             2_550_001,
-            None,
         )
         .unwrap();
         assert_eq!(plan_internal()[0].start_height, 2_549_901);
