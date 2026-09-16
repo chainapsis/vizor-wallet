@@ -694,7 +694,9 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
   }
 
   Bytes ExchangePackets(const std::shared_ptr<Session>& session,
-                        const std::vector<Bytes>& frames, uint64_t operation, bool mtu = false) {
+                        const std::vector<Bytes>& frames, uint64_t operation,
+                        bool mtu = false,
+                        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
     Check(operation);
     {
       std::lock_guard lock(session->mutex);
@@ -713,25 +715,41 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     } guard{session};
     for (const auto& frame : frames) {
       Check(operation);
+      auto write_timeout = std::chrono::milliseconds(30000);
+      if (deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            *deadline - std::chrono::steady_clock::now());
+        if (remaining <= 0ms) {
+          throw Error("unavailable", "Ledger app recovery timed out.");
+        }
+        write_timeout = remaining;
+      }
       streams::DataWriter writer;
       writer.WriteBytes(frame);
       const auto result = Await(session->write.WriteValueWithResultAsync(
-          writer.DetachBuffer(), gatt::GattWriteOption::WriteWithResponse), operation);
+          writer.DetachBuffer(), gatt::GattWriteOption::WriteWithResponse),
+          operation, write_timeout);
       RequireGatt(result.Status());
     }
-    const auto deadline = std::chrono::steady_clock::now() + (mtu ? 10s : 300s);
+    const auto response_deadline = deadline.value_or(
+        std::chrono::steady_clock::now() + (mtu ? 10s : 300s));
     ledger_ble::ResponseAssembler assembler;
     for (;;) {
+      Check(operation);
+      if (std::chrono::steady_clock::now() >= response_deadline) {
+        throw Error("unavailable", "Ledger did not respond. Finish or reject its pending request, then reconnect.");
+      }
       Bytes packet;
       {
         std::unique_lock lock(session->mutex);
-        if (!session->changed.wait_until(lock, deadline, [&] {
-              return !session->packets.empty() || session->failure || !session->connected ||
-                     closed_ || !gate_.IsActive(operation);
-            })) {
+        const bool ready = session->changed.wait_until(lock, response_deadline, [&] {
+          return !session->packets.empty() || session->failure || !session->connected ||
+                 closed_ || !gate_.IsActive(operation);
+        });
+        Check(operation);
+        if (!ready) {
           throw Error("unavailable", "Ledger did not respond. Finish or reject its pending request, then reconnect.");
         }
-        Check(operation);
         if (session->failure) throw *session->failure;
         if (!session->connected) throw Error("disconnected", "The Ledger disconnected. Reconnect and try again.");
         packet = std::move(session->packets.front());
@@ -742,14 +760,20 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     }
   }
 
-  Bytes Exchange(const Bytes& command, uint64_t operation) {
+  Bytes Exchange(
+      const Bytes& command, uint64_t operation,
+      std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
     const auto session = CurrentSession();
-    return ExchangePackets(session, ledger_ble::FrameApdu(command, session->mtu), operation);
+    return ExchangePackets(
+        session, ledger_ble::FrameApdu(command, session->mtu), operation,
+        false, deadline);
   }
 
-  ledger_ble::AppInfo ReadApp(uint64_t operation) {
+  ledger_ble::AppInfo ReadApp(
+      uint64_t operation,
+      std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
     return ledger_ble::DecodeAppInfo(
-        Exchange(ledger_ble::GetAppAndVersionCommand(), operation));
+        Exchange(ledger_ble::GetAppAndVersionCommand(), operation, deadline));
   }
 
   ledger_ble::AppInfo WaitForApp(
@@ -769,7 +793,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
           }
         }
         if (!connected) Connect(id, operation);
-        const auto app = ReadApp(operation);
+        const auto app = ReadApp(operation, deadline);
         if (matches(app)) return app;
       } catch (const Error& error) {
         if (error.code != "disconnected" && error.code != "device_busy") throw;
