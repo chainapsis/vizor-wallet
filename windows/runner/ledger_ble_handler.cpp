@@ -110,6 +110,13 @@ void RequireGatt(gatt::GattCommunicationStatus status) {
   throw Error("unavailable", "Windows could not exchange Bluetooth data with the Ledger.");
 }
 
+void RequireGattReady(gatt::GattCommunicationStatus status) {
+  if (status == gatt::GattCommunicationStatus::ProtocolError) {
+    throw Error("disconnected", "The Ledger Bluetooth service is not ready. Keep it nearby and unlocked, then reconnect.");
+  }
+  RequireGatt(status);
+}
+
 Value AppValue(const ledger_ble::AppInfo& app) {
   return Value(Map{{Value("name"), Value(app.name)},
                    {Value("version"), Value(app.version)}});
@@ -544,9 +551,13 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         });
       } catch (const winrt::hresult_error& error) {
         const auto mapped = WindowsError(error);
-        if (const auto self = weak.lock()) self->Post([weak, mapped, generation] {
+        if (const auto self = weak.lock()) self->Post([weak, address, mapped, generation] {
           const auto owner = weak.lock();
           if (!owner || generation != owner->discovery_generation_) return;
+          if (mapped.code == "disconnected") {
+            owner->resolving_addresses_.erase(address);
+            return;
+          }
           owner->StopDiscovery();
           owner->DiscoveryError(mapped.code.c_str(), mapped.what());
         });
@@ -606,7 +617,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     if (!session->gatt_session) throw Error("disconnected", "Windows could not open the Ledger Bluetooth session.");
     session->gatt_session.MaintainConnection(true);
     const auto services = Await(session->device.GetGattServicesAsync(bt::BluetoothCacheMode::Uncached), operation);
-    RequireGatt(services.Status());
+    RequireGattReady(services.Status());
     const ledger_ble::ServiceSpec* profile = nullptr;
     for (const auto& service : services.Services()) {
       for (const auto& spec : ledger_ble::kServices) {
@@ -618,13 +629,13 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       }
       if (profile) break;
     }
-    if (!profile) throw Error("unavailable", "This device does not expose a supported Ledger Bluetooth service.");
+    if (!profile) throw Error("disconnected", "The Ledger Bluetooth service is not ready. Keep it nearby and unlocked, then reconnect.");
     auto notify = Await(session->service.GetCharacteristicsForUuidAsync(winrt::guid(profile->notify), bt::BluetoothCacheMode::Uncached), operation);
     auto write = Await(session->service.GetCharacteristicsForUuidAsync(winrt::guid(profile->write), bt::BluetoothCacheMode::Uncached), operation);
-    RequireGatt(notify.Status());
-    RequireGatt(write.Status());
+    RequireGattReady(notify.Status());
+    RequireGattReady(write.Status());
     if (notify.Characteristics().Size() != 1 || write.Characteristics().Size() != 1) {
-      throw Error("unavailable", "Ledger Bluetooth characteristics are missing.");
+      throw Error("disconnected", "The Ledger Bluetooth service is not ready. Keep it nearby and unlocked, then reconnect.");
     }
     session->notify = notify.Characteristics().GetAt(0);
     session->write = write.Characteristics().GetAt(0);
@@ -668,7 +679,7 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         connected->changed.notify_all();
       }
     });
-    RequireGatt(Await(session->notify.WriteClientCharacteristicConfigurationDescriptorAsync(
+    RequireGattReady(Await(session->notify.WriteClientCharacteristicConfigurationDescriptorAsync(
         gatt::GattClientCharacteristicConfigurationDescriptorValue::Notify), operation));
     // Ledger's MTU command reports the maximum ATT payload. Windows negotiates
     // its own ATT MTU, so use the smaller of the two advertised limits.
