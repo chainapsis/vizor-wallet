@@ -670,6 +670,19 @@ Keep desktop and mobile consistent when cancelling signing, not merely closing t
 - Vote: preserve saved partial signatures and resume unsigned bundles.
 - For transaction proposals, finish input-lock release and balance refresh before allowing retry.
 
+Send proposal reservations are process-scoped until a signed outbox checkpoint
+or the first broadcast attempt. Wallet-owned PCZTs carry the reservation owner;
+strip that metadata from device signer views. Ledger checkpoint insertion and
+reservation transfer must commit in the same SQLite transaction. Keystone marks
+retention before the first network submission, including TEX's first round.
+Normal app exit closes the proposal gate, drains accepted DB creators, and
+releases only unsubmitted reservations; backgrounding does not end the session.
+Before the first balance read after restart, the DB migration gate recovers
+abandoned process-scoped reservations without network access. Legacy retained,
+signed, and ambiguous-broadcast reservations keep their expiry-based recovery.
+Never clear all account locks: migration owners and durable outbox work are
+outside cancellation cleanup.
+
 Android Ledger device work must use `LedgerMobileHandler.launchOperation`,
 including app queries and app-opening approval, not only signing APDUs. Register
 ownership before dispatch, settle each MethodChannel result once, and retain the

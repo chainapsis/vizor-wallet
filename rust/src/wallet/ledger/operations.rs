@@ -6,6 +6,8 @@ use std::{
 
 use rusqlite::{params, OptionalExtension};
 
+use crate::wallet::sync::proposal_locks;
+
 use crate::wallet::{
     db::{open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
@@ -150,8 +152,13 @@ pub(crate) fn checkpoint_batch(
     let network = network_name(network);
 
     with_wallet_db_write_lock("ledger.operations.checkpoint", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
+        proposal_locks::require_active_session()?;
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection
+            .transaction()
+            .map_err(|e| format!("Begin signed checkpoint: {e}"))?;
         let inserted = conn
             .execute(
                 &format!(
@@ -208,9 +215,22 @@ pub(crate) fn checkpoint_batch(
                 ));
             }
         }
-        load_metadata(&conn, network, operation_id)?.ok_or_else(|| {
+        if inserted != 0 {
+            let mut owners = HashSet::new();
+            for pczt in proof_pczts {
+                if let Some(owner) = proposal_locks::pczt_owner(pczt)? {
+                    if owners.insert(owner) {
+                        proposal_locks::checkpoint_owner(&conn, owner, operation_id)?;
+                    }
+                }
+            }
+        }
+        let metadata = load_metadata(&conn, network, operation_id)?.ok_or_else(|| {
             format!("Ledger operation {operation_id} was not found after checkpointing")
-        })
+        })?;
+        conn.commit()
+            .map_err(|e| format!("Commit signed checkpoint: {e}"))?;
+        Ok(metadata)
     })
 }
 
@@ -266,7 +286,7 @@ pub(crate) async fn broadcast(
     )
     .await;
 
-    match result {
+    let outcome = match result {
         Ok(result) => apply_broadcast_outcome(
             db_path,
             network,
@@ -285,7 +305,13 @@ pub(crate) async fn broadcast(
                 Err(error)
             }
         }
+    };
+    // The terminal transition is durable already; failure here is safe to retry
+    // on startup and must not turn a successful broadcast into a send failure.
+    if let Err(error) = proposal_locks::recover_before_balance(db_path, network) {
+        log::warn!("Ledger reservation cleanup pending: {error}");
     }
+    outcome
 }
 
 pub(crate) fn delete_for_account_with_tx(
@@ -391,8 +417,10 @@ fn apply_broadcast_outcome(
     let network = network_name(network);
     let now = now_ms()?;
     with_wallet_db_write_lock("ledger.operations.record_broadcast", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection.transaction().map_err(|e| e.to_string())?;
         let changed = if clean_terminal {
             conn.execute(
                 &format!("DELETE FROM {TABLE} WHERE network = ?1 AND operation_id = ?2"),
@@ -424,6 +452,11 @@ fn apply_broadcast_outcome(
                 "Ledger operation {operation_id} changed while its broadcast result was recorded"
             ));
         }
+        if status == "broadcasted" || status == "expired" {
+            proposal_locks::release_operation(&conn, operation_id)?;
+        }
+        conn.commit()
+            .map_err(|e| format!("Commit Ledger result: {e}"))?;
         Ok(BroadcastResult {
             operation_id: operation_id.to_string(),
             txid: txid.to_string(),
@@ -443,8 +476,10 @@ fn record_broadcast_failure(
     let network = network_name(network);
     let now = now_ms()?;
     with_wallet_db_write_lock("ledger.operations.record_failure", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection.transaction().map_err(|e| e.to_string())?;
         if is_terminal_broadcast_failure(message) {
             conn.execute(
                 &format!(
@@ -454,6 +489,9 @@ fn record_broadcast_failure(
                 params![network, operation_id, STATE_SIGNED_PENDING_BROADCAST],
             )
             .map_err(|e| format!("Discard terminal Ledger operation: {e}"))?;
+            proposal_locks::release_operation(&conn, operation_id)?;
+            conn.commit()
+                .map_err(|e| format!("Commit rejected Ledger operation: {e}"))?;
             return Ok(true);
         }
         conn.execute(
@@ -471,6 +509,7 @@ fn record_broadcast_failure(
             ],
         )
         .map_err(|e| format!("Record Ledger broadcast failure: {e}"))?;
+        conn.commit().map_err(|e| e.to_string())?;
         Ok(false)
     })
 }
@@ -840,6 +879,80 @@ mod tests {
             &signature,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn signed_checkpoint_atomically_owns_reservation_and_rejects_cancelled_pczt() {
+        use zcash_client_backend::wallet::{LockOwner, OutputRef};
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::PoolType;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        let owner = LockOwner::new([21; 32]);
+        let (proof, signature, expiry) = signed_pczt(1_234_500);
+        let proof = proposal_locks::bind_pczt(pczt::Pczt::parse(&proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+        let output = OutputRef::new(TxId::from_bytes([1; 32]), PoolType::TRANSPARENT, 0);
+        proposal_locks::persist(path, owner, &[output], BlockHeight::from_u32(expiry)).unwrap();
+        checkpoint(
+            path,
+            WalletNetwork::Main,
+            "bound-op",
+            "account-1",
+            "send",
+            None,
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        let state: (bool, String, String) = conn
+            .query_row(
+                "SELECT retain_until_expiry, phase, operation_id FROM vizor_send_proposal_locks",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(state, (true, "signed".into(), "bound-op".into()));
+        // An idempotent retry does not try to acquire ownership again.
+        checkpoint(
+            path,
+            WalletNetwork::Main,
+            "bound-op",
+            "account-1",
+            "send",
+            None,
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        // A different outbox ID cannot steal an already transferred reservation.
+        assert!(checkpoint(
+            path,
+            WalletNetwork::Main,
+            "other-op",
+            "account-1",
+            "send",
+            None,
+            &proof,
+            &signature
+        )
+        .is_err());
+        assert_eq!(list(path, WalletNetwork::Main, None).unwrap().len(), 1);
+        proposal_locks::remove(path, owner).unwrap();
+        assert!(checkpoint(
+            path,
+            WalletNetwork::Main,
+            "cancelled-op",
+            "account-1",
+            "send",
+            None,
+            &proof,
+            &signature
+        )
+        .is_err());
+        assert_eq!(list(path, WalletNetwork::Main, None).unwrap().len(), 1);
     }
 
     #[test]

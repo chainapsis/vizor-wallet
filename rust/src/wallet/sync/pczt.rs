@@ -571,16 +571,12 @@ pub async fn create_pczt_from_proposal(
             BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))?;
-        let pczt_bytes = pczt
+        let pczt_bytes = super::proposal_locks::bind_pczt(pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize PCZT: {e:?}"))?;
 
-        // From this point the PCZT may leave the process and later be
-        // broadcast. Persist the conservative restart policy before releasing
-        // the wallet write lock, closing both the cancel/re-lock race and the
-        // crash window before a follow-up retain FFI call. The in-memory
-        // capability remains, so ordinary cancellation can still unlock it.
-        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
+        // Approval waits belong to this process. Only a durable checkpoint or
+        // the pre-broadcast boundary promotes the reservation to restart-safe.
         Ok(pczt_bytes)
     });
 
@@ -757,7 +753,7 @@ pub async fn create_tex_pczts_from_proposal(
             ],
         )
         .map_err(|e| format!("Build TEX ephemeral BIP 44 derivation: {e:?}"))?;
-        let first_bytes = first_pczt
+        let first_bytes = super::proposal_locks::bind_pczt(first_pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize TEX PCZT step 1: {e:?}"))?;
         let first_signer_bytes = prepare_tex_pczt_for_keystone(
@@ -809,12 +805,11 @@ pub async fn create_tex_pczts_from_proposal(
         {
             return Err("TEX PCZT step 2 does not spend the exact step 1 output".to_string());
         }
-        let second_bytes = second_pczt
+        let second_bytes = super::proposal_locks::bind_pczt(second_pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize TEX PCZT step 2: {e:?}"))?;
         let second_signer_bytes = prepare_tex_pczt_for_keystone(&second_bytes, network, None)?;
 
-        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
         Ok(TexPcztPair {
             pczts: vec![first_bytes, second_bytes],
             signer_pczts: vec![first_signer_bytes, second_signer_bytes],
@@ -1005,7 +1000,10 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     }
 
     let mut redactor = Redactor::new(pczt)
-        .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
+        .redact_global_with(|mut r| {
+            r.redact_proprietary("zcash_client_backend:proposal_info");
+            r.redact_proprietary(super::proposal_locks::OWNER_KEY);
+        })
         .redact_orchard_with(|mut r| {
             redact_bundle(&mut r, for_batch);
         });
@@ -1706,6 +1704,11 @@ async fn store_and_broadcast_pczts_inner(
                     }
                 }
             };
+            if index == 0 {
+                if let Some((proposal_id, send_flow_id)) = proposal {
+                    super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
+                }
+            }
             let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
                 &mut client,
                 &item.extracted.raw_tx,
@@ -2778,8 +2781,7 @@ mod tests {
             extract_transaction_from_pczt, ironwood_orchard_proving_key,
             preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
             prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
-            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
-            validate_signed_pczts,
+            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;

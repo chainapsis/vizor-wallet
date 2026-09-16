@@ -236,6 +236,7 @@ pub fn ensure_db_migrated_once(db_path: &str, network: WalletNetwork) -> Result<
 
     log::info!("wallet DB migration gate: ensuring schema for {db_path}");
     ensure_db_initialized(db_path, network)?;
+    crate::wallet::sync::proposal_locks::recover_before_balance(db_path, network)?;
     migrated.insert(key);
     Ok(())
 }

@@ -2959,3 +2959,9 @@ pub fn get_payment_link_spend_evidence(
         })
     })
 }
+
+/// End the foreground signing session during normal application shutdown.
+/// Durable signed or submitted transactions are retained for recovery.
+pub fn shutdown_signing_reservations() -> Result<(), String> {
+    wallet_sync::shutdown_signing_reservations()
+}
