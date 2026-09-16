@@ -657,8 +657,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
-      if (hardware && !_requireHardwareVotingAccount(context, signerKind!))
+      if (hardware && !_requireHardwareVotingAccount(context, signerKind!)) {
         return;
+      }
       if (hardware != context.isHardwareAccount) {
         _setError(
           hardware

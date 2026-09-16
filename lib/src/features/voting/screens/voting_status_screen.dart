@@ -588,6 +588,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       VotingSessionPhase.castingVotes ||
       VotingSessionPhase.submittingShares ||
       VotingSessionPhase.keystoneSigning ||
+      VotingSessionPhase.ledgerSigning ||
       VotingSessionPhase.done ||
       VotingSessionPhase.error => phase,
       _ => VotingSessionPhase.castingVotes,

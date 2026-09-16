@@ -372,6 +372,91 @@ void main() {
     expect(find.text('Delivering your responses'), findsOneWidget);
   });
 
+  testWidgets('Ledger approval stays visible after partial ballot progress', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _LedgerAccountNotifier.new,
+      activeAccountUuid: () async => 'ledger-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'ledger-1'},
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.waitingForLedger,
+              generation: 1,
+              ledgerBundleIndex: 1,
+              ledgerBundleCount: 2,
+              ledgerDisplayMemo: 'Voting bundle',
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(_roundId, accountUuid: 'ledger-1'),
+        ),
+      ),
+    );
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: true,
+    );
+    for (final phase in [
+      VotingSessionPhase.castingVotes,
+      VotingSessionPhase.ledgerSigning,
+    ]) {
+      updates.add(
+        VotingSessionState(
+          roundId: _roundId,
+          accountUuid: 'ledger-1',
+          isHardwareAccount: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          phase: phase,
+          roundPlan: plan,
+          voteSubmissionCompletedCount: 1,
+          voteSubmissionTotalCount: 2,
+          voteSubmissionProgress: 0.5,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(find.text('Approve on your Ledger'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_voting_signing_panel')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('ledger_voting_cancel')), findsOneWidget);
+    expect(find.text('Signing with Keystone'), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+  });
+
   testWidgets('status screen requires software account without mnemonic', (
     tester,
   ) async {
