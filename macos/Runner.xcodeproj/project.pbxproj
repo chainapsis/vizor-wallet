@@ -313,7 +313,7 @@
 			mainGroup = 33CC10E42044A3C60003C045;
 			packageReferences = (
 				CB6432B5361DBFCC835D5AB2 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				LEDGERMAC020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */,
+				LEDGERMAC020000000000001 /* XCLocalSwiftPackageReference "ledger_ble_transport" */,
 			);
 			productRefGroup = 33CC10EE2044A3C60003C045 /* Products */;
 			projectDirPath = "";
@@ -842,15 +842,14 @@
 				minimumVersion = 2.9.1;
 			};
 		};
-		LEDGERMAC020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/LedgerHQ/hw-transport-ios-ble.git";
-			requirement = {
-				kind = exactVersion;
-				version = 1.0.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		LEDGERMAC020000000000001 /* XCLocalSwiftPackageReference "ledger_ble_transport" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../third_party/ledger_ble_transport";
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		CD78EC47695D0CDAA4C59781 /* Sparkle */ = {
@@ -860,7 +859,7 @@
 		};
 		LEDGERMAC030000000000001 /* BleTransport */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = LEDGERMAC020000000000001 /* XCRemoteSwiftPackageReference "hw-transport-ios-ble" */;
+			package = LEDGERMAC020000000000001 /* XCLocalSwiftPackageReference "ledger_ble_transport" */;
 			productName = BleTransport;
 		};
 /* End XCSwiftPackageProductDependency section */

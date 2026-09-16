@@ -12,8 +12,6 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-pins = json.loads((root / 'macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
-ledger = next(pin for pin in pins if pin['identity'] == 'hw-transport-ios-ble')
 with tempfile.TemporaryDirectory(prefix='vizor-ledger-native-') as directory:
     package = Path(directory)
     probe = package / 'sdk.dart'
@@ -30,11 +28,11 @@ with tempfile.TemporaryDirectory(prefix='vizor-ledger-native-') as directory:
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(name: "LedgerNativeTests", platforms: [.macOS(.v13)], dependencies: [
-  .package(url: %s, revision: %s)
+  .package(path: %s)
 ], targets: [
   .binaryTarget(name: "FlutterMacOS", path: "FlutterMacOS.xcframework"),
-  .target(name: "Runner", dependencies: ["FlutterMacOS", .product(name: "BleTransport", package: "hw-transport-ios-ble")]),
-  .testTarget(name: "RunnerTests", dependencies: ["Runner", "FlutterMacOS", .product(name: "BleTransport", package: "hw-transport-ios-ble")])
+  .target(name: "Runner", dependencies: ["FlutterMacOS", .product(name: "BleTransport", package: "ledger_ble_transport")]),
+  .testTarget(name: "RunnerTests", dependencies: ["Runner", "FlutterMacOS", .product(name: "BleTransport", package: "ledger_ble_transport")])
 ])
-''' % (json.dumps(ledger['location']), json.dumps(ledger['state']['revision'])))
+''' % json.dumps(str(root / 'third_party/ledger_ble_transport')))
     subprocess.run(['swift', 'test', '--package-path', str(package)], check=True)
