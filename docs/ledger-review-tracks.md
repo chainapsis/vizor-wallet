@@ -13,9 +13,9 @@ classification does not authorize merging the collection into main.
 | Slice | Status | Why it can target the collection |
 | --- | --- | --- |
 | C01 USB/protocol | Merged, #695 | Foundation already present |
-| C02 account import and signer dispatch | In review, #696 | Depends on merged C01; signer dispatch and interrupted-setup recovery are implemented |
+| C02 account import and signer dispatch | Merged, #696 | Depends on merged C01; signer dispatch and interrupted-setup recovery are implemented |
 | C04 Apple BLE | In review, #700 | Swift adapter, registrations and native dependencies are self-contained |
-| C05 Android BLE | In review, #698 | Kotlin adapter, permissions and native dependencies are self-contained |
+| C05 Android BLE | Merged, #698 | Kotlin adapter, permissions and native dependencies are self-contained |
 | C06a shared native BLE protocol | Merged, #701 | Platform-neutral framing, response assembly and operation gate, with host tests |
 
 C04 and C05 were originally stacked on C03. Their own native patches apply
