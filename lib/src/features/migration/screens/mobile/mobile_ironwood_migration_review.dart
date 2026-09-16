@@ -7,6 +7,7 @@ bool _keystoneTwoRoundPlanSupported(
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {
+  if (error is UnsupportedAccountSignerException) return error.userMessage;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
@@ -81,11 +82,20 @@ class _MobileMigrationFastReviewState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-
-      if (accountState.activeAccount?.isHardware ?? false) {
-        if (!mounted) return;
-        context.go('/migration/immediate/keystone/sign', extra: plan);
-        return;
+      final account = accountState.activeAccount;
+      if (account == null) {
+        throw StateError('The active account is unavailable.');
+      }
+      switch (resolveAccountSigningBackend(
+        account,
+        operation: AccountSigningOperation.ironwoodMigration,
+      )) {
+        case AccountSigningBackend.keystone:
+          if (!mounted) return;
+          context.go('/migration/immediate/keystone/sign', extra: plan);
+          return;
+        case AccountSigningBackend.software:
+          break;
       }
 
       final result = await ref

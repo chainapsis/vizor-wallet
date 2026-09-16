@@ -4347,8 +4347,10 @@ ProviderContainer _statusContainer({
       votingActiveAccountUuidProvider.overrideWithValue(
         activeAccountUuid ?? () async => 'account-1',
       ),
-      votingAccountIsHardwareProvider.overrideWithValue(
-        (uuid) async => effectiveHardwareAccountUuids.contains(uuid),
+      votingAccountSignerKindProvider.overrideWithValue(
+        (uuid) async => effectiveHardwareAccountUuids.contains(uuid)
+            ? AccountSignerKind.keystone
+            : AccountSignerKind.software,
       ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(

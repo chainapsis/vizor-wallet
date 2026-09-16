@@ -154,18 +154,17 @@ final votingActiveAccountUuidProvider = Provider<Future<String?> Function()>((
   };
 });
 
-/// Test seam for account hardware classification.
-final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
-  (ref) {
-    return (accountUuid) async {
-      final accountState = await ref.read(accountProvider.future);
-      for (final account in accountState.accounts) {
-        if (account.uuid == accountUuid) return account.isHardware;
-      }
-      return false;
-    };
-  },
-);
+/// Test seam for account signer classification.
+final votingAccountSignerKindProvider =
+    Provider<Future<AccountSignerKind> Function(String)>((ref) {
+      return (accountUuid) async {
+        final accountState = await ref.read(accountProvider.future);
+        for (final account in accountState.accounts) {
+          if (account.uuid == accountUuid) return account.signerKind;
+        }
+        throw StateError('Account not found: $accountUuid');
+      };
+    });
 
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {

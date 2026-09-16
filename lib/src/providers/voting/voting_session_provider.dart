@@ -8,6 +8,7 @@ import '../../core/formatting/duration_format.dart';
 import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../account_provider.dart';
+import '../account_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../services/voting/voting_rust_exception.dart';
 import '../../services/voting/voting_retry.dart';
@@ -134,7 +135,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   final Set<VotingRoundSession> _activeRoundSessions = {};
   bool _automaticShareTrackingStopped = false;
   String? _sessionAccountUuid;
-  bool? _sessionIsHardwareAccount;
+  AccountSignerKind? _sessionSignerKind;
   _VotingSessionContext? _currentContext;
   bool _disposeHandlerRegistered = false;
   bool _activeAccountListenerRegistered = false;
@@ -173,7 +174,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final initialState = VotingSessionState(
       roundId: _roundId,
       accountUuid: context.accountUuid,
-      isHardwareAccount: context.isHardwareAccount,
+      signerKind: context.signerKind,
       config: context.config,
       round: context.round,
       roundPlan: context.roundPlan,
@@ -302,7 +303,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _advanceSessionGeneration();
     }
     _sessionAccountUuid = accountUuid;
-    _sessionIsHardwareAccount = null;
+    _sessionSignerKind = null;
     _currentContext = null;
     _backgroundDelegationProofPrecomputes.clear();
     if (!hadSessionAccount || _isDisposed) return;
@@ -321,7 +322,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         VotingSessionState(
           roundId: _roundId,
           accountUuid: context.accountUuid,
-          isHardwareAccount: context.isHardwareAccount,
+          signerKind: context.signerKind,
           config: context.config,
           round: context.round,
           roundPlan: context.roundPlan,
@@ -643,11 +644,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
-      if (hardware != context.isHardwareAccount) {
+      if (hardware && !_requireKeystoneVotingContext(context)) {
+        return;
+      }
+      if (!hardware && context.isHardwareAccount) {
         _setError(
-          hardware
-              ? 'Keystone voting is only available for hardware accounts.'
-              : 'Sign delegation bundles with Keystone before submitting.',
+          'Sign delegation bundles with Keystone before submitting.',
           context: context,
         );
         return;
@@ -1025,13 +1027,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
-      if (!context.isHardwareAccount) {
-        _setError(
-          'Keystone voting is only available for hardware accounts.',
-          context: context,
-        );
-        return;
-      }
+      if (!_requireKeystoneVotingContext(context)) return;
 
       final roundPlan = current.roundPlan ?? context.roundPlan;
       final signatures = await _loadKeystoneSignatures(context);
@@ -3317,16 +3313,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
   }
 
+  bool _requireKeystoneVotingContext(_VotingSessionContext context) {
+    try {
+      final backend = resolveAccountSignerKind(
+        context.signerKind,
+        operation: AccountSigningOperation.voting,
+      );
+      if (backend.usesKeystoneProtocol) return true;
+      _setError(
+        'Keystone voting is only available for Keystone accounts.',
+        context: context,
+      );
+      return false;
+    } on UnsupportedAccountSignerException catch (error) {
+      _setError(error.userMessage, context: context);
+      return false;
+    }
+  }
+
   Future<void> _prepareKeystoneSigningUnlocked() async {
     var current = await future;
     var context = await _loadContext(_roundId);
-    if (!context.isHardwareAccount) {
-      _setError(
-        'Keystone voting is only available for hardware accounts.',
-        context: context,
-      );
-      return;
-    }
+    if (!_requireKeystoneVotingContext(context)) return;
     await _waitUntilWalletReadyForVoting(context);
 
     if (_needsDelegationPreparation(current)) {
@@ -3352,7 +3360,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         context,
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
-          isHardwareAccount: true,
+          signerKind: AccountSignerKind.keystone,
           keystoneSignatures: signatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -3371,7 +3379,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context,
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
-        isHardwareAccount: true,
+        signerKind: AccountSignerKind.keystone,
         keystoneSignatures: signatures,
         currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneSigningRequest: true,
@@ -3407,7 +3415,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       context,
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.keystoneSigning,
-        isHardwareAccount: true,
+        signerKind: AccountSignerKind.keystone,
         roundPlan: roundPlan,
         eligibleWeightZatoshi: requests.first.eligibleWeightZatoshi,
         keystoneSigningRequests: requests,
@@ -3431,7 +3439,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         config: context.config,
         round: context.round,
         roundPlan: context.roundPlan,
-        isHardwareAccount: context.isHardwareAccount,
+        signerKind: context.signerKind,
         clearError: true,
       ),
     );
@@ -3470,7 +3478,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         config: context.config,
         round: context.round,
         roundPlan: context.roundPlan,
-        isHardwareAccount: context.isHardwareAccount,
+        signerKind: context.signerKind,
       ),
     );
 
@@ -3488,7 +3496,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         eligibleWeightZatoshi: bundleSetup.eligibleWeight,
         privacyTrimDroppedValueZatoshi:
             bundleSetup.privacyTrimDroppedValueZatoshi,
-        isHardwareAccount: context.isHardwareAccount,
+        signerKind: context.signerKind,
       ),
     );
   }
@@ -3541,7 +3549,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         eligibleWeightZatoshi: eligibility.eligibleWeightZatoshi,
         privacyTrimDroppedValueZatoshi:
             eligibility.privacyTrimDroppedValueZatoshi,
-        isHardwareAccount: context.isHardwareAccount,
+        signerKind: context.signerKind,
         clearError: eligibility.isEligible,
       );
       _setStateForContext(
@@ -3570,7 +3578,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundPlan: context.roundPlan,
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
           privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
-          isHardwareAccount: context.isHardwareAccount,
+          signerKind: context.signerKind,
           error: VotingSessionError(
             message: message,
             cause: error,
@@ -3627,7 +3635,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
     checkAction();
     final accountUuid = await _accountUuidForSession();
-    final isHardwareAccount = await _isHardwareAccountForSession();
+    final signerKind = await _signerKindForSession();
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
@@ -3658,7 +3666,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       sessionGeneration: _sessionGeneration,
       dbPath: dbPath,
       accountUuid: accountUuid,
-      isHardwareAccount: isHardwareAccount,
+      signerKind: signerKind,
       network: _loggedVotingNetwork(endpoint.networkName),
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
@@ -3687,16 +3695,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return accountUuid;
   }
 
-  Future<bool> _isHardwareAccountForSession() async {
-    final existing = _sessionIsHardwareAccount;
+  Future<AccountSignerKind> _signerKindForSession() async {
+    final existing = _sessionSignerKind;
     if (existing != null) return existing;
 
     final accountUuid = await _accountUuidForSession();
-    final isHardware = await ref
-        .read(votingAccountIsHardwareProvider)
+    final signerKind = await ref
+        .read(votingAccountSignerKindProvider)
         .call(accountUuid);
-    _sessionIsHardwareAccount = isHardware;
-    return isHardware;
+    _sessionSignerKind = signerKind;
+    return signerKind;
   }
 
   /// Loads the crate planner's round plan.
@@ -3818,7 +3826,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         config: context.config,
         round: context.round,
         roundPlan: context.roundPlan,
-        isHardwareAccount: context.isHardwareAccount,
+        signerKind: context.signerKind,
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
         walletChainTipHeight: readiness.chainTipHeight,
@@ -4331,7 +4339,7 @@ class _VotingSessionContext {
   final int sessionGeneration;
   final String dbPath;
   final String accountUuid;
-  final bool isHardwareAccount;
+  final AccountSignerKind signerKind;
   final String network;
   final String lightwalletdUrl;
   final rust_config.ResolvedVotingConfig config;
@@ -4343,7 +4351,7 @@ class _VotingSessionContext {
     required this.sessionGeneration,
     required this.dbPath,
     required this.accountUuid,
-    required this.isHardwareAccount,
+    required this.signerKind,
     required this.network,
     required this.lightwalletdUrl,
     required this.config,
@@ -4351,6 +4359,8 @@ class _VotingSessionContext {
     required this.roundParams,
     this.roundPlan,
   });
+
+  bool get isHardwareAccount => signerKind != AccountSignerKind.software;
 }
 
 class _StaleVotingSessionAction implements Exception {
@@ -4541,7 +4551,7 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             eligibleWeightZatoshi: bundleSetup.eligibleWeight,
             privacyTrimDroppedValueZatoshi:
                 bundleSetup.privacyTrimDroppedValueZatoshi,
-            isHardwareAccount: context.isHardwareAccount,
+            signerKind: context.signerKind,
             clearError: true,
           ),
         );

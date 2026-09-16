@@ -177,9 +177,9 @@ const _accountState = AccountState(
   activeAddress: 'u1homeaddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   initialLocation: '/home',
-  initialAccountState: _accountState,
+  initialAccountState: accountState ?? _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
@@ -233,6 +233,7 @@ Widget _app(
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex? giftCardActivityIndex,
   AppThemeData theme = AppThemeData.dark,
+  AccountState? accountState,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -337,7 +338,9 @@ Widget _app(
           (ref) =>
               () => ref.read(votingHomeCacheProvider.notifier).ensureLoaded(),
         ),
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       if (migrationCompletion != null || migrationCompletionFuture != null)
         ironwoodMigrationCompletionProvider.overrideWith(
           (ref) =>
@@ -2351,6 +2354,44 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Shield'), findsOneWidget);
+  });
+
+  testWidgets('Ledger shield action stops before the Keystone route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          transparentBalance: BigInt.from(242000000),
+          canShieldTransparentBalance: true,
+        ),
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1homeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+    );
+    await tester.pump();
+
+    expect(
+      find.text('Ledger shielding is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.text('keystone shield route'), findsNothing);
   });
 
   testWidgets('animates transparent balance tray away before removal', (

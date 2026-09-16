@@ -1637,6 +1637,49 @@ void main() {
     },
   );
 
+  testWidgets('Ledger creation stops before Keystone funding', (tester) async {
+    final hardwareSigning = FakePaymentLinkHardwareSigningService();
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      bootstrap: ledgerBootstrap,
+      hardwareSigning: hardwareSigning,
+      operations: operations,
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start typing...'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_message_editor')),
+      'For Ledger',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Confirm & review'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ledger gift card funding is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(hardwareSigning.createdAmounts, isEmpty);
+    expect(operations.createdAmounts, isEmpty);
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+  });
+
   testWidgets(
     'new cards select a valid design and keep preview and selection in sync',
     (tester) async {

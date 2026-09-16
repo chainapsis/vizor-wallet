@@ -15,6 +15,8 @@ import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../providers/account_provider.dart';
+import '../../../../providers/account_signing.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
@@ -103,6 +105,13 @@ class _MobileKeystoneShieldScreenState
   Future<void> _preparePczt() async {
     try {
       final accountUuid = activeShieldingAccountUuid(ref);
+      final backend = resolveAccountSigningBackend(
+        ref.read(accountProvider.notifier).accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.shield,
+      );
+      if (!backend.usesKeystoneProtocol) {
+        throw StateError('Keystone signing requires a Keystone account.');
+      }
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final shieldPczt = await rust_sync.createShieldTransparentPczt(

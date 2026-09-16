@@ -21,6 +21,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -724,9 +725,14 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 
     secretGuard.check();
     final accountNotifier = ref.read(accountProvider.notifier);
-    final isHardware = accountNotifier.isHardwareAccount(
-      args.proposalAccountUuid,
+    final signingBackend = resolveAccountSigningBackend(
+      accountNotifier.accountForUuidOrThrow(args.proposalAccountUuid),
+      operation: AccountSigningOperation.send,
     );
+    final isHardware = switch (signingBackend) {
+      AccountSigningBackend.software => false,
+      AccountSigningBackend.keystone => true,
+    };
 
     late final String txids;
     late final bool broadcastComplete;
@@ -735,7 +741,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     late final String? pendingStatusMessage;
     String? broadcastMessageForFallback;
 
-    if (isHardware) {
+    if (signingBackend.usesKeystoneProtocol) {
       if (keystone == null) {
         throw Exception('Missing Keystone transaction signature.');
       }

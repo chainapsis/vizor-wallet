@@ -44,6 +44,7 @@ pub(super) struct RunningDeviceApp {
 pub(super) struct LedgerTransport {
     device: HidDevice,
     operation: OperationContext,
+    model: Option<String>,
 }
 
 impl LedgerTransport {
@@ -61,11 +62,20 @@ impl LedgerTransport {
                 )
             })
             .ok_or_else(|| "No Ledger device found. Connect and unlock the Ledger.".to_string())?;
+        let model = device_info.product_string().map(str::to_owned);
         let device = device_info
             .open_device(&hid)
             .map_err(|error| classify_hid_error("Open", error))?;
         operation.check()?;
-        Ok(Self { device, operation })
+        Ok(Self {
+            device,
+            operation,
+            model,
+        })
+    }
+
+    pub(super) fn device_model(&self) -> Option<&str> {
+        self.model.as_deref()
     }
 
     pub(super) fn current_app(&self) -> Result<RunningDeviceApp, String> {

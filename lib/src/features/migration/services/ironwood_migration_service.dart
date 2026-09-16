@@ -12,6 +12,7 @@ import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -171,6 +172,8 @@ typedef IronwoodMigrationNotificationAuthorizationStatusGetter =
 typedef IronwoodMigrationNotificationSettingsOpener = Future<bool> Function();
 typedef IronwoodMigrationHardwareAccountCheck =
     bool Function(String accountUuid);
+typedef IronwoodMigrationSignerKindGetter =
+    AccountSignerKind Function(String accountUuid);
 
 enum IronwoodMigrationNotificationAuthorizationStatus {
   notDetermined,
@@ -638,6 +641,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPlatformCheck? isAndroid,
     IronwoodMigrationPlatformCheck? supportsBackgroundMigration,
     IronwoodMigrationHardwareAccountCheck? isHardwareAccount,
+    IronwoodMigrationSignerKindGetter? signerKindForAccount,
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
@@ -716,6 +720,7 @@ class IronwoodMigrationService {
                ? _defaultSupportsNativeMigrationOutbox
                : _alwaysTrue),
        isHardwareAccount = isHardwareAccount ?? _defaultIsHardwareAccount,
+       _signerKindForAccount = signerKindForAccount,
        scheduleBackgroundMigration =
            scheduleBackgroundMigration ?? _defaultScheduleBackgroundMigration,
        startBackgroundPreparation =
@@ -853,6 +858,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPlatformCheck isAndroid;
   final IronwoodMigrationPlatformCheck supportsBackgroundMigration;
   final IronwoodMigrationHardwareAccountCheck isHardwareAccount;
+  final IronwoodMigrationSignerKindGetter? _signerKindForAccount;
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
@@ -2018,6 +2024,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
+    _requireKeystoneMigrationSigner(accountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
@@ -2037,6 +2044,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
+    _requireKeystoneMigrationSigner(accountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
@@ -2056,6 +2064,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
+    _requireKeystoneMigrationSigner(accountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
@@ -2188,6 +2197,7 @@ class IronwoodMigrationService {
 
   Future<rust_sync.KeystoneMigrationSigningRequest>
   prepareKeystoneBatchPrivateMigration({required String accountUuid}) async {
+    _requireKeystoneMigrationSigner(accountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
@@ -3017,6 +3027,22 @@ class IronwoodMigrationService {
   }) {
     return getKeystoneProofStatus(requestId: requestId);
   }
+
+  void _requireKeystoneMigrationSigner(String accountUuid) {
+    final signerKindForAccount = _signerKindForAccount;
+    if (signerKindForAccount == null) {
+      throw StateError('Ironwood migration signer lookup is not configured.');
+    }
+    switch (resolveAccountSignerKind(
+      signerKindForAccount(accountUuid),
+      operation: AccountSigningOperation.ironwoodMigration,
+    )) {
+      case AccountSigningBackend.keystone:
+        return;
+      case AccountSigningBackend.software:
+        throw StateError('Active account is not a Keystone account.');
+    }
+  }
 }
 
 final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
@@ -3051,6 +3077,9 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
       }
       return false;
     },
+    signerKindForAccount: ref
+        .read(accountProvider.notifier)
+        .signerKindForAccount,
   );
 });
 

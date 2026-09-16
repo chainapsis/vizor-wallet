@@ -3840,6 +3840,29 @@ void main() {
     expect(rust.keystoneDelegationRequestCalls, [0, 0]);
   });
 
+  test('Ledger voting never prepares a Keystone signing request', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(
+      rust: rust,
+      accountSignerKind: AccountSignerKind.ledger,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareKeystoneSigning();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.signerKind, AccountSignerKind.ledger);
+    expect(state.phase, VotingSessionPhase.error);
+    expect(
+      state.error?.message,
+      'Ledger voting signing is not available in this build.',
+    );
+    expect(rust.keystoneDelegationRequestCalls, isEmpty);
+  });
+
   test(
     'hardware voting surfaces setup errors without resetting durable state',
     () async {
@@ -12393,6 +12416,7 @@ ProviderContainer _sessionContainer({
   Future<String?> Function()? activeAccountUuid,
   ProviderListenable<String?>? activeAccountUuidListenable,
   bool accountIsHardware = false,
+  AccountSignerKind? accountSignerKind,
   Set<String>? hardwareAccountUuids,
   String? accountMnemonic = kTestMnemonic,
   String accountBip39Passphrase = '',
@@ -12484,8 +12508,12 @@ ProviderContainer _sessionContainer({
         }
         return activeAccountUuid ?? () async => 'account-1';
       }),
-      votingAccountIsHardwareProvider.overrideWithValue(
-        (uuid) async => effectiveHardwareAccountUuids.contains(uuid),
+      votingAccountSignerKindProvider.overrideWithValue(
+        (uuid) async => uuid == 'account-1' && accountSignerKind != null
+            ? accountSignerKind
+            : effectiveHardwareAccountUuids.contains(uuid)
+            ? AccountSignerKind.keystone
+            : AccountSignerKind.software,
       ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(

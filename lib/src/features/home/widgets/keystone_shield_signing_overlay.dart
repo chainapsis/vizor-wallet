@@ -10,6 +10,8 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -112,6 +114,13 @@ class _KeystoneShieldSigningOverlayState
       final accountUuid = ref.read(walletProvider).value?.activeAccountUuid;
       if (accountUuid == null) {
         throw Exception('No active account.');
+      }
+      final backend = resolveAccountSigningBackend(
+        ref.read(accountProvider.notifier).accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.shield,
+      );
+      if (!backend.usesKeystoneProtocol) {
+        throw StateError('Keystone signing requires a Keystone account.');
       }
 
       final dbPath = await getWalletDbPath();

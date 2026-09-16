@@ -254,6 +254,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
+          accountUuid: accountUuid,
           isHardware: isHardware,
         );
       },
@@ -292,11 +293,13 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
   const _MobileMigrationLiveStatus({
     required this.data,
     required this.status,
+    required this.accountUuid,
     required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus status;
+  final String accountUuid;
   final bool isHardware;
 
   @override
@@ -304,6 +307,7 @@ class _MobileMigrationLiveStatus extends StatelessWidget {
     return _MobileMigrationRedesignedStatus(
       data: data,
       status: status,
+      accountUuid: accountUuid,
       isHardware: isHardware,
     );
   }

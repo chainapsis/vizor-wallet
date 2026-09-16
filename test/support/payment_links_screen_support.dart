@@ -228,6 +228,34 @@ final hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+const ledgerAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'ledger-account',
+      name: 'Ledger',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+    ),
+  ],
+  activeAccountUuid: 'ledger-account',
+  activeAddress: 'u1ledgeraddress',
+);
+
+final ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: ledgerAccountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 const twoAccountHardwareState = AccountState(
   accounts: [
     AccountInfo(

@@ -16,6 +16,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
@@ -158,10 +159,23 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     if (_cancelling || _proposalAbandoned) return;
-    final isHardware = ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
-    if (isHardware) {
+    final accountNotifier = ref.read(accountProvider.notifier);
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(_reviewArgs.proposalAccountUuid),
+        operation: AccountSigningOperation.send,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
+      showAppToast(
+        context,
+        error.userMessage,
+        iconName: AppIcons.warningCircle,
+        tone: AppToastTone.destructive,
+      );
+      return;
+    }
+    if (signingBackend.usesKeystoneProtocol) {
       _showKeystoneSigningModal();
       return;
     }
@@ -265,6 +279,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         mounted && !_proposalAbandoned && generation == _signingGeneration;
     final args = _reviewArgs;
     try {
+      final backend = resolveAccountSigningBackend(
+        ref
+            .read(accountProvider.notifier)
+            .accountForUuidOrThrow(args.proposalAccountUuid),
+        operation: AccountSigningOperation.send,
+      );
+      if (!backend.usesKeystoneProtocol) {
+        throw StateError('Keystone signing requires a Keystone account.');
+      }
       final dbPath = await getWalletDbPath();
       if (!isCurrent()) return;
       final endpoint = ref.read(rpcEndpointProvider);
@@ -541,9 +564,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isHardware = ref
+    final signerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
+        .signerKindForAccount(_reviewArgs.proposalAccountUuid);
+    final isLedger = signerKind == AccountSignerKind.ledger;
+    final isKeystone = signerKind == AccountSignerKind.keystone;
     final keystonePhase = _keystonePhase;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
@@ -617,10 +642,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
-                            : isHardware
+                            : isLedger
+                            ? 'Ledger unavailable'
+                            : isKeystone
                             ? 'Confirm with Keystone'
                             : 'Confirm donation',
-                        confirmIcon: isHardware
+                        confirmIcon: isLedger
+                            ? AppIcons.warningCircle
+                            : isKeystone
                             ? AppIcons.qr
                             : AppIcons.donation,
                         onConfirm:
@@ -649,10 +678,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
-                            : isHardware
+                            : isLedger
+                            ? 'Ledger unavailable'
+                            : isKeystone
                             ? 'Confirm with Keystone'
                             : 'Confirm & send',
-                        confirmLeadingIconName: isHardware
+                        confirmLeadingIconName: isLedger
+                            ? AppIcons.warningCircle
+                            : isKeystone
                             ? AppIcons.qr
                             : AppIcons.plane,
                         onConfirm:

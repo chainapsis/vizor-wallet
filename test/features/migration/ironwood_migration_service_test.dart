@@ -13,6 +13,8 @@ import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_signing.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -3188,6 +3190,7 @@ void main() {
         ),
       ];
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
@@ -3295,6 +3298,73 @@ void main() {
   );
 
   test(
+    'Keystone prepare APIs reject Ledger before reading wallet state',
+    () async {
+      var walletPathReads = 0;
+      final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.ledger,
+        getWalletDbPath: () async {
+          walletPathReads++;
+          return '/tmp/wallet.db';
+        },
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+      );
+      final immediatePlan = rust_sync.OrchardMigrationImmediatePlan(
+        totalInputZatoshi: BigInt.from(10_000_000),
+        feeZatoshi: BigInt.from(10_000),
+        migratedZatoshi: BigInt.from(9_990_000),
+        inputNoteCount: 2,
+      );
+      final preparations = <Future<void> Function()>[
+        () => service
+            .prepareKeystoneSingleQrPrivateMigration(
+              accountUuid: 'ledger-account',
+              approvedSchedule: const [],
+            )
+            .then((_) {}),
+        () => service
+            .prepareKeystoneDenominationPrivateMigration(
+              accountUuid: 'ledger-account',
+              approvedSchedule: const [],
+            )
+            .then((_) {}),
+        () => service
+            .prepareKeystoneImmediateMigrationRequest(
+              accountUuid: 'ledger-account',
+              approvedPlan: immediatePlan,
+            )
+            .then((_) {}),
+        () => service
+            .prepareKeystoneBatchPrivateMigration(accountUuid: 'ledger-account')
+            .then((_) {}),
+      ];
+
+      for (final prepare in preparations) {
+        await expectLater(
+          prepare,
+          throwsA(
+            isA<UnsupportedAccountSignerException>().having(
+              (error) => error.userMessage,
+              'userMessage',
+              'Ledger migration signing is not available in this build.',
+            ),
+          ),
+        );
+      }
+      expect(walletPathReads, 0);
+    },
+  );
+
+  test(
     'prepareKeystoneDenominationPrivateMigration forwards approved schedule',
     () async {
       String? seenDbPath;
@@ -3310,6 +3380,7 @@ void main() {
         ),
       ];
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
@@ -3362,6 +3433,7 @@ void main() {
     int? seenNoteCount;
     String? completedRequestId;
     final service = IronwoodMigrationService(
+      signerKindForAccount: (_) => AccountSignerKind.keystone,
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus());
@@ -3569,6 +3641,7 @@ void main() {
       String? seenAccountUuid;
       final expected = _keystoneSigningRequest();
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
@@ -4870,6 +4943,7 @@ void main() {
       var scheduledCount = 0;
       var notificationAuthorizationRequestCount = 0;
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(statuses.removeAt(0));

@@ -1,3 +1,5 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_file_cache.dart';
 import 'dart:async';
@@ -7,6 +9,8 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -25,6 +29,7 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 final _rustApi = _AccountMutationRustApiFake();
 
@@ -34,6 +39,24 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
+
+  test('signer lookup does not treat a missing account as software', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    expect(
+      () => container
+          .read(accountProvider.notifier)
+          .signerKindForAccount('missing-account'),
+      throwsStateError,
+    );
+  });
 
   test('Linux rejects account changes while another mutation waits', () async {
     FlutterSecureStorage.setMockInitialValues({});
@@ -61,6 +84,13 @@ void main() {
         () => account.removeAccount('account-2'),
         () => account.resetWallet(),
         () => account.importKeystoneAccount(
+          name: 'Unused',
+          ufvk: '',
+          seedFingerprint: [],
+          zip32Index: 0,
+          birthdayHeight: 0,
+        ),
+        () => account.importLedgerAccount(
           name: 'Unused',
           ufvk: '',
           seedFingerprint: [],
@@ -462,6 +492,119 @@ void main() {
       isFalse,
     );
   });
+
+  test(
+    'first and additional Ledger imports preserve account-scoped metadata',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-ledger-import',
+      );
+      addTearDown(() => supportDirectory.deleteSync(recursive: true));
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final notifier = container.read(accountProvider.notifier);
+
+      await notifier.importLedgerAccount(
+        name: 'Primary Ledger',
+        ufvk: 'uview1ledger0',
+        seedFingerprint: List.filled(32, 1),
+        zip32Index: 0,
+        birthdayHeight: 3000000,
+        connectionTransport: LedgerConnectionTransport.usb,
+        ledgerDeviceModel: 'Nano S Plus',
+      );
+      await notifier.importLedgerAccount(
+        name: 'Travel Ledger',
+        ufvk: 'uview1ledger7',
+        seedFingerprint: List.filled(32, 2),
+        zip32Index: 7,
+        birthdayHeight: 3000007,
+        connectionTransport: LedgerConnectionTransport.bluetooth,
+        ledgerDeviceId: 'device-7',
+        ledgerDeviceName: 'Rowan Ledger',
+        ledgerDeviceModel: 'Nano X',
+      );
+
+      final state = container.read(accountProvider).requireValue;
+      expect(_rustApi.importedHardwareKinds, ['ledger', 'ledger']);
+      expect(state.accounts, hasLength(2));
+      expect(state.accounts.first.zip32AccountIndex, 0);
+      expect(
+        state.accounts.first.ledgerLastTransport,
+        LedgerConnectionTransport.usb,
+      );
+      expect(state.accounts.last.zip32AccountIndex, 7);
+      expect(state.accounts.last.birthdayHeight, 3000007);
+      expect(state.accounts.last.ledgerDeviceId, 'device-7');
+      expect(state.accounts.last.ledgerDeviceName, 'Rowan Ledger');
+      expect(state.accounts.last.ledgerDeviceModel, 'Nano X');
+      expect(state.activeAccountUuid, 'imported-7');
+    },
+  );
+
+  test(
+    'Ledger import removes the Rust account and active UUID when account persistence fails',
+    () async {
+      FlutterSecureStoragePlatform.instance = _FailingAccountsWriteStorage();
+      addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-ledger-import-rollback',
+      );
+      addTearDown(() => supportDirectory.deleteSync(recursive: true));
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            pathProvider,
+            (_) async => supportDirectory.path,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .importLedgerAccount(
+              name: 'Ledger',
+              ufvk: 'uview1ledger',
+              seedFingerprint: List.filled(32, 1),
+              zip32Index: 0,
+              birthdayHeight: 3000000,
+            ),
+        throwsA(anything),
+      );
+
+      expect(_rustApi.deletedAccountUuids, ['imported-0']);
+      expect(container.read(accountProvider).value?.accounts, isEmpty);
+      const storage = FlutterSecureStorage();
+      expect(await storage.read(key: 'zcash_accounts'), isNull);
+      expect(await storage.read(key: 'zcash_active_account'), isNull);
+    },
+  );
 
   test(
     'wallet link import rejects cross-network links before fresh wallet import',
@@ -1220,17 +1363,54 @@ class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
   void unlockForTest() => state = state.copyWith(isUnlocked: true);
 }
 
+class _FailingAccountsWriteStorage extends TestFlutterSecureStoragePlatform {
+  _FailingAccountsWriteStorage() : super({});
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async {
+    if (key.contains('accounts')) {
+      throw PlatformException(code: 'write_failed', message: 'disk full');
+    }
+    await super.write(key: key, value: value, options: options);
+  }
+}
+
 class _AccountMutationRustApiFake implements RustLibApi {
   final deletedAccountUuids = <String>[];
+  final importedHardwareKinds = <String>[];
   final requestedAccounts = <String>[];
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
 
   void reset() {
     deletedAccountUuids.clear();
+    importedHardwareKinds.clear();
     requestedAccounts.clear();
     lookupStarted = Completer<void>();
     lookupGate = null;
+  }
+
+  @override
+  Future<rust_wallet.AccountCreationResult>
+  crateApiWalletImportHardwareAccount({
+    required String dbPath,
+    required String network,
+    required String name,
+    required String ufvkString,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    BigInt? birthdayHeight,
+    required String hardwareSignerKind,
+  }) async {
+    importedHardwareKinds.add(hardwareSignerKind);
+    return rust_wallet.AccountCreationResult(
+      accountUuid: 'imported-$zip32Index',
+      unifiedAddress: 'u1imported$zip32Index',
+    );
   }
 
   @override

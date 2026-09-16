@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -79,6 +81,13 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     required String accountUuid,
     required SwapIntent intent,
   }) async {
+    final backend = resolveAccountSigningBackend(
+      _ref.read(accountProvider.notifier).accountForUuidOrThrow(accountUuid),
+      operation: AccountSigningOperation.zecOutboundSwap,
+    );
+    if (!backend.usesKeystoneProtocol) {
+      throw StateError('Keystone signing requires a Keystone account.');
+    }
     if (intent.direction != SwapDirection.zecToExternal) {
       throw StateError('Only ZEC deposit swaps can create a deposit PCZT');
     }
