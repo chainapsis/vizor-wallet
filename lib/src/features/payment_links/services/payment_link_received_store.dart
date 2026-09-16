@@ -844,18 +844,21 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final parsedClaimLink = claimLinkRaw == null
       ? null
       : VizorPaymentLink.parse(claimLinkRaw);
-  final claimLink = parsedClaimLink?.withResolvedMetadata(
-    address: address,
-    createdAt: createdAt,
-  );
-  if (claimLink != null &&
-      (claimLink.network != network ||
-          claimLink.address != address ||
-          claimLink.amountZatoshi != amountZatoshi)) {
+  // Validate the embedded v1 address before hydration replaces it. V2 omits
+  // the address and relies on the resolved metadata stored with the record.
+  if (parsedClaimLink != null &&
+      (parsedClaimLink.network != network ||
+          (parsedClaimLink.knownAddress != null &&
+              parsedClaimLink.knownAddress != address) ||
+          parsedClaimLink.amountZatoshi != amountZatoshi)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card link metadata does not match its record.',
     );
   }
+  final claimLink = parsedClaimLink?.withResolvedMetadata(
+    address: address,
+    createdAt: createdAt,
+  );
   if (status != PaymentLinkReceivedStatus.received && claimLink == null) {
     throw const PaymentLinkReceivedStoreFormatException(
       'An unfinished received Card must retain its claim link.',

@@ -7,6 +7,67 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  for (final version in [1, 2]) {
+    for (final mismatch in [false, true]) {
+      test(
+        'v$version received link validates address before hydration: mismatch=$mismatch',
+        () async {
+          final storage = _FakePaymentLinkReceivedStorage();
+          final store = PaymentLinkReceivedStore(storage);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            priorTxids: [],
+          );
+          final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+          final row =
+              (payload['records'] as List).single as Map<String, dynamic>;
+          if (version == 1) {
+            final encoded = base64Url.encode(
+              utf8.encode(
+                jsonEncode({
+                  'v': 1,
+                  'network': link.network,
+                  'address': link.address,
+                  'amountZatoshi': link.amountZatoshi.toString(),
+                  'mnemonic': link.mnemonic,
+                  'birthdayHeight': link.birthdayHeight,
+                  'label': link.label,
+                  'createdAt': link.createdAt.toIso8601String(),
+                }),
+              ),
+            );
+            row['claimLink'] = link
+                .toUri()
+                .replace(fragment: 'v1=$encoded')
+                .toString();
+          }
+          if (mismatch) row['address'] = 'u1differentaddress';
+          storage.value = jsonEncode(payload);
+          final original = storage.value;
+          if (version == 1 && mismatch) {
+            await expectLater(
+              store.load(),
+              throwsA(isA<PaymentLinkReceivedStoreFormatException>()),
+            );
+            // A failed read must preserve the original recovery data.
+            expect(storage.value, original);
+            return;
+          }
+          final restored = (await store.load()).single;
+          expect(restored.status, PaymentLinkReceivedStatus.submitting);
+          expect(restored.claimLink!.address, row['address']);
+          expect(restored.claimLink!.createdAt, link.createdAt);
+          expect(restored.claimLink!.mnemonic, link.mnemonic);
+          expect(restored.destinationAccountUuid, 'receiver');
+          expect(await store.countReceivingForAccount('receiver'), 1);
+        },
+      );
+    }
+  }
+
   for (final status in PaymentLinkReceivedStatus.values) {
     for (final explicitNull in [false, true]) {
       test(
