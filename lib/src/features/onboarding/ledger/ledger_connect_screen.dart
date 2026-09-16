@@ -68,12 +68,17 @@ class LedgerOnboardingShell extends ConsumerWidget {
               active: step == activeStep,
             ),
         ],
-        illustration: Center(
-          child: AppIcon(
-            AppIcons.ledgerBrand,
-            size: 88,
-            color: context.colors.icon.muted,
-            semanticLabel: 'Ledger',
+        illustration: IgnorePointer(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Image.asset(
+              'assets/illustrations/onboarding_ledger_sidebar.png',
+              width: 256,
+              height: 430,
+              fit: BoxFit.contain,
+              alignment: Alignment.bottomCenter,
+              excludeFromSemantics: true,
+            ),
           ),
         ),
       ),
