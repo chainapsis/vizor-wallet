@@ -42,6 +42,26 @@ void main() {
     },
   );
 
+  test(
+    'readiness probes wait for the preceding signing status screen',
+    () async {
+      var now = DateTime(2026);
+      final delays = <Duration>[];
+      final gate = LedgerMobileSigningStatusGate(
+        now: () => now,
+        delay: (duration) async {
+          delays.add(duration);
+          now = now.add(duration);
+        },
+      );
+      await gate.run(() async {});
+      await gate.waitUntilReady();
+      expect(delays, [kLedgerMobileSigningStatusCooldown]);
+      await gate.run(() async {});
+      expect(delays, hasLength(1));
+    },
+  );
+
   test('mobile signing gate keeps cooldown after a failed stream', () async {
     var now = DateTime.utc(2026, 8, 28);
     final delays = <Duration>[];

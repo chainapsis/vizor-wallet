@@ -79,6 +79,7 @@ pub fn ledger_open_zcash_app() -> Result<LedgerDeviceApp, String> {
 }
 
 /// Cancel the Ledger operation currently waiting for device interaction.
+#[flutter_rust_bridge::frb(sync)]
 pub fn ledger_cancel_operation() {
     ledger::cancel_operation();
 }

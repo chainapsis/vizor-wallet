@@ -34,6 +34,7 @@
 		8A0F5C572F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C562F8B001200A1C001 /* IronwoodMasqueradeAppIcon.icon */; };
 		86D631C82662CFADA25E93A1 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34FFD12E0E0D09282CBC1131 /* Pods_Runner.framework */; };
 		CB9BE22086B38194355E9C44 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CD78EC47695D0CDAA4C59781 /* Sparkle */; };
+		LEDGERMAC010000000000003 /* LedgerMobileHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERMAC000000000000003 /* LedgerMobileHandlerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -96,6 +97,7 @@
 		A99D1F13B43F868A52AD08B9 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE859360348D2C1D6E8BE647 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		CD4D2BC101D79448151F3868 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		LEDGERMAC000000000000003 /* LedgerMobileHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerMobileHandlerTests.swift; path = ../../ios/RunnerTests/LedgerMobileHandlerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				331C80D7294CF71000263BE5 /* RunnerTests.swift */,
+				LEDGERMAC000000000000003 /* LedgerMobileHandlerTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -452,6 +455,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */,
+				LEDGERMAC010000000000003 /* LedgerMobileHandlerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

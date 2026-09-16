@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -18,6 +19,46 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  test(
+    'invalid pairing retains recovery metadata across the native channel',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'pairing_invalid',
+              message: 'Native description',
+            );
+          });
+      await expectLater(
+        service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Flex'),
+        ),
+        throwsA(
+          isA<LedgerMobileException>()
+              .having(
+                (e) => e.failure,
+                'failure',
+                LedgerMobileFailure.pairingInvalid,
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                kLedgerPairingInvalidMessage,
+              ),
+        ),
+      );
+      expect(
+        ledgerPairingNeedsReset(
+          const LedgerMobileException(
+            LedgerMobileFailure.pairingRejected,
+            'Rejected',
+          ),
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('maps native permission failure to a typed error', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -316,4 +357,128 @@ void main() {
       ),
     );
   });
+  {
+    for (final cancellation in ['cancelSigning', 'disconnect']) {
+      test('$cancellation stops pending UFVK retries', () async {
+        final waiting = Completer<void>();
+        final resume = Completer<void>();
+        final calls = <String>[];
+        service = MethodChannelLedgerMobileBleService(
+          reviewBusyDelay: (_) {
+            waiting.complete();
+            return resume.future;
+          },
+        );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call.method);
+              if (call.method == cancellation) return null;
+              return <List<int>>[
+                <int>[0x69, 0x01],
+              ];
+            });
+
+        final pending = service.exchangeUfvk(_ufvkPlan());
+        final cancelled = expectLater(pending, throwsA(_cancelledFailure));
+        await waiting.future;
+        if (cancellation == 'disconnect') {
+          await service.disconnect();
+        } else {
+          await service.cancelSigning();
+        }
+        resume.complete();
+        await cancelled;
+        expect(calls, ['exchangeUfvk', cancellation]);
+      });
+    }
+
+    test(
+      'ignores late UFVK results without cancelling a new request',
+      () async {
+        final started = Completer<void>();
+        final lateResponse = Completer<List<List<int>>>();
+        var requests = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == 'cancelSigning') return null;
+              if (++requests == 1) {
+                started.complete();
+                return lateResponse.future;
+              }
+              return <List<int>>[
+                <int>[0x90, 0],
+              ];
+            });
+        final pending = service.exchangeUfvk(_ufvkPlan());
+        final cancelled = expectLater(pending, throwsA(_cancelledFailure));
+        await started.future;
+        await service.cancelSigning();
+        final fresh = await service.exchangeUfvk(_ufvkPlan());
+        expect(fresh.single, [0x90, 0]);
+        lateResponse.complete([
+          [0x90, 0],
+        ]);
+        await cancelled;
+        expect(requests, 2);
+      },
+    );
+  }
+  {
+    for (final cancellation in ['cancelSigning', 'disconnect']) {
+      test('$cancellation stops pending signing retries', () async {
+        final waiting = Completer<void>();
+        final resume = Completer<void>();
+        final calls = <String>[];
+        service = MethodChannelLedgerMobileBleService(
+          reviewBusyDelay: (_) {
+            waiting.complete();
+            return resume.future;
+          },
+        );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call.method);
+              if (call.method == cancellation) return null;
+              return <List<int>>[
+                <int>[0x69, 0x01],
+              ];
+            });
+
+        final pending = service.exchangeApdus([_ufvkPlan().first]);
+        final cancelled = expectLater(pending, throwsA(_cancelledFailure));
+        await waiting.future;
+        if (cancellation == 'disconnect') {
+          await service.disconnect();
+        } else {
+          await service.cancelSigning();
+        }
+        resume.complete();
+        await cancelled;
+        expect(calls, ['exchangeApdus', cancellation]);
+      });
+    }
+  }
 }
+
+final _cancelledFailure = isA<LedgerMobileException>().having(
+  (error) => error.failure,
+  'failure',
+  LedgerMobileFailure.cancelled,
+);
+
+LedgerUfvkApduPlan _ufvkPlan() => LedgerUfvkApduPlan(
+  first: LedgerApduCommand(
+    cla: 0xe0,
+    ins: 0x50,
+    p1: 0,
+    p2: 0,
+    data: Uint8List(4),
+  ),
+  continuation: LedgerApduCommand(
+    cla: 0xe0,
+    ins: 0x50,
+    p1: 0x80,
+    p2: 0,
+    data: Uint8List(0),
+  ),
+);

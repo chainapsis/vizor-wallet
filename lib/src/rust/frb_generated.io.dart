@@ -523,6 +523,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LedgerPcztApduPlan dco_decode_ledger_pczt_apdu_plan(dynamic raw);
 
   @protected
+  LedgerShieldingProgress dco_decode_ledger_shielding_progress(dynamic raw);
+
+  @protected
   LedgerSignedOperation dco_decode_ledger_signed_operation(dynamic raw);
 
   @protected
@@ -1902,6 +1905,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LedgerPcztApduPlan sse_decode_ledger_pczt_apdu_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerShieldingProgress sse_decode_ledger_shielding_progress(
     SseDeserializer deserializer,
   );
 
@@ -3624,6 +3632,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ledger_pczt_apdu_plan(
     LedgerPcztApduPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_shielding_progress(
+    LedgerShieldingProgress self,
     SseSerializer serializer,
   );
 

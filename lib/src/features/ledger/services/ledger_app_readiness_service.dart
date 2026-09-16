@@ -223,6 +223,7 @@ class LedgerAppReadinessService {
     if (error is LedgerAppReadinessException) return error;
     if (error is LedgerMobileException) {
       final failure = switch (error.failure) {
+        LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.pairingRejected ||
         LedgerMobileFailure.disconnected =>
           LedgerAppReadinessFailure.disconnected,

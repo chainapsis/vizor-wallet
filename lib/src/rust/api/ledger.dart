@@ -17,7 +17,7 @@ Future<LedgerDeviceApp> ledgerOpenZcashApp() =>
     RustLib.instance.api.crateApiLedgerLedgerOpenZcashApp();
 
 /// Cancel the Ledger operation currently waiting for device interaction.
-Future<void> ledgerCancelOperation() =>
+void ledgerCancelOperation() =>
     RustLib.instance.api.crateApiLedgerLedgerCancelOperation();
 
 /// Reject a PCZT shape that the currently supported Ledger Zcash app cannot

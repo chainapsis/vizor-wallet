@@ -666,7 +666,6 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     }
 
     let operation = lock_operation()?;
-    wait_for_signing_status(operation.context())?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
@@ -727,7 +726,6 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let operation = lock_operation()?;
-    wait_for_signing_status(operation.context())?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     transport.send_pczt(&commands)?;
@@ -865,13 +863,16 @@ fn lock_operation() -> Result<OperationGuard, String> {
         .lock()
         .map_err(|_| "Ledger operation lock was poisoned".to_string())?;
     let generation = LEDGER_OPERATION_STATE.begin();
-    Ok(OperationGuard {
+    let guard = OperationGuard {
         _lock: lock,
         context: OperationContext {
             generation,
             deadline: Instant::now() + LEDGER_OPERATION_TIMEOUT,
         },
-    })
+    };
+    #[cfg(target_os = "macos")]
+    wait_for_signing_status(guard.context())?;
+    Ok(guard)
 }
 
 #[cfg(target_os = "macos")]

@@ -1015,6 +1015,80 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
+/// Local-only progress for a Ledger shielding session. Errors remain errors:
+/// discovery/DB/proposal failures must never be interpreted as completion.
+#[derive(Debug)]
+pub(crate) struct LedgerShieldingProgress {
+    pub input_count: u32,
+    pub input_limit: u32,
+    pub below_threshold: bool,
+}
+
+pub(crate) fn get_ledger_shielding_progress(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<LedgerShieldingProgress, String> {
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let id = parse_account_uuid(account_uuid)?;
+    if !sync_engine::ledger_discovery::is_ready(db_path, id)? {
+        return Err("Ledger transparent recovery is incomplete".into());
+    }
+    ledger_shielding_progress(&mut db, network, id)
+}
+
+fn ledger_shielding_progress(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    id: AccountUuid,
+) -> Result<LedgerShieldingProgress, String> {
+    let account = db
+        .get_account(id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Account not found")?;
+    if crate::wallet::keys::hardware_signer_kind(account.source())
+        != Some(crate::wallet::keys::HardwareSignerKind::Ledger)
+    {
+        return Err("Shielding rounds require a Ledger account".into());
+    }
+    let tip = db
+        .chain_height()
+        .map_err(|e| e.to_string())?
+        .ok_or("Wallet must sync before shielding")?;
+    let balances = db
+        .get_transparent_balances(id, (tip + 1).into(), ConfirmationsPolicy::MIN)
+        .map_err(|e| e.to_string())?;
+    let mut progress = LedgerShieldingProgress {
+        input_count: 0,
+        input_limit: crate::wallet::ledger::MAX_SHIELDING_INPUTS as u32,
+        below_threshold: false,
+    };
+    if !balances
+        .values()
+        .any(|(_, balance)| balance.spendable_value() > Zatoshis::ZERO)
+    {
+        return Ok(progress);
+    }
+    let (addresses, _) = select_shielding_sources(balances, Zatoshis::ZERO)?;
+    let outputs = ledger_shielding_outputs(db, &addresses)?;
+    progress.input_count =
+        u32::try_from(outputs.len()).map_err(|_| "Too many transparent inputs")?;
+    if outputs.is_empty() {
+        return Ok(progress);
+    }
+    let round_value = outputs
+        .iter()
+        .take(crate::wallet::ledger::MAX_SHIELDING_INPUTS)
+        .try_fold(Zatoshis::ZERO, |sum, output| sum + output.txout().value())
+        .ok_or("Ledger shielding value overflow")?;
+    progress.below_threshold = round_value < shielding_threshold()?;
+    if !progress.below_threshold {
+        // Use the real planner to detect fee, anchor and policy failures.
+        build_shielding_proposal(db, network, id, shielding_threshold()?)?;
+    }
+    Ok(progress)
+}
+
 /// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 pub(crate) async fn create_shield_transparent_pczt(
     db_path: &str,
@@ -3329,17 +3403,13 @@ fn build_shielding_proposal(
     Ok((proposal, selected_value))
 }
 
-/// Bound each Ledger approval to the serializer's supported input count. Remaining
-/// UTXOs stay spendable for the next Shield action; signed-operation recovery is unchanged.
-fn build_ledger_shielding_round(
+/// Shared selection policy for progress and transaction creation.
+fn ledger_shielding_outputs(
     db: &WalletDatabase,
-    network: WalletNetwork,
-    account: AccountUuid,
-    threshold: Zatoshis,
     addresses: &[TransparentAddress],
-) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
+) -> Result<Vec<WalletTransparentOutput<AccountUuid>>, String> {
     let confirmations = ConfirmationsPolicy::MIN;
-    let (target, anchor) = db
+    let (target, _) = db
         .get_target_and_anchor_heights(confirmations.trusted())
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
@@ -3364,6 +3434,24 @@ fn build_ledger_shielding_round(
             .then_with(|| a.outpoint().n().cmp(&b.outpoint().n()))
     });
     outputs.dedup_by(|a, b| a.outpoint() == b.outpoint());
+    Ok(outputs)
+}
+
+/// Bound each Ledger approval to the serializer's supported input count. Remaining
+/// UTXOs stay spendable for the next Shield action; signed-operation recovery is unchanged.
+fn build_ledger_shielding_round(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+    threshold: Zatoshis,
+    addresses: &[TransparentAddress],
+) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
+    let confirmations = ConfirmationsPolicy::MIN;
+    let (target, anchor) = db
+        .get_target_and_anchor_heights(confirmations.trusted())
+        .map_err(|e| e.to_string())?
+        .ok_or("Wallet must sync before shielding")?;
+    let mut outputs = ledger_shielding_outputs(db, addresses)?;
     outputs.truncate(crate::wallet::ledger::MAX_SHIELDING_INPUTS);
     let selected = outputs
         .iter()

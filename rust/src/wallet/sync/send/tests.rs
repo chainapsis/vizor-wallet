@@ -3389,6 +3389,11 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
             .unwrap()
             .contains("incomplete")
     );
+    assert!(get_ledger_shielding_progress(path, network, &uuid).unwrap_err().contains("incomplete"));
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_limit, 10);
+    assert_eq!(progress.input_count, 23);
+    assert!(!progress.below_threshold);
     let (proposal, selected) =
         build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
     assert_eq!(proposal.steps().head.transparent_inputs().len(), 10);
@@ -3427,6 +3432,8 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     for input in proposal.steps().head.transparent_inputs() {
         conn.execute("DELETE FROM transparent_received_outputs WHERE transaction_id IN (SELECT id_tx FROM transactions WHERE txid=?1) AND output_index=?2",params![input.outpoint().hash().as_slice(),input.outpoint().n()]).unwrap();
     }
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_count, 13);
     let (next, _) =
         build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
     assert_eq!(next.steps().head.transparent_inputs().len(), 10);
@@ -3443,4 +3450,18 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         .transparent_inputs()
         .iter()
         .all(|u| !first.contains(u.outpoint())));
+    conn.execute("DELETE FROM transparent_received_outputs", []).unwrap();
+    assert_eq!(ledger_shielding_progress(&mut db, network, id).unwrap().input_count, 0);
+    let dust_address = external.derive_address(NonHardenedChildIndex::ZERO).unwrap();
+    let dust = WalletTransparentOutput::from_parts(
+        OutPoint::new([240; 32], 0),
+        // Above the spendable-output fee floor, below the shielding threshold.
+        TxOut::new(Zatoshis::const_from_u64(50_000), dust_address.script().into()),
+        Some(tip), None, None, None,
+    ).unwrap();
+    db.put_received_transparent_utxo(&dust).unwrap();
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_count, 1);
+    assert!(progress.below_threshold);
+
 }

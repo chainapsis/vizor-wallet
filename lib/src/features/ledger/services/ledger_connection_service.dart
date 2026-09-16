@@ -7,6 +7,7 @@ import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_mobile_ble_service.dart';
+import 'ledger_signing_status_gate.dart';
 
 class LedgerConnectionRequiredException implements Exception {
   const LedgerConnectionRequiredException(this.message);
@@ -65,7 +66,9 @@ class LedgerConnectionService {
         // Only connection preparation may fall back; never replay an operation.
         if (operationStarted) rethrow;
         if (!_isConnectionFailure(error)) rethrow;
-        lastConnectionError = error;
+        if (!ledgerPairingNeedsReset(lastConnectionError)) {
+          lastConnectionError = error;
+        }
       }
     }
 
@@ -118,6 +121,7 @@ class LedgerConnectionService {
     AccountInfo account,
     Future<T> Function(LedgerMobileBleService mobile) operation,
   ) async {
+    await _ref.read(ledgerMobileSigningStatusGateProvider).waitUntilReady();
     final deviceId = account.ledgerDeviceId;
     if (deviceId == null) {
       throw const LedgerConnectionRequiredException(
@@ -189,6 +193,7 @@ class LedgerConnectionService {
         LedgerMobileFailure.bluetoothOff ||
         LedgerMobileFailure.permissionDenied ||
         LedgerMobileFailure.pairingRejected ||
+        LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.unavailable => true,
         LedgerMobileFailure.locked ||
         LedgerMobileFailure.rejected ||
@@ -206,6 +211,7 @@ class LedgerConnectionService {
   }
 
   static String _connectionFailureMessage(AccountInfo account, Object? error) {
+    if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
     final suffix = error == null ? '' : ' ${error.toString()}';
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb =>

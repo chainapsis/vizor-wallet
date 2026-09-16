@@ -86,7 +86,8 @@ pub use send::{
     IronwoodMigrationResult,
 };
 pub(crate) use send::{
-    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
+    create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
+    shield_transparent_balance,
 };
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
