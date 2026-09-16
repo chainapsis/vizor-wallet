@@ -4110,7 +4110,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -8289,9 +8289,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "5.0.0"
+version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aff09c9265ea8faf9aa3893b867d399d439dc0591fa87b1e30151096a397886"
+checksum = "d7328ebd71373556a182557b9f2c6bbd4e1f27f7726dec506c98191288dc5fdd"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
