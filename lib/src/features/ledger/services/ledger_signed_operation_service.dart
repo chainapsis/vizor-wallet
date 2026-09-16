@@ -17,6 +17,7 @@ enum LedgerSignedOperationKind {
   send('send'),
   swapDeposit('swap_deposit'),
   payDeposit('pay_deposit'),
+  giftCard('gift_card'),
   shield('shield');
 
   const LedgerSignedOperationKind(this.wireName);

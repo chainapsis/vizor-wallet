@@ -46,6 +46,7 @@ enum OperationKind {
     Send,
     SwapDeposit,
     PayDeposit,
+    GiftCard,
     Shield,
 }
 
@@ -55,15 +56,16 @@ impl OperationKind {
             "send" => Ok(Self::Send),
             "swap_deposit" => Ok(Self::SwapDeposit),
             "pay_deposit" => Ok(Self::PayDeposit),
+            "gift_card" => Ok(Self::GiftCard),
             "shield" => Ok(Self::Shield),
             _ => Err(
-                "Ledger operation kind must be send, swap_deposit, pay_deposit, or shield".into(),
+                "Ledger operation kind must be send, swap_deposit, pay_deposit, gift_card, or shield".into(),
             ),
         }
     }
 
     fn requires_ack(self) -> bool {
-        matches!(self, Self::SwapDeposit | Self::PayDeposit)
+        matches!(self, Self::SwapDeposit | Self::PayDeposit | Self::GiftCard)
     }
 }
 
@@ -573,13 +575,13 @@ fn read_batch_u32(encoded: &[u8], offset: &mut usize) -> Result<u32, String> {
     Ok(value)
 }
 
-fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
-    conn.execute_batch(&format!(
-        "CREATE TABLE IF NOT EXISTS {TABLE} (
+fn create_table_sql(table: &str) -> String {
+    format!(
+        "CREATE TABLE IF NOT EXISTS {table} (
             network TEXT NOT NULL,
             operation_id TEXT NOT NULL,
             account_uuid TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK(kind IN ('send', 'swap_deposit', 'pay_deposit', 'shield')),
+            kind TEXT NOT NULL CHECK(kind IN ('send', 'swap_deposit', 'pay_deposit', 'shield', 'gift_card')),
             external_ref TEXT,
             proof_pczt BLOB NOT NULL,
             signature_pczt BLOB NOT NULL,
@@ -591,11 +593,41 @@ fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
             created_at_ms INTEGER NOT NULL,
             updated_at_ms INTEGER NOT NULL,
             PRIMARY KEY (network, operation_id)
-        );
-        CREATE INDEX IF NOT EXISTS vizor_ledger_signed_operations_account
-            ON {TABLE}(network, account_uuid, created_at_ms);"
+        );"
+    )
+}
+
+fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(&create_table_sql(TABLE))
+        .map_err(|e| format!("Initialize Ledger signed-operation outbox: {e}"))?;
+    let schema: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [TABLE],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read Ledger outbox schema: {e}"))?;
+    if !schema.contains("'gift_card'") {
+        // SQLite cannot extend a CHECK constraint in place. Preserve every
+        // pending signed payload and result while widening the kind enum.
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin Ledger outbox migration: {e}"))?;
+        tx.execute_batch(&format!(
+            "{} INSERT INTO vizor_ledger_operations_upgrade SELECT * FROM {TABLE};
+             DROP TABLE {TABLE};
+             ALTER TABLE vizor_ledger_operations_upgrade RENAME TO {TABLE};",
+            create_table_sql("vizor_ledger_operations_upgrade"),
+        ))
+        .map_err(|e| format!("Migrate Ledger outbox kinds: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Commit Ledger outbox migration: {e}"))?;
+    }
+    conn.execute_batch(&format!(
+        "CREATE INDEX IF NOT EXISTS vizor_ledger_signed_operations_account
+         ON {TABLE}(network, account_uuid, created_at_ms);"
     ))
-    .map_err(|e| format!("Initialize Ledger signed-operation outbox: {e}"))
+    .map_err(|e| format!("Index Ledger signed-operation outbox: {e}"))
 }
 
 fn load_metadata(
@@ -649,14 +681,11 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
 
 fn validate_external_ref(kind: OperationKind, external_ref: Option<&str>) -> Result<(), String> {
     match kind {
-        OperationKind::SwapDeposit | OperationKind::PayDeposit => {
+        OperationKind::SwapDeposit | OperationKind::PayDeposit | OperationKind::GiftCard => {
             if external_ref.is_some_and(|value| !value.trim().is_empty()) {
                 Ok(())
             } else {
-                Err(
-                    "Ledger swap_deposit and pay_deposit operations require an external reference"
-                        .into(),
-                )
+                Err("Ledger deposit and gift_card operations require an external reference".into())
             }
         }
         OperationKind::Send | OperationKind::Shield => {
@@ -798,7 +827,8 @@ mod tests {
         kind: &str,
     ) -> SignedOperationMetadata {
         let (proof, signature, _) = signed_pczt(1_234_500);
-        let external_ref = matches!(kind, "swap_deposit" | "pay_deposit").then_some("external-1");
+        let external_ref =
+            matches!(kind, "swap_deposit" | "pay_deposit" | "gift_card").then_some("external-1");
         checkpoint(
             db_path,
             WalletNetwork::Main,
@@ -992,6 +1022,48 @@ mod tests {
         drop(first);
 
         BroadcastGuard::acquire("wallet.db", WalletNetwork::Main, "op-1").unwrap();
+    }
+
+    #[test]
+    fn old_outbox_migrates_without_losing_pending_payloads() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(&create_table_sql(TABLE).replace(", 'gift_card'", ""))
+            .unwrap();
+        conn.execute_batch(&format!("INSERT INTO {TABLE} VALUES ('main', 'op', 'account', 'swap_deposit', 'external', X'010203', X'040506', 4000000, 'result_pending_ack', 'txid', 'broadcasted', NULL, 1, 2);")).unwrap();
+        ensure_table(&conn).unwrap();
+        ensure_table(&conn).unwrap();
+        let payloads: (Vec<u8>, Vec<u8>, String) = conn.query_row(
+            &format!("SELECT proof_pczt, signature_pczt, txid FROM {TABLE} WHERE operation_id = 'op'"), [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(payloads, (vec![1, 2, 3], vec![4, 5, 6], "txid".into()));
+        conn.execute(&format!("UPDATE {TABLE} SET kind = 'gift_card'"), [])
+            .unwrap();
+    }
+
+    #[test]
+    fn gift_card_requires_reference_and_acknowledgement() {
+        assert!(validate_external_ref(OperationKind::GiftCard, None).is_err());
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "gift-1", "gift_card");
+        let result = apply_broadcast_outcome(
+            db_path,
+            WalletNetwork::Main,
+            "gift-1",
+            OperationKind::GiftCard,
+            "gift-txid",
+            "broadcasted",
+            None,
+        )
+        .unwrap();
+        assert!(result.requires_ack);
+        assert_eq!(
+            list(db_path, WalletNetwork::Main, None).unwrap()[0].state,
+            STATE_RESULT_PENDING_ACK
+        );
+        acknowledge(db_path, WalletNetwork::Main, "gift-1").unwrap();
+        assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
 
     #[test]

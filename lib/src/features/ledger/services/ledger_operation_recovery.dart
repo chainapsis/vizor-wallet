@@ -11,6 +11,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_hardware_broadcast_result.dart';
+import '../../payment_links/services/payment_link_ledger_funding_service.dart';
 import '../../swap/models/swap_models.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
@@ -190,6 +191,10 @@ class LedgerOperationRecoveryCoordinator {
 
         if (result == null) continue;
         switch (operation.kind) {
+          case LedgerSignedOperationKind.giftCard:
+            await _ref
+                .read(paymentLinkLedgerFundingServiceProvider)
+                .complete(operation, result);
           case LedgerSignedOperationKind.swapDeposit:
           case LedgerSignedOperationKind.payDeposit:
             await _ref.read(ledgerDepositRecoveryProvider)(

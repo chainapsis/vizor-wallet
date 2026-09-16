@@ -108,7 +108,10 @@ void main() {
       for (final kind in LedgerSignedOperationKind.values) {
         await service.broadcast(operationId: kind.wireName);
       }
-      expect(api.urls, List.filled(4, fallback));
+      expect(
+        api.urls,
+        List.filled(LedgerSignedOperationKind.values.length, fallback),
+      );
       expect(
         c.read(votingRpcEndpointConfigProvider).normalizedLightwalletdUrl,
         fallback,

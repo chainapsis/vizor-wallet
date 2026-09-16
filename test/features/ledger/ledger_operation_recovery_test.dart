@@ -13,7 +13,49 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import '../../support/ledger_gift_card_support.dart';
+
 void main() {
+  test(
+    'startup recovery funds a saved Ledger Gift Card and retains checkpoint on storage failure',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', draft.link.address),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: draft.link.address,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      final container = _container(
+        operationService: h.operations,
+        sync: _RecoverySyncNotifier(),
+        giftFunding: h.service,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      h.storage.failWrites = true;
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      await coordinator.recover();
+      expect(h.operations.acks, 0);
+      expect(h.operations.broadcasts, 1);
+      h.storage.failWrites = false;
+      await coordinator.recover();
+      expect(h.operations.acks, 1);
+      expect(h.operations.broadcasts, 1);
+      expect(
+        (await h.recovery.load()).single.state,
+        PaymentLinkRecoveryState.funded,
+      );
+    },
+  );
+
   test(
     'destructive drain includes deposit persistence and acknowledgement',
     () async {
@@ -277,9 +319,10 @@ void main() {
 }
 
 ProviderContainer _container({
-  required _FakeLedgerSignedOperationService operationService,
+  required LedgerSignedOperationService operationService,
   required _RecoverySyncNotifier sync,
   List<String>? recoveredDeposits,
+  PaymentLinkLedgerFundingService? giftFunding,
   LedgerDepositRecovery? depositRecovery,
   LedgerStandaloneResultRecovery? standaloneRecovery,
 }) {
@@ -295,6 +338,8 @@ ProviderContainer _container({
               recoveredDeposits?.add('${operation.externalRef}:${result.txid}');
             },
       ),
+      if (giftFunding != null)
+        paymentLinkLedgerFundingServiceProvider.overrideWithValue(giftFunding),
       if (standaloneRecovery != null)
         ledgerStandaloneResultRecoveryProvider.overrideWithValue(
           standaloneRecovery,
