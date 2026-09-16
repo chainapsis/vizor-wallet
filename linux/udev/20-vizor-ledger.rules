@@ -1,0 +1,3 @@
+# Grant the active local session access to Ledger's USB HID interfaces.
+# Keep this before 73-seat-late.rules, which applies the uaccess ACL.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2c97", TAG+="uaccess"
