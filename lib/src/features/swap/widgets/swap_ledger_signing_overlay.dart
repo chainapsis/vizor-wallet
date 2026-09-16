@@ -346,23 +346,6 @@ class _SwapLedgerSigningOverlayState
       );
     }
     _pendingBroadcastResult = result;
-    final draft = _draft;
-    _draft = null;
-    if (draft != null) {
-      try {
-        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-          draft: draft,
-          status: result.status,
-        );
-      } catch (error, stackTrace) {
-        // The durable outbox result is authoritative after broadcast. Proposal
-        // cleanup must not turn a sent transaction back into a signing error.
-        log(
-          'SwapLedgerSigning: post-broadcast draft settlement failed: '
-          '$error\n$stackTrace',
-        );
-      }
-    }
     try {
       await ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (e) {
@@ -373,12 +356,20 @@ class _SwapLedgerSigningOverlayState
 
   Future<void> _completeProviderCheckpoint(
     LedgerSignedOperationBroadcastResult result,
-  ) async {
+  ) => _lifecycle.run(() async {
     if (mounted) {
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
       });
+    }
+    final draft = _draft;
+    if (draft != null) {
+      await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+        draft: draft,
+        status: result.status,
+      );
+      _draft = null;
     }
     await _completionService.complete(widget.intent, result);
     _pendingBroadcastResult = null;
@@ -395,7 +386,7 @@ class _SwapLedgerSigningOverlayState
       // A navigation/toast failure must not repeat a durably completed deposit.
       log('SwapLedgerSigning: result presentation failed: $error');
     }
-  }
+  });
 
   bool _hasBroadcastTxid(LedgerSignedOperationBroadcastResult result) {
     return switch (result.status) {
@@ -484,10 +475,30 @@ class _SwapLedgerSigningOverlayState
     _draft = null;
     if (draft == null) return;
     if (_operationCheckpointed) {
-      await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-        draft: draft,
-        status: null,
-      );
+      try {
+        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+          draft: draft,
+          status: _pendingBroadcastResult?.status,
+        );
+      } catch (error, stackTrace) {
+        log(
+          'SwapLedgerSigning: checkpointed draft cleanup failed: '
+          '$error\n$stackTrace',
+        );
+        if (_pendingBroadcastResult != null) {
+          try {
+            await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+              draft: draft,
+              status: null,
+            );
+          } catch (fallbackError, fallbackStackTrace) {
+            log(
+              'SwapLedgerSigning: retaining checkpointed draft failed: '
+              '$fallbackError\n$fallbackStackTrace',
+            );
+          }
+        }
+      }
       return;
     }
     await _signingService?.discardPcztDraft(draft: draft);

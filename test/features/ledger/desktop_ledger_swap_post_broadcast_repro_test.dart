@@ -104,8 +104,7 @@ void main() {
   }
 
   testWidgets(
-    'desktop Ledger keeps completing after post-broadcast draft settlement '
-    'fails',
+    'desktop Ledger retries post-broadcast draft settlement before completion',
     (tester) async {
       final operations = _StatefulOperationService();
       final signing = _HardwareSigningService(
@@ -129,17 +128,33 @@ void main() {
       );
 
       await pump();
-      await _pumpUntil(tester, () => completionCalls == 1);
+      await _pumpUntil(
+        tester,
+        () => find.text('Retry saving').evaluate().isNotEmpty,
+      );
 
       expect(operations.broadcastCalls, 1);
       expect(operations.acceptedSubmissions, 1);
       expect(signing.settleCalls, 1);
       expect(signerCalls, 1);
       expect(operations.checkpointCalls, 1);
+      expect(persistenceCalls, 0);
+      expect(operations.acknowledgeCalls, 0);
+      expect(operations.state, 'result_pending_ack');
+      expect(find.text('Transaction sent'), findsOneWidget);
+      expect(find.text('Ledger signing failed'), findsNothing);
+
+      await tester.tap(find.text('Retry saving'));
+      await _pumpUntil(tester, () => completionCalls == 1);
+
+      expect(signing.settleCalls, 2);
+      expect(signerCalls, 1);
+      expect(operations.checkpointCalls, 1);
+      expect(operations.broadcastCalls, 1);
+      expect(operations.acceptedSubmissions, 1);
       expect(persistenceCalls, 1);
       expect(operations.acknowledgeCalls, 1);
       expect(operations.state, 'completed');
-      expect(find.text('Ledger signing failed'), findsNothing);
     },
   );
 
