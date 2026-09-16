@@ -94,6 +94,10 @@ abstract interface class LedgerMobileBleService {
 
   Future<List<Uint8List>> exchangeUfvk(rust_ledger.LedgerUfvkApduPlan plan);
 
+  Future<List<Uint8List>> exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands,
+  );
+
   Future<void> cancelSigning();
 }
 
@@ -216,6 +220,58 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
         await _reviewBusyDelay(_reviewBusyRetryDelay);
       }
       throw StateError('the bounded Ledger review retry loop always returns');
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  @override
+  Future<List<Uint8List>> exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands,
+  ) async {
+    final generation = _operationGeneration;
+    try {
+      if (commands.isEmpty) {
+        return await _invokeApduResponses('exchangeApdus', const {
+          'commands': <Object>[],
+        });
+      }
+
+      final completed = <Uint8List>[];
+      var pending = commands;
+      var reviewBusyAttempts = 0;
+      while (pending.isNotEmpty) {
+        _checkOperationActive(generation);
+        final responses = await _invokeApduResponses('exchangeApdus', {
+          'commands': pending.map(_encodeCommand).toList(growable: false),
+        });
+        _checkOperationActive(generation);
+        if (responses.isEmpty) return completed;
+
+        var retryIndex = -1;
+        for (var index = 0; index < responses.length; index++) {
+          final response = responses[index];
+          if (_hasStatus(response, _reviewBusyStatus)) {
+            reviewBusyAttempts++;
+            if (reviewBusyAttempts == _reviewBusyMaxAttempts ||
+                index >= pending.length) {
+              completed.add(response);
+              return completed;
+            }
+            retryIndex = index;
+            break;
+          }
+
+          completed.add(response);
+          reviewBusyAttempts = 0;
+          if (!_hasStatus(response, 0x9000)) return completed;
+        }
+
+        if (retryIndex < 0) return completed;
+        pending = pending.sublist(retryIndex);
+        await _reviewBusyDelay(_reviewBusyRetryDelay);
+      }
+      return completed;
     } on PlatformException catch (error) {
       throw _mapPlatformError(error);
     }

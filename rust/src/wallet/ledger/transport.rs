@@ -6,6 +6,7 @@ use super::{
         decode_ufvk_chunks, map_status_word, ufvk_commands, ufvk_expected_len,
         ApduCommand as ZcashApduCommand, ZCASH_CLA,
     },
+    serializer::{packet_p1, packet_p2, CommandPackets},
     OperationContext,
 };
 
@@ -41,6 +42,12 @@ pub(super) struct RunningDeviceApp {
     pub version: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TransparentSignature {
+    pub signature: Vec<u8>,
+    pub sighash_type: u8,
+}
+
 pub(super) struct LedgerTransport {
     device: HidDevice,
     operation: OperationContext,
@@ -74,6 +81,14 @@ impl LedgerTransport {
         })
     }
 
+    pub(super) fn connect_signing(operation: OperationContext) -> Result<Self, String> {
+        Self::connect(operation)
+    }
+
+    pub(super) fn connect_ufvk(operation: OperationContext) -> Result<Self, String> {
+        Self::connect(operation)
+    }
+
     pub(super) fn device_model(&self) -> Option<&str> {
         self.model.as_deref()
     }
@@ -100,6 +115,62 @@ impl LedgerTransport {
             |command| self.exchange(command.ins, command.p1, command.p2, command.data),
             || self.operation.check(),
         )
+    }
+
+    pub(super) fn send_pczt(&self, commands: &[CommandPackets]) -> Result<(), String> {
+        for command in commands {
+            let total = command.packets.len();
+            if total == 0 {
+                return Err("Ledger PCZT command has no packets".into());
+            }
+            for (index, packet) in command.packets.iter().enumerate() {
+                self.exchange(
+                    command.instruction,
+                    packet_p1(index, total),
+                    packet_p2(index, total, command.finishes_pczt),
+                    packet.clone(),
+                )
+                .map_err(|error| {
+                    format!(
+                        "Ledger PCZT APDU {:#04x} packet {}/{} failed: {error}",
+                        command.instruction,
+                        index + 1,
+                        total
+                    )
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn sign_action(
+        &self,
+        instruction: u8,
+        action_index: usize,
+    ) -> Result<[u8; 64], String> {
+        let action_index =
+            u8::try_from(action_index).map_err(|_| "Ledger action index exceeds the APDU range")?;
+        let response = self.exchange(instruction, 0, action_index, Vec::new())?;
+        let signature: [u8; 64] = response.try_into().map_err(|response: Vec<u8>| {
+            format!(
+                "Ledger returned a {}-byte spend authorization signature; expected 64",
+                response.len()
+            )
+        })?;
+        if signature.iter().all(|byte| *byte == 0) {
+            return Err("Ledger returned an all-zero spend authorization signature".into());
+        }
+        Ok(signature)
+    }
+
+    pub(super) fn sign_transparent_input(
+        &self,
+        input_index: usize,
+    ) -> Result<TransparentSignature, String> {
+        let input_index =
+            u8::try_from(input_index).map_err(|_| "Ledger input index exceeds the APDU range")?;
+        let response = self.exchange(0x55, 0, input_index, Vec::new())?;
+        decode_transparent_signature_response(response)
     }
 
     fn exchange(&self, ins: u8, p1: u8, p2: u8, data: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -352,6 +423,28 @@ fn build_command(
     })
 }
 
+fn decode_transparent_signature_response(
+    response: Vec<u8>,
+) -> Result<TransparentSignature, String> {
+    if !(9..=73).contains(&response.len()) {
+        return Err(format!(
+            "Ledger returned a {}-byte transparent signature; expected DER plus sighash type",
+            response.len()
+        ));
+    }
+    let (signature, sighash_type) = response.split_at(response.len() - 1);
+    if signature[0] & 0xfe != 0x30 {
+        return Err("Ledger transparent signature has an invalid DER sequence tag".into());
+    }
+    if signature[1] as usize + 2 != signature.len() {
+        return Err("Ledger transparent signature has an invalid DER length".into());
+    }
+    Ok(TransparentSignature {
+        signature: signature.to_vec(),
+        sighash_type: sighash_type[0],
+    })
+}
+
 fn decode_app_and_version_response(response: &[u8]) -> Result<RunningDeviceApp, String> {
     let mut cursor = 0usize;
     let format = take_byte(response, &mut cursor, "format")?;
@@ -557,6 +650,26 @@ mod tests {
         .unwrap();
         assert_eq!(response, REVIEW_BUSY_STATUS);
         assert_eq!(exchanges, REVIEW_BUSY_MAX_ATTEMPTS);
+    }
+
+    #[test]
+    fn transparent_signature_response_preserves_parity_and_sighash() {
+        let mut response = vec![0x31, 0x06, 0x02, 0x01, 1, 0x02, 0x01, 1];
+        response.push(1);
+        let decoded = decode_transparent_signature_response(response).unwrap();
+        assert_eq!(decoded.signature[0], 0x31);
+        assert_eq!(decoded.sighash_type, 1);
+    }
+
+    #[test]
+    fn transparent_signature_response_rejects_malformed_der() {
+        assert!(decode_transparent_signature_response(vec![0x30, 1])
+            .unwrap_err()
+            .contains("expected DER"));
+        let malformed = vec![0x30, 0x07, 0x02, 0x01, 1, 0x02, 0x01, 1, 1];
+        assert!(decode_transparent_signature_response(malformed)
+            .unwrap_err()
+            .contains("DER length"));
     }
 
     #[test]

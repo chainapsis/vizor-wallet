@@ -4586,6 +4586,7 @@ dependencies = [
  "redb",
  "rusqlite",
  "rustls",
+ "secp256k1",
  "secrecy",
  "security-framework",
  "serde",

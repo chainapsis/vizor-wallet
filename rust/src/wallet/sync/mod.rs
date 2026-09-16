@@ -59,7 +59,7 @@ pub use pczt::{
 };
 pub(crate) use pczt::{
     expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
-    txid_from_io_finalized_pczt,
+    preflight_orchard_spend_auth_signatures, txid_from_io_finalized_pczt,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;

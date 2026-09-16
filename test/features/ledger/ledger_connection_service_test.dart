@@ -733,6 +733,11 @@ class _FakeBleService implements LedgerMobileBleService {
       const [];
 
   @override
+  Future<List<Uint8List>> exchangeApdus(
+    List<LedgerApduCommand> commands,
+  ) async => const [];
+
+  @override
   Future<void> cancelSigning() async {
     recoveryEvents.add('cancel');
   }

@@ -340,6 +340,11 @@ class _FakeMobileBleService implements LedgerMobileBleService {
   }
 
   @override
+  Future<List<Uint8List>> exchangeApdus(List<LedgerApduCommand> commands) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<void> cancelSigning() async {}
 
   @override

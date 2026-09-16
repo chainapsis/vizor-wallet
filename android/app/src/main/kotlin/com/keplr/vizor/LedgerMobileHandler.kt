@@ -126,6 +126,7 @@ class LedgerMobileHandler(
             "currentApp" -> currentApp(result)
             "openZcashApp" -> openZcashApp(result)
             "exchangeUfvk" -> exchangeUfvk(call, result)
+            "exchangeApdus" -> exchangeApdus(call, result)
             "cancelSigning" -> cancelSigning(result)
             else -> result.notImplemented()
         }
@@ -442,6 +443,30 @@ class LedgerMobileHandler(
                     return@startOperation responses.map { it.asUnsignedList() }
                 }
                 payloadLength += response.size - APDU_STATUS_SIZE
+            }
+            responses.map { it.asUnsignedList() }
+        }
+    }
+
+    private fun exchangeApdus(call: MethodCall, result: MethodChannel.Result) {
+        val device = requireConnected(result) ?: return
+        val values = call.argument<List<*>>("commands")
+        if (values.isNullOrEmpty()) {
+            result.error("unavailable", "Ledger signing APDU list is empty or invalid.", null)
+            return
+        }
+        val commands = mutableListOf<ApduCommand>()
+        for (value in values) {
+            val command = parseCommand(value as? Map<*, *>, result) ?: return
+            commands += command
+        }
+        startOperation(result) { generation ->
+            val responses = mutableListOf<ByteArray>()
+            for (command in commands) {
+                val response = exchange(device.uid, command, generation)
+                    ?: return@startOperation null
+                responses += response
+                if (!response.hasSuccessStatus()) break
             }
             responses.map { it.asUnsignedList() }
         }

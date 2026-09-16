@@ -97,7 +97,7 @@ pub(crate) fn decode_raw_ufvk_responses(responses: &[Vec<u8>]) -> Result<String,
     decode_ufvk_chunks(&chunks)
 }
 
-fn decode_raw_response(response: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_raw_response(response: &[u8]) -> Result<Vec<u8>, String> {
     if response.len() < 2 {
         return Err("Ledger APDU response was too short to contain a status word".into());
     }

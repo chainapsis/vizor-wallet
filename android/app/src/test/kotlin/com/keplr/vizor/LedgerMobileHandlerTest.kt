@@ -117,6 +117,45 @@ class LedgerMobileHandlerTest {
     }
 
     @Test
+    fun signingBatchStopsAtFirstFailureAndPreservesUnsignedBytes() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk)
+        sdk.responses.add(bytes(0x90, 0))
+        sdk.responses.add(bytes(0x69, 0x85))
+        sdk.responses.add(bytes(0x90, 0))
+
+        val signing = reply(handler, signingCall())
+
+        assertEquals(listOf(listOf(0x90, 0), listOf(0x69, 0x85)), signing.value)
+        assertEquals(1, signing.completions)
+        assertEquals(2, sdk.commands)
+        handler.close()
+    }
+
+    @Test
+    fun cancelledSigningBatchRetainsOperationSlotUntilSdkCallbackDrains() {
+        val sdk = PendingLedgerSdk()
+        val handler = handler(sdk)
+        val original = reply(handler, signingCall())
+
+        reply(handler, MethodCall("cancelSigning", null))
+
+        assertEquals("cancelled", original.error)
+        assertEquals("unavailable", reply(handler, signingCall()).error)
+        sdk.complete(bytes(0x90, 0))
+        assertEquals(1, original.completions)
+        assertEquals(1, sdk.commands)
+
+        sdk.responses.add(bytes(0x90, 0))
+        sdk.responses.add(bytes(0x90, 0))
+        val fresh = reply(handler, signingCall())
+        assertNull(fresh.error)
+        assertEquals(1, fresh.completions)
+        assertEquals(3, sdk.commands)
+        handler.close()
+    }
+
+    @Test
     fun rejectedUfvkResponseKeepsUnsignedFlutterBytes() {
         val sdk = PendingLedgerSdk()
         val handler = handler(sdk)
@@ -345,6 +384,9 @@ class LedgerMobileHandlerTest {
     )
     private fun ufvkCall() = MethodCall("exchangeUfvk", mapOf(
         "first" to command(), "continuation" to command(0x80),
+    ))
+    private fun signingCall() = MethodCall("exchangeApdus", mapOf(
+        "commands" to listOf(command(), command(1)),
     ))
     private class Reply : MethodChannel.Result {
         var completions = 0
