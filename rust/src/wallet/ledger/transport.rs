@@ -25,6 +25,16 @@ const REVIEW_BUSY_STATUS: u16 = 0x6901;
 const REVIEW_BUSY_MAX_ATTEMPTS: usize = 3;
 const REVIEW_BUSY_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
+fn is_ledger_interface(vendor_id: u16, usage_page: u16, interface: i32, is_linux: bool) -> bool {
+    // Match Ledger's HID transport: Linux enumeration may omit the usage page.
+    vendor_id == LEDGER_VID
+        && if is_linux {
+            interface == 0
+        } else {
+            usage_page == LEDGER_USAGE_PAGE
+        }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RunningDeviceApp {
     pub name: String,
@@ -43,7 +53,12 @@ impl LedgerTransport {
         let device_info = hid
             .device_list()
             .find(|device| {
-                device.vendor_id() == LEDGER_VID && device.usage_page() == LEDGER_USAGE_PAGE
+                is_ledger_interface(
+                    device.vendor_id(),
+                    device.usage_page(),
+                    device.interface_number(),
+                    cfg!(target_os = "linux"),
+                )
             })
             .ok_or_else(|| "No Ledger device found. Connect and unlock the Ledger.".to_string())?;
         let device = device_info
@@ -379,6 +394,32 @@ fn take_length_prefixed_string(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_filter_handles_linux_without_a_usage_page() {
+        assert!(is_ledger_interface(LEDGER_VID, 0, 0, true));
+        assert!(is_ledger_interface(LEDGER_VID, LEDGER_USAGE_PAGE, 0, true));
+        for interface in [-1, 1, 2] {
+            assert!(!is_ledger_interface(LEDGER_VID, 0, interface, true));
+            assert!(!is_ledger_interface(
+                LEDGER_VID,
+                LEDGER_USAGE_PAGE,
+                interface,
+                true
+            ));
+        }
+        assert!(!is_ledger_interface(0x1234, 0, 0, true));
+
+        // macOS and Windows still require the Ledger usage page.
+        assert!(!is_ledger_interface(LEDGER_VID, 0, 0, false));
+        assert!(is_ledger_interface(
+            LEDGER_VID,
+            LEDGER_USAGE_PAGE,
+            -1,
+            false
+        ));
+        assert!(!is_ledger_interface(0x1234, LEDGER_USAGE_PAGE, 0, false));
+    }
 
     #[test]
     fn ufvk_exchange_is_bounded_before_and_during_continuation() {
