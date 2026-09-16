@@ -437,7 +437,7 @@ class _ReadyDevice implements LedgerAppReadinessDevice {
         status: available
             ? LedgerDeviceAppStatus.open
             : LedgerDeviceAppStatus.disconnected,
-        version: '3.9.2',
+        version: '3.9.3',
       );
 
   @override
@@ -514,7 +514,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     if (pauseStage == 'currentApp') await pause;
-    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 
   @override

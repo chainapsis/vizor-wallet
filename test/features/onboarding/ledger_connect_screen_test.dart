@@ -34,7 +34,7 @@ void main() {
             ufvk: 'usb-account',
             seedFingerprint: [1],
             accountIndex: 0,
-            appVersion: '3.9.2',
+            appVersion: '3.9.3',
           ),
           importer:
               ({
@@ -366,7 +366,7 @@ void main() {
             ufvk: 'uview-bluetooth',
             seedFingerprint: const [4, 5, 6],
             accountIndex: accountIndex,
-            appVersion: '3.9.2',
+            appVersion: '3.9.3',
             transport: LedgerConnectionTransport.bluetooth,
             device: device,
           );
@@ -399,7 +399,7 @@ void main() {
 
     expect(find.text('Ledger Flex is ready'), findsOneWidget);
     expect(
-      find.text('Zcash 3.9.2 approved account 0 over Bluetooth.'),
+      find.text('Zcash 3.9.3 approved account 0 over Bluetooth.'),
       findsOneWidget,
     );
     expect(ble.connectedDeviceId, 'ledger-1');
@@ -536,7 +536,7 @@ class _FakeLedgerBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() async {
     openAppCalls++;
-    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 
   @override

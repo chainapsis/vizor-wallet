@@ -116,7 +116,7 @@ class _Ready implements LedgerAppReadinessDevice {
   Future<LedgerDeviceAppSnapshot> queryZcashApp() async =>
       const LedgerDeviceAppSnapshot(
         status: LedgerDeviceAppStatus.open,
-        version: '3.9.2',
+        version: '3.9.3',
       );
   @override
   Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() =>

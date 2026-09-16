@@ -54,6 +54,9 @@ use zcash_client_sqlite::{util::SystemClock, wallet::commitment_tree, WalletDb};
 const DEFAULT_API_URL: &str = "http://127.0.0.1:5000";
 const APDU_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const API_TIMEOUT: Duration = Duration::from_secs(3);
+const BOLOS_CLA: u8 = 0xb0;
+const GET_APP_AND_VERSION: u8 = 0x01;
+const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
 
 fn main() {
     if let Err(error) = run() {
@@ -93,6 +96,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         "Desktop smoke mode requires --signing-api-url for the configured signing instance",
     )?;
     let signing_client = SpeculosClient::new(signing_api_url)?;
+    signing_client.require_supported_zcash_app()?;
 
     let approval = config
         .auto_approve
@@ -155,6 +159,7 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     let pczt_path = config.pczt_path.ok_or_else(usage)?;
     let metadata_path = config.metadata_path.ok_or_else(usage)?;
     let client = SpeculosClient::new(&config.api_url)?;
+    client.require_supported_zcash_app()?;
     let (export, automated_review) =
         export_account_from_speculos(&client, &config.network, config.auto_approve)?;
     let account = import_hardware_account(
@@ -401,6 +406,7 @@ fn exchange_signing_plan(
     commands: &[LedgerApduCommand],
     auto_approve: bool,
 ) -> Result<(Vec<Vec<u8>>, bool), String> {
+    client.require_supported_zcash_app()?;
     let mut responses = Vec::with_capacity(commands.len());
     let mut automated_review = false;
     for (index, command) in commands.iter().enumerate() {
@@ -1018,7 +1024,7 @@ impl Config {
 }
 
 fn usage() -> String {
-    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON.";
+    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
         "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <fresh-speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\
@@ -1026,7 +1032,7 @@ builds a transparent PCZT for that key, and exercises Vizor plan, transport, and
 The signing API must be a fresh instance using the same deterministic seed because the\n\
 Zcash app does not accept PCZT initialization in the post-UFVK Speculos session.\n\n\
 For file mode, the wallet database must contain the selected Ledger account imported\n\
-from the same Speculos seed. Start Zcash 3.9.2 with its REST API exposed, then run:\n\
+from the same Speculos seed. Start Zcash 3.9.3 or newer with its REST API exposed, then run:\n\
   cargo run --example ledger_zcash_speculos_poc -- <arguments>\n\n\
 By default the harness navigates Nano S+/Nano X review screens with the Speculos\n\
 /events and /button APIs. Pass --manual-review to use the Speculos UI instead."
@@ -1078,6 +1084,25 @@ impl SpeculosClient {
             .and_then(Value::as_str)
             .ok_or("Speculos /apdu response is missing string field 'data'")?;
         hex::decode(data).map_err(|error| format!("Decode Speculos APDU response: {error}"))
+    }
+
+    fn require_supported_zcash_app(&self) -> Result<(), String> {
+        let response = self.exchange_apdu(&LedgerApduCommand {
+            cla: BOLOS_CLA,
+            ins: GET_APP_AND_VERSION,
+            p1: 0,
+            p2: 0,
+            data: vec![],
+        })?;
+        let status = response_status(&response)?;
+        if status != 0x9000 {
+            return Err(format!(
+                "Ledger get-app-and-version failed with status {status:#06x}"
+            ));
+        }
+        let payload = &response[..response.len() - 2];
+        let (name, version) = decode_app_and_version_response(payload)?;
+        require_supported_zcash_app(&name, &version)
     }
 
     fn current_screen_text(&self) -> Result<String, String> {
@@ -1134,6 +1159,79 @@ impl SpeculosClient {
         let response = read_http_response(&mut stream)?;
         parse_http_json_response(&response)
     }
+}
+
+fn decode_app_and_version_response(response: &[u8]) -> Result<(String, String), String> {
+    let mut cursor = 0;
+    let format = take_app_info_byte(response, &mut cursor, "format")?;
+    if format != 1 {
+        return Err(format!(
+            "Ledger returned unsupported app-info format {format}"
+        ));
+    }
+    let name = take_app_info_string(response, &mut cursor, "app name")?;
+    let version = take_app_info_string(response, &mut cursor, "app version")?;
+    if cursor < response.len() {
+        let flags_len = take_app_info_byte(response, &mut cursor, "flags length")? as usize;
+        if cursor.checked_add(flags_len) != Some(response.len()) {
+            return Err("Ledger app-info response has malformed flags".into());
+        }
+    }
+    Ok((name, version))
+}
+
+fn take_app_info_byte(response: &[u8], cursor: &mut usize, field: &str) -> Result<u8, String> {
+    let value = response
+        .get(*cursor)
+        .copied()
+        .ok_or_else(|| format!("Ledger app-info response is missing {field}"))?;
+    *cursor += 1;
+    Ok(value)
+}
+
+fn take_app_info_string(
+    response: &[u8],
+    cursor: &mut usize,
+    field: &str,
+) -> Result<String, String> {
+    let length = take_app_info_byte(response, cursor, &format!("{field} length"))? as usize;
+    let end = cursor
+        .checked_add(length)
+        .ok_or_else(|| format!("Ledger {field} length overflowed"))?;
+    let bytes = response
+        .get(*cursor..end)
+        .ok_or_else(|| format!("Ledger app-info response truncated {field}"))?;
+    *cursor = end;
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|_| format!("Ledger {field} is not valid UTF-8"))
+}
+
+fn require_supported_zcash_app(name: &str, version: &str) -> Result<(), String> {
+    if name != "Zcash" {
+        return Err(format!(
+            "Open Ledger Zcash app 3.9.3 or newer; found {name} {version}"
+        ));
+    }
+    let parsed = parse_app_version(version).ok_or_else(|| {
+        format!("Ledger Zcash app version {version:?} is invalid; use 3.9.3 or newer")
+    })?;
+    if parsed < MINIMUM_ZCASH_APP_VERSION {
+        return Err(format!(
+            "Ledger Zcash app {version} is unsupported; use 3.9.3 or newer"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_app_version(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim().split('.');
+    let parsed = (
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+    );
+    parts.next().is_none().then_some(parsed)
 }
 
 struct ApprovalWorker {
@@ -1359,6 +1457,31 @@ mod tests {
         let body = parse_http_json_response(response).unwrap();
         let bytes = hex::decode(body["data"].as_str().unwrap()).unwrap();
         assert_eq!(response_status(&bytes).unwrap(), 0x9000);
+    }
+
+    #[test]
+    fn enforces_the_supported_zcash_app_version() {
+        assert!(require_supported_zcash_app("Zcash", "3.9.3").is_ok());
+        assert!(require_supported_zcash_app("Zcash", "3.10.0").is_ok());
+        assert!(require_supported_zcash_app("Zcash", "4.0.0").is_ok());
+        assert!(require_supported_zcash_app("Zcash", "3.9.2")
+            .unwrap_err()
+            .contains("3.9.3 or newer"));
+        assert!(require_supported_zcash_app("Zcash", "unknown")
+            .unwrap_err()
+            .contains("version \"unknown\" is invalid"));
+        assert!(require_supported_zcash_app("BOLOS", "1.0.0")
+            .unwrap_err()
+            .contains("Open Ledger Zcash app"));
+    }
+
+    #[test]
+    fn decodes_the_transport_app_info_shape() {
+        let response = hex::decode("01055a6361736805332e392e330102").unwrap();
+        assert_eq!(
+            decode_app_and_version_response(&response).unwrap(),
+            ("Zcash".into(), "3.9.3".into())
+        );
     }
 
     #[test]

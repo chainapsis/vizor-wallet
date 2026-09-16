@@ -105,7 +105,7 @@ const _account = LedgerDeviceAccount(
   ufvk: 'uview-ledger-first-account',
   seedFingerprint: [1, 2, 3, 4],
   accountIndex: 0,
-  appVersion: '3.9.2',
+  appVersion: '3.9.3',
 );
 
 Widget _harness({

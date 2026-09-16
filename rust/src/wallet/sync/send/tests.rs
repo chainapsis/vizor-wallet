@@ -3360,7 +3360,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
     let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
     let internal = ufvk.transparent().unwrap().derive_internal_ivk().unwrap();
-    for i in 0..23u32 {
+    for i in 0..35u32 {
         let index = NonHardenedChildIndex::from_index(i / 2).unwrap();
         let address = if i % 2 == 0 {
             external.derive_address(index).unwrap()
@@ -3391,13 +3391,13 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     );
     assert!(get_ledger_shielding_progress(path, network, &uuid).unwrap_err().contains("incomplete"));
     let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
-    assert_eq!(progress.input_limit, 10);
-    assert_eq!(progress.input_count, 23);
+    assert_eq!(progress.input_limit, 32);
+    assert_eq!(progress.input_count, 35);
     assert!(!progress.below_threshold);
     let (proposal, selected) =
         build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
-    assert_eq!(proposal.steps().head.transparent_inputs().len(), 10);
-    assert_eq!(selected, Zatoshis::const_from_u64(10_000_000));
+    assert_eq!(proposal.steps().head.transparent_inputs().len(), 32);
+    assert_eq!(selected, Zatoshis::const_from_u64(32_000_000));
     let p = zcash_client_backend::data_api::wallet::create_pczt_from_proposal::<
         _,
         _,
@@ -3433,10 +3433,10 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         conn.execute("DELETE FROM transparent_received_outputs WHERE transaction_id IN (SELECT id_tx FROM transactions WHERE txid=?1) AND output_index=?2",params![input.outpoint().hash().as_slice(),input.outpoint().n()]).unwrap();
     }
     let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
-    assert_eq!(progress.input_count, 13);
+    assert_eq!(progress.input_count, 3);
     let (next, _) =
         build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
-    assert_eq!(next.steps().head.transparent_inputs().len(), 10);
+    assert_eq!(next.steps().head.transparent_inputs().len(), 3);
     let first = proposal
         .steps()
         .head

@@ -51,13 +51,11 @@ pub(super) fn serialize_pczt(pczt: &ParsedPczt) -> Result<Vec<CommandPackets>, S
 }
 
 fn serialize_transparent_inputs(inputs: &[TransparentInput]) -> Result<Vec<Vec<u8>>, String> {
-    if inputs.len() > super::MAX_SHIELDING_INPUTS {
-        return Err(format!(
-            "Ledger supports at most {} transparent inputs; found {}",
-            super::MAX_SHIELDING_INPUTS,
-            inputs.len()
-        ));
-    }
+    ensure_count(
+        "transparent inputs",
+        inputs.len(),
+        super::MAX_TRANSPARENT_INPUTS,
+    )?;
     let mut packets = vec![compact_size(inputs.len())?];
 
     for input in inputs {
@@ -100,7 +98,11 @@ fn serialize_header(global: &Global) -> Vec<u8> {
 }
 
 fn serialize_transparent_outputs(outputs: &[TransparentOutput]) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("transparent outputs", outputs.len())?;
+    ensure_count(
+        "transparent outputs",
+        outputs.len(),
+        super::MAX_TRANSPARENT_OUTPUTS,
+    )?;
     let mut packets = vec![compact_size(outputs.len())?];
 
     for output in outputs {
@@ -151,7 +153,11 @@ fn serialize_shielded_bundle(
     anchor: &[u8; 32],
     note_version: impl Fn(usize) -> Option<u8>,
 ) -> Result<Vec<Vec<u8>>, String> {
-    ensure_count("shielded actions", actions.len())?;
+    ensure_count(
+        "shielded actions",
+        actions.len(),
+        super::MAX_SHIELDED_ACTIONS,
+    )?;
     let mut packets = vec![compact_size(actions.len())?];
     if actions.is_empty() {
         return Ok(packets);
@@ -266,9 +272,11 @@ fn compact_size(value: usize) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn ensure_count(label: &str, count: usize) -> Result<(), String> {
-    if count > 10 {
-        Err(format!("Ledger supports at most 10 {label}; found {count}"))
+fn ensure_count(label: &str, count: usize, maximum: usize) -> Result<(), String> {
+    if count > maximum {
+        Err(format!(
+            "Ledger supports at most {maximum} {label}; found {count}"
+        ))
     } else {
         Ok(())
     }
@@ -320,6 +328,23 @@ fn push_optional_u32_le(bytes: &mut Vec<u8>, value: Option<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::ledger::parse::IronwoodAction;
+
+    fn assert_boundary(
+        serialize: impl Fn(usize) -> Result<Vec<Vec<u8>>, String>,
+        maximum: usize,
+        label: &str,
+    ) {
+        assert!(serialize(maximum - 1).is_ok());
+        assert!(serialize(maximum).is_ok());
+        assert_eq!(
+            serialize(maximum + 1).unwrap_err(),
+            format!(
+                "Ledger supports at most {maximum} {label}; found {}",
+                maximum + 1
+            )
+        );
+    }
 
     fn global(tx_version: u32) -> Global {
         Global {
@@ -353,6 +378,114 @@ mod tests {
                 seed_fingerprint: [0x11; 32],
             },
         }
+    }
+
+    fn transparent_output() -> TransparentOutput {
+        TransparentOutput {
+            value: 1,
+            script_pubkey: transparent_input().script_pubkey,
+            derivation: None,
+        }
+    }
+
+    fn shielded_action() -> ShieldedAction {
+        ShieldedAction {
+            cv_net: [0; 32],
+            nullifier: [0; 32],
+            rk: [0; 32],
+            spend_recipient: [0; 43],
+            spend_value: 0,
+            spend_rho: [0; 32],
+            spend_rseed: [0; 32],
+            alpha: [0; 32],
+            signing_path: vec![],
+            seed_fingerprint: [0; 32],
+            cmx: [0; 32],
+            ephemeral_key: [0; 32],
+            enc_ciphertext: vec![],
+            out_ciphertext: vec![],
+            recipient: [0; 43],
+            value: 0,
+            rseed: [0; 32],
+            rcv: [0; 32],
+        }
+    }
+
+    #[test]
+    fn category_limits_match_ledger_zcash_3_9_3() {
+        assert_eq!(
+            (
+                super::super::MAX_TRANSPARENT_INPUTS,
+                super::super::MAX_TRANSPARENT_OUTPUTS,
+                super::super::MAX_SHIELDED_ACTIONS,
+            ),
+            (32, 10, 32),
+        );
+        assert_boundary(
+            |count| serialize_transparent_inputs(&vec![transparent_input(); count]),
+            super::super::MAX_TRANSPARENT_INPUTS,
+            "transparent inputs",
+        );
+        assert_boundary(
+            |count| serialize_transparent_outputs(&vec![transparent_output(); count]),
+            super::super::MAX_TRANSPARENT_OUTPUTS,
+            "transparent outputs",
+        );
+        assert_boundary(
+            |count| {
+                serialize_orchard_bundle(Some(&ShieldedBundle {
+                    actions: vec![shielded_action(); count],
+                    flags: 0,
+                    value_balance: 0,
+                    anchor: [0; 32],
+                }))
+            },
+            super::super::MAX_SHIELDED_ACTIONS,
+            "shielded actions",
+        );
+        assert_boundary(
+            |count| {
+                serialize_ironwood_bundle(Some(&IronwoodBundle {
+                    actions: vec![
+                        IronwoodAction {
+                            action: shielded_action(),
+                            note_plaintext_version: 3,
+                        };
+                        count
+                    ],
+                    flags: 0,
+                    value_balance: 0,
+                    anchor: [0; 32],
+                }))
+            },
+            super::super::MAX_SHIELDED_ACTIONS,
+            "shielded actions",
+        );
+
+        assert!(serialize_pczt(&ParsedPczt {
+            global: global(6),
+            transparent_inputs: vec![],
+            transparent_outputs: vec![],
+            orchard_bundle: Some(ShieldedBundle {
+                actions: vec![shielded_action(); 32],
+                flags: 0,
+                value_balance: 0,
+                anchor: [0; 32],
+            }),
+            ironwood_bundle: Some(IronwoodBundle {
+                actions: vec![
+                    IronwoodAction {
+                        action: shielded_action(),
+                        note_plaintext_version: 3,
+                    };
+                    32
+                ],
+                flags: 0,
+                value_balance: 0,
+                anchor: [0; 32],
+            }),
+        })
+        .is_ok());
     }
 
     #[test]
@@ -453,10 +586,11 @@ mod tests {
     }
 
     #[test]
-    fn transparent_input_packets_reject_more_than_ten_inputs() {
-        let inputs = vec![transparent_input(); 11];
-        assert!(serialize_transparent_inputs(&inputs)
-            .unwrap_err()
-            .contains("at most 10 transparent inputs"));
+    fn transparent_input_packets_accept_the_ledger_limit() {
+        assert!(serialize_transparent_inputs(&vec![
+            transparent_input();
+            super::super::MAX_TRANSPARENT_INPUTS
+        ])
+        .is_ok());
     }
 }

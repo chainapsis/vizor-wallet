@@ -1,7 +1,7 @@
 # Ledger USB on Linux
 
 Vizor supports Ledger over USB on Zcash mainnet. Bluetooth is not available on
-Windows or Linux. Unlock the Ledger and open its Zcash app (3.9.2 or newer).
+Windows or Linux. Unlock the Ledger and open its Zcash app (3.9.3 or newer).
 
 If the device is connected but Vizor cannot access it, install the supplied udev
 rule on the host. From this directory:

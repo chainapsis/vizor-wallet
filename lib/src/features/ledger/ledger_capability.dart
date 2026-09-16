@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
 
-const kMinimumLedgerZcashAppVersion = '3.9.2';
+const kMinimumLedgerZcashAppVersion = '3.9.3';
 
 const kLedgerLegacyOrchardRecoveryErrorCode =
     'ledger_legacy_orchard_recovery_unsupported';

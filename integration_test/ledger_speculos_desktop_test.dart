@@ -188,7 +188,7 @@ void main() {
       expect(exported!.ufvk, fixture.ufvk);
       expect(exported.seedFingerprint, fixture.seedFingerprint);
       expect(exported.accountIndex, fixture.accountIndex);
-      expect(exported.appVersion, '3.9.2');
+      expect(exported.appVersion, '3.9.3');
       expect(firstAccountImport.name, 'Speculos Ledger');
       expect(firstAccountImport.birthdayHeight, 2500000);
       expect(security.preparedPassword, 'LedgerE2e1!');
