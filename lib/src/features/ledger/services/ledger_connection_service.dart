@@ -27,8 +27,33 @@ class LedgerConnectionService {
   LedgerConnectionService(this._ref);
 
   final Ref _ref;
+  bool _running = false;
+  bool _requiresReconnect = false;
 
   Future<T> run<T>({
+    required String accountUuid,
+    required Future<T> Function() usb,
+    required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
+  }) async {
+    if (_running) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.busy,
+        'Another Ledger operation is still active.',
+      );
+    }
+    _running = true;
+    try {
+      return await _run(
+        accountUuid: accountUuid,
+        usb: usb,
+        bluetooth: bluetooth,
+      );
+    } finally {
+      _running = false;
+    }
+  }
+
+  Future<T> _run<T>({
     required String accountUuid,
     required Future<T> Function() usb,
     required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
@@ -70,6 +95,15 @@ class LedgerConnectionService {
         check();
         return result;
       } catch (error) {
+        if (transport == LedgerConnectionTransport.bluetooth &&
+            ((error is LedgerMobileException &&
+                    ledgerFailureInvalidatesConnection(error.failure)) ||
+                (error is LedgerAppReadinessException &&
+                    (error.failure == LedgerAppReadinessFailure.disconnected ||
+                        error.failure ==
+                            LedgerAppReadinessFailure.unavailable)))) {
+          _requiresReconnect = true;
+        }
         check();
         // Only connection preparation may fall back; never replay an operation.
         if (operationStarted) rethrow;
@@ -162,37 +196,50 @@ class LedgerConnectionService {
       name: account.ledgerDeviceName ?? 'Ledger',
       model: account.ledgerDeviceModel ?? 'Ledger',
     );
-    if (platform == TargetPlatform.macOS) {
+    Future<void> reconnect() async {
+      // Keep this set until cleanup AND connect have both completed. A null
+      // Dart identity may still have a connected/dirty native transport.
+      _requiresReconnect = true;
       await mobile.disconnect();
       check();
       await mobile.connect(device);
       check();
-    } else if (mobile.connectedDeviceId != device.id) {
-      if (mobile.connectedDeviceId != null) {
-        await mobile.disconnect();
-        check();
-      }
-      await mobile.connect(device);
-      check();
-    } else {
-      try {
+      _requiresReconnect = false;
+    }
+
+    final readiness = _ref.read(
+      ledgerAppReadinessServiceForTransportProvider(
+        LedgerConnectionTransport.bluetooth,
+      ),
+    );
+    var reconnected = false;
+    try {
+      if (platform == TargetPlatform.macOS ||
+          _requiresReconnect ||
+          mobile.connectedDeviceId != device.id) {
+        reconnected = true;
+        await reconnect();
+      } else {
         await mobile.currentApp();
         check();
-      } on LedgerMobileException catch (error) {
-        check();
-        if (error.failure != LedgerMobileFailure.disconnected) rethrow;
-        await mobile.connect(device);
-        check();
       }
+      await readiness.ensureReady();
+      check();
+    } catch (error) {
+      check();
+      final disconnected =
+          error is LedgerMobileException &&
+              error.failure == LedgerMobileFailure.disconnected ||
+          error is LedgerAppReadinessException && error.canReconnect;
+      // Only a failed existing connection gets one automatic preparation retry.
+      // Never retry a pairing problem or any operation that reached the signer.
+      if (!disconnected || ledgerPairingNeedsReset(error) || reconnected) {
+        rethrow;
+      }
+      await reconnect();
+      await readiness.ensureReady();
+      check();
     }
-    await _ref
-        .read(
-          ledgerAppReadinessServiceForTransportProvider(
-            LedgerConnectionTransport.bluetooth,
-          ),
-        )
-        .ensureReady();
-    check();
     return operation(mobile);
   }
 
@@ -220,6 +267,7 @@ class LedgerConnectionService {
         LedgerMobileFailure.pairingRejected ||
         LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.unavailable => true,
+        LedgerMobileFailure.busy ||
         LedgerMobileFailure.locked ||
         LedgerMobileFailure.rejected ||
         LedgerMobileFailure.wrongApp ||

@@ -762,7 +762,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func pendingExchangeError() -> FlutterError {
     flutterError(
-      code: "unavailable",
+      code: "busy",
       message: "Finish or reject the pending request on your Ledger, then try again."
     )
   }
@@ -951,7 +951,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         )
       case .pendingActionOnDevice:
         return flutterError(
-          code: "unavailable",
+          code: "busy",
           message: "Another Ledger operation is still active."
         )
       case .scanningTimedOut, .scanError, .lowerLevelError:

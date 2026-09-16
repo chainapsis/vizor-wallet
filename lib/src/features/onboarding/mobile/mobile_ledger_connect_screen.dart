@@ -112,6 +112,7 @@ class _MobileLedgerConnectScreenState
   String _friendlyError(Object error) {
     if (error is LedgerMobileException) {
       return switch (error.failure) {
+        LedgerMobileFailure.busy => error.message,
         LedgerMobileFailure.pairingInvalid => kLedgerPairingInvalidMessage,
         LedgerMobileFailure.disconnected ||
         LedgerMobileFailure.pairingRejected =>

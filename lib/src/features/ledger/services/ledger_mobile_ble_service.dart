@@ -14,6 +14,7 @@ bool ledgerPairingNeedsReset(Object? error) =>
     error?.toString() == kLedgerPairingInvalidMessage;
 
 enum LedgerMobileFailure {
+  busy,
   permissionDenied,
   bluetoothOff,
   pairingRejected,
@@ -176,8 +177,8 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
   @override
   Future<void> disconnect() async {
     _operationGeneration++;
-    await _invokeVoid('disconnect');
     _connectedDeviceId = null;
+    await _invokeVoid('disconnect');
   }
 
   @override
@@ -396,17 +397,22 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
     }
   }
 
-  static LedgerMobileException _mapPlatformError(PlatformException error) {
-    return _errorFromCode(
+  LedgerMobileException _mapPlatformError(PlatformException error) {
+    final mapped = _errorFromCode(
       error.code,
       error.code == 'pairing_invalid'
           ? kLedgerPairingInvalidMessage
           : error.message ?? 'Ledger mobile connection failed.',
     );
+    if (ledgerFailureInvalidatesConnection(mapped.failure)) {
+      _connectedDeviceId = null;
+    }
+    return mapped;
   }
 
   static LedgerMobileException _errorFromCode(String code, String message) {
     final failure = switch (code) {
+      'busy' => LedgerMobileFailure.busy,
       'permission_denied' => LedgerMobileFailure.permissionDenied,
       'bluetooth_off' => LedgerMobileFailure.bluetoothOff,
       'pairing_rejected' => LedgerMobileFailure.pairingRejected,
@@ -421,3 +427,16 @@ class MethodChannelLedgerMobileBleService implements LedgerMobileBleService {
     return LedgerMobileException(failure, message);
   }
 }
+
+/// Identity alone is not proof of a usable native session. Busy and device
+/// decisions keep ownership; transport/environment failures require cleanup.
+bool ledgerFailureInvalidatesConnection(LedgerMobileFailure failure) =>
+    switch (failure) {
+      LedgerMobileFailure.disconnected ||
+      LedgerMobileFailure.unavailable ||
+      LedgerMobileFailure.bluetoothOff ||
+      LedgerMobileFailure.permissionDenied ||
+      LedgerMobileFailure.pairingInvalid ||
+      LedgerMobileFailure.pairingRejected => true,
+      _ => false,
+    };
