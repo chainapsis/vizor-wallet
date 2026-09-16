@@ -222,6 +222,30 @@ class PaymentLinkClaimWallet {
   ) async {
     final supportDir = await getWalletSupportDirectory();
     final separator = Platform.pathSeparator;
+    // Pre-v2 wallets included the address in their identity. Keep using their
+    // DB (including local submission metadata and SQLite sidecars) in place.
+    // Prefer it even if a newer cache also exists: a rescan of that cache cannot
+    // replace the original attempt's locally recorded transaction evidence.
+    final legacyAddress = link.knownAddress;
+    if (legacyAddress != null) {
+      final legacyIdentity = sha256.convert(
+        utf8.encode(
+          '${link.network}:$legacyAddress:${link.mnemonic}:'
+          '${link.birthdayHeight}',
+        ),
+      );
+      final legacyName = paymentLinkClaimWalletDirectoryNameFor(
+        network: link.network.trim(),
+        identityHash: legacyIdentity.toString(),
+      );
+      final legacyDirectory = Directory(
+        '${supportDir.path}$separator$legacyName',
+      );
+      final legacyDbPath = '${legacyDirectory.path}${separator}zcash_wallet.db';
+      if (await File(legacyDbPath).exists()) {
+        return (directory: legacyDirectory, dbPath: legacyDbPath);
+      }
+    }
     final directory = Directory(
       '${supportDir.path}$separator${paymentLinkClaimWalletDirectoryName(link)}',
     );

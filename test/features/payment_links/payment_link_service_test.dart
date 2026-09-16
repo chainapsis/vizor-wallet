@@ -278,6 +278,156 @@ void main() {
       await supportDirectory.delete(recursive: true);
     });
 
+    test(
+      'unresolved v2 links create and reopen the current claim wallet',
+      () async {
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        final link = VizorPaymentLink.parse(_link().toUri().toString());
+        expect(link.knownAddress, isNull);
+        final opened = await wallet.createOrOpen(link);
+        expect(opened.existed, isFalse);
+        expect(
+          opened.directory.path,
+          '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+        );
+        await File(opened.dbPath).writeAsString('current');
+        final reopened = await wallet.createOrOpen(link);
+        expect(reopened.existed, isTrue);
+        expect(reopened.dbPath, opened.dbPath);
+      },
+    );
+
+    for (final legacyExists in [false, true]) {
+      for (final currentExists in [false, true]) {
+        test(
+          'claim wallet lookup: legacy=$legacyExists current=$currentExists',
+          () async {
+            final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+            final legacy = Directory(
+              '${supportDirectory.path}/$_legacyClaimDirectory',
+            );
+            final current = Directory(
+              '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(_link())}',
+            );
+            // An empty legacy directory must not hide a current DB.
+            await legacy.create();
+            if (legacyExists) {
+              await File(
+                '${legacy.path}/zcash_wallet.db',
+              ).writeAsString('legacy');
+              await File(
+                '${legacy.path}/zcash_wallet.db-wal',
+              ).writeAsString('wal');
+            }
+            if (currentExists) {
+              await current.create();
+              await File(
+                '${current.path}/zcash_wallet.db',
+              ).writeAsString('current');
+            }
+            final opened = await wallet.createOrOpen(_link());
+            expect(
+              opened.directory.path,
+              legacyExists ? legacy.path : current.path,
+            );
+            expect(opened.existed, legacyExists || currentExists);
+            if (legacyExists) {
+              expect(await File(opened.dbPath).readAsString(), 'legacy');
+              expect(await File('${opened.dbPath}-wal').readAsString(), 'wal');
+              final store = container.read(paymentLinkReceivedStoreProvider);
+              final record = await store.saveReady(_link());
+              expect(await wallet.deleteRetained(record), isTrue);
+              expect(await legacy.exists(), isFalse);
+              if (currentExists) {
+                expect(
+                  await File('${current.path}/zcash_wallet.db').readAsString(),
+                  'current',
+                );
+              }
+            }
+          },
+        );
+      }
+    }
+
+    for (final currentExists in [false, true]) {
+      test(
+        'legacy submitting recovery with current cache=$currentExists',
+        () async {
+          api.poolFixture = true;
+          api.localClaimTxids = ['old', 'pending'];
+          api.claimHistory = [_transaction(txid: 'pending', txKind: 'sent')];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            priorTxids: ['old'],
+          );
+          // Simulate the v1 link persisted by the pre-upgrade app.
+          final saved =
+              jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
+          final legacyPayload = base64Url.encode(
+            utf8.encode(
+              jsonEncode({
+                'v': 1,
+                'network': link.network,
+                'address': link.address,
+                'amountZatoshi': link.amountZatoshi.toString(),
+                'mnemonic': link.mnemonic,
+                'birthdayHeight': link.birthdayHeight,
+                'label': link.label,
+                'createdAt': link.createdAt.toIso8601String(),
+              }),
+            ),
+          );
+          (saved['records'] as List).single['claimLink'] = link
+              .toUri()
+              .replace(fragment: 'v1=$legacyPayload')
+              .toString();
+          receivedStorage.value = jsonEncode(saved);
+          final legacy = Directory(
+            '${supportDirectory.path}/$_legacyClaimDirectory',
+          );
+          await legacy.create();
+          final legacyDbPath = '${legacy.path}/zcash_wallet.db';
+          await File(legacyDbPath).writeAsString('retained attempt');
+          if (currentExists) {
+            final current = Directory(
+              '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+            );
+            await current.create();
+            await File(
+              '${current.path}/zcash_wallet.db',
+            ).writeAsString('new cache');
+          }
+          await container.read(syncProvider.future);
+          final recovered = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(recovered.status, PaymentLinkReceivedStatus.receiving);
+          expect(recovered.claimTxids, 'pending');
+          expect(api.claimSyncDbPaths, isNotEmpty);
+          expect(api.claimSyncDbPaths, everyElement(legacyDbPath));
+          expect(await store.countReceivingForAccount('receiver'), 1);
+
+          // An expired attempt must become retryable and release account deletion.
+          api.claimHistory = [
+            _transaction(txid: 'pending', txKind: 'sent', expiredUnmined: true),
+          ];
+          final settled = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(settled.status, PaymentLinkReceivedStatus.readyToClaim);
+          expect(settled.availability, PaymentLinkAvailability.failed);
+          expect(await store.countReceivingForAccount('receiver'), 0);
+        },
+      );
+    }
+
     for (final oldTransactions in [
       <String>[],
       ['old-attempt'],
@@ -1938,6 +2088,11 @@ class _RecordingPaymentLinkRecoveryStorage
   }
 }
 
+// Frozen pre-v2 directory for _link(), computed with the address in the hash.
+const _legacyClaimDirectory =
+    'payment_link_claim_main_'
+    'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
@@ -1999,6 +2154,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   var syncStarted = Completer<void>();
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
+  final claimSyncDbPaths = <String>[];
 
   @override
   Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -2018,9 +2174,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String network,
   }) async {
     if (!poolFixture) return [];
-    final isClaimWallet = dbPath.contains(
-      paymentLinkClaimWalletDirectoryName(_link()),
-    );
+    final isClaimWallet =
+        dbPath.contains(paymentLinkClaimWalletDirectoryName(_link())) ||
+        dbPath.contains(_legacyClaimDirectory);
     return [
       rust_wallet.AccountInfo(
         uuid: isClaimWallet ? 'claim-wallet' : 'receiver',
@@ -2056,6 +2212,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     if (!poolFixture) throw StateError('Unexpected claim sync');
     claimSyncCalls++;
     claimSyncModes.add(allowResubmit);
+    claimSyncDbPaths.add(dbPath);
     if (!syncStarted.isCompleted) syncStarted.complete();
     await syncGate?.future;
   }
@@ -2131,6 +2288,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     syncStarted = Completer<void>();
     claimSyncCalls = 0;
     claimSyncModes = [];
+    claimSyncDbPaths.clear();
   }
 
   @override
