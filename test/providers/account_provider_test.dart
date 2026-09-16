@@ -58,6 +58,89 @@ void main() {
     );
   });
 
+  test(
+    'Ledger metadata setters reject Keystone and missing accounts',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const accounts = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'ledger',
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          AccountInfo(
+            uuid: 'keystone',
+            name: 'Keystone',
+            order: 1,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.keystone,
+          ),
+        ],
+        activeAccountUuid: 'ledger',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            AppBootstrapState(
+              initialLocation: '/home',
+              initialAccountState: accounts,
+              initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('ledger'),
+              network: kZcashDefaultNetworkName,
+              rpcEndpointConfig: defaultRpcEndpointConfig(
+                kZcashDefaultNetworkName,
+              ),
+              themeMode: ThemeMode.system,
+              privacyModeEnabled: false,
+              isPasswordConfigured: true,
+              isUnlocked: true,
+              passwordRotationRecoveryFailed: false,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final notifier = container.read(accountProvider.notifier);
+
+      await notifier.updateLedgerConnectionPreference(
+        'ledger',
+        LedgerConnectionPreference.bluetooth,
+      );
+      await notifier.recordLedgerConnection(
+        uuid: 'ledger',
+        transport: LedgerConnectionTransport.bluetooth,
+        deviceId: 'ledger-id',
+      );
+      final ledger =
+          container.read(accountProvider).requireValue.accounts.first;
+      expect(
+        ledger.ledgerConnectionPreference,
+        LedgerConnectionPreference.bluetooth,
+      );
+      expect(ledger.ledgerDeviceId, 'ledger-id');
+
+      for (final uuid in ['keystone', 'missing']) {
+        await expectLater(
+          notifier.updateLedgerConnectionPreference(
+            uuid,
+            LedgerConnectionPreference.usb,
+          ),
+          throwsArgumentError,
+        );
+        await expectLater(
+          notifier.recordLedgerConnection(
+            uuid: uuid,
+            transport: LedgerConnectionTransport.usb,
+          ),
+          throwsArgumentError,
+        );
+      }
+    },
+  );
+
   test('Linux rejects account changes while another mutation waits', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final coordinator = LinuxKeyringCoordinator.testing();
@@ -81,6 +164,14 @@ void main() {
         () => account.switchAccount('account-2'),
         () => account.renameAccount('account-1', 'Changed'),
         () => account.updateProfilePicture('account-1', 'unused'),
+        () => account.updateLedgerConnectionPreference(
+          'account-1',
+          LedgerConnectionPreference.usb,
+        ),
+        () => account.recordLedgerConnection(
+          uuid: 'account-1',
+          transport: LedgerConnectionTransport.usb,
+        ),
         () => account.removeAccount('account-2'),
         () => account.resetWallet(),
         () => account.importKeystoneAccount(

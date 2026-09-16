@@ -18,6 +18,13 @@ const _initialAccounts = AccountState(
   accounts: [
     AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
     AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+    AccountInfo(
+      uuid: 'ledger',
+      name: 'Ledger',
+      order: 2,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
+    ),
   ],
   activeAccountUuid: 'account-1',
   activeAddress: 'u1account-1',
@@ -102,6 +109,30 @@ void main() {
       },
     );
   }
+
+  test('Linux Ledger metadata save cannot restore a locked address', () async {
+    store.delayWrite('zcash_accounts');
+    final operation = account.recordLedgerConnection(
+      uuid: 'ledger',
+      transport: LedgerConnectionTransport.bluetooth,
+      deviceId: 'ledger-id',
+      deviceName: 'Ledger',
+      deviceModel: 'Nano X',
+    );
+    await store.writeStarted.future;
+    lock();
+    store.writeRelease.complete();
+    await operation;
+
+    final current = container.read(accountProvider).requireValue;
+    expect(current.activeAccountUuid, 'account-1');
+    expect(current.activeAddress, isNull);
+    final ledger = current.accounts.singleWhere(
+      (entry) => entry.uuid == 'ledger',
+    );
+    expect(ledger.ledgerLastTransport, LedgerConnectionTransport.bluetooth);
+    expect(ledger.ledgerDeviceId, 'ledger-id');
+  });
 
   test(
     'Linux switch keeps its durable UUID after lock during metadata save',

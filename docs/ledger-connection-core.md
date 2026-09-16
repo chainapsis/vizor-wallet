@@ -1,6 +1,7 @@
 # Ledger connection coordination
 
-C03 is a stacked draft on C02 (`rowan/ledger-core-accounts`, PR #696).
+C03 targets the core collection (`rowan/ledger-core-collection`, PR #693)
+after account import and signer dispatch from #696 have merged.
 It adds the transport-neutral Dart contracts that the native BLE adapters and
 later signing flows consume. It does not add a native adapter or a screen.
 
@@ -48,20 +49,22 @@ PCZT exchange are C08; they are not pulled into C03 as unused scaffolding.
 - Keep transaction-capacity messages, migration capability, PCZT signing methods
   and signing-status cooldown out of this slice. They have later consumers and
   are not classified as dead code merely because C03 does not use them.
-- Keep the lower-level Rust UFVK helper for the planned diagnostic/canary paths.
+- Keep the lower-level Rust UFVK helper: the source implementation has a real
+  canary consumer in `ironwood_migration/plan_child.rs`, which belongs to a later
+  slice. Removing the duplicate bridge does not remove that Rust-only helper.
 
-## Parallel work proposal
+## Integration dependencies
 
-C04 Apple and C05 Android can be prepared/reviewed independently once this Dart
-channel contract is fixed: their native implementations, registrations,
-dependencies and tests live in separate platform directories. Both depend on
-C03; neither depends on the other. C08 signer work can also progress alongside
-those adapters, with its own Rust/FRB changes and hardware-free tests.
+C02 account import and signer dispatch (#696), Android BLE (#698), and shared
+native BLE protocol (#701) are merged into the collection. C04 Apple (#700),
+C06b Windows (#702), and C07 Linux (#703) target the collection independently.
+Their native channel implementations consume this contract at runtime; they do
+not need C03's Dart sources to compile.
 
-C06 Windows and C07 Linux share `native/ledger/ble_protocol.h` and
-`ble_operation_gate.h`. Keep those common files in one prerequisite slice before
-parallelizing the two OS adapters; Linux should not independently duplicate them.
-These are proposals, not additional PRs opened by C03.
+C03 only prepares connections and exports account material. Ledger transaction
+signing remains unsupported by the account-signing policy until C08 is added.
+The later signing slice consumes C03's connection contract without changing
+software or Keystone signer dispatch.
 
 ## Validation boundary
 
