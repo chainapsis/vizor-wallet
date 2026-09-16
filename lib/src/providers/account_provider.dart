@@ -8,6 +8,8 @@ import '../services/voting/voting_file_cache.dart';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
@@ -15,6 +17,7 @@ import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
@@ -59,6 +62,9 @@ const _duplicateSoftwareAccountImportMessage =
     'This account is already in your wallet.';
 const _duplicateKeystoneAccountImportMessage =
     'This Keystone account is already in your wallet.';
+
+const _duplicateLedgerAccountImportMessage =
+    'This Ledger account is already in your wallet.';
 
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
@@ -114,6 +120,7 @@ class LinkedWalletAccountImport {
     required this.zip32AccountIndex,
     required this.isHardware,
     required this.isSeedAnchor,
+    this.hardwareSignerKind,
     this.mnemonic,
     this.bip39Passphrase = '',
     this.ufvk,
@@ -127,6 +134,7 @@ class LinkedWalletAccountImport {
   final int zip32AccountIndex;
   final bool isHardware;
   final bool isSeedAnchor;
+  final HardwareSignerKind? hardwareSignerKind;
   final String? mnemonic;
   final String bip39Passphrase;
   final String? ufvk;
@@ -661,6 +669,70 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
+  Future<void> updateLedgerConnectionPreference(
+    String uuid,
+    LedgerConnectionPreference preference,
+  ) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    AccountInfo updatePreference(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(ledgerConnectionPreference: preference)
+        : account;
+    final updated = prev.accounts.map(updatePreference).toList(growable: false);
+    await _saveAccounts(updated);
+    if (!ref.mounted) return;
+    // This is a UI-state merge, independent of Linux secret-session policy.
+    // A metadata write must not undo a lock or account switch on any platform.
+    final current = state.value ?? const AccountState();
+    state = AsyncData(
+      current.copyWith(
+        accounts: current.accounts
+            .map(updatePreference)
+            .toList(growable: false),
+      ),
+    );
+    log('updateLedgerConnectionPreference: $uuid → ${preference.name}');
+  });
+
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    AccountInfo updateConnection(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(
+            ledgerLastTransport: transport,
+            ledgerDeviceId: deviceId,
+            ledgerDeviceName: deviceName,
+            ledgerDeviceModel: deviceModel,
+          )
+        : account;
+    final updated = prev.accounts.map(updateConnection).toList(growable: false);
+    await _saveAccounts(updated);
+    if (!ref.mounted) return;
+    // This is a UI-state merge, independent of Linux secret-session policy.
+    // A metadata write must not undo a lock or account switch on any platform.
+    final current = state.value ?? const AccountState();
+    state = AsyncData(
+      current.copyWith(
+        accounts: current.accounts
+            .map(updateConnection)
+            .toList(growable: false),
+      ),
+    );
+    log('recordLedgerConnection: $uuid → ${transport.name}');
+  });
+
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
@@ -681,12 +753,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
-    _storage.invalidatePendingSecretOperations();
-
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
       // Gift Card claims first, and before the in-flight count below: that
       // count is a one-shot read, and a claim that enters `submitting` right
       // after it returned zero would revalidate its destination against an
@@ -700,6 +773,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      ledgerLifecycle.resume();
       claimLifecycle.resume();
       giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
@@ -891,15 +965,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<void> _resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-    _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
@@ -911,6 +987,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      ledgerLifecycle.resume();
       if (resumeClaimLifecycle) claimLifecycle.resume();
       // Release only after all destructive work has finished. New onboarding
       // reuses this registry; stale registrations re-read the now-empty store.
@@ -1296,6 +1373,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
         birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.keystone.name,
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;
@@ -1306,6 +1384,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
@@ -1322,6 +1403,124 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       log('importKeystoneAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Import a Ledger-backed account using the UFVK approved on the device.
+  Future<void> importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importLedgerAccount(
+          name: name,
+          ufvk: ufvk,
+          seedFingerprint: seedFingerprint,
+          zip32Index: zip32Index,
+          birthdayHeight: birthdayHeight,
+          profilePictureId: profilePictureId,
+          connectionTransport: connectionTransport,
+          ledgerDeviceId: ledgerDeviceId,
+          ledgerDeviceName: ledgerDeviceName,
+          ledgerDeviceModel: ledgerDeviceModel,
+        ),
+      );
+
+  Future<void> _importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) async {
+    try {
+      // A first mobile account requires a prepared passcode session. Existing
+      // wallets must be unlocked; route arguments alone never authorize import.
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        final security = ref.read(appSecurityProvider);
+        final firstAccount = state.value?.accounts.isEmpty == true;
+        final preparedSetup = ref
+            .read(appSecurityProvider.notifier)
+            .hasPreparedPasswordSetup;
+        if (!(security.isPasswordConfigured && security.isUnlocked) &&
+            !(firstAccount && preparedSetup)) {
+          throw StateError(
+            'Set up and unlock your wallet before adding a Ledger account.',
+          );
+        }
+      }
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
+      final prev = state.value ?? const AccountState();
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+
+      final result = await rust_wallet.importHardwareAccount(
+        dbPath: dbPath,
+        network: network,
+        name: accountName,
+        ufvkString: ufvk,
+        seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index,
+        birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.ledger.name,
+      );
+      final accountUuid = result.accountUuid;
+      final address = result.unifiedAddress;
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: prev.accounts.length,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
+        ledgerLastTransport: connectionTransport,
+        ledgerDeviceId: ledgerDeviceId,
+        ledgerDeviceName: ledgerDeviceName,
+        ledgerDeviceModel: ledgerDeviceModel,
+        profilePictureId: normalizedProfilePictureId,
+      );
+      final updated = [...prev.accounts, newAccount];
+      await _saveAccounts(updated);
+      await _storage.writeString(_activeAccountKey, accountUuid);
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: accountUuid,
+          activeAddress: address,
+        ),
+      );
+      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+    } catch (e, st) {
+      log('importLedgerAccount: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -1383,6 +1582,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               seedFingerprint: input.seedFingerprint ?? const [],
               zip32Index: input.zip32AccountIndex,
               birthdayHeight: BigInt.from(input.birthdayHeight),
+              hardwareSignerKind:
+                  (input.hardwareSignerKind ?? HardwareSignerKind.keystone)
+                      .name,
             );
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
@@ -1430,6 +1632,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: input.name,
             order: nextOrder,
             isHardware: input.isHardware,
+            hardwareSignerKind: input.isHardware
+                ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
+                : null,
             isSeedAnchor: isSeedAnchor,
             profilePictureId: normalizeProfilePictureId(
               input.profilePictureId ?? kDefaultProfilePictureId,
@@ -1551,6 +1756,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     return false;
   }
+
+  HardwareSignerKind? hardwareSignerKindForAccount(String uuid) {
+    final accounts = state.value?.accounts ?? const <AccountInfo>[];
+    for (final account in accounts) {
+      if (account.uuid == uuid) return account.hardwareSignerKind;
+    }
+    return null;
+  }
+
+  bool isKeystoneAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.keystone;
+
+  bool isLedgerAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.ledger;
 
   /// Get the mnemonic for the active account.
   Future<String?> getActiveMnemonic() async {
@@ -1682,6 +1901,7 @@ bool isWalletLinkDuplicateImportError(Object error) {
   final message = _normalizedExceptionMessage(error);
   return message == _duplicateSoftwareAccountImportMessage ||
       message == _duplicateKeystoneAccountImportMessage ||
+      message == _duplicateLedgerAccountImportMessage ||
       (message.contains('account corresponding to the data provided') &&
           message.contains('already exists in the wallet'));
 }

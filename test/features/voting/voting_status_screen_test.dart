@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provid
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -43,6 +44,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'fake_rust_api_shapes.dart' as rust_api;
@@ -369,6 +371,163 @@ void main() {
       ),
     );
     expect(find.text('Delivering your responses'), findsOneWidget);
+  });
+
+  testWidgets(
+    'cancelling Ledger approval drains an in-flight signature write',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final recovery = _MutableVotingRecoveryApi()..state = _recoveryState();
+      final storeGate = Completer<void>();
+      var storeStarted = false;
+      final rust = _VotingStatusRustApi(recovery)
+        ..beforeStoreKeystoneSignatures = () async {
+          storeStarted = true;
+          await storeGate.future;
+        };
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recovery,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue(
+            (_, _) async => [
+              LedgerVotingSignature(
+                pool: 1,
+                actionIndex: 0,
+                signature: List.filled(64, 1),
+              ),
+            ],
+          ),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+      container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(),
+        ),
+      );
+      await _pumpUntilCondition(tester, () => storeStarted, attempts: 100);
+      await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .cancelLedgerSigning(key);
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var drained = false;
+      final draining = registry.quiesceAndDrain(accountUuid: 'ledger-1').then((
+        _,
+      ) {
+        drained = true;
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(
+        drained,
+        isFalse,
+        reason: 'Account deletion must wait for the pending Rust write',
+      );
+      storeGate.complete();
+      await _pumpUntilCondition(tester, () => drained, attempts: 100);
+      await draining;
+      registry.resume(accountUuid: 'ledger-1');
+      expect(
+        container.read(votingSubmissionJobProvider(key)).status,
+        VotingSubmissionJobStatus.error,
+      );
+    },
+  );
+
+  testWidgets('Ledger approval stays visible after partial ballot progress', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+    final updates = StreamController<VotingSessionState>();
+    addTearDown(updates.close);
+    final sessionProvider = StreamProvider((ref) => updates.stream);
+    final container = _statusContainer(
+      accountOverride: _LedgerAccountNotifier.new,
+      activeAccountUuid: () async => 'ledger-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'ledger-1'},
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _StaticVotingSubmissionJobsNotifier(
+            const VotingSubmissionJobsState(jobKeys: [key]),
+          ),
+        ),
+        votingSubmissionJobProvider(key).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            key,
+            const VotingSubmissionJobState(
+              key: key,
+              status: VotingSubmissionJobStatus.waitingForLedger,
+              generation: 1,
+              ledgerBundleIndex: 1,
+              ledgerBundleCount: 2,
+              ledgerDisplayMemo: 'Voting bundle',
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(
+          key,
+        ).overrideWith((ref) => ref.watch(sessionProvider)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(
+          initialLocation: votingStatusRoute(_roundId, accountUuid: 'ledger-1'),
+        ),
+      ),
+    );
+    final plan = apiRoundPlan(
+      roundId: _roundId,
+      pendingRecovery: true,
+      nextSteps: const [],
+      openProposals: Uint32List.fromList([1]),
+      allDecided: true,
+    );
+    for (final phase in [
+      VotingSessionPhase.castingVotes,
+      VotingSessionPhase.ledgerSigning,
+    ]) {
+      updates.add(
+        VotingSessionState(
+          roundId: _roundId,
+          accountUuid: 'ledger-1',
+          isHardwareAccount: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          phase: phase,
+          roundPlan: plan,
+          voteSubmissionCompletedCount: 1,
+          voteSubmissionTotalCount: 2,
+          voteSubmissionProgress: 0.5,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(find.text('Approve on your Ledger'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_voting_signing_panel')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('ledger_voting_cancel')), findsOneWidget);
+    expect(find.text('Signing with Keystone'), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
   });
 
   testWidgets('status screen requires software account without mnemonic', (
@@ -3943,6 +4102,122 @@ void main() {
     expect(rust.sessionBallotIntents.toSet(), {'1:false:0', '2:true:null'});
   });
 
+  testWidgets(
+    'Ledger voting persists sequential bundles and ignores a late cancelled result',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final recoveryApi = _MutableVotingRecoveryApi()
+        ..state = _recoveryState(bundleCount: 2);
+      final rust = _VotingStatusRustApi(
+        recoveryApi,
+        bundleCount: 2,
+        eligibilityWeightZatoshi: BigInt.from(200),
+        setupWeightPerBundle: BigInt.from(100),
+      );
+      final lateSecondSignature = Completer<List<LedgerVotingSignature>>();
+      final signedPczts = <List<int>>[];
+      var cancelCalls = 0;
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recoveryApi,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue((
+            _,
+            pcztBytes,
+          ) async {
+            signedPczts.add(List<int>.from(pcztBytes));
+            if (signedPczts.length == 2) {
+              return lateSecondSignature.future;
+            }
+            return [
+              LedgerVotingSignature(
+                pool: 1,
+                actionIndex: 0,
+                signature: List<int>.filled(64, signedPczts.length),
+              ),
+            ];
+          }),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {
+            cancelCalls++;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      const ledgerKey = VotingSessionKey(
+        roundId: _roundId,
+        accountUuid: 'ledger-1',
+      );
+      container.read(votingDraftProvider(ledgerKey).notifier).setChoice(1, 0);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(withPlatformProgressBuilder: true),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Bundle 2 of 2'), attempts: 100);
+
+      expect(
+        find.byKey(const ValueKey('ledger_voting_signing_panel')),
+        findsOneWidget,
+      );
+      expect(find.text('Approve on your Ledger'), findsOneWidget);
+      expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+      expect(find.text('Waiting for Ledger approval'), findsOneWidget);
+      expect(find.text('Signing with Keystone'), findsNothing);
+      expect(find.text('Signing with Ledger'), findsOneWidget);
+      expect(find.text('platform submission progress'), findsNothing);
+      expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
+      expect(find.textContaining('may not display'), findsOneWidget);
+      expect(find.text('Scan signature'), findsNothing);
+      expect(rust.storedKeystoneSignatures.keys, {0});
+      expect(signedPczts, [
+        [2, 0],
+        [2, 1],
+      ]);
+
+      await tester.tap(find.byKey(const ValueKey('ledger_voting_cancel')));
+      await tester.pump();
+      expect(cancelCalls, 1);
+      expect(
+        find.text('Ledger voting approval was cancelled.'),
+        findsOneWidget,
+      );
+
+      lateSecondSignature.complete([
+        LedgerVotingSignature(
+          pool: 1,
+          actionIndex: 0,
+          signature: List<int>.filled(64, 2),
+        ),
+      ]);
+      await tester.pump();
+      expect(rust.storedKeystoneSignatures.keys, {0});
+
+      await tester.tap(find.text('Retry'));
+      await _pumpUntilCondition(
+        tester,
+        () => rust.storedKeystoneSignatures.length == 2,
+        attempts: 100,
+      );
+      expect(rust.storedKeystoneSignatures.keys, {0, 1});
+      expect(signedPczts, [
+        [2, 0],
+        [2, 1],
+        [2, 1],
+      ]);
+    },
+  );
+
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
     tester,
   ) async {
@@ -4408,16 +4683,26 @@ Widget _mobileProposalApp(GoRouter router) {
 Widget _statusHarness({
   List<int>? keystoneScanResult,
   String? initialLocation,
+  bool withPlatformProgressBuilder = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation ?? '/voting/poll/$_roundId/status',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId/status',
-        builder: (_, state) => VotingStatusScreen(
-          roundId: state.pathParameters['roundId']!,
-          accountUuid: state.uri.queryParameters['account'],
-        ),
+        builder: (_, state) {
+          final roundId = state.pathParameters['roundId']!;
+          final accountUuid = state.uri.queryParameters['account'];
+          if (withPlatformProgressBuilder) {
+            return VotingStatusView(
+              roundId: roundId,
+              accountUuid: accountUuid,
+              submissionProgressBuilder: (_, _) =>
+                  const Text('platform submission progress'),
+            );
+          }
+          return VotingStatusScreen(roundId: roundId, accountUuid: accountUuid);
+        },
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',
@@ -4845,10 +5130,28 @@ class _HardwareAccountNotifier extends AccountNotifier {
         name: 'Keystone',
         order: 0,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
       ),
     ],
     activeAccountUuid: 'hardware-1',
     activeAddress: 'u1hardwarevotingaddress',
+  );
+}
+
+class _LedgerAccountNotifier extends AccountNotifier {
+  @override
+  FutureOr<AccountState> build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'ledger-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'ledger-1',
+    activeAddress: 'u1ledgervotingaddress',
   );
 }
 
@@ -5469,6 +5772,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
   final Map<int, String> keystoneMemoZecByBundle;
+  Future<void> Function()? beforeStoreKeystoneSignatures;
   @override
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
@@ -5789,7 +6093,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     final displayAmount = keystoneMemoZecByBundle[bundleIndex] ?? '0.00000100';
     return rust_delegate.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
-      redactedPcztBytes: Uint8List.fromList(const [2]),
+      redactedPcztBytes: Uint8List.fromList([2, bundleIndex]),
       pcztSighash: Uint8List.fromList(const [3]),
       rk: Uint8List.fromList(const [4]),
       actionIndex: 0,
@@ -5827,6 +6131,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     required String roundId,
     required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) async {
+    await beforeStoreKeystoneSignatures?.call();
     var inserted = 0;
     var alreadyPresent = 0;
     for (final signature in signatures) {

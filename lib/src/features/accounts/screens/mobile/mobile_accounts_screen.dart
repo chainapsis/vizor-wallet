@@ -586,7 +586,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
         size: AppProfilePictureSize.navLarge,
-        isHardware: account.isHardware,
+        hardwareSignerKind: account.hardwareSignerKind,
         badgeRingColor: colors.background.ground,
         badgeBorderWidth: 3,
         badgeRight: -5,
@@ -763,7 +763,7 @@ class _RemoveAccountSheet extends StatelessWidget {
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
         size: AppProfilePictureSize.large,
-        isHardware: account.isHardware,
+        hardwareSignerKind: account.hardwareSignerKind,
       ),
       titleStyle: _titleStyle.copyWith(color: colors.text.accent),
       child: Column(

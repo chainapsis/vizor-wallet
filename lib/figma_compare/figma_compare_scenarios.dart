@@ -2,6 +2,10 @@
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../src/app_bootstrap.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 
 import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/keystone_use_cases.dart';
@@ -24,6 +28,7 @@ import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
+import 'mobile_method_selection_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -54,6 +59,18 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-method-selection-ledger',
+    description: 'Mobile method selection with Ledger available',
+    builder: buildMobileMethodSelectionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-sidebar',
+    description: 'Desktop Ledger import sidebar illustration',
+    builder: _buildLedgerOnboardingSidebar,
+  ),
   FigmaCompareScenario(
     id: 'gift-card-usage-checking',
     description: 'Inline Gift Card usage states',
@@ -1868,6 +1885,15 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
 ];
+
+Widget _buildLedgerOnboardingSidebar(BuildContext context) => ProviderScope(
+  overrides: [appBootstrapProvider.overrideWithValue(AppBootstrapState.empty)],
+  child: const LedgerOnboardingShell(
+    activeStep: LedgerOnboardingStep.birthday,
+    backTarget: null,
+    child: SizedBox.shrink(),
+  ),
+);
 
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {

@@ -460,6 +460,51 @@ void main() {
     expect(find.text('viewing key route hardware-account'), findsOneWidget);
   });
 
+  testWidgets('Ledger account uses a Ledger-specific hardware badge', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'ledger-account',
+          name: 'Ledger Vault',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          birthdayHeight: 2600000,
+          zip32AccountIndex: 12,
+          ledgerConnectionPreference: LedgerConnectionPreference.automatic,
+          ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+          ledgerDeviceId: 'nano-x-id',
+          ledgerDeviceName: 'Rowan Ledger',
+          ledgerDeviceModel: 'Nano X',
+        ),
+      ],
+      activeAccountUuid: 'ledger-account',
+      activeAddress: 'u1ledgeraddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_ledger')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_keystone')),
+      findsNothing,
+    );
+  });
+
   testWidgets('current imported account can be removed', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {

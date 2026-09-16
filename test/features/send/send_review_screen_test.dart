@@ -4,9 +4,9 @@
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -22,16 +22,23 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
     show
+        resolveSendReviewRoutePayload,
+        sendReviewRouteLocation,
         resolveSendStatusRoutePayload,
         SendFlowKind,
         SendStatusRoutePayloadObserver,
@@ -41,6 +48,7 @@ import 'package:zcash_wallet/src/features/send/widgets/sapling_params_prompt.dar
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart'
     show KeystoneActionSig, KeystoneMsgSig, KeystoneSigResult;
@@ -75,6 +83,28 @@ void main() {
     });
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
+
+  for (final type in ['unified', 'tex']) {
+    testWidgets('Ledger $type PCZT uses active fallback', (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: type),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async => [9, 1],
+          useFallback: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.pcztUrls, ['https://fallback.example:443']);
+      expect(rustApi.createPcztCalls, 1);
+    });
+  }
 
   testWidgets('a whitespace-only memo keeps its Message row, with a '
       'placeholder', (tester) async {
@@ -1101,6 +1131,834 @@ void main() {
     expect(rustApi.encodeFullPcztCalls, 2);
   });
 
+  for (final flowKind in [SendFlowKind.send, SendFlowKind.donation]) {
+    testWidgets(
+      'Ledger ${flowKind.name} handoff signs directly and carries the PCZT pair',
+      (tester) async {
+        final statusExtras = <Object?>[];
+        List<int>? signingRequest;
+        final operationService = _FakeLedgerSignedOperationService();
+
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            _reviewArgs(addressType: 'unified', flowKind: flowKind),
+            bootstrap: _bootstrap(
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+            statusExtras: statusExtras,
+            ledgerOperationService: operationService,
+            ledgerSigner: (pcztBytes) async {
+              signingRequest = [...pcztBytes];
+              return _fakeSignatureBytes;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        await tester.tap(find.text('Confirm with Ledger'));
+        await _flushRealAsync(tester);
+
+        expect(find.byType(LedgerSigningModal), findsNothing);
+        expect(find.text('status-route'), findsOneWidget);
+        expect(signingRequest, const [4, 5, 6]);
+        final extra = statusExtras.single as LedgerBroadcastArgs;
+        expect(extra.reviewArgs.flowKind, flowKind);
+        expect(
+          extra.operationId,
+          'send:test-account:${extra.reviewArgs.sendFlowId}',
+        );
+        expect(operationService.checkpoints, hasLength(1));
+        expect(operationService.checkpoints.single.proofs, _fakeProofsBytes);
+        expect(
+          operationService.checkpoints.single.signatures,
+          _fakeSignatureBytes,
+        );
+      },
+    );
+  }
+
+  testWidgets(
+    'Ledger retry reuses the consumed proposal PCZT and retries only signing',
+    (tester) async {
+      final statusExtras = <Object?>[];
+      final signingRequests = <List<int>>[];
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          statusExtras: statusExtras,
+          ledgerSigner: (pcztBytes) async {
+            signingRequests.add([...pcztBytes]);
+            if (signingRequests.length == 1) {
+              throw StateError('Ledger rejected the test PCZT');
+            }
+            return _fakeSignatureBytes;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger signing failed'), findsOneWidget);
+      expect(rustApi.createPcztCalls, 1);
+      expect(rustApi.redactPcztCalls, 1);
+      expect(rustApi.addProofsCalls, 1);
+
+      await tester.tap(find.text('Try again'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('status-route'), findsOneWidget);
+      expect(rustApi.createPcztCalls, 1);
+      expect(rustApi.redactPcztCalls, 1);
+      expect(rustApi.addProofsCalls, 1);
+      expect(signingRequests, const [
+        [4, 5, 6],
+        [4, 5, 6],
+      ]);
+      expect(statusExtras.single, isA<LedgerBroadcastArgs>());
+    },
+  );
+
+  testWidgets(
+    'Ledger legacy Orchard recovery requires an app update without retrying',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async => throw StateError(
+            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(
+        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsNothing);
+    },
+  );
+
+  testWidgets('Ledger TEX signs two rounds then checkpoints one batch', (
+    tester,
+  ) async {
+    final firstApproval = Completer<List<int>>();
+    final secondApproval = Completer<List<int>>();
+    final operationService = _FakeLedgerSignedOperationService();
+    final signingRequests = <List<int>>[];
+    addTearDown(() {
+      if (!firstApproval.isCompleted) firstApproval.complete([9, 1]);
+      if (!secondApproval.isCompleted) secondApproval.complete([9, 2]);
+    });
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (pczt) {
+          signingRequests.add([...pczt]);
+          return signingRequests.length == 1
+              ? firstApproval.future
+              : secondApproval.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(
+      find.text('Review Transaction 1 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(signingRequests, const [
+      [1, 4],
+    ]);
+
+    firstApproval.complete([9, 1]);
+    await _flushRealAsync(tester);
+    expect(
+      find.text('Review Transaction 2 of 2 on your Ledger'),
+      findsOneWidget,
+    );
+    expect(signingRequests, const [
+      [1, 4],
+      [2, 4],
+    ]);
+
+    secondApproval.complete([9, 2]);
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+    expect(operationService.checkpoints, isEmpty);
+    expect(operationService.batchCheckpoints, hasLength(1));
+    expect(operationService.batchCheckpoints.single.proofs, const [
+      [3, 1],
+      [3, 2],
+    ]);
+    expect(operationService.batchCheckpoints.single.signatures, const [
+      [9, 1],
+      [9, 2],
+    ]);
+    expect(rustApi.createPcztCalls, 1);
+    expect(rustApi.redactPcztCalls, 2);
+    expect(rustApi.addProofsCalls, 2);
+  });
+
+  testWidgets('Ledger TEX second rejection can cancel without checkpointing', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    var cancelCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          if (signerCalls == 2) {
+            throw StateError('Ledger request rejected on device');
+          }
+          return [9, 1];
+        },
+        ledgerCanceller: () async => cancelCalls++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.text('Ledger signing failed'), findsOneWidget);
+    expect(
+      find.text('The transaction was rejected on your Ledger.'),
+      findsOneWidget,
+    );
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, isEmpty);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+    expect(find.byType(SendReviewScreen), findsOneWidget);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(cancelCalls, 1);
+  });
+
+  testWidgets('Ledger TEX checkpoint retry does not request approval again', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService()
+      ..failuresRemaining = 1;
+    var signerCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'tex', address: _texAddress),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async => [9, ++signerCalls],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.text('Could not save signed transaction'), findsOneWidget);
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, hasLength(1));
+
+    await tester.tap(find.text('Retry saving'));
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+    expect(signerCalls, 2);
+    expect(operationService.batchCheckpoints, hasLength(2));
+    expect(
+      operationService.batchCheckpoints[1].signatures,
+      operationService.batchCheckpoints[0].signatures,
+    );
+  });
+
+  for (final dismissal in ['button', 'scrim', 'escape', 'back']) {
+    testWidgets(
+      'Ledger $dismissal dismissal keeps the same review and ignores a late signature',
+      (tester) async {
+        final signerResult = Completer<List<int>>();
+        final operationService = _FakeLedgerSignedOperationService();
+        var cancelCount = 0;
+        addTearDown(() {
+          if (!signerResult.isCompleted) {
+            signerResult.complete(_fakeSignatureBytes);
+          }
+        });
+
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            _reviewArgs(addressType: 'unified'),
+            bootstrap: _bootstrap(
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+            ledgerOperationService: operationService,
+            ledgerSigner: (_) => signerResult.future,
+            ledgerCanceller: () async => cancelCount++,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Confirm with Ledger'));
+        await _flushRealAsync(tester);
+        expect(find.text('Review on your Ledger'), findsOneWidget);
+
+        switch (dismissal) {
+          case 'button':
+            await tester.tap(
+              find.descendant(
+                of: find.byType(LedgerSigningModal),
+                matching: find.text('Cancel'),
+              ),
+            );
+          case 'scrim':
+            final overlayRect = tester.getRect(
+              find.byType(AppPaneModalOverlay),
+            );
+            await tester.tapAt(overlayRect.topLeft + const Offset(8, 8));
+          case 'escape':
+            await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          case 'back':
+            await tester.binding.handlePopRoute();
+        }
+        await _flushRealAsync(tester);
+
+        expect(find.byType(LedgerSigningModal), findsNothing);
+        expect(find.byType(SendReviewScreen), findsOneWidget);
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        expect(find.text('15.12 ZEC'), findsOneWidget);
+        expect(find.text(truncatedAddress(_longAddress)), findsOneWidget);
+        expect(cancelCount, 1);
+        expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+        expect(operationService.checkpoints, isEmpty);
+
+        signerResult.complete(_fakeSignatureBytes);
+        await _flushRealAsync(tester);
+
+        expect(find.byType(SendReviewScreen), findsOneWidget);
+        expect(find.text('status-route'), findsNothing);
+        expect(operationService.checkpoints, isEmpty);
+        expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      },
+    );
+  }
+
+  testWidgets('Ledger cannot retry while device cancellation is pending', (
+    tester,
+  ) async {
+    final cancellation = Completer<void>();
+    var signerCalls = 0;
+    addTearDown(() {
+      if (!cancellation.isCompleted) cancellation.complete();
+    });
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerSigner: (_) async {
+          signerCalls++;
+          throw StateError('6985 rejected');
+        },
+        ledgerCanceller: () => cancellation.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    final queuedRetry = tester
+        .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+        .onFailureAction!;
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pump();
+    queuedRetry();
+    await tester.pump();
+    expect(signerCalls, 1);
+    expect(
+      tester
+          .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+          .onFailureAction,
+      isNull,
+    );
+    expect(rustApi.discardCalls, isEmpty);
+    cancellation.complete();
+    await _flushRealAsync(tester);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+  });
+
+  testWidgets('Ledger cancellation generation cannot affect the next request', (
+    tester,
+  ) async {
+    final firstSignerResult = Completer<List<int>>();
+    final secondSignerResult = Completer<List<int>>();
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    var cancelCount = 0;
+    addTearDown(() {
+      if (!firstSignerResult.isCompleted) {
+        firstSignerResult.complete(_fakeSignatureBytes);
+      }
+      if (!secondSignerResult.isCompleted) {
+        secondSignerResult.complete(_fakeSignatureBytes);
+      }
+    });
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) {
+          signerCalls++;
+          return signerCalls == 1
+              ? firstSignerResult.future
+              : secondSignerResult.future;
+        },
+        ledgerCanceller: () async => cancelCount++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(signerCalls, 2);
+
+    firstSignerResult.complete(_fakeSignatureBytes);
+    await _flushRealAsync(tester);
+    expect(find.text('Review on your Ledger'), findsOneWidget);
+    expect(operationService.checkpoints, isEmpty);
+
+    secondSignerResult.complete(_fakeSignatureBytes);
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+    expect(operationService.checkpoints, hasLength(1));
+    expect(cancelCount, 1);
+  });
+
+  testWidgets(
+    'Ledger cancellation drains creation before refreshing the review',
+    (tester) async {
+      final creationGate = Completer<void>();
+      final syncNotifier = _FakeSyncNotifier();
+      rustApi.createPcztGate = creationGate;
+      addTearDown(() {
+        if (!creationGate.isCompleted) creationGate.complete();
+      });
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          syncNotifier: syncNotifier,
+          ledgerSigner: (_) async => _fakeSignatureBytes,
+          ledgerCanceller: () async {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createPcztCalls, 1);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(LedgerSigningModal),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await _flushRealAsync(tester);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(find.text('Cancelling…'), findsOneWidget);
+      creationGate.complete();
+      await _flushRealAsync(tester);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.byType(LedgerSigningModal), findsNothing);
+      expect(find.text('Confirm with Ledger'), findsOneWidget);
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.createdProposalIds, [BigInt.one, BigInt.two]);
+      expect(find.text('status-route'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Ledger expired proposal requires a new transaction', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    rustApi.createPcztError = StateError('proposal not found');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+
+    expect(find.text('Transaction expired'), findsOneWidget);
+    expect(find.text('Create new transaction'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    expect(signerCalls, 0);
+    expect(operationService.checkpoints, isEmpty);
+
+    await tester.tap(find.text('Create new transaction'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('send-route'), findsOneWidget);
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+  });
+
+  testWidgets('Ledger checkpoint retry preserves bytes without re-signing', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService()
+      ..failuresRemaining = 1;
+    var signerCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+
+    expect(find.text('Could not save signed transaction'), findsOneWidget);
+    expect(find.text('Retry saving'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+      findsNothing,
+    );
+    expect(signerCalls, 1);
+    expect(operationService.checkpoints, hasLength(1));
+
+    await tester.tap(find.text('Retry saving'));
+    await _flushRealAsync(tester);
+
+    expect(find.text('status-route'), findsOneWidget);
+    expect(signerCalls, 1);
+    expect(rustApi.createPcztCalls, 1);
+    expect(rustApi.redactPcztCalls, 1);
+    expect(rustApi.addProofsCalls, 1);
+    expect(operationService.checkpoints, hasLength(2));
+    expect(
+      operationService.checkpoints.map((checkpoint) => checkpoint.operationId),
+      everyElement('send:test-account:test-send-flow'),
+    );
+    expect(
+      operationService.checkpoints.map((checkpoint) => checkpoint.accountUuid),
+      everyElement('test-account'),
+    );
+    expect(
+      operationService.checkpoints.map((checkpoint) => checkpoint.kind),
+      everyElement(LedgerSignedOperationKind.send),
+    );
+    expect(
+      operationService.checkpoints.map((checkpoint) => checkpoint.proofs),
+      everyElement(_fakeProofsBytes),
+    );
+    expect(
+      operationService.checkpoints.map((checkpoint) => checkpoint.signatures),
+      everyElement(_fakeSignatureBytes),
+    );
+  });
+
+  testWidgets('Ledger checkpoint integrity failure blocks every retry', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService()
+      ..failuresRemaining = 1
+      ..checkpointError = StateError(
+        'Ledger signed operation cannot be retried with different data',
+      );
+    var signerCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+
+    expect(find.text('Signed transaction needs attention'), findsOneWidget);
+    expect(find.text('Retry saving'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+      findsNothing,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Signed transaction needs attention'), findsOneWidget);
+    expect(signerCalls, 1);
+    expect(operationService.checkpoints, hasLength(1));
+    expect(rustApi.discardCalls, isEmpty);
+  });
+
+  testWidgets('Ledger saving state cannot be dismissed after signature', (
+    tester,
+  ) async {
+    final checkpointGate = Completer<void>();
+    final operationService = _FakeLedgerSignedOperationService()
+      ..checkpointGate = checkpointGate;
+    var cancelCount = 0;
+    addTearDown(() {
+      if (!checkpointGate.isCompleted) checkpointGate.complete();
+    });
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async => _fakeSignatureBytes,
+        ledgerCanceller: () async => cancelCount++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.text('Saving signed transaction'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(LedgerSigningModal),
+        matching: find.text('Cancel'),
+      ),
+      findsNothing,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.binding.handlePopRoute();
+    final overlayRect = tester.getRect(find.byType(AppPaneModalOverlay));
+    await tester.tapAt(overlayRect.topLeft + const Offset(8, 8));
+    await tester.pump();
+
+    expect(find.text('Saving signed transaction'), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+    expect(cancelCount, 0);
+    expect(rustApi.discardCalls, isEmpty);
+
+    checkpointGate.complete();
+    await _flushRealAsync(tester);
+    expect(find.text('status-route'), findsOneWidget);
+  });
+
+  testWidgets('Ledger Sapling parameter cancellation returns to review', (
+    tester,
+  ) async {
+    var signerCalls = 0;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', needsSaplingParams: true),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.byType(SaplingParamsPrompt), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SaplingParamsPrompt),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await _flushRealAsync(tester);
+
+    expect(find.byType(SaplingParamsPrompt), findsNothing);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(find.byType(SendReviewScreen), findsOneWidget);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(signerCalls, 0);
+    expect(rustApi.discardCalls, isEmpty);
+  });
+
+  testWidgets('Ledger review survives route replay while signing waits', (
+    tester,
+  ) async {
+    final args = _reviewArgs(addressType: 'unified');
+    final statusExtras = <Object?>[];
+    final signerResult = Completer<List<int>>();
+    addTearDown(() {
+      if (!signerResult.isCompleted) {
+        signerResult.complete(_fakeSignatureBytes);
+      }
+    });
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        productionReviewRoute: true,
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        statusExtras: statusExtras,
+        ledgerSigner: (_) => signerResult.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
+    expect(find.byType(LedgerSigningModal), findsOneWidget);
+
+    final reviewContext = tester.element(find.byType(SendReviewScreen));
+    ProviderScope.containerOf(
+      reviewContext,
+    ).read(sendStatusRoutePayloadProvider.notifier).retain(args);
+    GoRouter.of(
+      reviewContext,
+    ).go('/send/review?flow=${args.sendFlowId}&replayed=1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(SendReviewScreen), findsOneWidget);
+    expect(find.byType(LedgerSigningModal), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+
+    signerResult.complete(_fakeSignatureBytes);
+    await _flushRealAsync(tester);
+
+    expect(find.text('status-route'), findsOneWidget);
+    expect(statusExtras.single, isA<LedgerBroadcastArgs>());
+  });
+
   testWidgets('Keystone status survives a router refresh after handoff', (
     tester,
   ) async {
@@ -1145,6 +2003,52 @@ void main() {
       pcztWithSignatures: [_fakeSignatureBytes],
     );
 
+    expect(
+      resolveSendStatusRoutePayload(
+        routePayload: null,
+        retainedPayload: retained,
+        sendFlowId: 'different-send-flow',
+      ),
+      isNull,
+    );
+  });
+
+  test('retained review payload restores only its matching send flow', () {
+    final reviewArgs = _reviewArgs(addressType: 'unified');
+
+    expect(
+      resolveSendReviewRoutePayload(
+        routePayload: null,
+        retainedPayload: reviewArgs,
+        sendFlowId: reviewArgs.sendFlowId,
+      ),
+      same(reviewArgs),
+    );
+    expect(
+      resolveSendReviewRoutePayload(
+        routePayload: null,
+        retainedPayload: reviewArgs,
+        sendFlowId: 'different-send-flow',
+      ),
+      isNull,
+    );
+  });
+
+  test('retained Ledger payload restores only its matching send flow', () {
+    final reviewArgs = _reviewArgs(addressType: 'unified');
+    final retained = LedgerBroadcastArgs(
+      reviewArgs: reviewArgs,
+      operationId: 'send:test-account:${reviewArgs.sendFlowId}',
+    );
+
+    expect(
+      resolveSendStatusRoutePayload(
+        routePayload: null,
+        retainedPayload: retained,
+        sendFlowId: reviewArgs.sendFlowId,
+      ),
+      same(retained),
+    );
     expect(
       resolveSendStatusRoutePayload(
         routePayload: null,
@@ -1475,12 +2379,20 @@ Widget _harness(
   List<Object?>? statusExtras,
   List<Object?>? scanExtras,
   Listenable? routerRefresh,
+  Future<List<int>> Function(List<int> pcztBytes)? ledgerSigner,
+  LedgerOperationCanceller? ledgerCanceller,
+  LedgerSignedOperationService? ledgerOperationService,
   _FakeSyncNotifier? syncNotifier,
   bool cancelScan = false,
+  bool productionReviewRoute = false,
   String initialLocation = '/send/review',
+  bool useFallback = false,
 }) {
   final router = GoRouter(
-    initialLocation: initialLocation,
+    initialLocation: initialLocation == '/send/review'
+        ? sendReviewRouteLocation(args.sendFlowId)
+        : initialLocation,
+    initialExtra: args,
     refreshListenable: routerRefresh,
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
@@ -1491,7 +2403,21 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/review',
-        builder: (_, _) => SendReviewScreen(args: args),
+        pageBuilder: productionReviewRoute ? buildDesktopSendReviewPage : null,
+        builder: productionReviewRoute
+            ? null
+            : (context, state) => switch (resolveSendReviewRoutePayload(
+                routePayload:
+                    state.extra ??
+                    (state.uri.queryParameters['flow'] == null ? args : null),
+                retainedPayload: ProviderScope.containerOf(
+                  context,
+                ).read(sendStatusRoutePayloadProvider),
+                sendFlowId: state.uri.queryParameters['flow'],
+              )) {
+                SendReviewArgs resolved => SendReviewScreen(args: resolved),
+                _ => const Text('send-route'),
+              },
       ),
       GoRoute(
         path: '/send/keystone/scan',
@@ -1517,7 +2443,8 @@ Widget _harness(
           );
           statusExtras?.add(resolved);
           if (resolved is! SendReviewArgs &&
-              resolved is! KeystoneBroadcastArgs) {
+              resolved is! KeystoneBroadcastArgs &&
+              resolved is! LedgerBroadcastArgs) {
             return const Text('send-route');
           }
           return const Text('status-route');
@@ -1527,11 +2454,24 @@ Widget _harness(
   );
 
   return ProviderScope(
-    overrides: _harnessOverrides(
-      bootstrap: bootstrap,
-      addressBookRepository: addressBookRepository,
-      syncNotifier: syncNotifier,
-    ),
+    overrides: [
+      ..._harnessOverrides(
+        bootstrap: bootstrap,
+        addressBookRepository: addressBookRepository,
+        syncNotifier: syncNotifier,
+      ),
+      if (useFallback)
+        rpcEndpointFailoverProvider.overrideWith(_FallbackRoute.new),
+      if (ledgerSigner != null)
+        ledgerPcztSignerProvider.overrideWithValue(
+          (_, pcztBytes) => ledgerSigner(pcztBytes),
+        ),
+      if (ledgerCanceller != null)
+        ledgerOperationCancellerProvider.overrideWithValue(ledgerCanceller),
+      ledgerSignedOperationServiceProvider.overrideWithValue(
+        ledgerOperationService ?? _FakeLedgerSignedOperationService(),
+      ),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
@@ -1539,9 +2479,118 @@ Widget _harness(
   );
 }
 
+class _LedgerCheckpoint {
+  const _LedgerCheckpoint({
+    required this.operationId,
+    required this.accountUuid,
+    required this.kind,
+    required this.proofs,
+    required this.signatures,
+  });
+
+  final String operationId;
+  final String accountUuid;
+  final LedgerSignedOperationKind kind;
+  final List<int> proofs;
+  final List<int> signatures;
+}
+
+class _LedgerBatchCheckpoint {
+  const _LedgerBatchCheckpoint({
+    required this.operationId,
+    required this.accountUuid,
+    required this.kind,
+    required this.proofs,
+    required this.signatures,
+  });
+
+  final String operationId;
+  final String accountUuid;
+  final LedgerSignedOperationKind kind;
+  final List<List<int>> proofs;
+  final List<List<int>> signatures;
+}
+
+class _FakeLedgerSignedOperationService
+    implements
+        LedgerSignedOperationService,
+        LedgerSignedOperationBatchCheckpointService {
+  final checkpoints = <_LedgerCheckpoint>[];
+  final batchCheckpoints = <_LedgerBatchCheckpoint>[];
+  int failuresRemaining = 0;
+  Object checkpointError = StateError('checkpoint failed');
+  Completer<void>? checkpointGate;
+
+  @override
+  Future<void> checkpoint({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? externalRef,
+  }) async {
+    checkpoints.add(
+      _LedgerCheckpoint(
+        operationId: operationId,
+        accountUuid: accountUuid,
+        kind: kind,
+        proofs: [...pcztWithProofsBytes],
+        signatures: [...pcztWithSignaturesBytes],
+      ),
+    );
+    final gate = checkpointGate;
+    if (gate != null) await gate.future;
+    if (failuresRemaining > 0) {
+      failuresRemaining--;
+      throw checkpointError;
+    }
+  }
+
+  @override
+  Future<void> checkpointBatch({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<List<int>> pcztsWithProofs,
+    required List<List<int>> pcztsWithSignatures,
+    String? externalRef,
+  }) async {
+    batchCheckpoints.add(
+      _LedgerBatchCheckpoint(
+        operationId: operationId,
+        accountUuid: accountUuid,
+        kind: kind,
+        proofs: pcztsWithProofs.map((pczt) => [...pczt]).toList(),
+        signatures: pcztsWithSignatures.map((pczt) => [...pczt]).toList(),
+      ),
+    );
+    final gate = checkpointGate;
+    if (gate != null) await gate.future;
+    if (failuresRemaining > 0) {
+      failuresRemaining--;
+      throw checkpointError;
+    }
+  }
+
+  @override
+  Future<void> acknowledge(String operationId) async {}
+
+  @override
+  Future<LedgerSignedOperationBroadcastResult> broadcast({
+    required String operationId,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+}
+
 AppBootstrapState _bootstrap({
   bool isHardware = false,
   bool secondAccount = false,
+  HardwareSignerKind? hardwareSignerKind,
 }) {
   return AppBootstrapState(
     initialLocation: '/send/review',
@@ -1552,6 +2601,7 @@ AppBootstrapState _bootstrap({
           name: 'Account 1',
           order: 0,
           isHardware: isHardware,
+          hardwareSignerKind: hardwareSignerKind,
         ),
         if (secondAccount)
           const AccountInfo(uuid: 'account-b', name: 'Account B', order: 1),
@@ -1711,12 +2761,17 @@ class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   final proposedAccounts = <String>[];
+  final pcztUrls = <String>[];
   int createPcztCalls = 0;
   final createdProposalIds = <BigInt>[];
   int prepareBatchCalls = 0;
   int encodeBatchCalls = 0;
   int encodeFullPcztCalls = 0;
   int decodeBatchCalls = 0;
+  int redactPcztCalls = 0;
+  int addProofsCalls = 0;
+  Object? createPcztError;
+  Completer<void>? createPcztGate;
   int previousTransactionCount = 0;
   Object? prepareBatchError;
   Completer<void>? discardCompleter;
@@ -1727,12 +2782,17 @@ class _RustApiFake implements RustLibApi {
   void reset() {
     discardCalls.clear();
     proposedAccounts.clear();
+    pcztUrls.clear();
     createPcztCalls = 0;
     createdProposalIds.clear();
     prepareBatchCalls = 0;
     encodeBatchCalls = 0;
     encodeFullPcztCalls = 0;
     decodeBatchCalls = 0;
+    redactPcztCalls = 0;
+    addProofsCalls = 0;
+    createPcztError = null;
+    createPcztGate = null;
     previousTransactionCount = 0;
     prepareBatchError = null;
     discardCompleter = null;
@@ -1815,8 +2875,13 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
   }) async {
+    pcztUrls.add(lightwalletdUrl);
     createPcztCalls++;
     createdProposalIds.add(proposalId);
+    final gate = createPcztGate;
+    if (gate != null) await gate.future;
+    final error = createPcztError;
+    if (error != null) throw error;
     return Uint8List.fromList([1, 2, 3]);
   }
 
@@ -1828,6 +2893,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
   }) async {
+    pcztUrls.add(lightwalletdUrl);
     createPcztCalls++;
     return TexPcztPairResult(
       pczts: [
@@ -1845,6 +2911,10 @@ class _RustApiFake implements RustLibApi {
   Future<Uint8List> crateApiSyncRedactPcztForSigner({
     required List<int> pcztBytes,
   }) async {
+    redactPcztCalls++;
+    if (pcztBytes.length == 1) {
+      return Uint8List.fromList([pcztBytes.single, 4]);
+    }
     return Uint8List.fromList([4, 5, 6]);
   }
 
@@ -1922,9 +2992,25 @@ class _RustApiFake implements RustLibApi {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
+    addProofsCalls++;
+    if (pcztBytes.length == 1) {
+      return Uint8List.fromList([3, pcztBytes.single]);
+    }
     return Uint8List.fromList(_fakeProofsBytes);
   }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
+class _FallbackRoute extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() => RpcEndpointFailoverState(
+    primary: defaultRpcEndpointConfig('main'),
+    current: const RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://fallback.example:443',
+    ),
+    fallbackCandidates: const [],
+  );
 }

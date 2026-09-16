@@ -772,6 +772,16 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
+Future<LedgerShieldingProgress> getLedgerShieldingProgress({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetLedgerShieldingProgress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
@@ -1533,6 +1543,32 @@ class KeystoneSignedMigrationMessage {
           runtimeType == other.runtimeType &&
           id == other.id &&
           sigs == other.sigs;
+}
+
+/// Local DB progress only; no address discovery or network requests.
+class LedgerShieldingProgress {
+  final int inputCount;
+  final int inputLimit;
+  final bool belowThreshold;
+
+  const LedgerShieldingProgress({
+    required this.inputCount,
+    required this.inputLimit,
+    required this.belowThreshold,
+  });
+
+  @override
+  int get hashCode =>
+      inputCount.hashCode ^ inputLimit.hashCode ^ belowThreshold.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LedgerShieldingProgress &&
+          runtimeType == other.runtimeType &&
+          inputCount == other.inputCount &&
+          inputLimit == other.inputLimit &&
+          belowThreshold == other.belowThreshold;
 }
 
 class MigrationOutboxBatch {

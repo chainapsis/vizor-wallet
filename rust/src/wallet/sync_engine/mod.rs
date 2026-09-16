@@ -51,6 +51,7 @@ mod enhance;
 mod gift_card_funding;
 pub(crate) use gift_card_funding::gift_card_funding_reason;
 mod error;
+pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 mod tip_cache;
@@ -1160,6 +1161,8 @@ async fn repair_anchor_root_mismatch_if_needed(
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
+                ledger_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
+                    .map_err(|e| SyncError::db(format!("invalidate transparent refresh: {e}")))?;
                 match db.truncate_to_chain_state(repair_chain_state.clone()) {
                     Ok(()) => {}
                     Err(e) if is_commitment_tree_root_conflict(&e) => {
@@ -1269,6 +1272,7 @@ struct TransparentRefresh {
 
 struct TransparentRefreshCompletion {
     non_external_addresses: Vec<String>,
+    internal_sweep: bool,
     child_indices: Vec<u32>,
     next_sweep_offset: Option<usize>,
 }
@@ -1332,6 +1336,8 @@ async fn refresh_utxos(
             continue;
         }
         summary.matched_accounts += 1;
+        let planning_started = std::time::Instant::now();
+        let first_refresh = refreshes.len();
         let safety_start_height = db
             .utxo_query_height(account_id)
             .map_err(|e| SyncError::db(format!("utxo_query_height: {e}")))?;
@@ -1344,6 +1350,43 @@ async fn refresh_utxos(
                 );
                 u64::from(u32::from(safety_start_height))
             });
+
+        let is_ledger = db
+            .get_account(account_id)
+            .map_err(|e| SyncError::db(e.to_string()))?
+            .is_some_and(|a| {
+                keys::hardware_signer_kind(zcash_client_backend::data_api::Account::source(&a))
+                    == Some(keys::HardwareSignerKind::Ledger)
+            });
+        let account_birthday_height = if is_ledger {
+            0
+        } else {
+            account_birthday_height
+        };
+        let safety_start_height = if is_ledger {
+            BlockHeight::from_u32(0)
+        } else {
+            safety_start_height
+        };
+
+        let (external_sweep_due, internal_sweep_due) = if is_ledger {
+            transparent_receive_cache::ledger_sweep_due(db_data_path, network, &account_uuid)
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "transparent sweep schedule unavailable for account {}: {}",
+                        account_uuid,
+                        e
+                    );
+                    (true, true)
+                })
+        } else {
+            (true, true)
+        };
+        let external_recent_limit = if is_ledger {
+            10
+        } else {
+            TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
+        };
 
         let query_network = transparent_utxo_query_network(network);
         let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
@@ -1364,8 +1407,12 @@ async fn refresh_utxos(
             &external_addresses,
             account_birthday_height,
             u64::from(u32::from(safety_start_height)),
-            TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT,
-            TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT,
+            external_recent_limit,
+            if external_sweep_due {
+                TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT
+            } else {
+                0
+            },
         ) {
             Ok(batches) => batches,
             Err(e) => {
@@ -1407,6 +1454,7 @@ async fn refresh_utxos(
                 account_uuid: account_uuid.clone(),
                 completion: Some(TransparentRefreshCompletion {
                     non_external_addresses: Vec::new(),
+                    internal_sweep: false,
                     child_indices: batch.child_indices,
                     next_sweep_offset: batch.next_sweep_offset,
                 }),
@@ -1418,9 +1466,53 @@ async fn refresh_utxos(
             .map(|address| address.address.as_str())
             .collect::<BTreeSet<_>>();
         let mut internal_addresses = std::collections::HashSet::new();
-        let non_external_addresses: Vec<String> = db
+        let receivers = db
             .get_transparent_receivers(account_id, true, true)
-            .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
+            .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?;
+        if is_ledger {
+            let internal = receivers
+                .iter()
+                .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
+                .map(|(addr, meta)| {
+                    meta.address_index()
+                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let batches = transparent_receive_cache::plan_internal_utxo_refresh(
+                db_data_path,
+                network,
+                &account_uuid,
+                &internal,
+                5,
+                if internal_sweep_due { TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT } else { 0 },
+            )
+            .unwrap_or_else(|e| {
+                // Like the existing external fallback, cache failure must not
+                // make wallet funds inaccessible. This exceptional path retains
+                // the pre-optimization complete snapshot and logs its cost.
+                log::warn!("transparent receive cache: failed to plan internal refresh for account {}; falling back to full internal refresh: {}", account_uuid, e);
+                vec![transparent_receive_cache::TransparentUtxoRefreshBatch {
+                    addresses: internal.iter().map(|(_, address)| address.clone()).collect(),
+                    child_indices: Vec::new(), start_height: 0, next_sweep_offset: None,
+                }]
+            });
+            for batch in batches {
+                refreshes.push(TransparentRefresh {
+                    addresses: batch.addresses.clone(),
+                    start_height: block_height_from_u64(batch.start_height, "internal UTXO start")?,
+                    label: "transparent internal UTXOs".into(),
+                    account_uuid: account_uuid.clone(),
+                    completion: Some(TransparentRefreshCompletion {
+                        non_external_addresses: batch.addresses.clone(),
+                        internal_sweep: true,
+                        child_indices: batch.child_indices,
+                        next_sweep_offset: batch.next_sweep_offset,
+                    }),
+                });
+            }
+        }
+        let non_external_addresses: Vec<String> = receivers
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
             .map(|(addr, metadata)| {
@@ -1451,10 +1543,17 @@ async fn refresh_utxos(
                 vec![(non_external_addresses.clone(), 0)]
             }
         });
-        for (addresses, start) in non_external_batches {
+        for (mut addresses, start) in non_external_batches {
+            if is_ledger {
+                addresses.retain(|address| !internal_addresses.contains(address));
+            }
+            if addresses.is_empty() {
+                continue;
+            }
             refreshes.push(TransparentRefresh {
                 completion: Some(TransparentRefreshCompletion {
                     non_external_addresses: addresses.clone(),
+                    internal_sweep: false,
                     child_indices: Vec::new(),
                     next_sweep_offset: None,
                 }),
@@ -1464,6 +1563,16 @@ async fn refresh_utxos(
                 account_uuid: account_uuid.clone(),
             });
         }
+        log::info!(
+            "transparent refresh plan: account={} rpc_count={} addresses={} elapsed_ms={}",
+            account_id.expose_uuid(),
+            refreshes.len() - first_refresh,
+            refreshes[first_refresh..]
+                .iter()
+                .map(|r| r.addresses.len())
+                .sum::<usize>(),
+            planning_started.elapsed().as_millis(),
+        );
     }
 
     let total_refreshes = refreshes.len() as u64;
@@ -1551,30 +1660,44 @@ fn update_transparent_refresh_cache_metadata(
     }
     if let Some(completion) = downloaded.refresh.completion.as_ref() {
         if !completion.non_external_addresses.is_empty() {
-            if let Err(error) = transparent_receive_cache::mark_non_external_utxo_refresh_complete(
+            let result = if completion.internal_sweep {
+                transparent_receive_cache::mark_non_external_utxo_refresh_complete_with_sweep(
+                    db_data_path,
+                    network,
+                    &downloaded.refresh.account_uuid,
+                    &completion.non_external_addresses,
+                    u64::from(u32::from(tip_height)) + 1,
+                    completion.next_sweep_offset,
+                )
+            } else {
+                transparent_receive_cache::mark_non_external_utxo_refresh_complete(
+                    db_data_path,
+                    network,
+                    &downloaded.refresh.account_uuid,
+                    &completion.non_external_addresses,
+                    u64::from(u32::from(tip_height)) + 1,
+                )
+            };
+            if let Err(error) = result {
+                log::warn!("failed to mark non-external UTXO lookup complete: {error}");
+            }
+        }
+        if !completion.internal_sweep {
+            if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
                 db_data_path,
                 network,
                 &downloaded.refresh.account_uuid,
-                &completion.non_external_addresses,
+                &completion.child_indices,
                 u64::from(u32::from(tip_height)) + 1,
+                completion.next_sweep_offset,
             ) {
-                log::warn!("failed to mark internal UTXO lookup complete: {error}");
-            }
-        }
-        if let Err(e) = transparent_receive_cache::mark_utxo_refresh_batch_complete(
-            db_data_path,
-            network,
-            &downloaded.refresh.account_uuid,
-            &completion.child_indices,
-            u64::from(u32::from(tip_height)) + 1,
-            completion.next_sweep_offset,
-        ) {
-            log::warn!(
-                "transparent receive cache: failed to mark UTXO batch complete for \
+                log::warn!(
+                    "transparent receive cache: failed to mark UTXO batch complete for \
                  account {}: {}",
-                downloaded.refresh.account_uuid,
-                e,
-            );
+                    downloaded.refresh.account_uuid,
+                    e,
+                );
+            }
         }
     }
 }
@@ -1729,6 +1852,8 @@ async fn download_transparent_outputs(
         }));
     }
 
+    let started = std::time::Instant::now();
+    let address_count = refresh.addresses.len();
     log::info!(
         "[{}] sync: refreshing {} for account {} from height {} ({} addresses)",
         elapsed(),
@@ -1757,6 +1882,7 @@ async fn download_transparent_outputs(
     };
 
     let mut outputs = Vec::new();
+    let mut response_bytes = 0usize;
     loop {
         let reply = tokio::select! {
             biased;
@@ -1773,6 +1899,7 @@ async fn download_transparent_outputs(
         let Some(reply) = reply else {
             break;
         };
+        response_bytes += prost::Message::encoded_len(&reply);
         let txid: [u8; 32] = reply
             .txid
             .try_into()
@@ -1805,6 +1932,11 @@ async fn download_transparent_outputs(
         );
     }
 
+    log::info!(
+        "transparent refresh: account={} batch={:?} addresses={} rpc_count=1 outputs={} response_bytes={} elapsed_ms={}",
+        refresh.account_uuid, refresh.label,
+        address_count, outputs.len(), response_bytes, started.elapsed().as_millis(),
+    );
     Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
 }
 
@@ -1951,7 +2083,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            db.truncate_to_height(height)
+            ledger_discovery::truncate(db_data_path, db, height)
         })
     })
 }
@@ -2522,7 +2654,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        db.truncate_to_height(height)
+                        ledger_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2626,7 +2758,9 @@ async fn run_payment_link_claim_sync_once(
                 let fresh_tip =
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 invalidate_transparent_checks_before_rewind(db_data_path)?;
-                truncate_wallet_with(requested, fresh_tip, |height| db.truncate_to_height(height))?;
+                truncate_wallet_with(requested, fresh_tip, |height| {
+                    ledger_discovery::truncate(db_data_path, &mut db, height)
+                })?;
             }
         }
     }
@@ -2776,6 +2910,21 @@ async fn run_sync_impl(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
             elapsed(),
         );
+        return Ok(());
+    }
+
+    // Recovery runs after import, under the existing sync lifetime. Once both
+    // scopes complete it performs no further address-history requests.
+    ledger_discovery::run(
+        &mut client,
+        &mut db,
+        db_data_path,
+        network,
+        tip_height,
+        &should_exit,
+    )
+    .await?;
+    if should_exit() {
         return Ok(());
     }
 
@@ -3618,7 +3767,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match db.truncate_to_height(target) {
+                            match ledger_discovery::truncate(db_data_path, &mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -3629,7 +3778,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    db.truncate_to_height(safe).map_err(|e| {
+                                    ledger_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -4057,6 +4206,16 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
+    for id in db
+        .get_account_ids()
+        .map_err(|e| SyncError::db(e.to_string()))?
+    {
+        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
+            return Err(SyncError::other(
+                "Ledger recovery was invalidated during sync; retrying",
+            ));
+        }
+    }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
     // became visible in this run. This is intentionally repeated after every
@@ -4385,11 +4544,9 @@ mod tests {
         // Both the initial tip and a later refreshed tip recreate idle work.
         for tip in [2_500_000, 2_500_010] {
             db.update_chain_tip(block_height(tip)).unwrap();
-            assert!(db
-                .suggest_scan_ranges()
-                .unwrap()
-                .iter()
-                .any(|r| is_pending_scan_range(r) && r.block_range().start < block_height(2_400_000)));
+            assert!(db.suggest_scan_ranges().unwrap().iter().any(
+                |r| is_pending_scan_range(r) && r.block_range().start < block_height(2_400_000)
+            ));
             let ranges = payment_link_scan_ranges(&db, path).unwrap();
             let pending: Vec<_> = ranges.iter().filter(|r| is_pending_scan_range(r)).collect();
             assert!(!pending.is_empty());
@@ -4413,9 +4570,9 @@ mod tests {
             .iter()
             .filter(|r| is_pending_scan_range(r))
             .all(|r| r.block_range().start >= block_height(2_200_000)));
-        assert!(ranges
-            .iter()
-            .any(|r| is_pending_scan_range(r) && r.block_range().contains(&block_height(2_200_000))));
+        assert!(ranges.iter().any(
+            |r| is_pending_scan_range(r) && r.block_range().contains(&block_height(2_200_000))
+        ));
         assert_eq!(db.get_account_ids().unwrap().len(), 2);
     }
 

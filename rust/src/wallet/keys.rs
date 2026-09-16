@@ -34,6 +34,9 @@ use crate::wallet::{
 pub(crate) const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
     "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
+const DUPLICATE_LEDGER_ACCOUNT_MESSAGE: &str = "This Ledger account is already in your wallet.";
+const KEY_SOURCE_KEYSTONE: &str = "vizor.hardware.keystone.v1";
+pub(crate) const KEY_SOURCE_LEDGER: &str = "vizor.hardware.ledger.v1";
 const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
@@ -44,6 +47,44 @@ pub(crate) struct ExternalTransparentAddress {
     pub child_index: u32,
     pub address: String,
     pub has_received: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HardwareSignerKind {
+    Keystone,
+    Ledger,
+}
+
+impl HardwareSignerKind {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "keystone" => Ok(Self::Keystone),
+            "ledger" => Ok(Self::Ledger),
+            _ => Err(format!("Unsupported hardware signer kind: {value}")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Keystone => "keystone",
+            Self::Ledger => "ledger",
+        }
+    }
+
+    fn key_source(self) -> &'static str {
+        match self {
+            Self::Keystone => KEY_SOURCE_KEYSTONE,
+            Self::Ledger => KEY_SOURCE_LEDGER,
+        }
+    }
+}
+
+pub(crate) fn hardware_signer_kind(source: &AccountSource) -> Option<HardwareSignerKind> {
+    match source.key_source() {
+        Some(KEY_SOURCE_KEYSTONE) => Some(HardwareSignerKind::Keystone),
+        Some(KEY_SOURCE_LEDGER) => Some(HardwareSignerKind::Ledger),
+        _ => None,
+    }
 }
 
 fn map_account_import_error(
@@ -456,6 +497,7 @@ pub fn import_hardware_account(
     seed_fingerprint_bytes: &[u8],
     zip32_index: u32,
     birthday_height: Option<u64>,
+    hardware_signer_kind: HardwareSignerKind,
 ) -> Result<(String, String), String> {
     // Ensure DB is initialized (without seed — hardware wallet has no local seed)
     ensure_db_migrated_once(db_path, network)?;
@@ -483,11 +525,20 @@ pub fn import_hardware_account(
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
         let account = db
-            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+            .import_account_ufvk(
+                name,
+                &ufvk,
+                &birthday,
+                purpose,
+                Some(hardware_signer_kind.key_source()),
+            )
             .map_err(|e| {
                 map_account_import_error(
                     e,
-                    DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    match hardware_signer_kind {
+                        HardwareSignerKind::Keystone => DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                        HardwareSignerKind::Ledger => DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
+                    },
                     "Failed to import hardware account",
                 )
             })?;
@@ -574,14 +625,22 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub birthday_height: u32,
+    pub zip32_account_index: Option<u32>,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    pub hardware_signer_kind: Option<HardwareSignerKind>,
 }
 
 pub struct AccountExportMetadata {
     pub zip32_account_index: Option<u32>,
     pub hardware_ufvk: Option<String>,
     pub seed_fingerprint: Option<Vec<u8>>,
+}
+
+pub(crate) struct LedgerAccountSigningMetadata {
+    pub account_index: u32,
+    pub seed_fingerprint: [u8; 32],
 }
 
 pub struct SoftwareSeedAccountState {
@@ -652,25 +711,95 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .map_err(|e| format!("Failed to get account: {e}"))?
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
-        let (address, is_hardware) = match account.ufvk() {
-            Some(ufvk) => (
-                current_receive_address(&db, network, id, ufvk)?,
-                is_keystone_style_ufvk(ufvk),
-            ),
-            None => (String::new(), false),
+        let address = match account.ufvk() {
+            Some(ufvk) => current_receive_address(&db, network, id, ufvk)?,
+            None => String::new(),
         };
 
         let source = account.source();
+        let hardware_signer_kind = hardware_signer_kind(source);
         accounts.push(AccountInfo {
             uuid: id.expose_uuid().to_string(),
             name: account.name().unwrap_or("").to_string(),
             unified_address: address,
+            birthday_height: u32::from(account.birthday_height()),
+            zip32_account_index: source
+                .key_derivation()
+                .map(|derivation| u32::from(derivation.account_index())),
             is_seed_anchor: matches!(source, AccountSource::Derived { .. }),
-            is_hardware,
+            is_hardware: hardware_signer_kind.is_some(),
+            hardware_signer_kind,
         });
     }
 
     Ok(accounts)
+}
+
+/// Preserve stored hardware accounts while moving signer identity into the
+/// wallet database. The caller supplies the account UUID and stored signer kind.
+///
+/// UFVK shape is used only as a migration safety check. New and recovered
+/// account identity is always read from `accounts.key_source`.
+pub fn backfill_legacy_hardware_accounts(
+    db_path: &str,
+    network: WalletNetwork,
+    accounts: &[(String, HardwareSignerKind)],
+) -> Result<u32, String> {
+    if accounts.is_empty() {
+        return Ok(0);
+    }
+
+    with_wallet_db_write_lock("keys.backfill_legacy_hardware_accounts", || {
+        let db = open_wallet_db_for_mutation(db_path, network)?;
+        let mut validated_account_ids = Vec::new();
+
+        for (account_uuid, hardware_signer_kind) in accounts {
+            let Ok(account_id) = parse_account_uuid(account_uuid) else {
+                continue;
+            };
+            let Some(account) = db
+                .get_account(account_id)
+                .map_err(|e| format!("Failed to load legacy hardware account: {e}"))?
+            else {
+                continue;
+            };
+            if account.source().key_source().is_some() {
+                continue;
+            }
+            if account.ufvk().is_some_and(is_hardware_style_ufvk) {
+                validated_account_ids.push((account_id, *hardware_signer_kind));
+            }
+        }
+        drop(db);
+
+        if validated_account_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = rusqlite::Connection::open(db_path)
+            .map_err(|e| format!("Failed to open wallet DB for hardware metadata backfill: {e}"))?;
+        conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+            .map_err(|e| format!("Failed to configure hardware metadata backfill: {e}"))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin hardware metadata backfill: {e}"))?;
+        let mut updated = 0usize;
+        for (account_id, hardware_signer_kind) in validated_account_ids {
+            updated += tx
+                .execute(
+                    "UPDATE accounts SET key_source = ?1 WHERE uuid = ?2 AND key_source IS NULL",
+                    rusqlite::params![
+                        hardware_signer_kind.key_source(),
+                        account_id.expose_uuid().as_bytes().as_slice()
+                    ],
+                )
+                .map_err(|e| format!("Failed to backfill hardware signer metadata: {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Failed to commit hardware metadata backfill: {e}"))?;
+
+        u32::try_from(updated).map_err(|_| "Too many hardware accounts to backfill".into())
+    })
 }
 
 pub fn get_account_export_metadata(
@@ -685,7 +814,7 @@ pub fn get_account_export_metadata(
         .map_err(|e| format!("Failed to get account: {e}"))?
         .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
 
-    let is_hardware = account.ufvk().is_some_and(is_keystone_style_ufvk);
+    let is_hardware = hardware_signer_kind(account.source()).is_some();
     let hardware_ufvk = if is_hardware {
         account.ufvk().map(|ufvk| ufvk.encode(&network))
     } else {
@@ -705,6 +834,35 @@ pub fn get_account_export_metadata(
         zip32_account_index,
         hardware_ufvk,
         seed_fingerprint,
+    })
+}
+
+pub(crate) fn get_ledger_account_signing_metadata(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<LedgerAccountSigningMetadata, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get Ledger account: {e}"))?
+        .ok_or_else(|| format!("Ledger account not found: {}", account_id.expose_uuid()))?;
+
+    if hardware_signer_kind(account.source()) != Some(HardwareSignerKind::Ledger) {
+        return Err(format!(
+            "Account {} is not backed by Ledger",
+            account_id.expose_uuid()
+        ));
+    }
+    let derivation = account
+        .source()
+        .key_derivation()
+        .ok_or("Ledger account derivation metadata is unavailable")?;
+
+    Ok(LedgerAccountSigningMetadata {
+        account_index: u32::from(derivation.account_index()),
+        seed_fingerprint: derivation.seed_fingerprint().to_bytes(),
     })
 }
 
@@ -745,7 +903,7 @@ pub fn delete_account(
         // while the SQL expects `:to_address`. Keep this local copy aligned
         // with upstream except for that binding until the dependency is fixed.
         drop(db);
-        delete_account_rows(db_path, account_id)?;
+        delete_account_rows(db_path, network, account_id)?;
         crate::wallet::wallet_summary_cache::evict_db(db_path);
         if let Err(error) = crate::wallet::sync::discard_keystone_migration_requests_for_account(
             account_uuid,
@@ -759,7 +917,11 @@ pub fn delete_account(
     })
 }
 
-fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), String> {
+fn delete_account_rows(
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+) -> Result<(), String> {
     let mut conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
@@ -859,7 +1021,13 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
     )
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
 
+    crate::wallet::sync_engine::ledger_discovery::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
+    crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
+        &tx,
+        network,
+        &account_uuid_text,
+    )?;
 
     tx.execute(
         "DELETE FROM accounts WHERE uuid = :account_uuid",
@@ -1111,7 +1279,7 @@ fn current_receive_address(
     Ok(address.encode(&network))
 }
 
-fn is_keystone_style_ufvk(ufvk: &UnifiedFullViewingKey) -> bool {
+fn is_hardware_style_ufvk(ufvk: &UnifiedFullViewingKey) -> bool {
     ufvk.orchard().is_some() && ufvk.sapling().is_none()
 }
 
@@ -1280,6 +1448,29 @@ pub fn wallet_exists(db_path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hardware_style_ufvk(seed: &SecretVec<u8>, account_index: zip32::AccountId) -> String {
+        use zcash_address::unified::{Encoding, Fvk, Ufvk};
+        use zcash_protocol::consensus::NetworkType;
+
+        let full_ufvk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key();
+        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+        let transparent_fvk = full_ufvk
+            .transparent()
+            .unwrap()
+            .serialize()
+            .try_into()
+            .unwrap();
+        Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+            .unwrap()
+            .encode(&NetworkType::Main)
+    }
 
     #[test]
     fn test_generate_mnemonic_is_24_words() {
@@ -1503,6 +1694,7 @@ mod tests {
             &seed_fingerprint,
             u32::from(account_index),
             None,
+            HardwareSignerKind::Keystone,
         )
         .unwrap();
 
@@ -1884,6 +2076,7 @@ mod tests {
             &seed_fingerprint,
             u32::from(account_index),
             None,
+            HardwareSignerKind::Keystone,
         )
         .unwrap();
         let listed_account = list_accounts(db_path_str, WalletNetwork::Main)
@@ -1892,6 +2085,10 @@ mod tests {
             .find(|account| account.uuid == uuid)
             .unwrap();
         assert!(listed_account.is_hardware);
+        assert_eq!(
+            listed_account.hardware_signer_kind,
+            Some(HardwareSignerKind::Keystone)
+        );
         let export_metadata =
             get_account_export_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
         assert_eq!(export_metadata.zip32_account_index, Some(0));
@@ -1936,6 +2133,189 @@ mod tests {
     }
 
     #[test]
+    fn test_list_accounts_preserves_ledger_signer_kind() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let account_index = zip32::AccountId::try_from(7).unwrap();
+        let birthday_height = 2_500_000;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let ufvk_string = usk
+            .to_unified_full_viewing_key()
+            .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        let (uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Ledger",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            Some(birthday_height),
+            HardwareSignerKind::Ledger,
+        )
+        .unwrap();
+
+        let listed = list_accounts(db_path_str, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .find(|account| account.uuid == uuid)
+            .unwrap();
+        assert!(listed.is_hardware);
+        assert_eq!(
+            listed.hardware_signer_kind,
+            Some(HardwareSignerKind::Ledger)
+        );
+        assert_eq!(listed.birthday_height, birthday_height as u32);
+        assert_eq!(listed.zip32_account_index, Some(7));
+
+        let signing =
+            get_ledger_account_signing_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(signing.account_index, 7);
+        assert_eq!(signing.seed_fingerprint, seed_fingerprint);
+    }
+
+    #[test]
+    fn test_backfill_legacy_hardware_accounts_is_validated_and_idempotent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+        let keystone_index = zip32::AccountId::ZERO;
+        let ledger_index = zip32::AccountId::try_from(1).unwrap();
+        let invalid_index = zip32::AccountId::try_from(2).unwrap();
+        let (keystone_uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &hardware_style_ufvk(&seed, keystone_index),
+            &seed_fingerprint,
+            u32::from(keystone_index),
+            Some(2_400_000),
+            HardwareSignerKind::Keystone,
+        )
+        .unwrap();
+        let (ledger_uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Ledger",
+            &hardware_style_ufvk(&seed, ledger_index),
+            &seed_fingerprint,
+            u32::from(ledger_index),
+            Some(2_500_000),
+            HardwareSignerKind::Ledger,
+        )
+        .unwrap();
+        let full_ufvk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            invalid_index,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key()
+        .encode(&WalletNetwork::Main);
+        let (invalid_uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Full UFVK",
+            &full_ufvk,
+            &seed_fingerprint,
+            u32::from(invalid_index),
+            Some(2_600_000),
+            HardwareSignerKind::Ledger,
+        )
+        .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        for uuid in [&keystone_uuid, &ledger_uuid, &invalid_uuid] {
+            conn.execute(
+                "UPDATE accounts SET key_source = NULL WHERE uuid = ?1",
+                rusqlite::params![uuid::Uuid::parse_str(uuid).unwrap().as_bytes().as_slice()],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let before = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        assert!(before.iter().all(|account| !account.is_hardware));
+
+        assert_eq!(
+            backfill_legacy_hardware_accounts(
+                db_path_str,
+                WalletNetwork::Main,
+                &[
+                    (keystone_uuid.clone(), HardwareSignerKind::Keystone),
+                    (ledger_uuid.clone(), HardwareSignerKind::Ledger),
+                    (invalid_uuid.clone(), HardwareSignerKind::Ledger),
+                    (uuid::Uuid::new_v4().to_string(), HardwareSignerKind::Ledger),
+                    ("invalid uuid".to_string(), HardwareSignerKind::Keystone),
+                ],
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            backfill_legacy_hardware_accounts(
+                db_path_str,
+                WalletNetwork::Main,
+                &[
+                    (keystone_uuid.clone(), HardwareSignerKind::Ledger),
+                    (ledger_uuid.clone(), HardwareSignerKind::Keystone),
+                    (invalid_uuid.clone(), HardwareSignerKind::Ledger),
+                ],
+            )
+            .unwrap(),
+            0
+        );
+
+        let after = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        let keystone = after
+            .iter()
+            .find(|account| account.uuid == keystone_uuid)
+            .unwrap();
+        assert!(keystone.is_hardware);
+        assert_eq!(
+            keystone.hardware_signer_kind,
+            Some(HardwareSignerKind::Keystone)
+        );
+        assert_eq!(keystone.birthday_height, 2_400_000);
+        assert_eq!(keystone.zip32_account_index, Some(0));
+        let ledger = after
+            .iter()
+            .find(|account| account.uuid == ledger_uuid)
+            .unwrap();
+        assert!(ledger.is_hardware);
+        assert_eq!(
+            ledger.hardware_signer_kind,
+            Some(HardwareSignerKind::Ledger)
+        );
+        assert_eq!(ledger.birthday_height, 2_500_000);
+        assert_eq!(ledger.zip32_account_index, Some(1));
+        let invalid = after
+            .iter()
+            .find(|account| account.uuid == invalid_uuid)
+            .unwrap();
+        assert!(!invalid.is_hardware);
+        assert_eq!(invalid.hardware_signer_kind, None);
+    }
+
+    #[test]
     fn test_add_account_duplicate_seed_returns_user_message() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -1954,6 +2334,17 @@ mod tests {
 
     #[test]
     fn test_import_hardware_duplicate_ufvk_returns_user_message() {
+        assert_hardware_duplicate_message(
+            HardwareSignerKind::Keystone,
+            DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+        );
+        assert_hardware_duplicate_message(
+            HardwareSignerKind::Ledger,
+            DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
+        );
+    }
+
+    fn assert_hardware_duplicate_message(signer: HardwareSignerKind, expected: &str) {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -1976,26 +2367,28 @@ mod tests {
         import_hardware_account(
             db_path_str,
             WalletNetwork::Main,
-            "Keystone",
+            signer.as_str(),
             &ufvk_string,
             &seed_fingerprint,
             u32::from(account_index),
             None,
+            signer,
         )
         .unwrap();
 
         let error = import_hardware_account(
             db_path_str,
             WalletNetwork::Main,
-            "Keystone",
+            signer.as_str(),
             &ufvk_string,
             &seed_fingerprint,
             u32::from(account_index),
             None,
+            signer,
         )
-        .expect_err("duplicate Keystone UFVK import should fail");
+        .expect_err("duplicate hardware UFVK import should fail");
 
-        assert_eq!(error, DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE);
+        assert_eq!(error, expected);
     }
 
     #[test]
@@ -2039,6 +2432,87 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+    }
+
+    #[test]
+    fn test_delete_ledger_account_removes_only_its_signed_operations() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let software_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &software_seed,
+            None,
+            "software",
+        )
+        .unwrap();
+
+        let ledger_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let ledger_ufvk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            ledger_seed.expose_secret(),
+            account_index,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key()
+        .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(ledger_seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+        let (ledger_uuid, _) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Ledger",
+            &ledger_ufvk,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+            HardwareSignerKind::Ledger,
+        )
+        .unwrap();
+
+        let other_account_uuid = uuid::Uuid::new_v4().to_string();
+        {
+            let conn = rusqlite::Connection::open(db_path_str).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE vizor_ledger_signed_operations (
+                    network TEXT NOT NULL,
+                    account_uuid TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO vizor_ledger_signed_operations (network, account_uuid)
+                 VALUES ('main', ?1), ('main', ?2), ('test', ?1)",
+                rusqlite::params![ledger_uuid, other_account_uuid],
+            )
+            .unwrap();
+        }
+
+        delete_account(db_path_str, WalletNetwork::Main, &ledger_uuid).unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        let remaining: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT network, account_uuid FROM vizor_ledger_signed_operations
+                 ORDER BY network, account_uuid",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            remaining,
+            vec![
+                ("main".to_string(), other_account_uuid),
+                ("test".to_string(), ledger_uuid),
+            ]
+        );
     }
 
     // --- VZR-89: orphaned scan-range pruning -------------------------------

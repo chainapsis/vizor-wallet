@@ -56,8 +56,8 @@ final class SwapStartedActivity extends SwapStartResult {
   const SwapStartedActivity(super.intentId);
 }
 
-final class SwapStartedKeystoneSigning extends SwapStartResult {
-  const SwapStartedKeystoneSigning(super.intentId);
+final class SwapStartedHardwareSigning extends SwapStartResult {
+  const SwapStartedHardwareSigning(super.intentId);
 }
 
 SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
@@ -826,6 +826,12 @@ class SwapNotifier extends Notifier<SwapState> {
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
+    final hardwareSignerKind = ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(accountUuid);
+    final hardwareSignerLabel = hardwareSignerKind == HardwareSignerKind.ledger
+        ? 'Ledger'
+        : 'Keystone';
     if (quote.direction.sendsZec) {
       try {
         await ref
@@ -872,13 +878,53 @@ class SwapNotifier extends Notifier<SwapState> {
       now: DateTime.now().toUtc(),
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
-      const nextAction = 'Sign and send the ZEC deposit with Keystone.';
+      final nextAction =
+          'Sign and send the ZEC deposit with $hardwareSignerLabel.';
       intent = intent.copyWith(nextAction: nextAction);
     }
     _quoteGeneration++;
     if (activeAccountIsHardware && quote.direction.sendsZec) {
+      if (hardwareSignerKind == HardwareSignerKind.ledger) {
+        // The provider intent already exists at this point. Persist it before
+        // opening the direct-USB signing surface so an app exit, device
+        // disconnect, or expired Ledger request cannot orphan the swap/pay
+        // intent. The deposit PCZT itself is safe to recreate while the
+        // provider intent remains within its deadline.
+        state = state.copyWith(
+          reviewVisible: false,
+          amountText: '',
+          receiveAmountText: '',
+          quoteMode: SwapQuoteMode.exactInput,
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          destinationText: '',
+          clearUserExternalContactId: true,
+          intents: [
+            intent,
+            for (final stored in state.intents)
+              if (stored.id != intent.id) stored,
+          ],
+          selectedIntentId: intent.id,
+          startSubmitting: false,
+          quoteLoading: false,
+          depositTxHashText: '',
+          clearReview: true,
+          clearQuoteError: true,
+          clearStatusError: true,
+          clearPendingHardwareSigningIntent: true,
+        );
+        await _persistCurrentIntents();
+        log(
+          'Swap: persisted Ledger signing checkpoint '
+          'intent=${_shortSwapValue(intent.id)}',
+        );
+        return SwapStartedHardwareSigning(intent.id);
+      }
       log(
-        'Swap: start pending Keystone signing intent=${_shortSwapValue(intent.id)} '
+        'Swap: start pending $hardwareSignerLabel signing '
+        'intent=${_shortSwapValue(intent.id)} '
         'status=${intent.status.name}',
       );
       state = state.copyWith(
@@ -892,7 +938,7 @@ class SwapNotifier extends Notifier<SwapState> {
         receiveFiatText: '',
         destinationText: '',
         clearUserExternalContactId: true,
-        pendingKeystoneSigningIntent: intent,
+        pendingHardwareSigningIntent: intent,
         startSubmitting: false,
         quoteLoading: false,
         depositTxHashText: '',
@@ -902,10 +948,10 @@ class SwapNotifier extends Notifier<SwapState> {
         clearSelectedIntent: true,
       );
       log(
-        'Swap: hardware ZEC deposit waiting for Keystone signing '
+        'Swap: hardware ZEC deposit waiting for $hardwareSignerLabel signing '
         'intent=${_shortSwapValue(intent.id)}',
       );
-      return SwapStartedKeystoneSigning(intent.id);
+      return SwapStartedHardwareSigning(intent.id);
     }
 
     log(
@@ -931,7 +977,7 @@ class SwapNotifier extends Notifier<SwapState> {
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
-      clearPendingKeystoneSigningIntent: true,
+      clearPendingHardwareSigningIntent: true,
     );
     await _persistCurrentIntents();
 
@@ -1027,10 +1073,10 @@ class SwapNotifier extends Notifier<SwapState> {
     await removeIntent(intentId);
   }
 
-  void clearPendingKeystoneSigningIntent(String intentId) {
-    final pending = state.pendingKeystoneSigningIntent;
+  void clearPendingHardwareSigningIntent(String intentId) {
+    final pending = state.pendingHardwareSigningIntent;
     if (pending == null || pending.id != intentId) return;
-    state = state.copyWith(clearPendingKeystoneSigningIntent: true);
+    state = state.copyWith(clearPendingHardwareSigningIntent: true);
   }
 
   void cancelReviewQuote() {
@@ -1163,7 +1209,7 @@ class SwapNotifier extends Notifier<SwapState> {
     await _persistCurrentIntents();
   }
 
-  Future<void> recordKeystoneDepositBroadcast({
+  Future<void> recordHardwareDepositBroadcast({
     required SwapIntent intent,
     required SwapDepositBroadcastResult broadcast,
   }) async {
@@ -1172,7 +1218,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
     final existing = state.intents.swapIntentById(intent.id);
     if (existing != null) {
-      clearPendingKeystoneSigningIntent(intent.id);
+      clearPendingHardwareSigningIntent(intent.id);
       await submitDepositTransactionForIntent(
         intentId: existing.id,
         accountUuid: existing.accountUuid ?? intent.accountUuid ?? '',
@@ -1212,7 +1258,7 @@ class SwapNotifier extends Notifier<SwapState> {
           if (stored.id != checkpointed.id) stored,
       ];
       await _persistIntentsForAccount(intent.accountUuid, storedIntents);
-      clearPendingKeystoneSigningIntent(intent.id);
+      clearPendingHardwareSigningIntent(intent.id);
       if (!submitProviderStatus) return;
 
       try {
@@ -1246,7 +1292,7 @@ class SwapNotifier extends Notifier<SwapState> {
     }
 
     log(
-      'Swap: Keystone deposit checkpoint begin '
+      'Swap: hardware deposit checkpoint begin '
       'intent=${_shortSwapValue(intent.id)} '
       'deposit=${_shortSwapValue(_providerDepositAddress(intent))} '
       'tx=${_shortSwapValue(normalizedTxHash)} '
@@ -1261,7 +1307,7 @@ class SwapNotifier extends Notifier<SwapState> {
       selectedIntentId: checkpointed.id,
       depositTxHashText: normalizedTxHash,
       depositSubmitting: submitProviderStatus,
-      clearPendingKeystoneSigningIntent: true,
+      clearPendingHardwareSigningIntent: true,
       clearStatusError: true,
     );
     await _persistCurrentIntents();
@@ -1292,13 +1338,13 @@ class SwapNotifier extends Notifier<SwapState> {
         clearStatusError: true,
       );
       log(
-        'Swap: Keystone deposit submitted intent=${_shortSwapValue(updated.id)} '
+        'Swap: hardware deposit submitted intent=${_shortSwapValue(updated.id)} '
         'status=${updated.status.name}',
       );
       await _persistCurrentIntents();
     } catch (e) {
       log(
-        'Swap: Keystone deposit submit failed after broadcast '
+        'Swap: hardware deposit submit failed after broadcast '
         'intent=${_shortSwapValue(intent.id)} '
         'tx=${_shortSwapValue(normalizedTxHash)} error=$e',
       );
@@ -1698,7 +1744,7 @@ class SwapNotifier extends Notifier<SwapState> {
       clearStatusError: true,
       clearMaxAmountError: true,
       clearSelectedIntent: true,
-      clearPendingKeystoneSigningIntent: true,
+      clearPendingHardwareSigningIntent: true,
     );
   }
 
@@ -1717,7 +1763,7 @@ class SwapNotifier extends Notifier<SwapState> {
           depositTxHashText: '',
           depositSubmitting: false,
           clearSelectedIntent: true,
-          clearPendingKeystoneSigningIntent: true,
+          clearPendingHardwareSigningIntent: true,
           clearStatusError: true,
         );
       }

@@ -9,7 +9,7 @@ import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
 import '../../core/storage/voting_hotkey_store.dart';
 import '../../providers/account_provider.dart';
-import '../../providers/rpc_endpoint_provider.dart';
+import '../../providers/rpc_endpoint_failover_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
@@ -167,9 +167,17 @@ final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
   },
 );
 
+/// Synchronous signer-kind lookup for vendor-specific voting capabilities.
+/// Hardware accounts without a persisted signer kind fail closed in the
+/// session layer instead of being routed to another vendor's signing flow.
+final votingAccountHardwareSignerKindProvider =
+    Provider<HardwareSignerKind? Function(String)>((ref) {
+      return ref.read(accountProvider.notifier).hardwareSignerKindForAccount;
+    });
+
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
-  return ref.watch(rpcEndpointProvider);
+  return ref.watch(rpcEndpointFailoverProvider).current;
 });
 
 /// Starts foreground wallet sync when voting needs the wallet to catch up.
@@ -535,6 +543,44 @@ final class _FrbVotingRoundSession implements VotingRoundSession {
       proposalId: proposalId,
       shareIndex: shareIndex,
     ),
+  );
+}
+
+/// Vendor-neutral app-layer names for the pinned voting crate's external
+/// signer storage and proof APIs. The crate types remain Keystone-named, but
+/// neither the durable records nor these operations require a Keystone device.
+extension VotingHardwareSignatureRustApi on VotingRustApi {
+  Future<List<rust_delegate.KeystoneSigningRequest>>
+  buildHardwareDelegationRequests({
+    required rust_api.ApiVotingRoundContext ctx,
+    required List<int> storedHotkeySecret,
+    required List<int> bundleIndices,
+  }) => buildKeystoneDelegationRequests(
+    ctx: ctx,
+    storedHotkeySecret: storedHotkeySecret,
+    bundleIndices: bundleIndices,
+  );
+
+  Future<void> storeHardwareSignatures({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+    required List<rust_api.ApiKeystoneSignatureInput> signatures,
+  }) => storeKeystoneSignaturesBatch(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
+    signatures: signatures,
+  );
+
+  Future<List<rust_voting.KeystoneSignatureRecord>> getHardwareSignatures({
+    required String dbPath,
+    required String accountUuid,
+    required String roundId,
+  }) => getKeystoneSignatures(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    roundId: roundId,
   );
 }
 

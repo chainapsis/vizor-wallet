@@ -28,6 +28,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
+
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
 
@@ -46,6 +49,8 @@ Future<void> pumpPaymentLinksScreen(
   FakePaymentLinkOperations? operations,
   FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  PaymentLinkLedgerFundingService? ledgerFunding,
+  LedgerPcztSigner? ledgerSigner,
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
   PaymentLinkScanner? scanner,
@@ -91,6 +96,14 @@ Future<void> pumpPaymentLinksScreen(
           paymentLinkQrShareHandlerProvider.overrideWithValue(qrShareHandler),
         if (scanner != null)
           paymentLinkScannerProvider.overrideWithValue(scanner),
+        if (ledgerFunding != null)
+          paymentLinkLedgerFundingServiceProvider.overrideWithValue(
+            ledgerFunding,
+          ),
+        if (ledgerSigner != null)
+          ledgerPcztSignerProvider.overrideWithValue(ledgerSigner),
+        if (ledgerFunding != null)
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         if (hardwareSigning != null)
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,
@@ -218,6 +231,31 @@ const hardwareAccountState = AccountState(
 final hardwareBootstrap = AppBootstrapState(
   initialLocation: '/payment-links',
   initialAccountState: hardwareAccountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final ledgerGiftBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1ledger',
+  ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),

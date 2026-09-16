@@ -26,6 +26,8 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/services/ledger_operation_lifecycle.dart';
+import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'sapling_params.dart';
 
 /// Longest requester label the review screens will render.
@@ -129,6 +131,18 @@ class KeystoneBroadcastArgs {
   final SendReviewArgs reviewArgs;
   final List<List<int>> pcztWithProofs;
   final List<List<int>> pcztWithSignatures;
+}
+
+/// Direct-USB Ledger handoff payload. The device-signed PCZT is combined with
+/// the independently proved clone by the same finalizer used for Keystone.
+class LedgerBroadcastArgs {
+  const LedgerBroadcastArgs({
+    required this.reviewArgs,
+    required this.operationId,
+  });
+
+  final SendReviewArgs reviewArgs;
+  final String operationId;
 }
 
 class SendStatusRoutePayloadNotifier extends Notifier<Object?> {
@@ -290,12 +304,31 @@ class SendStatusRoutePayloadObserver extends NavigatorObserver {
 String sendStatusRouteLocation(String sendFlowId) =>
     Uri(path: '/send/status', queryParameters: {'flow': sendFlowId}).toString();
 
+String sendReviewRouteLocation(String sendFlowId) =>
+    Uri(path: '/send/review', queryParameters: {'flow': sendFlowId}).toString();
+
+SendReviewArgs? resolveSendReviewRoutePayload({
+  required Object? routePayload,
+  required Object? retainedPayload,
+  required String? sendFlowId,
+}) {
+  if (routePayload is SendReviewArgs) return routePayload;
+  return switch (retainedPayload) {
+    SendReviewArgs(sendFlowId: final retainedFlowId)
+        when retainedFlowId == sendFlowId =>
+      retainedPayload,
+    _ => null,
+  };
+}
+
 Object? resolveSendStatusRoutePayload({
   required Object? routePayload,
   required Object? retainedPayload,
   required String? sendFlowId,
 }) {
-  if (routePayload is SendReviewArgs || routePayload is KeystoneBroadcastArgs) {
+  if (routePayload is SendReviewArgs ||
+      routePayload is KeystoneBroadcastArgs ||
+      routePayload is LedgerBroadcastArgs) {
     return routePayload;
   }
   return switch (retainedPayload) {
@@ -303,6 +336,11 @@ Object? resolveSendStatusRoutePayload({
         when retainedFlowId == sendFlowId =>
       retainedPayload,
     KeystoneBroadcastArgs(
+      reviewArgs: SendReviewArgs(sendFlowId: final retainedFlowId),
+    )
+        when retainedFlowId == sendFlowId =>
+      retainedPayload,
+    LedgerBroadcastArgs(
       reviewArgs: SendReviewArgs(sendFlowId: final retainedFlowId),
     )
         when retainedFlowId == sendFlowId =>
@@ -632,6 +670,29 @@ String _pcztBroadcastStatusMessage(
       'The transaction broadcast did not complete. Check Activity before sending again.';
 }
 
+String _ledgerBroadcastStatusMessage({
+  required String status,
+  required String? message,
+}) {
+  if (status == 'broadcast_unknown') {
+    return message ??
+        'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.';
+  }
+  if (status == 'partial_broadcast') {
+    return message ??
+        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
+  }
+  if (status == 'broadcasted_storage_failed') {
+    return message ??
+        'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+  }
+  final rawMessage = message?.toLowerCase() ?? '';
+  if (rawMessage.contains('broadcast rejected')) {
+    return 'Transaction was rejected by the network. Please try again later.';
+  }
+  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+}
+
 /// Runs the full broadcast leg for a proposed send — Sapling params
 /// gate, software execute (macOS keychain or in-memory mnemonic) or
 /// hardware PCZT combine+broadcast, endpoint failover, post-send
@@ -645,10 +706,40 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   required WidgetRef ref,
   required SendReviewArgs args,
   KeystoneBroadcastArgs? keystone,
+  LedgerBroadcastArgs? ledger,
   required Future<bool> Function() confirmSaplingParamsDownload,
   Future<bool> Function()? shouldAbort,
 }) async {
-  var proposalConsumed = keystone != null;
+  Future<SendBroadcastOutcome> execute() => _runSendBroadcast(
+    ref: ref,
+    args: args,
+    keystone: keystone,
+    ledger: ledger,
+    confirmSaplingParamsDownload: confirmSaplingParamsDownload,
+    shouldAbort: shouldAbort,
+  );
+  if (ledger == null) return execute();
+  try {
+    return await ref.read(ledgerOperationLifecycleProvider).run(execute);
+  } catch (error) {
+    return SendBroadcastOutcome(
+      phase: SendBroadcastPhase.failed,
+      proposalConsumed: true,
+      error: friendlyBroadcastError(error.toString()),
+    );
+  }
+}
+
+Future<SendBroadcastOutcome> _runSendBroadcast({
+  required WidgetRef ref,
+  required SendReviewArgs args,
+  KeystoneBroadcastArgs? keystone,
+  LedgerBroadcastArgs? ledger,
+  required Future<bool> Function() confirmSaplingParamsDownload,
+  Future<bool> Function()? shouldAbort,
+}) async {
+  final hasHardwarePayload = ledger != null || keystone != null;
+  var proposalConsumed = hasHardwarePayload;
   var proposalReleased = false;
   LinuxSecretOperationGuard? secretGuard;
   final syncNotifier = ref.read(syncProvider.notifier);
@@ -657,15 +748,23 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     if (shouldAbort == null) return false;
     if (!await shouldAbort()) return false;
     if (!proposalReleased) {
-      // A release Rust never confirmed leaves the proposal for the receipt
-      // to release; only a confirmed one counts as consumed.
-      proposalConsumed = await discardSendProposal(
-        proposalId: args.proposalId,
-        sendFlowId: args.sendFlowId,
-        logContext: 'SendBroadcast(abort)',
-        syncNotifier: syncNotifier,
-        accountUuid: args.proposalAccountUuid,
-      );
+      if (ledger != null) {
+        await retainSendProposalLockUntilExpiry(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(ledger-abort)',
+        );
+      } else {
+        // A release Rust never confirmed leaves the proposal for the receipt
+        // to release; only a confirmed one counts as consumed.
+        proposalConsumed = await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(abort)',
+          syncNotifier: syncNotifier,
+          accountUuid: args.proposalAccountUuid,
+        );
+      }
       proposalReleased = true;
     }
     return true;
@@ -696,13 +795,21 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         if (!downloadConfirmed) {
           if (await abortRequested()) return aborted();
           if (!proposalReleased) {
-            proposalConsumed = await discardSendProposal(
-              proposalId: args.proposalId,
-              sendFlowId: args.sendFlowId,
-              logContext: 'SendBroadcast(params-declined)',
-              syncNotifier: syncNotifier,
-              accountUuid: args.proposalAccountUuid,
-            );
+            if (ledger != null) {
+              await retainSendProposalLockUntilExpiry(
+                proposalId: args.proposalId,
+                sendFlowId: args.sendFlowId,
+                logContext: 'SendBroadcast(ledger-params-declined)',
+              );
+            } else {
+              proposalConsumed = await discardSendProposal(
+                proposalId: args.proposalId,
+                sendFlowId: args.sendFlowId,
+                logContext: 'SendBroadcast(params-declined)',
+                syncNotifier: syncNotifier,
+                accountUuid: args.proposalAccountUuid,
+              );
+            }
             proposalReleased = true;
           }
           return SendBroadcastOutcome(
@@ -736,75 +843,141 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     String? broadcastMessageForFallback;
 
     if (isHardware) {
-      if (keystone == null) {
-        throw Exception('Missing Keystone transaction signature.');
+      if (!hasHardwarePayload) {
+        throw Exception('Missing hardware transaction signature.');
       }
       proposalConsumed = true;
-      if (keystone.pcztWithProofs.length !=
-              keystone.pcztWithSignatures.length ||
-          keystone.pcztWithProofs.isEmpty) {
-        throw Exception('Invalid Keystone signing round count.');
-      }
-      // The Rust orchestration owns proposal-lock cleanup on every outcome
-      // from this point onward, including validation and atomic-store errors.
-      proposalReleased = true;
-      final rust_sync.StoreAndBroadcastPcztsResult result;
-      if (args.addressType == 'tex') {
-        result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          proposalId: args.proposalId,
-          sendFlowId: args.sendFlowId,
-          pcztWithProofs: keystone.pcztWithProofs
-              .map(Uint8List.fromList)
-              .toList(),
-          pcztWithSignatures: keystone.pcztWithSignatures
-              .map(Uint8List.fromList)
-              .toList(),
-          spendParamsPath: args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
-      } else {
-        result = await rust_sync
-            .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: endpoint.networkName,
+      if (ledger != null) {
+        late final LedgerSignedOperationBroadcastResult result;
+        try {
+          result = await ref
+              .read(ledgerSignedOperationServiceProvider)
+              .broadcast(
+                operationId: ledger.operationId,
+                spendParamsPath: args.needsSaplingParams
+                    ? saplingParams.spendPath
+                    : null,
+                outputParamsPath: args.needsSaplingParams
+                    ? saplingParams.outputPath
+                    : null,
+              );
+        } catch (error) {
+          if (isTerminalLedgerSignedOperationError(error)) {
+            await discardSendProposal(
               proposalId: args.proposalId,
               sendFlowId: args.sendFlowId,
-              pcztWithProofs: keystone.pcztWithProofs
-                  .map(Uint8List.fromList)
-                  .toList(),
-              signatureBlobs: keystone.pcztWithSignatures
-                  .map(Uint8List.fromList)
-                  .toList(),
-              spendParamsPath: args.needsSaplingParams
-                  ? saplingParams.spendPath
-                  : null,
-              outputParamsPath: args.needsSaplingParams
-                  ? saplingParams.outputPath
-                  : null,
+              logContext: 'SendBroadcast(ledger-terminal)',
+              syncNotifier: syncNotifier,
+              accountUuid: args.proposalAccountUuid,
             );
+          } else {
+            await retainSendProposalLockUntilExpiry(
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+              logContext: 'SendBroadcast(ledger-retryable)',
+            );
+          }
+          proposalReleased = true;
+          rethrow;
+        }
+        if (result.status == 'broadcast_unknown' ||
+            result.status == 'broadcasted_storage_failed') {
+          await retainSendProposalLockUntilExpiry(
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            logContext: 'SendBroadcast(ledger-uncertain)',
+          );
+        } else {
+          await discardSendProposal(
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            logContext: 'SendBroadcast(ledger-finish)',
+            syncNotifier: syncNotifier,
+            accountUuid: args.proposalAccountUuid,
+          );
+        }
+        proposalReleased = true;
+        txids = result.txid;
+        broadcastComplete = result.status == 'broadcasted';
+        broadcastExpired = result.status == 'expired';
+        receiptTxid = broadcastExpired
+            ? null
+            : broadcastComplete
+            ? _lastTxid(txids)
+            : _firstTxid(txids);
+        pendingStatusMessage = broadcastComplete
+            ? null
+            : _ledgerBroadcastStatusMessage(
+                status: result.status,
+                message: result.message,
+              );
+        broadcastMessageForFallback = result.message;
+      } else {
+        final payload = keystone!;
+        if (payload.pcztWithProofs.length !=
+                payload.pcztWithSignatures.length ||
+            payload.pcztWithProofs.isEmpty) {
+          throw Exception('Invalid Keystone signing round count.');
+        }
+        // The Rust orchestration owns proposal-lock cleanup on every outcome
+        // from this point onward, including validation and atomic-store errors.
+        proposalReleased = true;
+        final rust_sync.StoreAndBroadcastPcztsResult result;
+        if (args.addressType == 'tex') {
+          result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            pcztWithProofs: payload.pcztWithProofs
+                .map(Uint8List.fromList)
+                .toList(),
+            pcztWithSignatures: payload.pcztWithSignatures
+                .map(Uint8List.fromList)
+                .toList(),
+            spendParamsPath: args.needsSaplingParams
+                ? saplingParams.spendPath
+                : null,
+            outputParamsPath: args.needsSaplingParams
+                ? saplingParams.outputPath
+                : null,
+          );
+        } else {
+          result = await rust_sync
+              .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.networkName,
+                proposalId: args.proposalId,
+                sendFlowId: args.sendFlowId,
+                pcztWithProofs: payload.pcztWithProofs
+                    .map(Uint8List.fromList)
+                    .toList(),
+                signatureBlobs: payload.pcztWithSignatures
+                    .map(Uint8List.fromList)
+                    .toList(),
+                spendParamsPath: args.needsSaplingParams
+                    ? saplingParams.spendPath
+                    : null,
+                outputParamsPath: args.needsSaplingParams
+                    ? saplingParams.outputPath
+                    : null,
+              );
+        }
+        txids = result.txids;
+        broadcastComplete = result.status == 'broadcasted';
+        broadcastExpired = result.status == 'expired';
+        receiptTxid = broadcastExpired
+            ? null
+            : broadcastComplete
+            ? _lastTxid(txids)
+            : _firstTxid(txids);
+        pendingStatusMessage = broadcastComplete || broadcastExpired
+            ? null
+            : _pcztBroadcastStatusMessage(result);
+        broadcastMessageForFallback = result.message;
       }
-      txids = result.txids;
-      broadcastComplete = result.status == 'broadcasted';
-      broadcastExpired = result.status == 'expired';
-      // A completed TEX send is represented by the dependent final
-      // transaction, not its first-step ephemeral funding transaction.
-      receiptTxid = broadcastExpired
-          ? null
-          : broadcastComplete
-          ? _lastTxid(txids)
-          : _firstTxid(txids);
-      pendingStatusMessage = broadcastComplete || broadcastExpired
-          ? null
-          : _pcztBroadcastStatusMessage(result);
-      broadcastMessageForFallback = result.message;
     } else {
       late final rust_sync.ExecuteProposalResult result;
       if (Platform.isMacOS && !secretGuard.enabled) {
@@ -873,6 +1046,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 
     final canReadProviders = !secretGuard.enabled || ref.context.mounted;
     if (canReadProviders &&
+        ledger == null &&
         !broadcastComplete &&
         !broadcastExpired &&
         broadcastMessageForFallback != null) {
@@ -882,7 +1056,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
             broadcastMessageForFallback,
             endpoint: endpoint,
             operation: isHardware
-                ? 'keystone send broadcast'
+                ? 'hardware send broadcast'
                 : 'send broadcast',
           );
       if (switched) {
@@ -909,7 +1083,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? 'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          ? 'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
           : null,
     );
   } catch (e) {

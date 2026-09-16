@@ -304,6 +304,14 @@ target account exists before removing account-scoped wallet rows.
 Voting background work that can write account state or secure storage must
 register with the destructive-operation drain before its first asynchronous
 step, and account deletion/reset must await that work before clearing data.
+Ledger outbox operations and their caller-side result persistence must register
+with `ledgerOperationLifecycleProvider` before their first asynchronous step.
+Account deletion/reset block new Ledger work and drain accepted operations before
+invalidating the secret session or deleting wallet data. Keep the lease through
+swap/pay metadata persistence and outbox acknowledgement; do not cancel a
+broadcast after submission merely to unblock deletion. Device approval remains
+outside this durable-operation lease. Ledger account import uses the same Linux
+`runMutation` boundary as software and Keystone imports.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
@@ -661,6 +669,15 @@ Keep desktop and mobile consistent when cancelling signing, not merely closing t
 - Swap / Pay: return to the composer without preserving inputs; obtain a new quote on the next Review.
 - Vote: preserve saved partial signatures and resume unsigned bundles.
 - For transaction proposals, finish input-lock release and balance refresh before allowing retry.
+
+Android Ledger device work must use `LedgerMobileHandler.launchOperation`,
+including app queries and app-opening approval, not only signing APDUs. Register
+ownership before dispatch, settle each MethodChannel result once, and retain the
+SDK-wide exclusion until the job actually completes after cancellation. Discovery
+and disconnect cleanup also participate in exclusion across Activity recreation.
+Dart preparation uses `ledgerDeviceRequestsProvider`: capture before the first
+await and check before starting the next stage or publishing a result. Do not
+apply this cancellable device policy to already-submitted durable broadcasts.
 
 ### Hardware Wallet (Keystone) Send Flow
 

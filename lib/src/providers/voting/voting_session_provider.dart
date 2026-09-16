@@ -8,6 +8,7 @@ import '../../core/formatting/duration_format.dart';
 import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../account_provider.dart';
+import '../../features/ledger/services/ledger_signing_service.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../services/voting/voting_rust_exception.dart';
 import '../../services/voting/voting_retry.dart';
@@ -148,9 +149,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   rust_api.ApiVotingRoundContext _apiRoundContext(
     _VotingSessionContext context,
   ) {
+    // Contexts can outlive RPC failover (including the retry delay). Keep the
+    // wallet/round fixed, but resolve the transport route for each attempt.
+    final endpoint = ref.read(votingRpcEndpointConfigProvider);
+    if (endpoint.networkName != context.network) {
+      throw StateError('Voting session belongs to a different network.');
+    }
     return rust_api.ApiVotingRoundContext(
       dbPath: context.dbPath,
-      lightwalletdUrl: context.lightwalletdUrl,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: context.network,
       roundParams: context.roundParams,
       roundName: context.round.title,
@@ -174,6 +181,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundId: _roundId,
       accountUuid: context.accountUuid,
       isHardwareAccount: context.isHardwareAccount,
+      hardwareSignerKind: context.hardwareSignerKind,
       config: context.config,
       round: context.round,
       roundPlan: context.roundPlan,
@@ -322,6 +330,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           roundId: _roundId,
           accountUuid: context.accountUuid,
           isHardwareAccount: context.isHardwareAccount,
+          hardwareSignerKind: context.hardwareSignerKind,
           config: context.config,
           round: context.round,
           roundPlan: context.roundPlan,
@@ -610,7 +619,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// The signatures are durable in the sidecar; the SDK loads the record for
   /// each bundle and verifies it against the stored PCZT sighash.
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
-    return _delegatePendingBundles(hardware: true);
+    return _delegatePendingBundles(
+      hardware: true,
+      signerKind: HardwareSignerKind.keystone,
+    );
+  }
+
+  Future<void> delegatePendingBundlesWithLedgerSignatures() {
+    return _delegatePendingBundles(
+      hardware: true,
+      signerKind: HardwareSignerKind.ledger,
+    );
   }
 
   /// Runs the delegation round for whichever signer this account uses.
@@ -628,6 +647,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   /// other way.
   Future<void> _delegatePendingBundles({
     required bool hardware,
+    HardwareSignerKind? signerKind,
     String? mnemonic,
   }) {
     final secretGuard = mnemonic == null
@@ -643,11 +663,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       secretGuard?.check();
       var current = await future;
       var context = await _loadContext(_roundId);
+      if (hardware && !_requireHardwareVotingAccount(context, signerKind!)) {
+        return;
+      }
       if (hardware != context.isHardwareAccount) {
         _setError(
           hardware
               ? 'Keystone voting is only available for hardware accounts.'
-              : 'Sign delegation bundles with Keystone before submitting.',
+              : 'Sign delegation bundles with ${context.hardwareSignerLabel} before submitting.',
           context: context,
         );
         return;
@@ -683,7 +706,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // hotkey is ensured.
       final Map<int, rust_wire.KeystoneSignatureRecord> signatures = hardware
           ? (hasPendingBundles
-                ? await _loadKeystoneSignatures(context)
+                ? await _loadHardwareSignatures(context)
                 : current.keystoneSignatures)
           : const {};
 
@@ -708,7 +731,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           for (final bundleIndex in delegationBundleIndexes) {
             if (!signatures.containsKey(bundleIndex)) {
               _setError(
-                'Sign delegation bundle ${bundleIndex + 1} with Keystone before submitting.',
+                'Sign delegation bundle ${bundleIndex + 1} with ${context.hardwareSignerLabel} before submitting.',
                 context: context,
               );
               return;
@@ -731,6 +754,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearError: !hardware,
           keystoneSignatures: hardware ? signatures : null,
           clearKeystoneSigningRequest: hardware,
+          clearLedgerSigningRequest: hardware,
           clearKeystoneScanError: hardware,
         );
         _setStateForContext(context, nextState);
@@ -784,7 +808,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                       keystoneSighash: null,
                     ),
               progress: progress,
-              logLabel: hardware ? 'Keystone' : 'software',
+              logLabel: hardware ? context.hardwareSignerLabel : 'software',
             ),
           );
         } on _StaleVotingSessionAction {
@@ -837,6 +861,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentBundleIndex: true,
           keystoneSignatures: hardware ? signatures : null,
           clearKeystoneSigningRequest: hardware,
+          clearLedgerSigningRequest: hardware,
           clearKeystoneScanError: hardware,
         ),
       );
@@ -877,7 +902,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> prepareKeystoneSigning() {
     return _enqueue(
-      _prepareKeystoneSigningUnlocked,
+      () => _prepareHardwareSigningUnlocked(HardwareSignerKind.keystone),
+      cleanupProcessStateOnError: false,
+    );
+  }
+
+  Future<void> prepareLedgerSigning() {
+    return _enqueue(
+      () => _prepareHardwareSigningUnlocked(HardwareSignerKind.ledger),
       cleanupProcessStateOnError: false,
     );
   }
@@ -897,7 +929,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final rust = ref.read(votingRustApiProvider);
       // Always refresh this snapshot. Another attempt may have committed the
       // batch even if Dart did not receive its successful return value.
-      final storedSignatures = await _loadKeystoneSignatures(context);
+      final storedSignatures = await _loadHardwareSignatures(context);
 
       void reject(String message) {
         _setStateForContext(
@@ -989,7 +1021,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           )
           .toList();
       if (remainingRequests.isNotEmpty) {
-        final refreshedSignatures = await _loadKeystoneSignatures(context);
+        final refreshedSignatures = await _loadHardwareSignatures(context);
         _setStateForContext(
           context,
           current.copyWith(
@@ -1003,7 +1035,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      await _prepareKeystoneSigningUnlocked();
+      await _prepareHardwareSigningUnlocked(HardwareSignerKind.keystone);
     }, cleanupProcessStateOnError: false);
   }
 
@@ -1021,20 +1053,84 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  Future<void> skipRemainingKeystoneBundles() {
+  Future<void> handleLedgerSignatures(List<LedgerVotingSignature> signatures) {
+    // Cancellation releases the interactive job guard immediately. Keep a
+    // separate drain lease until an already-started signature write has ended.
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: _sessionAccountUuid);
+    if (release == null) {
+      return Future.error(
+        StateError('Voting work is paused for wallet changes.'),
+      );
+    }
     return _enqueue(() async {
       final current = await future;
+      final request = current.ledgerSigningRequest;
       final context = await _loadContext(_roundId);
-      if (!context.isHardwareAccount) {
+      if (!context.isLedgerAccount ||
+          current.phase != VotingSessionPhase.ledgerSigning ||
+          request == null) {
         _setError(
-          'Keystone voting is only available for hardware accounts.',
+          'No Ledger voting bundle is waiting for approval.',
+          context: context,
+        );
+        return;
+      }
+      late final LedgerVotingSignature signature;
+      try {
+        signature = requireMatchingLedgerVotingSignature(
+          signatures: signatures,
+          actionIndex: request.actionIndex,
+        );
+      } on StateError catch (error) {
+        _setError(error.message, context: context);
+        return;
+      }
+
+      _throwIfContextStale(context, 'ledger-signature-store');
+      try {
+        await ref
+            .read(votingRustApiProvider)
+            .storeHardwareSignatures(
+              dbPath: context.dbPath,
+              accountUuid: context.accountUuid,
+              roundId: context.round.roundId,
+              signatures: [
+                rust_api.ApiKeystoneSignatureInput(
+                  bundleIndex: request.bundleIndex,
+                  sig: Uint8List.fromList(signature.signature),
+                  sighash: Uint8List.fromList(request.pcztSighash),
+                  rk: Uint8List.fromList(request.rk),
+                ),
+              ],
+            );
+      } catch (error) {
+        _setError(
+          votingRustExceptionOf(error)?.kind ==
+                  rust_wire.VotingErrorKindView.keystoneSignatureConflict
+              ? 'This Ledger signature conflicts with the signature already saved for this voting bundle.'
+              : 'Could not save the Ledger voting signature. Retry this bundle.',
           context: context,
         );
         return;
       }
 
+      _throwIfContextStale(context, 'ledger-signature-store-complete');
+      // Rebuild from durable storage so retries and restarts always resume at
+      // the first unsigned bundle.
+      await _prepareHardwareSigningUnlocked(HardwareSignerKind.ledger);
+    }, cleanupProcessStateOnError: false).whenComplete(release);
+  }
+
+  Future<void> skipRemainingKeystoneBundles() {
+    return _enqueue(() async {
+      final current = await future;
+      final context = await _loadContext(_roundId);
+      if (!_requireKeystoneVotingAccount(context)) return;
+
       final roundPlan = current.roundPlan ?? context.roundPlan;
-      final signatures = await _loadKeystoneSignatures(context);
+      final signatures = await _loadHardwareSignatures(context);
       final signedPrefixCount = resolvedKeystoneBundlePrefixCount(
         roundPlan: roundPlan,
         signatures: signatures,
@@ -2280,12 +2376,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadKeystoneSignatures(
+  Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadHardwareSignatures(
     _VotingSessionContext context,
   ) async {
     final records = await ref
         .read(votingRustApiProvider)
-        .getKeystoneSignatures(
+        .getHardwareSignatures(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
           roundId: context.round.roundId,
@@ -3111,7 +3207,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     late final List<int> storedHotkeySecret;
     try {
       final signatures = context.isHardwareAccount
-          ? await _loadKeystoneSignatures(context)
+          ? await _loadHardwareSignatures(context)
           : const <int, rust_wire.KeystoneSignatureRecord>{};
       storedHotkeySecret = await _ensureHotkey(
         context,
@@ -3317,16 +3413,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
   }
 
-  Future<void> _prepareKeystoneSigningUnlocked() async {
+  Future<void> _prepareHardwareSigningUnlocked(
+    HardwareSignerKind signerKind,
+  ) async {
     var current = await future;
     var context = await _loadContext(_roundId);
-    if (!context.isHardwareAccount) {
-      _setError(
-        'Keystone voting is only available for hardware accounts.',
-        context: context,
-      );
-      return;
-    }
+    if (!_requireHardwareVotingAccount(context, signerKind)) return;
+    final signingPhase = signerKind == HardwareSignerKind.ledger
+        ? VotingSessionPhase.ledgerSigning
+        : VotingSessionPhase.keystoneSigning;
+    final signerLabel = context.hardwareSignerLabel;
     await _waitUntilWalletReadyForVoting(context);
 
     if (_needsDelegationPreparation(current)) {
@@ -3337,7 +3433,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
 
     var roundPlan = current.roundPlan ?? context.roundPlan;
-    var signatures = await _loadKeystoneSignatures(context);
+    var signatures = await _loadHardwareSignatures(context);
     var unsignedBundleIndexes = delegationBundleIndexesNeedingSigning(
       roundPlan,
     ).where((bundleIndex) => !signatures.containsKey(bundleIndex)).toList();
@@ -3355,6 +3451,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           isHardwareAccount: true,
           keystoneSignatures: signatures,
           clearKeystoneSigningRequest: true,
+          clearLedgerSigningRequest: true,
           clearKeystoneScanError: true,
           clearCurrentBundleIndex: true,
           clearError: true,
@@ -3370,11 +3467,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _setStateForContext(
       context,
       (state.value ?? current).copyWith(
-        phase: VotingSessionPhase.keystoneSigning,
+        phase: signingPhase,
         isHardwareAccount: true,
         keystoneSignatures: signatures,
         currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneSigningRequest: true,
+        clearLedgerSigningRequest: true,
         clearKeystoneScanError: true,
         clearError: true,
       ),
@@ -3385,7 +3483,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       policy: _delegationSetupRetryPolicy,
       isCancelled: () =>
           !_isCurrentPrecomputeContext(context, context.accountUuid),
-      operation: () => rust.buildKeystoneDelegationRequests(
+      operation: () => rust.buildHardwareDelegationRequests(
         ctx: _apiRoundContext(context),
         storedHotkeySecret: storedHotkeySecret,
         bundleIndices: unsignedBundleIndexes,
@@ -3399,18 +3497,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               requests[index].bundleIndex == unsignedBundleIndexes[index],
         ).every((matches) => matches)) {
       throw StateError(
-        'Keystone voting requests do not match the pending bundles.',
+        '$signerLabel voting requests do not match the pending bundles.',
       );
     }
 
     _setStateForContext(
       context,
       (state.value ?? current).copyWith(
-        phase: VotingSessionPhase.keystoneSigning,
+        phase: signingPhase,
         isHardwareAccount: true,
         roundPlan: roundPlan,
         eligibleWeightZatoshi: requests.first.eligibleWeightZatoshi,
-        keystoneSigningRequests: requests,
+        keystoneSigningRequests: signerKind == HardwareSignerKind.keystone
+            ? requests
+            : const [],
+        ledgerSigningRequests: signerKind == HardwareSignerKind.ledger
+            ? requests
+            : const [],
         keystoneSignatures: signatures,
         currentBundleIndex: unsignedBundleIndexes.first,
         clearKeystoneScanError: true,
@@ -3432,6 +3535,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         round: context.round,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
         clearError: true,
       ),
     );
@@ -3471,6 +3575,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         round: context.round,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
       ),
     );
 
@@ -3489,6 +3594,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         privacyTrimDroppedValueZatoshi:
             bundleSetup.privacyTrimDroppedValueZatoshi,
         isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
       ),
     );
   }
@@ -3542,6 +3648,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         privacyTrimDroppedValueZatoshi:
             eligibility.privacyTrimDroppedValueZatoshi,
         isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
         clearError: eligibility.isEligible,
       );
       _setStateForContext(
@@ -3571,6 +3678,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           eligibleWeightZatoshi: eligibilityError ? BigInt.zero : null,
           privacyTrimDroppedValueZatoshi: eligibilityError ? BigInt.zero : null,
           isHardwareAccount: context.isHardwareAccount,
+          hardwareSignerKind: context.hardwareSignerKind,
           error: VotingSessionError(
             message: message,
             cause: error,
@@ -3628,6 +3736,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     checkAction();
     final accountUuid = await _accountUuidForSession();
     final isHardwareAccount = await _isHardwareAccountForSession();
+    final hardwareSignerKind = isHardwareAccount
+        ? ref.read(votingAccountHardwareSignerKindProvider)(accountUuid)
+        : null;
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
@@ -3659,6 +3770,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       dbPath: dbPath,
       accountUuid: accountUuid,
       isHardwareAccount: isHardwareAccount,
+      hardwareSignerKind: hardwareSignerKind,
       network: _loggedVotingNetwork(endpoint.networkName),
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
@@ -3819,6 +3931,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         round: context.round,
         roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
         walletChainTipHeight: readiness.chainTipHeight,
@@ -3857,8 +3970,36 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingSessionState nextState,
   ) {
     if (!_canUpdateSessionUi(context)) return false;
-    state = AsyncData(nextState);
+    state = AsyncData(
+      nextState.copyWith(
+        isHardwareAccount: context.isHardwareAccount,
+        hardwareSignerKind: context.hardwareSignerKind,
+      ),
+    );
     return true;
+  }
+
+  bool _requireKeystoneVotingAccount(_VotingSessionContext context) {
+    if (context.isKeystoneAccount) return true;
+    _setError(
+      'Keystone voting is only available for Keystone accounts.',
+      context: context,
+    );
+    return false;
+  }
+
+  bool _requireHardwareVotingAccount(
+    _VotingSessionContext context,
+    HardwareSignerKind signerKind,
+  ) {
+    if (context.isHardwareAccount && context.hardwareSignerKind == signerKind) {
+      return true;
+    }
+    _setError(
+      '${signerKind == HardwareSignerKind.ledger ? 'Ledger' : 'Keystone'} voting is only available for matching hardware accounts.',
+      context: context,
+    );
+    return false;
   }
 
   bool _canUpdateSessionUi([_VotingSessionContext? context]) {
@@ -4059,7 +4200,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (_isBallotPhase(next) ||
         next == VotingSessionPhase.done ||
         next == VotingSessionPhase.error ||
-        next == VotingSessionPhase.keystoneSigning) {
+        next == VotingSessionPhase.keystoneSigning ||
+        next == VotingSessionPhase.ledgerSigning) {
       return next;
     }
     return current;
@@ -4332,6 +4474,7 @@ class _VotingSessionContext {
   final String dbPath;
   final String accountUuid;
   final bool isHardwareAccount;
+  final HardwareSignerKind? hardwareSignerKind;
   final String network;
   final String lightwalletdUrl;
   final rust_config.ResolvedVotingConfig config;
@@ -4344,6 +4487,7 @@ class _VotingSessionContext {
     required this.dbPath,
     required this.accountUuid,
     required this.isHardwareAccount,
+    required this.hardwareSignerKind,
     required this.network,
     required this.lightwalletdUrl,
     required this.config,
@@ -4351,6 +4495,11 @@ class _VotingSessionContext {
     required this.roundParams,
     this.roundPlan,
   });
+  bool get isKeystoneAccount =>
+      isHardwareAccount && hardwareSignerKind == HardwareSignerKind.keystone;
+  bool get isLedgerAccount =>
+      isHardwareAccount && hardwareSignerKind == HardwareSignerKind.ledger;
+  String get hardwareSignerLabel => isLedgerAccount ? 'Ledger' : 'Keystone';
 }
 
 class _StaleVotingSessionAction implements Exception {
@@ -4522,7 +4671,7 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
     final context = await _loadContext(_roundId);
     await _waitUntilWalletReadyForVoting(context);
     if (context.isHardwareAccount) {
-      final signatures = await _loadKeystoneSignatures(context);
+      final signatures = await _loadHardwareSignatures(context);
       if (signatures.isNotEmpty) {
         final bundleSetup = await ref
             .read(votingRustApiProvider)
@@ -4542,6 +4691,7 @@ class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
             privacyTrimDroppedValueZatoshi:
                 bundleSetup.privacyTrimDroppedValueZatoshi,
             isHardwareAccount: context.isHardwareAccount,
+            hardwareSignerKind: context.hardwareSignerKind,
             clearError: true,
           ),
         );
