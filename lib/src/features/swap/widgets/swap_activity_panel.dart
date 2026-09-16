@@ -13,6 +13,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -135,7 +136,7 @@ class _SwapActivityDetailSurfaceState
     }
     final needsAutoSign =
         widget.autoSignZecDeposit &&
-        _isHardwareIntent(intent) &&
+        _isKeystoneSigningIntent(intent) &&
         intent.direction == SwapDirection.zecToExternal &&
         !(intent.depositTxHash?.trim().isNotEmpty ?? false);
     final request = needsAutoSign
@@ -170,12 +171,23 @@ class _SwapActivityDetailSurfaceState
   bool _isHardwareIntent(SwapIntent intent) {
     final accountUuid = intent.accountUuid;
     if (accountUuid == null || accountUuid.trim().isEmpty) return false;
-    final accountState = ref.read(accountProvider).value;
-    final accountHardwareByUuid = {
-      for (final account in accountState?.accounts ?? const <AccountInfo>[])
-        account.uuid: account.isHardware,
-    };
-    return accountHardwareByUuid[accountUuid] ?? false;
+    return ref
+        .read(accountProvider.notifier)
+        .accountForUuidOrThrow(accountUuid)
+        .isHardware;
+  }
+
+  bool _isKeystoneSigningIntent(SwapIntent intent) {
+    final accountUuid = intent.accountUuid;
+    if (accountUuid == null || accountUuid.trim().isEmpty) return false;
+    try {
+      return resolveAccountSigningBackend(
+        ref.read(accountProvider.notifier).accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.zecOutboundSwap,
+      ).usesKeystoneProtocol;
+    } on UnsupportedAccountSignerException {
+      return false;
+    }
   }
 
   void _refreshStatus() {
@@ -227,10 +239,28 @@ class _SwapActivityDetailSurfaceState
   }
 
   void _signZecDeposit(SwapIntent intent) {
+    final accountUuid = intent.accountUuid ?? _activeAccountUuid;
+    if (accountUuid == null || accountUuid.isEmpty) return;
+    try {
+      final backend = resolveAccountSigningBackend(
+        ref.read(accountProvider.notifier).accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.zecOutboundSwap,
+      );
+      if (!backend.usesKeystoneProtocol) {
+        throw StateError('Keystone signing requires a Keystone account.');
+      }
+    } on UnsupportedAccountSignerException catch (error) {
+      showAppToast(
+        _toastContext(context),
+        error.userMessage,
+        iconName: AppIcons.warning,
+      );
+      return;
+    }
     final request = _SwapKeystoneSigningRequest(
       intent: intent,
       intentId: intent.id,
-      accountUuid: intent.accountUuid ?? _activeAccountUuid ?? '',
+      accountUuid: accountUuid,
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       unawaited(_openMobileKeystoneSigning(intent, request));
@@ -391,7 +421,7 @@ class _SwapActivityDetailSurfaceState
         !_initialIntentApplied &&
         widget.autoSignZecDeposit &&
         activityDetailIntent != null &&
-        _isHardwareIntent(activityDetailIntent) &&
+        _isKeystoneSigningIntent(activityDetailIntent) &&
         activityDetailIntent.direction == SwapDirection.zecToExternal &&
         !(activityDetailIntent.depositTxHash?.trim().isNotEmpty ?? false);
     final hideTransientSigningContent =

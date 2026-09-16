@@ -29,6 +29,7 @@ void main() {
             uuid: 'account-1',
             name: 'Account 1',
             unifiedAddress: 'u1test',
+            birthdayHeight: 0,
             isSeedAnchor: true,
             isHardware: false,
           ),

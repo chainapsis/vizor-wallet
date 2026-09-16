@@ -22,11 +22,13 @@ class _MobileMigrationRedesignedStatus extends ConsumerStatefulWidget {
   const _MobileMigrationRedesignedStatus({
     required this.data,
     required this.status,
+    required this.accountUuid,
     required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus status;
+  final String accountUuid;
   final bool isHardware;
 
   @override
@@ -53,6 +55,17 @@ class _MobileMigrationRedesignedStatusState
   bool _surfaceRefreshRequested = false;
   bool _showSyncSurface = false;
   bool _walletSyncActive = false;
+
+  AccountSignerKind? get _runSignerKind {
+    final accounts = ref.read(accountProvider).value?.accounts;
+    if (accounts == null) return null;
+    for (final account in accounts) {
+      if (account.uuid == widget.accountUuid) return account.signerKind;
+    }
+    return null;
+  }
+
+  bool get _runUsesKeystone => _runSignerKind == AccountSignerKind.keystone;
 
   // A sync transition invalidates the status shown by this surface. Only a
   // coordinator refresh and route-status reload from the same epoch can make
@@ -131,7 +144,8 @@ class _MobileMigrationRedesignedStatusState
     if (completedPreparation) {
       unawaited(_showPreparationCompleteIfNeeded());
     }
-    if (enteredAwaitingPreparation && !widget.isHardware) {
+    if (enteredAwaitingPreparation &&
+        _runSignerKind == AccountSignerKind.software) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_resumeSoftwarePreparation());
       });
@@ -139,15 +153,14 @@ class _MobileMigrationRedesignedStatusState
   }
 
   bool get _shouldResumeSoftwarePreparation =>
-      !widget.isHardware &&
+      _runSignerKind == AccountSignerKind.software &&
       widget.status.activeRunId != null &&
       widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
       !_softwarePreparationResumeAttempted;
 
   Future<void> _resumeSoftwarePreparation() async {
     if (!_shouldResumeSoftwarePreparation || _actionRunning) return;
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return;
+    final accountUuid = widget.accountUuid;
     _softwarePreparationResumeAttempted = true;
     setState(() {
       _actionRunning = true;
@@ -609,31 +622,35 @@ class _MobileMigrationRedesignedStatusState
         ),
       );
     });
-    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    ref.watch(accountProvider);
+    final accountUuid = widget.accountUuid;
+    final runSignerKind = _runSignerKind;
+    final runUsesKeystone = runSignerKind == AccountSignerKind.keystone;
+    final ledgerSigningUnavailable =
+        runSignerKind == AccountSignerKind.ledger &&
+        (migrationRequiresKeystoneSignature(widget.status) ||
+            widget.status.parts.any(
+              (part) => part.state == rust_sync.MigrationPartState.needsInput,
+            ));
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
-    final coordinatorError = accountUuid == null
-        ? null
-        : coordinator.errors[accountUuid];
-    final needsCredentialRecovery =
-        accountUuid != null &&
-        ironwoodMigrationNeedsCredentialRecovery(coordinatorError);
+    final coordinatorError = coordinator.errors[accountUuid];
+    final needsCredentialRecovery = ironwoodMigrationNeedsCredentialRecovery(
+      coordinatorError,
+    );
     final needsHardwareCredentialAttention =
         needsCredentialRecovery && widget.isHardware;
     final needsSoftwareCredentialRecovery =
         needsCredentialRecovery && !widget.isHardware;
-    final recoveryInProgress =
-        accountUuid != null &&
-        coordinator.advancingAccounts.contains(accountUuid);
-    final hasForegroundPermit =
-        accountUuid != null &&
-        coordinator.foregroundProgressPermits.contains(accountUuid);
-    final hasChildProofBatchPermit =
-        accountUuid != null &&
-        coordinator.childProofBatchPermits.contains(accountUuid);
+    final recoveryInProgress = coordinator.advancingAccounts.contains(
+      accountUuid,
+    );
+    final hasForegroundPermit = coordinator.foregroundProgressPermits.contains(
+      accountUuid,
+    );
+    final hasChildProofBatchPermit = coordinator.childProofBatchPermits
+        .contains(accountUuid);
     final actionInProgress =
-        _actionRunning ||
-        (accountUuid != null &&
-            coordinator.advancingAccounts.contains(accountUuid));
+        _actionRunning || coordinator.advancingAccounts.contains(accountUuid);
     void viewMigrationSchedule() {
       context.push('/migration/private/schedule');
     }
@@ -654,26 +671,34 @@ class _MobileMigrationRedesignedStatusState
       // `awaiting_preparation`. Both phases mean the same thing for a Keystone
       // account: only the device can move preparation forward.
       final awaitingKeystoneSignature =
-          widget.isHardware &&
+          runUsesKeystone &&
           (widget.status.phase ==
                   kIronwoodMigrationAwaitingDenominationSignaturePhase ||
               widget.status.phase ==
                   kIronwoodMigrationAwaitingPreparationPhase);
+      final awaitingUnsupportedLedgerSignature =
+          runSignerKind == AccountSignerKind.ledger;
       final softwareResumeFailed =
           !widget.isHardware && _softwarePreparationResumeError != null;
       return _MigrationPreparationPreview(
-        state: awaitingKeystoneSignature || softwareResumeFailed
+        state:
+            awaitingKeystoneSignature ||
+                awaitingUnsupportedLedgerSignature ||
+                softwareResumeFailed
             ? _MigrationPreparationState.paused
             : _MigrationPreparationState.active,
         isKeystone: awaitingKeystoneSignature,
         pausedMessage: awaitingKeystoneSignature
             ? _keystonePreparationSignatureMessage
+            : awaitingUnsupportedLedgerSignature
+            ? const UnsupportedAccountSignerException(
+                signerKind: AccountSignerKind.ledger,
+                operation: AccountSigningOperation.ironwoodMigration,
+              ).userMessage
             : _softwarePreparationResumeError,
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
-        onContinue: accountUuid == null
-            ? null
-            : awaitingKeystoneSignature
+        onContinue: awaitingKeystoneSignature
             ? () =>
                   context.push('/migration/private/keystone/denominations/sign')
             : softwareResumeFailed
@@ -722,7 +747,7 @@ class _MobileMigrationRedesignedStatusState
         ),
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
-        onContinue: accountUuid == null || _actionRunning
+        onContinue: _actionRunning
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
       );
@@ -735,7 +760,7 @@ class _MobileMigrationRedesignedStatusState
       // outbox can never produce one.
       final needsKeystoneResign =
           !needsHardwareCredentialAttention &&
-          widget.isHardware &&
+          runUsesKeystone &&
           migrationRequiresKeystoneSignature(widget.status);
       final keystoneResignLabel =
           widget.status.parts.any(
@@ -787,7 +812,7 @@ class _MobileMigrationRedesignedStatusState
             : _actionRunning
             ? 'Retrying...'
             : 'Retry',
-        onAction: accountUuid == null || recoveryInProgress || _actionRunning
+        onAction: recoveryInProgress || _actionRunning
             ? null
             : needsHardwareCredentialAttention
             ? () => context.go('/home')
@@ -833,7 +858,7 @@ class _MobileMigrationRedesignedStatusState
             : paused
             ? 'Resume'
             : 'Retry',
-        onAction: accountUuid == null || _actionRunning
+        onAction: _actionRunning
             ? null
             : () => unawaited(_retryAfterError(accountUuid)),
       );
@@ -897,7 +922,7 @@ class _MobileMigrationRedesignedStatusState
             : null,
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
-        onContinue: !needsManualResume || accountUuid == null
+        onContinue: !needsManualResume
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
       );
@@ -923,9 +948,9 @@ class _MobileMigrationRedesignedStatusState
         !hasDueProofBatch && _hasLateScheduledBroadcast(widget.status);
     final batchNumber = batchProgress.currentBatchNumber;
     final signingAllKeystoneTransactions =
-        widget.isHardware && _isInitialKeystoneSigning(widget.status);
+        runUsesKeystone && _isInitialKeystoneSigning(widget.status);
     final resigningKeystoneTransactions =
-        widget.isHardware &&
+        runUsesKeystone &&
         widget.status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
         );
@@ -977,7 +1002,7 @@ class _MobileMigrationRedesignedStatusState
               batchProgress.currentBatchParts,
             ),
       actionRunning: _actionRunning,
-      onAction: accountUuid == null || _actionRunning
+      onAction: _actionRunning || ledgerSigningUnavailable
           ? null
           : () => unawaited(_performRequiredAction(accountUuid)),
     );
@@ -1183,8 +1208,15 @@ class _MobileMigrationRedesignedStatusState
   /// Runs the required action for [accountUuid]. Only a tap reaches here.
   Future<void> _performRequiredAction(String accountUuid) async {
     if (_actionRunning) return;
-    if (widget.isHardware &&
-        migrationRequiresKeystoneSignature(widget.status)) {
+    if (migrationRequiresKeystoneSignature(widget.status)) {
+      final account = ref
+          .read(accountProvider.notifier)
+          .accountForUuidOrThrow(accountUuid);
+      final backend = resolveAccountSigningBackend(
+        account,
+        operation: AccountSigningOperation.ironwoodMigration,
+      );
+      if (backend != AccountSigningBackend.keystone) return;
       context.push('/migration/private/keystone/batch/sign');
       return;
     }
@@ -1217,7 +1249,17 @@ class _MobileMigrationRedesignedStatusState
           : 'Preparing batch #$batchNumber...';
     }
     if (hasLateScheduledBroadcast) return 'Submit scheduled transaction';
-    if (!widget.isHardware) return 'Prepare batch #$batchNumber';
+    if (_runSignerKind == AccountSignerKind.ledger &&
+        (migrationRequiresKeystoneSignature(status) ||
+            status.parts.any(
+              (part) => part.state == rust_sync.MigrationPartState.needsInput,
+            ))) {
+      return const UnsupportedAccountSignerException(
+        signerKind: AccountSignerKind.ledger,
+        operation: AccountSigningOperation.ironwoodMigration,
+      ).userMessage;
+    }
+    if (!_runUsesKeystone) return 'Prepare batch #$batchNumber';
     if (migrationRequiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
@@ -1439,7 +1481,7 @@ class _MobileMigrationRedesignedStatusState
     final keystonePartsPerBatch = status.signingBatchLimit > 0
         ? status.signingBatchLimit
         : 1;
-    final partsPerBatch = widget.isHardware
+    final partsPerBatch = _runUsesKeystone
         ? keystonePartsPerBatch
         : _softwarePartsPerBatch;
     final totalBatches = math.max(

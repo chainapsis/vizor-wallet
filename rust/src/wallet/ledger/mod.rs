@@ -201,6 +201,21 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
     Err(unsupported_platform())
 }
 
+/// Export account material and its USB product name from the same device session.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn get_ufvk_with_device_model(account_index: u32) -> Result<(String, Option<String>), String> {
+    let operation = lock_operation()?;
+    let transport = transport::LedgerTransport::connect(operation.context())?;
+    let model = transport.device_model().map(str::to_owned);
+    let ufvk = transport.ufvk(account_index)?;
+    Ok((ufvk, model))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub fn get_ufvk_with_device_model(_account_index: u32) -> Result<(String, Option<String>), String> {
+    Err(unsupported_platform())
+}
+
 pub fn cancel_operation() {
     LEDGER_OPERATION_STATE.cancel_active();
 }

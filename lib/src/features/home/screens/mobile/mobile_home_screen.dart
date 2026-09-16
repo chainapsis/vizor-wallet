@@ -24,6 +24,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/account_signing.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
@@ -949,7 +950,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isHardwareAccount(accountUuid)) {
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.shield,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
+      _showShieldToast(error.userMessage);
+      return;
+    }
+    if (signingBackend.usesKeystoneProtocol) {
       final result = await context.push<MobileKeystoneShieldResult>(
         '/home/keystone-shield',
       );

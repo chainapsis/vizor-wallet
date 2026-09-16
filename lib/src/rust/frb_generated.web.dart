@@ -510,7 +510,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
 
   @protected
+  LedgerAccountExport dco_decode_ledger_account_export(dynamic raw);
+
+  @protected
   LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
+
+  @protected
+  LegacyHardwareAccount dco_decode_legacy_hardware_account(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -597,6 +603,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneSigningRequest> dco_decode_list_keystone_signing_request(
+    dynamic raw,
+  );
+
+  @protected
+  List<LegacyHardwareAccount> dco_decode_list_legacy_hardware_account(
     dynamic raw,
   );
 
@@ -1846,7 +1857,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LedgerAccountExport sse_decode_ledger_account_export(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
+
+  @protected
+  LegacyHardwareAccount sse_decode_legacy_hardware_account(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
@@ -1951,6 +1972,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneSigningRequest> sse_decode_list_keystone_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LegacyHardwareAccount> sse_decode_list_legacy_hardware_account(
     SseDeserializer deserializer,
   );
 
@@ -3500,8 +3526,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_ledger_account_export(
+    LedgerAccountExport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ledger_device_app(
     LedgerDeviceApp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_legacy_hardware_account(
+    LegacyHardwareAccount self,
     SseSerializer serializer,
   );
 
@@ -3631,6 +3669,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_keystone_signing_request(
     List<KeystoneSigningRequest> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_legacy_hardware_account(
+    List<LegacyHardwareAccount> self,
     SseSerializer serializer,
   );
 

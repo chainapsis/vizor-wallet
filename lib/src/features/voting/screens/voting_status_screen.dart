@@ -12,6 +12,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../providers/account_models.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../voting_error_messages.dart';
@@ -434,7 +435,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         final bundleIndex = state.keystoneSigningRequest?.bundleIndex;
         final urParts = job?.keystoneUrParts ?? const <String>[];
         if (keystoneBuilder != null &&
-            state.isHardwareAccount &&
+            state.signerKind == AccountSignerKind.keystone &&
             phase == VotingSessionPhase.keystoneSigning &&
             bundleIndex != null &&
             urParts.isNotEmpty &&
@@ -515,7 +516,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           submissionJobComplete: submissionJobComplete,
           submissionJobInFlight: submissionJobInFlight,
           softwareAccountRequired: job?.softwareAccountRequired ?? false,
-          isHardwareAccount: state.isHardwareAccount,
+          signerKind: state.signerKind,
           keystoneSigningBundleIndex: state.keystoneSigningRequest?.bundleIndex,
           canSkipRemainingKeystoneBundles:
               state.canSkipRemainingKeystoneBundles,
@@ -786,7 +787,7 @@ class _StatusContent extends StatelessWidget {
     this.submissionJobComplete = false,
     this.submissionJobInFlight = false,
     this.softwareAccountRequired = false,
-    this.isHardwareAccount = false,
+    this.signerKind = AccountSignerKind.software,
     this.keystoneSigningBundleIndex,
     this.canSkipRemainingKeystoneBundles = false,
     this.keystoneUrParts = const [],
@@ -823,7 +824,7 @@ class _StatusContent extends StatelessWidget {
   final bool submissionJobComplete;
   final bool submissionJobInFlight;
   final bool softwareAccountRequired;
-  final bool isHardwareAccount;
+  final AccountSignerKind signerKind;
   final int? keystoneSigningBundleIndex;
   final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
@@ -903,7 +904,7 @@ class _StatusContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
-              if (isHardwareAccount &&
+              if (signerKind == AccountSignerKind.keystone &&
                   phase == VotingSessionPhase.keystoneSigning &&
                   keystoneSigningBundleIndex != null) ...[
                 // Only the signing panel is a live QR the device is reading.
@@ -925,7 +926,7 @@ class _StatusContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
-              if (isHardwareAccount)
+              if (signerKind == AccountSignerKind.keystone)
                 _StepRow(
                   label: 'Signing with Keystone',
                   active: phase == VotingSessionPhase.keystoneSigning,

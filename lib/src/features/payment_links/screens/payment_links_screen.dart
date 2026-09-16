@@ -19,6 +19,7 @@ import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -1134,9 +1135,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             )
           : null,
     );
-    if (ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(sourceAccountUuid)) {
+    final accountNotifier = ref.read(accountProvider.notifier);
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(sourceAccountUuid),
+        operation: AccountSigningOperation.paymentLinkFunding,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
+      _showError(error.userMessage);
+      return;
+    }
+    if (signingBackend.usesKeystoneProtocol) {
       setState(() {
         _operationInProgress = true;
         _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(

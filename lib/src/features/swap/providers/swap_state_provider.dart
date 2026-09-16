@@ -9,6 +9,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -823,9 +824,24 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return null;
     }
-    final activeAccountIsHardware = ref
-        .read(accountProvider.notifier)
-        .isActiveAccountHardware;
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final account = accountNotifier.accountForUuidOrThrow(accountUuid);
+    var activeAccountIsKeystone = false;
+    if (quote.direction.sendsZec) {
+      try {
+        activeAccountIsKeystone = resolveAccountSigningBackend(
+          account,
+          operation: AccountSigningOperation.zecOutboundSwap,
+        ).usesKeystoneProtocol;
+      } on UnsupportedAccountSignerException catch (error) {
+        log('Swap: Ledger ZEC deposit signing is unavailable');
+        state = state.copyWith(
+          startSubmitting: false,
+          statusError: error.userMessage,
+        );
+        return null;
+      }
+    }
     if (quote.direction.sendsZec) {
       try {
         await ref
@@ -871,12 +887,12 @@ class SwapNotifier extends Notifier<SwapState> {
       payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
-    if (activeAccountIsHardware && quote.direction.sendsZec) {
+    if (activeAccountIsKeystone && quote.direction.sendsZec) {
       const nextAction = 'Sign and send the ZEC deposit with Keystone.';
       intent = intent.copyWith(nextAction: nextAction);
     }
     _quoteGeneration++;
-    if (activeAccountIsHardware && quote.direction.sendsZec) {
+    if (activeAccountIsKeystone && quote.direction.sendsZec) {
       log(
         'Swap: start pending Keystone signing intent=${_shortSwapValue(intent.id)} '
         'status=${intent.status.name}',

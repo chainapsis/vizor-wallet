@@ -584,7 +584,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         throw StateError('No active account is selected.');
       }
       final activeAccount = accountState.activeAccount;
-      if (activeAccount == null || !activeAccount.isHardware) {
+      if (activeAccount == null) {
+        throw StateError('The active account is unavailable.');
+      }
+      final signingBackend = resolveAccountSigningBackend(
+        activeAccount,
+        operation: AccountSigningOperation.ironwoodMigration,
+      );
+      if (signingBackend != AccountSigningBackend.keystone) {
         throw StateError('Active account is not a Keystone account.');
       }
       if (preparedRequest != null && preparedAccountUuid != accountUuid) {

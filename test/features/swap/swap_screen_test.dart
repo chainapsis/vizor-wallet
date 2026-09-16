@@ -8856,6 +8856,56 @@ void main() {
     },
   );
 
+  testWidgets('Ledger ZEC swaps stop before creating a provider intent', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final hardwareSigningService = _FakeSwapHardwareSigningService();
+    final sessionStore = _FakeSwapPersistenceStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _ledgerBootstrap,
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        hardwareSigningService: hardwareSigningService,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ledger swap signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(depositSender.preflightRequests, isEmpty);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(hardwareSigningService.depositDrafts, isEmpty);
+    expect(sessionStore.savedIntents, isEmpty);
+  });
+
   testWidgets(
     'hardware ZEC signing keeps the modal preparing until proofs are ready',
     (tester) async {
@@ -10388,6 +10438,31 @@ final _hardwareBootstrap = AppBootstrapState(
         name: 'Keystone',
         order: 0,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1swapaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/swap',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
       ),
     ],
     activeAccountUuid: 'account-1',

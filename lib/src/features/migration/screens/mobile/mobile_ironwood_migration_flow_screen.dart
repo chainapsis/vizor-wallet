@@ -25,6 +25,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/account_signing.dart';
 import '../../../../providers/network_privacy_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';

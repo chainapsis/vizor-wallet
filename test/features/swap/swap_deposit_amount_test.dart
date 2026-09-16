@@ -144,7 +144,15 @@ void main() {
 final _bootstrap = AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+      ),
+    ],
     activeAccountUuid: 'account-1',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,

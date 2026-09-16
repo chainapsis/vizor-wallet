@@ -15,6 +15,7 @@ import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../account_provider.dart';
+import '../account_signing.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -644,7 +645,28 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             _sessionNeedsDelegationSigning(activeSession);
       }
 
-      if (activeSession.isHardwareAccount && needsDelegationSigning) {
+      AccountSigningBackend? hardwareSigningBackend;
+      if (activeSession.isHardwareAccount &&
+          (draftVotes.isNotEmpty ||
+              needsDelegation ||
+              needsDelegationSigning)) {
+        try {
+          hardwareSigningBackend = resolveAccountSignerKind(
+            activeSession.signerKind,
+            operation: AccountSigningOperation.voting,
+          );
+        } on UnsupportedAccountSignerException catch (error) {
+          _failJob(
+            key: key,
+            generation: generation,
+            message: error.userMessage,
+          );
+          return;
+        }
+      }
+
+      if ((hardwareSigningBackend?.usesKeystoneProtocol ?? false) &&
+          needsDelegationSigning) {
         _storePendingKeystoneState(
           key: key,
           generation: generation,
@@ -661,7 +683,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
 
-      if (activeSession.isHardwareAccount &&
+      if ((hardwareSigningBackend?.usesKeystoneProtocol ?? false) &&
           (draftVotes.isNotEmpty || needsDelegation)) {
         if (needsDelegation) {
           _storePendingKeystoneState(

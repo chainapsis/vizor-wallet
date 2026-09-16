@@ -518,6 +518,7 @@ Widget _amountStepWithPriceLoadingApp() {
 Widget _reviewApp({
   required SyncNotifier syncNotifier,
   required MobileSendFeeEstimator estimateFee,
+  AccountState? accountState,
   bool initialMaxMode = false,
   bool refreshReviewFeeOnInit = true,
   String initialAmount = '1.5',
@@ -529,7 +530,9 @@ Widget _reviewApp({
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(accountState: accountState),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(() => syncNotifier),
       zecMarketDataSourceProvider.overrideWithValue(
@@ -1631,6 +1634,52 @@ void main() {
     );
     expect(feeText.data, ZecAmount.fromZatoshi(refreshedFee).fee.toString());
   });
+
+  testWidgets(
+    'Ledger confirmation stops before proposal and Keystone signing',
+    (tester) async {
+      await tester.pumpWidget(
+        _reviewApp(
+          syncNotifier: _FakeSyncNotifier(),
+          estimateFee:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+                required toAddress,
+                required amountZatoshi,
+                memo,
+              }) async => BigInt.from(10000),
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'account-1',
+                name: 'Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+            activeAddress: 'u1activeaddress',
+          ),
+          refreshReviewFeeOnInit: false,
+          initialFeeZatoshi: BigInt.from(10000),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Ledger signing is not available in this build.'),
+        findsOneWidget,
+      );
+      expect(_proposeCalls, 0);
+      expect(find.text('keystone sign'), findsNothing);
+    },
+  );
 
   testWidgets(
     'snapshot review disables confirmation until fee is authoritative',
