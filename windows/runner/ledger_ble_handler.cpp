@@ -12,6 +12,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.Streams.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -41,6 +42,7 @@ using List = flutter::EncodableList;
 using Result = flutter::MethodResult<Value>;
 using ledger_ble::Bytes;
 using ledger_ble::Error;
+using Deadline = std::optional<std::chrono::steady_clock::time_point>;
 
 const Value* Field(const Value* value, const char* key) {
   if (!value) return nullptr;
@@ -256,17 +258,25 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     }
   }
 
+  void CheckDeadline(const Deadline& deadline) const {
+    if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+      throw Error("unavailable", "Ledger app recovery timed out.");
+    }
+  }
+
   template <typename Factory>
-  auto BeginOnMain(Factory factory, uint64_t operation) {
+  auto BeginOnMain(Factory factory, uint64_t operation,
+                   Deadline deadline = std::nullopt) {
     using T = decltype(factory());
     auto promise = std::make_shared<std::promise<T>>();
     auto future = promise->get_future();
     const auto weak = weak_from_this();
-    Post([weak, promise, factory = std::move(factory), operation] {
+    Post([weak, promise, factory = std::move(factory), operation, deadline] {
       try {
         const auto self = weak.lock();
         if (!self) throw Error("cancelled", "Ledger Bluetooth has closed.");
         self->Check(operation);
+        self->CheckDeadline(deadline);
         promise->set_value(factory());
       } catch (...) {
         promise->set_exception(std::current_exception());
@@ -283,8 +293,12 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
 
   template <typename Async>
   auto Await(Async async, uint64_t operation,
-             std::chrono::milliseconds timeout = 30s) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+             std::chrono::milliseconds timeout = 30s,
+             Deadline absolute_deadline = std::nullopt) {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    if (absolute_deadline && *absolute_deadline < deadline) {
+      deadline = *absolute_deadline;
+    }
     std::optional<Error> cancellation;
     while (async.Status() == winrt::Windows::Foundation::AsyncStatus::Started) {
       if (!cancellation && (closed_ || !gate_.IsActive(operation))) {
@@ -593,30 +607,42 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     if (session) session->Close();
   }
 
-  void Connect(const std::string& id, uint64_t operation) {
+  void Connect(const std::string& id, uint64_t operation,
+               Deadline deadline = std::nullopt) {
     Check(operation);
+    CheckDeadline(deadline);
     CloseSession();
     auto session = std::make_shared<Session>();
     {
       std::lock_guard lock(session_mutex_);
       session_ = session;
     }
-    session->device = Await(BeginOnMain([id] { return bt::BluetoothLEDevice::FromIdAsync(winrt::to_hstring(id)); }, operation), operation);
+    auto device = BeginOnMain(
+        [id] { return bt::BluetoothLEDevice::FromIdAsync(winrt::to_hstring(id)); },
+        operation, deadline);
+    session->device = Await(device, operation, 30s, deadline);
     if (!session->device) throw Error("disconnected", "Windows could not find that Ledger. Search again and select it.");
     const auto pairing = session->device.DeviceInformation().Pairing();
     if (!pairing.IsPaired()) {
-      const auto paired = Await(BeginOnMain([pairing] {
+      auto pairing_operation = BeginOnMain([pairing] {
         return pairing.PairAsync(devices::DevicePairingProtectionLevel::EncryptionAndAuthentication);
-      }, operation), operation, 120s);
+      }, operation, deadline);
+      const auto paired = Await(pairing_operation, operation, 120s, deadline);
       if (paired.Status() != devices::DevicePairingResultStatus::Paired &&
           paired.Status() != devices::DevicePairingResultStatus::AlreadyPaired) {
         throw Error("pairing_rejected", "Ledger Bluetooth pairing was not completed. Confirm the matching code in Windows and on your Ledger, then try again.");
       }
     }
-    session->gatt_session = Await(gatt::GattSession::FromDeviceIdAsync(session->device.BluetoothDeviceId()), operation);
+    CheckDeadline(deadline);
+    auto gatt_session = gatt::GattSession::FromDeviceIdAsync(
+        session->device.BluetoothDeviceId());
+    session->gatt_session = Await(gatt_session, operation, 30s, deadline);
     if (!session->gatt_session) throw Error("disconnected", "Windows could not open the Ledger Bluetooth session.");
     session->gatt_session.MaintainConnection(true);
-    const auto services = Await(session->device.GetGattServicesAsync(bt::BluetoothCacheMode::Uncached), operation);
+    CheckDeadline(deadline);
+    auto services_operation = session->device.GetGattServicesAsync(
+        bt::BluetoothCacheMode::Uncached);
+    const auto services = Await(services_operation, operation, 30s, deadline);
     RequireGattReady(services.Status());
     const ledger_ble::ServiceSpec* profile = nullptr;
     for (const auto& service : services.Services()) {
@@ -630,8 +656,14 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       if (profile) break;
     }
     if (!profile) throw Error("disconnected", "The Ledger Bluetooth service is not ready. Keep it nearby and unlocked, then reconnect.");
-    auto notify = Await(session->service.GetCharacteristicsForUuidAsync(winrt::guid(profile->notify), bt::BluetoothCacheMode::Uncached), operation);
-    auto write = Await(session->service.GetCharacteristicsForUuidAsync(winrt::guid(profile->write), bt::BluetoothCacheMode::Uncached), operation);
+    CheckDeadline(deadline);
+    auto notify_operation = session->service.GetCharacteristicsForUuidAsync(
+        winrt::guid(profile->notify), bt::BluetoothCacheMode::Uncached);
+    auto notify = Await(notify_operation, operation, 30s, deadline);
+    CheckDeadline(deadline);
+    auto write_operation = session->service.GetCharacteristicsForUuidAsync(
+        winrt::guid(profile->write), bt::BluetoothCacheMode::Uncached);
+    auto write = Await(write_operation, operation, 30s, deadline);
     RequireGattReady(notify.Status());
     RequireGattReady(write.Status());
     if (notify.Characteristics().Size() != 1 || write.Characteristics().Size() != 1) {
@@ -679,14 +711,20 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
         connected->changed.notify_all();
       }
     });
-    RequireGattReady(Await(session->notify.WriteClientCharacteristicConfigurationDescriptorAsync(
-        gatt::GattClientCharacteristicConfigurationDescriptorValue::Notify), operation));
+    CheckDeadline(deadline);
+    auto notify_configuration =
+        session->notify.WriteClientCharacteristicConfigurationDescriptorAsync(
+            gatt::GattClientCharacteristicConfigurationDescriptorValue::Notify);
+    RequireGattReady(Await(
+        notify_configuration, operation, 30s, deadline));
     // Ledger's MTU command reports the maximum ATT payload. Windows negotiates
     // its own ATT MTU, so use the smaller of the two advertised limits.
     session->mtu = ledger_ble::NegotiatedMtu(
-        ExchangePackets(session, {{0x08, 0, 0, 0, 0}}, operation, true),
+        ExchangePackets(session, {{0x08, 0, 0, 0, 0}}, operation, true,
+                        deadline, deadline.has_value()),
         session->gatt_session.MaxPduSize());
     Check(operation);
+    CheckDeadline(deadline);
     {
       std::lock_guard lock(session_mutex_);
       connected_id_ = id;
@@ -696,8 +734,10 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
   Bytes ExchangePackets(const std::shared_ptr<Session>& session,
                         const std::vector<Bytes>& frames, uint64_t operation,
                         bool mtu = false,
-                        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
+                        Deadline deadline = std::nullopt,
+                        bool retry_protocol_error = false) {
     Check(operation);
+    CheckDeadline(deadline);
     {
       std::lock_guard lock(session->mutex);
       if (!session->connected) throw Error("disconnected", "The Ledger disconnected. Reconnect and try again.");
@@ -726,10 +766,16 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
       }
       streams::DataWriter writer;
       writer.WriteBytes(frame);
-      const auto result = Await(session->write.WriteValueWithResultAsync(
-          writer.DetachBuffer(), gatt::GattWriteOption::WriteWithResponse),
-          operation, write_timeout);
-      RequireGatt(result.Status());
+      CheckDeadline(deadline);
+      auto write_operation = session->write.WriteValueWithResultAsync(
+          writer.DetachBuffer(), gatt::GattWriteOption::WriteWithResponse);
+      const auto result = Await(
+          write_operation, operation, write_timeout, deadline);
+      if (retry_protocol_error) {
+        RequireGattReady(result.Status());
+      } else {
+        RequireGatt(result.Status());
+      }
     }
     const auto response_deadline = deadline.value_or(
         std::chrono::steady_clock::now() + (mtu ? 10s : 300s));
@@ -762,18 +808,20 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
 
   Bytes Exchange(
       const Bytes& command, uint64_t operation,
-      std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
+      Deadline deadline = std::nullopt,
+      bool retry_protocol_error = false) {
     const auto session = CurrentSession();
     return ExchangePackets(
         session, ledger_ble::FrameApdu(command, session->mtu), operation,
-        false, deadline);
+        false, deadline, retry_protocol_error);
   }
 
   ledger_ble::AppInfo ReadApp(
-      uint64_t operation,
-      std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) {
+      uint64_t operation, Deadline deadline = std::nullopt,
+      bool retry_protocol_error = false) {
     return ledger_ble::DecodeAppInfo(
-        Exchange(ledger_ble::GetAppAndVersionCommand(), operation, deadline));
+        Exchange(ledger_ble::GetAppAndVersionCommand(), operation, deadline,
+                 retry_protocol_error));
   }
 
   ledger_ble::AppInfo WaitForApp(
@@ -792,14 +840,18 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
             connected = session_->connected;
           }
         }
-        if (!connected) Connect(id, operation);
-        const auto app = ReadApp(operation, deadline);
+        if (!connected) Connect(id, operation, deadline);
+        const auto app = ReadApp(operation, deadline, true);
         if (matches(app)) return app;
       } catch (const Error& error) {
         if (error.code != "disconnected" && error.code != "device_busy") throw;
         if (error.code == "disconnected") CloseSession();
       }
-      std::this_thread::sleep_for(200ms);
+      Check(operation);
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now());
+      if (remaining <= 0ms) break;
+      std::this_thread::sleep_for(std::min(200ms, remaining));
     }
     Check(operation);
     throw Error("unavailable", std::string("Vizor could not resume at ") + expected +
