@@ -214,14 +214,18 @@ class AppSyncSnapshot {
   );
 }
 
-/// A password verifier without any account or wallet DB is an onboarding
-/// remnant rather than a wallet, so startup may drop it safely.
+/// A password verifier without any account data is an onboarding remnant when
+/// the wallet DB is absent or was successfully confirmed to contain no
+/// accounts, so startup may drop it safely.
 bool shouldClearOrphanedPasswordVerifier({
   required bool isPasswordConfigured,
   required bool hasWallet,
   required bool walletDbExists,
+  required bool walletDbAccountsConfirmedEmpty,
 }) {
-  return isPasswordConfigured && !hasWallet && !walletDbExists;
+  return isPasswordConfigured &&
+      !hasWallet &&
+      (!walletDbExists || walletDbAccountsConfirmedEmpty);
 }
 
 Future<AppBootstrapState> loadAppBootstrap() async {
@@ -303,6 +307,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     );
 
     var rustAccounts = <AccountInfo>[];
+    var walletDbAccountsConfirmedEmpty = false;
     final rustAddressesByUuid = <String, String>{};
     if (rust_wallet.walletExists(dbPath: dbPath)) {
       try {
@@ -347,6 +352,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
             order: index,
           );
         }).toList();
+        walletDbAccountsConfirmedEmpty = rustAccounts.isEmpty;
         log('bootstrap: rust accounts=${rustAccounts.length}');
       } catch (e) {
         log('bootstrap: failed to list Rust accounts: $e');
@@ -363,6 +369,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       isPasswordConfigured: isPasswordConfigured,
       hasWallet: hasWallet,
       walletDbExists: rust_wallet.walletExists(dbPath: dbPath),
+      walletDbAccountsConfirmedEmpty: walletDbAccountsConfirmedEmpty,
     )) {
       log('bootstrap: clearing password verifier left without any account');
       try {

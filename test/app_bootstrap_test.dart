@@ -9,6 +9,7 @@ void main() {
         isPasswordConfigured: true,
         hasWallet: false,
         walletDbExists: false,
+        walletDbAccountsConfirmedEmpty: false,
       ),
       isTrue,
     );
@@ -17,6 +18,7 @@ void main() {
         isPasswordConfigured: true,
         hasWallet: true,
         walletDbExists: false,
+        walletDbAccountsConfirmedEmpty: false,
       ),
       isFalse,
     );
@@ -25,6 +27,7 @@ void main() {
         isPasswordConfigured: true,
         hasWallet: false,
         walletDbExists: true,
+        walletDbAccountsConfirmedEmpty: false,
       ),
       isFalse,
     );
@@ -33,6 +36,43 @@ void main() {
         isPasswordConfigured: false,
         hasWallet: false,
         walletDbExists: false,
+        walletDbAccountsConfirmedEmpty: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('an orphaned verifier is cleared after an empty DB is confirmed', () {
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: false,
+        walletDbExists: true,
+        walletDbAccountsConfirmedEmpty: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('an orphaned verifier is retained when DB contents are unknown', () {
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: false,
+        walletDbExists: true,
+        walletDbAccountsConfirmedEmpty: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('stored accounts retain the verifier even after an empty DB result', () {
+    expect(
+      shouldClearOrphanedPasswordVerifier(
+        isPasswordConfigured: true,
+        hasWallet: true,
+        walletDbExists: true,
+        walletDbAccountsConfirmedEmpty: true,
       ),
       isFalse,
     );
