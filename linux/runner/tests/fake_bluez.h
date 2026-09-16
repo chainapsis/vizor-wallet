@@ -74,6 +74,7 @@ struct FakeBluez {
   GDBusMethodInvocation* pending_pair = nullptr;
   int pairs = 0, pair_cancellations = 0, connects = 0, disconnects = 0, writes = 0;
   ledger_ble::ResponseAssembler input;
+  std::vector<Bytes> requests;
   Bytes response = {1, 5, 'Z', 'c', 'a', 's', 'h', 5, '3', '.', '9', '.', '3', 0x90, 0};
 
   FakeBluez() {
@@ -310,6 +311,7 @@ struct FakeBluez {
       if (packet[0] == 0x08) {
         if (!self.hold_mtu) self.Notify({0x08, 0, 0, 0, 0, 20});
       } else if (self.input.Add(packet)) {
+        self.requests.push_back(self.input.bytes());
         self.input = {};
         if (self.disconnect_on_write) {
           self.connected = false;

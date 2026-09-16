@@ -616,7 +616,7 @@ Bytes Transport::Exchange(const Bytes& apdu, GCancellable* cancel) {
 }
 
 ledger_ble::AppInfo Transport::CurrentApp(GCancellable* cancel) {
-  return ledger_ble::DecodeAppInfo(Exchange({0xb0, 0x01, 0, 0}, cancel));
+  return ledger_ble::DecodeAppInfo(Exchange({0xb0, 0x01, 0, 0, 0}, cancel));
 }
 
 ledger_ble::AppInfo Transport::OpenZcash(GCancellable* cancel) {

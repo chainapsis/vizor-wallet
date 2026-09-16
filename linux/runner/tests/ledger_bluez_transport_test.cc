@@ -144,6 +144,9 @@ int main() {
     Run([&] { transport.Connect(kDevice, nullptr); });
     auto app = Run([&] { return transport.CurrentApp(nullptr); });
     Require(app.name == "Zcash" && app.version == "3.9.3", "decode app");
+    Require(!fake.requests.empty() &&
+            fake.requests.back() == Bytes({0xb0, 0x01, 0, 0, 0}),
+        "current app uses the five-byte Ledger wire APDU");
     fake.hold_mtu = true;
     const auto initialization_started = std::chrono::steady_clock::now();
     Fails("unavailable", [&] { transport.Connect(kDevice, nullptr); });
