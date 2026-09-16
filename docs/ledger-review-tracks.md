@@ -14,9 +14,9 @@ classification does not authorize merging the collection into main.
 | --- | --- | --- |
 | C01 USB/protocol | Merged, #695 | Foundation already present |
 | C02 account import and signer dispatch | In review, #696 | Depends on merged C01; signer dispatch and interrupted-setup recovery are implemented |
-| C04 Apple BLE | Draft, #700 | Swift adapter, registrations and native dependencies are self-contained |
-| C05 Android BLE | Draft, #698 | Kotlin adapter, permissions and native dependencies are self-contained |
-| C06a shared native BLE protocol | Draft, #701 | Platform-neutral framing, response assembly and operation gate, with host tests |
+| C04 Apple BLE | In review, #700 | Swift adapter, registrations and native dependencies are self-contained |
+| C05 Android BLE | In review, #698 | Kotlin adapter, permissions and native dependencies are self-contained |
+| C06a shared native BLE protocol | Merged, #701 | Platform-neutral framing, response assembly and operation gate, with host tests |
 
 C04 and C05 were originally stacked on C03. Their own native patches apply
 unchanged to the collection and have been rebased to target it directly.
@@ -24,12 +24,16 @@ Neither needs to wait for C02's signer-dispatch refactor or for the other
 platform adapter. C04 raises the app-wide minimum to macOS 12; C05 raises the
 app-wide minimum to Android 11 (API 30). Those remain release constraints.
 
-## One shared prerequisite, independent adapters
+## Independent Windows and Linux adapters
 
-| Slice | Initial base | Merge condition |
+Shared prerequisite #701 is merged into the collection. Both adapters were
+rebased onto the collection with unchanged platform patches and marked ready
+for review.
+
+| Slice | Current base | Status |
 | --- | --- | --- |
-| C06b Windows BLE, draft #702 | C06a, #701 | After C06a merges, rebase its Windows-only commit onto the collection |
-| C07 Linux BLE, draft #703 | C06a, #701 | After C06a merges, rebase its Linux-only commit onto the collection |
+| C06b Windows BLE, #702 | Collection #693 | Ready for review |
+| C07 Linux BLE, #703 | Collection #693 | Ready for review |
 
 C06a owns `native/ledger/ble_protocol.h`, `ble_operation_gate.h` and their
 transport-neutral tests. Windows and Linux reuse these headers, but do not
