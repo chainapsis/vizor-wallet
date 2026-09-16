@@ -259,14 +259,76 @@ class LedgerMobileHandlerTest {
         assertEquals(1, sdk.commands)
     }
 
+    @Test
+    fun closeDrainsPendingConnectAndDisconnectsItsLateSession() {
+        val sdk = PendingLedgerSdk().apply { connectPending = true }
+        val lifecycle = LedgerConnectionLifecycle(sdk.device)
+        val handler = handler(
+            sdk,
+            discovered = mapOf(sdk.discovery.uid to sdk.discovery),
+            connectionLifecycle = lifecycle,
+        )
+        val connect = reply(
+            handler,
+            MethodCall("connect", mapOf("deviceId" to sdk.discovery.uid)),
+        )
+
+        assertEquals(listOf("disconnect", "connect"), sdk.connectionCalls)
+        handler.close()
+        assertEquals(0, connect.completions)
+
+        sdk.completeConnect()
+
+        assertEquals("cancelled", connect.error)
+        assertEquals(1, connect.completions)
+        assertEquals(listOf("disconnect", "connect", "disconnect"), sdk.connectionCalls)
+        assertFalse(lifecycle.isTeardownPending)
+    }
+
+    @Test
+    fun replacementHandlerCannotUseSharedSessionUntilCloseDrains() {
+        val sdk = PendingLedgerSdk()
+        val lifecycle = LedgerConnectionLifecycle(sdk.device)
+        val oldHandler = handler(sdk, connectionLifecycle = lifecycle)
+        val pending = reply(oldHandler, MethodCall("currentApp", null))
+        oldHandler.close()
+        val replacement = handler(
+            sdk,
+            discovered = mapOf(sdk.discovery.uid to sdk.discovery),
+            connectionLifecycle = lifecycle,
+        )
+
+        val blocked = reply(
+            replacement,
+            MethodCall("connect", mapOf("deviceId" to sdk.discovery.uid)),
+        )
+        assertEquals("unavailable", blocked.error)
+        assertEquals(listOf<String>(), sdk.connectionCalls)
+
+        sdk.completeApp()
+        assertEquals("cancelled", pending.error)
+        assertEquals(listOf("disconnect"), sdk.connectionCalls)
+
+        val reconnect = reply(
+            replacement,
+            MethodCall("connect", mapOf("deviceId" to sdk.discovery.uid)),
+        )
+        assertNull(reconnect.error)
+        assertEquals(1, reconnect.completions)
+        assertEquals(listOf("disconnect", "connect"), sdk.connectionCalls)
+        replacement.close()
+    }
+
     private fun handler(
         sdk: PendingLedgerSdk,
         hasPermission: (String) -> Boolean = { true },
         requestPermissions: (Array<String>, Int) -> Unit = { _, _ -> },
         discovered: Map<String, DiscoveryDevice> = emptyMap(),
+        connectionLifecycle: LedgerConnectionLifecycle = LedgerConnectionLifecycle(sdk.device),
     ) = LedgerMobileHandler(
         activity = mock(Activity::class.java),
         dmk = sdk.api,
+        connectionLifecycle = connectionLifecycle,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         hasPermission = hasPermission,
         requestPermissions = requestPermissions,
@@ -302,12 +364,14 @@ class LedgerMobileHandlerTest {
         var commands = 0
         var appCommands = 0
         var openActions = 0
+        var connectPending = false
         val connectionCalls = mutableListOf<String>()
         var connectError: Exception? = null
         val responses = ArrayDeque<ByteArray>()
         private var pending: Continuation<DeviceOperationResult<ByteArray>>? = null
         private var pendingApp: Continuation<DeviceOperationResult<AppAndVersion>>? = null
         private var pendingOpen: Continuation<DeviceActionResult<Unit>>? = null
+        private var pendingConnect: Continuation<ConnectionResult>? = null
         val device = ConnectedDevice(
             "test-ledger", "Test Ledger", LedgerDevice.NanoX, ConnectivityType.Bluetooth(-50),
         )
@@ -330,8 +394,16 @@ class LedgerMobileHandlerTest {
                 "connectDevice" -> {
                     connectionCalls += "connect"
                     connectError?.let { throw it }
-                    connected = true
-                    ConnectionResult.Connected(device)
+                    if (connectPending) {
+                        check(pendingConnect == null)
+                        @Suppress("UNCHECKED_CAST")
+                        val continuation = args.last() as Continuation<ConnectionResult>
+                        pendingConnect = continuation
+                        COROUTINE_SUSPENDED
+                    } else {
+                        connected = true
+                        ConnectionResult.Connected(device)
+                    }
                 }
                 "sendApdu" -> {
                     commands++
@@ -381,6 +453,13 @@ class LedgerMobileHandlerTest {
             val continuation = checkNotNull(pendingOpen)
             pendingOpen = null
             continuation.resume(DeviceActionResult.Success(Unit))
+        }
+
+        fun completeConnect() {
+            val continuation = checkNotNull(pendingConnect)
+            pendingConnect = null
+            connected = true
+            continuation.resume(ConnectionResult.Connected(device))
         }
     }
 

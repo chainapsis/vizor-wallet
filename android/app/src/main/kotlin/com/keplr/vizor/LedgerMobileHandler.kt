@@ -44,10 +44,31 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
+
+class LedgerConnectionLifecycle internal constructor(
+    initialConnectedDevice: ConnectedDevice? = null,
+) {
+    val mutex = Mutex()
+    @Volatile var connectedDevice: ConnectedDevice? = initialConnectedDevice
+    @Volatile var connectionToClose: ConnectedDevice? = null
+    private val pendingTeardowns = AtomicInteger(0)
+
+    val isTeardownPending: Boolean get() = pendingTeardowns.get() > 0
+
+    fun beginTeardown() {
+        pendingTeardowns.incrementAndGet()
+    }
+
+    fun finishTeardown() {
+        pendingTeardowns.decrementAndGet()
+    }
+}
 
 class LedgerMobileHandler(
     private val activity: Activity,
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
+    private val connectionLifecycle: LedgerConnectionLifecycle = LedgerDmkHolder.connectionLifecycle,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val hasPermission: (String) -> Boolean = {
         ActivityCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
@@ -67,15 +88,24 @@ class LedgerMobileHandler(
     private var eventSink: EventChannel.EventSink? = null
     private var discoveryRequested = false
     private val discoveredDevices = initialDiscoveredDevices.toMutableMap()
-    private var connectedDevice: ConnectedDevice? = initialConnectedDevice
     private var permissionResult: MethodChannel.Result? = null
     private var operationJob: Job? = null
     private var operationResult: MethodChannel.Result? = null
     private var operationGeneration = 0L
-    private val connectionMutex = Mutex()
-    private var connectionToClose: ConnectedDevice? = null
+    private var connectionJob: Job? = null
+    private var closed = false
+
+    init {
+        if (connectionLifecycle.connectedDevice == null) {
+            connectionLifecycle.connectedDevice = initialConnectedDevice
+        }
+    }
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
+        if (closed) {
+            result.error("cancelled", "The Ledger connection handler is closed.", null)
+            return
+        }
         when (call.method) {
             "openBluetoothSettings" -> {
                 try {
@@ -120,26 +150,30 @@ class LedgerMobileHandler(
     }
 
     fun close() {
+        if (closed) return
+        closed = true
+        connectionLifecycle.beginTeardown()
         stopDiscovery()
-        val exchangeToDrain = cancelOperation()
+        val operationToDrain = cancelOperation()
+        val connectionToDrain = connectionJob?.also { it.cancel() }
         permissionResult?.error("cancelled", "The Ledger permission request was cancelled.", null)
         permissionResult = null
-        val device = connectionToClose ?: connectedDevice
-        connectedDevice = null
-        if (device == null) {
-            scope.cancel()
-            return
-        }
         scope.launch(NonCancellable) {
             try {
-                connectionMutex.withLock {
-                    exchangeToDrain?.join()
-                    closeConnection(device)
+                connectionToDrain?.join()
+                connectionLifecycle.mutex.withLock {
+                    operationToDrain?.join()
+                    val device = connectionLifecycle.connectionToClose
+                        ?: connectionLifecycle.connectedDevice
+                        ?: dmk.getConnectedDevices().singleOrNull()
+                    connectionLifecycle.connectedDevice = null
+                    if (device != null) closeConnection(device)
                 }
             } catch (_: Exception) {
                 // The Activity is already closing. Keep teardown best-effort;
                 // a later handler still waits for DMK/GATT state before reuse.
             } finally {
+                connectionLifecycle.finishTeardown()
                 scope.cancel()
             }
         }
@@ -235,60 +269,85 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
+        if (connectionLifecycle.isTeardownPending || connectionJob != null) {
+            result.error("unavailable", "A Ledger connection is already changing.", null)
+            return
+        }
         val exchangeToDrain = cancelOperation()
-        scope.launch { connectionMutex.withLock {
+        var resultCompleted = false
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                exchangeToDrain?.join()
-                val previousDevice = connectionToClose ?: connectedDevice
-                if (previousDevice != null) {
-                    connectedDevice = null
-                    closeConnection(previousDevice)
-                }
-                when (val connection = dmk.connectDevice(device)) {
-                    is ConnectionResult.Connected -> {
-                        connectedDevice = connection.device
-                        stopDiscovery()
-                        result.success(null)
-                    }
-                    is ConnectionResult.Disconnected -> connectionFailure(result, connection.failure)
-                }
-            } catch (error: Exception) {
-                // DMK 0.0.4 can throw after opening GATT but before returning a
-                // ConnectedDevice (BluetoothDevice.name is nullable). Its public
-                // disconnect API routes by uid/connectivity, so request closure of that
-                // attempted connection even though no session was returned.
-                connectedDevice = null
-                discoveredDevices.remove(device.uid)
-                val attempted = connectionToClose ?: ConnectedDevice(
-                    uid = device.uid, name = device.name,
-                    ledgerDevice = device.ledgerDevice,
-                    connectivityType = device.connectivityType,
-                )
-                connectionToClose = attempted
-                val cleanupRequested = withContext(NonCancellable) {
+                connectionLifecycle.mutex.withLock {
                     try {
-                        closeConnection(attempted)
-                        true
-                    } catch (_: Exception) {
-                        false
+                        exchangeToDrain?.join()
+                        val previousDevice = connectionLifecycle.connectionToClose
+                            ?: connectionLifecycle.connectedDevice
+                        if (previousDevice != null) {
+                            connectionLifecycle.connectedDevice = null
+                            closeConnection(previousDevice)
+                        }
+                        val connection = dmk.connectDevice(device)
+                        currentCoroutineContext().ensureActive()
+                        when (connection) {
+                            is ConnectionResult.Connected -> {
+                                connectionLifecycle.connectedDevice = connection.device
+                                stopDiscovery()
+                                result.success(null)
+                                resultCompleted = true
+                            }
+                            is ConnectionResult.Disconnected -> {
+                                connectionFailure(result, connection.failure)
+                                resultCompleted = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        // DMK 0.0.4 can throw after opening GATT but before returning a
+                        // ConnectedDevice (BluetoothDevice.name is nullable). Its public
+                        // disconnect API routes by uid/connectivity, so request closure of that
+                        // attempted connection even though no session was returned.
+                        connectionLifecycle.connectedDevice = null
+                        discoveredDevices.remove(device.uid)
+                        val attempted = connectionLifecycle.connectionToClose ?: ConnectedDevice(
+                            uid = device.uid, name = device.name,
+                            ledgerDevice = device.ledgerDevice,
+                            connectivityType = device.connectivityType,
+                        )
+                        connectionLifecycle.connectionToClose = attempted
+                        val cleanupRequested = withContext(NonCancellable) {
+                            try {
+                                closeConnection(attempted)
+                                true
+                            } catch (_: Exception) {
+                                false
+                            }
+                        }
+                        result.error(
+                            if (error is CancellationException) "cancelled" else "disconnected",
+                            if (cleanupRequested) {
+                                "Could not finish connecting to your Ledger. Search for your Ledger again and reconnect."
+                            } else {
+                                "Could not close the previous Ledger connection. Turn Bluetooth off and on on your Ledger, then search again."
+                            },
+                            null,
+                        )
+                        resultCompleted = true
+                        if (error is CancellationException) throw error
                     }
                 }
-                result.error(
-                    if (error is CancellationException) "cancelled" else "disconnected",
-                    if (cleanupRequested) {
-                        "Could not finish connecting to your Ledger. Search for your Ledger again and reconnect."
-                    } else {
-                        "Could not close the previous Ledger connection. Turn Bluetooth off and on on your Ledger, then search again."
-                    },
-                    null,
-                )
-                if (error is CancellationException) throw error
+            } catch (_: CancellationException) {
+                if (!resultCompleted) {
+                    result.error("cancelled", "The Ledger connection was cancelled.", null)
+                }
+            } finally {
+                if (connectionJob === coroutineContext[Job]) connectionJob = null
             }
-        } }
+        }
+        connectionJob = job
+        job.start()
     }
 
     private suspend fun closeConnection(device: ConnectedDevice) {
-        connectionToClose = device
+        connectionLifecycle.connectionToClose = device
         withTimeout(5000) {
             dmk.disconnectDevice(device)
             // SDK session removal alone is not proof that Android closed GATT.
@@ -297,15 +356,20 @@ class LedgerMobileHandler(
                 delay(50)
             }
         }
-        connectionToClose = null
+        connectionLifecycle.connectionToClose = null
     }
 
     private fun disconnect(result: MethodChannel.Result) {
+        if (connectionLifecycle.isTeardownPending) {
+            result.error("unavailable", "The Ledger connection is still closing.", null)
+            return
+        }
         val exchangeToDrain = cancelOperation()
-        scope.launch { connectionMutex.withLock {
+        scope.launch { connectionLifecycle.mutex.withLock {
             exchangeToDrain?.join()
-            val device = connectionToClose ?: connectedDevice
-            connectedDevice = null
+            val device = connectionLifecycle.connectionToClose
+                ?: connectionLifecycle.connectedDevice
+            connectionLifecycle.connectedDevice = null
             try {
                 if (device != null) closeConnection(device)
                 result.success(null)
@@ -499,14 +563,16 @@ class LedgerMobileHandler(
             result.error("permission_denied", "Bluetooth permission was revoked. Allow it before reconnecting.", null)
             return null
         }
-        if (connectionMutex.isLocked || connectionToClose != null) {
+        if (connectionLifecycle.isTeardownPending ||
+            connectionLifecycle.mutex.isLocked ||
+            connectionLifecycle.connectionToClose != null) {
             result.error("disconnected", "Your Ledger connection is not ready. Reconnect before trying again.", null)
             return null
         }
-        if (connectedDevice == null) {
-            connectedDevice = dmk.getConnectedDevices().singleOrNull()
+        if (connectionLifecycle.connectedDevice == null) {
+            connectionLifecycle.connectedDevice = dmk.getConnectedDevices().singleOrNull()
         }
-        return connectedDevice ?: run {
+        return connectionLifecycle.connectedDevice ?: run {
             result.error("disconnected", "Select and connect a Ledger first.", null)
             null
         }
@@ -613,6 +679,7 @@ class LedgerMobileHandler(
 
 private object LedgerDmkHolder {
     private var instance: DeviceManagementKitApi? = null
+    val connectionLifecycle = LedgerConnectionLifecycle()
 
     @Synchronized
     fun get(activity: Activity): DeviceManagementKitApi {
