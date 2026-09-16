@@ -1,0 +1,142 @@
+# Ledger signing phase guidance analysis
+
+2026-09-16. Code inspection only; proposed copy and event boundaries are not implemented.
+Scope: transaction approval on desktop/mobile, plus the separate voting approval UI.
+Account import/public viewing-key export is a separate onboarding flow.
+
+## Current surfaces
+
+Desktop send uses `AppPaneModalOverlay` in `send_review_screen.dart`. Mobile send
+uses `MobileLedgerSendSignScreen` with top title `Confirm transaction`. Both render
+`LedgerSigningModal`. Shielding, swap/payment, gift-card funding and immediate
+migration also use that shared card, with desktop overlays/mobile page wrappers.
+Mobile wrapper titles include `Shield with Ledger`, `Sign ZEC deposit`,
+`Sign payment`, `Confirm Gift Card`, and `Migrate with Ledger`.
+Voting uses `LedgerVotingSigningPanel`, not the shared card.
+
+macOS supports USB/BLE; Windows/Linux USB; iOS/Android BLE in current product code.
+Form factor controls presentation; active transport controls connection instructions.
+
+## Exact shared card inventory
+
+| Phase | Title | Status | Body |
+| --- | --- | --- | --- |
+| preparing | Preparing for Ledger | Preparing transaction | Vizor is preparing the transaction for secure device review. |
+| awaitingDevice | Review on your Ledger | Waiting for approval | Review every transaction detail on the device, then approve or reject it. |
+| saving | Saving signed transaction | Securing transaction | Keep Vizor open while the signed transaction is saved securely. |
+| broadcasting | Sending transaction | Broadcasting to the network | Keep Vizor open while the transaction is sent. |
+| failed | Caller-specific | Caller-specific, often Action needed | Caller-specific failure/recovery instructions. |
+
+During awaitingDevice, readiness can override the card:
+
+- `Checking your Ledger` / `Checking device`: `Vizor is checking whether the Zcash app is ready.`
+- `Confirm opening Zcash` / `Opening Zcash`: `Confirm the request on your Ledger. Vizor will reconnect automatically.`
+- idle/ready/failed readiness otherwise keeps the generic approval text.
+- A failed card may use `Ledger needs attention` / `Action needed` and the readiness error.
+
+Preparing and awaitingDevice both also show `Open the Zcash app` /
+`Keep it open on your Ledger.` even after the app is known to be open.
+Active cards have a spinner and a disabled `Waiting` button (`Saving` during save).
+Cancellation availability depends on the flow; signed-operation recovery must be preserved.
+Desktop failure UI can offer Auto/USB/Bluetooth on macOS, USB guidance on Windows/Linux;
+mobile does not offer this connection picker.
+
+TEX and consecutive shielding display transaction/round counts. Awaiting text is
+`Review Transaction N of M on your Ledger`, `Waiting for approval · N of M`,
+and `Approve this transaction on the device. Vizor will request the next transaction separately.`
+Shielding additionally explains separate network fees per approval.
+Normal send hands off after saving to the send-status flow rather than showing
+the shared card's broadcasting phase.
+
+Voting shows `Approve voting delegation`, `Bundle N of M`, and defaults to
+`Waiting for Ledger approval` / `Approve bundle N on the device. Vizor will continue automatically.`
+Readiness overrides are checking/opening/attention. Its enclosing status screen
+can still say `Approve on your Ledger` while the panel is checking the device.
+Keep the existing disclosure that the device may not display the voting memo verbatim.
+
+## Gaps
+
+1. Both send UIs set awaitingDevice before calling the signer, not upon device review.
+   Validation, path/DB lookup, connection, cooldown, APDU planning, upload, device
+   processing, signature retrieval and local validation are collapsed into approval.
+2. Regular send/swap/shield proof generation happens under preparing, but this
+   generic label does not explain the longer local calculation.
+3. Connection/cooldown happens before readiness sets checkingDevice. Old idle/ready
+   state can therefore display approval while no review is possible yet.
+4. No transport progress or per-command activity reaches the card. A long device
+   computation and a broken connection initially look identical.
+5. After approval, response retrieval and verification still say waiting for approval.
+6. Immediate migration has an additional issue: after signing, broadcasting includes
+   waiting for background proofs, before actual network submission.
+7. Cancellation can await SDK/proposal cleanup without a dedicated cancelling label.
+
+## Revised proposal: four user-facing stages
+
+User feedback on 2026-09-16 supersedes the earlier detailed stage proposal:
+keep `Open the Zcash app` / `Keep it open on your Ledger.` unchanged, and group
+internal work into a few stages. Do not expose a checklist of internal operations.
+
+| Stage | Suggested title | Short body | Work included |
+| --- | --- | --- | --- |
+| Prepare | Preparing transaction | Please wait while Vizor prepares your transaction. | PCZT/proofs, validation, connection readiness, cooldown and command planning. |
+| Transfer | Sending to Ledger | Keep your Ledger connected. | Transaction command transfer and device processing interleaved with that transfer. |
+| Review | Check your Ledger | Review and approve when prompted on your Ledger. | Processing around the review-triggering command and user review/approval. |
+| Finish | Finishing transaction | Keep Vizor open. | Signature retrieval/validation, checkpoint, and any remaining proof work; network submission if this surface owns it. |
+
+The first two stages mean wait, review means check the device, and finish means
+Vizor is completing the approved request. Desktop/mobile use the same four-stage
+model. No new screen per stage and no mandatory four-step checklist; update the
+existing title/status area without repeating the same information three times.
+
+- Keep the existing persistent Zcash-app prompt unchanged, as explicitly requested.
+- The existing `Confirm opening Zcash` remains a contextual action prompt within
+  preparation, not another numbered stage. Never hide a required device action
+  behind a generic waiting message. Checking-device feedback can remain contextual.
+- Do not expose proof generation, DB reads, cooldown, signature verification and
+  saving as separate stages. Internal states remain available for correctness/logs.
+- Normal send already navigates to its send-status screen for broadcasting; retain
+  that handoff. Flows broadcasting within the Ledger surface can remain in Finish,
+  rather than adding another approval-stage transition. Success/failure remain outcomes.
+- Preserve round/bundle N-of-M and per-transaction fee explanations. Each new approval
+  repeats the relevant stages; Finish alone must not imply the whole batch succeeded.
+- Voting uses the same stage semantics with operation-appropriate nouns and keeps
+  the existing memo disclosure. Synchronize its outer headline and inner panel.
+- Cancellation/failure are exceptional states, not extra happy-path steps. A
+  cancelling button label can explain cleanup without adding a stage to the sequence.
+
+## Honest progress boundaries
+
+- Enter Transfer immediately before transaction APDU exchange, after host preparation.
+- Current APIs do not expose an exact device-screen-ready event. Enter Review at
+  the protocol's review-capable request boundary, verified for each supported
+  transaction format; do not switch merely because signing was requested.
+- The final upload request may still perform device validation before showing review.
+  `when prompted` deliberately avoids claiming that approval is already visible.
+  Never wait for that request's response to first show Review if the response itself
+  requires user approval. Do not infer progress from a timer or poll concurrently.
+- Enter Finish only after the review/approval outcome is known; then retrieve and
+  verify signatures. If that boundary cannot be observed by the host, remain in
+  Review until a reliable response is available instead of fabricating approval.
+- No percentages, estimated completion times, or command counts in the initial UI.
+  Keep per-command timing/progress internally for diagnostics.
+- Long waits may replace the short helper with `Still waiting for your Ledger.
+  Check the device screen.` No extra phase or automatic signing retry; elapsed time
+  alone does not establish device health or failure.
+
+## Implementation outline for a later change
+
+- Add one per-attempt progress model shared by card/voting UI; scope to operation,
+  round and generation so late responses cannot overwrite cancellation or retries.
+- Emit host phases from connection/readiness/signing services and flow owners.
+- BLE needs progress events from Apple/Android native loops: the current method
+  call returns the entire response list only when the operation finishes.
+- USB needs Rust progress events from plan/transport/signature validation via FRB.
+  macOS BLE should use the BLE events, not the desktop USB path.
+- Do not add concurrent device polling, replay signatures, alter APDU ordering,
+  weaken validation, or change durable-operation/cancellation ownership for UI updates.
+- Test delayed planning/upload/review/finalization, consecutive rounds, failure,
+  cancel/retry and late events on desktop/mobile lanes; use deterministic UI states.
+  Physical Nano X timing verification remains deferred, separately tracked.
+
+Copy audit CSVs named by AGENTS.md were not present in this checkout. Draft copy
+uses sentence case; consult those audits if restored before implementation.

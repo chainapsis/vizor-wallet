@@ -1,5 +1,9 @@
 # Ledger connection and shielding behavior
 
+Pending investigations and UI proposals:
+- [Nano X reboot/latency follow-up](nano-x-follow-up.md): resume when a physical Nano X is available.
+- [Signing phase guidance analysis](signing-phase-guidance.md): desktop/mobile copy inventory and proposed phase events; not yet implemented.
+
 ## Mobile account setup
 
 Mobile Ledger onboarding supports first-account setup and adding accounts to an
