@@ -112,6 +112,222 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+  for (final counts in [
+    [10, 0],
+    [11, 1, 1, 0],
+    [23, 13, 13, 3, 3, 0],
+  ]) {
+    testWidgets('shields in bounded rounds: $counts', (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      var completed = false;
+      var reads = 0;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async => [7, 8, 9],
+          onComplete: () => completed = true,
+          progressReader:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => LedgerShieldingProgress(
+                inputCount: counts[reads++],
+                inputLimit: 10,
+                belowThreshold: false,
+              ),
+        ),
+      );
+      await _pumpUntil(tester, () => completed);
+      expect(completed, isTrue);
+      expect(operations.broadcasts.length, counts.length ~/ 2);
+      expect(
+        operations.checkpoints.map((c) => c.operationId).toSet().length,
+        counts.length ~/ 2,
+      );
+    });
+  }
+
+  for (final problem in ['unchanged', 'unknown', 'below threshold']) {
+    testWidgets('pauses shielding for $problem remainder', (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      var reads = 0;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async => [7, 8, 9],
+          onComplete: () => fail('must not report completion'),
+          progressReader:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async {
+                if (++reads > 1 && problem == 'unknown') {
+                  throw StateError('DB unavailable');
+                }
+                return LedgerShieldingProgress(
+                  inputCount: 11,
+                  inputLimit: 10,
+                  belowThreshold: reads > 1 && problem == 'below threshold',
+                );
+              },
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Shielding paused').evaluate().isNotEmpty,
+      );
+      expect(find.text('Shielding paused'), findsOneWidget);
+      expect(operations.broadcasts, hasLength(1));
+      expect(find.text('Try again'), findsNothing);
+    });
+  }
+
+  testWidgets('checkpoint retry retains signature and operation identity', (
+    tester,
+  ) async {
+    final operations = _FakeLedgerSignedOperationService()
+      ..failCheckpointOnce = true;
+    var signatures = 0;
+    var completed = false;
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async {
+          signatures++;
+          return [7, 8, 9];
+        },
+        onComplete: () => completed = true,
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text('Try again').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('Try again'));
+    await _pumpUntil(tester, () => completed);
+    expect(completed, isTrue);
+    expect(signatures, 1);
+    expect(operations.checkpoints, hasLength(2));
+    expect(
+      operations.checkpoints.first.operationId,
+      operations.checkpoints.last.operationId,
+    );
+    expect(operations.broadcasts, hasLength(1));
+  });
+  testWidgets(
+    'cancelling a rejected second round preserves the first broadcast',
+    (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      var signatures = 0;
+      var cancelled = false;
+      var reads = 0;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async {
+            if (++signatures == 2) throw StateError('rejected');
+            return [7, 8, 9];
+          },
+          onComplete: () => fail('must not complete'),
+          onCancel: () => cancelled = true,
+          progressReader:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => LedgerShieldingProgress(
+                inputCount: reads++ == 0 ? 11 : 1,
+                inputLimit: 10,
+                belowThreshold: false,
+              ),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Try again').evaluate().isNotEmpty,
+      );
+      expect(signatures, 2);
+      expect(operations.broadcasts, hasLength(1));
+      await tester.tap(find.text('Back to wallet'));
+      await tester.pump();
+      expect(cancelled, isTrue);
+      expect(operations.broadcasts, hasLength(1));
+    },
+  );
+
+  testWidgets(
+    'broadcast retry reuses the checkpoint without another approval',
+    (tester) async {
+      final operations = _FakeLedgerSignedOperationService()
+        ..failBroadcastOnce = true;
+      var signatures = 0;
+      var completed = false;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async {
+            signatures++;
+            return [7, 8, 9];
+          },
+          onComplete: () => completed = true,
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Try again').evaluate().isNotEmpty,
+      );
+      await tester.tap(find.text('Try again'));
+      await _pumpUntil(tester, () => completed);
+      expect(completed, isTrue);
+      expect(signatures, 1);
+      expect(operations.checkpoints, hasLength(1));
+      expect(operations.broadcasts, hasLength(2));
+      expect(operations.broadcasts.toSet(), hasLength(1));
+    },
+  );
+  testWidgets(
+    'account change while signing cannot checkpoint or retry the old request',
+    (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      final signed = Completer<List<int>>();
+      var started = false;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) {
+            started = true;
+            return signed.future;
+          },
+          onComplete: () => fail('must not complete'),
+        ),
+      );
+      await _pumpUntil(tester, () => started);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(LedgerShieldSigningOverlay)),
+      );
+      (container.read(walletProvider.notifier) as _FakeWalletNotifier)
+          .switchForTest();
+      signed.complete([7, 8, 9]);
+      await _pumpUntil(
+        tester,
+        () => find.text('Try again').evaluate().isNotEmpty,
+      );
+      expect(operations.checkpoints, isEmpty);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      expect(find.text('Shielding paused'), findsOneWidget);
+      expect(operations.checkpoints, isEmpty);
+      expect(operations.broadcasts, isEmpty);
+    },
+  );
 }
 
 Widget _harness({
@@ -119,9 +335,13 @@ Widget _harness({
   required _FakeSyncNotifier sync,
   required Future<List<int>> Function(List<int> pcztBytes) ledgerSigner,
   required VoidCallback onComplete,
+  LedgerShieldingProgressReader? progressReader,
+  VoidCallback? onCancel,
 }) {
   return ProviderScope(
     overrides: [
+      if (progressReader != null)
+        ledgerShieldingProgressReaderProvider.overrideWithValue(progressReader),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       walletProvider.overrideWith(_FakeWalletNotifier.new),
       syncProvider.overrideWith(() => sync),
@@ -133,7 +353,10 @@ Widget _harness({
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
-      home: LedgerShieldSigningOverlay(onCancel: () {}, onComplete: onComplete),
+      home: LedgerShieldSigningOverlay(
+        onCancel: onCancel ?? () {},
+        onComplete: onComplete,
+      ),
     ),
   );
 }
@@ -166,6 +389,15 @@ AppBootstrapState _bootstrap() {
 }
 
 class _FakeWalletNotifier extends WalletNotifier {
+  void switchForTest() => state = const AsyncData(
+    WalletState(
+      hasWallet: true,
+      unifiedAddress: 'u1other',
+      network: 'main',
+      activeAccountUuid: 'account-2',
+    ),
+  );
+
   @override
   FutureOr<WalletState> build() => const WalletState(
     hasWallet: true,
@@ -206,6 +438,8 @@ class _Checkpoint {
 
 class _FakeLedgerSignedOperationService
     implements LedgerSignedOperationService {
+  bool failCheckpointOnce = false;
+  bool failBroadcastOnce = false;
   final checkpoints = <_Checkpoint>[];
   final broadcasts = <String>[];
   final acknowledged = <String>[];
@@ -231,6 +465,10 @@ class _FakeLedgerSignedOperationService
         signatures: [...pcztWithSignaturesBytes],
       ),
     );
+    if (failCheckpointOnce) {
+      failCheckpointOnce = false;
+      throw StateError('Temporary checkpoint failure');
+    }
   }
 
   @override
@@ -240,6 +478,10 @@ class _FakeLedgerSignedOperationService
     String? outputParamsPath,
   }) async {
     broadcasts.add(operationId);
+    if (failBroadcastOnce) {
+      failBroadcastOnce = false;
+      throw StateError('temporary broadcast error');
+    }
     return LedgerSignedOperationBroadcastResult(
       operationId: operationId,
       txid: 'txid-1',
@@ -275,6 +517,17 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<LedgerShieldingProgress> crateApiSyncGetLedgerShieldingProgress({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => LedgerShieldingProgress(
+    inputCount: createShieldCalls == 0 ? 1 : 0,
+    inputLimit: 10,
+    belowThreshold: false,
+  );
+
+  @override
   Future<ShieldTransparentPcztResult> crateApiSyncCreateShieldTransparentPczt({
     required String dbPath,
     required String lightwalletdUrl,
@@ -303,4 +556,13 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Future<void> _pumpUntil(WidgetTester tester, bool Function() done) async {
+  for (var i = 0; i < 200 && !done(); i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+  }
 }

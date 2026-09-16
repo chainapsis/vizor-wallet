@@ -23,6 +23,18 @@ import '../../send/screens/mobile/mobile_send_screen.dart'
     show MobileSaplingParamsSheet;
 import '../../send/widgets/sapling_params_prompt.dart';
 
+typedef LedgerShieldingProgressReader =
+    Future<rust_sync.LedgerShieldingProgress> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+    });
+
+final ledgerShieldingProgressReaderProvider =
+    Provider<LedgerShieldingProgressReader>(
+      (_) => rust_sync.getLedgerShieldingProgress,
+    );
+
 class LedgerShieldSigningOverlay extends ConsumerStatefulWidget {
   const LedgerShieldSigningOverlay({
     required this.onCancel,
@@ -55,9 +67,18 @@ class _LedgerShieldSigningOverlayState
   String? _accountUuid;
   String? _operationId;
   bool _operationCheckpointed = false;
+  int _round = 1;
+  int _roundCount = 1;
+  int? _pendingInputs;
+  bool _pausedEarly = false;
+  String? _network;
+  List<int>? _signedPczt;
+
   late final LedgerOperationCanceller _cancelLedgerOperation;
 
-  bool get _isBroadcasting => _phase == LedgerSigningModalPhase.broadcasting;
+  bool get _isBroadcasting =>
+      _phase == LedgerSigningModalPhase.broadcasting ||
+      _phase == LedgerSigningModalPhase.saving;
 
   @override
   void initState() {
@@ -91,7 +112,16 @@ class _LedgerShieldSigningOverlayState
     try {
       final accountUuid = ref.read(walletProvider).value?.activeAccountUuid;
       if (accountUuid == null) throw StateError('No active account.');
+      if (_accountUuid != null && _accountUuid != accountUuid) {
+        throw StateError(
+          'The selected account changed. Return to your wallet.',
+        );
+      }
       _accountUuid = accountUuid;
+      _network ??= ref.read(rpcEndpointProvider).networkName;
+      if (_network != ref.read(rpcEndpointProvider).networkName) {
+        throw StateError('The network changed. Return to your wallet.');
+      }
 
       final existingOperation = await _findExistingShieldOperation(accountUuid);
       if (existingOperation != null) {
@@ -112,7 +142,21 @@ class _LedgerShieldSigningOverlayState
         return;
       }
 
+      final work = await _readProgress();
+      if (!mounted || _cancelled) return;
+      if (work.inputCount == 0) {
+        widget.onComplete();
+        return;
+      }
+      if (work.belowThreshold) {
+        _pauseEarly('The remaining funds are below the shielding threshold.');
+        return;
+      }
+      _pendingInputs = work.inputCount;
+      setState(() => _roundCount = _round - 1 + _roundsFor(work));
+
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
+      _requireOriginalContext();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final shieldPczt = await rust_sync.createShieldTransparentPczt(
         dbPath: dbPath,
@@ -146,6 +190,7 @@ class _LedgerShieldSigningOverlayState
             : null,
       );
       if (!mounted || _cancelled) return;
+      _requireOriginalContext();
       setState(() {
         _phase = LedgerSigningModalPhase.awaitingDevice;
         _canRetry = true;
@@ -155,15 +200,23 @@ class _LedgerShieldSigningOverlayState
         _needsSaplingParams = shieldPczt.needsSaplingParams;
       });
 
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        shieldPczt.pcztBytes,
-      );
+      final signedPczt =
+          _signedPczt ??
+          await ref.read(ledgerPcztSignerProvider)(
+            accountUuid,
+            shieldPczt.pcztBytes,
+          );
       if (!mounted || _cancelled) return;
-      final operationId = newLedgerSignedOperationId(
-        kind: LedgerSignedOperationKind.shield,
-        accountUuid: accountUuid,
-      );
+      _requireOriginalContext();
+      _signedPczt = signedPczt;
+      setState(() => _phase = LedgerSigningModalPhase.saving);
+      final operationId =
+          _operationId ??
+          newLedgerSignedOperationId(
+            kind: LedgerSignedOperationKind.shield,
+            accountUuid: accountUuid,
+          );
+      _operationId = operationId;
       await ref
           .read(ledgerSignedOperationServiceProvider)
           .checkpoint(
@@ -189,6 +242,13 @@ class _LedgerShieldSigningOverlayState
 
   Future<void> _retry() async {
     if (_phase != LedgerSigningModalPhase.failed || !_canRetry) return;
+    if (_network != ref.read(rpcEndpointProvider).networkName ||
+        _accountUuid != ref.read(walletProvider).value?.activeAccountUuid) {
+      _pauseEarly(
+        'The selected account or network changed. Return to your wallet.',
+      );
+      return;
+    }
     if (_operationCheckpointed) {
       setState(() {
         _phase = LedgerSigningModalPhase.broadcasting;
@@ -228,15 +288,20 @@ class _LedgerShieldSigningOverlayState
       if (accountUuid == null || proofs == null) {
         throw StateError('Ledger shield transaction is incomplete.');
       }
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        pcztBytes,
-      );
+      final signedPczt =
+          _signedPczt ??
+          await ref.read(ledgerPcztSignerProvider)(accountUuid, pcztBytes);
       if (!mounted || _cancelled) return;
-      final operationId = newLedgerSignedOperationId(
-        kind: LedgerSignedOperationKind.shield,
-        accountUuid: accountUuid,
-      );
+      _requireOriginalContext();
+      _signedPczt = signedPczt;
+      setState(() => _phase = LedgerSigningModalPhase.saving);
+      final operationId =
+          _operationId ??
+          newLedgerSignedOperationId(
+            kind: LedgerSignedOperationKind.shield,
+            accountUuid: accountUuid,
+          );
+      _operationId = operationId;
       await ref
           .read(ledgerSignedOperationServiceProvider)
           .checkpoint(
@@ -275,6 +340,7 @@ class _LedgerShieldSigningOverlayState
 
     RpcEndpointConfig? attemptedEndpoint;
     try {
+      _requireOriginalContext();
       attemptedEndpoint = ref.read(rpcEndpointFailoverProvider).current;
       final result = await ref
           .read(ledgerSignedOperationServiceProvider)
@@ -307,7 +373,7 @@ class _LedgerShieldSigningOverlayState
         });
         return;
       }
-      widget.onComplete();
+      await _continueOrComplete();
     } catch (e, st) {
       log('LedgerShieldConfirm._broadcast: ERROR: $e\n$st');
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
@@ -322,6 +388,89 @@ class _LedgerShieldSigningOverlayState
         _error = _friendlyError(e);
       });
     }
+  }
+
+  void _requireOriginalContext() {
+    if (_accountUuid == null ||
+        _network != ref.read(rpcEndpointProvider).networkName ||
+        _accountUuid != ref.read(walletProvider).value?.activeAccountUuid) {
+      throw StateError(
+        'The selected account or network changed. Return to your wallet.',
+      );
+    }
+  }
+
+  Future<rust_sync.LedgerShieldingProgress> _readProgress() async {
+    final uuid = _accountUuid;
+    if (uuid == null ||
+        _network != ref.read(rpcEndpointProvider).networkName ||
+        uuid != ref.read(walletProvider).value?.activeAccountUuid) {
+      throw StateError('The selected account or network changed.');
+    }
+    final dbPath = await ref.read(ledgerWalletDbPathProvider)();
+    _requireOriginalContext();
+    return ref.read(ledgerShieldingProgressReaderProvider)(
+      dbPath: dbPath,
+      network: _network!,
+      accountUuid: uuid,
+    );
+  }
+
+  int _roundsFor(rust_sync.LedgerShieldingProgress work) {
+    if (work.inputLimit <= 0) throw StateError('Invalid Ledger input limit');
+    return (work.inputCount + work.inputLimit - 1) ~/ work.inputLimit;
+  }
+
+  Future<void> _continueOrComplete() async {
+    final rust_sync.LedgerShieldingProgress work;
+    try {
+      work = await _readProgress();
+    } catch (error) {
+      if (!mounted || _cancelled) return;
+      _pauseEarly(
+        'Round $_round was sent, but the remaining funds could not be checked. Return to your wallet and try again after sync.',
+      );
+      return;
+    }
+    if (!mounted || _cancelled) return;
+    if (work.inputCount == 0) {
+      widget.onComplete();
+      return;
+    }
+    if (work.belowThreshold) {
+      _pauseEarly(
+        'Round $_round was sent. The remaining funds are below the shielding threshold.',
+      );
+      return;
+    }
+    if (_pendingInputs == null || work.inputCount >= _pendingInputs!) {
+      _pauseEarly(
+        'Round $_round was sent, but no reduction in spendable inputs could be confirmed. Wait for sync before shielding again.',
+      );
+      return;
+    }
+    setState(() {
+      _round++;
+      _roundCount = _round - 1 + _roundsFor(work);
+      _phase = LedgerSigningModalPhase.preparing;
+      _canRetry = false;
+      _error = null;
+      _pcztBytes = null;
+      _pcztWithProofs = null;
+      _signedPczt = null;
+      _operationId = null;
+      _operationCheckpointed = false;
+    });
+    await _prepareAndSign();
+  }
+
+  void _pauseEarly(String message) {
+    setState(() {
+      _phase = LedgerSigningModalPhase.failed;
+      _pausedEarly = true;
+      _canRetry = false;
+      _error = message;
+    });
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -448,13 +597,21 @@ class _LedgerShieldSigningOverlayState
     final canLeave = !_isBroadcasting;
     final modal = LedgerSigningModal(
       accountUuid: _accountUuid,
+      roundNumber: _round,
+      roundCount: _roundCount,
+      roundFeeNotice: _roundCount > 1
+          ? 'Each approval creates a separate transaction with its own network fee.'
+          : null,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              title: 'Ledger signing failed',
-              statusLabel: 'Action needed',
+              isError: !_pausedEarly,
+              title: _pausedEarly
+                  ? 'Shielding paused'
+                  : 'Ledger signing failed',
+              statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
-              showDeviceAppPrompt: true,
+              showDeviceAppPrompt: !_pausedEarly,
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,

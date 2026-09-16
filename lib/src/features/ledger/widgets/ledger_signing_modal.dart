@@ -30,6 +30,7 @@ class LedgerSigningFailurePresentation {
     required this.message,
     required this.showDeviceAppPrompt,
     this.actionLabel,
+    this.isError = true,
   });
 
   final String title;
@@ -37,6 +38,7 @@ class LedgerSigningFailurePresentation {
   final String message;
   final bool showDeviceAppPrompt;
   final String? actionLabel;
+  final bool isError;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -47,6 +49,7 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
     this.accountUuid,
+    this.roundFeeNotice,
     this.roundNumber = 1,
     this.roundCount = 1,
     super.key,
@@ -67,6 +70,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onFailureAction;
   final String cancelLabel;
   final String? accountUuid;
+  final String? roundFeeNotice;
   final int roundNumber;
   final int roundCount;
 
@@ -84,6 +88,7 @@ class LedgerSigningModal extends ConsumerWidget {
     final account = _ledgerAccount(ref, accountUuid);
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
+    final error = failed && failure!.isError;
     var title = switch (phase) {
       LedgerSigningModalPhase.preparing => 'Preparing for Ledger',
       LedgerSigningModalPhase.awaitingDevice => 'Review on your Ledger',
@@ -121,10 +126,13 @@ class LedgerSigningModal extends ConsumerWidget {
         message =
             'Approve this transaction on the device. Vizor will request the next transaction separately.';
       } else if (phase == LedgerSigningModalPhase.saving) {
-        statusLabel = 'Securing both signed transactions';
+        statusLabel = roundFeeNotice == null
+            ? 'Securing both signed transactions'
+            : 'Securing signed transaction';
       }
     }
     if (phase == LedgerSigningModalPhase.failed &&
+        failure!.showDeviceAppPrompt &&
         readiness.phase == LedgerAppReadinessPhase.failed) {
       title = 'Ledger needs attention';
       statusLabel = 'Action needed';
@@ -146,6 +154,9 @@ class LedgerSigningModal extends ConsumerWidget {
             LedgerAppReadinessPhase.failed:
           break;
       }
+    }
+    if (!failed && roundFeeNotice != null) {
+      message = '$message ${roundFeeNotice!}';
     }
     final actionLabel = failed
         ? failure!.actionLabel
@@ -230,7 +241,7 @@ class LedgerSigningModal extends ConsumerWidget {
                     child: AppIcon(
                       failed ? AppIcons.warningCircle : AppIcons.loader,
                       size: failed ? 24 : 20,
-                      color: failed
+                      color: error
                           ? colors.icon.destructive
                           : colors.icon.regular,
                       animated: !failed,
@@ -246,7 +257,7 @@ class LedgerSigningModal extends ConsumerWidget {
                       Text(
                         statusLabel,
                         style: AppTypography.bodyMedium.copyWith(
-                          color: failed
+                          color: error
                               ? colors.text.destructive
                               : colors.text.accent,
                           fontWeight: FontWeight.w600,
@@ -256,7 +267,7 @@ class LedgerSigningModal extends ConsumerWidget {
                       Text(
                         message,
                         style: AppTypography.bodySmall.copyWith(
-                          color: failed
+                          color: error
                               ? colors.text.destructive
                               : colors.text.secondary,
                         ),
