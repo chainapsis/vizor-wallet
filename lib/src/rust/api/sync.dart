@@ -2403,12 +2403,16 @@ class ShieldTransparentStatus {
   final BigInt feeZatoshi;
   final BigInt shieldedZatoshi;
   final String reason;
+  final int transparentInputCount;
+  final int? ledgerInputLimit;
 
   const ShieldTransparentStatus({
     required this.canShield,
     required this.feeZatoshi,
     required this.shieldedZatoshi,
     required this.reason,
+    required this.transparentInputCount,
+    this.ledgerInputLimit,
   });
 
   @override
@@ -2416,7 +2420,9 @@ class ShieldTransparentStatus {
       canShield.hashCode ^
       feeZatoshi.hashCode ^
       shieldedZatoshi.hashCode ^
-      reason.hashCode;
+      reason.hashCode ^
+      transparentInputCount.hashCode ^
+      ledgerInputLimit.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2426,7 +2432,9 @@ class ShieldTransparentStatus {
           canShield == other.canShield &&
           feeZatoshi == other.feeZatoshi &&
           shieldedZatoshi == other.shieldedZatoshi &&
-          reason == other.reason;
+          reason == other.reason &&
+          transparentInputCount == other.transparentInputCount &&
+          ledgerInputLimit == other.ledgerInputLimit;
 }
 
 class StoreAndBroadcastPcztsResult {

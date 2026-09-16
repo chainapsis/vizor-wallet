@@ -12697,11 +12697,15 @@ impl SseDecode for crate::api::sync::ShieldTransparentStatus {
         let mut var_feeZatoshi = <u64>::sse_decode(deserializer);
         let mut var_shieldedZatoshi = <u64>::sse_decode(deserializer);
         let mut var_reason = <String>::sse_decode(deserializer);
+        let mut var_transparentInputCount = <u32>::sse_decode(deserializer);
+        let mut var_ledgerInputLimit = <Option<u32>>::sse_decode(deserializer);
         return crate::api::sync::ShieldTransparentStatus {
             can_shield: var_canShield,
             fee_zatoshi: var_feeZatoshi,
             shielded_zatoshi: var_shieldedZatoshi,
             reason: var_reason,
+            transparent_input_count: var_transparentInputCount,
+            ledger_input_limit: var_ledgerInputLimit,
         };
     }
 }
@@ -17051,6 +17055,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ShieldTransparentStatus
             self.fee_zatoshi.into_into_dart().into_dart(),
             self.shielded_zatoshi.into_into_dart().into_dart(),
             self.reason.into_into_dart().into_dart(),
+            self.transparent_input_count.into_into_dart().into_dart(),
+            self.ledger_input_limit.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -20850,6 +20856,8 @@ impl SseEncode for crate::api::sync::ShieldTransparentStatus {
         <u64>::sse_encode(self.fee_zatoshi, serializer);
         <u64>::sse_encode(self.shielded_zatoshi, serializer);
         <String>::sse_encode(self.reason, serializer);
+        <u32>::sse_encode(self.transparent_input_count, serializer);
+        <Option<u32>>::sse_encode(self.ledger_input_limit, serializer);
     }
 }
 

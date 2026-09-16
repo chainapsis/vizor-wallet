@@ -1,5 +1,20 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 
+/// True only for device transaction-shape limits that a smaller proposal can
+/// resolve. Other Ledger format restrictions must keep their original error.
+bool ledgerRequestExceedsCapacity(Object error) =>
+    error.toString().contains('VIZOR_LEDGER_CAPACITY:') ||
+    RegExp(
+      r'ledger supports at most \d+ (transparent inputs|transparent outputs|shielded actions); found \d+',
+    ).hasMatch(error.toString().toLowerCase());
+
+bool ledgerRequestNeedsRebuilding(Object error) {
+  final text = error.toString().toLowerCase();
+  return ledgerRequestExceedsCapacity(error) ||
+      text.contains('ledger supports at most') ||
+      text.contains('0x6986');
+}
+
 String ledgerUsbPermissionMessage(TargetPlatform platform) {
   // Linux hidraw nodes stay root-only until a udev rule grants access.
   return platform == TargetPlatform.linux
