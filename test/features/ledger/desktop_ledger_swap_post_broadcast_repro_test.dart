@@ -301,6 +301,100 @@ void main() {
       expect(operations.state, 'completed');
     },
   );
+
+  testWidgets('desktop Ledger closes an initially expired deposit result', (
+    tester,
+  ) async {
+    final operations = _StatefulOperationService(status: 'expired');
+    var cancelCalls = 0;
+    var persistenceCalls = 0;
+    var completionCalls = 0;
+
+    await _pumpOverlay(
+      tester,
+      intent: _intent(),
+      operations: operations,
+      signing: _HardwareSigningService(),
+      sign: (_, _) async => const [3],
+      persist: (_, _) async => persistenceCalls++,
+      onCompleted: (_) async => completionCalls++,
+      onCancelled: () => cancelCalls++,
+    );
+    await _pumpUntil(tester, () => cancelCalls == 1);
+
+    expect(operations.broadcastCalls, 1);
+    expect(operations.acknowledgeCalls, 1);
+    expect(persistenceCalls, 0);
+    expect(completionCalls, 0);
+    expect(find.text('Retry saving'), findsNothing);
+  });
+
+  testWidgets('desktop Ledger retry closes a recovered expired result', (
+    tester,
+  ) async {
+    final operations = _StatefulOperationService(
+      status: 'expired',
+      failBroadcastResponseAfterAccept: true,
+    );
+    var cancelCalls = 0;
+    var persistenceCalls = 0;
+    var completionCalls = 0;
+
+    await _pumpOverlay(
+      tester,
+      intent: _intent(payMode: true),
+      operations: operations,
+      signing: _HardwareSigningService(),
+      sign: (_, _) async => const [3],
+      persist: (_, _) async => persistenceCalls++,
+      onCompleted: (_) async => completionCalls++,
+      onCancelled: () => cancelCalls++,
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text('Try again').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('Try again'));
+    await _pumpUntil(tester, () => cancelCalls == 1);
+
+    expect(operations.broadcastCalls, 1);
+    expect(operations.acknowledgeCalls, 1);
+    expect(persistenceCalls, 0);
+    expect(completionCalls, 0);
+  });
+
+  testWidgets('desktop Ledger reopening closes a saved expired result', (
+    tester,
+  ) async {
+    final operations = _StatefulOperationService(status: 'expired')
+      ..seedPendingResult(payMode: true);
+    var signerCalls = 0;
+    var cancelCalls = 0;
+    var persistenceCalls = 0;
+    var completionCalls = 0;
+
+    await _pumpOverlay(
+      tester,
+      intent: _intent(payMode: true),
+      operations: operations,
+      signing: _HardwareSigningService(),
+      sign: (_, _) async {
+        signerCalls++;
+        return const [3];
+      },
+      persist: (_, _) async => persistenceCalls++,
+      onCompleted: (_) async => completionCalls++,
+      onCancelled: () => cancelCalls++,
+    );
+    await _pumpUntil(tester, () => cancelCalls == 1);
+
+    expect(signerCalls, 0);
+    expect(operations.checkpointCalls, 0);
+    expect(operations.broadcastCalls, 0);
+    expect(operations.acknowledgeCalls, 1);
+    expect(persistenceCalls, 0);
+    expect(completionCalls, 0);
+  });
 }
 
 Future<void> _pumpOverlay(
@@ -311,6 +405,7 @@ Future<void> _pumpOverlay(
   required LedgerPcztSigner sign,
   required LedgerDepositResultPersistence persist,
   required Future<void> Function(SwapHardwareBroadcastResult) onCompleted,
+  VoidCallback? onCancelled,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1200, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -337,7 +432,7 @@ Future<void> _pumpOverlay(
               data: AppThemeData.light,
               child: SwapLedgerSigningOverlay(
                 intent: intent,
-                onCancel: () {},
+                onCancel: onCancelled ?? () {},
                 onDepositBroadcast: onCompleted,
               ),
             ),
@@ -491,6 +586,18 @@ class _StatefulOperationService implements LedgerSignedOperationService {
   String? accountUuid;
   String? externalRef;
   LedgerSignedOperationKind? lastCheckpointKind;
+
+  void seedPendingResult({required bool payMode}) {
+    operationId = payMode
+        ? 'pay_deposit:account-1:pay-1'
+        : 'swap_deposit:account-1:swap-1';
+    accountUuid = 'account-1';
+    externalRef = payMode ? 'pay-1' : 'swap-1';
+    lastCheckpointKind = payMode
+        ? LedgerSignedOperationKind.payDeposit
+        : LedgerSignedOperationKind.swapDeposit;
+    state = 'result_pending_ack';
+  }
 
   @override
   Future<void> checkpoint({

@@ -192,6 +192,42 @@ void main() {
     },
   );
 
+  for (final kind in [
+    LedgerSignedOperationKind.swapDeposit,
+    LedgerSignedOperationKind.payDeposit,
+  ]) {
+    test(
+      'recovery acknowledges expired ${kind.wireName} without persistence',
+      () async {
+        final operationService = _FakeLedgerSignedOperationService([
+          _operation(
+            kind: kind,
+            state: 'result_pending_ack',
+            externalRef: 'intent-1',
+            txid: 'computed-txid',
+            status: 'expired',
+          ),
+        ]);
+        final recoveredDeposits = <String>[];
+        final container = _container(
+          operationService: operationService,
+          sync: _RecoverySyncNotifier(),
+          recoveredDeposits: recoveredDeposits,
+        );
+        addTearDown(container.dispose);
+        await container.read(walletProvider.future);
+
+        await container
+            .read(ledgerOperationRecoveryCoordinatorProvider)
+            .recover();
+
+        expect(operationService.broadcasts, isEmpty);
+        expect(recoveredDeposits, isEmpty);
+        expect(operationService.acknowledged, ['operation-1']);
+      },
+    );
+  }
+
   test('recovery keeps swap result when activity checkpoint fails', () async {
     final operationService = _FakeLedgerSignedOperationService([
       _operation(
