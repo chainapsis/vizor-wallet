@@ -56,14 +56,15 @@ final ledgerSigningProgressProvider =
 extension LedgerSigningStageCopy on LedgerSigningStage {
   String get title => switch (this) {
     LedgerSigningStage.preparing => 'Preparing transaction',
-    LedgerSigningStage.sending => 'Sending to Ledger',
+    LedgerSigningStage.sending => 'Processing with Ledger',
     LedgerSigningStage.reviewing => 'Check your Ledger',
     LedgerSigningStage.finishing => 'Finishing transaction',
   };
   String get message => switch (this) {
     LedgerSigningStage.preparing =>
       'Please wait while Vizor prepares your transaction.',
-    LedgerSigningStage.sending => 'Keep your Ledger connected.',
+    LedgerSigningStage.sending =>
+      'Keep your Ledger connected. This may take a while.',
     LedgerSigningStage.reviewing =>
       'Review and approve when prompted on your Ledger.',
     LedgerSigningStage.finishing => 'Keep Vizor open.',

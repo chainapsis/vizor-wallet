@@ -80,7 +80,7 @@ internal work into a few stages. Do not expose a checklist of internal operation
 | Stage | Suggested title | Short body | Work included |
 | --- | --- | --- | --- |
 | Prepare | Preparing transaction | Please wait while Vizor prepares your transaction. | PCZT/proofs, validation, connection readiness, cooldown and command planning. |
-| Transfer | Sending to Ledger | Keep your Ledger connected. | Transaction command transfer and device processing interleaved with that transfer. |
+| Transfer | Processing with Ledger | Keep your Ledger connected. This may take a while. | Transaction command transfer and device processing interleaved with that transfer. |
 | Review | Check your Ledger | Review and approve when prompted on your Ledger. | Processing around the review-triggering command and user review/approval. |
 | Finish | Finishing transaction | Keep Vizor open. | Signature retrieval/validation, checkpoint, and any remaining proof work; network submission if this surface owns it. |
 
@@ -120,9 +120,9 @@ existing title/status area without repeating the same information three times.
   Review until a reliable response is available instead of fabricating approval.
 - No percentages, estimated completion times, or command counts in the initial UI.
   Keep per-command timing/progress internally for diagnostics.
-- Long waits may replace the short helper with `Still waiting for your Ledger.
-  Check the device screen.` No extra phase or automatic signing retry; elapsed time
-  alone does not establish device health or failure.
+- Keep the processing helper fixed: `Keep your Ledger connected. This may take a while.`
+  Do not replace it based on elapsed time; elapsed time alone does not establish
+  device health or failure.
 
 ## Implementation
 

@@ -454,7 +454,7 @@ void main() {
         .begin('account-1');
     firstProgress('sending');
     await tester.pump();
-    expect(find.text('Sending to Ledger'), findsOneWidget);
+    expect(find.text('Processing with Ledger'), findsOneWidget);
     firstProgress('reviewing');
     await tester.pump();
     expect(find.text('Check your Ledger'), findsOneWidget);

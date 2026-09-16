@@ -110,7 +110,7 @@ void main() {
           .begin('voting-account');
       progress('sending');
       await tester.pump();
-      expect(find.text('Sending to Ledger'), findsOneWidget);
+      expect(find.text('Processing with Ledger'), findsOneWidget);
       progress('reviewing');
       await tester.pump();
       expect(find.text('Check your Ledger'), findsOneWidget);

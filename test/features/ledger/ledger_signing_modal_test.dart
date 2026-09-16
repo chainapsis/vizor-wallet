@@ -140,7 +140,7 @@ void main() {
         report(phase);
         await tester.pump();
         final expected = switch (phase) {
-          'sending' => 'Sending to Ledger',
+          'sending' => 'Processing with Ledger',
           'reviewing' => 'Check your Ledger',
           _ => 'Finishing transaction',
         };
