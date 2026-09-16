@@ -523,10 +523,17 @@ class LedgerBleHandler::Impl : public std::enable_shared_from_this<Impl> {
     const auto weak = weak_from_this();
     // Start device access on the platform/UI thread; Windows may ask for consent.
     auto operation = bt::BluetoothLEDevice::FromBluetoothAddressAsync(address, address_type);
-    operation.Completed([weak, name, model, generation](const auto& completed, const auto&) {
+    operation.Completed([weak, address, name, model, generation](const auto& completed, const auto&) {
       try {
         auto device = completed.GetResults();
-        if (!device) return;
+        if (!device) {
+          if (const auto self = weak.lock()) self->Post([weak, address, generation] {
+            const auto owner = weak.lock();
+            if (!owner || generation != owner->discovery_generation_) return;
+            owner->resolving_addresses_.erase(address);
+          });
+          return;
+        }
         const auto id = winrt::to_string(device.DeviceId());
         device.Close();
         if (const auto self = weak.lock()) self->Post([weak, id, name, model, generation] {
