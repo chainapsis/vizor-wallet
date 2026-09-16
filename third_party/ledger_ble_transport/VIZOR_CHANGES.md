@@ -23,3 +23,8 @@ Imported Swift sources have trailing whitespace normalized.
 Radio-unavailable state changes also invalidate module operations and listeners
 before SDK callbacks. Work enqueued before a connection generation change cannot
 start after the queue has been reset.
+
+Discarding a Scan now cancels its timeout/expiry timers, releases callbacks, and
+makes queued expiry, late timeout and stale stop/start events inert. Normal stops
+still notify once. ScanLifetimeTests exercises the production Scan and Queue with
+only CoreBluetooth radio calls substituted, including fast radio off/on recovery.

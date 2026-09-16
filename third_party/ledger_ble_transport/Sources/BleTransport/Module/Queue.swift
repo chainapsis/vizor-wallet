@@ -21,7 +21,7 @@ class Queue {
 
     func add(_ operation: TaskOperation, isCurrent: @escaping () -> Bool = { true }, finished: EmptyResponse? = nil) {
         DispatchQueue.main.async {
-            guard isCurrent() else { operation.finished = nil; finished?(); return }
+            guard isCurrent() else { operation.discard(); finished?(); return }
             self.queue.append(operation)
             if self.queue.count == 1 {
                 self.queue.first?.start()
@@ -46,7 +46,7 @@ class Queue {
 
     // Called on main before publishing an unavailable radio state.
     func discardAll() {
-        queue.forEach { $0.finished = nil }
+        queue.forEach { $0.discard() }
         queue.removeAll()
     }
 
@@ -64,7 +64,7 @@ class Queue {
                 var newQueue = [TaskOperation]()
                 for (index, operation) in self.queue.enumerated() {
                     if index < firstOperationOfTypeIndex {
-                        operation.finished = nil
+                        operation.discard()
                     } else {
                         newQueue.append(operation)
                     }

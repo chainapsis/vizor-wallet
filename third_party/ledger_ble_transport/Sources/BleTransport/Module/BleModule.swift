@@ -32,6 +32,11 @@ protocol TaskOperation: AnyObject {
     var finished: EmptyResponse? { get set }
 
     func start()
+    func discard()
+}
+
+extension TaskOperation {
+    func discard() { finished = nil }
 }
 
 public class BleModule: NSObject {

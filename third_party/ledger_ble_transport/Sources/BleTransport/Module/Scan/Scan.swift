@@ -8,12 +8,23 @@
 import Foundation
 import CoreBluetooth
 
+// Only the radio boundary is substituted by tests; timers and queue are real.
+protocol ScanRadio: AnyObject {
+    var state: CBManagerState { get }
+    func scanForPeripherals(withServices serviceUUIDs: [CBUUID]?, options: [String: Any]?)
+    func stopScan()
+}
+
+extension CBCentralManager: ScanRadio {}
+
 public class Scan: TaskOperation {
 
     var finished: EmptyResponse?
+    private var isStarted = false
+    private var isFinished = false
 
     /// The manager responsible for this operation.
-    private let manager: CBCentralManager
+    private let manager: ScanRadio
 
     /// The duration of the scan.
     private let duration: TimeInterval
@@ -28,13 +39,13 @@ public class Scan: TaskOperation {
     private let serviceIdentifiers: [ServiceIdentifier]
 
     /// The discovery callback.
-    private let discovery: (ScanDiscovery, [ScanDiscovery]) -> ScanAction
+    private var discovery: ((ScanDiscovery, [ScanDiscovery]) -> ScanAction)?
 
     /// The expired callback.
-    private let expired: ((ScanDiscovery, [ScanDiscovery]) -> ScanAction)?
+    private var expired: ((ScanDiscovery, [ScanDiscovery]) -> ScanAction)?
 
     /// The stopped callback. Called when stopped normally as well, not just when there is an error.
-    private let stopped: ([ScanDiscovery], Error?, Bool) -> Void
+    private var stopped: (([ScanDiscovery], Error?, Bool) -> Void)?
 
     /// The discoveries made so far in a given scan session.
     private var discoveries = [ScanDiscovery]()
@@ -52,7 +63,7 @@ public class Scan: TaskOperation {
          discovery: @escaping (ScanDiscovery, [ScanDiscovery]) -> ScanAction,
          expired: ((ScanDiscovery, [ScanDiscovery]) -> ScanAction)?,
          stopped: @escaping ([ScanDiscovery], Error?, Bool) -> Void,
-         manager: CBCentralManager) {
+         manager: ScanRadio) {
 
         self.duration = duration
         self.throttleRSSIDelta = throttleRSSIDelta
@@ -73,6 +84,8 @@ public class Scan: TaskOperation {
     }
 
     func start() {
+        guard !isStarted, !isFinished else { return }
+        isStarted = true
         let timeoutTimer = Timer(
             timeInterval: duration,
             target: self,
@@ -95,11 +108,16 @@ public class Scan: TaskOperation {
     }
 
     func discoveredPeripheral(cbPeripheral: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber) {
+        discovered(ScanDiscovery(
+            peripheralIdentifier: PeripheralIdentifier(uuid: cbPeripheral.identifier, name: cbPeripheral.name),
+            advertisementPacket: advertisementData, rssi: rssi.intValue))
+    }
+
+    func discovered(_ newDiscovery: ScanDiscovery) {
+        guard isStarted, !isFinished else { return }
         clearTimeoutTimer()
-
-        let peripheralIdentifier = PeripheralIdentifier(uuid: cbPeripheral.identifier, name: cbPeripheral.name)
-
-        let newDiscovery = ScanDiscovery(peripheralIdentifier: peripheralIdentifier, advertisementPacket: advertisementData, rssi: rssi.intValue)
+        let peripheralIdentifier = newDiscovery.peripheralIdentifier
+        let rssi = newDiscovery.rssi
 
         refreshTimer(identifier: newDiscovery.peripheralIdentifier.uuid)
 
@@ -109,7 +127,7 @@ public class Scan: TaskOperation {
             let existingDiscovery = discoveries[indexOfExistingDiscovery]
 
             // Throttle discovery by ignoring discovery if the change of RSSI is insignificant.
-            if abs(existingDiscovery.rssi - rssi.intValue) < throttleRSSIDelta {
+            if abs(existingDiscovery.rssi - rssi) < throttleRSSIDelta {
                 return
             }
 
@@ -120,31 +138,32 @@ public class Scan: TaskOperation {
             discoveries.append(newDiscovery)
         }
 
-        if case .stop = discovery(newDiscovery, discoveries) {
+        if case .stop? = discovery?(newDiscovery, discoveries) {
             stopScan(with: discoveries, error: nil, timedOut: false)
         }
     }
 
-    private func stopScan(with discoveries: [ScanDiscovery], error: Error?, timedOut: Bool) {
+    // Queue invalidation is silent: Bluetooth state already supplies the error.
+    // Mark terminal before stopping radio or releasing callbacks for reentrancy.
+    func discard() {
+        guard !isFinished else { finished = nil; return }
+        isFinished = true
+        finished = nil
         clearTimers()
-
-        // There is no point trying to stop the scan if Bluetooth is off, as trying to do so has no effect and will also cause CoreBluetooth to log an "API MISUSE" warning.
-        if manager.state == .poweredOn {
-            manager.stopScan()
-        }
-
-        /*if let error = error {
-            print("Scanning stopped with error: \(error.localizedDescription)")
-        } else {
-            print("Scanning stopped.")
-        }*/
-
-        complete(discoveries, error, timedOut)
+        discovery = nil
+        expired = nil
+        stopped = nil
+        discoveries.removeAll()
+        if isStarted, manager.state == .poweredOn { manager.stopScan() }
     }
 
-    func complete(_ discoveries: [ScanDiscovery], _ error: Error?, _ timedOut: Bool) {
-        stopped(discoveries, error, timedOut)
-        finished?()
+    private func stopScan(with discoveries: [ScanDiscovery], error: Error?, timedOut: Bool) {
+        guard !isFinished else { return }
+        let completion = stopped
+        let drained = finished
+        discard()
+        completion?(discoveries, error, timedOut)
+        drained?()
     }
 
     private func refreshTimer(identifier: UUID) {
@@ -169,6 +188,7 @@ public class Scan: TaskOperation {
     }
 
     private func refresh(identifier: UUID) {
+        guard isStarted, !isFinished else { return }
         if let indexOfExpiredDiscovery = discoveries.firstIndex(where: { discovery -> Bool in
             discovery.peripheralIdentifier.uuid == identifier
         }) {
@@ -178,13 +198,7 @@ public class Scan: TaskOperation {
             if let expired = expired {
                 if case .stop = expired(expiredDiscovery, discoveries) {
                     DispatchQueue.main.async {
-                        self.clearTimers()
-
-                        if self.manager.state == .poweredOn {
-                            self.manager.stopScan()
-                        }
-
-                        self.complete(self.discoveries, nil, false)
+                        self.stopScan(with: self.discoveries, error: nil, timedOut: false)
                     }
                 }
             }
