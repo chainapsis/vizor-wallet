@@ -253,6 +253,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
         'SwapHardwareSigning: retain deposit proposal lock failed '
         'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$e',
       );
+      rethrow;
     }
   }
 

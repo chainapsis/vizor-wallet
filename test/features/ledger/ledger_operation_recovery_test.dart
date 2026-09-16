@@ -228,6 +228,47 @@ void main() {
     );
   }
 
+  test(
+    'recovery leaves an overlay-owned expired result until its claim releases',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.payDeposit,
+          state: 'result_pending_ack',
+          externalRef: 'intent-1',
+          txid: 'computed-txid',
+          status: 'expired',
+        ),
+      ]);
+      final recoveredDeposits = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        recoveredDeposits: recoveredDeposits,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      final claim = container
+          .read(ledgerOperationClaimRegistryProvider)
+          .tryClaim('operation-1');
+      expect(claim, isNotNull);
+
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      await coordinator.recover();
+
+      expect(recoveredDeposits, isEmpty);
+      expect(operationService.acknowledged, isEmpty);
+
+      claim!.release();
+      await coordinator.recover();
+
+      expect(recoveredDeposits, isEmpty);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
   test('recovery keeps swap result when activity checkpoint fails', () async {
     final operationService = _FakeLedgerSignedOperationService([
       _operation(

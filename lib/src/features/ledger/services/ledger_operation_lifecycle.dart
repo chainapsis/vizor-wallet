@@ -6,6 +6,37 @@ final ledgerOperationLifecycleProvider = Provider(
   (ref) => LedgerOperationLifecycle(),
 );
 
+final ledgerOperationClaimRegistryProvider = Provider(
+  (ref) => LedgerOperationClaimRegistry(),
+);
+
+/// Prevents startup/background recovery from consuming an outbox operation
+/// while its signing surface still owns draft settlement and result handling.
+class LedgerOperationClaimRegistry {
+  final Set<String> _claims = {};
+
+  LedgerOperationClaim? tryClaim(String operationId) {
+    if (!_claims.add(operationId)) return null;
+    return LedgerOperationClaim._(this, operationId);
+  }
+
+  void _release(String operationId) => _claims.remove(operationId);
+}
+
+class LedgerOperationClaim {
+  LedgerOperationClaim._(this._registry, this.operationId);
+
+  final LedgerOperationClaimRegistry _registry;
+  final String operationId;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _registry._release(operationId);
+  }
+}
+
 /// Protects outbox work, including the caller's durable result handling, from
 /// wallet deletion on every platform. Device approval is outside this boundary.
 /// A destructive operation blocks new work and drains accepted work before

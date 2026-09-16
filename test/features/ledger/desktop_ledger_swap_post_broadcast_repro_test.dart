@@ -329,6 +329,147 @@ void main() {
     expect(find.text('Retry saving'), findsNothing);
   });
 
+  testWidgets(
+    'desktop Ledger retries expired draft cleanup before acknowledgement',
+    (tester) async {
+      final operations = _StatefulOperationService(status: 'expired');
+      final signing = _HardwareSigningService(settlementFailures: 2);
+      var signerCalls = 0;
+      var cancelCalls = 0;
+      var persistenceCalls = 0;
+
+      await _pumpOverlay(
+        tester,
+        intent: _intent(payMode: true),
+        operations: operations,
+        signing: signing,
+        sign: (_, _) async {
+          signerCalls++;
+          return const [3];
+        },
+        persist: (_, _) async => persistenceCalls++,
+        onCompleted: (_) async => fail('Expired result must not complete.'),
+        onCancelled: () => cancelCalls++,
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Retry cleanup').evaluate().isNotEmpty,
+      );
+
+      expect(find.text('Transaction expired'), findsOneWidget);
+      expect(find.text('Open the Zcash app'), findsNothing);
+      expect(signing.settlementStatuses, ['expired']);
+      expect(operations.acknowledgeCalls, 0);
+      expect(cancelCalls, 0);
+      expect(persistenceCalls, 0);
+
+      await tester.tap(find.text('Back to activity'));
+      await _pumpUntil(tester, () => signing.settlementStatuses.length == 2);
+
+      expect(find.text('Retry cleanup'), findsOneWidget);
+      expect(signing.settlementStatuses, ['expired', 'expired']);
+      expect(operations.acknowledgeCalls, 0);
+      expect(cancelCalls, 0);
+
+      await tester.tap(find.text('Retry cleanup'));
+      await _pumpUntil(tester, () => cancelCalls == 1);
+
+      expect(signing.settlementStatuses, ['expired', 'expired', 'expired']);
+      expect(signerCalls, 1);
+      expect(operations.broadcastCalls, 1);
+      expect(operations.acknowledgeCalls, 1);
+      expect(persistenceCalls, 0);
+    },
+  );
+
+  testWidgets(
+    'desktop Ledger retries expired acknowledgement without cleanup again',
+    (tester) async {
+      final operations = _StatefulOperationService(
+        status: 'expired',
+        acknowledgeFailures: 1,
+      );
+      final signing = _HardwareSigningService();
+      var cancelCalls = 0;
+      var persistenceCalls = 0;
+
+      await _pumpOverlay(
+        tester,
+        intent: _intent(),
+        operations: operations,
+        signing: signing,
+        sign: (_, _) async => const [3],
+        persist: (_, _) async => persistenceCalls++,
+        onCompleted: (_) async => fail('Expired result must not complete.'),
+        onCancelled: () => cancelCalls++,
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Retry cleanup').evaluate().isNotEmpty,
+      );
+
+      expect(signing.settlementStatuses, ['expired']);
+      expect(operations.acknowledgeCalls, 1);
+      expect(cancelCalls, 0);
+
+      await tester.tap(find.text('Retry cleanup'));
+      await _pumpUntil(tester, () => cancelCalls == 1);
+
+      expect(signing.settlementStatuses, ['expired']);
+      expect(operations.broadcastCalls, 1);
+      expect(operations.acknowledgeCalls, 2);
+      expect(persistenceCalls, 0);
+    },
+  );
+
+  testWidgets(
+    'desktop Ledger retries uncertain-result lock retention before saving',
+    (tester) async {
+      final operations = _StatefulOperationService(
+        status: SwapDepositBroadcastStatus.broadcastUnknown,
+      );
+      final signing = _HardwareSigningService(settlementFailures: 1);
+      var signerCalls = 0;
+      var persistenceCalls = 0;
+      var completionCalls = 0;
+
+      await _pumpOverlay(
+        tester,
+        intent: _intent(),
+        operations: operations,
+        signing: signing,
+        sign: (_, _) async {
+          signerCalls++;
+          return const [3];
+        },
+        persist: (_, _) async => persistenceCalls++,
+        onCompleted: (_) async => completionCalls++,
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Retry saving').evaluate().isNotEmpty,
+      );
+
+      expect(signing.settlementStatuses, [
+        SwapDepositBroadcastStatus.broadcastUnknown,
+      ]);
+      expect(persistenceCalls, 0);
+      expect(operations.acknowledgeCalls, 0);
+
+      await tester.tap(find.text('Retry saving'));
+      await _pumpUntil(tester, () => completionCalls == 1);
+
+      expect(signing.settlementStatuses, [
+        SwapDepositBroadcastStatus.broadcastUnknown,
+        SwapDepositBroadcastStatus.broadcastUnknown,
+      ]);
+      expect(signerCalls, 1);
+      expect(operations.broadcastCalls, 1);
+      expect(persistenceCalls, 1);
+      expect(operations.acknowledgeCalls, 1);
+    },
+  );
+
   testWidgets('desktop Ledger retry closes a recovered expired result', (
     tester,
   ) async {
@@ -507,10 +648,15 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _HardwareSigningService implements SwapHardwareSigningService {
-  _HardwareSigningService({this.failFirstBroadcastSettlement = false});
+  _HardwareSigningService({
+    bool failFirstBroadcastSettlement = false,
+    int settlementFailures = 0,
+  }) : settlementFailures =
+           settlementFailures + (failFirstBroadcastSettlement ? 1 : 0);
 
-  final bool failFirstBroadcastSettlement;
+  int settlementFailures;
   var settleCalls = 0;
+  final settlementStatuses = <String?>[];
 
   @override
   Future<SwapHardwarePcztDraft> createZecDepositPczt({
@@ -538,7 +684,9 @@ class _HardwareSigningService implements SwapHardwareSigningService {
     required String? status,
   }) async {
     settleCalls++;
-    if (failFirstBroadcastSettlement && settleCalls == 1) {
+    settlementStatuses.add(status);
+    if (settlementFailures > 0) {
+      settlementFailures--;
       throw StateError('Could not finish cancelling. Please try again.');
     }
   }

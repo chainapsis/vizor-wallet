@@ -164,6 +164,10 @@ class LedgerOperationRecoveryCoordinator {
     var broadcastedAny = false;
 
     for (final operation in operations) {
+      final claim = _ref
+          .read(ledgerOperationClaimRegistryProvider)
+          .tryClaim(operation.operationId);
+      if (claim == null) continue;
       LedgerSignedOperationBroadcastResult? result;
       try {
         if (operation.state == 'signed_pending_broadcast') {
@@ -239,6 +243,8 @@ class LedgerOperationRecoveryCoordinator {
           'LedgerRecovery: operation=${operation.operationId} failed: '
           '$error\n$stackTrace',
         );
+      } finally {
+        claim.release();
       }
     }
 

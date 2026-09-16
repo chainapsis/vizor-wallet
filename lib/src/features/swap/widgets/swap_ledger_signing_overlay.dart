@@ -62,6 +62,9 @@ class _SwapLedgerSigningOverlayState
   late final SwapLedgerCompletionService _completionService;
   late final LedgerOperationLifecycle _lifecycle;
   late final LedgerSignedOperationService _operations;
+  late final LedgerOperationClaimRegistry _claimRegistry;
+  LedgerOperationClaim? _operationClaim;
+  bool _operationClaimUnavailable = false;
 
   bool get _isBroadcasting =>
       _phase == LedgerSigningModalPhase.broadcasting ||
@@ -74,6 +77,8 @@ class _SwapLedgerSigningOverlayState
     _completionService = ref.read(swapLedgerCompletionServiceProvider);
     _lifecycle = ref.read(ledgerOperationLifecycleProvider);
     _operations = ref.read(ledgerSignedOperationServiceProvider);
+    _claimRegistry = ref.read(ledgerOperationClaimRegistryProvider);
+    _ensureOperationClaim();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_prepareAndSign());
     });
@@ -91,7 +96,18 @@ class _SwapLedgerSigningOverlayState
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
-    if (!_isBroadcasting) unawaited(_discardDraft());
+    if (!_isBroadcasting) {
+      unawaited(
+        _discardDraft()
+            .catchError((Object error, StackTrace stackTrace) {
+              log(
+                'SwapLedgerSigning.disposeCleanup: ERROR: '
+                '$error\n$stackTrace',
+              );
+            })
+            .whenComplete(_releaseOperationClaim),
+      );
+    }
     super.dispose();
   }
 
@@ -100,6 +116,9 @@ class _SwapLedgerSigningOverlayState
       final accountUuid = widget.intent.accountUuid;
       if (accountUuid == null || accountUuid.trim().isEmpty) {
         throw StateError('Swap account is missing.');
+      }
+      if (!_ensureOperationClaim()) {
+        throw StateError('Ledger operation recovery is still running.');
       }
       final operationKind = widget.intent.payMode
           ? LedgerSignedOperationKind.payDeposit
@@ -129,6 +148,17 @@ class _SwapLedgerSigningOverlayState
         intent: widget.intent,
       );
       _draft = draft;
+      if (!mounted || _cancelled) {
+        try {
+          await _discardDraft();
+        } catch (error, stackTrace) {
+          log(
+            'SwapLedgerSigning.lateDraftCleanup: ERROR: '
+            '$error\n$stackTrace',
+          );
+        }
+        return;
+      }
 
       SaplingParamsStatus? saplingParams;
       if (draft.needsSaplingParams) {
@@ -178,7 +208,10 @@ class _SwapLedgerSigningOverlayState
       );
     } catch (e, st) {
       log('SwapLedgerSigning._prepareAndSign: ERROR: $e\n$st');
-      if (!mounted || _cancelled) return;
+      if (!mounted || _cancelled) {
+        if (!mounted) _releaseOperationClaim();
+        return;
+      }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
@@ -188,6 +221,7 @@ class _SwapLedgerSigningOverlayState
 
   Future<void> _retry() async {
     if (_phase != LedgerSigningModalPhase.failed || _isBroadcasting) return;
+    if (!_ensureOperationClaim()) return;
     if (_operationCheckpointed) {
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
@@ -209,7 +243,10 @@ class _SwapLedgerSigningOverlayState
         }
       } catch (e, st) {
         log('SwapLedgerSigning._retryCheckpoint: ERROR: $e\n$st');
-        if (!mounted || _cancelled) return;
+        if (!mounted || _cancelled) {
+          if (!mounted) _releaseOperationClaim();
+          return;
+        }
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
           _error = _friendlyError(e);
@@ -252,7 +289,10 @@ class _SwapLedgerSigningOverlayState
       );
     } catch (e, st) {
       log('SwapLedgerSigning._retry: ERROR: $e\n$st');
-      if (!mounted || _cancelled) return;
+      if (!mounted || _cancelled) {
+        if (!mounted) _releaseOperationClaim();
+        return;
+      }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
         _error = _friendlyError(e);
@@ -328,11 +368,13 @@ class _SwapLedgerSigningOverlayState
         _operationCheckpointed = false;
         _operationId = null;
         _pendingBroadcastResult = null;
+        _releaseOperationClaim();
       }
       rethrow;
     }
     final disposition = classifyLedgerDepositBroadcastResult(result);
     if (disposition == LedgerDepositBroadcastDisposition.expired) {
+      _pendingBroadcastResult = result;
       await _finishExpiredResult(result);
       return;
     }
@@ -366,6 +408,7 @@ class _SwapLedgerSigningOverlayState
         _pendingBroadcastResult = result;
         await _completeProviderCheckpoint(result);
       case LedgerDepositBroadcastDisposition.expired:
+        _pendingBroadcastResult = result;
         await _finishExpiredResult(result);
       case LedgerDepositBroadcastDisposition.invalid:
         throw StateError(
@@ -377,45 +420,29 @@ class _SwapLedgerSigningOverlayState
   Future<void> _finishExpiredResult(
     LedgerSignedOperationBroadcastResult result,
   ) => _lifecycle.run(() async {
+    if (mounted) {
+      setState(() {
+        _phase = LedgerSigningModalPhase.saving;
+        _error = null;
+      });
+    }
     final draft = _draft;
-    _draft = null;
     if (draft != null) {
-      try {
-        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-          draft: draft,
-          status: result.status,
-        );
-      } catch (error, stackTrace) {
-        log(
-          'SwapLedgerSigning: expired draft cleanup failed: '
-          '$error\n$stackTrace',
-        );
-        try {
-          await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-            draft: draft,
-            status: null,
-          );
-        } catch (fallbackError, fallbackStackTrace) {
-          log(
-            'SwapLedgerSigning: retaining expired draft failed: '
-            '$fallbackError\n$fallbackStackTrace',
-          );
-        }
+      await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+        draft: draft,
+        status: result.status,
+      );
+      if (identical(_draft, draft)) {
+        _draft = null;
       }
     }
     if (result.requiresAck) {
-      try {
-        await _operations.acknowledge(result.operationId);
-      } catch (error, stackTrace) {
-        log(
-          'SwapLedgerSigning: expired result acknowledgement failed: '
-          '$error\n$stackTrace',
-        );
-      }
+      await _operations.acknowledge(result.operationId);
     }
     _operationCheckpointed = false;
     _operationId = null;
     _pendingBroadcastResult = null;
+    _releaseOperationClaim();
     if (!mounted) return;
     _cancelled = true;
     widget.onCancel();
@@ -440,6 +467,7 @@ class _SwapLedgerSigningOverlayState
     }
     await _completionService.complete(widget.intent, result);
     _pendingBroadcastResult = null;
+    _releaseOperationClaim();
     if (!mounted) return;
     try {
       await widget.onDepositBroadcast(
@@ -513,10 +541,60 @@ class _SwapLedgerSigningOverlayState
 
   Future<void> _cancel() async {
     if (_isBroadcasting) return;
+    setState(() {
+      _phase = LedgerSigningModalPhase.saving;
+      _error = null;
+    });
     _cancelled = true;
     await _cancelLedgerOperationSafely();
-    unawaited(_discardDraft());
+    try {
+      await _lifecycle.run(_discardDraft);
+    } catch (error, stackTrace) {
+      log('SwapLedgerSigning.cancelDiscard: ERROR: $error\n$stackTrace');
+      if (!mounted) {
+        _releaseOperationClaim();
+        return;
+      }
+      _cancelled = false;
+      setState(() {
+        _phase = LedgerSigningModalPhase.failed;
+        _error = _friendlyError(error);
+      });
+      return;
+    }
+    if (!mounted) {
+      _releaseOperationClaim();
+      return;
+    }
+    _releaseOperationClaim();
     widget.onCancel();
+  }
+
+  bool _ensureOperationClaim() {
+    if (_operationClaim != null) return true;
+    final accountUuid = widget.intent.accountUuid?.trim();
+    if (accountUuid == null || accountUuid.isEmpty) return false;
+    final operationKind = widget.intent.payMode
+        ? LedgerSignedOperationKind.payDeposit
+        : LedgerSignedOperationKind.swapDeposit;
+    final operationId = _operationId ??= newLedgerSignedOperationId(
+      kind: operationKind,
+      accountUuid: accountUuid,
+      externalRef: widget.intent.id,
+    );
+    final claim = _claimRegistry.tryClaim(operationId);
+    if (claim == null) {
+      _operationClaimUnavailable = true;
+      return false;
+    }
+    _operationClaimUnavailable = false;
+    _operationClaim = claim;
+    return true;
+  }
+
+  void _releaseOperationClaim() {
+    _operationClaim?.release();
+    _operationClaim = null;
   }
 
   Future<void> _cancelLedgerOperationSafely() async {
@@ -529,36 +607,21 @@ class _SwapLedgerSigningOverlayState
 
   Future<void> _discardDraft() async {
     final draft = _draft;
-    _draft = null;
     if (draft == null) return;
     if (_operationCheckpointed) {
-      try {
-        await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-          draft: draft,
-          status: _pendingBroadcastResult?.status,
-        );
-      } catch (error, stackTrace) {
-        log(
-          'SwapLedgerSigning: checkpointed draft cleanup failed: '
-          '$error\n$stackTrace',
-        );
-        if (_pendingBroadcastResult != null) {
-          try {
-            await _signingService?.settlePcztDraftAfterLedgerBroadcast(
-              draft: draft,
-              status: null,
-            );
-          } catch (fallbackError, fallbackStackTrace) {
-            log(
-              'SwapLedgerSigning: retaining checkpointed draft failed: '
-              '$fallbackError\n$fallbackStackTrace',
-            );
-          }
-        }
+      await _signingService?.settlePcztDraftAfterLedgerBroadcast(
+        draft: draft,
+        status: _pendingBroadcastResult?.status,
+      );
+      if (identical(_draft, draft)) {
+        _draft = null;
       }
       return;
     }
     await _signingService?.discardPcztDraft(draft: draft);
+    if (identical(_draft, draft)) {
+      _draft = null;
+    }
   }
 
   String _friendlyError(Object error) {
@@ -591,6 +654,10 @@ class _SwapLedgerSigningOverlayState
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
+    final expiredRecovery =
+        pendingBroadcastResult != null &&
+        classifyLedgerDepositBroadcastResult(pendingBroadcastResult) ==
+            LedgerDepositBroadcastDisposition.expired;
     final broadcastConfirmed =
         pendingBroadcastResult?.status ==
             SwapDepositBroadcastStatus.broadcasted ||
@@ -602,29 +669,47 @@ class _SwapLedgerSigningOverlayState
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
               title: postBroadcastRecovery
-                  ? broadcastConfirmed
+                  ? expiredRecovery
+                        ? 'Transaction expired'
+                        : broadcastConfirmed
                         ? 'Transaction sent'
                         : 'Transaction status pending'
+                  : _operationClaimUnavailable
+                  ? 'Transaction recovery in progress'
                   : legacyOrchardRecoveryUnavailable
                   ? 'Ledger app update required'
                   : 'Ledger signing failed',
               statusLabel: postBroadcastRecovery
-                  ? 'Saving transaction'
+                  ? expiredRecovery
+                        ? 'Cleanup needed'
+                        : 'Saving transaction'
+                  : _operationClaimUnavailable
+                  ? 'Please wait'
                   : legacyOrchardRecoveryUnavailable
                   ? 'Recovery unavailable'
                   : 'Action needed',
               message: postBroadcastRecovery
-                  ? broadcastConfirmed
+                  ? expiredRecovery
+                        ? 'The transaction expired before it was sent. Vizor still needs to release its reserved funds.'
+                        : broadcastConfirmed
                         ? 'The transaction was sent, but Vizor could not finish saving it.'
                         : 'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'
+                  : _operationClaimUnavailable
+                  ? 'Vizor is already finishing this transaction in the background.'
                   : _error ?? 'Ledger signing could not be completed.',
               showDeviceAppPrompt:
-                  !postBroadcastRecovery && !legacyOrchardRecoveryUnavailable,
-              showConnectionPicker: !postBroadcastRecovery,
-              actionLabel: legacyOrchardRecoveryUnavailable
+                  !postBroadcastRecovery &&
+                  !_operationClaimUnavailable &&
+                  !legacyOrchardRecoveryUnavailable,
+              showConnectionPicker:
+                  !postBroadcastRecovery && !_operationClaimUnavailable,
+              actionLabel:
+                  legacyOrchardRecoveryUnavailable || _operationClaimUnavailable
                   ? null
                   : postBroadcastRecovery
-                  ? 'Retry saving'
+                  ? expiredRecovery
+                        ? 'Retry cleanup'
+                        : 'Retry saving'
                   : 'Try again',
             )
           : null,
@@ -632,6 +717,7 @@ class _SwapLedgerSigningOverlayState
       cancelLabel: 'Back to activity',
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
+              !_operationClaimUnavailable &&
               !legacyOrchardRecoveryUnavailable
           ? () => unawaited(_retry())
           : null,
