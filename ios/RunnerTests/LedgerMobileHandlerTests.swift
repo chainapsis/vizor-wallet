@@ -513,6 +513,33 @@ final class LedgerMobileHandlerTests: XCTestCase {
     }
   }
 
+  @MainActor
+  func testOpenZcashAppMapsRawMissingAppAndLockedStatuses() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let cases: [(response: String, code: String, message: String)] = [
+      ("6807", "unavailable", "The Zcash app is not installed on this Ledger."),
+      ("5515", "locked", "Unlock your Ledger and reopen the Zcash app."),
+      ("6982", "locked", "Unlock your Ledger and reopen the Zcash app."),
+      ("5303", "locked", "Unlock your Ledger and reopen the Zcash app."),
+    ]
+
+    for testCase in cases {
+      transport.responses = [testCase.response]
+      let completed = expectation(description: "mapped status \(testCase.response)")
+      handler.handle(
+        FlutterMethodCall(methodName: "openZcashApp", arguments: nil)
+      ) { value in
+        let error = value as? FlutterError
+        XCTAssertEqual(error?.code, testCase.code)
+        XCTAssertEqual(error?.message, testCase.message)
+        completed.fulfill()
+      }
+      await fulfillment(of: [completed], timeout: 2)
+    }
+  }
+
   func testAppSwitchRecoversLostOpenResponseWithoutOpeningTwice() async throws {
     var opens = 0
     var reads = 0

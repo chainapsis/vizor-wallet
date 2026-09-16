@@ -772,10 +772,15 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
     if let protocolError = error as? LedgerMobileProtocolError {
       switch protocolError {
-      case .status(0x5515):
+      case .status(0x5515), .status(0x6982), .status(0x5303):
         return flutterError(
           code: "locked",
           message: "Unlock your Ledger and reopen the Zcash app."
+        )
+      case .status(0x6807):
+        return flutterError(
+          code: "unavailable",
+          message: "The Zcash app is not installed on this Ledger."
         )
       case .status(0x6985), .status(0x5501):
         return flutterError(
