@@ -55,7 +55,7 @@ struct FakeBluez {
   bool reject_pairing = false, deny_write = false, hold_response = false;
   bool hold_mtu = false;
   bool disconnect_on_write = false;
-  bool hold_start = false, discovering = false;
+  bool hold_start = false, hold_pair = false, discovering = false;
   bool nearby = true;
   // Pairing agent: BlueZ asks the registering application's agent to confirm
   // its own pairing requests. `agent_manager` false models an old BlueZ
@@ -69,8 +69,10 @@ struct FakeBluez {
   int agent_registrations = 0, agent_duplicate_registrations = 0;
   std::string fail_start, fail_pair, fail_connect;
   GCancellable* cancel_start = nullptr;
+  GCancellable* cancel_pair = nullptr;
   GDBusMethodInvocation* pending_start = nullptr;
-  int pairs = 0, connects = 0, disconnects = 0, writes = 0;
+  GDBusMethodInvocation* pending_pair = nullptr;
+  int pairs = 0, pair_cancellations = 0, connects = 0, disconnects = 0, writes = 0;
   ledger_ble::ResponseAssembler input;
   Bytes response = {1, 5, 'Z', 'c', 'a', 's', 'h', 5, '3', '.', '9', '.', '3', 0x90, 0};
 
@@ -97,6 +99,7 @@ struct FakeBluez {
 
   ~FakeBluez() {
     g_clear_object(&pending_start);
+    g_clear_object(&pending_pair);
     for (const auto id : registrations) g_dbus_connection_unregister_object(server, id);
     g_dbus_node_info_unref(node);
     g_dbus_connection_close_sync(client, nullptr, nullptr);
@@ -243,6 +246,12 @@ struct FakeBluez {
       }
     } else if (name == "Pair") {
       ++self.pairs;
+      if (self.hold_pair) {
+        self.pending_pair = G_DBUS_METHOD_INVOCATION(g_object_ref(invocation));
+        // Cancel the local wait after BlueZ has accepted the Pair request.
+        g_cancellable_cancel(self.cancel_pair);
+        return;
+      }
       if (self.reject_pairing) {
         g_dbus_method_invocation_return_dbus_error(invocation, "org.bluez.Error.AuthenticationRejected", "Pairing rejected");
         return;
@@ -257,6 +266,14 @@ struct FakeBluez {
         return;
       }
       self.paired = true;
+    } else if (name == "CancelPairing") {
+      ++self.pair_cancellations;
+      self.paired = false;
+      if (self.pending_pair) {
+        g_dbus_method_invocation_return_dbus_error(
+            self.pending_pair, "org.bluez.Error.AuthenticationCanceled", "Pairing cancelled");
+        g_clear_object(&self.pending_pair);
+      }
     } else if (name == "Connect") {
       ++self.connects;
       if (!self.fail_connect.empty()) {

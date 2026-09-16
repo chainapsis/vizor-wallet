@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 # Builds and runs the Linux Ledger BLE tests on Linux or macOS. Needs glib,
 # gio and dbus-daemon (Homebrew: glib, dbus) and the Flutter engine sources
 # that ship with the SDK (fvm/flutter >= 3.38 keeps them under engine/src).
@@ -12,8 +12,8 @@ LINUX="$ENGINE/flutter/shell/platform/linux"
 [[ -f "$LINUX/fl_value.cc" ]] || { echo "Flutter engine sources not found under $ENGINE" >&2; exit 1; }
 
 if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists gio-2.0 gmodule-2.0; then
-  GLIB_CFLAGS=("${(@f)$(pkg-config --cflags gio-2.0 gmodule-2.0 | tr ' ' '\n')}")
-  GLIB_LIBS=("${(@f)$(pkg-config --libs gio-2.0 gmodule-2.0 | tr ' ' '\n')}")
+  read -r -a GLIB_CFLAGS <<< "$(pkg-config --cflags gio-2.0 gmodule-2.0)"
+  read -r -a GLIB_LIBS <<< "$(pkg-config --libs gio-2.0 gmodule-2.0)"
 else
   GLIB=$(brew --prefix glib)
   GLIB_CFLAGS=(-I"$GLIB/include/glib-2.0" -I"$GLIB/lib/glib-2.0/include" -I"$(brew --prefix gettext)/include" -I"$(brew --prefix pcre2)/include")

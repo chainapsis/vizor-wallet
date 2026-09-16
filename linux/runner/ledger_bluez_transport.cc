@@ -429,7 +429,19 @@ void Transport::Connect(const std::string& id, GCancellable* cancel) {
     } catch (const BusFailure& failure) {
       pair_failure = failure;
     }
-    pairing_ = false;
+    const bool remote_pairing_may_continue = pair_failure &&
+        (pair_failure->code == "cancelled" || pair_failure->timed_out);
+    if (remote_pairing_may_continue) {
+      try {
+        Call(id, kDevice, "CancelPairing", nullptr, nullptr, 3000);
+        pairing_ = false;
+      } catch (const Error& error) {
+        // Keep pairing_ set so the caller's Disconnect cleanup retries.
+        g_warning("Ledger pairing cleanup: %s", error.what());
+      }
+    } else {
+      pairing_ = false;
+    }
     ResolvePairingPrompt(false, "org.bluez.Error.Canceled");
     NotifyPairing("");
     // AlreadyExists means the bond completed elsewhere while this call ran.

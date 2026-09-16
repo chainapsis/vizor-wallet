@@ -75,12 +75,25 @@ int main() {
     Require(!fake.discovering && !fake.pending_start, "cancelled discovery drains BlueZ");
     fake.hold_start = false;
     fake.cancel_start = nullptr;
+    fake.agent_manager = false;
+    fake.hold_pair = true;
+    g_autoptr(GCancellable) pair_cancel = g_cancellable_new();
+    fake.cancel_pair = pair_cancel;
+    Fails("cancelled", [&] { transport.Connect(kDevice, pair_cancel); });
+    Require(fake.pair_cancellations == 1 && !fake.pending_pair && !fake.paired,
+        "cancelled pairing cancels the remote BlueZ operation exactly once");
+    Run([&] { transport.Disconnect(); });
+    Require(fake.pair_cancellations == 1, "disconnect does not cancel the drained pairing twice");
+    codes.clear();
+    fake.hold_pair = false;
+    fake.cancel_pair = nullptr;
+    fake.agent_manager = true;
     fake.reject_pairing = true;
     Fails("pairing_rejected", [&] { transport.Connect(kDevice, nullptr); });
     Run([&] { transport.Disconnect(); });
     fake.reject_pairing = false;
     Run([&] { transport.Connect(kDevice, nullptr); });
-    Require(fake.pairs == 2, "pair before GATT");
+    Require(fake.pairs == 3, "pair before GATT after the cancelled attempt");
     Require(fake.agent_path == "/com/zcash/wallet/ledger/agent" && fake.agent_capability == "DisplayYesNo",
         "the transport registers its own pairing agent");
     Require(fake.agent_answers == 1 && fake.agent_rejections == 0, "the agent confirmed our own pairing");
