@@ -108,7 +108,11 @@ final class LedgerMobileHandlerTests: XCTestCase {
     handler.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) { value in
       XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
     }
+    connect(handler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
     XCTAssertEqual(transport.disconnects, 0)
+    XCTAssertEqual(transport.connects, 1)
     XCTAssertEqual(transport.commands, [LedgerMobileProtocol.openZcashAppCommand])
 
     transport.onExchange = nil
@@ -220,6 +224,75 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testReplacementHandlerWaitsForOldHandlerDrainAndDisconnect() async {
+    let transport = PendingLedgerTransport()
+    transport.deferDisconnectCompletion = true
+    let oldHandler = LedgerMobileHandler(transport: transport)
+    connect(oldHandler)
+    let started = expectation(description: "old handler exchange reached transport")
+    transport.onExchange = { started.fulfill() }
+    oldHandler.handle(ufvkCall) { _ in }
+    await fulfillment(of: [started], timeout: 2)
+
+    oldHandler.close()
+    let replacementHandler = LedgerMobileHandler(transport: transport)
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.connects, 1)
+    XCTAssertEqual(transport.disconnects, 0)
+
+    transport.onExchange = nil
+    transport.complete("6985")
+    let deadline = Date().addingTimeInterval(2)
+    while transport.disconnects == 0 && Date() < deadline {
+      await Task.yield()
+    }
+    XCTAssertEqual(transport.disconnects, 1)
+
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.connects, 1)
+
+    transport.completeDisconnect()
+    connect(replacementHandler)
+    XCTAssertEqual(transport.connects, 2)
+    XCTAssertTrue(transport.isConnected)
+  }
+
+  @MainActor
+  func testReplacementHandlerWaitsForOldPendingConnectAndCloseDisconnect() async {
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    transport.deferDisconnectCompletion = true
+    var oldHandler: LedgerMobileHandler? = LedgerMobileHandler(transport: transport)
+    connect(oldHandler!) { _ in }
+
+    oldHandler?.close()
+    oldHandler = nil
+    let replacementHandler = LedgerMobileHandler(transport: transport)
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.connects, 1)
+    XCTAssertEqual(transport.disconnects, 0)
+
+    transport.completeConnect()
+    await Task.yield()
+    XCTAssertEqual(transport.disconnects, 1)
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+
+    transport.completeDisconnect()
+    transport.deferConnectCompletion = false
+    connect(replacementHandler)
+    XCTAssertEqual(transport.connects, 2)
+    XCTAssertTrue(transport.isConnected)
+  }
+
+  @MainActor
   func testUfvkKeepsNormalMultiCommandResponses() async {
     let transport = PendingLedgerTransport()
     let handler = LedgerMobileHandler(transport: transport)
@@ -241,10 +314,13 @@ final class LedgerMobileHandlerTests: XCTestCase {
     ])
   }
 
-  private func connect(_ handler: LedgerMobileHandler) {
+  private func connect(
+    _ handler: LedgerMobileHandler,
+    result: @escaping FlutterResult = { value in XCTAssertNil(value) }
+  ) {
     handler.handle(FlutterMethodCall(methodName: "connect", arguments: [
       "deviceId": "00000000-0000-0000-0000-000000000001", "deviceName": "Test Ledger"
-    ])) { value in XCTAssertNil(value) }
+    ]), result: result)
   }
 
   func testApduEncodingAlwaysIncludesLc() {
@@ -583,9 +659,14 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var responses: [String] = []
   var disconnects = 0
   var reconnects = 0
+  var connects = 0
+  var deferConnectCompletion = false
+  var deferDisconnectCompletion = false
   var onExchange: (() -> Void)?
   private var pending: CheckedContinuation<String, Error>?
   private var disconnectedCallback: EmptyResponse?
+  private var deferredConnect: (PeripheralIdentifier, PeripheralResponse)?
+  private var deferredDisconnectCompletion: OptionalBleErrorResponse?
 
   var hasPendingExchange: Bool { pending != nil }
 
@@ -604,14 +685,35 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   }
   func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?,
     success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
+    connects += 1
     isConnected = true
     self.disconnectedCallback = disconnectedCallback
-    success(peripheral)
+    if deferConnectCompletion {
+      deferredConnect = (peripheral, success)
+    } else {
+      success(peripheral)
+    }
+  }
+
+  func completeConnect() {
+    guard let deferred = deferredConnect else { return }
+    deferredConnect = nil
+    deferred.1(deferred.0)
   }
   func disconnect(completion: OptionalBleErrorResponse?) {
     XCTAssertNil(pending, "Must not enter the SDK's pending-disconnect wait")
     disconnects += 1
     isConnected = false
+    if deferDisconnectCompletion {
+      deferredDisconnectCompletion = completion
+    } else {
+      completion?(nil)
+    }
+  }
+
+  func completeDisconnect() {
+    let completion = deferredDisconnectCompletion
+    deferredDisconnectCompletion = nil
     completion?(nil)
   }
   func stopScanning() {}

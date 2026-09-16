@@ -8,6 +8,39 @@ import Foundation
   import Flutter
 #endif
 
+private final class LedgerMobileTransportOwnership {
+  static let shared = LedgerMobileTransportOwnership()
+
+  private let lock = NSLock()
+  private var owners: [ObjectIdentifier: ObjectIdentifier] = [:]
+
+  func claim(transport: BleTransportProtocol, owner: AnyObject) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let transportID = ObjectIdentifier(transport as AnyObject)
+    let ownerID = ObjectIdentifier(owner)
+    guard owners[transportID] == nil || owners[transportID] == ownerID else {
+      return false
+    }
+    owners[transportID] = ownerID
+    return true
+  }
+
+  func owns(transport: BleTransportProtocol, owner: AnyObject) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return owners[ObjectIdentifier(transport as AnyObject)] == ObjectIdentifier(owner)
+  }
+
+  func release(transport: BleTransportProtocol, owner: AnyObject) {
+    lock.lock()
+    defer { lock.unlock() }
+    let transportID = ObjectIdentifier(transport as AnyObject)
+    guard owners[transportID] == ObjectIdentifier(owner) else { return }
+    owners.removeValue(forKey: transportID)
+  }
+}
+
 final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   static let methodChannelName = "com.zcash.wallet/ledger_mobile"
   static let eventChannelName = "com.zcash.wallet/ledger_mobile/discovery"
@@ -28,6 +61,10 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var exchangeGeneration = 0
   private var exchangeRecoversFromDisconnect = false
   private var appPreparationGeneration = 0
+  private var transportCallbackPending = false
+  private var transportCallbackResult: FlutterResult?
+  private var closeDisconnectPending = false
+  private var isClosing = false
 
   init(transport: BleTransportProtocol? = nil) {
     transportStorage = transport
@@ -82,15 +119,28 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   func close() {
+    guard !isClosing else { return }
+    isClosing = true
+    guard let transport = transportStorage,
+      LedgerMobileTransportOwnership.shared.owns(transport: transport, owner: self)
+    else { return }
     stopDiscovery()
     cancelExchangeOperation(
       code: "cancelled",
       message: "The Ledger operation was cancelled."
     )
+    if let pending = transportCallbackResult {
+      transportCallbackResult = nil
+      pending(
+        flutterError(
+          code: "cancelled",
+          message: "The Ledger operation was cancelled."
+        )
+      )
+    }
     connectedDevice = nil
-    guard let transport = transportStorage else { return }
     guard let pendingTask = exchangeTask else {
-      if transport.isConnected { transport.disconnect(completion: nil) }
+      finishClosing(transport)
       return
     }
     // BleTransport cannot disconnect while an SDK exchange is waiting for its
@@ -98,7 +148,23 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     // must keep the transport alive until that callback drains.
     Task { @MainActor in
       await pendingTask.value
-      if transport.isConnected { transport.disconnect(completion: nil) }
+      self.finishClosing(transport)
+    }
+  }
+
+  private func finishClosing(_ transport: BleTransportProtocol) {
+    guard exchangeTask == nil, !transportCallbackPending, !closeDisconnectPending else {
+      return
+    }
+    guard transport.isConnected else {
+      LedgerMobileTransportOwnership.shared.release(transport: transport, owner: self)
+      return
+    }
+    closeDisconnectPending = true
+    transport.disconnect { [self] error in
+      closeDisconnectPending = false
+      guard error == nil || !transport.isConnected else { return }
+      LedgerMobileTransportOwnership.shared.release(transport: transport, owner: self)
     }
   }
 
@@ -115,6 +181,21 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       }
     }
     return transport
+  }
+
+  private func transportForOperation(
+    _ result: @escaping FlutterResult
+  ) -> BleTransportProtocol? {
+    guard !isClosing else {
+      result(pendingExchangeError())
+      return nil
+    }
+    let transport = transportStorage ?? BleTransport.shared
+    guard LedgerMobileTransportOwnership.shared.claim(transport: transport, owner: self) else {
+      result(pendingExchangeError())
+      return nil
+    }
+    return ensureTransport()
   }
 
   private func handleBluetoothState(_ state: CBManagerState) {
@@ -150,7 +231,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func requestPermissions(_ result: @escaping FlutterResult) {
-    _ = ensureTransport()
+    guard transportForOperation(result) != nil else { return }
     switch CBManager.authorization {
     case .allowedAlways, .notDetermined:
       // CoreBluetooth has no standalone permission request API. The system
@@ -164,7 +245,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func startDiscovery(_ result: @escaping FlutterResult) {
-    let transport = ensureTransport()
+    guard let transport = transportForOperation(result) else { return }
     switch CBManager.authorization {
     case .denied, .restricted:
       result(
@@ -278,7 +359,11 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     if clearRequest {
       discoveryRequested = false
     }
-    transportStorage?.stopScanning()
+    if let transportStorage,
+      LedgerMobileTransportOwnership.shared.owns(transport: transportStorage, owner: self)
+    {
+      transportStorage.stopScanning()
+    }
   }
 
   private func failDiscovery(code: String, message: String) {
@@ -308,6 +393,11 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     _ call: FlutterMethodCall,
     result: @escaping FlutterResult
   ) {
+    guard exchangeTask == nil, !transportCallbackPending else {
+      result(pendingExchangeError())
+      return
+    }
+    guard let transport = transportForOperation(result) else { return }
     guard
       let arguments = call.arguments as? [String: Any],
       let deviceID = arguments["deviceId"] as? String,
@@ -333,8 +423,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       discoveredModels[deviceID] = deviceModel
     }
 
-    let transport = ensureTransport()
     stopDiscovery()
+    transportCallbackPending = true
+    transportCallbackResult = result
     transport.connect(
       toPeripheralID: device,
       disconnectedCallback: { [weak self] in
@@ -342,39 +433,70 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
           self?.handleDisconnected()
         }
       },
-      success: { [weak self] connected in
-        self?.connectedDevice = connected
-        result(nil)
+      success: { [self] connected in
+        finishConnect(connected: connected, error: nil)
       },
-      failure: { [weak self] error in
-        self?.completeFailure(result, error: error)
+      failure: { [self] error in
+        finishConnect(connected: nil, error: error)
       }
     )
   }
 
+  private func finishConnect(connected: PeripheralIdentifier?, error: Error?) {
+    guard transportCallbackPending else { return }
+    transportCallbackPending = false
+    let result = transportCallbackResult
+    transportCallbackResult = nil
+    if isClosing {
+      if let transportStorage { finishClosing(transportStorage) }
+      return
+    }
+    if let error {
+      if let result { completeFailure(result, error: error) }
+      return
+    }
+    connectedDevice = connected
+    result?(nil)
+  }
+
   private func disconnect(_ result: @escaping FlutterResult) {
+    guard let transport = transportForOperation(result) else { return }
     cancelExchangeOperation(
       code: "disconnected",
       message: "The Ledger disconnected. Reconnect and try again."
     )
     // BleTransport cannot disconnect until an outstanding device response drains.
     // Fail promptly so the picker shows recovery guidance instead of fake scanning.
-    guard exchangeTask == nil else {
+    guard exchangeTask == nil, !transportCallbackPending else {
       result(pendingExchangeError())
       return
     }
     connectedDevice = nil
 
-    guard let transport = transportStorage, transport.isConnected else {
+    guard transport.isConnected else {
       result(nil)
       return
     }
-    transport.disconnect { [weak self] error in
-      if let error {
-        self?.completeFailure(result, error: error)
-      } else {
-        result(nil)
-      }
+    transportCallbackPending = true
+    transportCallbackResult = result
+    transport.disconnect { [self] error in
+      finishDisconnect(error: error)
+    }
+  }
+
+  private func finishDisconnect(error: Error?) {
+    guard transportCallbackPending else { return }
+    transportCallbackPending = false
+    let result = transportCallbackResult
+    transportCallbackResult = nil
+    if isClosing {
+      if let transportStorage { finishClosing(transportStorage) }
+      return
+    }
+    if let error {
+      if let result { completeFailure(result, error: error) }
+    } else {
+      result?(nil)
     }
   }
 
@@ -582,7 +704,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private func requireConnected(
     _ result: @escaping FlutterResult
   ) -> PeripheralIdentifier? {
-    guard let connectedDevice, ensureTransport().isConnected else {
+    guard let transport = transportForOperation(result) else { return nil }
+    guard let connectedDevice, transport.isConnected else {
       result(
         flutterError(
           code: "disconnected",
