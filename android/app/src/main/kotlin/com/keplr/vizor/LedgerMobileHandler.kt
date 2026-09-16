@@ -117,8 +117,8 @@ class LedgerMobileHandler(
     }
 
     private fun startDiscovery(result: MethodChannel.Result) {
-        if (connectionJob != null) {
-            result.error("unavailable", "A Ledger connection is already active.", null)
+        if (connectionJob != null || signingJob != null) {
+            result.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
         if (requiredPermissions().any {
@@ -333,39 +333,39 @@ class LedgerMobileHandler(
         val device = requireConnected(result) ?: return
         val first = parseCommand(call.argument("first"), result) ?: return
         val continuation = parseCommand(call.argument("continuation"), result) ?: return
-        scope.launch {
+        launchExchange(result) { generation ->
             val responses = mutableListOf<ByteArray>()
-            val firstResponse = exchange(device.uid, first, result) ?: return@launch
+            val firstResponse = exchange(device.uid, first, generation) ?: return@launchExchange
             responses += firstResponse
             if (!firstResponse.hasSuccessStatus()) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
+                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                return@launchExchange
             }
             if (firstResponse.size < 4) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
+                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                return@launchExchange
             }
             val expectedPayloadLength = 2 + ((firstResponse[0].toInt() and 0xff) shl 8) +
                 (firstResponse[1].toInt() and 0xff)
             if (expectedPayloadLength > MAX_UFVK_RESPONSE) {
-                result.success(responses.map { it.asUnsignedList() })
-                return@launch
+                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                return@launchExchange
             }
             var payloadLength = firstResponse.size - 2
             while (payloadLength < expectedPayloadLength) {
-                val response = exchange(device.uid, continuation, result) ?: return@launch
+                val response = exchange(device.uid, continuation, generation) ?: return@launchExchange
                 responses += response
                 if (!response.hasSuccessStatus()) {
-                    result.success(responses.map { it.asUnsignedList() })
-                    return@launch
+                    finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                    return@launchExchange
                 }
                 if (response.size == APDU_STATUS_SIZE) {
-                    result.success(responses.map { it.asUnsignedList() })
-                    return@launch
+                    finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                    return@launchExchange
                 }
                 payloadLength += response.size - 2
             }
-            result.success(responses.map { it.asUnsignedList() })
+            finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
         }
     }
 
@@ -381,38 +381,45 @@ class LedgerMobileHandler(
             val command = parseCommand(value as? Map<*, *>, result) ?: return
             commands += command
         }
-        if (signingJob != null) {
-            result.error("unavailable", "A Ledger signing operation is already active.", null)
+        launchExchange(result) { generation ->
+            val responses = mutableListOf<ByteArray>()
+            for (command in commands) {
+                val response = exchange(device.uid, command, generation) ?: return@launchExchange
+                responses += response
+                if (!response.hasSuccessStatus()) break
+            }
+            finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+        }
+    }
+
+    // UFVK export and signing share one APDU owner, including while a cancelled
+    // SDK callback is still draining. Only job completion releases this slot.
+    private fun launchExchange(result: MethodChannel.Result, block: suspend (Long) -> Unit) {
+        if (signingJob != null || connectionJob != null) {
+            result.error("unavailable", "A Ledger operation is already active.", null)
             return
         }
-
         val generation = ++signingGeneration
         signingResult = result
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val responses = mutableListOf<ByteArray>()
-                for (command in commands) {
-                    currentCoroutineContext().ensureActive()
-                    when (val operation = sendApdu(device.uid, command)) {
-                        is DeviceOperationResult.Success -> {
-                            currentCoroutineContext().ensureActive()
-                            responses += operation.value
-                            if (!operation.value.hasSuccessStatus()) break
-                        }
-                        is DeviceOperationResult.Failure -> {
-                            finishSigningFailure(generation, operation.reason)
-                            return@launch
-                        }
-                    }
-                }
-                finishSigningSuccess(generation, responses.map { it.asUnsignedList() })
+                block(generation)
             } catch (_: CancellationException) {
                 finishSigningCancelled(generation)
-            } finally {
-                if (signingJob === coroutineContext[Job]) signingJob = null
+            } catch (_: Exception) {
+                takeSigningResult(generation)?.error(
+                    "unavailable", "Could not exchange data with Ledger. Try again.", null,
+                )
             }
         }
         signingJob = job
+        job.invokeOnCompletion {
+            // Also runs if cancellation happened before the coroutine started.
+            if (signingJob === job) {
+                finishSigningCancelled(generation)
+                signingJob = null
+            }
+        }
         job.start()
     }
 
@@ -453,20 +460,21 @@ class LedgerMobileHandler(
         if (generation != signingGeneration) return null
         val result = signingResult ?: return null
         signingResult = null
-        signingJob = null
         return result
     }
 
     private suspend fun exchange(
         uid: String,
         command: ApduCommand,
-        result: MethodChannel.Result,
+        generation: Long,
     ): ByteArray? {
+        currentCoroutineContext().ensureActive()
         val operation = sendApdu(uid, command)
+        currentCoroutineContext().ensureActive()
         return when (operation) {
             is DeviceOperationResult.Success -> operation.value
             is DeviceOperationResult.Failure -> {
-                operationFailure(result, operation.reason)
+                finishSigningFailure(generation, operation.reason)
                 null
             }
         }
