@@ -167,6 +167,50 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testDelayedOldDisconnectDoesNotClearReconnectedSession() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "open app reached transport")
+    transport.onExchange = { started.fulfill() }
+    let opened = expectation(description: "open app completed after reconnect")
+    handler.handle(
+      FlutterMethodCall(methodName: "openZcashApp", arguments: nil)
+    ) { value in
+      XCTAssertNil(value as? FlutterError)
+      opened.fulfill()
+    }
+    await fulfillment(of: [started], timeout: 2)
+
+    transport.loseConnectionWithoutCallback()
+    transport.responses = ["01055a6361736805332e392e3201029000"]
+    transport.onExchange = nil
+    transport.complete("9000")
+    await fulfillment(of: [opened], timeout: 2)
+    XCTAssertEqual(transport.reconnects, 1)
+    XCTAssertEqual(transport.disconnectCallbackCount, 2)
+
+    // The original session's notification was queued after the replacement
+    // connected. It must not erase the restored device.
+    transport.simulateDisconnect(callbackIndex: 0, markDisconnected: false)
+    await Task.yield()
+    transport.responses = ["01055a6361736805332e392e3201029000"]
+    let current = expectation(description: "new session remains connected")
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { value in
+      XCTAssertNil(value as? FlutterError)
+      current.fulfill()
+    }
+    await fulfillment(of: [current], timeout: 2)
+
+    // A disconnect from the replacement session still invalidates it.
+    transport.simulateDisconnect(callbackIndex: 1)
+    await Task.yield()
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "disconnected")
+    }
+  }
+
+  @MainActor
   func testDiscoveryRejectsPendingConnectCallback() {
     let transport = PendingLedgerTransport()
     transport.deferConnectCompletion = true
@@ -764,11 +808,12 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var disconnectFailures = 0
   var onExchange: (() -> Void)?
   private var pending: CheckedContinuation<String, Error>?
-  private var disconnectedCallback: EmptyResponse?
+  private var disconnectedCallbacks: [EmptyResponse] = []
   private var deferredConnect: (PeripheralIdentifier, PeripheralResponse)?
   private var deferredDisconnectCompletion: OptionalBleErrorResponse?
 
   var hasPendingExchange: Bool { pending != nil }
+  var disconnectCallbackCount: Int { disconnectedCallbacks.count }
 
   func complete(_ response: String) {
     let continuation = pending
@@ -787,7 +832,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
     connects += 1
     isConnected = true
-    self.disconnectedCallback = disconnectedCallback
+    if let disconnectedCallback { disconnectedCallbacks.append(disconnectedCallback) }
     if deferConnectCompletion {
       deferredConnect = (peripheral, success)
     } else {
@@ -828,7 +873,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
     reconnects += 1
     isConnected = true
-    self.disconnectedCallback = disconnectedCallback
+    if let disconnectedCallback { disconnectedCallbacks.append(disconnectedCallback) }
     return peripheral
   }
   func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
@@ -846,8 +891,13 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func openAppIfNeeded(_ name: String, completion: @escaping (Result<Void, Error>) -> Void) { XCTFail("unused") }
   func openAppIfNeeded(_ name: String) async throws { XCTFail("unused") }
 
-  func simulateDisconnect() {
+  func loseConnectionWithoutCallback() {
     isConnected = false
-    disconnectedCallback?()
+  }
+
+  func simulateDisconnect(callbackIndex: Int? = nil, markDisconnected: Bool = true) {
+    if markDisconnected { isConnected = false }
+    let index = callbackIndex ?? disconnectedCallbacks.index(before: disconnectedCallbacks.endIndex)
+    disconnectedCallbacks[index]()
   }
 }

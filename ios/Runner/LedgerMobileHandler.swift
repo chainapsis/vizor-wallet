@@ -59,6 +59,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var discoveredDevices: [String: PeripheralIdentifier] = [:]
   private var discoveredModels: [String: String] = [:]
   private var connectedDevice: PeripheralIdentifier?
+  private var connectionGeneration = 0
 
   private var exchangeTask: Task<Void, Never>?
   private var exchangeTaskGeneration: Int?
@@ -461,11 +462,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     stopDiscovery()
     transportCallbackPending = true
     transportCallbackResult = result
+    connectionGeneration += 1
+    let generation = connectionGeneration
     transport.connect(
       toPeripheralID: device,
       disconnectedCallback: { [weak self] in
         DispatchQueue.main.async {
-          self?.handleDisconnected()
+          self?.handleDisconnected(generation: generation)
         }
       },
       success: { [self] connected in
@@ -535,7 +538,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func handleDisconnected() {
+  private func handleDisconnected(generation: Int) {
+    guard generation == connectionGeneration else { return }
     connectedDevice = nil
     if exchangeRecoversFromDisconnect { return }
     cancelExchangeOperation(
@@ -566,11 +570,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         },
         isConnected: { transport.isConnected },
         reconnect: {
+          connectionGeneration += 1
+          let reconnectGeneration = connectionGeneration
           let connected = try await transport.connect(
             toPeripheralID: device,
             disconnectedCallback: { [weak self] in
               DispatchQueue.main.async {
-                self?.handleDisconnected()
+                self?.handleDisconnected(generation: reconnectGeneration)
               }
             }
           )
