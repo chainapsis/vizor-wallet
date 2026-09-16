@@ -111,8 +111,12 @@ final class LedgerMobileHandlerTests: XCTestCase {
     connect(handler) { value in
       XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
     }
+    handler.handle(FlutterMethodCall(methodName: "startDiscovery", arguments: nil)) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
     XCTAssertEqual(transport.disconnects, 0)
     XCTAssertEqual(transport.connects, 1)
+    XCTAssertEqual(transport.scans, 0)
     XCTAssertEqual(transport.commands, [LedgerMobileProtocol.openZcashAppCommand])
 
     transport.onExchange = nil
@@ -160,6 +164,20 @@ final class LedgerMobileHandlerTests: XCTestCase {
     XCTAssertEqual((received as? [String: String])?["name"], "Zcash")
     XCTAssertEqual(transport.reconnects, 1)
     XCTAssertEqual(transport.commands.count, 2)
+  }
+
+  @MainActor
+  func testDiscoveryRejectsPendingConnectCallback() {
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler) { _ in }
+
+    handler.handle(FlutterMethodCall(methodName: "startDiscovery", arguments: nil)) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.scans, 0)
+    transport.completeConnect()
   }
 
   @MainActor
@@ -713,6 +731,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var disconnects = 0
   var reconnects = 0
   var connects = 0
+  var scans = 0
   var deferConnectCompletion = false
   var deferDisconnectCompletion = false
   var disconnectFailures = 0
@@ -778,7 +797,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   }
   func stopScanning() {}
   func scan(duration: TimeInterval, callback: @escaping PeripheralsWithServicesResponse,
-    stopped: @escaping OptionalBleErrorResponse) { XCTFail("Unexpected scan") }
+    stopped: @escaping OptionalBleErrorResponse) { scans += 1 }
   func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
     reconnects += 1
     isConnected = true

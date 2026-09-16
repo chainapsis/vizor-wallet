@@ -275,6 +275,10 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func startDiscovery(_ result: @escaping FlutterResult) {
+    guard exchangeTask == nil, !transportCallbackPending else {
+      result(pendingExchangeError())
+      return
+    }
     guard let transport = transportForOperation(result) else { return }
     switch CBManager.authorization {
     case .denied, .restricted:
@@ -344,6 +348,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func beginDiscovery(using existingTransport: BleTransportProtocol? = nil) {
     guard discoveryRequested, !discoveryActive, eventSink != nil else { return }
+    guard exchangeTask == nil, !transportCallbackPending else { return }
     let transport = existingTransport ?? ensureTransport()
     guard transport.isBluetoothAvailable else { return }
 
