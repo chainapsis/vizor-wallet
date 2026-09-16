@@ -20,7 +20,9 @@ The shielded birthday and compact-block RPC construction are unchanged.
   addresses are batched separately so a new child does not rewind its neighbors.
 - Completion (`tip + 1`) is persisted only after the complete stream's outputs
   and missing-transaction retrieval requests have committed to SQLite.
-- Wallet rewinds invalidate both completion maps before SQLite is truncated.
+- Wallet rewinds, including the public `rewindToHeight` API, invalidate both
+  completion maps before SQLite is truncated. Invalidation failure aborts the
+  rewind; a later SQLite failure can only cause extra lookups.
   Resetting only to the rewind height would miss an old output resurrected by
   removal of a later spend. These exceptional full lookups favor correctness.
 

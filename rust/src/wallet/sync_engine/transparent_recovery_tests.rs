@@ -348,3 +348,158 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
     let next = address_history::plan(&requests);
     assert_eq!(next[0][0].block_range_start(), tip + 2);
 }
+
+fn public_rewind_fixture(corrupt_cache: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let birthday = 2_000_000;
+    let tip = 2_000_500;
+    let target = 2_000_100;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(birthday), "public rewind")
+            .unwrap();
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap();
+    let internal = vec![addresses[1].clone()];
+    let internal_set = internal.iter().cloned().collect();
+    let external =
+        keys::get_external_transparent_receive_addresses_from_db(path, network, Some(&uuid))
+            .unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(tip)).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    // Transparent-only fixture: no shielded witnesses above these block markers.
+    for height in [target, tip] {
+        conn.execute(
+            "INSERT INTO blocks (height, hash, time, sapling_tree) VALUES (?1, ?2, 0, X'')",
+            params![height, [height as u8; 32].as_slice()],
+        )
+        .unwrap();
+    }
+    let batches: Vec<_> = addresses
+        .iter()
+        .enumerate()
+        .map(|(index, address)| {
+            let tx = legacy_transaction(
+                OutPoint::new([index as u8 + 1; 32], 0),
+                TransparentAddress::decode(&network, address).unwrap(),
+                1_000_000,
+            );
+            downloaded(&uuid, &tx, 2_000_200)
+        })
+        .collect();
+    store_transparent_outputs(&mut db, &batches).unwrap();
+    let planned = transparent_receive_cache::plan_external_utxo_refresh(
+        path, network, &uuid, &external, birthday, birthday, 20, 20,
+    )
+    .unwrap();
+    for batch in planned {
+        transparent_receive_cache::mark_utxo_refresh_batch_complete(
+            path,
+            network,
+            &uuid,
+            &batch.child_indices,
+            u64::from(tip) + 1,
+            batch.next_sweep_offset,
+        )
+        .unwrap();
+    }
+    transparent_receive_cache::mark_non_external_utxo_refresh_complete(
+        path,
+        network,
+        &uuid,
+        &internal,
+        u64::from(tip) + 1,
+    )
+    .unwrap();
+    assert!(transparent_receive_cache::plan_non_external_utxo_refresh(
+        path,
+        network,
+        &uuid,
+        &internal,
+        birthday,
+        birthday,
+        &internal_set,
+        tip.into()
+    )
+    .unwrap()
+    .is_empty());
+    drop(db);
+    if corrupt_cache {
+        std::fs::write(
+            transparent_receive_cache::sidecar_path(path),
+            b"corrupt receive cache",
+        )
+        .unwrap();
+    }
+    let result = crate::wallet::sync::rewind_to_height(path, network, target.into());
+    if corrupt_cache {
+        assert!(
+            result.is_err(),
+            "cache invalidation must fail before truncation"
+        );
+        let mined: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE mined_height=2000200",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            mined, 2,
+            "SQLite must remain untouched after invalidation failure"
+        );
+        let max_block: u32 = conn
+            .query_row("SELECT MAX(height) FROM blocks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(max_block, tip);
+        return;
+    }
+    assert_eq!(result.unwrap(), u64::from(target));
+    assert_eq!(account_birthday_height(path, account).unwrap(), birthday);
+    let plans = transparent_receive_cache::plan_external_utxo_refresh(
+        path, network, &uuid, &external, birthday, birthday, 20, 20,
+    )
+    .unwrap();
+    assert!(plans.iter().all(|batch| batch.start_height == 0));
+    let internal_plan = transparent_receive_cache::plan_non_external_utxo_refresh(
+        path,
+        network,
+        &uuid,
+        &internal,
+        birthday,
+        birthday,
+        &internal_set,
+        tip.into(),
+    )
+    .unwrap();
+    assert_eq!(internal_plan, vec![(internal, 0)]);
+    let mined: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE mined_height=2000200",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(mined, 0, "rewind actually unmined the transparent receipts");
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(tip)).unwrap();
+    // Replayed UTXO responses restore mined state without duplicate outputs.
+    store_transparent_outputs(&mut db, &batches).unwrap();
+    store_transparent_outputs(&mut db, &batches).unwrap();
+    let counts: (i64,i64) = conn.query_row("SELECT COUNT(*), COUNT(t.mined_height) FROM transparent_received_outputs u JOIN transactions t ON t.id_tx=u.transaction_id", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert_eq!(counts, (2, 2));
+}
+
+#[test]
+fn public_rewind_invalidates_checks_and_recovers_outputs_without_duplicates() {
+    public_rewind_fixture(false);
+}
+
+#[test]
+fn public_rewind_cache_failure_leaves_sqlite_unchanged() {
+    public_rewind_fixture(true);
+}

@@ -311,6 +311,14 @@ fn pre_sapling_recovery_shields_and_other_wallet_detects_the_spend() {
     }
     sync(&sender_path);
     sync(&observer_path);
+    // Exercise the exposed rewind route after the spend was learned, then
+    // restore it from the chain without resetting either wallet.
+    for path in [&sender_path, &observer_path] {
+        let actual =
+            crate::api::sync::rewind_to_height(path.clone(), "regtest".into(), 350).unwrap();
+        assert_eq!(actual, 350);
+        sync(path);
+    }
     for (path, account) in [
         (&sender_path, &sender_account.account_uuid),
         (&observer_path, &observer_account.account_uuid),
