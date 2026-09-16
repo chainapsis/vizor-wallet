@@ -58,6 +58,7 @@ void main() {
       (_) => buildLedgerSigningPreview(
         phase: LedgerSigningModalPhase.failed,
         readiness: LedgerSigningPlaygroundReadiness.failed,
+        failureMode: LedgerSigningPlaygroundFailure.reconnect,
       ),
     );
 
