@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "ledger_ble_handler.h"
 #include "single_instance.h"
 
 struct _MyApplication {
@@ -214,6 +215,7 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  register_ledger_ble_handler(view);
   register_payment_uri_channel(self, view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
