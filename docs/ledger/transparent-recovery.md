@@ -66,7 +66,7 @@ sweep. The first sweep is immediately eligible. Times persist across app restart
 failed requests do not start the cooldown, and a rewind or clock rollback makes
 the sweep eligible again. This is checked during normal sync, not by a new timer. The unused gap candidates
 are included in the highest indices. Ephemeral/standalone receivers and software
-internal receivers keep their prior snapshot behavior.
+internal receivers follow main: previously checked internal addresses refresh together every 20 blocks, while newly registered addresses are queried immediately from genesis.
 
 Each selection is split into unqueried and previously checked addresses, so a new
 candidate does not pull checked addresses back to height 0. Each scope schedules
@@ -79,12 +79,14 @@ refreshes, approximately 8 hours 20 minutes at a 10-minute cadence. Background
 pauses and sync scheduling can extend this delay.
 
 Cache completion is published only after UTXO persistence. Internal metadata is
-stored separately from external metadata in the existing receive sidecar and
-survives receive-address cache regeneration. Wallet rewinds persist a new epoch
-in `ext_vizor_transparent_refresh_epoch` before truncation, including anchor-root
-repairs. A sidecar from an earlier epoch discards both scopes' query heights and
-sweep positions. The reset may perform extra bounded queries but cannot skip
-rewound data because of stale heights. As with the existing external path, an
+keyed by encoded address in main's shared non-external completion map and
+survives receive-address cache regeneration. Wallet rewinds clear both scopes'
+query heights, sweep positions and cooldowns before truncation, including
+anchor-root repairs. Ledger discovery checkpoints are invalidated as well.
+Old Ledger sidecars carrying `rewind_epoch` discard their completion metadata
+once on upgrade, then use this common invalidation path; main's existing v3
+completions remain valid. The reset may perform extra bounded queries but cannot
+skip rewound data because of stale heights. As with the existing external path, an
 unavailable/corrupt sidecar falls back to a complete snapshot with a warning;
 these bounds apply to healthy-cache operation, not this fallback.
 
