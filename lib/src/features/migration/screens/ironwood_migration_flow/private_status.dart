@@ -16,19 +16,34 @@ class _IronwoodMigrationPrivateStatusContent extends ConsumerStatefulWidget {
 
 class _IronwoodMigrationPrivateStatusContentState
     extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
+  String? _actionError;
+
   Future<void> _handleAction(_StatusAction action) async {
     final accountUuid = widget.accountUuid;
     if (accountUuid == null) return;
-    if (action == _StatusAction.needsInput) {
-      context.go('/migration/private/keystone/batch/sign');
-      return;
-    }
     try {
+      if (action == _StatusAction.needsInput) {
+        final account = ref
+            .read(accountProvider.notifier)
+            .accountForUuidOrThrow(accountUuid);
+        final backend = resolveAccountSigningBackend(
+          account,
+          operation: AccountSigningOperation.ironwoodMigration,
+        );
+        if (backend != AccountSigningBackend.keystone) return;
+        if (mounted) context.go('/migration/private/keystone/batch/sign');
+        return;
+      }
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .retry(accountUuid);
     } catch (e) {
       log('Migration continuation failed: $e');
+      if (mounted) {
+        setState(() {
+          _actionError = _privateMigrationContinueErrorMessage(e);
+        });
+      }
     }
     _invalidateIronwoodMigrationStatusState(
       ref,
@@ -46,12 +61,24 @@ class _IronwoodMigrationPrivateStatusContentState
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
     final accountState = ref.watch(accountProvider).value;
-    final isHardware =
-        accountState?.accounts
-            .where((account) => account.uuid == widget.accountUuid)
-            .any((account) => account.isHardware) ??
-        false;
-    final action = _statusAction(status, isHardware: isHardware);
+    final signerKind = accountState?.accounts
+        .where((account) => account.uuid == widget.accountUuid)
+        .map((account) => account.signerKind)
+        .firstOrNull;
+    final isKeystone = signerKind == AccountSignerKind.keystone;
+    final ledgerSigningUnavailable =
+        signerKind == AccountSignerKind.ledger &&
+        migrationRequiresKeystoneSignature(status);
+    final blockedMessage =
+        _actionError ??
+        (ledgerSigningUnavailable
+            ? const UnsupportedAccountSignerException(
+                signerKind: AccountSignerKind.ledger,
+                operation: AccountSigningOperation.ironwoodMigration,
+              ).userMessage
+            : null);
+    final statusAction = _statusAction(status, isKeystone: isKeystone);
+    final action = blockedMessage == null ? statusAction : _StatusAction.none;
     final canUseAction = widget.accountUuid != null;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final syncState = ref.watch(syncProvider).asData?.value;
@@ -68,9 +95,11 @@ class _IronwoodMigrationPrivateStatusContentState
     final coordinatorError = widget.accountUuid == null
         ? null
         : coordinator.errors[widget.accountUuid!];
-    final footerText = coordinatorError == null
-        ? presentation.footer
-        : _privateMigrationContinueErrorMessage(coordinatorError);
+    final footerText =
+        blockedMessage ??
+        (coordinatorError == null
+            ? presentation.footer
+            : _privateMigrationContinueErrorMessage(coordinatorError));
     final actionCallback = switch (action) {
       _StatusAction.needsInput || _StatusAction.retry =>
         canUseAction ? () => unawaited(_handleAction(action)) : null,
@@ -94,6 +123,7 @@ class _IronwoodMigrationPrivateStatusContentState
         action: action,
         isAdvancing: isAdvancing,
         onAction: actionCallback,
+        blockedMessage: blockedMessage,
       );
     }
 
@@ -357,12 +387,12 @@ extension _StatusActionLabels on _StatusAction {
 
 _StatusAction _statusAction(
   rust_sync.MigrationStatus status, {
-  required bool isHardware,
+  required bool isKeystone,
 }) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
     kIronwoodMigrationReadyToMigratePhase =>
-      isHardware && migrationRequiresKeystoneSignature(status)
+      isKeystone && migrationRequiresKeystoneSignature(status)
           ? _StatusAction.needsInput
           : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,

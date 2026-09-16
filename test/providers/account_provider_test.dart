@@ -40,6 +40,24 @@ void main() {
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
 
+  test('signer lookup does not treat a missing account as software', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    expect(
+      () => container
+          .read(accountProvider.notifier)
+          .signerKindForAccount('missing-account'),
+      throwsStateError,
+    );
+  });
+
   test('Linux rejects account changes while another mutation waits', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final coordinator = LinuxKeyringCoordinator.testing();

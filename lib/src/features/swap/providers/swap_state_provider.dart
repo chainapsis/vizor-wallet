@@ -9,6 +9,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -824,17 +825,22 @@ class SwapNotifier extends Notifier<SwapState> {
       return null;
     }
     final accountNotifier = ref.read(accountProvider.notifier);
-    final activeAccountIsKeystone = accountNotifier.isKeystoneAccount(
-      accountUuid,
-    );
-    if (quote.direction.sendsZec &&
-        accountNotifier.isLedgerAccount(accountUuid)) {
-      log('Swap: Ledger ZEC deposit signing is unavailable');
-      state = state.copyWith(
-        startSubmitting: false,
-        statusError: 'Ledger swap signing is not available in this build.',
-      );
-      return null;
+    final account = accountNotifier.accountForUuidOrThrow(accountUuid);
+    var activeAccountIsKeystone = false;
+    if (quote.direction.sendsZec) {
+      try {
+        activeAccountIsKeystone = resolveAccountSigningBackend(
+          account,
+          operation: AccountSigningOperation.zecOutboundSwap,
+        ).usesKeystoneProtocol;
+      } on UnsupportedAccountSignerException catch (error) {
+        log('Swap: Ledger ZEC deposit signing is unavailable');
+        state = state.copyWith(
+          startSubmitting: false,
+          statusError: error.userMessage,
+        );
+        return null;
+      }
     }
     if (quote.direction.sendsZec) {
       try {

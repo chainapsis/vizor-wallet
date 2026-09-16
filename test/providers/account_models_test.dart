@@ -62,6 +62,32 @@ void main() {
     expect(account.isLedger, isFalse);
   });
 
+  test('explicit unknown hardware signer metadata fails closed', () {
+    expect(
+      () => AccountInfo.fromJson({
+        'uuid': 'account-1',
+        'name': 'Unknown hardware',
+        'order': 0,
+        'isHardware': true,
+        'hardwareSignerKind': 'unknown',
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('software account with hardware signer metadata fails closed', () {
+    expect(
+      () => AccountInfo.fromJson({
+        'uuid': 'account-1',
+        'name': 'Invalid software',
+        'order': 0,
+        'isHardware': false,
+        'hardwareSignerKind': 'ledger',
+      }),
+      throwsFormatException,
+    );
+  });
+
   test('Ledger signer and derivation metadata survive JSON persistence', () {
     const account = AccountInfo(
       uuid: 'account-1',

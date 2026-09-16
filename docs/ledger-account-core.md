@@ -31,6 +31,32 @@ UI callers later own router-refresh suspension and navigation around this action
 - Device model/name/ID and transport hints are neither seed identity nor proof
   that a connected Ledger can sign for the account.
 
+## Signer identity and operation support
+
+Hardware custody and signing protocol are separate contracts. `isHardware`
+means the wallet does not hold the account's software spending key. It remains
+appropriate for seed access, UFVK receive-address derivation and hardware
+transaction bookkeeping; it must not select a Keystone QR flow.
+
+`AccountInfo.signerKind` identifies software, Keystone or Ledger independently
+of which operations this build supports. The common account-signing policy
+selects a supported backend for a specific operation. In C02, software and
+Keystone signing remain available; Ledger signing produces an explicit
+unsupported-operation error. Adding a later Ledger signer must enable only the
+operations implemented by that slice, rather than enable all hardware actions.
+
+Send, shielding, gift-card funding, outbound ZEC swaps, voting and Ironwood
+migration use this policy at signing dispatch. Resumed operations use the
+operation's account identity. Keystone-specific preparation boundaries also
+validate their account before creating a device request, including callers
+that bypass the usual screen entry point. Missing accounts cannot fall through
+to software signing.
+
+Ledger account listing, balances, receive addresses and inbound swaps remain
+available. Existing Keystone metadata without an explicit signer kind retains
+its deployed interpretation. No stored account schema or Ledger migration is
+introduced by the dispatch refactor.
+
 ## Synthetic derivation fingerprint
 
 The Ledger app does not return a ZIP-32 seed fingerprint. The existing source

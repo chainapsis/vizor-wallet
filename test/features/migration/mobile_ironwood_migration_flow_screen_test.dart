@@ -186,9 +186,13 @@ class _FailingBindCredentialStore
 }
 
 class _HardwareAccountNotifier extends AccountNotifier {
+  _HardwareAccountNotifier(this.signerKind);
+
+  final AccountSignerKind signerKind;
+
   @override
   Future<AccountState> build() async =>
-      _bootstrap(hardware: true).initialAccountState;
+      _bootstrap(signerKind: signerKind).initialAccountState;
 }
 
 class _ManageTestMigrationCoordinator extends IronwoodMigrationCoordinator {
@@ -711,7 +715,9 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
   );
 }
 
-AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  AccountSignerKind signerKind = AccountSignerKind.software,
+}) => AppBootstrapState(
   initialLocation: '/migration/private/status',
   initialAccountState: AccountState(
     accounts: [
@@ -720,7 +726,12 @@ AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
         name: 'Wallet 1',
         order: 0,
         profilePictureId: kDefaultProfilePictureId,
-        isHardware: hardware,
+        isHardware: signerKind != AccountSignerKind.software,
+        hardwareSignerKind: switch (signerKind) {
+          AccountSignerKind.software => null,
+          AccountSignerKind.keystone => HardwareSignerKind.keystone,
+          AccountSignerKind.ledger => HardwareSignerKind.ledger,
+        },
       ),
     ],
     activeAccountUuid: 'account-1',
@@ -839,6 +850,7 @@ Widget _productionApp({
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
   Future<IronwoodHomeMigrationCtaState> Function()? ctaLoader,
   bool hardware = false,
+  AccountSignerKind? accountSignerKind,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
@@ -992,8 +1004,21 @@ Widget _productionApp({
   return ProviderScope(
     overrides: [
       ...extraOverrides,
-      appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
-      if (hardware) accountProvider.overrideWith(_HardwareAccountNotifier.new),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(
+          signerKind:
+              accountSignerKind ??
+              (hardware
+                  ? AccountSignerKind.keystone
+                  : AccountSignerKind.software),
+        ),
+      ),
+      if (hardware || accountSignerKind != null)
+        accountProvider.overrideWith(
+          () => _HardwareAccountNotifier(
+            accountSignerKind ?? AccountSignerKind.keystone,
+          ),
+        ),
       syncProvider.overrideWith(
         () =>
             syncNotifier ??
@@ -1065,6 +1090,7 @@ class _RouteCtaPrimeScreen extends ConsumerWidget {
 }
 
 IronwoodMigrationService _migrationService({
+  AccountSignerKind signerKind = AccountSignerKind.keystone,
   Future<rust_sync.MigrationStatus> Function()? onGetStatus,
   Future<rust_sync.IronwoodMigrationResult> Function(
     String accountUuid,
@@ -1117,6 +1143,7 @@ IronwoodMigrationService _migrationService({
   onCreatePrivateDraft,
 }) {
   return IronwoodMigrationService(
+    signerKindForAccount: (_) => signerKind,
     getWalletDbPath: () async => '/tmp/wallet.db',
     getStatus:
         ({required dbPath, required network, required accountUuid}) async =>
@@ -1997,6 +2024,39 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('rejects Ledger Immediate migration before opening signing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          signerKind: AccountSignerKind.ledger,
+        ),
+        accountSignerKind: AccountSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ledger migration signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('keystone immediate sign route'), findsNothing);
   });
 
   testWidgets('leaves migration choices before preparing the private plan', (
@@ -3766,6 +3826,30 @@ void main() {
     },
   );
 
+  testWidgets('keeps a Ledger draft awaiting preparation read-only', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          signerKind: AccountSignerKind.ledger,
+        ),
+        accountSignerKind: AccountSignerKind.ledger,
+        status: _status(phase: kIronwoodMigrationAwaitingPreparationPhase),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(
+      find.text('Ledger migration signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.text('Continue with Keystone'), findsNothing);
+  });
+
   testWidgets('renders the mobile Keystone split signing QR', (tester) async {
     _useMobileViewport(tester, size: const Size(320, 568));
     final request = rust_sync.KeystoneMigrationSigningRequest(
@@ -3918,6 +4002,7 @@ void main() {
       final coordinator = _ProofPermitTestMigrationCoordinator();
       final credentialStore = _FailingBindCredentialStore(failAtBindCall: 1);
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus:
             ({required dbPath, required network, required accountUuid}) async =>
@@ -4055,6 +4140,7 @@ void main() {
               activeRunId: 'run-1',
             );
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus:
             ({required dbPath, required network, required accountUuid}) async =>
@@ -4296,6 +4382,7 @@ void main() {
       final discardStarted = Completer<void>();
       final finishDiscard = Completer<void>();
       final service = IronwoodMigrationService(
+        signerKindForAccount: (_) => AccountSignerKind.keystone,
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus:
             ({required dbPath, required network, required accountUuid}) async =>
@@ -4345,7 +4432,9 @@ void main() {
 
       Widget signingApp() => ProviderScope(
         overrides: [
-          appBootstrapProvider.overrideWithValue(_bootstrap(hardware: true)),
+          appBootstrapProvider.overrideWithValue(
+            _bootstrap(signerKind: AccountSignerKind.keystone),
+          ),
           ironwoodMigrationServiceProvider.overrideWithValue(service),
         ],
         child: AppTheme(

@@ -16,6 +16,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
@@ -159,16 +160,22 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
     if (_cancelling || _proposalAbandoned) return;
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isLedgerAccount(_reviewArgs.proposalAccountUuid)) {
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(_reviewArgs.proposalAccountUuid),
+        operation: AccountSigningOperation.send,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
       showAppToast(
         context,
-        'Ledger signing is not available in this build.',
+        error.userMessage,
         iconName: AppIcons.warningCircle,
         tone: AppToastTone.destructive,
       );
       return;
     }
-    if (accountNotifier.isKeystoneAccount(_reviewArgs.proposalAccountUuid)) {
+    if (signingBackend.usesKeystoneProtocol) {
       _showKeystoneSigningModal();
       return;
     }
@@ -272,6 +279,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         mounted && !_proposalAbandoned && generation == _signingGeneration;
     final args = _reviewArgs;
     try {
+      final backend = resolveAccountSigningBackend(
+        ref
+            .read(accountProvider.notifier)
+            .accountForUuidOrThrow(args.proposalAccountUuid),
+        operation: AccountSigningOperation.send,
+      );
+      if (!backend.usesKeystoneProtocol) {
+        throw StateError('Keystone signing requires a Keystone account.');
+      }
       final dbPath = await getWalletDbPath();
       if (!isCurrent()) return;
       final endpoint = ref.read(rpcEndpointProvider);
@@ -550,9 +566,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   Widget build(BuildContext context) {
     final signerKind = ref
         .read(accountProvider.notifier)
-        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
-    final isLedger = signerKind == HardwareSignerKind.ledger;
-    final isKeystone = signerKind == HardwareSignerKind.keystone;
+        .signerKindForAccount(_reviewArgs.proposalAccountUuid);
+    final isLedger = signerKind == AccountSignerKind.ledger;
+    final isKeystone = signerKind == AccountSignerKind.keystone;
     final keystonePhase = _keystonePhase;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??

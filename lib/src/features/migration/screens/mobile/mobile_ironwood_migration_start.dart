@@ -91,7 +91,15 @@ _continuePrivateMigrationAfterNotificationGate(
     throw StateError('No active account is selected.');
   }
 
-  if (accountState.activeAccount?.isHardware ?? false) {
+  final account = accountState.activeAccount;
+  if (account == null) {
+    throw StateError('The active account is unavailable.');
+  }
+  final signingBackend = resolveAccountSigningBackend(
+    account,
+    operation: AccountSigningOperation.ironwoodMigration,
+  );
+  if (signingBackend == AccountSigningBackend.keystone) {
     final service = ref.read(ironwoodMigrationServiceProvider);
     if (!_privatePlanUsesCombinedKeystoneSigning(plan)) {
       final request = await service.prepareKeystoneDenominationPrivateMigration(
@@ -287,15 +295,23 @@ class _MobileIronwoodMigrationStartScreenState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      final isHardware = accountState.activeAccount?.isHardware ?? false;
-      if (isHardware && !_keystoneTwoRoundPlanSupported(plan)) {
+      final account = accountState.activeAccount;
+      if (account == null) {
+        throw StateError('The active account is unavailable.');
+      }
+      final signingBackend = resolveAccountSigningBackend(
+        account,
+        operation: AccountSigningOperation.ironwoodMigration,
+      );
+      final usesKeystone = signingBackend == AccountSigningBackend.keystone;
+      if (usesKeystone && !_keystoneTwoRoundPlanSupported(plan)) {
         throw StateError(
           'This migration needs more transactions than one Keystone '
           'signing request supports.',
         );
       }
 
-      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+      if (!usesKeystone || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
         await ref
             .read(ironwoodMigrationServiceProvider)
             .savePrivateMigrationDraft(

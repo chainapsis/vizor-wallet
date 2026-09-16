@@ -58,22 +58,32 @@ class _IronwoodMigrationPrivateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
+      final account = accountState.activeAccount;
+      if (account == null) {
+        throw StateError('The active account is unavailable.');
+      }
       statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
       );
-      if (accountState.activeAccount?.isHardware ?? false) {
-        // A fully direct plan has no split stages, so the combined request
-        // would carry zero messages, which Rust rejects. It signs nothing up
-        // front: the legacy denomination completion accepts the empty set and
-        // the children are signed from the status screen.
-        context.go(
-          plan.denominationSplitStageCount > 0
-              ? '/migration/private/keystone/sign'
-              : '/migration/private/keystone/denominations/sign',
-          extra: plan.scheduledTransfers,
-        );
-        return;
+      switch (resolveAccountSigningBackend(
+        account,
+        operation: AccountSigningOperation.ironwoodMigration,
+      )) {
+        case AccountSigningBackend.keystone:
+          // A fully direct plan has no split stages, so the combined request
+          // would carry zero messages, which Rust rejects. It signs nothing up
+          // front: the legacy denomination completion accepts the empty set and
+          // the children are signed from the status screen.
+          context.go(
+            plan.denominationSplitStageCount > 0
+                ? '/migration/private/keystone/sign'
+                : '/migration/private/keystone/denominations/sign',
+            extra: plan.scheduledTransfers,
+          );
+          return;
+        case AccountSigningBackend.software:
+          break;
       }
       softwareStartAttempted = true;
       await ref

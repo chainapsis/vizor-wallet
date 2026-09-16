@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -114,6 +116,15 @@ class RustPaymentLinkHardwareSigningService
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
   }) async {
+    final backend = resolveAccountSigningBackend(
+      _ref
+          .read(accountProvider.notifier)
+          .accountForUuidOrThrow(sourceAccountUuid),
+      operation: AccountSigningOperation.paymentLinkFunding,
+    );
+    if (!backend.usesKeystoneProtocol) {
+      throw StateError('Keystone signing requires a Keystone account.');
+    }
     final link = await _paymentLinkService.createFundingDraft(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,

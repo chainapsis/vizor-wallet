@@ -1686,19 +1686,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return false;
   }
 
-  HardwareSignerKind? hardwareSignerKindForAccount(String uuid) {
+  AccountInfo accountForUuidOrThrow(String uuid) {
     final accounts = state.value?.accounts ?? const <AccountInfo>[];
     for (final account in accounts) {
-      if (account.uuid == uuid) return account.hardwareSignerKind;
+      if (account.uuid == uuid) return account;
     }
-    return null;
+    throw StateError('Account not found: $uuid');
   }
 
-  bool isKeystoneAccount(String uuid) =>
-      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.keystone;
-
-  bool isLedgerAccount(String uuid) =>
-      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.ledger;
+  AccountSignerKind signerKindForAccount(String uuid) =>
+      accountForUuidOrThrow(uuid).signerKind;
 
   /// Get the mnemonic for the active account.
   Future<String?> getActiveMnemonic() async {

@@ -29,6 +29,7 @@ import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/account_signing.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -1821,21 +1822,25 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
     final accountNotifier = ref.read(accountProvider.notifier);
-    final isLedger = accountNotifier.isLedgerAccount(accountUuid);
-    final isKeystone = accountNotifier.isKeystoneAccount(accountUuid);
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.send,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
+      setState(() {
+        _phase = _SendPhase.failed;
+        _error = error.userMessage;
+      });
+      return;
+    }
+    final isKeystone = signingBackend.usesKeystoneProtocol;
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
     final reviewedFeeZatoshi = _feeZatoshi!;
     final address = _addressController.text.trim();
     final memo = _effectiveMemo;
-
-    if (isLedger) {
-      setState(() {
-        _phase = _SendPhase.failed;
-        _error = 'Ledger signing is not available in this build.';
-      });
-      return;
-    }
 
     setState(() {
       _isConfirmingSend = true;

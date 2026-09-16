@@ -61,6 +61,7 @@ class _MigrationStatusContent extends StatelessWidget {
     required this.action,
     required this.isAdvancing,
     required this.onAction,
+    this.blockedMessage,
   });
 
   final rust_sync.MigrationStatus status;
@@ -68,6 +69,7 @@ class _MigrationStatusContent extends StatelessWidget {
   final _StatusAction action;
   final bool isAdvancing;
   final VoidCallback? onAction;
+  final String? blockedMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +142,7 @@ class _MigrationStatusContent extends StatelessWidget {
             action: action,
             isAdvancing: isAdvancing,
             onAction: onAction,
+            blockedMessage: blockedMessage,
             waitingForAnchor:
                 status.phase == kIronwoodMigrationReadyToMigratePhase &&
                 status.proofReady == false,
@@ -330,6 +333,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
     required this.isAdvancing,
     required this.onAction,
     required this.waitingForAnchor,
+    this.blockedMessage,
   });
 
   final bool isPreparing;
@@ -344,6 +348,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
   final bool isAdvancing;
   final VoidCallback? onAction;
   final bool waitingForAnchor;
+  final String? blockedMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -667,7 +672,20 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 ),
             ],
           ),
-          if (action == _StatusAction.none)
+          if (action == _StatusAction.none && blockedMessage != null)
+            Positioned(
+              left: 51,
+              bottom: 38,
+              width: 318,
+              child: Text(
+                blockedMessage!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            )
+          else if (action == _StatusAction.none)
             Positioned(
               left: -70,
               bottom: 16,
@@ -2064,6 +2082,7 @@ int _currentMigrationHeight(SyncState? syncState) {
 }
 
 String _privateMigrationStartErrorMessage(Object error) {
+  if (error is UnsupportedAccountSignerException) return error.userMessage;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
@@ -2082,6 +2101,7 @@ String _privateMigrationStartErrorMessage(Object error) {
 }
 
 String _privateMigrationContinueErrorMessage(Object error) {
+  if (error is UnsupportedAccountSignerException) return error.userMessage;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('secret storage') || lower.contains('unlocked session')) {

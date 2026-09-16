@@ -14,6 +14,12 @@ enum HardwareSignerKind {
   }
 }
 
+/// The signer associated with an account, including software accounts.
+///
+/// This identifies custody only. Whether a feature can use that signer is an
+/// operation-specific policy decision in `account_signing.dart`.
+enum AccountSignerKind { software, keystone, ledger }
+
 enum LedgerConnectionPreference {
   automatic,
   usb,
@@ -86,6 +92,14 @@ class AccountInfo {
   bool get isLedger =>
       isHardware && hardwareSignerKind == HardwareSignerKind.ledger;
 
+  AccountSignerKind get signerKind =>
+      switch ((isHardware, hardwareSignerKind)) {
+        (false, null) => AccountSignerKind.software,
+        (true, HardwareSignerKind.keystone) => AccountSignerKind.keystone,
+        (true, HardwareSignerKind.ledger) => AccountSignerKind.ledger,
+        _ => throw StateError('Account signer metadata is inconsistent.'),
+      };
+
   AccountInfo copyWith({
     String? name,
     int? order,
@@ -142,14 +156,23 @@ class AccountInfo {
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) {
     final isHardware = json['isHardware'] as bool? ?? false;
+    final signerValue = json['hardwareSignerKind'];
+    final parsedSigner = HardwareSignerKind.fromJson(signerValue);
+    if (signerValue != null && parsedSigner == null) {
+      throw const FormatException('Unknown hardware signer kind.');
+    }
+    if (!isHardware && parsedSigner != null) {
+      throw const FormatException(
+        'Software account cannot declare a hardware signer kind.',
+      );
+    }
     return AccountInfo(
       uuid: json['uuid'] as String,
       name: json['name'] as String,
       order: json['order'] as int? ?? 0,
       isHardware: isHardware,
       hardwareSignerKind: isHardware
-          ? HardwareSignerKind.fromJson(json['hardwareSignerKind']) ??
-                HardwareSignerKind.keystone
+          ? parsedSigner ?? HardwareSignerKind.keystone
           : null,
       birthdayHeight: json['birthdayHeight'] as int?,
       zip32AccountIndex: json['zip32AccountIndex'] as int?,

@@ -510,6 +510,34 @@ void main() {
     expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
   });
 
+  testWidgets('rejects Ledger Immediate migration before starting or routing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        activeAccountSignerKind: AccountSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Immediate'));
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ledger migration signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('keystone-immediate-sign-route'), findsNothing);
+  });
+
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
@@ -3615,6 +3643,41 @@ void main() {
     expect(find.text('keystone-batch-sign-route'), findsOneWidget);
   });
 
+  testWidgets('private status keeps Ledger signature work read-only', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            currentSigningPartIndices: const [0],
+          ),
+        ),
+        initialLocation: '/migration/private/status',
+        realStatusRoute: true,
+        activeAccountSignerKind: AccountSignerKind.ledger,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      find.text('Ledger migration signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign Batch #1'), findsNothing);
+    expect(find.text('keystone-batch-sign-route'), findsNothing);
+  });
+
   testWidgets(
     'private status waits for anchor after the final Keystone batch is signed',
     (tester) async {
@@ -5370,6 +5433,7 @@ Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  AccountSignerKind? activeAccountSignerKind,
   bool realStatusRoute = false,
   OrchardMigrationStatusGetter? statusGetter,
   bool coordinatorAdvancing = false,
@@ -5513,7 +5577,10 @@ Widget _migrationOptionsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+        _bootstrapFor(
+          activeAccountIsHardware: activeAccountIsHardware,
+          signerKind: activeAccountSignerKind,
+        ),
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
@@ -5795,6 +5862,7 @@ Widget _privateStatusHarness({
   OrchardMigrationStatusGetter? statusGetter,
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  AccountSignerKind? activeAccountSignerKind,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
@@ -5812,6 +5880,7 @@ Widget _privateStatusHarness({
     statusGetter: statusGetter,
     migrationService: migrationService,
     activeAccountIsHardware: activeAccountIsHardware,
+    activeAccountSignerKind: activeAccountSignerKind,
     coordinatorAdvancing: coordinatorAdvancing,
     coordinatorStatus: coordinatorStatus,
     syncState: syncState,
@@ -5950,6 +6019,7 @@ Widget _migrationEntryHarness({
   OrchardMigrationStatusGetter? statusGetter,
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  AccountSignerKind? activeAccountSignerKind,
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
@@ -6054,7 +6124,10 @@ Widget _migrationEntryHarness({
             },
       ),
       appBootstrapProvider.overrideWithValue(
-        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+        _bootstrapFor(
+          activeAccountIsHardware: activeAccountIsHardware,
+          signerKind: activeAccountSignerKind,
+        ),
       ),
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(syncState ?? _syncedSyncState),
@@ -6208,17 +6281,28 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-AppBootstrapState _bootstrapFor({required bool activeAccountIsHardware}) {
-  if (!activeAccountIsHardware) return _bootstrap;
+AppBootstrapState _bootstrapFor({
+  required bool activeAccountIsHardware,
+  AccountSignerKind? signerKind,
+}) {
+  final resolvedSignerKind =
+      signerKind ??
+      (activeAccountIsHardware
+          ? AccountSignerKind.keystone
+          : AccountSignerKind.software);
+  if (resolvedSignerKind == AccountSignerKind.software) return _bootstrap;
   return AppBootstrapState(
     initialLocation: _bootstrap.initialLocation,
-    initialAccountState: const AccountState(
+    initialAccountState: AccountState(
       accounts: [
         AccountInfo(
           uuid: 'account-1',
           name: 'Account 1',
           order: 0,
           isHardware: true,
+          hardwareSignerKind: resolvedSignerKind == AccountSignerKind.ledger
+              ? HardwareSignerKind.ledger
+              : HardwareSignerKind.keystone,
           profilePictureId: kDefaultProfilePictureId,
         ),
       ],

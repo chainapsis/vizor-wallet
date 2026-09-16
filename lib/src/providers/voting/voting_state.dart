@@ -9,6 +9,7 @@ import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_models.dart';
+import '../account_models.dart';
 
 /// Poll-list row consumed by the upcoming voting screens.
 class VotingRoundView {
@@ -267,7 +268,7 @@ class VotingSessionState {
   final int? walletScannedHeight;
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
-  final bool isHardwareAccount;
+  final AccountSignerKind signerKind;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
@@ -305,7 +306,7 @@ class VotingSessionState {
     this.walletScannedHeight,
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
-    this.isHardwareAccount = false,
+    this.signerKind = AccountSignerKind.software,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
@@ -337,6 +338,8 @@ class VotingSessionState {
        );
 
   bool get hasError => phase == VotingSessionPhase.error;
+
+  bool get isHardwareAccount => signerKind != AccountSignerKind.software;
 
   bool get hasConfirmedVotingEligibility =>
       eligibleWeightZatoshi != null &&
@@ -379,7 +382,7 @@ class VotingSessionState {
     int? walletSnapshotHeight,
     int? walletChainTipHeight,
     bool clearWalletSyncReadiness = false,
-    bool? isHardwareAccount,
+    AccountSignerKind? signerKind,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
@@ -422,7 +425,7 @@ class VotingSessionState {
       walletChainTipHeight: clearWalletSyncReadiness
           ? null
           : walletChainTipHeight ?? this.walletChainTipHeight,
-      isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
+      signerKind: signerKind ?? this.signerKind,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,
       voteProgress: voteProgress ?? this.voteProgress,

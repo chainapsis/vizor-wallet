@@ -28,6 +28,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/account_signing.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
@@ -131,15 +132,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isLedgerAccount(accountUuid)) {
+    late final AccountSigningBackend signingBackend;
+    try {
+      signingBackend = resolveAccountSigningBackend(
+        accountNotifier.accountForUuidOrThrow(accountUuid),
+        operation: AccountSigningOperation.shield,
+      );
+    } on UnsupportedAccountSignerException catch (error) {
       setState(() {
-        _shieldBalanceError =
-            'Ledger shielding is not available in this build.';
+        _shieldBalanceError = error.userMessage;
         _shieldBalanceErrorDetail = null;
       });
       return;
     }
-    if (accountNotifier.isKeystoneAccount(accountUuid)) {
+    if (signingBackend.usesKeystoneProtocol) {
       setState(() {
         _showKeystoneShieldSigning = true;
         _shieldBalanceError = null;
