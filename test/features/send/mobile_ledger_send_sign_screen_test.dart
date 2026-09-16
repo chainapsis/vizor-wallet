@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send
 import 'package:zcash_wallet/src/features/send/services/sapling_params.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 final _args = SendReviewArgs(
@@ -57,6 +58,37 @@ void main() {
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
   });
+
+  for (final args in [_args, _texArgs]) {
+    testWidgets(
+      'uses latest fallback after parameter wait for ${args.addressType}',
+      (tester) async {
+        final route = _Route();
+        final params = Completer<SaplingParamsStatus>();
+        final urls = <String>[];
+        await tester.pumpWidget(
+          _app(
+            args: args,
+            operationService: _FakeOperationService(),
+            signer: (_) async => [4],
+            route: route,
+            paramsLoader: () => params.future,
+            onCreate: urls.add,
+          ),
+        );
+        await tester.tap(find.text('Open signing'));
+        await tester.pump();
+        await tester.pump();
+        ProviderScope.containerOf(
+          tester.element(find.byType(MobileLedgerSendSignScreen)),
+        ).read(rpcEndpointFailoverProvider);
+        route.useFallback();
+        params.complete(_params);
+        await tester.pumpAndSettle();
+        expect(urls, ['https://fallback.example:443']);
+      },
+    );
+  }
 
   testWidgets('redacts, proves, signs, and checkpoints before handoff', (
     tester,
@@ -442,6 +474,9 @@ Widget _app({
   ValueChanged<LedgerBroadcastArgs>? onResult,
   Future<void> Function()? onDiscard,
   Future<void>? creationGate,
+  _Route? route,
+  Future<SaplingParamsStatus> Function()? paramsLoader,
+  void Function(String)? onCreate,
 }) {
   final router = GoRouter(
     routes: [
@@ -460,7 +495,7 @@ Widget _app({
         builder: (_, _) => MobileLedgerSendSignScreen(
           args: args ?? _args,
           loadWalletDbPath: () async => '/tmp/wallet.db',
-          loadSaplingParams: () async => _params,
+          loadSaplingParams: paramsLoader ?? () async => _params,
           createPczt:
               ({
                 required dbPath,
@@ -469,6 +504,7 @@ Widget _app({
                 required proposalId,
                 required sendFlowId,
               }) async {
+                onCreate?.call(lightwalletdUrl);
                 events?.add('create');
                 if (creationGate != null) await creationGate;
                 return const [1];
@@ -481,6 +517,7 @@ Widget _app({
                 required proposalId,
                 required sendFlowId,
               }) async {
+                onCreate?.call(lightwalletdUrl);
                 events?.add('create-tex');
                 return rust_sync.TexPcztPairResult(
                   pczts: [
@@ -511,6 +548,7 @@ Widget _app({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
+      if (route != null) rpcEndpointFailoverProvider.overrideWith(() => route),
       ledgerPcztSignerProvider.overrideWithValue(
         (_, pcztBytes) => signer(pcztBytes),
       ),
@@ -610,4 +648,21 @@ class _FakeOperationService
 
   @override
   Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+}
+
+class _Route extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() => RpcEndpointFailoverState(
+    primary: defaultRpcEndpointConfig('main'),
+    current: defaultRpcEndpointConfig('main'),
+    fallbackCandidates: const [],
+  );
+  void useFallback() {
+    state = state.copyWith(
+      current: const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://fallback.example:443',
+      ),
+    );
+  }
 }

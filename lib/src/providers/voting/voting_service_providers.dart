@@ -9,7 +9,7 @@ import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
 import '../../core/storage/voting_hotkey_store.dart';
 import '../../providers/account_provider.dart';
-import '../../providers/rpc_endpoint_provider.dart';
+import '../../providers/rpc_endpoint_failover_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
@@ -177,7 +177,7 @@ final votingAccountHardwareSignerKindProvider =
 
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
-  return ref.watch(rpcEndpointProvider);
+  return ref.watch(rpcEndpointFailoverProvider).current;
 });
 
 /// Starts foreground wallet sync when voting needs the wallet to catch up.

@@ -48,6 +48,7 @@ import 'package:zcash_wallet/src/features/send/widgets/sapling_params_prompt.dar
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart'
     show KeystoneActionSig, KeystoneMsgSig, KeystoneSigResult;
@@ -82,6 +83,28 @@ void main() {
     });
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
+
+  for (final type in ['unified', 'tex']) {
+    testWidgets('Ledger $type PCZT uses active fallback', (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: type),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async => [9, 1],
+          useFallback: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+      expect(rustApi.pcztUrls, ['https://fallback.example:443']);
+      expect(rustApi.createPcztCalls, 1);
+    });
+  }
 
   testWidgets('a whitespace-only memo keeps its Message row, with a '
       'placeholder', (tester) async {
@@ -2363,6 +2386,7 @@ Widget _harness(
   bool cancelScan = false,
   bool productionReviewRoute = false,
   String initialLocation = '/send/review',
+  bool useFallback = false,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation == '/send/review'
@@ -2436,6 +2460,8 @@ Widget _harness(
         addressBookRepository: addressBookRepository,
         syncNotifier: syncNotifier,
       ),
+      if (useFallback)
+        rpcEndpointFailoverProvider.overrideWith(_FallbackRoute.new),
       if (ledgerSigner != null)
         ledgerPcztSignerProvider.overrideWithValue(
           (_, pcztBytes) => ledgerSigner(pcztBytes),
@@ -2735,6 +2761,7 @@ class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   final proposedAccounts = <String>[];
+  final pcztUrls = <String>[];
   int createPcztCalls = 0;
   final createdProposalIds = <BigInt>[];
   int prepareBatchCalls = 0;
@@ -2755,6 +2782,7 @@ class _RustApiFake implements RustLibApi {
   void reset() {
     discardCalls.clear();
     proposedAccounts.clear();
+    pcztUrls.clear();
     createPcztCalls = 0;
     createdProposalIds.clear();
     prepareBatchCalls = 0;
@@ -2847,6 +2875,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
   }) async {
+    pcztUrls.add(lightwalletdUrl);
     createPcztCalls++;
     createdProposalIds.add(proposalId);
     final gate = createPcztGate;
@@ -2864,6 +2893,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
   }) async {
+    pcztUrls.add(lightwalletdUrl);
     createPcztCalls++;
     return TexPcztPairResult(
       pczts: [
@@ -2971,4 +3001,16 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
+class _FallbackRoute extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() => RpcEndpointFailoverState(
+    primary: defaultRpcEndpointConfig('main'),
+    current: const RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://fallback.example:443',
+    ),
+    fallbackCandidates: const [],
+  );
 }

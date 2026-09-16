@@ -3813,6 +3813,58 @@ void main() {
     ]);
   });
 
+  for (final signer in [
+    HardwareSignerKind.keystone,
+    HardwareSignerKind.ledger,
+  ]) {
+    test('hardware voting $signer retry reads updated RPC route', () async {
+      var endpoint = const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://primary.example:443',
+      );
+      final rust = FakeVotingRustApi(
+        keystoneDelegationRequestFailuresByCall: {
+          0: votingRustError(
+            rust_wire.VotingErrorKindView.busy,
+            message: 'busy',
+            retryable: true,
+          ),
+        },
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        readRpcEndpoint: () => endpoint,
+        hardwareSignerKind: signer,
+      );
+      addTearDown(container.dispose);
+      rust.onSigningRequest = () {
+        endpoint = const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://fallback.example:443',
+        );
+        container.invalidate(votingRpcEndpointConfigProvider);
+      };
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      if (signer == HardwareSignerKind.ledger) {
+        await notifier.prepareLedgerSigning();
+      } else {
+        await notifier.prepareKeystoneSigning();
+      }
+      expect(rust.signingRequestUrls, [
+        'https://primary.example:443',
+        'https://fallback.example:443',
+      ]);
+      expect(
+        container.read(votingSessionProvider(kRoundId)).value!.phase,
+        signer == HardwareSignerKind.ledger
+            ? VotingSessionPhase.ledgerSigning
+            : VotingSessionPhase.keystoneSigning,
+      );
+    });
+  }
+
   test('hardware voting prepares Keystone signing request', () async {
     final rust = FakeVotingRustApi();
     final hotkeyStore = FakeVotingHotkeyStore(null);
@@ -11867,6 +11919,35 @@ void main() {
     expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
 
+  test('PIR warmup selects fallback after waiting for wallet scan', () async {
+    var endpoint = const RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://primary.example:443',
+    );
+    final rust = FakeVotingRustApi();
+    final readiness = _GatedVotingWalletSyncReadinessChecker();
+    final container = _sessionContainer(
+      rust: rust,
+      http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+      readRpcEndpoint: () => endpoint,
+    );
+    addTearDown(container.dispose);
+    final warmup = container
+        .read(votingPirWarmupProvider)
+        .maybeWarmActiveRounds();
+    await readiness.firstCheck.future;
+    endpoint = const RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://fallback.example:443',
+    );
+    container.invalidate(votingRpcEndpointConfigProvider);
+    readiness.allowReady();
+    await warmup;
+    expect(rust.warmPirProofCacheLwdUrls, ['https://fallback.example:443']);
+  });
+
   test('destructive drain stops PIR warmup waiting for wallet scan', () async {
     final rust = FakeVotingRustApi();
     final readiness = _QuiescenceGatedVotingWalletSyncReadinessChecker();
@@ -12380,6 +12461,7 @@ PirSnapshotResolution _pirResolution(Uri selected, List<Uri> matches) {
 
 ProviderContainer _sessionContainer({
   VotingHomeCacheStore? homeCacheStore,
+  RpcEndpointConfig Function()? readRpcEndpoint,
   List<Override> extraOverrides = const [],
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -12393,6 +12475,7 @@ ProviderContainer _sessionContainer({
   Future<String?> Function()? activeAccountUuid,
   ProviderListenable<String?>? activeAccountUuidListenable,
   bool accountIsHardware = false,
+  HardwareSignerKind hardwareSignerKind = HardwareSignerKind.keystone,
   Set<String>? hardwareAccountUuids,
   String? accountMnemonic = kTestMnemonic,
   String accountBip39Passphrase = '',
@@ -12489,14 +12572,16 @@ ProviderContainer _sessionContainer({
       ),
       votingAccountHardwareSignerKindProvider.overrideWithValue(
         (uuid) => effectiveHardwareAccountUuids.contains(uuid)
-            ? HardwareSignerKind.keystone
+            ? hardwareSignerKind
             : null,
       ),
-      votingRpcEndpointConfigProvider.overrideWithValue(
-        const RpcEndpointConfig(
-          networkName: 'main',
-          lightwalletdUrl: 'https://lightwalletd.example:443',
-        ),
+      votingRpcEndpointConfigProvider.overrideWith(
+        (ref) =>
+            readRpcEndpoint?.call() ??
+            const RpcEndpointConfig(
+              networkName: 'main',
+              lightwalletdUrl: 'https://lightwalletd.example:443',
+            ),
       ),
       votingRecoveryServiceProvider.overrideWithValue(
         VotingRecoveryService(
@@ -14465,6 +14550,7 @@ class FakeVotingRustApi
   final warmPirProofCacheSnapshotHeights = <int>[];
   final warmPirProofCacheKeepRoots = <List<List<int>>>[];
   final warmPirProofCachePirServerUrls = <String>[];
+  final warmPirProofCacheLwdUrls = <String>[];
   final warmPirProofCacheStarted = Completer<void>();
   Completer<void>? warmPirProofCacheGate;
   Object? warmPirProofCacheError;
@@ -14500,6 +14586,8 @@ class FakeVotingRustApi
   final confirmedShares = <String>[];
   final eligibilityAccountUuids = <String>[];
   final keystoneDelegationRequestCalls = <int>[];
+  final signingRequestUrls = <String>[];
+  void Function()? onSigningRequest;
   final keystoneProofBundleCalls = <int>[];
   final keystonePirServerUrlBatches = <List<String>>[];
   final deleteSkippedBundleKeepCounts = <int>[];
@@ -15006,6 +15094,8 @@ class FakeVotingRustApi
     required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
+    signingRequestUrls.add(ctx.lightwalletdUrl);
+    onSigningRequest?.call();
     final callIndex = keystoneDelegationRequestCalls.length;
     accountUuids.add(ctx.accountUuid);
     // The ballot the round had recorded when this request was built. The SDK
@@ -15317,6 +15407,7 @@ class FakeVotingRustApi
       keepRoots.map((root) => List<int>.from(root)).toList(),
     );
     warmPirProofCachePirServerUrls.add(pirServerUrl);
+    warmPirProofCacheLwdUrls.add(lightwalletdUrl);
     if (!warmPirProofCacheStarted.isCompleted) {
       warmPirProofCacheStarted.complete();
     }

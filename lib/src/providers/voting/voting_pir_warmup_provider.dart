@@ -290,13 +290,17 @@ class VotingPirWarmupCoordinator {
         return false;
       }
 
+      // Sync/PIR discovery may have switched routes while this warmup waited.
+      final currentEndpoint = _ref.read(votingRpcEndpointConfigProvider);
+      if (currentEndpoint.networkName != endpoint.networkName) return false;
+
       final result = await _ref
           .read(votingRustApiProvider)
           .warmPirProofCache(
             dbPath: dbPath,
             accountUuid: accountUuid,
             network: endpoint.networkName,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            lightwalletdUrl: currentEndpoint.normalizedLightwalletdUrl,
             snapshotHeight: BigInt.from(round.snapshotHeight),
             pirServerUrl: _ref
                 .read(votingEndpointMapperProvider)

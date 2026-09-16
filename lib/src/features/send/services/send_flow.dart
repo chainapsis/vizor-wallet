@@ -1017,6 +1017,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 
     final canReadProviders = !secretGuard.enabled || ref.context.mounted;
     if (canReadProviders &&
+        ledger == null &&
         !broadcastComplete &&
         !broadcastExpired &&
         broadcastMessageForFallback != null) {

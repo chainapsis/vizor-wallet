@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import 'ledger_signing_service.dart' show ledgerWalletDbPathProvider;
 
@@ -106,6 +111,28 @@ final ledgerSignedOperationServiceProvider =
         network: endpoint.networkName,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         loadWalletDbPath: ref.watch(ledgerWalletDbPathProvider),
+        readBroadcastEndpoint: () =>
+            ref.read(rpcEndpointFailoverProvider).current,
+        reportBroadcastFailure: (error, attemptedEndpoint) async {
+          final switched = await ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .switchToFallbackFor(
+                error,
+                endpoint: attemptedEndpoint,
+                operation: 'ledger signed operation broadcast',
+              );
+          if (switched) {
+            unawaited(
+              ref
+                  .read(syncProvider.notifier)
+                  .restartSync()
+                  .catchError(
+                    (Object error) =>
+                        log('LedgerBroadcast: sync restart failed: $error'),
+                  ),
+            );
+          }
+        },
       );
     });
 
@@ -117,11 +144,29 @@ class RustLedgerSignedOperationService
     required this.network,
     required this.lightwalletdUrl,
     required this.loadWalletDbPath,
+    this.readBroadcastEndpoint,
+    this.reportBroadcastFailure,
   });
 
   final String network;
   final String lightwalletdUrl;
   final Future<String> Function() loadWalletDbPath;
+  // Resolve after loading the DB, on every call, including when startup recovery
+  // holds this service across multiple operations. Fixed URLs remain available
+  // to standalone integration harnesses.
+  final RpcEndpointConfig Function()? readBroadcastEndpoint;
+  final Future<void> Function(Object, RpcEndpointConfig)?
+  reportBroadcastFailure;
+
+  Future<void> _reportFailure(Object error, RpcEndpointConfig? endpoint) async {
+    if (endpoint == null) return;
+    try {
+      await reportBroadcastFailure?.call(error, endpoint);
+    } catch (reportError) {
+      // Endpoint bookkeeping must not replace a durable transaction outcome.
+      log('LedgerBroadcast: could not report RPC failure: $reportError');
+    }
+  }
 
   @override
   Future<void> checkpoint({
@@ -184,21 +229,35 @@ class RustLedgerSignedOperationService
     String? outputParamsPath,
   }) async {
     final dbPath = await loadWalletDbPath();
-    final result = await rust_ledger.ledgerBroadcastSignedOperation(
-      dbPath: dbPath,
-      lightwalletdUrl: lightwalletdUrl,
-      network: network,
-      operationId: operationId,
-      spendParamsPath: spendParamsPath,
-      outputParamsPath: outputParamsPath,
-    );
-    return LedgerSignedOperationBroadcastResult(
-      operationId: result.operationId,
-      txid: result.txid,
-      status: result.status,
-      message: result.message,
-      requiresAck: result.requiresAck,
-    );
+    final endpoint = readBroadcastEndpoint?.call();
+    if (endpoint != null && endpoint.networkName != network) {
+      throw StateError('Ledger operation belongs to a different network.');
+    }
+    try {
+      final result = await rust_ledger.ledgerBroadcastSignedOperation(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint?.normalizedLightwalletdUrl ?? lightwalletdUrl,
+        network: network,
+        operationId: operationId,
+        spendParamsPath: spendParamsPath,
+        outputParamsPath: outputParamsPath,
+      );
+      if (result.status != 'broadcasted' && result.message != null) {
+        await _reportFailure(result.message!, endpoint);
+      }
+      // Do not replay partial/unknown outcomes: Rust checkpoints them for
+      // acknowledgement and reconciliation. Only future attempts use fallback.
+      return LedgerSignedOperationBroadcastResult(
+        operationId: result.operationId,
+        txid: result.txid,
+        status: result.status,
+        message: result.message,
+        requiresAck: result.requiresAck,
+      );
+    } catch (error) {
+      await _reportFailure(error, endpoint);
+      rethrow;
+    }
   }
 
   @override

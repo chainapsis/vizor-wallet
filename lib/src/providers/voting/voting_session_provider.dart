@@ -149,9 +149,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   rust_api.ApiVotingRoundContext _apiRoundContext(
     _VotingSessionContext context,
   ) {
+    // Contexts can outlive RPC failover (including the retry delay). Keep the
+    // wallet/round fixed, but resolve the transport route for each attempt.
+    final endpoint = ref.read(votingRpcEndpointConfigProvider);
+    if (endpoint.networkName != context.network) {
+      throw StateError('Voting session belongs to a different network.');
+    }
     return rust_api.ApiVotingRoundContext(
       dbPath: context.dbPath,
-      lightwalletdUrl: context.lightwalletdUrl,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: context.network,
       roundParams: context.roundParams,
       roundName: context.round.title,

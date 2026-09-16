@@ -18,6 +18,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../core/navigation/app_back_resolver.dart';
@@ -267,7 +268,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     try {
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       if (!_isCurrentLedgerAttempt(generation)) return;
-      final endpoint = ref.read(rpcEndpointProvider);
       var saplingParams = await loadSaplingParamsStatus();
       if (!_isCurrentLedgerAttempt(generation)) return;
 
@@ -291,6 +291,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         if (!_isCurrentLedgerAttempt(generation)) return;
       }
 
+      // PCZT creation consumes the proposal; select the live route once and
+      // never retry the consumed proposal through a generic failover runner.
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final pczts = await _getOrCreateLedgerBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

@@ -10,6 +10,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
@@ -165,7 +166,6 @@ class _MobileLedgerSendSignScreenState
     try {
       final dbPath = await (widget.loadWalletDbPath ?? getWalletDbPath)();
       if (!_isCurrent(generation)) return;
-      final endpoint = ref.read(rpcEndpointProvider);
       var saplingParams =
           await (widget.loadSaplingParams ?? loadSaplingParamsStatus)();
       if (!_isCurrent(generation)) return;
@@ -187,6 +187,9 @@ class _MobileLedgerSendSignScreenState
         if (!_isCurrent(generation)) return;
       }
 
+      // PCZT creation consumes the proposal; select the live route once and
+      // never retry the consumed proposal through a generic failover runner.
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final basePczts = await _getOrCreateBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

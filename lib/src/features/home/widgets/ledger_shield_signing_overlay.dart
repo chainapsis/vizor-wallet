@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -338,10 +337,8 @@ class _LedgerShieldSigningOverlayState
       _error = null;
     });
 
-    RpcEndpointConfig? attemptedEndpoint;
     try {
       _requireOriginalContext();
-      attemptedEndpoint = ref.read(rpcEndpointFailoverProvider).current;
       final result = await ref
           .read(ledgerSignedOperationServiceProvider)
           .broadcast(
@@ -353,9 +350,6 @@ class _LedgerShieldSigningOverlayState
                 ? saplingParams?.outputPath
                 : null,
           );
-      if (result.status != 'broadcasted' && result.message != null) {
-        await _maybeSwitchBroadcastEndpoint(result.message!, attemptedEndpoint);
-      }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {
@@ -376,7 +370,6 @@ class _LedgerShieldSigningOverlayState
       await _continueOrComplete();
     } catch (e, st) {
       log('LedgerShieldConfirm._broadcast: ERROR: $e\n$st');
-      await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
       if (isTerminalLedgerSignedOperationError(e)) {
         _operationCheckpointed = false;
         _operationId = null;
@@ -500,22 +493,6 @@ class _LedgerShieldSigningOverlayState
       _saplingParamsPromptCompleter = null;
     });
     completer.complete(confirmed);
-  }
-
-  Future<void> _maybeSwitchBroadcastEndpoint(
-    Object error,
-    RpcEndpointConfig? attemptedEndpoint,
-  ) async {
-    final switched = await ref
-        .read(rpcEndpointFailoverProvider.notifier)
-        .switchToFallbackFor(
-          error,
-          endpoint: attemptedEndpoint,
-          operation: 'ledger shield broadcast',
-        );
-    if (switched) {
-      unawaited(ref.read(syncProvider.notifier).restartSync());
-    }
   }
 
   String _broadcastStatusMessage({
