@@ -72,6 +72,43 @@ void main() {
     }
   }
 
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    test('$platform reconnects using bootstrapped pairing metadata', () async {
+      final stored = _ledgerAccount(
+        preference: LedgerConnectionPreference.bluetooth,
+        deviceModel: 'Nano X',
+      );
+      final restored = mergeBootstrappedAccountInfo(
+        rustAccount: const AccountInfo(
+          uuid: 'ledger-1',
+          name: 'Ledger',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        storedAccount: AccountInfo.fromJson(stored.toJson()),
+        order: 0,
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: _FakeAccountNotifier(restored),
+        ble: ble,
+        platform: platform,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final result = await container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => fail('mobile must use Bluetooth'),
+            bluetooth: (_) async => 'signed',
+          );
+      expect(result, 'signed');
+      expect(ble.connectedDeviceIds, ['device-1']);
+    });
+  }
+
   test(
     'Automatic falls back from unavailable USB to verified Bluetooth',
     () async {

@@ -496,6 +496,13 @@ AccountInfo mergeBootstrappedAccountInfo({
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
     ),
     walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
+    ledgerConnectionPreference:
+        storedAccount?.ledgerConnectionPreference ??
+        LedgerConnectionPreference.automatic,
+    ledgerLastTransport: storedAccount?.ledgerLastTransport,
+    ledgerDeviceId: storedAccount?.ledgerDeviceId,
+    ledgerDeviceName: storedAccount?.ledgerDeviceName,
+    ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
   );
 }
 
