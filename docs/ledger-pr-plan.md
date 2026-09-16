@@ -1,7 +1,8 @@
 # Ledger 코어·UI PR 분리 계획
 
-상태: 준비·모음 draft 생성 단계. 이번 실행은 변경 귀속표와 문서 기반 모음 draft 두 개까지다.
-기능별 PR 생성·리뷰·병합은 다음 단계에서 하나씩 진행한다.
+상태: C01은 코어 모음에 병합되었고 C02는 signer 구분 리팩토링 중이다.
+사용자가 독립 플랫폼 PR의 병렬 준비를 승인했다. 현재 직접 병합 가능 여부와
+선행 의존성은 [리뷰 트랙 분류](ledger-review-tracks.md)를 따른다.
 
 ## 1. 목표와 기준점
 
@@ -73,10 +74,11 @@ prepare/sign/proof/complete/discard 계약은 C08 공통 signer와 C09의 차단
   squash로 SHA가 달라졌다면 단순 base 변경에 그치지 않고 후속 고유 커밋만 재배치한다.
 - rebase/force-push 전에 fetch, 원격 SHA와 복구 ref를 기록하고 명시적 lease를 사용한다.
   리뷰 중인 PR을 일괄 재작성하지 않는다.
-- 기능 PR은 **한 번에 하나**만 연다. 리뷰 → 수정 → 모음 브랜치 병합을 마친 뒤
-  갱신된 모음 브랜치에서 다음 PR을 연다. 현재 승인 범위는 모음 draft 두 개까지다.
-- 독립 영역이라 병렬 리뷰가 가능하면 대상 PR·겹치는 파일·의존 관계·검증 범위를
-  먼저 사용자에게 제안한다. 사용자가 확인하고 승인하기 전에는 추가 기능 PR을 열지 않는다.
+- 기능 PR은 리뷰 → 수정 → 모음 브랜치 병합 순서를 유지한다. 사용자가 승인한
+  C04~C07 플랫폼 트랙은 병렬 draft 준비와 리뷰가 가능하다. C06 공용 native
+  protocol을 C06a로 먼저 분리하고 Windows C06b와 Linux C07은 그 위에서 분기한다.
+- 직접 의존이 없는 PR은 코어 모음을 대상으로 한다. 선행 코드가 필요한 PR만
+  해당 기능 브랜치를 대상으로 두고, 선행 병합 후 고유 커밋만 재배치한다.
 - 서브에이전트의 읽기 전용 분류/검토는 기능 PR의 병렬 개설과 별개다.
   공유 파일 수정과 codegen은 같은 작업 디렉터리에서 동시에 수행하지 않는다.
 
@@ -139,7 +141,8 @@ prepare/sign/proof/complete/discard 계약은 C08 공통 signer와 C09의 차단
 
 ### 04 — Add Ledger Bluetooth transport on Apple platforms
 
-- **의존:** 03. 범위: `ios/Runner/LedgerMobileHandler.swift`, macOS 공유 연결,
+- **의존:** native 코드의 컴파일/리뷰는 코어 모음을 직접 대상으로 한다.
+  앱에서 사용할 때의 Dart 호출 계약은 03이 제공한다. 범위: `ios/Runner/LedgerMobileHandler.swift`, macOS 공유 연결,
   native 등록·권한·entitlement·Swift package 설정 및 native tests.
 - **동작/제약:** iOS/macOS 검색·pairing·앱 전환 후 재연결. SDK가 중단할 수 없는
   exchange는 결과를 한 번만 완료하고 실제 callback까지 native slot을 유지.
@@ -148,7 +151,8 @@ prepare/sign/proof/complete/discard 계약은 C08 공통 signer와 C09의 차단
 
 ### 05 — Add Ledger Bluetooth transport on Android
 
-- **의존:** 03. 범위: `LedgerMobileHandler.kt`, MainActivity, Gradle/manifest, tests.
+- **의존:** native 코드의 컴파일/리뷰는 코어 모음을 직접 대상으로 한다.
+  앱에서 사용할 때의 Dart 호출 계약은 03이 제공한다. 범위: `LedgerMobileHandler.kt`, MainActivity, Gradle/manifest, tests.
 - **동작/제약:** DMK 연결·APDU 교환, scan/connect 권한, GATT teardown 확인 후 재사용.
   API 30 하한이 전체 앱에 적용되는 점을 본문에 명시.
 - **완료:** 취소·disconnect·재연결 직렬화, nullable 기기 이름 오류,
@@ -156,15 +160,17 @@ prepare/sign/proof/complete/discard 계약은 C08 공통 signer와 C09의 차단
 
 ### 06 — Add Ledger Bluetooth transport on Windows
 
-- **의존:** 03. 범위: `native/ledger/*`, Windows handler·등록·빌드 설정·protocol tests.
+- **분리:** C06a는 `native/ledger/*`와 transport-neutral protocol tests를 코어 모음에
+  직접 제공한다. C06b는 Windows handler·등록·빌드 설정을 C06a 위에 둔다.
+- **의존:** native adapter는 C06a만 필요하고, 앱에서 사용할 때의 Dart 호출 계약은 03이다.
 - **동작/제약:** 공용 UUID/framing/MTU/operation gate, WinRT GATT와 authenticated pairing.
 - **완료:** framing 경계, MTU, generation·취소·notification 정리 검증과 Windows 빌드.
   VM/동글 결과를 Windows 전체 adapter 지원 증거로 확대하지 않는다.
 
 ### 07 — Add Ledger Bluetooth transport on Linux
 
-- **의존:** 03·06의 공용 native protocol. Windows adapter 자체에는 의존하지 않는다.
-  먼저 분리해야 할 필요가 생기면 06의 공용 헤더 부분만 선행한다.
+- **의존:** C06a의 공용 native protocol만 선행한다. Windows adapter C06b에는
+  의존하지 않으며 둘은 병렬 리뷰한다. 앱에서 사용할 때의 Dart 호출 계약은 03이다.
 - **범위:** BlueZ transport/handler, GIO·CMake, fake BlueZ tests.
 - **동작/제약:** 명시적 pairing 코드 확인, 대상/service 제한, GATT write 및 notification,
   취소 worker와 물리 disconnect 완료 확인. 기존 bond를 삭제하지 않는다.
@@ -338,7 +344,7 @@ skipped, blocked, or unverified cases.
 - [x] 완성본 미커밋 작업 커밋·푸시: `fbe518599`.
 - [x] 코어 범위, UI 경계, PR 순서·완료 기준 정의.
 - [x] 실행 시작 시 fetch·기준 SHA 확인 및 전체 변경 귀속표 작성: [inventory](ledger-change-inventory.md).
-- [ ] core/UI 문서 seed와 모음 draft 두 개 생성. GitHub 생성 후 각 모음 PR 본문에서 상태와 링크 관리.
+- [x] core/UI 모음 draft 생성: #693 / #694. 기능 상태와 링크는 모음 PR 본문과 리뷰 트랙 분류에서 관리.
 - [ ] 01부터 기능별 이관·검증·리뷰 진행.
 - [ ] 최종 동작 대조와 검증 표 완성.
 
