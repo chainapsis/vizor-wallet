@@ -12,31 +12,36 @@ private final class LedgerMobileTransportOwnership {
   static let shared = LedgerMobileTransportOwnership()
 
   private let lock = NSLock()
-  private var owners: [ObjectIdentifier: ObjectIdentifier] = [:]
+  private var owners: [ObjectIdentifier: AnyObject] = [:]
 
   func claim(transport: BleTransportProtocol, owner: AnyObject) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     let transportID = ObjectIdentifier(transport as AnyObject)
-    let ownerID = ObjectIdentifier(owner)
-    guard owners[transportID] == nil || owners[transportID] == ownerID else {
+    guard owners[transportID] == nil || owners[transportID] === owner else {
       return false
     }
-    owners[transportID] = ownerID
+    owners[transportID] = owner
     return true
   }
 
   func owns(transport: BleTransportProtocol, owner: AnyObject) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    return owners[ObjectIdentifier(transport as AnyObject)] == ObjectIdentifier(owner)
+    return owners[ObjectIdentifier(transport as AnyObject)] === owner
+  }
+
+  func owner(transport: BleTransportProtocol) -> AnyObject? {
+    lock.lock()
+    defer { lock.unlock() }
+    return owners[ObjectIdentifier(transport as AnyObject)]
   }
 
   func release(transport: BleTransportProtocol, owner: AnyObject) {
     lock.lock()
     defer { lock.unlock() }
     let transportID = ObjectIdentifier(transport as AnyObject)
-    guard owners[transportID] == ObjectIdentifier(owner) else { return }
+    guard owners[transportID] === owner else { return }
     owners.removeValue(forKey: transportID)
   }
 }
@@ -64,6 +69,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var transportCallbackPending = false
   private var transportCallbackResult: FlutterResult?
   private var closeDisconnectPending = false
+  private var closeRetryScheduled = false
+  private var automaticCloseRetryUsed = false
   private var isClosing = false
 
   init(transport: BleTransportProtocol? = nil) {
@@ -153,6 +160,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func finishClosing(_ transport: BleTransportProtocol) {
+    guard LedgerMobileTransportOwnership.shared.owns(transport: transport, owner: self) else {
+      return
+    }
     guard exchangeTask == nil, !transportCallbackPending, !closeDisconnectPending else {
       return
     }
@@ -163,8 +173,26 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     closeDisconnectPending = true
     transport.disconnect { [self] error in
       closeDisconnectPending = false
-      guard error == nil || !transport.isConnected else { return }
+      guard error == nil || !transport.isConnected else {
+        if !automaticCloseRetryUsed {
+          automaticCloseRetryUsed = true
+          scheduleCloseRetry(transport)
+        }
+        return
+      }
       LedgerMobileTransportOwnership.shared.release(transport: transport, owner: self)
+    }
+  }
+
+  private func scheduleCloseRetry(_ transport: BleTransportProtocol) {
+    guard isClosing, !closeRetryScheduled,
+      LedgerMobileTransportOwnership.shared.owns(transport: transport, owner: self)
+    else { return }
+    closeRetryScheduled = true
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 100_000_000)
+      closeRetryScheduled = false
+      finishClosing(transport)
     }
   }
 
@@ -192,6 +220,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
     let transport = transportStorage ?? BleTransport.shared
     guard LedgerMobileTransportOwnership.shared.claim(transport: transport, owner: self) else {
+      (LedgerMobileTransportOwnership.shared.owner(transport: transport) as? LedgerMobileHandler)?
+        .scheduleCloseRetry(transport)
       result(pendingExchangeError())
       return nil
     }

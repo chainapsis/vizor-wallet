@@ -259,6 +259,9 @@ final class LedgerMobileHandlerTests: XCTestCase {
     connect(replacementHandler)
     XCTAssertEqual(transport.connects, 2)
     XCTAssertTrue(transport.isConnected)
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    XCTAssertEqual(transport.disconnects, 1)
+    XCTAssertTrue(transport.isConnected)
   }
 
   @MainActor
@@ -309,6 +312,34 @@ final class LedgerMobileHandlerTests: XCTestCase {
     XCTAssertEqual(transport.connects, 1)
 
     transport.completeDisconnect()
+    connect(replacementHandler)
+    XCTAssertEqual(transport.connects, 2)
+    XCTAssertTrue(transport.isConnected)
+  }
+
+  @MainActor
+  func testCloseRetriesDisconnectFailureBeforeReleasingReplacement() async {
+    let transport = PendingLedgerTransport()
+    transport.disconnectFailures = 1
+    var oldHandler: LedgerMobileHandler? = LedgerMobileHandler(transport: transport)
+    connect(oldHandler!)
+    oldHandler?.close()
+    oldHandler = nil
+
+    let replacementHandler = LedgerMobileHandler(transport: transport)
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.connects, 1)
+    XCTAssertTrue(transport.isConnected)
+
+    let deadline = Date().addingTimeInterval(2)
+    while transport.disconnects < 2 && Date() < deadline {
+      await Task.yield()
+    }
+    XCTAssertEqual(transport.disconnects, 2)
+    XCTAssertFalse(transport.isConnected)
+
     connect(replacementHandler)
     XCTAssertEqual(transport.connects, 2)
     XCTAssertTrue(transport.isConnected)
@@ -684,6 +715,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var connects = 0
   var deferConnectCompletion = false
   var deferDisconnectCompletion = false
+  var disconnectFailures = 0
   var onExchange: (() -> Void)?
   private var pending: CheckedContinuation<String, Error>?
   private var disconnectedCallback: EmptyResponse?
@@ -725,6 +757,12 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func disconnect(completion: OptionalBleErrorResponse?) {
     XCTAssertNil(pending, "Must not enter the SDK's pending-disconnect wait")
     disconnects += 1
+    if disconnectFailures > 0 {
+      disconnectFailures -= 1
+      isConnected = true
+      completion?(BleTransportError.connectError(description: "Disconnect failed"))
+      return
+    }
     isConnected = false
     if deferDisconnectCompletion {
       deferredDisconnectCompletion = completion
