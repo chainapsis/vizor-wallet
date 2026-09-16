@@ -293,6 +293,28 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testReplacementHandlerWaitsForOldPendingPublicDisconnect() async {
+    let transport = PendingLedgerTransport()
+    transport.deferDisconnectCompletion = true
+    var oldHandler: LedgerMobileHandler? = LedgerMobileHandler(transport: transport)
+    connect(oldHandler!)
+    oldHandler?.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) { _ in }
+    oldHandler?.close()
+    oldHandler = nil
+
+    let replacementHandler = LedgerMobileHandler(transport: transport)
+    connect(replacementHandler) { value in
+      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+    }
+    XCTAssertEqual(transport.connects, 1)
+
+    transport.completeDisconnect()
+    connect(replacementHandler)
+    XCTAssertEqual(transport.connects, 2)
+    XCTAssertTrue(transport.isConnected)
+  }
+
+  @MainActor
   func testUfvkKeepsNormalMultiCommandResponses() async {
     let transport = PendingLedgerTransport()
     let handler = LedgerMobileHandler(transport: transport)
