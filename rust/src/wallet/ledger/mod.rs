@@ -20,8 +20,10 @@ pub(crate) use operations::{
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod transport;
 
-/// Conservative per-approval limit supported by our current Ledger serializer.
-pub(crate) const MAX_SHIELDING_INPUTS: usize = 10;
+// Ledger Zcash app 3.9.3 limits. Shielded action limits apply per pool.
+pub(crate) const MAX_TRANSPARENT_INPUTS: usize = 32;
+pub(crate) const MAX_TRANSPARENT_OUTPUTS: usize = 10;
+pub(crate) const MAX_SHIELDED_ACTIONS: usize = 32;
 
 use std::{
     sync::{

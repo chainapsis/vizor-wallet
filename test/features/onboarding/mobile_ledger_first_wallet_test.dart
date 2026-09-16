@@ -21,7 +21,7 @@ const _account = LedgerDeviceAccount(
   ufvk: 'ledger-ufvk',
   seedFingerprint: [1, 2, 3],
   accountIndex: 7,
-  appVersion: '3.9.2',
+  appVersion: '3.9.3',
   transport: LedgerConnectionTransport.bluetooth,
   device: LedgerBleDevice(id: 'ledger-id', name: 'My Ledger', model: 'Nano X'),
 );

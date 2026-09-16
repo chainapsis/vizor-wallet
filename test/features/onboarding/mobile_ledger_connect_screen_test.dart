@@ -377,7 +377,7 @@ void main() {
         ufvk: 'uview-100',
         seedFingerprint: [1, 2, 3],
         accountIndex: 100,
-        appVersion: '3.9.2',
+        appVersion: '3.9.3',
       ),
     );
     await tester.pumpAndSettle();
@@ -750,7 +750,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> currentApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() {
@@ -791,7 +791,7 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<LedgerMobileAppInfo> requestOpenZcashApp() async =>
-      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.2');
+      const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
 
   @override
   Future<void> stopDiscovery() async {

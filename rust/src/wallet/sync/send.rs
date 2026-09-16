@@ -1060,7 +1060,7 @@ fn ledger_shielding_progress(
         .map_err(|e| e.to_string())?;
     let mut progress = LedgerShieldingProgress {
         input_count: 0,
-        input_limit: crate::wallet::ledger::MAX_SHIELDING_INPUTS as u32,
+        input_limit: crate::wallet::ledger::MAX_TRANSPARENT_INPUTS as u32,
         below_threshold: false,
     };
     if !balances
@@ -1078,7 +1078,7 @@ fn ledger_shielding_progress(
     }
     let round_value = outputs
         .iter()
-        .take(crate::wallet::ledger::MAX_SHIELDING_INPUTS)
+        .take(crate::wallet::ledger::MAX_TRANSPARENT_INPUTS)
         .try_fold(Zatoshis::ZERO, |sum, output| sum + output.txout().value())
         .ok_or("Ledger shielding value overflow")?;
     progress.below_threshold = round_value < shielding_threshold()?;
@@ -3452,7 +3452,7 @@ fn build_ledger_shielding_round(
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
     let mut outputs = ledger_shielding_outputs(db, addresses)?;
-    outputs.truncate(crate::wallet::ledger::MAX_SHIELDING_INPUTS);
+    outputs.truncate(crate::wallet::ledger::MAX_TRANSPARENT_INPUTS);
     let selected = outputs
         .iter()
         .try_fold(Zatoshis::ZERO, |sum, o| sum + o.txout().value())

@@ -170,14 +170,14 @@ void main() {
         ),
         readiness: const LedgerAppReadinessState.failed(
           failure: LedgerAppReadinessFailure.unsupportedVersion,
-          message: 'Update the Ledger Zcash app to version 3.9.2 or newer.',
+          message: 'Update the Ledger Zcash app to version 3.9.3 or newer.',
         ),
       ),
     );
 
     expect(find.text('Ledger needs attention'), findsOneWidget);
     expect(
-      find.text('Update the Ledger Zcash app to version 3.9.2 or newer.'),
+      find.text('Update the Ledger Zcash app to version 3.9.3 or newer.'),
       findsOneWidget,
     );
     expect(find.text('Try again'), findsOneWidget);

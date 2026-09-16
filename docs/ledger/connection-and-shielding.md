@@ -41,7 +41,7 @@ locked-device and app-unavailable failures remain distinct.
 
 ## Consecutive shielding approvals
 
-Each approval still uses at most **10 transparent inputs**. The UI keeps one
+Each approval uses at most **32 transparent inputs**. The UI keeps one
 shielding session open and requests a new approval after each successful
 checkpoint and broadcast. Every round is a separate transaction and pays its own
 network fee. The displayed number of rounds is recalculated from currently
@@ -91,10 +91,11 @@ It uses the real pinned BLE library and Flutter framework in a temporary Swift
 package, without launching the wallet app.
 
 Automated tests use fake method channels, fake Ledger responses and local wallet
-DBs. Physical macOS USB/BLE and mobile BLE verification still requires a device:
+DBs. Physical macOS USB/BLE and mobile BLE verification still requires a device
+running Ledger Zcash 3.9.3 or newer:
 consecutive approvals, rejection/cancellation, reconnect, invalid pairing and
 TEX two-transaction execution. Automated coverage is not evidence of firmware or
-real-network compatibility. No 32-input limit expansion is included.
+real-network compatibility.
 
 ## Desktop USB platforms
 

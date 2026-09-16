@@ -48,7 +48,7 @@ void main() {
           await service.cancelSigning();
         }
         pending.complete(
-          method == 'connect' ? null : {'name': 'Zcash', 'version': '3.9.2'},
+          method == 'connect' ? null : {'name': 'Zcash', 'version': '3.9.3'},
         );
         await expectation;
         expect(service.connectedDeviceId, isNull);
