@@ -67,6 +67,13 @@ void main() {
           zip32Index: 0,
           birthdayHeight: 0,
         ),
+        () => account.importLedgerAccount(
+          name: 'Unused',
+          ufvk: '',
+          seedFingerprint: [],
+          zip32Index: 0,
+          birthdayHeight: 0,
+        ),
         () => account.importLinkedWalletAccounts(
           network: 'main',
           accountsToImport: [],

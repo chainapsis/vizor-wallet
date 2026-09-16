@@ -1412,6 +1412,34 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? ledgerDeviceId,
     String? ledgerDeviceName,
     String? ledgerDeviceModel,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importLedgerAccount(
+          name: name,
+          ufvk: ufvk,
+          seedFingerprint: seedFingerprint,
+          zip32Index: zip32Index,
+          birthdayHeight: birthdayHeight,
+          profilePictureId: profilePictureId,
+          connectionTransport: connectionTransport,
+          ledgerDeviceId: ledgerDeviceId,
+          ledgerDeviceName: ledgerDeviceName,
+          ledgerDeviceModel: ledgerDeviceModel,
+        ),
+      );
+
+  Future<void> _importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
   }) async {
     try {
       // A first mobile account requires a prepared passcode session. Existing
