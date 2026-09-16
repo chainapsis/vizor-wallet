@@ -1048,6 +1048,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> handleLedgerSignatures(List<LedgerVotingSignature> signatures) {
+    // Cancellation releases the interactive job guard immediately. Keep a
+    // separate drain lease until an already-started signature write has ended.
+    final release = ref
+        .read(votingShareTrackingRegistryProvider)
+        .beginBackgroundWork(accountUuid: _sessionAccountUuid);
+    if (release == null) {
+      return Future.error(
+        StateError('Voting work is paused for wallet changes.'),
+      );
+    }
     return _enqueue(() async {
       final current = await future;
       final request = current.ledgerSigningRequest;
@@ -1100,10 +1110,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
+      _throwIfContextStale(context, 'ledger-signature-store-complete');
       // Rebuild from durable storage so retries and restarts always resume at
       // the first unsigned bundle.
       await _prepareHardwareSigningUnlocked(HardwareSignerKind.ledger);
-    }, cleanupProcessStateOnError: false);
+    }, cleanupProcessStateOnError: false).whenComplete(release);
   }
 
   Future<void> skipRemainingKeystoneBundles() {

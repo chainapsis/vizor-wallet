@@ -44,6 +44,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_registry_provider.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'fake_rust_api_shapes.dart' as rust_api;
@@ -371,6 +372,78 @@ void main() {
     );
     expect(find.text('Delivering your responses'), findsOneWidget);
   });
+
+  testWidgets(
+    'cancelling Ledger approval drains an in-flight signature write',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final recovery = _MutableVotingRecoveryApi()..state = _recoveryState();
+      final storeGate = Completer<void>();
+      var storeStarted = false;
+      final rust = _VotingStatusRustApi(recovery)
+        ..beforeStoreKeystoneSignatures = () async {
+          storeStarted = true;
+          await storeGate.future;
+        };
+      final container = _statusContainer(
+        accountOverride: _LedgerAccountNotifier.new,
+        activeAccountUuid: () async => 'ledger-1',
+        accountIsHardware: true,
+        hardwareAccountUuids: const {'ledger-1'},
+        recoveryApi: recovery,
+        rust: rust,
+        hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+        overrides: [
+          ledgerVotingPcztSignerProvider.overrideWithValue(
+            (_, _) async => [
+              LedgerVotingSignature(
+                pool: 1,
+                actionIndex: 0,
+                signature: List.filled(64, 1),
+              ),
+            ],
+          ),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+        ],
+      );
+      addTearDown(container.dispose);
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'ledger-1');
+      container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(),
+        ),
+      );
+      await _pumpUntilCondition(tester, () => storeStarted, attempts: 100);
+      await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .cancelLedgerSigning(key);
+      final registry = container.read(votingShareTrackingRegistryProvider);
+      var drained = false;
+      final draining = registry.quiesceAndDrain(accountUuid: 'ledger-1').then((
+        _,
+      ) {
+        drained = true;
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(
+        drained,
+        isFalse,
+        reason: 'Account deletion must wait for the pending Rust write',
+      );
+      storeGate.complete();
+      await _pumpUntilCondition(tester, () => drained, attempts: 100);
+      await draining;
+      registry.resume(accountUuid: 'ledger-1');
+      expect(
+        container.read(votingSubmissionJobProvider(key)).status,
+        VotingSubmissionJobStatus.error,
+      );
+    },
+  );
 
   testWidgets('Ledger approval stays visible after partial ballot progress', (
     tester,
@@ -5699,6 +5772,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
   final BigInt? setupWeightPerBundle;
   final BigInt? shareTrackingDelaySeconds;
   final Map<int, String> keystoneMemoZecByBundle;
+  Future<void> Function()? beforeStoreKeystoneSignatures;
   @override
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int _persistedBundleCount;
@@ -6057,6 +6131,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi
     required String roundId,
     required List<rust_api.ApiKeystoneSignatureInput> signatures,
   }) async {
+    await beforeStoreKeystoneSignatures?.call();
     var inserted = 0;
     var alreadyPresent = 0;
     for (final signature in signatures) {
