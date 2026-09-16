@@ -104,3 +104,35 @@ host is still waiting on that exchange; it does **not** by itself distinguish
 radio failure, device computation, or power failure. `review_boundary` precedes
 both final validation and device approval. Metadata alone cannot prove heap or
 stack exhaustion, which may require an instrumented device-app build.
+
+## App-query recovery (2026-09-16)
+
+The supplied Android trace stopped at `currentApp` / `GetAppAndVersionCommand`,
+before the signing APDU plan. It does not establish a device reboot or a Zcash
+verification-memory failure. Stax working is useful comparison evidence, but
+installed OS/app versions and connection-start logs are still needed.
+
+App-name/version queries now have a 10-second deadline on Android and Apple.
+Opening-app approval and transaction review do not use this short deadline.
+Timeout/cancellation invalidates the old request and retires its native session;
+new requests remain excluded until teardown completes. Android also quarantines
+failed disconnects across Activity recreation. Apple uses the pinned BLE 1.0.1
+source in `third_party/ledger_ble_transport`, patched to abort the physical link
+and resolve a pending exchange on disconnect. A late response cannot publish a
+cancelled result. Dart clears cancelled connection metadata and resets native
+state before reconnecting. SDK raw APDU logging is disabled.
+
+Physical-device verification still required:
+
+1. With Zcash open, repeat the Android flow and capture `[LedgerTrace]` output.
+   A stalled app query should leave preparation after about 10 seconds.
+2. After disconnect cleanup, retry without restarting Vizor. A fresh connection
+   should reach `app_query_end` and then the signing plan, or return a concrete
+   connection error. Signing commands are never automatically replayed.
+3. Repeat on iOS, including turning the Ledger off during the query, cancelling,
+   reconnecting, and leaving an actual approval prompt open longer than 10 seconds.
+4. Compare Nano X and Stax with phone, app/OS versions, and transaction held fixed.
+
+If the OS never confirms physical disconnect, exclusion intentionally remains:
+we must not overlap a replacement request with an unretired connection. That is a
+separate OS/transport recovery failure, not permission to release the slot early.

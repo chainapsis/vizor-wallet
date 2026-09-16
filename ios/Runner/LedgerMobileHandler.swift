@@ -77,6 +77,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var signingReadyAt: Date?
 
   private var exchangeTask: Task<Void, Never>?
+  private var queryDeadlineTask: Task<Void, Never>?
+  private let appQueryTimeout: UInt64
+  private var queryRequiresDisconnect = false
   private var exchangeTaskGeneration: Int?
   private var exchangeResult: FlutterResult?
   private var exchangeGeneration = 0
@@ -91,7 +94,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var automaticCloseRetryUsed = false
   private var isClosing = false
 
-  init(transport: BleTransportProtocol? = nil) {
+  init(transport: BleTransportProtocol? = nil, appQueryTimeout: UInt64 = 10_000_000_000) {
+    self.appQueryTimeout = appQueryTimeout
     transportStorage = transport
     super.init()
   }
@@ -641,6 +645,20 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func readCurrentApp() async throws -> LedgerMobileAppInfo {
+    let generation = exchangeGeneration
+    queryDeadlineTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      do { try await Task.sleep(nanoseconds: appQueryTimeout) } catch { return }
+      guard generation == exchangeGeneration, exchangeResult != nil else { return }
+      trace("app_query_timeout")
+      queryRequiresDisconnect = true
+      connectedDevice = nil
+      cancelExchangeOperation(code: "disconnected", message: "Ledger did not respond. Reconnect and try again.")
+    }
+    defer {
+      queryDeadlineTask?.cancel()
+      queryDeadlineTask = nil
+    }
     let response = try await exchangeRaw([0xb0, 0x01, 0x00, 0x00])
     return try LedgerMobileProtocol.appInfo(from: response)
   }
@@ -767,6 +785,14 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
           exchangeTask = nil
           exchangeTaskGeneration = nil
           exchangeRecoversFromDisconnect = false
+          // A response can win the race with abort before the Swift task resumes.
+          // Retire that link too; the timed-out request must never leave a reusable
+          // connection merely because its callback arrived a little late.
+          if queryRequiresDisconnect, let transportStorage {
+            queryRequiresDisconnect = false
+            cancelledConnectionNeedsDisconnect = transportStorage.isConnected
+            drainCancelledConnection(transportStorage)
+          }
         }
       }
 
@@ -818,10 +844,11 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     exchangeGeneration += 1
     exchangeResult = nil
     trace("cancel code=\(code) exchange_pending=\(exchangeTask != nil)")
-    // BleTransport 1.0.1 cannot interrupt an exchange already waiting for a
-    // device response. Keep the task occupied until that callback drains, but
-    // invalidate its generation now so no late response reaches Dart.
+    // Keep ownership until the patched transport confirms physical disconnect
+    // and settles its exchange callback. Never release the slot on UI timeout.
+    queryDeadlineTask?.cancel()
     exchangeTask?.cancel()
+    transportStorage?.abortExchange()
     pending(flutterError(code: code, message: message))
   }
 

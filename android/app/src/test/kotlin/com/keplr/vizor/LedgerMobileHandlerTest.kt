@@ -84,6 +84,70 @@ class LedgerMobileHandlerTest {
         handler.handle(MethodCall(method, mapOf("deviceId" to id)), it)
     }
 
+    @Test fun appQueryTimeoutRetiresSessionBeforeRetryCanDispatch() = runTest(dispatcher) {
+        var cleanup: Continuation<Unit>? = null
+        var queries = 0
+        useReadiness(query = {
+            queries++
+            if (queries == 1) awaitCancellation()
+            DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2"))
+        }, disconnect = { suspendCoroutine { cleanup = it } })
+        val first = call("currentApp")
+        runCurrent()
+        advanceTimeBy(LedgerMobileHandler.APP_QUERY_TIMEOUT_MS)
+        runCurrent()
+        assertEquals("disconnected", first.error)
+        assertEquals(1, first.completions)
+        assertNotNull(cleanup)
+        assertEquals("busy", call("currentApp").error)
+        assertEquals(1, queries)
+        cleanup!!.resume(Unit)
+        runCurrent()
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
+        assertEquals(2, queries)
+    }
+
+    @Test fun failedSessionCleanupMustBeRetriedBeforeAnyQuery() = runTest(dispatcher) {
+        var cleanups = 0
+        var queries = 0
+        useReadiness(query = {
+            queries++
+            if (queries == 1) awaitCancellation()
+            DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2"))
+        }, disconnect = {
+            cleanups++
+            if (cleanups < 3) throw IllegalStateException("cleanup failed")
+        })
+        call("currentApp")
+        runCurrent()
+        call("cancelSigning")
+        runCurrent()
+        val blocked = call("currentApp")
+        runCurrent()
+        assertEquals("disconnected", blocked.error)
+        assertEquals(1, queries)
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(2, queries)
+        assertEquals(3, cleanups)
+    }
+
+    @Test fun openingAppApprovalDoesNotUseQueryDeadline() = runTest(dispatcher) {
+        useReadiness(open = { flow { awaitCancellation() } })
+        val pending = call("openZcashApp")
+        runCurrent()
+        advanceTimeBy(LedgerMobileHandler.APP_QUERY_TIMEOUT_MS * 3)
+        runCurrent()
+        assertEquals(0, pending.completions)
+        call("cancelSigning")
+        runCurrent()
+        assertEquals("cancelled", pending.error)
+    }
+
     @Test fun freshHandlerRediscoversOnlyTheSavedBluetoothDevice() = runTest(dispatcher) {
         val other = saved.copy(uid = "another-id")
         val usb = saved.copy(connectivityType = ConnectivityType.Usb)

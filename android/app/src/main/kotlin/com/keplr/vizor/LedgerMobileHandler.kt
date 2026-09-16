@@ -37,6 +37,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -351,7 +353,7 @@ class LedgerMobileHandler(
             // Recover that target (or a session inherited from an old handler)
             // only after the previous SDK job has drained.
             val target = cleanupDevice ?: device ?: dmk.getConnectedDevices().singleOrNull()
-            if (target != null) {
+            if (target != null && !(previous?.retiredSession == true && previous.device?.uid == target.uid)) {
                 cleanupDevice = target
                 dmk.disconnectDevice(target)
                 cleanupRequestedFor = target.uid
@@ -370,8 +372,13 @@ class LedgerMobileHandler(
 
     private suspend fun queryApp(device: ConnectedDevice, request: DeviceRequest) {
         currentCoroutineContext().ensureActive()
-        val app = dmk.executeCommand(device.uid, GetAppAndVersionCommand())
+        request.device = device
+        trace("app_query_start")
+        val app = withTimeout(APP_QUERY_TIMEOUT_MS) {
+            dmk.executeCommand(device.uid, GetAppAndVersionCommand())
+        }
         currentCoroutineContext().ensureActive()
+        trace("app_query_end")
         when (app) {
             is DeviceOperationResult.Success -> request.success(app.value.asFlutterMap())
             is DeviceOperationResult.Failure -> operationFailure(request, app.reason)
@@ -381,6 +388,7 @@ class LedgerMobileHandler(
     private fun openZcashApp(result: MethodChannel.Result) {
         launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
+            request.device = device
             val terminal = dmk.executeDeviceAction(device.uid, OpenApplicationDeviceAction("Zcash"))
                 .first { it is DeviceActionResult.Success || it is DeviceActionResult.Failure }
             currentCoroutineContext().ensureActive()
@@ -501,9 +509,21 @@ class LedgerMobileHandler(
                 if (cleanup) sdkJob?.join()
                 scan?.join()
                 currentCoroutineContext().ensureActive()
+                invalidSessions[dmk]?.let { retireSession(it) }
+                if (invalidSessions[dmk] != null) {
+                    request.error("disconnected", "Could not reset the Ledger connection. Try again.", null)
+                    return@launch
+                }
+                currentCoroutineContext().ensureActive()
                 block(request)
+            } catch (_: TimeoutCancellationException) {
+                request.error("disconnected", "Ledger did not respond. Reconnect and try again.", null)
+                retireSession(request.device)
+                request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (_: CancellationException) {
                 request.cancelResult()
+                retireSession(request.device)
+                request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (error: LedgerDiscoveryException) {
                 request.error(error.code, error.message, null)
             } catch (_: SecurityException) {
@@ -523,6 +543,26 @@ class LedgerMobileHandler(
         job.start()
     }
 
+    // DMK queues APDUs in its own session scope. Cancelling our await does not
+    // cancel that queue. Keep sdkJobs owned until disconnect releases the SDK
+    // session, including across Activity recreation. Failed teardown remains
+    // quarantined and is retried before any new device work.
+    private suspend fun retireSession(device: ConnectedDevice?) {
+        if (device == null) return
+        connectedDevice = null
+        invalidSessions[dmk] = device
+        withContext(NonCancellable) {
+            try {
+                dmk.disconnectDevice(device)
+                invalidSessions.remove(dmk)
+                cleanupRequestedFor = device.uid
+                if (cleanupDevice?.uid == device.uid) cleanupDevice = null
+            } catch (_: Exception) {
+                trace("session_cleanup_failed")
+            }
+        }
+    }
+
     private fun cancelSigning(result: MethodChannel.Result) {
         operation?.let { if (!it.cleanup) it.cancel() }
         result.success(null)
@@ -533,6 +573,8 @@ class LedgerMobileHandler(
         val cleanup: Boolean,
     ) : MethodChannel.Result {
         lateinit var job: Job
+        var device: ConnectedDevice? = null
+        var retiredSession = false
         val pending: Boolean get() = result != null
 
         private fun takeResult(): MethodChannel.Result? = result.also { result = null }
@@ -558,6 +600,7 @@ class LedgerMobileHandler(
         val started = android.os.SystemClock.elapsedRealtime()
         val header = listOf(command.cla, command.ins, command.p1, command.p2).joinToString(":") { "%02x".format(it) }
         trace("apdu_start seq=$sequence header=$header data_bytes=${command.data.size}")
+        request.device = connectedDevice
         val operation = try {
             sendApdu(uid, command)
         } catch (error: Exception) {
@@ -717,6 +760,8 @@ class LedgerMobileHandler(
         // the previous handler's non-cooperative command/cleanup to finish.
         // Accessed only on Main; entries are removed on actual job completion.
         private val sdkJobs = mutableMapOf<DeviceManagementKitApi, Job>()
+        private val invalidSessions = mutableMapOf<DeviceManagementKitApi, ConnectedDevice>()
+        internal const val APP_QUERY_TIMEOUT_MS = 10_000L
         const val METHOD_CHANNEL = "com.zcash.wallet/ledger_mobile"
         const val EVENT_CHANNEL = "com.zcash.wallet/ledger_mobile/discovery"
         private const val PERMISSION_REQUEST = 0x4c45
@@ -732,8 +777,8 @@ private object LedgerDmkHolder {
     fun get(activity: Activity): DeviceManagementKitApi {
         return instance ?: deviceManagementKit {
             context = activity.applicationContext
-            enableLog = activity.applicationInfo.flags and
-                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+            // SDK debug logs include raw APDUs and responses. Use LedgerTrace metadata only.
+            enableLog = false
         }.also { instance = it }
     }
 }
