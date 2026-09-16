@@ -358,7 +358,10 @@ class _SwapActivityDetailSurfaceState
       _cleanupCancelledHardwareSigningRequest(request);
       return;
     }
-    await _submitHardwareDepositBroadcast(context, request, result.broadcast);
+    showAppToast(
+      _toastContext(context),
+      result.broadcast.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+    );
   }
 
   Future<void> _submitHardwareDepositBroadcast(
@@ -481,8 +484,16 @@ class _SwapActivityDetailSurfaceState
                     intent: hardwareSigningIntent,
                     onCancel: () =>
                         _closeHardwareSigning(cleanupCancelledRequest: true),
-                    onDepositBroadcast: (result) =>
-                        _handleHardwareDepositBroadcast(context, result),
+                    onDepositBroadcast: (result) async {
+                      if (!mounted) return;
+                      _closeHardwareSigning();
+                      showAppToast(
+                        _toastContext(context),
+                        result.isCertain
+                            ? 'ZEC deposit sent'
+                            : 'Checking ZEC deposit',
+                      );
+                    },
                   )
                 : SwapKeystoneSigningOverlay(
                     intent: hardwareSigningIntent,

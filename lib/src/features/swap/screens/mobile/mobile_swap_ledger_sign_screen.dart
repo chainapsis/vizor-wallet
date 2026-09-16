@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../models/swap_activity_navigation.dart';
 import '../../models/swap_hardware_broadcast_result.dart';
 import '../../models/swap_models.dart';
-import '../../providers/swap_state_provider.dart';
 import '../../widgets/swap_ledger_signing_overlay.dart';
 
 class MobileSwapLedgerSignArgs {
@@ -59,12 +58,6 @@ class MobileSwapLedgerSignScreen extends ConsumerWidget {
           }
           return;
         }
-        await ref
-            .read(swapStateProvider.notifier)
-            .recordHardwareDepositBroadcast(
-              intent: args.intent,
-              broadcast: broadcast,
-            );
         if (!context.mounted) return;
         if (args.returnTarget == SwapActivityReturnTarget.pay) {
           context.go('/pay/submitted/${Uri.encodeComponent(args.intent.id)}');
