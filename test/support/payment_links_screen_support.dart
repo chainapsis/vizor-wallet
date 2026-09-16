@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -101,7 +102,14 @@ Future<void> pumpPaymentLinksScreen(
             ledgerFunding,
           ),
         if (ledgerSigner != null)
-          ledgerPcztSignerProvider.overrideWithValue(ledgerSigner),
+          ledgerPcztSignerProvider.overrideWith(
+            (ref) => (accountUuid, pcztBytes) {
+              ref
+                  .read(ledgerSigningProgressProvider.notifier)
+                  .begin(accountUuid)('reviewing');
+              return ledgerSigner(accountUuid, pcztBytes);
+            },
+          ),
         if (ledgerFunding != null)
           ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         if (hardwareSigning != null)

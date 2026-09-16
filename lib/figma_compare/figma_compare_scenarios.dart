@@ -5,6 +5,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/core/layout/app_form_factor.dart';
+import '../src/features/ledger/services/ledger_signing_progress.dart';
+import '../src/features/ledger/widgets/ledger_signing_modal.dart';
+import '../widgetbook/ledger_use_cases.dart';
 import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 
 import '../widgetbook/activity_use_cases.dart';
@@ -59,6 +63,30 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'ledger-signing-preparing',
+    description: 'Ledger signing: preparing',
+    builder: _buildLedgerSigningPreparing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing',
+    description: 'Ledger signing: processing',
+    builder: _buildLedgerSigningProcessing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-reviewing',
+    description: 'Ledger signing: reviewing',
+    builder: _buildLedgerSigningReviewing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-finishing',
+    description: 'Ledger signing: finishing',
+    builder: _buildLedgerSigningFinishing,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-method-selection-ledger',
     description: 'Mobile method selection with Ledger available',
@@ -1901,3 +1929,31 @@ FigmaCompareScenario? findFigmaCompareScenario(String id) {
   }
   return null;
 }
+
+Widget _buildLedgerSigningPreparing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.preparing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningReviewing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.reviewing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningFinishing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.saving,
+      signingStage: LedgerSigningStage.finishing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );

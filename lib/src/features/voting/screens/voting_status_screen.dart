@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../ledger/services/ledger_signing_progress.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -536,6 +538,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
           keystoneScanError: state.keystoneScanError,
+          ledgerAccountUuid: job?.key?.accountUuid,
           ledgerDisplayMemo: job?.ledgerDisplayMemo,
           ledgerSigningBundleIndex: job?.ledgerBundleIndex,
           ledgerSigningBundleCount: job?.ledgerBundleCount ?? 0,
@@ -812,6 +815,7 @@ class VotingStatusContent extends StatelessWidget {
     this.keystoneBatchTotalCount = 0,
     this.keystoneQrError,
     this.keystoneScanError,
+    this.ledgerAccountUuid,
     this.ledgerDisplayMemo,
     this.ledgerSigningBundleIndex,
     this.ledgerSigningBundleCount = 0,
@@ -855,6 +859,7 @@ class VotingStatusContent extends StatelessWidget {
   final int keystoneBatchTotalCount;
   final String? keystoneQrError;
   final String? keystoneScanError;
+  final String? ledgerAccountUuid;
   final String? ledgerDisplayMemo;
   final int? ledgerSigningBundleIndex;
   final int ledgerSigningBundleCount;
@@ -910,7 +915,7 @@ class VotingStatusContent extends StatelessWidget {
             children: [
               Text(
                 awaitingLedgerApproval
-                    ? 'Approve on your Ledger'
+                    ? 'Voting with Ledger'
                     : 'Submitting votes',
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
@@ -920,7 +925,7 @@ class VotingStatusContent extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 awaitingLedgerApproval
-                    ? 'Keep Vizor open and approve each voting bundle on your Ledger. Vizor continues automatically after every approval.'
+                    ? 'Keep Vizor open. Follow the instructions below for each voting bundle.'
                     : "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
@@ -964,6 +969,7 @@ class VotingStatusContent extends StatelessWidget {
                   ledgerSigningBundleIndex != null) ...[
                 PaymentUriBusySurfaceHold(
                   child: LedgerVotingSigningPanel(
+                    accountUuid: ledgerAccountUuid,
                     displayMemo: ledgerDisplayMemo ?? '',
                     bundleIndex: ledgerSigningBundleIndex!,
                     bundleCount: ledgerSigningBundleCount,
@@ -1150,6 +1156,7 @@ class _WalletSyncProgressText extends StatelessWidget {
 
 class LedgerVotingSigningPanel extends ConsumerWidget {
   const LedgerVotingSigningPanel({
+    this.accountUuid,
     required this.displayMemo,
     required this.bundleIndex,
     required this.bundleCount,
@@ -1157,6 +1164,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
     super.key,
   });
 
+  final String? accountUuid;
   final String displayMemo;
   final int bundleIndex;
   final int bundleCount;
@@ -1171,22 +1179,36 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final failed = readiness.phase == LedgerAppReadinessPhase.failed;
+    final progress = ref.watch(ledgerSigningProgressProvider);
+    final stage =
+        (progress?.accountUuid == accountUuid ? progress?.stage : null) ??
+        LedgerSigningStage.preparing;
     final (statusLabel, statusMessage) = switch (readiness.phase) {
-      LedgerAppReadinessPhase.checkingDevice => (
-        'Checking your Ledger',
-        'Vizor is checking whether the Zcash app is ready.',
-      ),
-      LedgerAppReadinessPhase.confirmOpening => (
-        'Confirm opening Zcash',
-        'Approve the request to open the Zcash app on your Ledger.',
-      ),
+      LedgerAppReadinessPhase.checkingDevice
+          when stage == LedgerSigningStage.preparing =>
+        (
+          'Checking your Ledger',
+          'Vizor is checking whether the Zcash app is ready.',
+        ),
+      LedgerAppReadinessPhase.confirmOpening
+          when stage == LedgerSigningStage.preparing =>
+        (
+          'Confirm opening Zcash',
+          'Approve the request to open the Zcash app on your Ledger.',
+        ),
       LedgerAppReadinessPhase.failed => (
         'Ledger needs attention',
         readiness.message ?? 'Reconnect your Ledger and try again.',
       ),
-      LedgerAppReadinessPhase.idle || LedgerAppReadinessPhase.ready => (
-        'Waiting for Ledger approval',
-        'Approve bundle ${bundleIndex + 1} on the device. Vizor will continue automatically.',
+      _ => (
+        switch (stage) {
+          LedgerSigningStage.preparing => 'Preparing voting delegation',
+          LedgerSigningStage.finishing => 'Finishing voting delegation',
+          _ => stage.title,
+        },
+        stage == LedgerSigningStage.preparing
+            ? 'Please wait while Vizor prepares your request.'
+            : stage.message,
       ),
     };
     return DecoratedBox(
@@ -1207,7 +1229,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Approve voting delegation',
+              'Voting delegation',
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,

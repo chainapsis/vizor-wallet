@@ -60,6 +60,13 @@ import UIKit
       name: LedgerMobileHandler.methodChannelName,
       binaryMessenger: messenger
     )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    ledgerMobileHandler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
     ledgerMobileChannel.setMethodCallHandler { call, result in
       ledgerMobileHandler.handle(call, result: result)
     }

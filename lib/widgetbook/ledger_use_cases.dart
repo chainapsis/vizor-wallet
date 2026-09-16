@@ -1,3 +1,4 @@
+import '../src/features/ledger/services/ledger_signing_progress.dart';
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
@@ -116,6 +117,12 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
     initialOption: LedgerSigningModalPhase.awaitingDevice,
     labelBuilder: (value) => value.name,
   );
+  final signingStage = context.knobs.object.dropdown<LedgerSigningStage>(
+    label: 'Signing stage',
+    options: LedgerSigningStage.values,
+    initialOption: LedgerSigningStage.reviewing,
+    labelBuilder: (value) => value.name,
+  );
   final readiness = context.knobs.object
       .dropdown<LedgerSigningPlaygroundReadiness>(
         label: 'App readiness',
@@ -145,6 +152,7 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
 
   return buildLedgerSigningPreview(
     phase: phase,
+    signingStage: signingStage,
     readiness: readiness,
     failureMode: failure,
     roundNumber: roundNumber > roundCount ? roundCount : roundNumber,
@@ -155,6 +163,7 @@ Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
 
 Widget buildLedgerSigningPreview({
   required LedgerSigningModalPhase phase,
+  LedgerSigningStage signingStage = LedgerSigningStage.reviewing,
   LedgerSigningPlaygroundReadiness readiness =
       LedgerSigningPlaygroundReadiness.ready,
   LedgerSigningPlaygroundFailure failureMode =
@@ -165,6 +174,9 @@ Widget buildLedgerSigningPreview({
 }) {
   final modal = LedgerSigningModal(
     phase: phase,
+    signingStage: readiness == LedgerSigningPlaygroundReadiness.ready
+        ? signingStage
+        : LedgerSigningStage.preparing,
     failure: phase == LedgerSigningModalPhase.failed
         ? _failurePresentation(failureMode)
         : null,
@@ -331,6 +343,13 @@ class _LedgerVotingPlaygroundState extends State<_LedgerVotingPlayground> {
     return ProviderScope(
       key: ValueKey('ledger-voting-readiness-${readiness.name}'),
       overrides: [
+        ledgerSigningProgressProvider.overrideWith(
+          () => _LedgerPreviewProgressController(
+            _stage == _LedgerVotingPreviewStage.awaitingApproval
+                ? LedgerSigningStage.reviewing
+                : LedgerSigningStage.preparing,
+          ),
+        ),
         ledgerAppReadinessStateProvider.overrideWith(
           () => _LedgerPreviewReadinessController(_readinessState(readiness)),
         ),
@@ -339,6 +358,7 @@ class _LedgerVotingPlaygroundState extends State<_LedgerVotingPlayground> {
         children: [
           Expanded(
             child: VotingStatusContent(
+              ledgerAccountUuid: _ledgerAccount.uuid,
               phase: phase,
               voteSubmissionDetail:
                   _stage == _LedgerVotingPreviewStage.castingVotes
@@ -658,3 +678,12 @@ final _ledgerBootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+class _LedgerPreviewProgressController extends LedgerSigningProgressController {
+  _LedgerPreviewProgressController(this.stage);
+  final LedgerSigningStage stage;
+
+  @override
+  LedgerSigningProgress? build() =>
+      LedgerSigningProgress(_ledgerAccount.uuid, stage);
+}

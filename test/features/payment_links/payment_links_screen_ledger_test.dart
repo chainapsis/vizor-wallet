@@ -39,7 +39,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
-      expect(find.text('Review on your Ledger'), findsOneWidget);
+      expect(find.text('Check your Ledger'), findsOneWidget);
       expect(find.text('Sign gift card on Keystone'), findsNothing);
       if (cancel) {
         await tester.tap(find.text('Back to gift card'));

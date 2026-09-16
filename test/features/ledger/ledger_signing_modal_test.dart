@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,18 +96,63 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _harness(phase: LedgerSigningModalPhase.awaitingDevice),
+      _harness(
+        phase: LedgerSigningModalPhase.awaitingDevice,
+        stage: LedgerSigningStage.reviewing,
+      ),
     );
 
-    expect(find.text('Review on your Ledger'), findsOneWidget);
+    expect(find.text('Check your Ledger'), findsOneWidget);
     expect(find.text('Zcash · Ledger'), findsOneWidget);
     expect(find.text('Open the Zcash app'), findsOneWidget);
-    expect(find.text('Waiting for approval'), findsOneWidget);
+    expect(find.text('Review on device'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'preparation never claims approval, and live stages preserve the app prompt',
+    (tester) async {
+      const account = AccountInfo(
+        uuid: 'ledger-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      );
+      await tester.pumpWidget(
+        _harness(
+          phase: LedgerSigningModalPhase.awaitingDevice,
+          account: account,
+        ),
+      );
+      expect(find.text('Preparing transaction'), findsOneWidget);
+      expect(find.text('Check your Ledger'), findsNothing);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(LedgerSigningModal)),
+      );
+      final report = container
+          .read(ledgerSigningProgressProvider.notifier)
+          .begin(account.uuid);
+      for (final phase in ['sending', 'reviewing', 'finishing']) {
+        report(phase);
+        await tester.pump();
+        final expected = switch (phase) {
+          'sending' => 'Processing with Ledger',
+          'reviewing' => 'Check your Ledger',
+          _ => 'Finishing transaction',
+        };
+        expect(find.text(expected), findsOneWidget);
+        if (phase == 'sending') {
+          expect(find.text('Preparing to sign'), findsOneWidget);
+          expect(find.text('Please wait'), findsNothing);
+        }
+        expect(find.text('Open the Zcash app'), findsOneWidget);
+      }
+    },
+  );
 
   testWidgets('keeps retry next to a failed signing status', (tester) async {
     var retryCount = 0;
@@ -190,9 +236,9 @@ void main() {
       _harness(phase: LedgerSigningModalPhase.saving, onCancel: null),
     );
 
-    expect(find.text('Saving signed transaction'), findsOneWidget);
-    expect(find.text('Securing transaction'), findsOneWidget);
-    expect(find.text('Saving'), findsOneWidget);
+    expect(find.text('Finishing transaction'), findsOneWidget);
+    expect(find.text('Please wait'), findsOneWidget);
+    expect(find.text('Finishing'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
     expect(find.text('Open the Zcash app'), findsNothing);
   });
@@ -308,6 +354,7 @@ void main() {
 Widget _harness({
   required LedgerSigningModalPhase phase,
   LedgerSigningFailurePresentation? failure,
+  LedgerSigningStage? stage,
   LedgerAppReadinessState readiness = const LedgerAppReadinessState.idle(),
   VoidCallback? onFailureAction,
   VoidCallback? onCancel = _noop,
@@ -332,6 +379,7 @@ Widget _harness({
           child: Center(
             child: LedgerSigningModal(
               phase: phase,
+              signingStage: stage,
               failure: failure,
               onCancel: onCancel,
               onFailureAction: onFailureAction,
