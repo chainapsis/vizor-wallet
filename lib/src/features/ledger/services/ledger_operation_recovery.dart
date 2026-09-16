@@ -14,6 +14,7 @@ import '../../swap/models/swap_hardware_broadcast_result.dart';
 import '../../payment_links/services/payment_link_ledger_funding_service.dart';
 import '../../swap/models/swap_models.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_ledger_completion_service.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_signing_service.dart' show ledgerWalletDbPathProvider;
@@ -163,6 +164,10 @@ class LedgerOperationRecoveryCoordinator {
     var broadcastedAny = false;
 
     for (final operation in operations) {
+      final claim = _ref
+          .read(ledgerOperationClaimRegistryProvider)
+          .tryClaim(operation.operationId);
+      if (claim == null) continue;
       LedgerSignedOperationBroadcastResult? result;
       try {
         if (operation.state == 'signed_pending_broadcast') {
@@ -197,6 +202,20 @@ class LedgerOperationRecoveryCoordinator {
                 .complete(operation, result);
           case LedgerSignedOperationKind.swapDeposit:
           case LedgerSignedOperationKind.payDeposit:
+            final disposition = classifyLedgerDepositBroadcastResult(result);
+            if (disposition == LedgerDepositBroadcastDisposition.expired) {
+              if (result.requiresAck) {
+                await operationService.acknowledge(operation.operationId);
+              }
+              continue;
+            }
+            if (disposition != LedgerDepositBroadcastDisposition.accepted) {
+              log(
+                'LedgerRecovery: invalid deposit result awaits review '
+                'operation=${operation.operationId} status=${result.status}',
+              );
+              continue;
+            }
             await _ref.read(ledgerDepositRecoveryProvider)(
               operation: operation,
               result: result,
@@ -224,6 +243,8 @@ class LedgerOperationRecoveryCoordinator {
           'LedgerRecovery: operation=${operation.operationId} failed: '
           '$error\n$stackTrace',
         );
+      } finally {
+        claim.release();
       }
     }
 

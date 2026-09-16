@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_provider.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
+import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import 'swap_state_provider.dart';
@@ -40,6 +41,24 @@ final swapLedgerCompletionServiceProvider =
       );
     });
 
+enum LedgerDepositBroadcastDisposition { accepted, expired, invalid }
+
+LedgerDepositBroadcastDisposition classifyLedgerDepositBroadcastResult(
+  LedgerSignedOperationBroadcastResult result,
+) {
+  final status = result.status.trim();
+  if (status == 'expired') return LedgerDepositBroadcastDisposition.expired;
+  final accepted = switch (status) {
+    SwapDepositBroadcastStatus.broadcasted ||
+    SwapDepositBroadcastStatus.broadcastUnknown ||
+    SwapDepositBroadcastStatus.broadcastedStorageFailed => true,
+    _ => false,
+  };
+  return accepted && result.txid.trim().isNotEmpty
+      ? LedgerDepositBroadcastDisposition.accepted
+      : LedgerDepositBroadcastDisposition.invalid;
+}
+
 /// UI callbacks are notifications only. Storage and acknowledgement stay in
 /// this lease even when the initiating route or Activity panel is gone.
 class SwapLedgerCompletionService {
@@ -59,6 +78,10 @@ class SwapLedgerCompletionService {
     SwapIntent intent,
     LedgerSignedOperationBroadcastResult result,
   ) => lifecycle.run(() async {
+    if (classifyLedgerDepositBroadcastResult(result) !=
+        LedgerDepositBroadcastDisposition.accepted) {
+      throw StateError('Ledger deposit result was not accepted for broadcast.');
+    }
     if (!accountExists(intent.accountUuid)) {
       throw StateError('The Ledger account is no longer available.');
     }
