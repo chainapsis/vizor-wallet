@@ -9,6 +9,7 @@ import com.ledger.devicemanagement.DeviceManagementKitApi
 import com.ledger.devicemanagement.api.DeviceOperationFailureReason
 import com.ledger.devicemanagement.api.DeviceOperationResult
 import com.ledger.devicemanagement.api.apdu.apdu
+import com.ledger.devicemanagement.api.apdu.chunkApduPayload
 import com.ledger.devicemanagement.api.apdu.uniqueApduPayload
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
 import com.ledger.devicemanagement.api.command.getappandversion.GetAppAndVersionCommand
@@ -485,19 +486,25 @@ class LedgerMobileHandler(
         }
     }
 
-    private suspend fun sendApdu(uid: String, command: ApduCommand) =
-        dmk.sendApdu(
-            uid,
-            uniqueApduPayload(
-                apdu {
-                    classInstruction = command.cla.toByte()
-                    instructionMethod = command.ins.toByte()
-                    parameter1 = command.p1.toByte()
-                    parameter2 = command.p2.toByte()
-                    data = command.data
-                },
-            ),
-        )
+    private suspend fun sendApdu(uid: String, command: ApduCommand): DeviceOperationResult<ByteArray> {
+        val packet = apdu {
+            classInstruction = command.cla.toByte()
+            instructionMethod = command.ins.toByte()
+            parameter1 = command.p1.toByte()
+            parameter2 = command.p2.toByte()
+            data = command.data
+        }
+        // DMK 0.0.4's UniqueApduPayload requires fewer than 255 data bytes.
+        // Its chunk payload emits exactly one APDU for 255 bytes. Keep the
+        // Rust plan's headers intact: P1/P2 describe the whole Zcash stream,
+        // not the SDK's first/last chunk. parseCommand rejects larger inputs.
+        val payload = if (command.data.size == 255) {
+            chunkApduPayload { _, _ -> packet }
+        } else {
+            uniqueApduPayload(packet)
+        }
+        return dmk.sendApdu(uid, payload)
+    }
 
     private fun ByteArray.hasSuccessStatus(): Boolean =
         size >= 2 && this[size - 2] == 0x90.toByte() && last() == 0.toByte()

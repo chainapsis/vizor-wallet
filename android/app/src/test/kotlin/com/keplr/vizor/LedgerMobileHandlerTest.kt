@@ -225,14 +225,75 @@ class LedgerMobileHandlerTest {
         return Result().also { handler.handle(MethodCall(method, args), it) }
     }
 
-    private fun useExchange(block: suspend () -> DeviceOperationResult<ByteArray>) {
+    private fun useExchange(block: suspend (ApduPayload) -> DeviceOperationResult<ByteArray>) {
         handler.close()
         `when`(connected.uid).thenReturn("connected-id")
         `when`(dmk.getConnectedDevices()).thenReturn(listOf(connected))
         val sdk = object : DeviceManagementKitApi by dmk {
-            override suspend fun sendApdu(uid: String, apdu: ApduPayload): DeviceOperationResult<ByteArray> = block()
+            override suspend fun sendApdu(uid: String, apdu: ApduPayload): DeviceOperationResult<ByteArray> = block(apdu)
         }
         handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+    }
+
+    private fun signingCommand(size: Int) = mapOf(
+        "cla" to 0xe0, "ins" to 0x58, "p1" to 0x80, "p2" to 0,
+        "data" to ByteArray(size) { it.toByte() },
+    )
+
+    @Test fun signingPayloadBoundariesPreserveOneApduAndResponsePerCommand() = runTest(dispatcher) {
+        val sizes = listOf(0, 254, 255)
+        val sent = mutableListOf<ByteArray>()
+        useExchange { payload ->
+            // Exercise the actual SDK payload, as its transport loop does.
+            sent += payload.rawApdu()
+            assertFalse("One Rust command must not produce extra APDUs", payload.containsOtherData())
+            DeviceOperationResult.Success(byteArrayOf(0x90.toByte(), 0))
+        }
+        val result = Result()
+        handler.handle(MethodCall("exchangeApdus", mapOf("commands" to sizes.map(::signingCommand))), result)
+        runCurrent()
+        assertNull(result.error)
+        assertEquals(1, result.completions)
+        assertEquals(sizes.size, sent.size)
+        for ((index, size) in sizes.withIndex()) {
+            assertArrayEquals(
+                byteArrayOf(0xe0.toByte(), 0x58, 0x80.toByte(), 0, size.toByte()) + ByteArray(size) { it.toByte() },
+                sent[index],
+            )
+        }
+        assertEquals(List(sizes.size) { listOf(0x90, 0) }, result.value)
+    }
+
+    @Test fun oversizedSigningCommandIsRejectedBeforeAnySdkSend() = runTest(dispatcher) {
+        var sends = 0
+        useExchange { sends++; DeviceOperationResult.Success(byteArrayOf(0x90.toByte(), 0)) }
+        val result = Result()
+        handler.handle(MethodCall("exchangeApdus", mapOf(
+            "commands" to listOf(signingCommand(254), signingCommand(256)),
+        )), result)
+        runCurrent()
+        assertEquals("unavailable", result.error)
+        assertEquals(1, result.completions)
+        assertEquals(0, sends)
+    }
+
+    @Test fun fullSizeSigningStatusFailureStopsBeforeNextCommand() = runTest(dispatcher) {
+        var sends = 0
+        useExchange { payload ->
+            sends++
+            assertEquals(260, payload.rawApdu().size)
+            assertFalse(payload.containsOtherData())
+            DeviceOperationResult.Success(byteArrayOf(0x69, 0x85.toByte()))
+        }
+        val result = Result()
+        handler.handle(MethodCall("exchangeApdus", mapOf(
+            "commands" to listOf(signingCommand(255), signingCommand(0)),
+        )), result)
+        runCurrent()
+        assertNull(result.error)
+        assertEquals(listOf(listOf(0x69, 0x85)), result.value)
+        assertEquals(1, sends)
+        assertEquals(1, result.completions)
     }
 
     @Test fun ufvkCancellationDisconnectAndCloseCancelThePendingChannelOnce() = runTest(dispatcher) {
