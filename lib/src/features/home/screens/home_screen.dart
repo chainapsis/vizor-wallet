@@ -131,7 +131,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isHardwareAccount(accountUuid)) {
+    if (accountNotifier.isLedgerAccount(accountUuid)) {
+      setState(() {
+        _shieldBalanceError =
+            'Ledger shielding is not available in this build.';
+        _shieldBalanceErrorDetail = null;
+      });
+      return;
+    }
+    if (accountNotifier.isKeystoneAccount(accountUuid)) {
       setState(() {
         _showKeystoneShieldSigning = true;
         _shieldBalanceError = null;

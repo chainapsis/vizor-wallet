@@ -727,6 +727,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     final isHardware = accountNotifier.isHardwareAccount(
       args.proposalAccountUuid,
     );
+    if (accountNotifier.isLedgerAccount(args.proposalAccountUuid)) {
+      throw Exception('Ledger signing is not available in this build.');
+    }
 
     late final String txids;
     late final bool broadcastComplete;

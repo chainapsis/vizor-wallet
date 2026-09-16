@@ -1134,9 +1134,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             )
           : null,
     );
-    if (ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(sourceAccountUuid)) {
+    final accountNotifier = ref.read(accountProvider.notifier);
+    if (accountNotifier.isLedgerAccount(sourceAccountUuid)) {
+      _showError('Ledger gift card funding is not available in this build.');
+      return;
+    }
+    if (accountNotifier.isKeystoneAccount(sourceAccountUuid)) {
       setState(() {
         _operationInProgress = true;
         _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(

@@ -1820,14 +1820,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    final isHardware = ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(accountUuid);
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final isLedger = accountNotifier.isLedgerAccount(accountUuid);
+    final isKeystone = accountNotifier.isKeystoneAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
     final reviewedFeeZatoshi = _feeZatoshi!;
     final address = _addressController.text.trim();
     final memo = _effectiveMemo;
+
+    if (isLedger) {
+      setState(() {
+        _phase = _SendPhase.failed;
+        _error = 'Ledger signing is not available in this build.';
+      });
+      return;
+    }
 
     setState(() {
       _isConfirmingSend = true;
@@ -1898,7 +1906,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     });
 
     KeystoneBroadcastArgs? keystone;
-    if (isHardware) {
+    if (isKeystone) {
       // Hand the PCZT to the device for the spend-auth signature; the
       // signing screen owns the QR display/scan round trip.
       keystone = await context.push<KeystoneBroadcastArgs>(

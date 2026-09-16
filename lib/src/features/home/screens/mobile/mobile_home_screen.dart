@@ -949,7 +949,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    if (accountNotifier.isHardwareAccount(accountUuid)) {
+    if (accountNotifier.isLedgerAccount(accountUuid)) {
+      _showShieldToast('Ledger shielding is not available in this build.');
+      return;
+    }
+    if (accountNotifier.isKeystoneAccount(accountUuid)) {
       final result = await context.push<MobileKeystoneShieldResult>(
         '/home/keystone-shield',
       );

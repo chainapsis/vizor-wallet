@@ -823,9 +823,19 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return null;
     }
-    final activeAccountIsHardware = ref
-        .read(accountProvider.notifier)
-        .isActiveAccountHardware;
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final activeAccountIsKeystone = accountNotifier.isKeystoneAccount(
+      accountUuid,
+    );
+    if (quote.direction.sendsZec &&
+        accountNotifier.isLedgerAccount(accountUuid)) {
+      log('Swap: Ledger ZEC deposit signing is unavailable');
+      state = state.copyWith(
+        startSubmitting: false,
+        statusError: 'Ledger swap signing is not available in this build.',
+      );
+      return null;
+    }
     if (quote.direction.sendsZec) {
       try {
         await ref
@@ -871,12 +881,12 @@ class SwapNotifier extends Notifier<SwapState> {
       payMode: startingPayMode,
       now: DateTime.now().toUtc(),
     );
-    if (activeAccountIsHardware && quote.direction.sendsZec) {
+    if (activeAccountIsKeystone && quote.direction.sendsZec) {
       const nextAction = 'Sign and send the ZEC deposit with Keystone.';
       intent = intent.copyWith(nextAction: nextAction);
     }
     _quoteGeneration++;
-    if (activeAccountIsHardware && quote.direction.sendsZec) {
+    if (activeAccountIsKeystone && quote.direction.sendsZec) {
       log(
         'Swap: start pending Keystone signing intent=${_shortSwapValue(intent.id)} '
         'status=${intent.status.name}',
