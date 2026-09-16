@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_hardware_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -29,6 +30,7 @@ void main() {
   ) async {
     final broadcast = Completer<LedgerSignedOperationBroadcastResult>();
     final operationService = _OperationService(broadcast.future);
+    final persistence = Completer<void>();
     var cancelCalls = 0;
     SwapHardwareBroadcastResult? completed;
     late BuildContext signingContext;
@@ -50,6 +52,7 @@ void main() {
               intent: _intent,
               onCancel: () => context.pop(),
               onDepositBroadcast: (result) async {
+                await persistence.future;
                 completed = result;
                 if (signingContext.mounted) signingContext.pop();
               },
@@ -100,6 +103,11 @@ void main() {
     expect(find.text('Sending transaction'), findsOneWidget);
     expect(cancelCalls, 0);
 
+    final lifecycle = ProviderScope.containerOf(
+      signingContext,
+    ).read(ledgerOperationLifecycleProvider);
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
     broadcast.complete(
       const LedgerSignedOperationBroadcastResult(
         operationId: 'swap_deposit:account-1:swap-1',
@@ -108,8 +116,16 @@ void main() {
         requiresAck: true,
       ),
     );
+    await tester.pump();
+    await tester.pump();
+    expect(drained, isFalse);
+    expect(operationService.acknowledged, isFalse);
+    persistence.complete();
     await tester.pumpAndSettle();
 
+    await drain;
+    expect(drained, isTrue);
+    lifecycle.resume();
     expect(completed?.txHash, 'txid-1');
     expect(operationService.acknowledged, isTrue);
     expect(find.text('Open signing'), findsOneWidget);

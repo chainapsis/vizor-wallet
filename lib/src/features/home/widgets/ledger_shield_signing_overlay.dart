@@ -13,6 +13,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -323,7 +324,11 @@ class _LedgerShieldSigningOverlayState
     }
   }
 
-  Future<void> _broadcastCheckpointed() async {
+  Future<void> _broadcastCheckpointed() => ref
+      .read(ledgerOperationLifecycleProvider)
+      .run(_broadcastCheckpointedWithLease);
+
+  Future<void> _broadcastCheckpointedWithLease() async {
     final operationId = _operationId;
     final saplingParams = _saplingParams;
     if (operationId == null || !_operationCheckpointed) {

@@ -26,6 +26,7 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'sapling_params.dart';
 
@@ -702,6 +703,34 @@ String _ledgerBroadcastStatusMessage({
 /// desktop screen aborts when unmounted). On abort the proposal and any
 /// retained owner-scoped input lock are released here.
 Future<SendBroadcastOutcome> runSendBroadcast({
+  required WidgetRef ref,
+  required SendReviewArgs args,
+  KeystoneBroadcastArgs? keystone,
+  LedgerBroadcastArgs? ledger,
+  required Future<bool> Function() confirmSaplingParamsDownload,
+  Future<bool> Function()? shouldAbort,
+}) async {
+  Future<SendBroadcastOutcome> execute() => _runSendBroadcast(
+    ref: ref,
+    args: args,
+    keystone: keystone,
+    ledger: ledger,
+    confirmSaplingParamsDownload: confirmSaplingParamsDownload,
+    shouldAbort: shouldAbort,
+  );
+  if (ledger == null) return execute();
+  try {
+    return await ref.read(ledgerOperationLifecycleProvider).run(execute);
+  } catch (error) {
+    return SendBroadcastOutcome(
+      phase: SendBroadcastPhase.failed,
+      proposalConsumed: true,
+      error: friendlyBroadcastError(error.toString()),
+    );
+  }
+}
+
+Future<SendBroadcastOutcome> _runSendBroadcast({
   required WidgetRef ref,
   required SendReviewArgs args,
   KeystoneBroadcastArgs? keystone,

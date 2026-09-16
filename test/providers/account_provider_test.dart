@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_file_cache.dart';
 import 'dart:async';
@@ -34,6 +35,52 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
   setUp(_rustApi.reset);
+
+  for (final reset in [false, true]) {
+    test(
+      '${reset ? "reset" : "delete"} drains Ledger before touching wallet data and resumes after failure',
+      () async {
+        FlutterSecureStorage.setMockInitialValues({});
+        final ledger = LedgerOperationLifecycle();
+        final gate = Completer<void>();
+        final operation = ledger.run(() => gate.future);
+        var destructiveWorkStarted = false;
+        final claims = PaymentLinkClaimLifecycleRegistry();
+        claims.register(
+          owner: Object(),
+          quiesceAndDrain: () async {
+            destructiveWorkStarted = true;
+            throw StateError('stop before wallet deletion');
+          },
+          resume: () {},
+        );
+        final container = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+            ledgerOperationLifecycleProvider.overrideWithValue(ledger),
+            paymentLinkClaimLifecycleRegistryProvider.overrideWithValue(claims),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        final account = container.read(accountProvider.notifier);
+        final mutation = reset
+            ? account.resetWallet()
+            : account.removeAccount('account-2');
+        final expectation = expectLater(mutation, throwsStateError);
+        await Future<void>.delayed(Duration.zero);
+        expect(ledger.isPaused, isTrue);
+        expect(destructiveWorkStarted, isFalse);
+        expect(_rustApi.deletedAccountUuids, isEmpty);
+        await expectLater(ledger.run(() async {}), throwsStateError);
+        gate.complete();
+        await operation;
+        await expectation;
+        expect(destructiveWorkStarted, isTrue);
+        expect(ledger.isPaused, isFalse);
+      },
+    );
+  }
 
   test('Linux rejects account changes while another mutation waits', () async {
     FlutterSecureStorage.setMockInitialValues({});
@@ -1364,9 +1411,18 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking({
   addTearDown(container.dispose);
   await container.read(accountProvider.future);
 
+  final ledger = container.read(ledgerOperationLifecycleProvider);
+  final ledgerGate = Completer<void>();
+  final ledgerWork = ledger.run(() => ledgerGate.future);
   final removal = container
       .read(accountProvider.notifier)
       .removeAccount('account-2');
+  await Future<void>.delayed(Duration.zero);
+  expect(drainStarted.isCompleted, isFalse);
+  expect(_rustApi.deletedAccountUuids, isEmpty);
+  expect(ledger.isPaused, isTrue);
+  ledgerGate.complete();
+  await ledgerWork;
   await drainStarted.future;
   expect(_rustApi.deletedAccountUuids, isEmpty);
   expect(shareTracking.isQuiesced('account-2'), isTrue);
@@ -1376,6 +1432,7 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking({
 
   expect(_rustApi.deletedAccountUuids, ['account-2']);
   expect(shareTracking.isQuiesced('account-2'), isFalse);
+  expect(ledger.isPaused, isFalse);
 }
 
 class _AccountTestPaymentLinkRecoveryStorage

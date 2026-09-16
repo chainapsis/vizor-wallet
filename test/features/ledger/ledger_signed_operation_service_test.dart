@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -51,6 +52,46 @@ void main() {
       isTrue,
     );
   }
+
+  test(
+    'production service registers before DB lookup and holds through Rust completion',
+    () async {
+      final db = Completer<String>();
+      final c = container(loadDb: () => db.future);
+      final lifecycle = c.read(ledgerOperationLifecycleProvider);
+      final service = c.read(ledgerSignedOperationServiceProvider);
+      api.gate = Completer<void>();
+      final broadcast = service.broadcast(operationId: 'send');
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      db.complete('/wallet.db');
+      await Future<void>.delayed(Duration.zero);
+      expect(api.urls.length, 1);
+      expect(drained, isFalse);
+      await expectLater(
+        service.broadcast(operationId: 'second'),
+        throwsStateError,
+      );
+      await expectLater(service.list(), throwsStateError);
+      await expectLater(service.acknowledge('send'), throwsStateError);
+      await expectLater(
+        service.checkpoint(
+          operationId: 'new',
+          accountUuid: 'account',
+          kind: LedgerSignedOperationKind.send,
+          pcztWithProofsBytes: [1],
+          pcztWithSignaturesBytes: [2],
+        ),
+        throwsStateError,
+      );
+      api.gate!.complete();
+      await broadcast;
+      await drain;
+      lifecycle.resume();
+    },
+  );
 
   test(
     'retained service follows fallback and voting observes the same route',

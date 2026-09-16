@@ -7,9 +7,11 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -262,7 +264,11 @@ class _SwapLedgerSigningOverlayState
     }
   }
 
-  Future<void> _broadcastCheckpointed() async {
+  Future<void> _broadcastCheckpointed() => ref
+      .read(ledgerOperationLifecycleProvider)
+      .run(_broadcastCheckpointedWithLease);
+
+  Future<void> _broadcastCheckpointedWithLease() async {
     final operationId = _operationId;
     if (operationId == null || !_operationCheckpointed) {
       throw StateError('Ledger deposit transaction is not checkpointed.');
@@ -327,7 +333,17 @@ class _SwapLedgerSigningOverlayState
 
   Future<void> _completeProviderCheckpoint(
     LedgerSignedOperationBroadcastResult result,
-  ) async {
+  ) => ref.read(ledgerOperationLifecycleProvider).run(() async {
+    final accountExists =
+        ref
+            .read(accountProvider)
+            .value
+            ?.accounts
+            .any((account) => account.uuid == widget.intent.accountUuid) ??
+        false;
+    if (!accountExists) {
+      throw StateError('The Ledger account is no longer available.');
+    }
     final operationService = ref.read(ledgerSignedOperationServiceProvider);
     if (mounted) {
       setState(() {
@@ -346,7 +362,7 @@ class _SwapLedgerSigningOverlayState
       await operationService.acknowledge(result.operationId);
     }
     _pendingBroadcastResult = null;
-  }
+  });
 
   bool _hasBroadcastTxid(LedgerSignedOperationBroadcastResult result) {
     return switch (result.status) {

@@ -17,6 +17,7 @@ import '../../swap/providers/swap_state_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_signing_service.dart' show ledgerWalletDbPathProvider;
 import 'ledger_signed_operation_service.dart';
+import 'ledger_operation_lifecycle.dart';
 
 typedef LedgerDepositRecovery =
     Future<void> Function({
@@ -132,7 +133,11 @@ class LedgerOperationRecoveryCoordinator {
       _rerunRequested = true;
       return existing;
     }
-    final recovery = _recoverUntilIdle().whenComplete(() => _inFlight = null);
+    final lifecycle = _ref.read(ledgerOperationLifecycleProvider);
+    if (lifecycle.isPaused) return Future.value();
+    final recovery = lifecycle
+        .run(_recoverUntilIdle)
+        .whenComplete(() => _inFlight = null);
     _inFlight = recovery;
     return recovery;
   }
@@ -141,7 +146,8 @@ class LedgerOperationRecoveryCoordinator {
     do {
       _rerunRequested = false;
       await _recover();
-    } while (_rerunRequested);
+    } while (_rerunRequested &&
+        !_ref.read(ledgerOperationLifecycleProvider).isPaused);
   }
 
   Future<void> _recover() async {

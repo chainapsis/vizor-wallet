@@ -10,6 +10,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
+import 'ledger_operation_lifecycle.dart';
 import 'ledger_signing_service.dart' show ledgerWalletDbPathProvider;
 
 enum LedgerSignedOperationKind {
@@ -108,6 +109,7 @@ final ledgerSignedOperationServiceProvider =
     Provider<LedgerSignedOperationService>((ref) {
       final endpoint = ref.watch(rpcEndpointProvider);
       return RustLedgerSignedOperationService(
+        lifecycle: ref.watch(ledgerOperationLifecycleProvider),
         network: endpoint.networkName,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         loadWalletDbPath: ref.watch(ledgerWalletDbPathProvider),
@@ -144,9 +146,15 @@ class RustLedgerSignedOperationService
     required this.network,
     required this.lightwalletdUrl,
     required this.loadWalletDbPath,
+    this.lifecycle,
     this.readBroadcastEndpoint,
     this.reportBroadcastFailure,
   });
+
+  final LedgerOperationLifecycle? lifecycle;
+
+  Future<T> _run<T>(Future<T> Function() action) =>
+      lifecycle?.run(action) ?? action();
 
   final String network;
   final String lightwalletdUrl;
@@ -176,7 +184,7 @@ class RustLedgerSignedOperationService
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? externalRef,
-  }) async {
+  }) => _run(() async {
     final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerCheckpointSignedOperation(
       dbPath: dbPath,
@@ -188,7 +196,7 @@ class RustLedgerSignedOperationService
       pcztWithProofsBytes: pcztWithProofsBytes,
       pcztWithSignaturesBytes: pcztWithSignaturesBytes,
     );
-  }
+  });
 
   @override
   Future<void> checkpointBatch({
@@ -198,7 +206,7 @@ class RustLedgerSignedOperationService
     required List<List<int>> pcztsWithProofs,
     required List<List<int>> pcztsWithSignatures,
     String? externalRef,
-  }) async {
+  }) => _run(() async {
     final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerCheckpointSignedOperationBatch(
       dbPath: dbPath,
@@ -210,24 +218,24 @@ class RustLedgerSignedOperationService
       pcztWithProofs: pcztsWithProofs.map(Uint8List.fromList).toList(),
       pcztWithSignatures: pcztsWithSignatures.map(Uint8List.fromList).toList(),
     );
-  }
+  });
 
   @override
-  Future<List<LedgerSignedOperationMetadata>> list() async {
+  Future<List<LedgerSignedOperationMetadata>> list() => _run(() async {
     final dbPath = await loadWalletDbPath();
     final operations = await rust_ledger.ledgerListSignedOperations(
       dbPath: dbPath,
       network: network,
     );
     return [for (final operation in operations) _metadataFromRust(operation)];
-  }
+  });
 
   @override
   Future<LedgerSignedOperationBroadcastResult> broadcast({
     required String operationId,
     String? spendParamsPath,
     String? outputParamsPath,
-  }) async {
+  }) => _run(() async {
     final dbPath = await loadWalletDbPath();
     final endpoint = readBroadcastEndpoint?.call();
     if (endpoint != null && endpoint.networkName != network) {
@@ -258,17 +266,17 @@ class RustLedgerSignedOperationService
       await _reportFailure(error, endpoint);
       rethrow;
     }
-  }
+  });
 
   @override
-  Future<void> acknowledge(String operationId) async {
+  Future<void> acknowledge(String operationId) => _run(() async {
     final dbPath = await loadWalletDbPath();
     await rust_ledger.ledgerAckSignedOperation(
       dbPath: dbPath,
       network: network,
       operationId: operationId,
     );
-  }
+  });
 }
 
 LedgerSignedOperationMetadata _metadataFromRust(

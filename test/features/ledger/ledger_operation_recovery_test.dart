@@ -7,12 +7,56 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_recovery.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 
 void main() {
+  test(
+    'destructive drain includes deposit persistence and acknowledgement',
+    () async {
+      final service = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.swapDeposit,
+          externalRef: 'intent-1',
+        ),
+      ]);
+      final writing = Completer<void>();
+      final gate = Completer<void>();
+      final container = _container(
+        operationService: service,
+        sync: _RecoverySyncNotifier(),
+        depositRecovery: ({required operation, required result}) async {
+          writing.complete();
+          await gate.future;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      final recovery = coordinator.recover();
+      await writing.future;
+      final lifecycle = container.read(ledgerOperationLifecycleProvider);
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      final duplicate = coordinator.recover();
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      expect(service.acknowledged, isEmpty);
+      gate.complete();
+      await Future.wait([recovery, duplicate, drain]);
+      expect(service.acknowledged, ['operation-1']);
+      expect(service.broadcasts, ['operation-1']);
+      await coordinator.recover();
+      expect(service.broadcasts, ['operation-1']);
+      lifecycle.resume();
+    },
+  );
+
   test('standalone recovery matches the persisted transaction prefix', () {
     expect(
       ledgerStandaloneResultIsRecovered(

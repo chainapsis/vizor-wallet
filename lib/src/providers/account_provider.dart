@@ -8,6 +8,8 @@ import '../services/voting/voting_file_cache.dart';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
@@ -751,12 +753,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
-    _storage.invalidatePendingSecretOperations();
-
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
       // Gift Card claims first, and before the in-flight count below: that
       // count is a one-shot read, and a claim that enters `submitting` right
       // after it returned zero would revalidate its destination against an
@@ -770,6 +773,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      ledgerLifecycle.resume();
       claimLifecycle.resume();
       giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
@@ -961,15 +965,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<void> _resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-    _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
@@ -981,6 +987,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      ledgerLifecycle.resume();
       if (resumeClaimLifecycle) claimLifecycle.resume();
       // Release only after all destructive work has finished. New onboarding
       // reuses this registry; stale registrations re-read the now-empty store.
