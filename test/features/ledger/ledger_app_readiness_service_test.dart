@@ -8,6 +8,32 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  test(
+    'Linux USB permission failure is not mistaken for device rejection',
+    () async {
+      final service = LedgerAppReadinessService(
+        device: _ErrorDevice(
+          StateError(
+            'ledger_linux_usb_access: Open Ledger HID device: Permission denied',
+          ),
+        ),
+        onState: (_) {},
+      );
+      await expectLater(
+        service.ensureReady(),
+        throwsA(
+          isA<LedgerAppReadinessException>()
+              .having(
+                (e) => e.failure,
+                'failure',
+                LedgerAppReadinessFailure.unavailable,
+              )
+              .having((e) => e.message, 'instructions', contains('udev')),
+        ),
+      );
+    },
+  );
+
   test('already-open app passes the minimum version gate', () async {
     final states = <LedgerAppReadinessState>[];
     final service = LedgerAppReadinessService(

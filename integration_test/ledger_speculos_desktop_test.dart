@@ -86,7 +86,7 @@ void main() {
               () => _FakeSyncNotifier(fixture.accountUuid),
             ),
             ledgerTargetPlatformProvider.overrideWithValue(
-              TargetPlatform.macOS,
+              defaultTargetPlatform,
             ),
             ledgerOperationCancellerProvider.overrideWithValue(() async {}),
             ledgerAccountImporterProvider.overrideWithValue(
@@ -277,7 +277,7 @@ void main() {
               _MemoryMarketDataCache(),
             ),
             ledgerTargetPlatformProvider.overrideWithValue(
-              TargetPlatform.macOS,
+              defaultTargetPlatform,
             ),
             ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
             ledgerSendBasePcztCreatorProvider.overrideWithValue(({
@@ -395,7 +395,7 @@ void main() {
               initialLocation: '/home',
             ),
           ),
-          ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+          ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
           ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
         ],
       );
@@ -438,7 +438,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
           initialLocation: '/home',
         ),
       ),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
       ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
     ],
   );
@@ -476,7 +476,7 @@ Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
           initialLocation: '/home',
         ),
       ),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
       ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
     ],
   );
@@ -715,7 +715,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
         ),
         networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
         syncProvider.overrideWith(() => _FakeSyncNotifier(fixture.accountUuid)),
-        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+        ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
         ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
         ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         ledgerSignedOperationServiceProvider.overrideWithValue(
@@ -833,7 +833,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
           const _EmptyMarketDataSource(),
         ),
         zecMarketDataCacheProvider.overrideWithValue(_MemoryMarketDataCache()),
-        ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+        ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
         ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
         ledgerSendTexPcztsCreatorProvider.overrideWithValue(({
           required dbPath,
@@ -1136,7 +1136,7 @@ Widget _ledgerSwapHarness({
         const _EmptyMarketDataSource(),
       ),
       zecMarketDataCacheProvider.overrideWithValue(_MemoryMarketDataCache()),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
       ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
       ledgerOperationCancellerProvider.overrideWithValue(() async {}),
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),

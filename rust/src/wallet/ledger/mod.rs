@@ -1,4 +1,4 @@
-//! Experimental macOS transport for the Ledger Zcash Ironwood app.
+//! Desktop USB transport for the Ledger Zcash Ironwood app.
 //!
 //! Every operation opens a fresh HID session. The current unsigned device app
 //! can leave a session in a stale state after UFVK approval, so reusing that
@@ -17,7 +17,7 @@ pub(crate) use operations::{
     list as list_signed_operations, SignedOperationMetadata,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod transport;
 
 /// Conservative per-approval limit supported by our current Ledger serializer.
@@ -43,14 +43,14 @@ use self::{parse::parse_pczt, serializer::serialize_pczt};
 
 static LEDGER_OPERATION: Mutex<()> = Mutex::new(());
 static LEDGER_OPERATION_STATE: OperationState = OperationState::new();
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 static LEDGER_SIGNING_READY_AT: Mutex<Option<Instant>> = Mutex::new(None);
 const LEDGER_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const APP_TRANSITION_TIMEOUT: Duration = Duration::from_secs(10);
 const APP_TRANSITION_POLL_INTERVAL: Duration = Duration::from_millis(200);
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(4);
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const SIGNING_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
@@ -134,10 +134,10 @@ struct OperationGuard {
     context: OperationContext,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 struct SigningStatusCooldownGuard;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 impl Drop for SigningStatusCooldownGuard {
     fn drop(&mut self) {
         if let Ok(mut ready_at) = LEDGER_SIGNING_READY_AT.lock() {
@@ -533,18 +533,18 @@ fn decode_transparent_signature(response: Vec<u8>) -> Result<TransparentInputSig
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn get_device_app() -> Result<DeviceAppInfo, String> {
     let operation = lock_operation()?;
     read_device_app(operation.context())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn get_device_app() -> Result<DeviceAppInfo, String> {
     Err(unsupported_platform())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     let operation = lock_operation()?;
     let context = operation.context();
@@ -566,12 +566,12 @@ pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     wait_for_device_app(context, |name| name == ZCASH_APP_NAME, "Zcash app")
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     Err(unsupported_platform())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn read_device_app(context: OperationContext) -> Result<DeviceAppInfo, String> {
     let app = transport::LedgerTransport::connect(context)?.current_app()?;
     Ok(DeviceAppInfo {
@@ -580,7 +580,7 @@ fn read_device_app(context: OperationContext) -> Result<DeviceAppInfo, String> {
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn wait_for_device_app(
     context: OperationContext,
     matches: impl Fn(&str) -> bool,
@@ -618,18 +618,18 @@ fn is_terminal_app_transition_error(error: &str) -> bool {
         || error.contains("does not support this command")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn get_ufvk(account_index: u32) -> Result<String, String> {
     let operation = lock_operation()?;
     transport::LedgerTransport::connect_ufvk(operation.context())?.ufvk(account_index)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
     Err(unsupported_platform())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
@@ -683,7 +683,7 @@ pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     Ok(signatures)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -691,7 +691,7 @@ pub fn sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> 
 /// Streams one PCZT to Ledger for a single transaction review, requests every
 /// transparent and Orchard-family signature it requires, verifies those
 /// signatures through the PCZT Signer role, and returns the signed PCZT.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     let commands = serialize_pczt(&parsed)?;
@@ -761,7 +761,7 @@ pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt_full(_pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
@@ -870,12 +870,12 @@ fn lock_operation() -> Result<OperationGuard, String> {
             deadline: Instant::now() + LEDGER_OPERATION_TIMEOUT,
         },
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     wait_for_signing_status(guard.context())?;
     Ok(guard)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn wait_for_signing_status(operation: OperationContext) -> Result<(), String> {
     loop {
         operation.check()?;
@@ -892,7 +892,7 @@ fn wait_for_signing_status(operation: OperationContext) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn signing_status_cooldown_remaining(ready_at: Option<Instant>, now: Instant) -> Duration {
     ready_at
         .map(|ready_at| ready_at.saturating_duration_since(now))
@@ -912,9 +912,9 @@ fn classify_operation_state(cancelled: bool, timed_out: bool) -> Result<(), Stri
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn unsupported_platform() -> String {
-    "Ledger desktop PoC is currently supported only on macOS".into()
+    "Ledger USB is supported only on macOS, Windows, and Linux".into()
 }
 
 #[cfg(test)]
@@ -989,7 +989,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[test]
     fn signing_status_cooldown_only_waits_until_the_device_can_receive_apdus() {
         let now = Instant::now();

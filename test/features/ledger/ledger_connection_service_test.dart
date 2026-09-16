@@ -14,6 +14,64 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+    for (final preference in LedgerConnectionPreference.values) {
+      for (final usbReady in [true, false]) {
+        test(
+          '$platform uses USB for saved $preference (ready: $usbReady)',
+          () async {
+            final notifier = _FakeAccountNotifier(
+              _ledgerAccount(
+                preference: preference,
+                deviceModel: 'Nano X',
+              ).copyWith(
+                ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+              ),
+            );
+            final ble = _FakeBleService();
+            final container = _container(
+              notifier: notifier,
+              ble: ble,
+              platform: platform,
+              usbReady: usbReady,
+            );
+            addTearDown(container.dispose);
+            await container.read(accountProvider.future);
+            final operation = container
+                .read(ledgerConnectionServiceProvider)
+                .run(
+                  accountUuid: 'ledger-1',
+                  usb: () async => 'usb',
+                  bluetooth: (_) async =>
+                      fail('unsupported native BLE must never be called'),
+                );
+            if (usbReady) {
+              expect(await operation, 'usb');
+            } else {
+              await expectLater(
+                operation,
+                throwsA(
+                  isA<LedgerConnectionRequiredException>()
+                      .having(
+                        (e) => e.message,
+                        'USB instructions',
+                        contains('with USB'),
+                      )
+                      .having(
+                        (e) => e.message,
+                        'no BLE instructions',
+                        isNot(contains('Bluetooth')),
+                      ),
+                ),
+              );
+            }
+            expect(ble.connectCalls, 0);
+          },
+        );
+      }
+    }
+  }
+
   test(
     'Automatic falls back from unavailable USB to verified Bluetooth',
     () async {

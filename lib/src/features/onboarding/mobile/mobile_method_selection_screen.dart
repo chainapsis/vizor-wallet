@@ -31,6 +31,7 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
     final bootstrap = ref.watch(appBootstrapProvider);
     final showLedger =
         ref.watch(ledgerStaticCapabilityProvider).supported &&
+        ledgerSupportsBluetooth(ref.watch(ledgerTargetPlatformProvider)) &&
         bootstrap.hasWallet &&
         bootstrap.isPasswordConfigured;
     return Scaffold(

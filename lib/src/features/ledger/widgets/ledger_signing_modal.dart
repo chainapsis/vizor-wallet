@@ -280,8 +280,7 @@ class LedgerSigningModal extends ConsumerWidget {
           ),
           if (failed &&
               account != null &&
-              ref.watch(ledgerTargetPlatformProvider) ==
-                  TargetPlatform.macOS) ...[
+              ledgerSupportsUsb(ref.watch(ledgerTargetPlatformProvider))) ...[
             const SizedBox(height: AppSpacing.sm),
             _LedgerFailureConnectionPicker(account: account),
           ],
@@ -343,6 +342,15 @@ class _LedgerFailureConnectionPicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!ledgerSupportsBluetooth(ref.watch(ledgerTargetPlatformProvider))) {
+      return Text(
+        'Connect your Ledger over USB.',
+        key: const ValueKey('ledger_usb_only_connection'),
+        style: AppTypography.bodySmall.copyWith(
+          color: context.colors.text.secondary,
+        ),
+      );
+    }
     final bluetoothAvailable =
         account.ledgerDeviceId != null &&
         ledgerBluetoothTransportCapabilityForModel(

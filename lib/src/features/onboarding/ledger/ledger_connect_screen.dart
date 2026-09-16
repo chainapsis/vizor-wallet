@@ -13,6 +13,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../ledger/ledger_onboarding_policy.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -337,19 +338,23 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                       : null,
                   child: Text(_connectButtonLabel(readiness)),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                AppButton(
-                  key: const ValueKey('ledger_desktop_ble_connect_button'),
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(_connectBluetooth()),
-                  variant: AppButtonVariant.ghost,
-                  leading: const AppIcon(
-                    AppIcons.ledger,
-                    semanticLabel: 'Ledger',
+                if (ledgerSupportsBluetooth(
+                  ref.watch(ledgerTargetPlatformProvider),
+                )) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  AppButton(
+                    key: const ValueKey('ledger_desktop_ble_connect_button'),
+                    onPressed: _busy
+                        ? null
+                        : () => unawaited(_connectBluetooth()),
+                    variant: AppButtonVariant.ghost,
+                    leading: const AppIcon(
+                      AppIcons.ledger,
+                      semanticLabel: 'Ledger',
+                    ),
+                    child: const Text('Connect with Bluetooth'),
                   ),
-                  child: const Text('Connect with Bluetooth'),
-                ),
+                ],
               ],
             ),
           ),

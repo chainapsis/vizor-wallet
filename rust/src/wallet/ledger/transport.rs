@@ -19,6 +19,14 @@ use super::{
     OperationContext,
 };
 
+fn hid_connection_error(message: &str) -> String {
+    if cfg!(target_os = "linux") {
+        format!("ledger_linux_usb_access: {message} Check the Ledger udev rules and reconnect the device.")
+    } else {
+        message.to_string()
+    }
+}
+
 const ZCASH_CLA: u8 = 0xe0;
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
@@ -110,10 +118,12 @@ impl LedgerTransport {
             .find(|device| {
                 device.vendor_id() == LEDGER_VID && device.usage_page() == LEDGER_USAGE_PAGE
             })
-            .ok_or_else(|| "No Ledger device found. Connect and unlock the Nano S+.".to_string())?;
+            .ok_or_else(|| {
+                hid_connection_error("No Ledger device found. Connect and unlock your Ledger.")
+            })?;
         let device = device_info
             .open_device(&hid)
-            .map_err(|e| format!("Open Ledger HID device: {e}"))?;
+            .map_err(|e| hid_connection_error(&format!("Open Ledger HID device: {e}")))?;
         operation.check()?;
         Ok(Self {
             backend: Backend::Hid(device),

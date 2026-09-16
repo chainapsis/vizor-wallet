@@ -74,6 +74,10 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
     rpcEndpointProvider.select((endpoint) => endpoint.networkName),
   );
   capability.requireSupported();
+  if (transport == LedgerConnectionTransport.bluetooth &&
+      !ledgerSupportsBluetooth(ref.read(ledgerTargetPlatformProvider))) {
+    throw UnsupportedError('Connect your Ledger over USB on this platform.');
+  }
   final appVersion = await ref
       .read(ledgerAppReadinessServiceForTransportProvider(transport))
       .ensureReady();

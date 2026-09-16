@@ -90,6 +90,9 @@ class LedgerConnectionService {
     if (isLedgerMobilePlatform(platform)) {
       return const [LedgerConnectionTransport.bluetooth];
     }
+    if (!ledgerSupportsBluetooth(platform)) {
+      return const [LedgerConnectionTransport.usb];
+    }
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb => const [LedgerConnectionTransport.usb],
       LedgerConnectionPreference.bluetooth => const [
@@ -210,7 +213,11 @@ class LedgerConnectionService {
         lower.contains('bluetooth');
   }
 
-  static String _connectionFailureMessage(AccountInfo account, Object? error) {
+  String _connectionFailureMessage(AccountInfo account, Object? error) {
+    if (!ledgerSupportsBluetooth(_ref.read(ledgerTargetPlatformProvider))) {
+      final suffix = error == null ? '' : ' ${error.toString()}';
+      return 'Connect and unlock your Ledger with USB, then try again.$suffix';
+    }
     if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
     final suffix = error == null ? '' : ' ${error.toString()}';
     return switch (account.ledgerConnectionPreference) {

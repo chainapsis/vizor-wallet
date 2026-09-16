@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -21,6 +22,40 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
 void main() {
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+    testWidgets('$platform imports over USB without a Bluetooth option', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          platform: platform,
+          connector: (_) async => const LedgerDeviceAccount(
+            ufvk: 'usb-account',
+            seedFingerprint: [1],
+            accountIndex: 0,
+            appVersion: '3.9.2',
+          ),
+          importer:
+              ({
+                required name,
+                required account,
+                required birthdayHeight,
+                required profilePictureId,
+              }) async {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('birthday-usb-account'), findsOneWidget);
+    });
+  }
+
   testWidgets('exports the approved Ledger account and continues setup', (
     tester,
   ) async {
@@ -383,6 +418,7 @@ Widget _harness({
   LedgerBluetoothAccountConnector? bluetoothConnector,
   LedgerAppReadinessState readiness = const LedgerAppReadinessState.idle(),
   LedgerMobileBleService? bleService,
+  TargetPlatform platform = TargetPlatform.macOS,
 }) {
   final router = GoRouter(
     initialLocation: '/onboarding/ledger',
@@ -406,6 +442,7 @@ Widget _harness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       ledgerAccountConnectorProvider.overrideWithValue(connector),
       ledgerBluetoothAccountConnectorProvider.overrideWithValue(

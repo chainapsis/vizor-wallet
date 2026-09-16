@@ -239,6 +239,13 @@ class LedgerAppReadinessService {
       return LedgerAppReadinessException(failure, error.message);
     }
     final raw = '$error'.toLowerCase();
+    if (raw.contains('ledger_linux_usb_access')) {
+      return const LedgerAppReadinessException(
+        LedgerAppReadinessFailure.unavailable,
+        'Connect and unlock your Ledger over USB. If it is connected, install '
+        'the Ledger udev rules on Linux, then unplug and reconnect it.',
+      );
+    }
     if (raw.contains('rejected') ||
         raw.contains('denied') ||
         raw.contains('6985')) {

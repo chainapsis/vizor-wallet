@@ -11,6 +11,40 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+    testWidgets(
+      '$platform failure offers USB only for saved Bluetooth account',
+      (tester) async {
+        await tester.pumpWidget(
+          _harness(
+            platform: platform,
+            phase: LedgerSigningModalPhase.failed,
+            account: const AccountInfo(
+              uuid: 'ledger-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+              ledgerDeviceId: 'saved',
+              ledgerDeviceModel: 'Nano X',
+              ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
+            ),
+            failure: const LedgerSigningFailurePresentation(
+              title: 'Ledger signing failed',
+              statusLabel: 'Action needed',
+              message: 'Reconnect your Ledger and try again.',
+              showDeviceAppPrompt: true,
+              actionLabel: 'Try again',
+            ),
+          ),
+        );
+        expect(find.text('Connect your Ledger over USB.'), findsOneWidget);
+        expect(find.text('Bluetooth'), findsNothing);
+        expect(find.text('Auto'), findsNothing);
+      },
+    );
+  }
+
   testWidgets(
     'parks payment requests across signing phases and releases on exit',
     (tester) async {
@@ -278,6 +312,7 @@ Widget _harness({
   VoidCallback? onFailureAction,
   VoidCallback? onCancel = _noop,
   AccountInfo? account,
+  TargetPlatform platform = TargetPlatform.macOS,
 }) {
   return ProviderScope(
     key: ValueKey(readiness.phase),
@@ -286,7 +321,7 @@ Widget _harness({
       ledgerAppReadinessStateProvider.overrideWith(
         () => _FakeReadinessController(readiness),
       ),
-      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
       if (account != null)
         accountProvider.overrideWith(() => _StaticAccountNotifier(account)),
     ],

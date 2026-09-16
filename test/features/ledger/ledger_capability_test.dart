@@ -3,43 +3,47 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 
 void main() {
-  test('supports macOS, iOS, and Android mainnet only', () {
-    expect(
-      ledgerStaticCapability(
-        platform: TargetPlatform.android,
-        networkName: 'main',
-      ).supported,
-      isTrue,
-    );
-    expect(
-      ledgerStaticCapability(
-        platform: TargetPlatform.macOS,
-        networkName: 'main',
-      ).supported,
-      isTrue,
-    );
-    expect(
-      ledgerStaticCapability(
-        platform: TargetPlatform.macOS,
-        networkName: 'test',
-      ).supported,
-      isFalse,
-    );
-    expect(
-      ledgerStaticCapability(
-        platform: TargetPlatform.iOS,
-        networkName: 'main',
-      ).supported,
-      isTrue,
-    );
-    expect(
-      ledgerStaticCapability(
-        platform: TargetPlatform.windows,
-        networkName: 'main',
-      ).supported,
-      isFalse,
-    );
+  test('desktop USB and mobile BLE are mainnet only', () {
+    for (final platform in TargetPlatform.values) {
+      final supported = platform != TargetPlatform.fuchsia;
+      expect(
+        ledgerStaticCapability(
+          platform: platform,
+          networkName: 'main',
+        ).supported,
+        supported,
+      );
+      expect(
+        ledgerStaticCapability(
+          platform: platform,
+          networkName: 'test',
+        ).supported,
+        isFalse,
+      );
+    }
   });
+
+  test(
+    'Windows and Linux never advertise Bluetooth, even for unknown models',
+    () {
+      for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+        expect(ledgerSupportsUsb(platform), isTrue);
+        expect(ledgerSupportsBluetooth(platform), isFalse);
+        for (final model in [null, 'Nano X', 'Flex', 'Stax', 'Nano Gen5']) {
+          expect(
+            ledgerBluetoothTransportCapabilityForModel(
+              model: model,
+              platform: platform,
+            ),
+            LedgerBluetoothCapability.unsupported,
+          );
+        }
+      }
+      expect(ledgerSupportsBluetooth(TargetPlatform.macOS), isTrue);
+      expect(ledgerSupportsUsb(TargetPlatform.android), isFalse);
+      expect(ledgerSupportsUsb(TargetPlatform.iOS), isFalse);
+    },
+  );
 
   test('identifies the native mobile Ledger platforms', () {
     expect(isLedgerMobilePlatform(TargetPlatform.iOS), isTrue);

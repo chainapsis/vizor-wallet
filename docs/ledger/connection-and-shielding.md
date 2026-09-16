@@ -82,5 +82,27 @@ Automated tests use fake method channels, fake Ledger responses and local wallet
 DBs. Physical macOS USB/BLE and mobile BLE verification still requires a device:
 consecutive approvals, rejection/cancellation, reconnect, invalid pairing and
 TEX two-transaction execution. Automated coverage is not evidence of firmware or
-real-network compatibility. No 32-input limit or Windows/Linux transport expansion
-is included.
+real-network compatibility. No 32-input limit expansion is included.
+
+## Desktop USB platforms
+
+The Rust HID transport is compiled for macOS, Windows and Linux. Windows and
+Linux use USB only, even when saved account metadata prefers Bluetooth. Their
+onboarding and signing recovery UI do not offer Bluetooth. macOS retains USB/BLE
+selection; iOS and Android retain native BLE. Mainnet and device-app version gates
+and the legacy Orchard recovery restriction remain unchanged.
+
+Linux build hosts need `libudev` development files and `pkg-config`. The current
+pinned HID crate selects `linux-static-hidraw`; do not enable a second Linux HID
+backend through additive Cargo features. Linux bundles ship the rule and setup
+instructions in `data/ledger-usb` (source: `linux/udev`). Windows uses HIDAPI's
+Windows backend through the existing Rust DLL/Cargokit build, without a new
+Flutter MethodChannel.
+
+Validation on each target should include native Rust/Flutter release builds and
+USB import, app switching, reconnect, cancellation, send/TEX, consecutive shielding
+and voting. Speculos exercises APDUs, not host USB drivers or Linux permissions.
+The desktop Speculos test uses the host target platform; the existing shell runner
+accepts `FLUTTER_DEVICE=linux` as well as its default `macos` (Windows needs an
+appropriate host runner). Physical USB checks must cover a normal user session,
+not only an elevated/admin environment.
