@@ -176,6 +176,7 @@ dependencies {
     implementation("com.freeletics.flowredux:flowredux:1.2.2")
     // Biometric passcode escrow (BiometricPrompt + Keystore-bound key).
     implementation("androidx.biometric:biometric:1.1.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("org.mockito:mockito-core:5.21.0")

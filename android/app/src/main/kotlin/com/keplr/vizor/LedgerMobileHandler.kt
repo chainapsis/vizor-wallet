@@ -28,16 +28,24 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
-class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamHandler {
+class LedgerMobileHandler(
+    private val activity: Activity,
+    private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
+) : EventChannel.StreamHandler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity)
+    private var connectionJob: Job? = null
+    private var connectionResult: MethodChannel.Result? = null
     private var discoveryJob: Job? = null
     private var eventSink: EventChannel.EventSink? = null
     private var discoveryRequested = false
@@ -86,6 +94,7 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
     }
 
     fun close() {
+        cancelConnection()
         stopDiscovery()
         cancelSigningOperation()
         scope.cancel()
@@ -108,6 +117,10 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
     }
 
     private fun startDiscovery(result: MethodChannel.Result) {
+        if (connectionJob != null) {
+            result.error("unavailable", "A Ledger connection is already active.", null)
+            return
+        }
         if (requiredPermissions().any {
                 ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
             }
@@ -177,24 +190,104 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
 
     private fun connect(call: MethodCall, result: MethodChannel.Result) {
         val deviceId = call.argument<String>("deviceId")
-        val device = deviceId?.let(discoveredDevices::get)
-        if (device == null) {
+        if (deviceId.isNullOrBlank()) {
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        scope.launch {
-            when (val connection = dmk.connectDevice(device)) {
-                is ConnectionResult.Connected -> {
-                    connectedDevice = connection.device
-                    stopDiscovery()
-                    result.success(null)
+        if (connectionJob != null || signingJob != null) {
+            result.error("unavailable", "A Ledger operation is already active.", null)
+            return
+        }
+        // The onboarding scan is optional: a fresh handler must also be able to
+        // connect using only the ID persisted with the account.
+        stopDiscovery()
+        connectionResult = result
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
+                currentCoroutineContext().ensureActive()
+                when (val connection = dmk.connectDevice(device)) {
+                    is ConnectionResult.Connected -> {
+                        if (connectionResult == null) {
+                            withContext(NonCancellable) { dmk.disconnectDevice(connection.device) }
+                        } else {
+                            connectedDevice = connection.device
+                            takeConnectionResult()?.success(null)
+                        }
+                    }
+                    is ConnectionResult.Disconnected -> {
+                        takeConnectionResult()?.let { connectionFailure(it, connection.failure) }
+                    }
                 }
-                is ConnectionResult.Disconnected -> connectionFailure(result, connection.failure)
+            } catch (_: CancellationException) {
+                takeConnectionResult()?.error("cancelled", "Ledger connection was cancelled.", null)
+            } catch (error: LedgerDiscoveryException) {
+                takeConnectionResult()?.error(error.code, error.message, null)
+            } catch (_: SecurityException) {
+                takeConnectionResult()?.error(
+                    "permission_denied", "Bluetooth permission is required to connect to Ledger.", null,
+                )
+            } catch (_: Exception) {
+                takeConnectionResult()?.error("unavailable", "Could not connect to Ledger. Try again.", null)
             }
+        }
+        connectionJob = job
+        job.invokeOnCompletion { if (connectionJob === job) connectionJob = null }
+        job.start()
+    }
+
+    private suspend fun rediscoverDevice(deviceId: String): DiscoveryDevice {
+        try {
+            return withTimeoutOrNull(15_000L) {
+                dmk.startDiscoveringDevices().mapNotNull { update ->
+                    when (update) {
+                        is DiscoveryResult.DevicesDiscovered -> update.devices.firstOrNull {
+                            it.uid == deviceId && it.connectivityType is ConnectivityType.Bluetooth &&
+                                it.ledgerDevice.bleInformation != null
+                        }
+                        DiscoveryResult.Ended -> throw LedgerDiscoveryException(
+                            "disconnected", "The selected Ledger is no longer available.",
+                        )
+                        DiscoveryResult.Failure.BluetoothDisabled -> throw LedgerDiscoveryException(
+                            "bluetooth_off", "Turn on Bluetooth to connect to Ledger.",
+                        )
+                        DiscoveryResult.Failure.BluetoothPermissionNotGranted -> throw LedgerDiscoveryException(
+                            "permission_denied", "Bluetooth permission is required to connect to Ledger.",
+                        )
+                        DiscoveryResult.Failure.LocationDisabled -> throw LedgerDiscoveryException(
+                            "permission_denied", "Location must be enabled for Bluetooth discovery on this Android version.",
+                        )
+                        DiscoveryResult.Failure.BluetoothBleNotSupported -> throw LedgerDiscoveryException(
+                            "unavailable", "This Android device does not support Bluetooth LE.",
+                        )
+                        is DiscoveryResult.Failure.Unknown -> throw LedgerDiscoveryException(
+                            "unavailable", update.message,
+                        )
+                    }
+                }.first().also { discoveredDevices[it.uid] = it }
+            } ?: throw LedgerDiscoveryException(
+                "disconnected", "Could not find the saved Ledger. Turn it on and try again.",
+            )
+        } finally {
+            dmk.stopDiscoveringDevices()
         }
     }
 
+    private fun takeConnectionResult(): MethodChannel.Result? {
+        val result = connectionResult
+        connectionResult = null
+        return result
+    }
+
+    private fun cancelConnection() {
+        takeConnectionResult()?.error("cancelled", "Ledger connection was cancelled.", null)
+        connectionJob?.cancel()
+    }
+
+    private class LedgerDiscoveryException(val code: String, message: String) : Exception(message)
+
     private fun disconnect(result: MethodChannel.Result) {
+        cancelConnection()
         cancelSigningOperation()
         val device = connectedDevice
         connectedDevice = null
@@ -324,6 +417,7 @@ class LedgerMobileHandler(private val activity: Activity) : EventChannel.StreamH
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
+        cancelConnection()
         cancelSigningOperation()
         result.success(null)
     }
