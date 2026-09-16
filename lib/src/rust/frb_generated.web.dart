@@ -513,7 +513,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LedgerAccountExport dco_decode_ledger_account_export(dynamic raw);
 
   @protected
+  LedgerApduCommand dco_decode_ledger_apdu_command(dynamic raw);
+
+  @protected
   LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
+
+  @protected
+  LedgerUfvkApduPlan dco_decode_ledger_ufvk_apdu_plan(dynamic raw);
 
   @protected
   LegacyHardwareAccount dco_decode_legacy_hardware_account(dynamic raw);
@@ -1862,7 +1868,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LedgerApduCommand sse_decode_ledger_apdu_command(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
+
+  @protected
+  LedgerUfvkApduPlan sse_decode_ledger_ufvk_apdu_plan(
+    SseDeserializer deserializer,
+  );
 
   @protected
   LegacyHardwareAccount sse_decode_legacy_hardware_account(
@@ -3532,8 +3548,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_ledger_apdu_command(
+    LedgerApduCommand self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ledger_device_app(
     LedgerDeviceApp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_ufvk_apdu_plan(
+    LedgerUfvkApduPlan self,
     SseSerializer serializer,
   );
 

@@ -36,6 +36,7 @@ void main() {
               ufvk: 'uview-test',
               seedFingerprint: [1],
               accountIndex: 0,
+              appVersion: '3.9.3',
             ),
             birthdayHeight: 3000000,
             profilePictureId: kDefaultProfilePictureId,
@@ -72,6 +73,7 @@ void main() {
           ufvk: 'uview-test',
           seedFingerprint: [1, 2, 3],
           accountIndex: 7,
+          appVersion: '3.9.3',
           deviceModel: 'Ledger Nano S Plus',
         ),
         birthdayHeight: 3000000,
@@ -83,6 +85,36 @@ void main() {
       expect(notifier.importedDeviceModel, 'Ledger Nano S Plus');
     },
   );
+
+  test('imports Bluetooth device metadata as separate raw fields', () async {
+    final notifier = _CapturingAccountNotifier();
+    final container = ProviderContainer(
+      overrides: [accountProvider.overrideWith(() => notifier)],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    await container.read(ledgerAccountImporterProvider)(
+      name: 'Ledger',
+      account: const LedgerDeviceAccount(
+        ufvk: 'uview-test',
+        seedFingerprint: [1, 2, 3],
+        accountIndex: 7,
+        appVersion: '3.9.3',
+        transport: LedgerConnectionTransport.bluetooth,
+        deviceId: 'device-1',
+        deviceName: 'Rowan Ledger',
+        deviceModel: 'Nano X',
+      ),
+      birthdayHeight: 3000000,
+      profilePictureId: kDefaultProfilePictureId,
+    );
+
+    expect(notifier.importedTransport, LedgerConnectionTransport.bluetooth);
+    expect(notifier.importedDeviceId, 'device-1');
+    expect(notifier.importedDeviceName, 'Rowan Ledger');
+    expect(notifier.importedDeviceModel, 'Nano X');
+  });
 
   for (final sameUfvk in [true, false]) {
     test(
@@ -136,6 +168,9 @@ class _CapturingAccountNotifier extends AccountNotifier {
   String? importedUfvk;
   int? importedIndex;
   List<int>? importedSeedFingerprint;
+  LedgerConnectionTransport? importedTransport;
+  String? importedDeviceId;
+  String? importedDeviceName;
   String? importedDeviceModel;
 
   @override
@@ -157,6 +192,9 @@ class _CapturingAccountNotifier extends AccountNotifier {
     importedUfvk = ufvk;
     importedIndex = zip32Index;
     importedSeedFingerprint = seedFingerprint;
+    importedTransport = connectionTransport;
+    importedDeviceId = ledgerDeviceId;
+    importedDeviceName = ledgerDeviceName;
     importedDeviceModel = ledgerDeviceModel;
   }
 }

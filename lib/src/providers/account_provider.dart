@@ -661,6 +661,56 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
+  Future<void> updateLedgerConnectionPreference(
+    String uuid,
+    LedgerConnectionPreference preference,
+  ) async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    final updated = prev.accounts
+        .map(
+          (account) => account.uuid == uuid
+              ? account.copyWith(ledgerConnectionPreference: preference)
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('updateLedgerConnectionPreference: $uuid → ${preference.name}');
+  }
+
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    final updated = prev.accounts
+        .map(
+          (account) => account.uuid == uuid
+              ? account.copyWith(
+                  ledgerLastTransport: transport,
+                  ledgerDeviceId: deviceId,
+                  ledgerDeviceName: deviceName,
+                  ledgerDeviceModel: deviceModel,
+                )
+              : account,
+        )
+        .toList(growable: false);
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('recordLedgerConnection: $uuid → ${transport.name}');
+  }
+
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
