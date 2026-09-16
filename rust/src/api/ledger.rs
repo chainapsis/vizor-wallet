@@ -14,6 +14,22 @@ pub struct LedgerAccountExport {
     pub device_model: Option<String>,
 }
 
+/// One transport-neutral APDU command. Native Bluetooth adapters own only the
+/// session and byte exchange; Rust remains the Zcash protocol authority.
+pub struct LedgerApduCommand {
+    pub cla: u8,
+    pub ins: u8,
+    pub p1: u8,
+    pub p2: u8,
+    pub data: Vec<u8>,
+}
+
+/// The first UFVK request and its continuation command.
+pub struct LedgerUfvkApduPlan {
+    pub first: LedgerApduCommand,
+    pub continuation: LedgerApduCommand,
+}
+
 /// The application currently running on the connected Ledger device.
 pub struct LedgerDeviceApp {
     pub app_name: String,
@@ -37,16 +53,6 @@ pub fn ledger_cancel_operation() {
     ledger::cancel_operation();
 }
 
-/// Export the UFVK for the selected mainnet account after device approval.
-///
-/// The request includes the shielded `m/32'/133'/account'` and transparent
-/// `m/44'/133'/account'` derivation paths. This does not import an account into
-/// the wallet or return seed/spending keys.
-pub fn ledger_export_ufvk(account_index: u32, network: String) -> Result<String, String> {
-    require_mainnet(&network)?;
-    ledger::get_ufvk(account_index)
-}
-
 /// Export an account's UFVK and derivation metadata after device approval.
 /// The Ledger app does not export the ZIP-32 seed fingerprint. The synthetic
 /// hash here fills the DB derivation slot; it cannot identify a seed or device.
@@ -55,20 +61,69 @@ pub fn ledger_export_account(
     network: String,
 ) -> Result<LedgerAccountExport, String> {
     require_mainnet(&network)?;
-    zip32::AccountId::try_from(account_index)
-        .map_err(|_| "Ledger account index must be less than 2^31")?;
+    require_account_index(account_index)?;
     let (ufvk, device_model) = ledger::get_ufvk_with_device_model(account_index)?;
-    zcash_keys::keys::UnifiedFullViewingKey::decode(
-        &crate::wallet::keys::parse_network(&network)?,
-        &ufvk,
-    )
-    .map_err(|error| format!("Failed to parse Ledger UFVK: {error}"))?;
+    validate_ufvk(&network, &ufvk)?;
     Ok(LedgerAccountExport {
         seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
         ufvk,
         account_index,
         device_model,
     })
+}
+
+/// Build the Zcash app's UFVK request without opening a desktop transport.
+pub fn ledger_build_ufvk_apdu_plan(account_index: u32) -> Result<LedgerUfvkApduPlan, String> {
+    require_account_index(account_index)?;
+    let (first, continuation) = ledger::apdu::ufvk_commands(account_index)?;
+    Ok(LedgerUfvkApduPlan {
+        first: to_apdu_command(first),
+        continuation: to_apdu_command(continuation),
+    })
+}
+
+/// Parse status-bearing Bluetooth responses and produce the same public
+/// account metadata as the USB export path.
+pub fn ledger_parse_mobile_ufvk_responses(
+    account_index: u32,
+    network: String,
+    responses: Vec<Vec<u8>>,
+) -> Result<LedgerAccountExport, String> {
+    require_mainnet(&network)?;
+    require_account_index(account_index)?;
+    let ufvk = ledger::apdu::decode_raw_ufvk_responses(&responses)?;
+    validate_ufvk(&network, &ufvk)?;
+    Ok(LedgerAccountExport {
+        seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
+        ufvk,
+        account_index,
+        device_model: None,
+    })
+}
+
+fn to_apdu_command(command: ledger::apdu::ApduCommand) -> LedgerApduCommand {
+    LedgerApduCommand {
+        cla: command.cla,
+        ins: command.ins,
+        p1: command.p1,
+        p2: command.p2,
+        data: command.data,
+    }
+}
+
+fn require_account_index(account_index: u32) -> Result<(), String> {
+    zip32::AccountId::try_from(account_index)
+        .map(|_| ())
+        .map_err(|_| "Ledger account index must be less than 2^31".into())
+}
+
+fn validate_ufvk(network: &str, ufvk: &str) -> Result<(), String> {
+    zcash_keys::keys::UnifiedFullViewingKey::decode(
+        &crate::wallet::keys::parse_network(network)?,
+        ufvk,
+    )
+    .map(|_| ())
+    .map_err(|error| format!("Failed to parse Ledger UFVK: {error}"))
 }
 
 fn ledger_account_fingerprint(ufvk: &str, account_index: u32) -> [u8; 32] {
@@ -97,7 +152,8 @@ fn require_mainnet(network: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ledger_account_fingerprint, ledger_export_account, ledger_export_ufvk, require_mainnet,
+        ledger_account_fingerprint, ledger_build_ufvk_apdu_plan, ledger_export_account,
+        ledger_parse_mobile_ufvk_responses, require_mainnet,
     };
 
     #[test]
@@ -121,11 +177,38 @@ mod tests {
     }
 
     #[test]
+    fn mobile_ufvk_helpers_reject_invalid_indexes_before_exchange_or_decode() {
+        assert!(ledger_build_ufvk_apdu_plan(1 << 31)
+            .err()
+            .unwrap()
+            .contains("index"));
+        assert!(
+            ledger_parse_mobile_ufvk_responses(1 << 31, "main".into(), vec![])
+                .err()
+                .unwrap()
+                .contains("index")
+        );
+        assert!(ledger_parse_mobile_ufvk_responses(0, "test".into(), vec![])
+            .err()
+            .unwrap()
+            .contains("mainnet"));
+        assert!(ledger_parse_mobile_ufvk_responses(
+            0,
+            "main".into(),
+            vec![vec![0, 3, b'b', b'a', b'd', 0x90, 0]],
+        )
+        .err()
+        .unwrap()
+        .contains("parse Ledger UFVK"));
+    }
+
+    #[test]
     fn ledger_network_gate_rejects_non_mainnet_before_device_access() {
         assert!(require_mainnet("main").is_ok());
         for network in ["test", "regtest", "", "unknown"] {
-            assert!(ledger_export_ufvk(0, network.into())
-                .unwrap_err()
+            assert!(ledger_export_account(0, network.into())
+                .err()
+                .unwrap()
                 .contains("mainnet"));
         }
     }
