@@ -158,10 +158,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
     if (_cancelling || _proposalAbandoned) return;
-    final isHardware = ref
-        .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
-    if (isHardware) {
+    final accountNotifier = ref.read(accountProvider.notifier);
+    if (accountNotifier.isLedgerAccount(_reviewArgs.proposalAccountUuid)) {
+      showAppToast(
+        context,
+        'Ledger signing is not available in this build.',
+        iconName: AppIcons.warningCircle,
+        tone: AppToastTone.destructive,
+      );
+      return;
+    }
+    if (accountNotifier.isKeystoneAccount(_reviewArgs.proposalAccountUuid)) {
       _showKeystoneSigningModal();
       return;
     }
@@ -541,9 +548,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isHardware = ref
+    final signerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(_reviewArgs.proposalAccountUuid);
+        .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
+    final isLedger = signerKind == HardwareSignerKind.ledger;
+    final isKeystone = signerKind == HardwareSignerKind.keystone;
     final keystonePhase = _keystonePhase;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
@@ -617,10 +626,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
-                            : isHardware
+                            : isLedger
+                            ? 'Ledger unavailable'
+                            : isKeystone
                             ? 'Confirm with Keystone'
                             : 'Confirm donation',
-                        confirmIcon: isHardware
+                        confirmIcon: isLedger
+                            ? AppIcons.warningCircle
+                            : isKeystone
                             ? AppIcons.qr
                             : AppIcons.donation,
                         onConfirm:
@@ -649,10 +662,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ? 'Retry'
                             : _cancelling
                             ? 'Cancelling…'
-                            : isHardware
+                            : isLedger
+                            ? 'Ledger unavailable'
+                            : isKeystone
                             ? 'Confirm with Keystone'
                             : 'Confirm & send',
-                        confirmLeadingIconName: isHardware
+                        confirmLeadingIconName: isLedger
+                            ? AppIcons.warningCircle
+                            : isKeystone
                             ? AppIcons.qr
                             : AppIcons.plane,
                         onConfirm:

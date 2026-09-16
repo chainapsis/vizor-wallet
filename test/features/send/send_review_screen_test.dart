@@ -894,6 +894,33 @@ void main() {
     expect(rustApi.encodeFullPcztCalls, 0);
   });
 
+  testWidgets('Ledger confirm does not open the Keystone signing modal', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(hardwareSignerKind: HardwareSignerKind.ledger),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger unavailable'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+
+    await tester.tap(find.text('Ledger unavailable'));
+    await tester.pump();
+
+    expect(
+      find.text('Ledger signing is not available in this build.'),
+      findsOneWidget,
+    );
+    expect(find.byType(KeystoneSigningModal), findsNothing);
+    expect(find.text('status-route'), findsNothing);
+    expect(rustApi.createPcztCalls, 0);
+  });
+
   testWidgets('review and Keystone signing hold the payment-URI busy latch', (
     tester,
   ) async {
@@ -1541,6 +1568,7 @@ Widget _harness(
 
 AppBootstrapState _bootstrap({
   bool isHardware = false,
+  HardwareSignerKind? hardwareSignerKind,
   bool secondAccount = false,
 }) {
   return AppBootstrapState(
@@ -1551,7 +1579,8 @@ AppBootstrapState _bootstrap({
           uuid: 'test-account',
           name: 'Account 1',
           order: 0,
-          isHardware: isHardware,
+          isHardware: isHardware || hardwareSignerKind != null,
+          hardwareSignerKind: hardwareSignerKind,
         ),
         if (secondAccount)
           const AccountInfo(uuid: 'account-b', name: 'Account B', order: 1),
