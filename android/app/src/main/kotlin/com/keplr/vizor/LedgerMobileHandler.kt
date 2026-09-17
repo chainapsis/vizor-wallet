@@ -1,7 +1,13 @@
 package com.keplr.vizor
 
 import android.Manifest
+import android.bluetooth.BluetoothManager
+import android.location.LocationManager
+import androidx.core.location.LocationManagerCompat
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -59,6 +65,7 @@ class LedgerMobileHandler(
     private var connectedDevice: ConnectedDevice? = null
     private var cleanupDevice: ConnectedDevice? = null
     private var cleanupRequestedFor: String? = null
+    private var permissionNeedsSettings = false
     private var permissionResult: MethodChannel.Result? = null
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -66,7 +73,20 @@ class LedgerMobileHandler(
             result.error("cancelled", "Ledger connection was closed.", null)
             return
         }
+        if (permissionResult != null && call.method in setOf("startDiscovery", "connect", "currentApp", "openZcashApp", "exchangeUfvk", "exchangeApdus")) {
+            result.error("busy", "A Ledger permission request is already active.", null)
+            return
+        }
         when (call.method) {
+            "bluetoothAccessStatus" -> result.success(bluetoothAccessStatus())
+            "openBluetoothSettings" -> {
+                val opened = runCatching {
+                    activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${activity.packageName}")))
+                    true
+                }.getOrDefault(false)
+                result.success(opened)
+            }
             "requestPermissions" -> requestPermissions(result)
             "startDiscovery" -> startDiscovery(result)
             "stopDiscovery" -> {
@@ -98,6 +118,10 @@ class LedgerMobileHandler(
     fun onRequestPermissionsResult(requestCode: Int, grantResults: IntArray): Boolean {
         if (requestCode != PERMISSION_REQUEST) return false
         val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        permissionNeedsSettings = !granted && grantResults.isNotEmpty() && requiredPermissions().any {
+            ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+        }
         permissionResult?.success(granted)
         permissionResult = null
         return true
@@ -116,7 +140,38 @@ class LedgerMobileHandler(
         scope.cancel()
     }
 
+    private fun bluetoothAccessStatus(): Map<String, Any> {
+        val missing = requiredPermissions().filter {
+            ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
+        }
+        // A denied permission with no rationale is also the initial state and
+        // can result from auto-reset. Do not label it permanently denied.
+        val restricted = missing.any {
+            activity.packageManager.isPermissionRevokedByPolicy(it, activity.packageName)
+        }
+        val status = mutableMapOf<String, Any>(
+            "permission" to if (missing.isEmpty()) "granted" else if (restricted) "restricted" else if (permissionNeedsSettings) "settings" else "requestable",
+            "permissionKind" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "bluetooth" else "location",
+        )
+        if (missing.isEmpty()) {
+            runCatching {
+                activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled
+            }.getOrNull()?.let { status["bluetoothEnabled"] = it }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                activity.getSystemService(LocationManager::class.java)?.let {
+                    status["locationEnabled"] = LocationManagerCompat.isLocationEnabled(it)
+                }
+            }
+            permissionNeedsSettings = false
+        }
+        return status
+    }
+
     private fun requestPermissions(result: MethodChannel.Result) {
+        if (sdkJobs[dmk] != null) {
+            result.error("busy", "A Ledger operation is already active.", null)
+            return
+        }
         val missing = requiredPermissions().filter {
             ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
         }

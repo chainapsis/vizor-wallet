@@ -65,6 +65,41 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'ledger-recovery-picker-permission',
+    description: 'Ledger onboarding: permission recovery',
+    builder: buildLedgerPickerPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restored',
+    description: 'Ledger recovery: permission restored, manual retry',
+    builder: buildLedgerPermissionRestoredCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location-permission',
+    description: 'Ledger recovery: legacy Android location permission',
+    builder: buildLedgerLocationPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-request',
+    description: 'Ledger recovery: request permission',
+    builder: buildLedgerPermissionRequestCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restricted',
+    description: 'Ledger recovery: restricted permission',
+    builder: buildLedgerPermissionRestrictedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-recovery-permission',
     description: 'Ledger recovery: permission',
     builder: buildLedgerPermissionCapture,

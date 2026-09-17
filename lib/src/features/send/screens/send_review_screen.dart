@@ -464,6 +464,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         statusLabel: 'Action needed',
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+        bluetoothRecovery: guidance.bluetoothRecovery,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;

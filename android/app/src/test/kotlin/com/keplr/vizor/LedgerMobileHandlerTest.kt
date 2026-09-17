@@ -57,6 +57,39 @@ class LedgerMobileHandlerTest {
     private val saved = DiscoveryDevice("saved-id", "Ledger", LedgerDevice.NanoX, ConnectivityType.Bluetooth(-50))
     private val connected = mock(ConnectedDevice::class.java)
 
+    @Test fun accessStatusDoesNotPromptOrStartDiscovery() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        val result = call("bluetoothAccessStatus")
+        val status = result.value as Map<*, *>
+        assertEquals("requestable", status["permission"])
+        assertEquals("bluetooth", status["permissionKind"])
+        verifyNoInteractions(dmk)
+    }
+
+    @Test @Config(sdk = [30]) fun legacyAccessRequestsLocationPermission() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        val status = call("bluetoothAccessStatus").value as Map<*, *>
+        assertEquals("location", status["permissionKind"])
+        assertEquals("requestable", status["permission"])
+    }
+
+    @Test fun deniedRequestWithoutRationaleOffersSettingsAndGrantClearsIt() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        call("requestPermissions")
+        handler.onRequestPermissionsResult(0x4c45, intArrayOf(PackageManager.PERMISSION_DENIED))
+        assertEquals("settings", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        assertEquals("granted", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+        shadowOf(activity.application).denyPermissions(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        assertEquals("requestable", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+    }
+
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
         handler = LedgerMobileHandler(mock(Activity::class.java), dmk)

@@ -3,7 +3,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/features/ledger/services/ledger_bluetooth_access.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
@@ -14,7 +16,11 @@ import '../src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import '../src/rust/api/ledger.dart' as rust_ledger;
 import '../widgetbook/ledger_use_cases.dart';
 
-Widget _signing(LedgerMobileFailure failure) {
+Widget _signing(
+  LedgerMobileFailure failure, {
+  LedgerBluetoothPermission permission = LedgerBluetoothPermission.settings,
+  bool locationPermission = false,
+}) {
   final guidance = ledgerFailureGuidance(
     LedgerMobileException(failure, 'Scripted capture failure'),
   )!;
@@ -23,6 +29,11 @@ Widget _signing(LedgerMobileFailure failure) {
       color: context.colors.background.window,
       child: buildLedgerSigningPreview(
         phase: LedgerSigningModalPhase.failed,
+        bluetoothService: _PermissionCaptureBle(
+          failure,
+          permission,
+          locationPermission: locationPermission,
+        ),
         mobileTitle: 'Confirm transaction',
         mobile: kAppFormFactor == AppFormFactor.mobile,
         failureOverride: LedgerSigningFailurePresentation(
@@ -30,6 +41,7 @@ Widget _signing(LedgerMobileFailure failure) {
           statusLabel: 'Action needed',
           message: guidance.message,
           showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+          bluetoothRecovery: guidance.bluetoothRecovery,
           actionLabel: 'Try again',
         ),
       ),
@@ -112,3 +124,60 @@ class _CaptureBle implements LedgerMobileBleService {
   Future<List<Uint8List>> exchangeUfvk(rust_ledger.LedgerUfvkApduPlan plan) =>
       throw StateError('Capture never exports keys');
 }
+
+Widget buildLedgerPermissionRequestCapture(BuildContext context) => _signing(
+  LedgerMobileFailure.permissionDenied,
+  permission: LedgerBluetoothPermission.requestable,
+);
+Widget buildLedgerPermissionRestrictedCapture(BuildContext context) => _signing(
+  LedgerMobileFailure.permissionDenied,
+  permission: LedgerBluetoothPermission.restricted,
+);
+
+class _PermissionCaptureBle extends _CaptureBle
+    implements LedgerBluetoothAccess {
+  _PermissionCaptureBle(
+    super.failure,
+    this.permission, {
+    this.locationPermission = false,
+  });
+  final bool locationPermission;
+  final LedgerBluetoothPermission permission;
+  @override
+  Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async =>
+      LedgerBluetoothAccessStatus(
+        failure == LedgerMobileFailure.permissionDenied
+            ? permission
+            : LedgerBluetoothPermission.granted,
+        locationPermission: locationPermission,
+        macOS: kAppFormFactor == AppFormFactor.desktop,
+        bluetoothEnabled: failure != LedgerMobileFailure.bluetoothOff,
+        locationEnabled: failure != LedgerMobileFailure.locationDisabled,
+      );
+  @override
+  Future<bool> openBluetoothSettings() async => true;
+}
+
+Widget buildLedgerPermissionRestoredCapture(BuildContext context) => _signing(
+  LedgerMobileFailure.permissionDenied,
+  permission: LedgerBluetoothPermission.granted,
+);
+Widget buildLedgerLocationPermissionCapture(BuildContext context) =>
+    _signing(LedgerMobileFailure.permissionDenied, locationPermission: true);
+
+Widget buildLedgerPickerPermissionCapture(BuildContext context) =>
+    ProviderScope(
+      child: Builder(
+        builder: (context) => MobileModalOverlay(
+          background: ColoredBox(color: context.colors.background.window),
+          child: MobileLedgerDeviceSheet(
+            service: _PermissionCaptureBle(
+              LedgerMobileFailure.permissionDenied,
+              LedgerBluetoothPermission.settings,
+            ),
+            onSelected: (_) {},
+            onClose: () {},
+          ),
+        ),
+      ),
+    );

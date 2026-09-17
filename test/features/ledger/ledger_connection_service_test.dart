@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_access.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'dart:async';
 
@@ -17,6 +18,81 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 
 void main() {
+  for (final platform in [
+    TargetPlatform.iOS,
+    TargetPlatform.android,
+    TargetPlatform.macOS,
+  ]) {
+    test(
+      '$platform revoked permission prevents saved-device connection and signing',
+      () async {
+        final ble = _PermissionBle();
+        final container = _container(
+          notifier: _FakeAccountNotifier(
+            _ledgerAccount(
+              preference: LedgerConnectionPreference.bluetooth,
+              deviceModel: 'Nano X',
+            ),
+          ),
+          ble: ble,
+          platform: platform,
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        var signs = 0;
+        await expectLater(
+          container
+              .read(ledgerConnectionServiceProvider)
+              .run(
+                accountUuid: 'ledger-1',
+                usb: () async => 'usb',
+                bluetooth: (_) async {
+                  signs++;
+                  return 'ble';
+                },
+              ),
+          throwsA(
+            predicate<Object>(
+              (e) => ledgerFailureGuidance(e)?.bluetoothRecovery == true,
+            ),
+          ),
+        );
+        expect(ble.connectCalls, 0);
+        expect(signs, 0);
+        expect(ble.reads, 1);
+      },
+    );
+  }
+  test(
+    'macOS successful USB automatic path never checks Bluetooth permissions',
+    () async {
+      final ble = _PermissionBle();
+      final container = _container(
+        notifier: _FakeAccountNotifier(
+          _ledgerAccount(
+            preference: LedgerConnectionPreference.automatic,
+            deviceModel: 'Nano X',
+          ),
+        ),
+        ble: ble,
+        platform: TargetPlatform.macOS,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      expect(
+        await container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () async => 'usb',
+              bluetooth: (_) async => 'ble',
+            ),
+        'usb',
+      );
+      expect(ble.reads, 0);
+    },
+  );
+
   for (final platform in [
     TargetPlatform.iOS,
     TargetPlatform.android,
@@ -756,4 +832,18 @@ class _FakeBleService implements LedgerMobileBleService {
 
   @override
   Future<void> cancelSigning() async {}
+}
+
+class _PermissionBle extends _FakeBleService implements LedgerBluetoothAccess {
+  int reads = 0;
+  @override
+  Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async {
+    reads++;
+    return const LedgerBluetoothAccessStatus(
+      LedgerBluetoothPermission.settings,
+    );
+  }
+
+  @override
+  Future<bool> openBluetoothSettings() async => true;
 }

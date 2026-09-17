@@ -150,6 +150,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
               title: 'Ledger migration failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger migration could not be completed.',

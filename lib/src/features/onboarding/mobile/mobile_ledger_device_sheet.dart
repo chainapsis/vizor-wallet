@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../ledger/services/ledger_bluetooth_access.dart';
+import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -60,6 +62,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   _DiscoveryState _state = _DiscoveryState.requestingPermission;
   List<LedgerBleDevice> _devices = const [];
   String? _error;
+  bool _bluetoothRecovery = false;
   String? _connectingDeviceId;
   var _generation = 0;
   bool _closing = false;
@@ -129,9 +132,10 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
         _state = _DiscoveryState.requestingPermission;
         _devices = const [];
         _error = null;
+        _bluetoothRecovery = false;
         _connectingDeviceId = null;
       });
-      final granted = await widget.service.requestPermissions();
+      final granted = await prepareLedgerBluetoothDiscovery(widget.service);
       if (!_isCurrent(generation)) return;
       if (!granted) {
         setState(() {
@@ -178,6 +182,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
     setState(() {
       _state = _DiscoveryState.failed;
       _error = message;
+      _bluetoothRecovery =
+          ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
       _connectingDeviceId = null;
     });
   }
@@ -192,6 +198,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
     try {
       await _stopDiscovery();
       if (!_isCurrent(generation)) return;
+      await requireLedgerBluetoothAccess(widget.service);
+      if (!mounted || generation != _generation) return;
       await widget.service.connect(device);
       if (!_isCurrent(generation)) return;
       // Successful selection transfers the connection to the parent screen.
@@ -259,6 +267,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                 title: 'Could not connect to your Ledger',
                 message: _error ?? 'Try again.',
               ),
+            if (_state == _DiscoveryState.failed && _bluetoothRecovery)
+              LedgerBluetoothRecovery(service: widget.service),
             if (_state == _DiscoveryState.empty ||
                 _state == _DiscoveryState.failed) ...[
               const SizedBox(height: AppSpacing.sm),

@@ -3,8 +3,10 @@ import CoreBluetooth
 import Foundation
 
 #if os(macOS)
+  import AppKit
   import FlutterMacOS
 #else
+  import UIKit
   import Flutter
 #endif
 
@@ -52,8 +54,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   var onSigningProgress: ((String, String) -> Void)?
 
+  private let authorization: () -> CBManagerAuthorization
+  private let permissionTimeout: UInt64
+  private var transportCallbackInstalled = false
   private var transportStorage: BleTransportProtocol?
   private var bluetoothState: CBManagerState = .unknown
+  private var permissionResult: FlutterResult?
+  private var permissionDeadline: Task<Void, Never>?
   private var eventSink: FlutterEventSink?
   private var discoveryRequested = false
   private var discoveryActive = false
@@ -82,14 +89,35 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var automaticCloseRetryUsed = false
   private var isClosing = false
 
-  init(transport: BleTransportProtocol? = nil, appQueryTimeout: UInt64 = 10_000_000_000) {
+  init(transport: BleTransportProtocol? = nil, appQueryTimeout: UInt64 = 10_000_000_000,
+       authorization: @escaping () -> CBManagerAuthorization = { CBManager.authorization },
+       permissionTimeout: UInt64 = 30_000_000_000) {
+    self.authorization = authorization
+    self.permissionTimeout = permissionTimeout
     self.appQueryTimeout = appQueryTimeout
     transportStorage = transport
     super.init()
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if permissionResult != nil && ["startDiscovery", "connect", "currentApp", "openZcashApp", "exchangeUfvk", "exchangeApdus"].contains(call.method) {
+      result(pendingExchangeError())
+      return
+    }
     switch call.method {
+    case "bluetoothAccessStatus":
+      result(bluetoothAccessStatus())
+    case "openBluetoothSettings":
+      #if os(macOS)
+        let url = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        result(NSWorkspace.shared.open(url))
+      #else
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url, options: [:]) { opened in result(opened) }
+      #endif
     case "requestPermissions":
       requestPermissions(result)
     case "startDiscovery":
@@ -140,6 +168,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   func close() {
     guard !isClosing else { return }
     isClosing = true
+    finishPermissionRequest(false)
     guard let transport = transportStorage,
       LedgerMobileTransportOwnership.shared.owns(transport: transport, owner: self)
     else { return }
@@ -209,12 +238,10 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func ensureTransport() -> BleTransportProtocol {
-    if let transportStorage {
-      return transportStorage
-    }
-
-    let transport = BleTransport.shared
+    let transport = transportStorage ?? BleTransport.shared
     transportStorage = transport
+    guard !transportCallbackInstalled else { return transport }
+    transportCallbackInstalled = true
     transport.bluetoothStateCallback { [weak self] state in
       DispatchQueue.main.async {
         self?.handleBluetoothState(state)
@@ -247,6 +274,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func handleBluetoothState(_ state: CBManagerState) {
     bluetoothState = state
+    if authorization() != .notDetermined {
+      finishPermissionRequest(authorization() == .allowedAlways)
+    }
     guard discoveryRequested else { return }
 
     switch state {
@@ -277,13 +307,54 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
+  // Authorization is read without creating a central manager (which can prompt).
+  private func bluetoothAccessStatus() -> [String: Any] {
+    let permission: String
+    switch authorization() {
+    case .allowedAlways: permission = "granted"
+    case .notDetermined: permission = "requestable"
+    case .denied: permission = "settings"
+    case .restricted: permission = "restricted"
+    @unknown default: permission = "settings"
+    }
+    var status: [String: Any] = ["permission": permission, "permissionKind": "bluetooth"]
+    #if os(macOS)
+      status["platform"] = "macOS"
+    #endif
+    if bluetoothState == .poweredOn || bluetoothState == .poweredOff {
+      status["bluetoothEnabled"] = bluetoothState == .poweredOn
+    }
+    return status
+  }
+
+  private func finishPermissionRequest(_ granted: Bool) {
+    let result = permissionResult
+    permissionResult = nil
+    permissionDeadline?.cancel()
+    permissionDeadline = nil
+    result?(granted)
+  }
+
   private func requestPermissions(_ result: @escaping FlutterResult) {
-    guard transportForOperation(result) != nil else { return }
-    switch CBManager.authorization {
-    case .allowedAlways, .notDetermined:
-      // CoreBluetooth has no standalone permission request API. The system
-      // prompt is presented when discovery first starts.
+    guard !isClosing, permissionResult == nil,
+      exchangeTask == nil, !transportCallbackPending, !discoveryRequested
+    else {
+      result(pendingExchangeError())
+      return
+    }
+    switch authorization() {
+    case .allowedAlways:
       result(true)
+    case .notDetermined:
+      // Creating the lazy central manager prompts. Complete only once the
+      // authorization decision arrives, not when the prompt is presented.
+      guard transportForOperation(result) != nil else { return }
+      permissionResult = result
+      let timeout = permissionTimeout
+      permissionDeadline = Task { @MainActor [weak self] in
+        do { try await Task.sleep(nanoseconds: timeout) } catch { return }
+        self?.finishPermissionRequest(self?.authorization() == .allowedAlways)
+      }
     case .denied, .restricted:
       result(false)
     @unknown default:
@@ -297,7 +368,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       return
     }
     guard let transport = transportForOperation(result) else { return }
-    switch CBManager.authorization {
+    switch authorization() {
     case .denied, .restricted:
       result(
         flutterError(
@@ -958,8 +1029,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     if let transportError = error as? BleTransportError {
       switch transportError {
       case .bluetoothNotAvailable:
-        if CBManager.authorization == .denied
-          || CBManager.authorization == .restricted
+        if authorization() == .denied
+          || authorization() == .restricted
         {
           return flutterError(
             code: "permission_denied",

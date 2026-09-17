@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ledger_bluetooth_access.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 
 const kLedgerPairingInvalidMessage =
@@ -119,7 +120,10 @@ final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
 });
 
 class MethodChannelLedgerMobileBleService
-    implements LedgerMobileBleService, LedgerProgressBleService {
+    implements
+        LedgerMobileBleService,
+        LedgerProgressBleService,
+        LedgerBluetoothAccess {
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
@@ -190,6 +194,18 @@ class MethodChannelLedgerMobileBleService
       if (!controller.isClosed) await controller.close();
     }
   }
+
+  @override
+  Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async {
+    final value = await _methods.invokeMapMethod<Object?, Object?>(
+      'bluetoothAccessStatus',
+    );
+    return LedgerBluetoothAccessStatus.fromMap(value ?? const {});
+  }
+
+  @override
+  Future<bool> openBluetoothSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothSettings') ?? false;
 
   @override
   Future<bool> requestPermissions() async {

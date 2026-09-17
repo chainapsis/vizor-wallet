@@ -3,6 +3,7 @@ import 'dart:developer' show log;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ledger_bluetooth_access.dart';
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
@@ -194,6 +195,8 @@ class LedgerConnectionService {
     }
 
     final mobile = _ref.read(ledgerMobileBleServiceProvider);
+    await requireLedgerBluetoothAccess(mobile);
+    check();
     final device = LedgerBleDevice(
       id: deviceId,
       name: account.ledgerDeviceName ?? 'Ledger',

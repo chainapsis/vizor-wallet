@@ -596,6 +596,7 @@ class _LedgerShieldSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
               isError: !_pausedEarly,
               title: _pausedEarly
                   ? 'Shielding paused'

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import 'ledger_bluetooth_recovery.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +34,7 @@ class LedgerSigningFailurePresentation {
     this.actionLabel,
     this.isError = true,
     this.showConnectionPicker = true,
+    this.bluetoothRecovery = false,
   });
 
   final String title;
@@ -42,6 +44,7 @@ class LedgerSigningFailurePresentation {
   final String? actionLabel;
   final bool isError;
   final bool showConnectionPicker;
+  final bool bluetoothRecovery;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -254,6 +257,10 @@ class LedgerSigningModal extends ConsumerWidget {
               ],
             ),
           ),
+          if (failed && failure!.bluetoothRecovery) ...[
+            const SizedBox(height: AppSpacing.sm),
+            LedgerBluetoothRecovery(key: ValueKey(accountUuid)),
+          ],
           if (failed &&
               failure!.showConnectionPicker &&
               account != null &&

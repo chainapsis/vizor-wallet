@@ -12,6 +12,56 @@ import XCTest
 
 final class LedgerMobileHandlerTests: XCTestCase {
   @MainActor
+  func testPermissionRequestWaitsForDecisionAndRejectsConcurrentDeviceWork() async {
+    let transport = PendingLedgerTransport()
+    var authorization: CBManagerAuthorization = .notDetermined
+    let handler = LedgerMobileHandler(transport: transport, authorization: { authorization })
+    var results: [Bool] = []
+    handler.handle(FlutterMethodCall(methodName: "requestPermissions", arguments: nil)) {
+      if let result = $0 as? Bool { results.append(result) }
+    }
+    XCTAssertTrue(results.isEmpty)
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      XCTAssertNotNil($0 as? FlutterError)
+    }
+    authorization = .denied
+    transport.stateCallback?(.unauthorized)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(results, [false])
+    handler.close()
+    XCTAssertEqual(results.count, 1)
+  }
+
+  @MainActor
+  func testPermissionDeadlineCompletesUnansweredPrompt() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport,
+      authorization: { .notDetermined }, permissionTimeout: 1_000_000)
+    let finished = expectation(description: "permission deadline")
+    handler.handle(FlutterMethodCall(methodName: "requestPermissions", arguments: nil)) {
+      XCTAssertEqual($0 as? Bool, false)
+      finished.fulfill()
+    }
+    await fulfillment(of: [finished], timeout: 1)
+    handler.close()
+  }
+
+  @MainActor
+  func testAccessStatusDoesNotCreateBluetoothTransport() {
+    let handler = LedgerMobileHandler()
+    var status: [String: Any]?
+    handler.handle(FlutterMethodCall(methodName: "bluetoothAccessStatus", arguments: nil)) {
+      status = $0 as? [String: Any]
+    }
+    XCTAssertEqual(status?["permissionKind"] as? String, "bluetooth")
+    XCTAssertNotNil(status?["permission"])
+    // A read-only query must leave the lazy transport uninitialized.
+    let storage = Mirror(reflecting: handler).children.first { $0.label == "transportStorage" }
+    XCTAssertEqual(Mirror(reflecting: storage!.value).children.count, 0)
+    handler.close()
+  }
+
+  @MainActor
   func testAppQueryTimeoutAbortsTransportAndAllowsFreshConnection() async {
     let transport = PendingLedgerTransport()
     transport.drainsOnAbort = true
@@ -1130,7 +1180,8 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func send(apdu: APDU) async throws { XCTFail("unused") }
   func disconnect() async throws { disconnect(completion: nil) }
   func bluetoothAvailabilityCallback(completion: @escaping (Bool) -> Void) {}
-  func bluetoothStateCallback(completion: @escaping (CBManagerState) -> Void) {}
+  var stateCallback: ((CBManagerState) -> Void)?
+  func bluetoothStateCallback(completion: @escaping (CBManagerState) -> Void) { stateCallback = completion }
   func bluetoothStateCallback() async -> CBManagerState { .poweredOn }
   func notifyDisconnected(completion: @escaping EmptyResponse) {}
   func getAppAndVersion(success: @escaping (AppInfo) -> Void, failure: @escaping ErrorResponse) { XCTFail("unused") }

@@ -173,6 +173,7 @@ Widget buildLedgerSigningPreview({
   bool mobile = false,
   LedgerSigningFailurePresentation? failureOverride,
   String mobileTitle = 'Ledger',
+  LedgerMobileBleService? bluetoothService,
 }) {
   final modal = LedgerSigningModal(
     phase: phase,
@@ -190,6 +191,8 @@ Widget buildLedgerSigningPreview({
   );
   return ProviderScope(
     overrides: [
+      if (bluetoothService != null)
+        ledgerMobileBleServiceProvider.overrideWithValue(bluetoothService),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
       accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
       ledgerTargetPlatformProvider.overrideWithValue(

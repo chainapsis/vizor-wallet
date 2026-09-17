@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../ledger/services/ledger_bluetooth_access.dart';
+import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -86,6 +88,7 @@ class _LedgerDesktopBleConnectDialogState
   LedgerBleDevice? _connectedDevice;
   LedgerDeviceAccount? _account;
   String? _error;
+  bool _bluetoothRecovery = false;
   var _generation = 0;
 
   bool get _busy =>
@@ -127,9 +130,10 @@ class _LedgerDesktopBleConnectDialogState
         _connectedDevice = null;
         _account = null;
         _error = null;
+        _bluetoothRecovery = false;
       });
 
-      final granted = await widget.service.requestPermissions();
+      final granted = await prepareLedgerBluetoothDiscovery(widget.service);
       if (!mounted || generation != _generation) return;
       if (!granted) {
         _fail(
@@ -175,6 +179,8 @@ class _LedgerDesktopBleConnectDialogState
     });
     try {
       await _stopDiscovery();
+      await requireLedgerBluetoothAccess(widget.service);
+      if (!mounted || generation != _generation) return;
       await widget.service.connect(device);
       if (!mounted || generation != _generation) return;
       setState(() => _phase = _ProbePhase.readingAccount);
@@ -199,6 +205,8 @@ class _LedgerDesktopBleConnectDialogState
           _ =>
             'Vizor could not connect to this Ledger over Bluetooth. Try again.',
         };
+    _bluetoothRecovery =
+        ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
     _fail(message);
   }
 
@@ -235,6 +243,8 @@ class _LedgerDesktopBleConnectDialogState
             ),
             const SizedBox(height: AppSpacing.sm),
             _buildBody(context),
+            if (_phase == _ProbePhase.failed && _bluetoothRecovery)
+              LedgerBluetoothRecovery(service: widget.service),
             const SizedBox(height: AppSpacing.sm),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

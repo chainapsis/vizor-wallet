@@ -358,6 +358,7 @@ class _MobileLedgerSendSignScreenState
         statusLabel: 'Action needed',
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+        bluetoothRecovery: guidance.bluetoothRecovery,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;

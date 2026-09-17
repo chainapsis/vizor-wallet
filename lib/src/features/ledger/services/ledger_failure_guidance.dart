@@ -6,8 +6,13 @@ import 'ledger_mobile_ble_service.dart';
 /// attempt's global readiness state. Unknown transaction errors stay with the
 /// caller so storage, broadcast and proposal recovery retain their own actions.
 class LedgerFailureGuidance {
-  const LedgerFailureGuidance(this.message, {this.showDeviceAppPrompt = false});
+  const LedgerFailureGuidance(
+    this.message, {
+    this.showDeviceAppPrompt = false,
+    this.bluetoothRecovery = false,
+  });
 
+  final bool bluetoothRecovery;
   final String message;
   final bool showDeviceAppPrompt;
 }
@@ -24,13 +29,16 @@ LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
   if (error is! LedgerMobileException) return null;
   return switch (error.failure) {
     LedgerMobileFailure.permissionDenied => const LedgerFailureGuidance(
-      'Bluetooth permission is required to connect to your Ledger. Allow Bluetooth access for Vizor in Settings, then try again.',
+      'Check Bluetooth access below, then try connecting to your Ledger again.',
+      bluetoothRecovery: true,
     ),
     LedgerMobileFailure.locationDisabled => const LedgerFailureGuidance(
       'Turn on location services to find your Ledger on this Android version, then try again.',
+      bluetoothRecovery: true,
     ),
     LedgerMobileFailure.bluetoothOff => const LedgerFailureGuidance(
       'Turn on Bluetooth, then try again.',
+      bluetoothRecovery: true,
     ),
     LedgerMobileFailure.pairingInvalid => const LedgerFailureGuidance(
       kLedgerPairingInvalidMessage,
