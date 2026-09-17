@@ -223,7 +223,7 @@ Future<void> claimPaymentLinkForRegtest(
   VizorPaymentLink link, {
   bool waitUntilReceiving = true,
 }) async {
-  await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
+  await Clipboard.setData(ClipboardData(text: link.toShareUri().toString()));
   await tapPaymentLinkText(tester, 'Redeem a card');
   await tapPaymentLinkText(tester, 'Paste card link');
   await pumpUntil(

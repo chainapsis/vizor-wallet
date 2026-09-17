@@ -133,7 +133,12 @@ void main() {
       );
 
       final rawLink = await _readPaymentLinkFromClipboard();
-      final link = VizorPaymentLink.parse(rawLink);
+      var link = VizorPaymentLink.parse(rawLink);
+      expect(
+        Uri.parse(rawLink).fragment,
+        startsWith(kPaymentLinkCompactSharing ? 'v3=' : 'v2='),
+      );
+      expect(link.mnemonic.split(' ').length, 24);
       expect(link.network, _network);
       expect(link.amountZatoshi, _giftAmountZatoshi);
       expect(link.presentation?.artworkId, 'coin');
@@ -165,6 +170,24 @@ void main() {
               .toList()
             ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       final fundingRecovery = senderRecoveries.first;
+      expect(link.hasSameCanonicalPayload(fundingRecovery.link), isTrue);
+      for (final uri in [
+        fundingRecovery.link.toRecoveryUri(),
+        fundingRecovery.link.toCompatibilityUri(),
+        fundingRecovery.link.toShareUri(compact: true),
+      ]) {
+        final recovered = VizorPaymentLink.parse(uri.toString());
+        expect(recovered.hasSameCanonicalPayload(link), isTrue);
+        await rust_wallet.validateGiftAddress(
+          mnemonic: recovered.mnemonic,
+          network: recovered.network,
+          address: fundingRecovery.link.address,
+        );
+      }
+      link = link.withResolvedMetadata(
+        address: fundingRecovery.link.address,
+        createdAt: fundingRecovery.link.createdAt,
+      );
       final fundingProgress = await operations.inspectCreatedLinkFundings([
         fundingRecovery,
       ]);

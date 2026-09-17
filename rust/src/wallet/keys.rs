@@ -125,6 +125,35 @@ pub fn generate_mnemonic() -> String {
     mnemonic.phrase().to_string()
 }
 
+/// Recover the original English BIP-39 entropy, validating word count and checksum.
+/// This is secret material, not the derived wallet seed. Errors omit input data.
+pub fn mnemonic_to_entropy(phrase: &str) -> Result<Vec<u8>, String> {
+    if phrase.len() > 512 {
+        return Err("Invalid gift recovery phrase".to_string());
+    }
+    let invalid = || "Invalid gift recovery phrase".to_string();
+    let mnemonic = Mnemonic::<English>::from_phrase(phrase).map_err(|_| invalid())?;
+    let canonical = Mnemonic::<English>::from_entropy(mnemonic.entropy())
+        .map_err(|_| invalid())?;
+    // Legacy parsing can accept different whitespace. Compact sharing must not
+    // change the mnemonic string used by retained claim-cache identities.
+    if canonical.phrase() != phrase {
+        return Err(invalid());
+    }
+    Ok(mnemonic.entropy().to_vec())
+}
+
+/// Reconstruct an English BIP-39 phrase from 16, 20, 24, 28, or 32 entropy bytes.
+/// Call the normal mnemonic-to-seed path afterwards to derive wallet keys.
+pub fn mnemonic_from_entropy(entropy: Vec<u8>) -> Result<String, String> {
+    if !matches!(entropy.len(), 16 | 20 | 24 | 28 | 32) {
+        return Err("Invalid gift entropy length".to_string());
+    }
+    Mnemonic::<English>::from_entropy(entropy)
+        .map(|mnemonic| mnemonic.phrase().to_string())
+        .map_err(|_| "Invalid gift entropy".to_string())
+}
+
 /// Return the BIP-39 English word list used for mnemonic validation.
 pub fn mnemonic_word_list() -> Vec<String> {
     English::WORD_LIST

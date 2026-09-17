@@ -1,9 +1,21 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
+import 'package:crypto/crypto.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
+
+part 'compact_payment_link_codec.dart';
+
+/// Enable after readers and the browser gateway have shipped. Local builds can
+/// opt in without changing how durable recovery records are written.
+const kPaymentLinkCompactSharing = bool.fromEnvironment(
+  'VIZOR_PAYMENT_LINK_COMPACT_SHARING',
+  defaultValue: false,
+);
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
@@ -196,7 +208,7 @@ class VizorPaymentLink {
 
   /// The address derived from [mnemonic], when it is known locally.
   ///
-  /// Version 2 does not carry this value. A received link gains it when its
+  /// Versions 2 and 3 do not carry this value. A received link gains it when its
   /// temporary claim wallet imports the mnemonic.
   String get address =>
       _address ??
@@ -204,7 +216,7 @@ class VizorPaymentLink {
 
   /// The card creation time, when it is known locally or from the chain.
   ///
-  /// Version 2 does not carry this value. A received link gains it from the
+  /// Versions 2 and 3 do not carry this value. A received link gains it from the
   /// funding transaction's block time after its claim wallet syncs.
   DateTime get createdAt =>
       _createdAt ??
@@ -250,13 +262,47 @@ class VizorPaymentLink {
     return _encodedPayload() == other._encodedPayload();
   }
 
-  Uri toUri() {
-    return Uri(
+  /// The established v2 representation. Prefer the purpose-specific methods
+  /// below for sharing or persistence.
+  Uri toUri() => toRecoveryUri();
+
+  /// Stable local serialization, independent of the selected share writer.
+  /// Resolved address, time, and submission evidence live in the enclosing record.
+  Uri toRecoveryUri() => _uri('$_fragmentPrefix${_encodedPayload()}');
+
+  /// Serialize for sharing. Callers dropping a known address must first verify
+  /// it asynchronously with [rust_wallet.validateGiftAddress].
+  Uri toShareUri({bool compact = kPaymentLinkCompactSharing}) => compact
+      ? _uri('v3=${_CompactPaymentLinkCodec.encode(this)}')
+      : toRecoveryUri();
+
+  /// Share with v1-only readers when the original metadata is available.
+  Uri toCompatibilityUri() {
+    if (_address == null || _address.trim().isEmpty || _createdAt == null) {
+      throw const FormatException('Gift card metadata is not available yet.');
+    }
+    final payload =
+        jsonDecode(utf8.decode(base64Url.decode(_encodedPayload())))
+            as Map<String, dynamic>;
+    payload['v'] = _legacyVersion;
+    payload['address'] = _address.trim();
+    payload['createdAt'] = _createdAt.toUtc().toIso8601String();
+    return _uri(
+      '$_legacyFragmentPrefix${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+    );
+  }
+
+  static Uri _uri(String fragment) {
+    final uri = Uri(
       scheme: VizorDeepLink.scheme,
       host: VizorDeepLink.host,
       path: VizorDeepLink.paymentLinkPath,
-      fragment: '$_fragmentPrefix${_encodedPayload()}',
+      fragment: fragment,
     );
+    if (uri.toString().length > maxEncodedLength) {
+      throw const FormatException('Payment link is too large.');
+    }
+    return uri;
   }
 
   String _encodedPayload() {
@@ -299,6 +345,9 @@ class VizorPaymentLink {
     }
 
     final fragment = uri.fragment;
+    if (fragment.startsWith('v3=')) {
+      return _CompactPaymentLinkCodec.decode(fragment.substring(3));
+    }
     final int expectedVersion;
     final String fragmentPrefix;
     if (fragment.startsWith(_fragmentPrefix)) {
