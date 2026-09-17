@@ -68,7 +68,14 @@ final class NumericKeyboardHandler {
         systemName: "checkmark",
         withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
       )
-      configuration.baseForegroundColor = UIColor(red: 0, green: 136.0 / 255.0, blue: 1, alpha: 1)
+      let checkColor = UIColor(red: 0, green: 136.0 / 255.0, blue: 1, alpha: 1)
+      configuration.baseForegroundColor = checkColor
+      // Glass may transform its base foreground color. Preserve the Figma
+      // icon color at the final image-color transformation step.
+      configuration.imageColorTransformer = UIConfigurationColorTransformer { _ in
+        checkColor
+      }
+      control.tintColor = checkColor
       control.configuration = configuration
       control.accessibilityLabel = "Done"
       control.accessibilityIdentifier = "mobile_numeric_keyboard_toolbar"
