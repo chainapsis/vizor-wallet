@@ -1030,7 +1030,6 @@ AppBootstrapState _ledgerBootstrap(_Fixture fixture, String lightwalletdUrl) {
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
           zip32AccountIndex: fixture.accountIndex,
-          ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
           ledgerDeviceId: _SpeculosLedgerMobileBleService.device.id,
           ledgerDeviceName: _SpeculosLedgerMobileBleService.device.name,
           ledgerDeviceModel: _SpeculosLedgerMobileBleService.device.model,

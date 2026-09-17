@@ -1,6 +1,7 @@
 import 'dart:developer' show log;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform;
 
 import 'ledger_bluetooth_access.dart';
 import 'ledger_device_selection.dart';
@@ -126,66 +127,52 @@ class LedgerConnectionService {
       }
     }
     _connectionGeneration++;
-    final candidates = _candidates(account);
-    Object? lastConnectionError;
-
-    for (final transport in candidates) {
-      check();
-      var operationStarted = false;
-      try {
-        final result = switch (transport) {
-          LedgerConnectionTransport.usb => await _runUsb(check, () {
-            operationStarted = true;
-            return usb();
-          }),
-          LedgerConnectionTransport.bluetooth => await _runBluetooth(
-            check,
-            account,
-            scope,
-            () {
-              operationStarted = true;
-              return usb();
-            },
-            (mobile) {
-              operationStarted = true;
-              return bluetooth(mobile);
-            },
-          ),
-        };
-        check();
-        try {
-          await _recordSuccess(
-            account,
-            scope.selected != null && scope.selected!.device == null
-                ? LedgerConnectionTransport.usb
-                : transport,
-          );
-        } catch (error, stackTrace) {
-          log(
-            'Failed to persist the successful Ledger transport.',
-            name: 'LedgerConnectionService',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-        check();
-        return result;
-      } catch (error) {
-        scope.selected = null;
-        check();
-        // Only connection preparation may fall back; never replay an operation.
-        if (operationStarted) rethrow;
-        if (!_isConnectionFailure(error)) rethrow;
-        if (!ledgerPairingNeedsReset(lastConnectionError)) {
-          lastConnectionError = error;
-        }
-      }
+    final platform = _ref.read(ledgerTargetPlatformProvider);
+    final selectable = ledgerSupportsBluetooth(platform);
+    var operationStarted = false;
+    Future<T> runUsb() {
+      operationStarted = true;
+      return usb();
     }
 
-    throw LedgerConnectionRequiredException(
-      _connectionFailureMessage(account, lastConnectionError),
-      cause: lastConnectionError,
-    );
+    try {
+      final result = selectable
+          ? await _runSelection(checkContext, account, scope, runUsb, (mobile) {
+              operationStarted = true;
+              return bluetooth(mobile);
+            })
+          : await _runUsb(checkContext, runUsb);
+      checkContext();
+      try {
+        await _recordSuccess(
+          account,
+          scope.selected?.device != null
+              ? LedgerConnectionTransport.bluetooth
+              : LedgerConnectionTransport.usb,
+        );
+      } catch (error, stackTrace) {
+        log(
+          'Failed to persist the successful Ledger transport.',
+          name: 'LedgerConnectionService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      checkContext();
+      return result;
+    } catch (error) {
+      scope.selected = null;
+      checkContext();
+      // No automatic transport fallback, and never replay an operation.
+      if (operationStarted || !_isConnectionFailure(error)) rethrow;
+      throw LedgerConnectionRequiredException(
+        scope.transport == LedgerConnectionTransport.bluetooth ||
+                isLedgerMobilePlatform(platform)
+            ? 'Turn on and unlock your Ledger, then reconnect with Bluetooth.'
+            : 'Connect and unlock your Ledger with USB, then try again.',
+        cause: error,
+      );
+    }
   }
 
   AccountInfo _account(String uuid) {
@@ -194,26 +181,6 @@ class LedgerConnectionService {
       if (account.uuid == uuid && account.isLedger) return account;
     }
     throw ArgumentError.value(uuid, 'accountUuid', 'Unknown Ledger account');
-  }
-
-  List<LedgerConnectionTransport> _candidates(AccountInfo account) {
-    final platform = _ref.read(ledgerTargetPlatformProvider);
-    if (isLedgerMobilePlatform(platform)) {
-      return const [LedgerConnectionTransport.bluetooth];
-    }
-    if (!ledgerSupportsBluetooth(platform)) {
-      return const [LedgerConnectionTransport.usb];
-    }
-    return switch (account.ledgerConnectionPreference) {
-      LedgerConnectionPreference.usb => const [LedgerConnectionTransport.usb],
-      LedgerConnectionPreference.bluetooth => const [
-        LedgerConnectionTransport.bluetooth,
-      ],
-      LedgerConnectionPreference.automatic => const [
-        LedgerConnectionTransport.usb,
-        LedgerConnectionTransport.bluetooth,
-      ],
-    };
   }
 
   Future<T> _runUsb<T>(
@@ -231,14 +198,18 @@ class LedgerConnectionService {
     return operation();
   }
 
-  Future<T> _runBluetooth<T>(
+  Future<T> _runSelection<T>(
     void Function() check,
     AccountInfo account,
     LedgerConnectionScope scope,
     Future<T> Function() usb,
     Future<T> Function(LedgerMobileBleService mobile) operation,
   ) async {
-    await _ref.read(ledgerMobileSigningStatusGateProvider).waitUntilReady();
+    final canChoose =
+        _ref.read(ledgerTargetPlatformProvider) == TargetPlatform.macOS;
+    if (!canChoose) {
+      await _ref.read(ledgerMobileSigningStatusGateProvider).waitUntilReady();
+    }
     check();
     final session = _ref.read(ledgerPairingRecoverySessionProvider)();
     final generation = _connectionGeneration;
@@ -254,13 +225,24 @@ class LedgerConnectionService {
     }
 
     final mobile = _ref.read(ledgerMobileBleServiceProvider);
+    var bluetoothStarted = false;
     final selected = await _ref
         .read(ledgerDeviceSelectionProvider.notifier)
         .request(
           LedgerDeviceSelectionRequest(
             accountUuid: account.uuid,
             check: guard,
+            canChooseTransport: canChoose,
+            initialTransport: canChoose
+                ? scope.transport
+                : LedgerConnectionTransport.bluetooth,
+            onTransportChanged: (transport) => scope.transport = transport,
+            prepareUsb: () => _runUsb(guard, () async {}),
+            stopDiscovery: () async {
+              if (bluetoothStarted) await mobile.stopDiscovery();
+            },
             cancelDevice: () async {
+              if (!bluetoothStarted && canChoose) return;
               try {
                 await mobile.cancelSigning();
               } finally {
@@ -268,6 +250,13 @@ class LedgerConnectionService {
               }
             },
             prepareDiscovery: () async {
+              guard();
+              bluetoothStarted = true;
+              if (canChoose) {
+                await _ref
+                    .read(ledgerMobileSigningStatusGateProvider)
+                    .waitUntilReady();
+              }
               guard();
               await mobile.stopDiscovery();
               guard();
@@ -281,21 +270,26 @@ class LedgerConnectionService {
               }
               guard();
             },
-            verify: (device, current, saving) => _ref
-                .read(ledgerPairingRecoveryServiceProvider)
-                .verifyAndSaveWithinConnection(
-                  accountUuid: account.uuid,
-                  device: device,
-                  checkCurrent: current,
-                  onSaving: saving,
-                ),
+            verify: (device, current, saving) {
+              bluetoothStarted = true;
+              scope.transport = LedgerConnectionTransport.bluetooth;
+              return _ref
+                  .read(ledgerPairingRecoveryServiceProvider)
+                  .verifyAndSaveWithinConnection(
+                    accountUuid: account.uuid,
+                    device: device,
+                    checkCurrent: current,
+                    onSaving: saving,
+                  );
+            },
           ),
         );
     guard();
     scope.selected = selected;
     if (selected.device == null) {
       // Explicit user action; USB retains its existing preparation/signing path.
-      return _runUsb(guard, usb);
+      // USB readiness was checked while the selection request remained visible.
+      return usb();
     }
     if (mobile.connectedDeviceId != selected.device!.id) {
       throw const LedgerMobileException(
@@ -346,25 +340,5 @@ class LedgerConnectionService {
         lower.contains('disconnected') ||
         lower.contains('hid') ||
         lower.contains('bluetooth');
-  }
-
-  String _connectionFailureMessage(AccountInfo account, Object? error) {
-    if (!ledgerSupportsBluetooth(_ref.read(ledgerTargetPlatformProvider))) {
-      final suffix = error == null ? '' : ' ${error.toString()}';
-      return 'Connect and unlock your Ledger with USB, then try again.$suffix';
-    }
-    if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
-    final suffix = error == null ? '' : ' ${error.toString()}';
-    if (isLedgerMobilePlatform(_ref.read(ledgerTargetPlatformProvider))) {
-      return 'Turn on and unlock your Ledger, then reconnect with Bluetooth.$suffix';
-    }
-    return switch (account.ledgerConnectionPreference) {
-      LedgerConnectionPreference.usb =>
-        'Connect and unlock your Ledger with USB, then try again.$suffix',
-      LedgerConnectionPreference.bluetooth =>
-        'Turn on and unlock your Ledger, then reconnect with Bluetooth.$suffix',
-      LedgerConnectionPreference.automatic =>
-        'Vizor could not find this Ledger over USB or Bluetooth. Reconnect your Ledger, then try again.$suffix',
-    };
   }
 }

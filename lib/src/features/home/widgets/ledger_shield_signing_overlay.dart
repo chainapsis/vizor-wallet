@@ -593,6 +593,7 @@ class _LedgerShieldSigningOverlayState
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: _accountUuid,
       roundNumber: _round,
       roundCount: _roundCount,

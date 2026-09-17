@@ -549,25 +549,6 @@ class _LedgerPreviewAccountNotifier extends AccountNotifier {
   FutureOr<AccountState> build() => _ledgerAccountState;
 
   @override
-  Future<void> updateLedgerConnectionPreference(
-    String uuid,
-    LedgerConnectionPreference preference,
-  ) async {
-    final previous = state.value ?? _ledgerAccountState;
-    state = AsyncData(
-      previous.copyWith(
-        accounts: [
-          for (final account in previous.accounts)
-            if (account.uuid == uuid)
-              account.copyWith(ledgerConnectionPreference: preference)
-            else
-              account,
-        ],
-      ),
-    );
-  }
-
-  @override
   Future<void> recordLedgerConnection({
     required String uuid,
     required LedgerConnectionTransport transport,
@@ -668,7 +649,6 @@ const _ledgerAccount = AccountInfo(
   hardwareSignerKind: HardwareSignerKind.ledger,
   birthdayHeight: 2870000,
   zip32AccountIndex: 0,
-  ledgerConnectionPreference: LedgerConnectionPreference.automatic,
   ledgerLastTransport: LedgerConnectionTransport.usb,
   ledgerDeviceId: 'widgetbook-ledger-flex',
   ledgerDeviceName: 'Ledger Flex',

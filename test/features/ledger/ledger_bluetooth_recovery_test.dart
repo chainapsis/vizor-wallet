@@ -71,10 +71,10 @@ void main() {
     TargetPlatform.android,
   ]) {
     testWidgets(
-      '$platform recovery has one primary action and platform-specific transport choice',
+      '$platform recovery has one primary action without stored transport controls',
       (tester) async {
         final service = _Access();
-        final notifier = _PreferenceNotifier();
+        final notifier = _AccountsNotifier();
         var retries = 0;
         final container = ProviderContainer(
           overrides: [
@@ -108,51 +108,20 @@ void main() {
         expect(find.text('Try again'), findsNothing);
         expect(find.text('Auto'), findsNothing);
         expect(
-          notifier.preferences,
-          isEmpty,
-        ); // Automatic mode is preserved until a choice.
-        expect(
           tester
               .widget<AppButton>(find.widgetWithText(AppButton, 'Allow access'))
               .expand,
           isTrue,
         );
-        if (platform == TargetPlatform.macOS) {
-          expect(find.text('Connection'), findsOneWidget);
-          await tester.tap(find.text('USB'));
-          await tester.pumpAndSettle();
-          expect(notifier.preferences, [LedgerConnectionPreference.usb]);
-          expect(find.text('Connect your Ledger via USB'), findsOneWidget);
-          expect(find.text('Allow access'), findsNothing);
-          expect(service.requests, 0);
-          await tester.tap(find.text('Connect'));
-          expect(retries, 1);
-          await tester.tap(find.text('Bluetooth'));
-          await tester.pumpAndSettle();
-          expect(
-            notifier.preferences.last,
-            LedgerConnectionPreference.bluetooth,
-          );
-          service.permissionPending = Completer<bool>();
-          await tester.tap(find.text('Allow access'));
-          await tester.pump();
-          await tester.pump();
-          expect(
-            tester
-                .widget<AppButton>(
-                  find.byKey(const ValueKey('ledger_recovery_usb')),
-                )
-                .onPressed,
-            isNull,
-          );
-          service.permissionPending!.complete(false);
-          await tester.pumpAndSettle();
-          expect(find.text('Open settings'), findsOneWidget);
-          expect(find.text('Allow access'), findsNothing);
-        } else {
-          expect(find.text('USB'), findsNothing);
-          expect(find.text('Connection'), findsNothing);
-        }
+        expect(find.text('USB'), findsNothing);
+        expect(find.text('Connection'), findsNothing);
+        service.permissionPending = Completer<bool>();
+        await tester.tap(find.text('Allow access'));
+        await tester.pump();
+        service.permissionPending!.complete(false);
+        await tester.pumpAndSettle();
+        expect(find.text('Open settings'), findsOneWidget);
+        expect(retries, 0);
         expect(tester.takeException(), isNull);
       },
     );
@@ -340,16 +309,8 @@ const _account = AccountInfo(
   ledgerDeviceModel: 'Flex',
 );
 
-class _PreferenceNotifier extends AccountNotifier {
-  final preferences = <LedgerConnectionPreference>[];
+class _AccountsNotifier extends AccountNotifier {
   @override
   AccountState build() =>
       const AccountState(accounts: [_account], activeAccountUuid: 'ledger');
-  @override
-  Future<void> updateLedgerConnectionPreference(
-    String uuid,
-    LedgerConnectionPreference preference,
-  ) async {
-    preferences.add(preference);
-  }
 }

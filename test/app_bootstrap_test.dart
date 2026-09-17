@@ -163,7 +163,7 @@ void main() {
     expect(merged.zip32AccountIndex, 7);
   });
 
-  test('bootstrap preserves persisted Ledger pairing and preferences', () {
+  test('bootstrap preserves Ledger pairing and ignores legacy preferences', () {
     const rustAccount = AccountInfo(
       uuid: 'ledger',
       name: 'Ledger',
@@ -171,24 +171,26 @@ void main() {
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
     );
-    for (final preference in LedgerConnectionPreference.values) {
+    for (final preference in ['automatic', 'usb', 'bluetooth']) {
       final stored = rustAccount.copyWith(
         ledgerDeviceId: 'paired-device',
         ledgerDeviceName: 'My Ledger',
         ledgerDeviceModel: 'nanoX',
         ledgerLastTransport: LedgerConnectionTransport.bluetooth,
-        ledgerConnectionPreference: preference,
       );
       final merged = mergeBootstrappedAccountInfo(
         rustAccount: rustAccount,
-        storedAccount: AccountInfo.fromJson(stored.toJson()),
+        storedAccount: AccountInfo.fromJson({
+          ...stored.toJson(),
+          'ledgerConnectionPreference': preference,
+        }),
         order: 0,
       );
       expect(merged.ledgerDeviceId, 'paired-device');
       expect(merged.ledgerDeviceName, 'My Ledger');
       expect(merged.ledgerDeviceModel, 'nanoX');
       expect(merged.ledgerLastTransport, LedgerConnectionTransport.bluetooth);
-      expect(merged.ledgerConnectionPreference, preference);
+      expect(merged.toJson().containsKey('ledgerConnectionPreference'), false);
       expect(
         AccountInfo.fromJson(merged.toJson()).ledgerDeviceId,
         'paired-device',
@@ -200,10 +202,6 @@ void main() {
       order: 0,
     );
     expect(fresh.ledgerDeviceId, isNull);
-    expect(
-      fresh.ledgerConnectionPreference,
-      LedgerConnectionPreference.automatic,
-    );
   });
 
   test('legacy hardware backfill preserves each stored signer kind', () {

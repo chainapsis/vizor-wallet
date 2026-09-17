@@ -63,6 +63,8 @@ class _PaymentLinkLedgerSigningOverlayState
   String? _error;
   LedgerFailureGuidance? _deviceGuidance;
 
+  final _connectionScope = LedgerConnectionScope();
+
   bool get _active => mounted && !_cancelled;
   bool get _durableBusy =>
       _phase == LedgerSigningModalPhase.saving ||
@@ -72,9 +74,8 @@ class _PaymentLinkLedgerSigningOverlayState
   void initState() {
     super.initState();
     _service = ref.read(paymentLinkLedgerFundingServiceProvider);
-    final scope = LedgerConnectionScope();
     final sign = ref.read(ledgerPcztSignerProvider);
-    _sign = (uuid, pczt) => scope.run(() => sign(uuid, pczt));
+    _sign = (uuid, pczt) => _connectionScope.run(() => sign(uuid, pczt));
     _cancelDevice = ref.read(ledgerOperationCancellerProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_active) _start();
@@ -269,6 +270,7 @@ class _PaymentLinkLedgerSigningOverlayState
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: widget.sourceAccountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed

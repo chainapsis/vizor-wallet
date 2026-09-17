@@ -13,6 +13,14 @@ class LedgerConnectionScope {
   static LedgerConnectionScope? get current =>
       Zone.current[_zoneKey] as LedgerConnectionScope?;
   LedgerSelectedConnection? selected;
+  // This user's current operation only; never copied into account metadata.
+  LedgerConnectionTransport? transport;
+
+  void changeConnection() {
+    selected = null;
+    transport = null;
+  }
+
   Future<T> run<T>(Future<T> Function() action) =>
       runZoned(action, zoneValues: {_zoneKey: this});
 }
@@ -43,16 +51,42 @@ class LedgerDeviceSelectionRequest {
     required this.prepareDiscovery,
     required this.verify,
     this.cancelDevice,
+    this.canChooseTransport = false,
+    this.initialTransport,
+    this.prepareUsb,
+    this.stopDiscovery,
+    this.onTransportChanged,
   });
   final String accountUuid;
   final void Function() check;
   final Future<void> Function() prepareDiscovery;
   final LedgerSelectionVerifier verify;
   final Future<void> Function()? cancelDevice;
+  final bool canChooseTransport;
+  final LedgerConnectionTransport? initialTransport;
+  final Future<void> Function()? prepareUsb;
+  final Future<void> Function()? stopDiscovery;
+  final void Function(LedgerConnectionTransport?)? onTransportChanged;
+
+  void chooseTransport(LedgerConnectionTransport? transport) {
+    requireCurrent();
+    if (_work != null) throw StateError('Ledger selection is busy.');
+    onTransportChanged?.call(transport);
+  }
+
+  // A completed stop belongs to this picker, so disposal must not send a
+  // second global native stop that could race the next connection attempt.
+  bool _discoveryStopped = false;
+  bool get discoveryStopped => _discoveryStopped;
+  Future<void> stop() => _prepare(() async {
+    await stopDiscovery?.call();
+    _discoveryStopped = true;
+  });
   Future<void>? _cancelWork;
   final _result = Completer<LedgerSelectedConnection>();
   Future<void>? _work;
   bool get completed => _result.isCompleted;
+  bool get busy => _work != null;
 
   void requireCurrent() {
     check();
@@ -64,10 +98,15 @@ class LedgerDeviceSelectionRequest {
     }
   }
 
-  Future<void> prepare() async {
+  Future<void> prepare() => _prepare(() {
+    _discoveryStopped = false;
+    return prepareDiscovery();
+  });
+
+  Future<void> _prepare(Future<void> Function() action) async {
     requireCurrent();
     if (_work != null) throw StateError('Ledger selection is busy.');
-    final work = prepareDiscovery();
+    final work = action();
     final drained = work.then<void>(
       (_) {},
       onError: (Object _, StackTrace stack) {},
@@ -122,9 +161,10 @@ class LedgerDeviceSelectionRequest {
     }
   }
 
-  void selectUsb() {
+  Future<void> selectUsb() async {
+    chooseTransport(LedgerConnectionTransport.usb);
+    await _prepare(prepareUsb ?? () async {});
     requireCurrent();
-    if (_work != null) return;
     _result.complete(LedgerSelectedConnection(accountUuid, null, check));
   }
 

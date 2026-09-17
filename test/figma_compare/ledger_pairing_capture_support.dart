@@ -73,7 +73,7 @@ void runLedgerSelectionCaptures({
     'known-signing',
     'mismatch',
     'signing',
-    if (!mobile) 'usb',
+    if (!mobile) ...['choice', 'usb', 'usb-checking', 'usb-failed'],
   ]) {
     for (final theme in [ThemeMode.light, ThemeMode.dark]) {
       final size = mobile ? const Size(393, 852) : const Size(800, 720);
@@ -87,7 +87,9 @@ void runLedgerSelectionCaptures({
           scenarioId: switch (state) {
             'searching' => 'ledger-searching',
             'searching-devices' => 'ledger-searching-devices',
-            'known-connecting' => 'ledger-known-device-connecting',
+            'known-connecting' ||
+            'usb-checking' => 'ledger-known-device-connecting',
+            'usb-failed' => 'ledger-request-failed',
             _ => 'ledger-device-selection',
           },
           themeMode: theme,
@@ -99,6 +101,25 @@ void runLedgerSelectionCaptures({
         beforeCapture: (tester) async {
           for (var i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 50));
+          }
+          if (!mobile) {
+            expect(find.text('How would you like to connect?'), findsOneWidget);
+            if (state == 'choice') return;
+            await _chooseTransport(
+              tester,
+              state.startsWith('usb') ? 'usb' : 'bluetooth',
+            );
+            if (state.startsWith('usb')) {
+              expect(
+                find.text(switch (state) {
+                  'usb-checking' => 'Checking your Ledger',
+                  'usb-failed' => 'Couldn’t connect to your Ledger',
+                  _ => 'Check your Ledger',
+                }),
+                findsOneWidget,
+              );
+              return;
+            }
           }
           expect(
             find.text(
@@ -173,6 +194,7 @@ void runLedgerRequestFailureCaptures({
           for (var i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 50));
           }
+          if (!mobile) await _chooseTransport(tester, 'bluetooth');
           tester
               .widget<AppButton>(
                 find.widgetWithText(AppButton, 'Ledger Flex · F52C'),
@@ -217,6 +239,7 @@ void runLedgerSavedCaptures({required bool mobile, required String output}) {
           for (var i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 50));
           }
+          if (!mobile) await _chooseTransport(tester, 'bluetooth');
           tester
               .widget<AppButton>(
                 find.widgetWithText(AppButton, 'Ledger Nano X · A37E'),
@@ -231,5 +254,14 @@ void runLedgerSavedCaptures({required bool mobile, required String output}) {
         },
       );
     }
+  }
+}
+
+Future<void> _chooseTransport(WidgetTester tester, String transport) async {
+  tester
+      .widget<AppButton>(find.byKey(ValueKey('ledger_choose_$transport')))
+      .onPressed!();
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
   }
 }

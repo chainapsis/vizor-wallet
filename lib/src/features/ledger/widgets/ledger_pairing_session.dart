@@ -33,6 +33,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
     required this.onRetry,
     required this.onClose,
     required this.onBusyChanged,
+    this.onCanChangeConnectionChanged,
     this.enabled = true,
     this.pairingInvalid = false,
     this.selectionRequest,
@@ -44,6 +45,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   final ValueChanged<bool> onBusyChanged;
+  final ValueChanged<bool>? onCanChangeConnectionChanged;
   final bool enabled;
   final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
@@ -150,15 +152,24 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     }
   }
 
-  void _notifyBusy() => widget.onBusyChanged(_busy);
+  void _notifyBusy() {
+    widget.onBusyChanged(_busy);
+    widget.onCanChangeConnectionChanged?.call(
+      _stage == LedgerPairingStage.scanning ||
+          _stage == LedgerPairingStage.devices ||
+          _stage == LedgerPairingStage.failed ||
+          _stage == LedgerPairingStage.mismatch,
+    );
+  }
 
   @override
   void dispose() {
     _generation++;
     _pairingEvidence?.removeListener(_onPairingEvidence);
     unawaited(_subscription?.cancel());
-    if (_stage == LedgerPairingStage.scanning ||
-        _stage == LedgerPairingStage.devices) {
+    if ((_stage == LedgerPairingStage.scanning ||
+            _stage == LedgerPairingStage.devices) &&
+        widget.selectionRequest?.discoveryStopped != true) {
       unawaited(_stopQuietly());
     }
     if (_stage == LedgerPairingStage.verifying &&
@@ -245,6 +256,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
         });
       }
       _check(generation);
+      _notifyBusy();
       _subscription = _mobile.discoverDevices().listen(
         (event) {
           try {

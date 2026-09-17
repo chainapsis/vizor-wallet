@@ -1229,6 +1229,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       ? () => unawaited(_dismissLedgerSigningModal())
                       : () {},
                   child: LedgerSigningModal(
+                    connectionScope: _connectionScope,
                     accountUuid: _reviewArgs.proposalAccountUuid,
                     phase: ledgerPhase,
                     failure: _ledgerFailure,

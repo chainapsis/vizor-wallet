@@ -21,9 +21,7 @@ void main() {
       '$platform saves replacement and waits for explicit rediscovery before signing',
       (tester) async {
         final ble = fixture.FakeBle();
-        final account = fixture.account.copyWith(
-          ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
-        );
+        final account = fixture.account;
         final accounts = fixture.FakeAccounts(initial: account);
         var exports = 0;
         final c = fixture.containerFor(
@@ -67,12 +65,16 @@ void main() {
               },
             );
         await pumpFrames(tester);
+        if (platform == TargetPlatform.macOS) {
+          expect(ble.calls, isEmpty);
+          await tester.tap(
+            find.byKey(const ValueKey('ledger_choose_bluetooth')),
+          );
+          await pumpFrames(tester);
+        }
         expect(find.text('Select your Ledger'), findsOneWidget);
         expect(find.text('Different from saved connection'), findsOneWidget);
-        expect(
-          find.text('USB'),
-          platform == TargetPlatform.macOS ? findsOneWidget : findsNothing,
-        );
+        expect(find.text('USB'), findsNothing);
         expect(ble.calls, contains('scan'));
         expect(ble.calls, isNot(contains('connect')));
         expect(signs, 0);

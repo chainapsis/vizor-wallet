@@ -478,7 +478,6 @@ void main() {
           hardwareSignerKind: HardwareSignerKind.ledger,
           birthdayHeight: 2600000,
           zip32AccountIndex: 12,
-          ledgerConnectionPreference: LedgerConnectionPreference.automatic,
           ledgerLastTransport: LedgerConnectionTransport.bluetooth,
           ledgerDeviceId: 'nano-x-id',
           ledgerDeviceName: 'Rowan Ledger',

@@ -1,3 +1,4 @@
+import '../src/features/ledger/services/ledger_app_readiness_service.dart';
 import '../widgetbook/send_use_cases.dart';
 import 'dart:async';
 import '../src/providers/rpc_endpoint_provider.dart';
@@ -28,7 +29,6 @@ const _account = AccountInfo(
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
   zip32AccountIndex: 0,
-  ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
   ledgerDeviceId: 'flex',
   ledgerDeviceModel: 'Flex',
   ledgerDeviceName: 'F52C',
@@ -90,6 +90,11 @@ Widget _buildCapture(
         );
   return ProviderScope(
     overrides: [
+      ledgerAppReadinessDeviceForTransportProvider(
+        LedgerConnectionTransport.usb,
+      ).overrideWithValue(
+        _CaptureUsb(hold: holdReadiness, fail: requestFailure != null),
+      ),
       rpcEndpointProvider.overrideWith(_Rpc.new),
       accountProvider.overrideWith(_Accounts.new),
       appSecurityProvider.overrideWith(_Security.new),
@@ -175,12 +180,6 @@ class _Accounts extends AccountNotifier {
       ),
     );
   }
-
-  @override
-  Future<void> updateLedgerConnectionPreference(
-    String uuid,
-    LedgerConnectionPreference preference,
-  ) async {}
 }
 
 class _Ble
@@ -287,7 +286,10 @@ class _SelectionCaptureHostState extends ConsumerState<_SelectionCaptureHost> {
             .read(ledgerConnectionServiceProvider)
             .run<void>(
               accountUuid: _account.uuid,
-              usb: () async {},
+              usb: () {
+                if (mounted) setState(() => _reviewing = true);
+                return _signing.future;
+              },
               bluetooth: (_) {
                 if (mounted) setState(() => _reviewing = true);
                 return _signing.future;
@@ -315,4 +317,23 @@ class _SelectionCaptureHostState extends ConsumerState<_SelectionCaptureHost> {
     onCancel: _noop,
     onFailureAction: null,
   );
+}
+
+class _CaptureUsb implements LedgerAppReadinessDevice {
+  _CaptureUsb({required this.hold, required this.fail});
+  final bool hold;
+  final bool fail;
+  @override
+  Future<LedgerDeviceAppSnapshot> queryZcashApp() async {
+    if (hold) await Completer<void>().future;
+    return LedgerDeviceAppSnapshot(
+      status: fail
+          ? LedgerDeviceAppStatus.disconnected
+          : LedgerDeviceAppStatus.open,
+      version: '3.9.3',
+    );
+  }
+
+  @override
+  Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() => queryZcashApp();
 }

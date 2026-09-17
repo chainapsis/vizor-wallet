@@ -1,19 +1,21 @@
-import '../../../core/layout/app_form_factor.dart';
-import 'mobile/mobile_ledger_access_content.dart';
 import 'dart:async';
-import 'package:flutter/widgets.dart';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../providers/account_provider.dart';
-import '../ledger_capability.dart';
-import '../services/ledger_device_request.dart';
+import '../services/ledger_app_readiness_service.dart';
 import '../services/ledger_device_selection.dart';
+import '../services/ledger_failure_guidance.dart';
 import 'ledger_bluetooth_recovery.dart';
 import 'ledger_pairing_recovery.dart';
+import 'ledger_progress_status.dart';
+import 'mobile/mobile_ledger_access_content.dart';
 
 /// A connection recovery surface, never used for saved/broadcast transactions.
 class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
@@ -25,6 +27,7 @@ class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
     this.pairingInvalid = false,
     this.selectionRequest,
     this.retrySelectsDevice = false,
+    this.onChangeConnection,
     super.key,
   });
   final AccountInfo? account;
@@ -34,6 +37,8 @@ class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
   final bool retrySelectsDevice;
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
+  final VoidCallback? onChangeConnection;
+
   @override
   ConsumerState<LedgerAccessRecoveryModal> createState() =>
       _LedgerAccessRecoveryModalState();
@@ -41,41 +46,78 @@ class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
 
 class _LedgerAccessRecoveryModalState
     extends ConsumerState<LedgerAccessRecoveryModal> {
-  bool _usb = false;
-  bool _saving = false;
-  bool _accessBusy = false;
-  String? _error;
+  late LedgerConnectionTransport? _transport;
+  bool _usbBusy = false;
+  bool _changing = false;
+  bool _canChange = true;
+  Object? _usbError;
+  String? _changeError;
 
-  Future<void> _select(bool usb) async {
-    if (_saving || _accessBusy || _usb == usb) return;
-    if (widget.selectionRequest != null) {
-      setState(() => _usb = usb);
-      return;
+  @override
+  void initState() {
+    super.initState();
+    final request = widget.selectionRequest;
+    _transport = request?.canChooseTransport == true
+        ? request!.initialTransport
+        : LedgerConnectionTransport.bluetooth;
+    if (_transport == LedgerConnectionTransport.usb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_connectUsb());
+      });
     }
+  }
+
+  Future<void> _connectUsb() async {
+    if (_usbBusy || _changing) return;
     setState(() {
-      _saving = true;
-      _error = null;
+      _transport = LedgerConnectionTransport.usb;
+      _usbBusy = true;
+      _usbError = null;
     });
     try {
-      final check = ref.read(ledgerDeviceRequestsProvider).capture();
-      await ref
-          .read(accountProvider.notifier)
-          .updateLedgerConnectionPreference(
-            widget.account!.uuid,
-            usb
-                ? LedgerConnectionPreference.usb
-                : LedgerConnectionPreference.bluetooth,
-          );
-      check();
-      if (!mounted) return;
-      setState(() => _usb = usb);
+      await widget.selectionRequest!.selectUsb();
+    } catch (error) {
+      if (mounted) setState(() => _usbError = error);
+    } finally {
+      if (mounted) setState(() => _usbBusy = false);
+    }
+  }
+
+  Future<void> _changeConnection() async {
+    if (_changing || _usbBusy || !_canChange) return;
+    final request = widget.selectionRequest;
+    if (request == null) {
+      widget.onChangeConnection?.call();
+      return;
+    }
+    if (request.busy) return;
+    setState(() {
+      _changing = true;
+      _changeError = null;
+    });
+    try {
+      // Stop the current scan before disposing its UI or allowing USB work.
+      await request.stop();
+      request.chooseTransport(null);
+      if (mounted) {
+        setState(() {
+          _transport = null;
+          _usbError = null;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not change the connection. Try again.');
+        setState(() => _changeError = 'Could not stop the search. Try again.');
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _changing = false);
     }
+  }
+
+  void _refresh() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -102,20 +144,14 @@ class _LedgerAccessRecoveryModalState
         retrySelectsDevice: widget.retrySelectsDevice,
       );
     }
-    final platform = ref.watch(ledgerTargetPlatformProvider);
-    final darkMode = context.appTheme == AppThemeData.dark;
-    final account = widget.account;
-    final canChoose =
-        platform == TargetPlatform.macOS &&
-        (widget.selectionRequest != null || account?.ledgerDeviceId != null) &&
-        ledgerBluetoothTransportCapabilityForModel(
-              model: account?.ledgerDeviceModel,
-              platform: platform,
-            ) ==
-            LedgerBluetoothCapability.supported;
-    final showTransportChoice = widget.selectionRequest != null
-        ? platform == TargetPlatform.macOS
-        : canChoose;
+    final request = widget.selectionRequest;
+    final canGoBack =
+        (request?.canChooseTransport == true ||
+            widget.onChangeConnection != null) &&
+        _transport != null &&
+        _canChange &&
+        !_usbBusy &&
+        request?.busy != true;
     return AppModalCard(
       width: 328,
       child: SingleChildScrollView(
@@ -125,9 +161,26 @@ class _LedgerAccessRecoveryModalState
           children: [
             Row(
               children: [
+                if (canGoBack) ...[
+                  AppButton(
+                    onPressed: _changing
+                        ? null
+                        : () => unawaited(_changeConnection()),
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.small,
+                    child: const AppIcon(
+                      AppIcons.chevronBackward,
+                      size: 16,
+                      semanticLabel: 'Change connection',
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                ],
                 Expanded(
                   child: Text(
-                    showTransportChoice ? 'Ledger' : 'Ledger · Bluetooth',
+                    _transport == null
+                        ? 'Ledger'
+                        : 'Ledger · ${_transport == LedgerConnectionTransport.usb ? 'USB' : 'Bluetooth'}',
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -135,12 +188,10 @@ class _LedgerAccessRecoveryModalState
                 ),
                 if (widget.onClose != null)
                   AppButton(
-                    onPressed: _saving
-                        ? null
-                        : () {
-                            widget.selectionRequest?.cancel();
-                            widget.onClose?.call();
-                          },
+                    onPressed: () {
+                      request?.cancel();
+                      widget.onClose?.call();
+                    },
                     variant: AppButtonVariant.ghost,
                     size: AppButtonSize.small,
                     child: const AppIcon(
@@ -151,128 +202,165 @@ class _LedgerAccessRecoveryModalState
                   ),
               ],
             ),
-            if (showTransportChoice) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Connection',
-                style: AppTypography.bodySmall.copyWith(
-                  color: context.colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.xxs),
-                decoration: BoxDecoration(
-                  color: context.colors.background.neutralSubtleOpacity,
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                ),
-                child: Row(
-                  children: [
-                    for (final usb in [false, true]) ...[
-                      if (usb) const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: AppButton(
-                          key: ValueKey(
-                            'ledger_recovery_${usb ? 'usb' : 'bluetooth'}',
-                          ),
-                          expand: true,
-                          constrainContent: true,
-                          size: AppButtonSize.medium,
-                          onPressed: _saving || _accessBusy
-                              ? null
-                              : () => unawaited(_select(usb)),
-                          variant: _usb == usb
-                              ? AppButtonVariant.secondary
-                              : AppButtonVariant.ghost,
-                          enabledBackgroundColor: darkMode && _usb == usb
-                              ? context.colors.background.inverse.withValues(
-                                  alpha: 0.85,
-                                )
-                              : null,
-                          pressedBackgroundColor: darkMode && _usb == usb
-                              ? context.colors.background.inverse
-                              : null,
-                          enabledLabelColor: darkMode && _usb == usb
-                              ? context.colors.text.inverse
-                              : null,
-                          pressedLabelColor: darkMode && _usb == usb
-                              ? context.colors.text.inverse
-                              : null,
-                          child: Text(usb ? 'USB' : 'Bluetooth'),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
             const SizedBox(height: AppSpacing.md),
-            if (_error != null) ...[
+            if (_changeError != null) ...[
               Text(
-                _error!,
+                _changeError!,
                 style: AppTypography.bodySmall.copyWith(
                   color: context.colors.text.destructive,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
             ],
-            if (_usb) ...[
-              Text(
-                'Connect your Ledger via USB',
-                style: AppTypography.headlineSmall.copyWith(
-                  color: context.colors.text.accent,
-                ),
-              ),
+            if (_transport == null) ...[
+              _title(context, 'How would you like to connect?'),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Connect your Ledger with a USB cable and unlock it.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                expand: true,
-                constrainContent: true,
-                onPressed: _saving
-                    ? null
-                    : widget.selectionRequest?.selectUsb ?? widget.onRetry,
-                size: AppButtonSize.large,
-                child: const Text('Connect'),
-              ),
-            ] else if ((widget.pairingRecovery ||
-                    widget.selectionRequest != null) &&
-                account != null)
+              _message(context, 'Choose a connection for this request.'),
+              const SizedBox(height: AppSpacing.sm),
+              for (final transport in LedgerConnectionTransport.values)
+                _choice(context, transport),
+            ] else if (_transport == LedgerConnectionTransport.usb)
+              _usbContent(context)
+            else if ((widget.pairingRecovery || request != null) &&
+                widget.account != null)
               LedgerPairingRecovery(
-                accountUuid: account.uuid,
+                accountUuid: widget.account!.uuid,
                 pairingInvalid: widget.pairingInvalid,
-                selectionRequest: widget.selectionRequest,
+                selectionRequest: request,
                 retrySelectsDevice: widget.retrySelectsDevice,
                 onRetry: widget.onRetry,
                 onClose: widget.onClose,
-                enabled: !_saving,
-                onBusyChanged: (busy) {
-                  _accessBusy = busy;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() {});
-                  });
+                enabled: !_changing,
+                onBusyChanged: (_) => _refresh(),
+                onCanChangeConnectionChanged: (canChange) {
+                  _canChange = canChange;
+                  _refresh();
                 },
               )
             else
               LedgerBluetoothRecovery(
-                enabled: !_saving,
-                onRetry: _saving ? null : widget.onRetry,
+                enabled: !_changing,
+                onRetry: widget.onRetry,
                 onClose: widget.onClose,
                 onBusyChanged: (busy) {
-                  _accessBusy = busy;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() {});
-                  });
+                  _canChange = !busy;
+                  _refresh();
                 },
               ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _title(BuildContext context, String text) => Text(
+    text,
+    style: AppTypography.headlineSmall.copyWith(
+      color: context.colors.text.accent,
+    ),
+  );
+  Widget _message(BuildContext context, String text) => Text(
+    text,
+    style: AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.secondary,
+    ),
+  );
+
+  Widget _choice(
+    BuildContext context,
+    LedgerConnectionTransport transport,
+  ) => Container(
+    decoration: BoxDecoration(
+      border: Border(bottom: BorderSide(color: context.colors.border.subtle)),
+    ),
+    child: AppButton(
+      key: ValueKey('ledger_choose_${transport.name}'),
+      variant: AppButtonVariant.ghost,
+      expand: true,
+      constrainContent: true,
+      height: 64,
+      onPressed: _changing
+          ? null
+          : () {
+              if (transport == LedgerConnectionTransport.usb) {
+                unawaited(_connectUsb());
+              } else {
+                widget.selectionRequest!.chooseTransport(transport);
+                setState(() {
+                  _transport = transport;
+                  _canChange = true;
+                });
+              }
+            },
+      child: Row(
+        children: [
+          Icon(
+            transport == LedgerConnectionTransport.usb
+                ? Icons.usb
+                : Icons.bluetooth,
+            size: 20,
+            color: context.colors.icon.regular,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              transport == LedgerConnectionTransport.usb ? 'USB' : 'Bluetooth',
+              style: AppTypography.bodyMediumStrong,
+            ),
+          ),
+          const AppIcon(AppIcons.chevronForward, size: 16),
+        ],
+      ),
+    ),
+  );
+
+  Widget _usbContent(BuildContext context) {
+    final readiness = ref.watch(ledgerAppReadinessStateProvider);
+    final opening =
+        _usbBusy && readiness.phase == LedgerAppReadinessPhase.confirmOpening;
+    final declined =
+        _usbError != null &&
+        LedgerRequestFailure.fromError(_usbError!) ==
+            LedgerRequestFailure.declined;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _title(
+          context,
+          _usbError != null
+              ? (declined
+                    ? 'Request declined'
+                    : 'Couldn’t connect to your Ledger')
+              : (opening ? 'Confirm on your Ledger' : 'Checking your Ledger'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        _message(
+          context,
+          _usbError != null
+              ? (declined
+                    ? LedgerRequestFailure.declined.message
+                    : ledgerFailureGuidance(_usbError!)?.message ??
+                          'Check the USB cable, unlock your Ledger, and open the Zcash app.')
+              : (opening
+                    ? 'Approve opening the Zcash app on your Ledger.'
+                    : 'Connect your Ledger with a USB cable, unlock it, and open the Zcash app.'),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (_usbError == null)
+          LedgerProgressStatus(
+            label: opening
+                ? 'Waiting for approval…'
+                : 'Checking USB connection…',
+          )
+        else
+          AppButton(
+            expand: true,
+            constrainContent: true,
+            size: AppButtonSize.large,
+            onPressed: () => unawaited(_connectUsb()),
+            child: const Text('Try again'),
+          ),
+      ],
     );
   }
 }

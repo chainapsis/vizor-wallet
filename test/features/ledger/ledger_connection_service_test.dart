@@ -76,7 +76,6 @@ void main() {
             isHardware: true,
             hardwareSignerKind: HardwareSignerKind.ledger,
             zip32AccountIndex: 0,
-            ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
             ledgerDeviceId: saved,
           );
           final accounts = _FakeAccountNotifier(initial);
@@ -138,38 +137,47 @@ void main() {
       );
     }
   }
-  test('automatic macOS prefers USB even after last Bluetooth use', () async {
-    final ble = _PermissionBle();
-    final c = _container(
-      notifier: _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.automatic,
-          deviceModel: 'Flex',
-        ).copyWith(ledgerLastTransport: LedgerConnectionTransport.bluetooth),
-      ),
-      ble: ble,
-    );
-    addTearDown(c.dispose);
-    expect(await run(c), 'usb');
-    expect(c.read(ledgerDeviceSelectionProvider), isNull);
-    expect(ble.reads, 0);
-  });
   test(
-    'unavailable USB opens a picker without connecting; explicit USB returns to USB',
+    'macOS waits for an explicit choice regardless of last transport',
     () async {
+      final ble = _PermissionBle();
       final c = _container(
         notifier: _FakeAccountNotifier(
           _ledgerAccount(
-            preference: LedgerConnectionPreference.automatic,
             deviceModel: 'Flex',
-          ),
+          ).copyWith(ledgerLastTransport: LedgerConnectionTransport.bluetooth),
         ),
+        ble: ble,
+      );
+      addTearDown(c.dispose);
+      final operation = run(c);
+      final request = await pending(c);
+      expect(request.canChooseTransport, isTrue);
+      expect(request.initialTransport, isNull);
+      expect(ble.reads, 0);
+      await request.selectUsb();
+      expect(await operation, 'usb');
+      expect(c.read(ledgerDeviceSelectionProvider), isNull);
+      expect(ble.reads, 0);
+    },
+  );
+  test(
+    'failed USB preparation keeps the request pending until an explicit Bluetooth choice',
+    () async {
+      final c = _container(
+        notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
         ble: _FakeBleService(),
         usbReady: false,
       );
       addTearDown(c.dispose);
       final result = run(c);
       final request = await pending(c);
+      await expectLater(
+        request.selectUsb(),
+        throwsA(isA<LedgerAppReadinessException>()),
+      );
+      expect(request.completed, false);
+      request.chooseTransport(LedgerConnectionTransport.bluetooth);
       await selectAndReconnect(request);
       expect(await result, 'ble');
     },
@@ -178,10 +186,7 @@ void main() {
     'USB choice from Bluetooth picker preserves USB operation errors without fallback',
     () async {
       final accounts = _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.bluetooth,
-          deviceModel: 'Flex',
-        ),
+        _ledgerAccount(deviceModel: 'Flex'),
       );
       final c = _container(notifier: accounts, ble: _FakeBleService());
       addTearDown(c.dispose);
@@ -196,12 +201,7 @@ void main() {
     },
   );
   test('explicit USB choice records USB rather than Bluetooth', () async {
-    final accounts = _FakeAccountNotifier(
-      _ledgerAccount(
-        preference: LedgerConnectionPreference.bluetooth,
-        deviceModel: 'Flex',
-      ),
-    );
+    final accounts = _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex'));
     final c = _container(notifier: accounts, ble: _FakeBleService());
     addTearDown(c.dispose);
     final result = run(c);
@@ -209,15 +209,45 @@ void main() {
     expect(await result, 'usb');
     expect(accounts.recordedTransports, [LedgerConnectionTransport.usb]);
   });
+  test('USB rounds and retries keep only this operation choice', () async {
+    final device = _CountingUsbDevice();
+    final c = _container(
+      notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
+      ble: _FakeBleService(),
+      usbDevice: device,
+    );
+    addTearDown(c.dispose);
+    final scope = LedgerConnectionScope();
+    final first = scope.run(() => run(c));
+    final request = await pending(c);
+    expect(device.queries, 0);
+    await request.selectUsb();
+    expect(await first, 'usb');
+    expect(device.queries, 1);
+    expect(await scope.run(() => run(c)), 'usb');
+    expect(c.read(ledgerDeviceSelectionProvider), isNull);
+    await expectLater(
+      scope.run(
+        () => run(c, usb: () async => throw StateError('Signing failed')),
+      ),
+      throwsStateError,
+    );
+    final retry = scope.run(() => run(c));
+    final retryRequest = await pending(c);
+    expect(retryRequest.initialTransport, LedgerConnectionTransport.usb);
+    await retryRequest.selectUsb();
+    expect(await retry, 'usb');
+    final next = LedgerConnectionScope().run(() => run(c));
+    final nextRequest = await pending(c);
+    expect(nextRequest.initialTransport, isNull);
+    final cancelled = expectLater(next, throwsA(isA<LedgerMobileException>()));
+    nextRequest.cancel();
+    await cancelled;
+  });
   test('rounds share a selection; a new user operation asks again', () async {
     final ble = _FakeBleService();
     final c = _container(
-      notifier: _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.bluetooth,
-          deviceModel: 'Flex',
-        ),
-      ),
+      notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
       ble: ble,
     );
     addTearDown(c.dispose);
@@ -237,12 +267,7 @@ void main() {
   test('sign failure is not replayed and invalidates selection', () async {
     final ble = _FakeBleService();
     final c = _container(
-      notifier: _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.bluetooth,
-          deviceModel: 'Flex',
-        ),
-      ),
+      notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
       ble: ble,
     );
     addTearDown(c.dispose);
@@ -284,10 +309,7 @@ void main() {
       () async {
         final ble = _FakeBleService();
         final accounts = _FakeAccountNotifier(
-          _ledgerAccount(
-            preference: LedgerConnectionPreference.bluetooth,
-            deviceModel: 'Flex',
-          ),
+          _ledgerAccount(deviceModel: 'Flex'),
         )..failRecording = failure == 'save';
         if (failure == 'mismatch') ble.exportKey = 'wrong';
         if (failure == 'connect') {
@@ -341,10 +363,7 @@ void main() {
           ..pauseStage = stage
           ..pause = gate.future;
         final accounts = _FakeAccountNotifier(
-          _ledgerAccount(
-            preference: LedgerConnectionPreference.bluetooth,
-            deviceModel: 'Flex',
-          ),
+          _ledgerAccount(deviceModel: 'Flex'),
         );
         if (stage == 'save') accounts.recordGate = gate.future;
         final c = _container(notifier: accounts, ble: ble);
@@ -396,12 +415,7 @@ void main() {
     () async {
       final ble = _FakeBleService();
       final c = _container(
-        notifier: _FakeAccountNotifier(
-          _ledgerAccount(
-            preference: LedgerConnectionPreference.bluetooth,
-            deviceModel: 'Flex',
-          ),
-        ),
+        notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
         ble: ble,
       );
       addTearDown(c.dispose);
@@ -433,12 +447,7 @@ void main() {
     'cached USB choice suppresses a result cancelled during device work',
     () async {
       final c = _container(
-        notifier: _FakeAccountNotifier(
-          _ledgerAccount(
-            preference: LedgerConnectionPreference.bluetooth,
-            deviceModel: 'Flex',
-          ),
-        ),
+        notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Flex')),
         ble: _FakeBleService(),
       );
       addTearDown(c.dispose);
@@ -471,10 +480,7 @@ void main() {
           if (!gate.isCompleted) gate.complete();
         });
       final accounts = _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.bluetooth,
-          deviceModel: 'Flex',
-        ),
+        _ledgerAccount(deviceModel: 'Flex'),
       );
       final c = _container(notifier: accounts, ble: ble);
       addTearDown(c.dispose);
@@ -530,10 +536,7 @@ void main() {
             if (stage == 'readiness') ble.appError = original;
             final c = _container(
               notifier: _FakeAccountNotifier(
-                _ledgerAccount(
-                  preference: LedgerConnectionPreference.bluetooth,
-                  deviceModel: 'Flex',
-                ),
+                _ledgerAccount(deviceModel: 'Flex'),
               ),
               ble: ble,
               platform: platform,
@@ -580,10 +583,7 @@ void main() {
     () async {
       final ble = _FakeBleService()..exportKey = 'different-seed';
       final accounts = _FakeAccountNotifier(
-        _ledgerAccount(
-          preference: LedgerConnectionPreference.bluetooth,
-          deviceModel: 'Flex',
-        ).copyWith(
+        _ledgerAccount(deviceModel: 'Flex').copyWith(
           ledgerDeviceId: 'selected',
           ledgerLastTransport: LedgerConnectionTransport.bluetooth,
         ),
@@ -606,60 +606,52 @@ void main() {
     },
   );
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
-    for (final preference in LedgerConnectionPreference.values) {
-      for (final usbReady in [true, false]) {
-        test(
-          '$platform uses USB for saved $preference (ready: $usbReady)',
-          () async {
-            final notifier = _FakeAccountNotifier(
-              _ledgerAccount(
-                preference: preference,
-                deviceModel: 'Nano X',
-              ).copyWith(
-                ledgerLastTransport: LedgerConnectionTransport.bluetooth,
-              ),
-            );
-            final ble = _FakeBleService();
-            final container = _container(
-              notifier: notifier,
-              ble: ble,
-              platform: platform,
-              usbReady: usbReady,
-            );
-            addTearDown(container.dispose);
-            await container.read(accountProvider.future);
-            final operation = container
-                .read(ledgerConnectionServiceProvider)
-                .run(
-                  accountUuid: 'ledger-1',
-                  usb: () async => 'usb',
-                  bluetooth: (_) async =>
-                      fail('unsupported native BLE must never be called'),
-                );
-            if (usbReady) {
-              expect(await operation, 'usb');
-            } else {
-              await expectLater(
-                operation,
-                throwsA(
-                  isA<LedgerConnectionRequiredException>()
-                      .having(
-                        (e) => e.message,
-                        'USB instructions',
-                        contains('with USB'),
-                      )
-                      .having(
-                        (e) => e.message,
-                        'no BLE instructions',
-                        isNot(contains('Bluetooth')),
-                      ),
-                ),
-              );
-            }
-            expect(ble.connectCalls, 0);
-          },
+    for (final usbReady in [true, false]) {
+      test('$platform uses USB directly (ready: $usbReady)', () async {
+        final notifier = _FakeAccountNotifier(
+          _ledgerAccount(
+            deviceModel: 'Nano X',
+          ).copyWith(ledgerLastTransport: LedgerConnectionTransport.bluetooth),
         );
-      }
+        final ble = _FakeBleService();
+        final container = _container(
+          notifier: notifier,
+          ble: ble,
+          platform: platform,
+          usbReady: usbReady,
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        final operation = container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () async => 'usb',
+              bluetooth: (_) async =>
+                  fail('unsupported native BLE must never be called'),
+            );
+        if (usbReady) {
+          expect(await operation, 'usb');
+        } else {
+          await expectLater(
+            operation,
+            throwsA(
+              isA<LedgerConnectionRequiredException>()
+                  .having(
+                    (e) => e.message,
+                    'USB instructions',
+                    contains('with USB'),
+                  )
+                  .having(
+                    (e) => e.message,
+                    'no BLE instructions',
+                    isNot(contains('Bluetooth')),
+                  ),
+            ),
+          );
+        }
+        expect(ble.connectCalls, 0);
+      });
     }
   }
 
@@ -668,13 +660,14 @@ void main() {
       'does not replay an operation (metadata failure: $metadataFailure)',
       () async {
         final notifier = _FakeAccountNotifier(
-          _ledgerAccount(
-            preference: LedgerConnectionPreference.automatic,
-            deviceModel: 'Nano X',
-          ),
+          _ledgerAccount(deviceModel: 'Nano X'),
         )..failRecording = metadataFailure;
         final ble = _FakeBleService();
-        final container = _container(notifier: notifier, ble: ble);
+        final container = _container(
+          notifier: notifier,
+          ble: ble,
+          platform: TargetPlatform.windows,
+        );
         addTearDown(container.dispose);
         await container.read(accountProvider.future);
         final operation = container
@@ -703,17 +696,14 @@ void main() {
 
   test('explicit USB never probes Bluetooth', () async {
     final notifier = _FakeAccountNotifier(
-      _ledgerAccount(
-        preference: LedgerConnectionPreference.usb,
-        deviceModel: 'Nano X',
-      ),
+      _ledgerAccount(deviceModel: 'Nano X'),
     );
     final ble = _FakeBleService();
     final container = _container(notifier: notifier, ble: ble);
     addTearDown(container.dispose);
     await container.read(accountProvider.future);
 
-    final result = await container
+    final result = container
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: 'ledger-1',
@@ -721,7 +711,8 @@ void main() {
           bluetooth: (_) async => 'unexpected',
         );
 
-    expect(result, 'signed-over-usb');
+    await (await pending(container)).selectUsb();
+    expect(await result, 'signed-over-usb');
     expect(ble.connectCalls, 0);
     expect(notifier.recordedTransports, [LedgerConnectionTransport.usb]);
   });
@@ -732,6 +723,7 @@ ProviderContainer _container({
   required _FakeBleService ble,
   TargetPlatform platform = TargetPlatform.macOS,
   bool usbReady = true,
+  LedgerAppReadinessDevice? usbDevice,
 }) {
   return ProviderContainer(
     overrides: [
@@ -758,7 +750,7 @@ ProviderContainer _container({
       }),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.usb,
-      ).overrideWithValue(_ReadyDevice(available: usbReady)),
+      ).overrideWithValue(usbDevice ?? _ReadyDevice(available: usbReady)),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.bluetooth,
       ).overrideWithValue(_ReadyDevice(ble: ble)),
@@ -766,17 +758,13 @@ ProviderContainer _container({
   );
 }
 
-AccountInfo _ledgerAccount({
-  required LedgerConnectionPreference preference,
-  required String deviceModel,
-}) {
+AccountInfo _ledgerAccount({required String deviceModel}) {
   return AccountInfo(
     uuid: 'ledger-1',
     name: 'Ledger',
     order: 0,
     isHardware: true,
     hardwareSignerKind: HardwareSignerKind.ledger,
-    ledgerConnectionPreference: preference,
     zip32AccountIndex: 0,
     ledgerDeviceId: 'device-1',
     ledgerDeviceName: 'Rowan Ledger',
@@ -949,4 +937,13 @@ class _PermissionBle extends _FakeBleService implements LedgerBluetoothAccess {
 
   @override
   Future<bool> openBluetoothSettings() async => true;
+}
+
+class _CountingUsbDevice extends _ReadyDevice {
+  int queries = 0;
+  @override
+  Future<LedgerDeviceAppSnapshot> queryZcashApp() {
+    queries++;
+    return super.queryZcashApp();
+  }
 }

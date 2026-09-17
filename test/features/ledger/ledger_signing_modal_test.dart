@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
@@ -13,37 +13,35 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
-    testWidgets(
-      '$platform failure offers USB only for saved Bluetooth account',
-      (tester) async {
-        await tester.pumpWidget(
-          _harness(
-            platform: platform,
-            phase: LedgerSigningModalPhase.failed,
-            account: const AccountInfo(
-              uuid: 'ledger-1',
-              name: 'Ledger',
-              order: 0,
-              isHardware: true,
-              hardwareSignerKind: HardwareSignerKind.ledger,
-              ledgerDeviceId: 'saved',
-              ledgerDeviceModel: 'Nano X',
-              ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
-            ),
-            failure: const LedgerSigningFailurePresentation(
-              title: 'Ledger signing failed',
-              statusLabel: 'Action needed',
-              message: 'Reconnect your Ledger and try again.',
-              showDeviceAppPrompt: true,
-              actionLabel: 'Try again',
-            ),
+    testWidgets('$platform failure does not offer a transport choice', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          platform: platform,
+          phase: LedgerSigningModalPhase.failed,
+          account: const AccountInfo(
+            uuid: 'ledger-1',
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+            ledgerDeviceId: 'saved',
+            ledgerDeviceModel: 'Nano X',
           ),
-        );
-        expect(find.text('Connect your Ledger over USB.'), findsOneWidget);
-        expect(find.text('Bluetooth'), findsNothing);
-        expect(find.text('Auto'), findsNothing);
-      },
-    );
+          failure: const LedgerSigningFailurePresentation(
+            title: 'Ledger signing failed',
+            statusLabel: 'Action needed',
+            message: 'Reconnect your Ledger and try again.',
+            showDeviceAppPrompt: true,
+            actionLabel: 'Try again',
+          ),
+        ),
+      );
+      expect(find.bySemanticsLabel('Change connection'), findsNothing);
+      expect(find.text('Bluetooth'), findsNothing);
+      expect(find.text('Auto'), findsNothing);
+    });
   }
 
   testWidgets(
@@ -270,87 +268,45 @@ void main() {
     expect(retrySavingCount, 1);
   });
 
-  testWidgets('offers a compact transport switch after a signing failure', (
-    tester,
-  ) async {
-    const account = AccountInfo(
-      uuid: 'ledger-1',
-      name: 'Ledger',
-      order: 0,
-      isHardware: true,
-      hardwareSignerKind: HardwareSignerKind.ledger,
-      ledgerDeviceId: 'nano-x',
-      ledgerDeviceModel: 'Nano X',
-    );
-    await tester.pumpWidget(
-      _harness(
-        phase: LedgerSigningModalPhase.failed,
-        failure: const LedgerSigningFailurePresentation(
-          title: 'Ledger signing failed',
-          statusLabel: 'Action needed',
-          message: 'Reconnect your Ledger and try again.',
-          showDeviceAppPrompt: true,
-          actionLabel: 'Try again',
+  for (final platform in [
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+  ]) {
+    testWidgets('$platform exposes connection choice only when supported', (
+      tester,
+    ) async {
+      final scope = LedgerConnectionScope()
+        ..transport = LedgerConnectionTransport.usb;
+      var retries = 0;
+      await tester.pumpWidget(
+        _harness(
+          phase: LedgerSigningModalPhase.failed,
+          failure: const LedgerSigningFailurePresentation(
+            title: 'Ledger signing failed',
+            statusLabel: 'Action needed',
+            message: 'Reconnect your Ledger and try again.',
+            showDeviceAppPrompt: true,
+            actionLabel: 'Try again',
+          ),
+          connectionScope: scope,
+          platform: platform,
+          onFailureAction: () => retries++,
         ),
-        account: account,
-      ),
-    );
-
-    expect(
-      find.byKey(const ValueKey('ledger_failure_connection_picker')),
-      findsOneWidget,
-    );
-    expect(find.text('Auto'), findsOneWidget);
-    expect(find.text('USB'), findsOneWidget);
-    expect(find.text('Bluetooth'), findsOneWidget);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('ledger_connection_bluetooth')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-  });
-
-  testWidgets('does not offer Bluetooth before the account verifies a device', (
-    tester,
-  ) async {
-    const account = AccountInfo(
-      uuid: 'ledger-1',
-      name: 'Ledger',
-      order: 0,
-      isHardware: true,
-      hardwareSignerKind: HardwareSignerKind.ledger,
-      ledgerDeviceModel: 'Nano S Plus',
-    );
-    await tester.pumpWidget(
-      _harness(
-        phase: LedgerSigningModalPhase.failed,
-        failure: const LedgerSigningFailurePresentation(
-          title: 'Ledger signing failed',
-          statusLabel: 'Action needed',
-          message: 'Reconnect your Ledger and try again.',
-          showDeviceAppPrompt: true,
-          actionLabel: 'Try again',
-        ),
-        account: account,
-      ),
-    );
-
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('ledger_connection_bluetooth')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      find.text('Bluetooth unavailable. Connect your Ledger over USB.'),
-      findsOneWidget,
-    );
-  });
+      );
+      expect(find.text('Auto'), findsNothing);
+      final back = find.bySemanticsLabel('Change connection');
+      expect(
+        back,
+        platform == TargetPlatform.macOS ? findsOneWidget : findsNothing,
+      );
+      if (platform == TargetPlatform.macOS) {
+        await tester.tap(back);
+        expect(scope.transport, isNull);
+        expect(retries, 1);
+      }
+    });
+  }
 }
 
 Widget _harness({
@@ -361,6 +317,7 @@ Widget _harness({
   VoidCallback? onFailureAction,
   VoidCallback? onCancel = _noop,
   AccountInfo? account,
+  LedgerConnectionScope? connectionScope,
   TargetPlatform platform = TargetPlatform.macOS,
 }) {
   return ProviderScope(
@@ -381,6 +338,7 @@ Widget _harness({
           child: Center(
             child: LedgerSigningModal(
               phase: phase,
+              connectionScope: connectionScope,
               signingStage: stage,
               failure: failure,
               onCancel: onCancel,

@@ -687,6 +687,7 @@ class _SwapLedgerSigningOverlayState
         pendingBroadcastResult?.status ==
             SwapDepositBroadcastStatus.broadcastedStorageFailed;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed

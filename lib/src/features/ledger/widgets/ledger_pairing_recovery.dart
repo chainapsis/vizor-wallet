@@ -21,6 +21,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
     required this.onRetry,
     required this.onClose,
     required this.onBusyChanged,
+    this.onCanChangeConnectionChanged,
     this.enabled = true,
     this.pairingInvalid = false,
     this.selectionRequest,
@@ -31,6 +32,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   final ValueChanged<bool> onBusyChanged;
+  final ValueChanged<bool>? onCanChangeConnectionChanged;
   final bool enabled;
   final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
@@ -43,6 +45,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
     onRetry: onRetry,
     onClose: onClose,
     onBusyChanged: onBusyChanged,
+    onCanChangeConnectionChanged: onCanChangeConnectionChanged,
     enabled: enabled,
     selectionRequest: selectionRequest,
     retrySelectsDevice: retrySelectsDevice,

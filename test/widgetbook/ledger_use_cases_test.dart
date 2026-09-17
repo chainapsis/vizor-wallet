@@ -2,7 +2,6 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/widgetbook/ledger_use_cases.dart';
 
@@ -68,24 +67,6 @@ void main() {
       find.text('Reconnect your Ledger and open the Zcash app.'),
       findsOne,
     );
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('signing transport choices update only the preview account', (
-    tester,
-  ) async {
-    await _pumpUseCase(
-      tester,
-      (_) => buildLedgerSigningPreview(phase: LedgerSigningModalPhase.failed),
-    );
-
-    final usb = find.byKey(const ValueKey('ledger_connection_usb'));
-    expect(tester.widget<AppButton>(usb).variant, AppButtonVariant.secondary);
-
-    await tester.tap(usb);
-    await tester.pump();
-
-    expect(tester.widget<AppButton>(usb).variant, AppButtonVariant.primary);
     expect(tester.takeException(), isNull);
   });
 

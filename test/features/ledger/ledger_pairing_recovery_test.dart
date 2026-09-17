@@ -230,8 +230,8 @@ void main() {
       expect(find.text('Remove the old pairing'), findsNothing);
       expect(find.text('Open settings'), findsNothing);
       expect(find.text('Native request failed'), findsNothing);
-      expect(find.text('USB'), findsOneWidget);
-      expect(find.text('Bluetooth'), findsOneWidget);
+      expect(find.text('USB'), findsNothing);
+      expect(find.text('Ledger · Bluetooth'), findsOneWidget);
       expect(accounts.writes, 0);
       expect(retries, 0);
       await tester.tap(find.text('Try again'));

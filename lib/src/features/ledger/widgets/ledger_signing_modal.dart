@@ -1,6 +1,5 @@
 import '../../../core/layout/app_form_factor.dart';
 import 'mobile/mobile_ledger_signing_content.dart';
-import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
@@ -64,6 +63,7 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
     this.accountUuid,
+    this.connectionScope,
     this.signingStage,
     this.roundFeeNotice,
     this.roundNumber = 1,
@@ -86,6 +86,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onFailureAction;
   final String cancelLabel;
   final String? accountUuid;
+  final LedgerConnectionScope? connectionScope;
   final LedgerSigningStage? signingStage;
   final String? roundFeeNotice;
   final int roundNumber;
@@ -117,6 +118,17 @@ class LedgerSigningModal extends ConsumerWidget {
     }
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
+    final canChangeConnection =
+        failed &&
+        failure!.showConnectionPicker &&
+        onFailureAction != null &&
+        connectionScope != null &&
+        ref.watch(ledgerTargetPlatformProvider) == TargetPlatform.macOS;
+    void changeConnection() {
+      connectionScope!.changeConnection();
+      onFailureAction?.call();
+    }
+
     if (failed &&
         (failure!.bluetoothRecovery ||
             (failure.pairingRecovery && account != null)) &&
@@ -127,6 +139,7 @@ class LedgerSigningModal extends ConsumerWidget {
         pairingRecovery: failure.pairingRecovery,
         pairingInvalid: failure.pairingInvalid,
         retrySelectsDevice: true,
+        onChangeConnection: canChangeConnection ? changeConnection : null,
         onRetry: onFailureAction,
         onClose: onCancel,
       );
@@ -209,6 +222,19 @@ class LedgerSigningModal extends ConsumerWidget {
         children: [
           Row(
             children: [
+              if (canChangeConnection) ...[
+                AppButton(
+                  onPressed: changeConnection,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.small,
+                  child: const AppIcon(
+                    AppIcons.chevronBackward,
+                    size: 16,
+                    semanticLabel: 'Change connection',
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               Container(
                 width: 36,
                 height: 36,
@@ -312,13 +338,6 @@ class LedgerSigningModal extends ConsumerWidget {
               ],
             ),
           ),
-          if (failed &&
-              failure!.showConnectionPicker &&
-              account != null &&
-              ledgerSupportsUsb(ref.watch(ledgerTargetPlatformProvider))) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _LedgerFailureConnectionPicker(account: account),
-          ],
           const SizedBox(height: AppSpacing.md),
           if (actionLabel == null && onCancel == null)
             const SizedBox.shrink()
@@ -367,95 +386,5 @@ class LedgerSigningModal extends ConsumerWidget {
       if (account.uuid == uuid && account.isLedger) return account;
     }
     return null;
-  }
-}
-
-class _LedgerFailureConnectionPicker extends ConsumerWidget {
-  const _LedgerFailureConnectionPicker({required this.account});
-
-  final AccountInfo account;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!ledgerSupportsBluetooth(ref.watch(ledgerTargetPlatformProvider))) {
-      return Text(
-        'Connect your Ledger over USB.',
-        key: const ValueKey('ledger_usb_only_connection'),
-        style: AppTypography.bodySmall.copyWith(
-          color: context.colors.text.secondary,
-        ),
-      );
-    }
-    final bluetoothAvailable =
-        account.ledgerDeviceId != null &&
-        ledgerBluetoothTransportCapabilityForModel(
-              model: account.ledgerDeviceModel,
-              platform: ref.watch(ledgerTargetPlatformProvider),
-            ) !=
-            LedgerBluetoothCapability.unsupported;
-    return Container(
-      key: const ValueKey('ledger_failure_connection_picker'),
-      padding: const EdgeInsets.all(AppSpacing.s),
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Try another connection',
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            children: [
-              for (final option in LedgerConnectionPreference.values) ...[
-                if (option != LedgerConnectionPreference.automatic)
-                  const SizedBox(width: AppSpacing.xxs),
-                Expanded(
-                  child: AppButton(
-                    key: ValueKey('ledger_connection_${option.name}'),
-                    onPressed:
-                        option == LedgerConnectionPreference.bluetooth &&
-                            !bluetoothAvailable
-                        ? null
-                        : () => unawaited(
-                            ref
-                                .read(accountProvider.notifier)
-                                .updateLedgerConnectionPreference(
-                                  account.uuid,
-                                  option,
-                                ),
-                          ),
-                    variant: account.ledgerConnectionPreference == option
-                        ? AppButtonVariant.primary
-                        : AppButtonVariant.secondary,
-                    size: AppButtonSize.small,
-                    constrainContent: true,
-                    child: Text(switch (option) {
-                      LedgerConnectionPreference.automatic => 'Auto',
-                      LedgerConnectionPreference.usb => 'USB',
-                      LedgerConnectionPreference.bluetooth => 'Bluetooth',
-                    }),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (!bluetoothAvailable) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'Bluetooth unavailable. Connect your Ledger over USB.',
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 }
