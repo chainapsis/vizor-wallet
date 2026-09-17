@@ -37,6 +37,13 @@ const _account = AccountInfo(
 Widget buildLedgerMobileLargeTextCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true, modalTextScale: 1.8);
 
+Widget buildLedgerAndroidInvalidPairingCapture(BuildContext context) =>
+    _buildCapture(
+      context,
+      pairingInvalid: true,
+      targetPlatform: TargetPlatform.android,
+    );
+
 Widget buildLedgerInvalidPairingCapture(BuildContext context) =>
     _buildCapture(context, pairingInvalid: true);
 
@@ -52,6 +59,7 @@ Widget buildLedgerSearchingDevicesCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true, scan: 'devices');
 Widget _buildCapture(
   BuildContext context, {
+  TargetPlatform? targetPlatform,
   bool selectFirst = false,
   bool pairingInvalid = false,
   bool holdReadiness = false,
@@ -74,7 +82,7 @@ Widget _buildCapture(
       accountProvider.overrideWith(_Accounts.new),
       appSecurityProvider.overrideWith(_Security.new),
       ledgerTargetPlatformProvider.overrideWithValue(
-        mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
+        targetPlatform ?? (mobile ? TargetPlatform.iOS : TargetPlatform.macOS),
       ),
       ledgerMobileBleServiceProvider.overrideWithValue(
         _Ble(holdReadiness: holdReadiness, scan: scan),

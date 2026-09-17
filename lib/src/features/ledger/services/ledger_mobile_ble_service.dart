@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ledger_bluetooth_access.dart';
@@ -112,6 +113,12 @@ abstract interface class LedgerMobileBleService {
   Future<void> cancelSigning();
 }
 
+/// Evidence is scoped to one selected connection, including late OS broadcasts.
+/// Consumers retain this listenable rather than following a subsequent attempt.
+abstract interface class LedgerPairingEvidenceService {
+  ValueListenable<bool>? get pairingInvalidEvidence;
+}
+
 /// Optional progress capability; existing test/custom transports remain compatible.
 abstract interface class LedgerProgressBleService {
   Future<List<Uint8List>> exchangeApdusWithProgress(
@@ -123,20 +130,60 @@ abstract interface class LedgerProgressBleService {
 /// Method channel shared by every native Ledger Bluetooth runner.
 const kLedgerMobileMethodChannel = 'com.zcash.wallet/ledger_mobile';
 
-final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
-  return MethodChannelLedgerMobileBleService();
+final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((ref) {
+  final service = MethodChannelLedgerMobileBleService();
+  ref.onDispose(service._stopPairingEvidence);
+  return service;
 });
 
 class MethodChannelLedgerMobileBleService
     implements
         LedgerMobileBleService,
         LedgerProgressBleService,
+        LedgerPairingEvidenceService,
         LedgerBluetoothAccess,
         LedgerBluetoothPairingSettings {
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
            reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
+
+  static const _pairingChannel = MethodChannel(
+    'com.zcash.wallet/ledger_mobile/pairing',
+  );
+  static int _nextConnectionId = 0;
+  static String? _observedConnectionId;
+  static void Function()? _onPairingInvalid;
+  String? _connectionId;
+  ValueNotifier<bool>? _pairingInvalidEvidence;
+
+  @override
+  ValueListenable<bool>? get pairingInvalidEvidence => _pairingInvalidEvidence;
+
+  void _stopPairingEvidence() {
+    if (_observedConnectionId == _connectionId) {
+      _observedConnectionId = null;
+      _onPairingInvalid = null;
+    }
+    _pairingInvalidEvidence = null;
+  }
+
+  void _startPairingEvidence() {
+    _stopPairingEvidence();
+    final evidence = _pairingInvalidEvidence = ValueNotifier(false);
+    _observedConnectionId = _connectionId = '${++_nextConnectionId}';
+    _onPairingInvalid = () {
+      _connectedDeviceId = null;
+      evidence.value = true;
+    };
+    _pairingChannel.setMethodCallHandler((call) async {
+      if (call.method != 'pairingInvalid' || call.arguments is! Map) return;
+      final id = (call.arguments as Map)['connectionId'];
+      if (id is String && id == _observedConnectionId) {
+        _onPairingInvalid?.call();
+      }
+    });
+  }
 
   static const _progressChannel = MethodChannel(
     'com.zcash.wallet/ledger_mobile/signing_progress',
@@ -185,6 +232,7 @@ class MethodChannelLedgerMobileBleService
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
+    _stopPairingEvidence();
     final controller = StreamController<Object?>();
     final subscription = _events.receiveBroadcastStream().listen(
       controller.add,
@@ -236,12 +284,22 @@ class MethodChannelLedgerMobileBleService
   @override
   Future<void> connect(LedgerBleDevice device) async {
     final generation = _operationGeneration;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _startPairingEvidence();
+    }
     await _invokeVoid('connect', <String, Object>{
       'deviceId': device.id,
+      'connectionId': ?_connectionId,
       'deviceName': device.name,
       'deviceModel': device.model,
     });
     _checkOperationActive(generation);
+    if (_pairingInvalidEvidence?.value == true) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.pairingInvalid,
+        kLedgerPairingInvalidMessage,
+      );
+    }
     _connectedDeviceId = device.id;
   }
 
@@ -364,6 +422,7 @@ class MethodChannelLedgerMobileBleService
 
   @override
   Future<void> cancelSigning() {
+    _stopPairingEvidence();
     // Invalidate Dart retries before waiting for the native cancellation reply.
     _operationGeneration++;
     // Native cancellation retires the BLE session. Do not advertise its cached

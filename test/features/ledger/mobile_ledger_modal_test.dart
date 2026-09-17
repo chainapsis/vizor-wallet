@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.da
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 
 Future<void> frames(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -42,7 +43,54 @@ Widget harness(Widget child, {double scale = 1}) => MaterialApp(
   ),
 );
 
+class _PairingEvidenceBle extends fixture.FakeBle
+    implements LedgerPairingEvidenceService {
+  @override
+  final ValueNotifier<bool> pairingInvalidEvidence = ValueNotifier(false);
+}
+
 void main() {
+  testWidgets(
+    'Android late key loss updates the existing recovery sheet only',
+    (tester) async {
+      final ble = _PairingEvidenceBle();
+      final c = fixture.containerFor(
+        ble,
+        fixture.FakeAccounts(),
+        platform: TargetPlatform.android,
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            LedgerAccessRecoveryModal(
+              account: fixture.account,
+              pairingRecovery: true,
+              onRetry: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await frames(tester);
+      expect(find.text('Did you reset pairing?'), findsOneWidget);
+      ble.pairingInvalidEvidence.value = true;
+      await frames(tester);
+      expect(find.text('Pair your Ledger again'), findsOneWidget);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(
+        find.textContaining('Open Bluetooth settings and remove'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      ble.pairingInvalidEvidence.value = false;
+      ble.pairingInvalidEvidence.value = true;
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final failure in [
     LedgerMobileFailure.pairingInvalid,
     LedgerMobileFailure.disconnected,

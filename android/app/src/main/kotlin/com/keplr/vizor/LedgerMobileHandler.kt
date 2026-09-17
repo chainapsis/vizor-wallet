@@ -53,6 +53,10 @@ class LedgerMobileHandler(
     private val activity: Activity,
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
 ) : EventChannel.StreamHandler {
+    var onPairingInvalid: ((String) -> Unit)? = null
+    private val keyMissingObserver = LedgerKeyMissingObserver(activity)
+    private var pairingInvalid = false
+
     var onSigningProgress: ((String, String) -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var operation: DeviceRequest? = null
@@ -136,6 +140,8 @@ class LedgerMobileHandler(
     fun close() {
         if (closed) return
         closed = true
+        keyMissingObserver.stop()
+        onPairingInvalid = null
         stopDiscovery()
         eventSink = null
         permissionResult?.error("cancelled", "Ledger connection was closed.", null)
@@ -209,6 +215,8 @@ class LedgerMobileHandler(
             result.error("unavailable", "This Android device does not support Bluetooth LE.", null)
             return
         }
+        keyMissingObserver.stop()
+        pairingInvalid = false
         discoveredDevices.clear()
         discoveryRequested = true
         if (eventSink != null) beginDiscovery()
@@ -293,7 +301,7 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        launchOperation(result) { request ->
+        launchOperation(result, newConnection = true) { request ->
             val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
             currentCoroutineContext().ensureActive()
             // A failed cleanup must not be bypassed by a new connection.
@@ -301,6 +309,19 @@ class LedgerMobileHandler(
                 dmk.disconnectDevice(stale)
                 cleanupRequestedFor = stale.uid
                 cleanupDevice = null
+            }
+            val connectionId = call.argument<String>("connectionId")
+            keyMissingObserver.start(device.uid) {
+                if (!pairingInvalid && !closed) {
+                    pairingInvalid = true
+                    connectionId?.let { onPairingInvalid?.invoke(it) }
+                    operation?.takeIf { !it.cleanup && it.pending }?.let { active ->
+                        active.keyMissing = true
+                        active.error("pairing_invalid", PAIRING_INVALID_MESSAGE, null)
+                        active.job.cancel()
+                    }
+                    if (operation == null && connectedDevice != null) disconnect(null)
+                }
             }
             when (val connection = connectAfterCleanup(device)) {
                 is ConnectionResult.Connected -> {
@@ -523,12 +544,17 @@ class LedgerMobileHandler(
     private fun launchOperation(
         result: MethodChannel.Result?,
         cleanup: Boolean = false,
+        newConnection: Boolean = false,
         block: suspend (DeviceRequest) -> Unit,
     ) {
         val sdkJob = sdkJobs[dmk]
         if (!cleanup && (operation != null || (sdkJob != null && sdkJob !== discoveryJob))) {
             result?.error("busy", "A Ledger operation is already active.", null)
             return
+        }
+        if (newConnection) {
+            keyMissingObserver.stop()
+            pairingInvalid = false
         }
         stopDiscovery()
         val scan = discoveryJob
@@ -554,6 +580,9 @@ class LedgerMobileHandler(
                 request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (_: CancellationException) {
                 request.cancelResult()
+                if (request.keyMissing && request.device == null) {
+                    request.device = connectedDevice ?: dmk.getConnectedDevices().singleOrNull()
+                }
                 retireSession(request.device)
                 request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (error: LedgerDiscoveryException) {
@@ -596,6 +625,8 @@ class LedgerMobileHandler(
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
+        keyMissingObserver.stop()
+        pairingInvalid = false
         operation?.let { if (!it.cleanup) it.cancel() }
         result.success(null)
     }
@@ -607,6 +638,7 @@ class LedgerMobileHandler(
         lateinit var job: Job
         var device: ConnectedDevice? = null
         var retiredSession = false
+        var keyMissing = false
         val pending: Boolean get() = result != null
 
         private fun takeResult(): MethodChannel.Result? = result.also { result = null }
@@ -666,6 +698,10 @@ class LedgerMobileHandler(
     private fun ByteArray.asUnsignedList(): List<Int> = map { it.toInt() and 0xff }
 
     private fun requireConnected(result: MethodChannel.Result): ConnectedDevice? {
+        if (pairingInvalid) {
+            result.error("pairing_invalid", PAIRING_INVALID_MESSAGE, null)
+            return null
+        }
         if (cleanupDevice != null) {
             result.error("disconnected", "Reconnect the Ledger to finish connection cleanup.", null)
             return null
@@ -771,6 +807,7 @@ class LedgerMobileHandler(
     )
 
     companion object {
+        private const val PAIRING_INVALID_MESSAGE = "Your Bluetooth pairing is no longer valid. Forget this Ledger in Bluetooth settings, then reconnect."
         // DMK survives Activity recreation. A new handler must also wait for
         // the previous handler's non-cooperative command/cleanup to finish.
         // Accessed only on Main; entries are removed on actual job completion.

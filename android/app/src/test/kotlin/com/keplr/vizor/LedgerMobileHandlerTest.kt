@@ -127,6 +127,140 @@ class LedgerMobileHandlerTest {
         handler.handle(MethodCall(method, mapOf("deviceId" to id)), it)
     }
 
+    private fun keyMissing(activity: Activity, address: String) {
+        val device = android.bluetooth.BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address)
+        activity.sendBroadcast(android.content.Intent(android.bluetooth.BluetoothDevice.ACTION_KEY_MISSING)
+            .putExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, device))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+    }
+
+    @Test @Config(sdk = [36]) fun keyMissingCancelsOnlySelectedConnectionAndDrainsLateSuccess() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        var pending: Continuation<ConnectionResult>? = null
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult =
+                suspendCoroutine { pending = it }
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        val events = mutableListOf<String>()
+        handler.onPairingInvalid = { events += it }
+        val result = Result()
+        handler.handle(MethodCall("connect", mapOf("deviceId" to target.uid, "connectionId" to "attempt-1")), result)
+        runCurrent()
+        keyMissing(activity, "AA:BB:CC:DD:EE:02")
+        assertEquals(0, result.completions)
+        keyMissing(activity, target.uid)
+        keyMissing(activity, target.uid)
+        assertEquals("pairing_invalid", result.error)
+        assertEquals(listOf("attempt-1"), events)
+        assertEquals("busy", call("currentApp").error)
+        pending!!.resume(ConnectionResult.Connected(connected))
+        runCurrent()
+        assertEquals(1, result.completions)
+        verify(dmk).disconnectDevice(connected)
+        assertEquals("pairing_invalid", call("currentApp").also { runCurrent() }.error)
+        handler.close()
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(1, events.size)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun lateKeyMissingRefinesFailedAttemptButIsDroppedAfterCancellation() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.connectDevice(target)).thenReturn(ConnectionResult.Disconnected(ConnectionResult.Failure.PairingFailed))
+        handler = LedgerMobileHandler(activity, dmk)
+        val events = mutableListOf<String>()
+        handler.onPairingInvalid = { events += it }
+        fun connectAttempt(id: String): Result = Result().also {
+            handler.handle(MethodCall("connect", mapOf("deviceId" to target.uid, "connectionId" to id)), it)
+        }
+        val first = connectAttempt("first")
+        runCurrent()
+        assertEquals("pairing_rejected", first.error)
+        call("disconnect")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        assertEquals(1, first.completions)
+        val second = connectAttempt("second")
+        runCurrent()
+        assertEquals("pairing_rejected", second.error)
+        // Replacement must happen before dispatch: the old receiver must not
+        // cancel this new request while it is still queued on the dispatcher.
+        val third = connectAttempt("third")
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        assertEquals(0, third.completions)
+        runCurrent()
+        assertEquals("pairing_rejected", third.error)
+        call("cancelSigning")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun keyMissingDuringAppQueryRetiresSdkSession() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.connectDevice(target)).thenReturn(ConnectionResult.Connected(connected))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun <T> executeCommand(deviceId: String, command: Command<T>): DeviceOperationResult<T> = awaitCancellation()
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        call("connect", target.uid)
+        runCurrent()
+        val query = call("currentApp")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        runCurrent()
+        assertEquals("pairing_invalid", query.error)
+        assertEquals(1, query.completions)
+        verify(dmk).disconnectDevice(connected)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun userCancellationDoesNotEraseKeyLossCleanup() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.getConnectedDevices()).thenReturn(listOf(connected))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult = awaitCancellation()
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        val result = call("connect", target.uid)
+        runCurrent()
+        keyMissing(activity, target.uid)
+        call("cancelSigning")
+        runCurrent()
+        assertEquals("pairing_invalid", result.error)
+        assertEquals(1, result.completions)
+        verify(dmk).disconnectDevice(connected)
+        activity.finish()
+    }
+
     @Test fun appQueryTimeoutRetiresSessionBeforeRetryCanDispatch() = runTest(dispatcher) {
         var cleanup: Continuation<Unit>? = null
         var queries = 0

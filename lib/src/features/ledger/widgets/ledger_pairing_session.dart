@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
+import '../ledger_capability.dart';
 import '../services/ledger_bluetooth_access.dart';
 import '../services/ledger_connection_service.dart';
 import '../services/ledger_device_request.dart';
@@ -65,6 +67,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   List<LedgerBleDevice> _devices = const [];
   StreamSubscription<LedgerDiscoveryUpdate>? _subscription;
   int _generation = 0;
+  ValueListenable<bool>? _pairingEvidence;
   late final LedgerMobileBleService _mobile;
   late final LedgerOperationCanceller _cancel;
   late final void Function() _epoch;
@@ -91,12 +94,50 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       _invalidated = true;
       _epoch = () => throw StateError('Cancelled');
     }
+    _observePairingEvidence();
     if (widget.selectionRequest != null) {
       _stage = LedgerPairingStage.scanning;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_scan(initial: true));
       });
     }
+  }
+
+  void _observePairingEvidence() {
+    _pairingEvidence?.removeListener(_onPairingEvidence);
+    _pairingEvidence = null;
+    if (ref.read(ledgerTargetPlatformProvider) != TargetPlatform.android ||
+        _mobile is! LedgerPairingEvidenceService) {
+      return;
+    }
+    _pairingEvidence =
+        (_mobile as LedgerPairingEvidenceService).pairingInvalidEvidence;
+    _pairingEvidence?.addListener(_onPairingEvidence);
+    // initState/_fail already schedule a build; avoid synchronous setState here.
+    if (_stage == LedgerPairingStage.failed &&
+        widget.selectionRequest == null &&
+        _pairingEvidence?.value == true) {
+      pairingInvalid = true;
+    }
+  }
+
+  void _onPairingEvidence() {
+    if (!mounted ||
+        _invalidated ||
+        _stage != LedgerPairingStage.failed ||
+        _accessRecovery ||
+        _pairingEvidence?.value != true) {
+      return;
+    }
+    try {
+      _epoch();
+    } catch (_) {
+      return;
+    }
+    setState(() {
+      pairingInvalid = true;
+      _error = null;
+    });
   }
 
   void _check(int generation) {
@@ -114,6 +155,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   @override
   void dispose() {
     _generation++;
+    _pairingEvidence?.removeListener(_onPairingEvidence);
     unawaited(_subscription?.cancel());
     if (_stage == LedgerPairingStage.scanning ||
         _stage == LedgerPairingStage.devices) {
@@ -162,6 +204,8 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
           : ledgerFailureGuidance(error)?.message ??
                 'Could not reconnect. Try finding your Ledger again.';
     });
+    _observePairingEvidence();
+    _onPairingEvidence();
     _notifyBusy();
   }
 
@@ -172,6 +216,8 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       return;
     }
     final generation = ++_generation;
+    _pairingEvidence?.removeListener(_onPairingEvidence);
+    _pairingEvidence = null;
     setState(() {
       _stage = LedgerPairingStage.scanning;
       pairingInvalid = false;

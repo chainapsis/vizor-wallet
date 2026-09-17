@@ -144,6 +144,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-android-pairing-invalid',
+    description: 'Android confirmed key loss recovery',
+    builder: buildLedgerAndroidInvalidPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-pairing-invalid',
     description: 'Confirmed invalid Bluetooth pairing',
     builder: buildLedgerInvalidPairingCapture,
