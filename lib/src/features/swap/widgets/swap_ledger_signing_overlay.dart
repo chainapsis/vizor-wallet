@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -52,6 +53,7 @@ class _SwapLedgerSigningOverlayState
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<int>? _pcztWithProofs;
@@ -227,6 +229,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
       try {
         var pendingResult = _pendingBroadcastResult;
@@ -261,6 +264,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
       await _prepareAndSign();
       return;
@@ -269,6 +273,7 @@ class _SwapLedgerSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.awaitingDevice;
       _error = null;
+      _deviceGuidance = null;
     });
     try {
       final accountUuid = widget.intent.accountUuid!;
@@ -340,6 +345,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.broadcasting;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     late final LedgerSignedOperationBroadcastResult result;
@@ -425,6 +431,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     final draft = _draft;
@@ -456,6 +463,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     final draft = _draft;
@@ -545,6 +553,7 @@ class _SwapLedgerSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.saving;
       _error = null;
+      _deviceGuidance = null;
     });
     _cancelled = true;
     await _cancelLedgerOperationSafely();
@@ -637,6 +646,8 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -712,7 +723,8 @@ class _SwapLedgerSigningOverlayState
               showDeviceAppPrompt:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&
-                  !legacyOrchardRecoveryUnavailable,
+                  !legacyOrchardRecoveryUnavailable &&
+                  (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker:
                   !postBroadcastRecovery && !_operationClaimUnavailable,
               actionLabel:

@@ -20,6 +20,31 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test(
+    'location-disabled native failure keeps its own classification',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'location_disabled',
+              message: 'Location must be enabled',
+            );
+          });
+      await expectLater(
+        service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Nano X'),
+        ),
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (error) => error.failure,
+            'failure',
+            LedgerMobileFailure.locationDisabled,
+          ),
+        ),
+      );
+    },
+  );
+
   for (final method in [
     'currentApp',
     'openZcashApp',

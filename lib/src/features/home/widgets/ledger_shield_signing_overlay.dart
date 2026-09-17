@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -61,6 +62,7 @@ class _LedgerShieldSigningOverlayState
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
   List<int>? _pcztBytes;
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -254,6 +256,7 @@ class _LedgerShieldSigningOverlayState
         _phase = LedgerSigningModalPhase.broadcasting;
         _canRetry = false;
         _error = null;
+        _deviceGuidance = null;
       });
       try {
         await _broadcastCheckpointed();
@@ -273,6 +276,7 @@ class _LedgerShieldSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
       await _prepareAndSign();
       return;
@@ -281,6 +285,7 @@ class _LedgerShieldSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.awaitingDevice;
       _error = null;
+      _deviceGuidance = null;
     });
     try {
       final accountUuid = _accountUuid;
@@ -340,6 +345,7 @@ class _LedgerShieldSigningOverlayState
       _phase = LedgerSigningModalPhase.broadcasting;
       _canRetry = false;
       _error = null;
+      _deviceGuidance = null;
     });
 
     try {
@@ -453,6 +459,7 @@ class _LedgerShieldSigningOverlayState
       _phase = LedgerSigningModalPhase.preparing;
       _canRetry = false;
       _error = null;
+      _deviceGuidance = null;
       _pcztBytes = null;
       _pcztWithProofs = null;
       _signedPczt = null;
@@ -532,6 +539,8 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -593,7 +602,9 @@ class _LedgerShieldSigningOverlayState
                   : 'Ledger signing failed',
               statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
-              showDeviceAppPrompt: !_pausedEarly,
+              showDeviceAppPrompt:
+                  !_pausedEarly &&
+                  (_deviceGuidance?.showDeviceAppPrompt ?? false),
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,

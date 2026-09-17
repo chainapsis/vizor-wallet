@@ -3,6 +3,9 @@
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -49,6 +52,46 @@ void main() {
       } catch (_) {}
     });
   });
+
+  for (final error in <Object>[
+    const LedgerMobileException(
+      LedgerMobileFailure.pairingInvalid,
+      'pairing diagnostic',
+    ),
+    const LedgerMobileException(
+      LedgerMobileFailure.permissionDenied,
+      'permission denied',
+    ),
+    StateError('unknown signer error'),
+  ]) {
+    testWidgets('shielding displays device recovery for $error', (
+      tester,
+    ) async {
+      final operations = _FakeLedgerSignedOperationService();
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async => throw error,
+          onComplete: () {},
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Try again').evaluate().isNotEmpty,
+      );
+      expect(
+        find.text(
+          ledgerFailureGuidance(error)?.message ??
+              'Ledger shielding could not be completed.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Open the Zcash app'), findsNothing);
+      expect(operations.checkpoints, isEmpty);
+      expect(operations.broadcasts, isEmpty);
+    });
+  }
 
   testWidgets('checkpoints Ledger shield signatures before broadcasting', (
     tester,

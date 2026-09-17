@@ -246,7 +246,7 @@ class LedgerMobileHandlerTest {
         val cases = listOf(
             DiscoveryResult.Failure.BluetoothDisabled to "bluetooth_off",
             DiscoveryResult.Failure.BluetoothPermissionNotGranted to "permission_denied",
-            DiscoveryResult.Failure.LocationDisabled to "permission_denied",
+            DiscoveryResult.Failure.LocationDisabled to "location_disabled",
             DiscoveryResult.Failure.BluetoothBleNotSupported to "unavailable",
             DiscoveryResult.Failure.Unknown("failure") to "unavailable",
             DiscoveryResult.Ended to "disconnected",

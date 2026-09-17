@@ -16,6 +16,7 @@ bool ledgerPairingNeedsReset(Object? error) =>
 enum LedgerMobileFailure {
   busy,
   permissionDenied,
+  locationDisabled,
   bluetoothOff,
   pairingRejected,
   pairingInvalid,
@@ -463,6 +464,7 @@ class MethodChannelLedgerMobileBleService
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
       'permission_denied' => LedgerMobileFailure.permissionDenied,
+      'location_disabled' => LedgerMobileFailure.locationDisabled,
       'bluetooth_off' => LedgerMobileFailure.bluetoothOff,
       'pairing_rejected' => LedgerMobileFailure.pairingRejected,
       'pairing_invalid' => LedgerMobileFailure.pairingInvalid,
@@ -485,6 +487,7 @@ bool ledgerFailureInvalidatesConnection(LedgerMobileFailure failure) =>
       LedgerMobileFailure.unavailable ||
       LedgerMobileFailure.bluetoothOff ||
       LedgerMobileFailure.permissionDenied ||
+      LedgerMobileFailure.locationDisabled ||
       LedgerMobileFailure.pairingInvalid ||
       LedgerMobileFailure.pairingRejected => true,
       _ => false,

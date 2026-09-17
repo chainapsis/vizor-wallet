@@ -104,7 +104,7 @@ void main() {
 
     await _pumpUseCase(tester, buildLedgerDevicePickerPermissionDeniedUseCase);
     await _pumpAsyncState(tester);
-    expect(find.text('Could not find your Ledger'), findsOne);
+    expect(find.text('Could not connect to your Ledger'), findsOne);
     expect(find.textContaining('Bluetooth permission is required'), findsOne);
     expect(tester.takeException(), isNull);
   });

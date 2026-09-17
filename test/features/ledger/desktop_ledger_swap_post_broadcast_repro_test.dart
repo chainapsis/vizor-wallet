@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -28,6 +31,47 @@ const _captureBoundaryKey = ValueKey('ledger_repro_capture');
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+
+  for (final error in <Object>[
+    const LedgerMobileException(
+      LedgerMobileFailure.pairingInvalid,
+      'pairing diagnostic',
+    ),
+    const LedgerMobileException(
+      LedgerMobileFailure.permissionDenied,
+      'permission denied',
+    ),
+    StateError('unknown signer error'),
+  ]) {
+    testWidgets('desktop swap displays device recovery for $error', (
+      tester,
+    ) async {
+      final operations = _StatefulOperationService();
+      await _pumpOverlay(
+        tester,
+        intent: _intent(),
+        operations: operations,
+        signing: _HardwareSigningService(),
+        sign: (_, _) async => throw error,
+        persist: (_, _) async {},
+        onCompleted: (_) async {},
+      );
+      await _pumpUntil(
+        tester,
+        () => find.text('Try again').evaluate().isNotEmpty,
+      );
+      expect(
+        find.text(
+          ledgerFailureGuidance(error)?.message ??
+              'Ledger signing could not be completed.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Open the Zcash app'), findsNothing);
+      expect(operations.checkpointCalls, 0);
+      expect(operations.broadcastCalls, 0);
+    });
+  }
 
   for (final payMode in [false, true]) {
     final flowName = payMode ? 'Pay' : 'Swap';

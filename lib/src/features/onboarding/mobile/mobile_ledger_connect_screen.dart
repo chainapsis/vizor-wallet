@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -102,27 +103,14 @@ class _MobileLedgerConnectScreenState
       if (!mounted) return;
       setState(() {
         _phase = _MobileLedgerConnectPhase.idle;
-        _error = error is LedgerAppReadinessException
-            ? error.message
-            : _friendlyError(error);
+        _error = _friendlyError(error);
       });
     }
   }
 
   String _friendlyError(Object error) {
-    if (error is LedgerMobileException) {
-      return switch (error.failure) {
-        LedgerMobileFailure.busy => error.message,
-        LedgerMobileFailure.pairingInvalid => kLedgerPairingInvalidMessage,
-        LedgerMobileFailure.disconnected ||
-        LedgerMobileFailure.pairingRejected =>
-          'Reconnect your Ledger, then try again.',
-        LedgerMobileFailure.locked => 'Unlock your Ledger, then try again.',
-        LedgerMobileFailure.rejected =>
-          'The viewing-key request was rejected on your Ledger.',
-        _ => error.message,
-      };
-    }
+    final guidance = ledgerFailureGuidance(error);
+    if (guidance != null) return guidance.message;
     final lower = '$error'.toLowerCase();
     if (lower.contains('rejected') || lower.contains('6985')) {
       return 'The viewing-key request was rejected on your Ledger.';

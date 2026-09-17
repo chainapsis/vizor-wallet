@@ -201,7 +201,7 @@ void main() {
     );
   });
 
-  testWidgets('surfaces a typed readiness failure beside retry', (
+  testWidgets('does not replace the current failure with stale readiness', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -221,10 +221,11 @@ void main() {
       ),
     );
 
-    expect(find.text('Ledger needs attention'), findsOneWidget);
+    expect(find.text('Ledger signing failed'), findsOneWidget);
+    expect(find.text('Open the Zcash app, then try again.'), findsOneWidget);
     expect(
       find.text('Update the Ledger Zcash app to version 3.9.3 or newer.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Try again'), findsOneWidget);
   });

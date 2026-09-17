@@ -191,7 +191,7 @@ class LedgerMobileHandler(
                             "Bluetooth permission is required to find Ledger devices.",
                         )
                         DiscoveryResult.Failure.LocationDisabled -> emitError(
-                            "permission_denied",
+                            "location_disabled",
                             "Location must be enabled for Bluetooth discovery on this Android version.",
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> emitError(
@@ -300,7 +300,7 @@ class LedgerMobileHandler(
                             "permission_denied", "Bluetooth permission is required to connect to Ledger.",
                         )
                         DiscoveryResult.Failure.LocationDisabled -> throw LedgerDiscoveryException(
-                            "permission_denied", "Location must be enabled for Bluetooth discovery on this Android version.",
+                            "location_disabled", "Location must be enabled for Bluetooth discovery on this Android version.",
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> throw LedgerDiscoveryException(
                             "unavailable", "This Android device does not support Bluetooth LE.",

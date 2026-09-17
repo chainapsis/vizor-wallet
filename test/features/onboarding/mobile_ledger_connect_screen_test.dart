@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -395,6 +396,54 @@ void main() {
     );
     expect(ble.stopCalls, greaterThanOrEqualTo(1));
   });
+
+  for (final failure in [
+    LedgerMobileFailure.pairingInvalid,
+    LedgerMobileFailure.permissionDenied,
+    LedgerMobileFailure.locationDisabled,
+  ]) {
+    testWidgets('picker retains devices and shows $failure with retry', (
+      tester,
+    ) async {
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: MaterialApp(
+            home: MobileLedgerDeviceSheet(
+              service: ble,
+              onSelected: (_) {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      const device = LedgerBleDevice(
+        id: 'recovery-device',
+        name: 'Recovery Ledger',
+        model: 'Nano X',
+      );
+      ble.emit(const LedgerDevicesDiscovered([device]));
+      await tester.pump();
+      final error = LedgerMobileException(failure, 'native diagnostic');
+      final connection = Completer<void>();
+      ble.pendingConnect = connection.future;
+      await tester.tap(find.text('Recovery Ledger'));
+      await tester.pump();
+      connection.completeError(error);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Recovery Ledger'), findsOneWidget);
+      expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
+      ble.pendingConnect = null;
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(ledgerFailureGuidance(error)!.message), findsNothing);
+    });
+  }
 
   testWidgets('shows permission, Bluetooth, empty, and retry states', (
     tester,

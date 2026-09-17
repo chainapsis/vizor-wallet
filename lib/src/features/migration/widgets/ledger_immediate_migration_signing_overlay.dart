@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_immediate_migration_service.dart';
@@ -40,6 +41,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   LedgerImmediateMigrationCancellation? _cancellation;
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
   bool _cancelled = false;
 
   bool get _canLeave => _phase != LedgerSigningModalPhase.broadcasting;
@@ -69,6 +71,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     try {
@@ -119,6 +122,8 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final message = error.toString().toLowerCase();
     if (message.contains('rejected') || message.contains('6985')) {
       return 'The migration transaction was rejected on your Ledger.';
@@ -148,7 +153,8 @@ class _LedgerImmediateMigrationSigningOverlayState
               title: 'Ledger migration failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger migration could not be completed.',
-              showDeviceAppPrompt: true,
+              showDeviceAppPrompt:
+                  _deviceGuidance?.showDeviceAppPrompt ?? false,
               actionLabel: 'Try again',
             )
           : null,

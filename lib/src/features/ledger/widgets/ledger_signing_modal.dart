@@ -112,13 +112,6 @@ class LedgerSigningModal extends ConsumerWidget {
       final progress = 'Transaction $roundNumber of $roundCount';
       if (!failed) statusLabel = progress;
     }
-    if (phase == LedgerSigningModalPhase.failed &&
-        failure!.showDeviceAppPrompt &&
-        readiness.phase == LedgerAppReadinessPhase.failed) {
-      title = 'Ledger needs attention';
-      statusLabel = 'Action needed';
-      message = readiness.message!;
-    }
     if ((phase == LedgerSigningModalPhase.awaitingDevice ||
             phase == LedgerSigningModalPhase.preparing) &&
         stage == LedgerSigningStage.preparing) {

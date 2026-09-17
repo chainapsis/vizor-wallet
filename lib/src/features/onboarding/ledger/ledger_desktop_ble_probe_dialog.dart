@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -190,12 +191,14 @@ class _LedgerDesktopBleConnectDialogState
 
   void _handleError(int generation, Object error) {
     if (!mounted || generation != _generation) return;
-    final message = switch (error) {
-      LedgerMobileException(:final message) => message,
-      UnsupportedError() =>
-        'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-      _ => 'Vizor could not connect to this Ledger over Bluetooth. Try again.',
-    };
+    final message =
+        ledgerFailureGuidance(error)?.message ??
+        switch (error) {
+          UnsupportedError() =>
+            'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
+          _ =>
+            'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+        };
     _fail(message);
   }
 

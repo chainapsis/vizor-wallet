@@ -3,6 +3,9 @@
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'dart:io';
 
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
@@ -1177,6 +1180,61 @@ void main() {
           operationService.checkpoints.single.signatures,
           _fakeSignatureBytes,
         );
+      },
+    );
+  }
+
+  for (final failure in [
+    LedgerMobileFailure.permissionDenied,
+    LedgerMobileFailure.pairingInvalid,
+    LedgerMobileFailure.bluetoothOff,
+    LedgerMobileFailure.pairingRejected,
+  ]) {
+    testWidgets(
+      'desktop Ledger preserves Bluetooth $failure and retries signing',
+      (tester) async {
+        final original = LedgerMobileException(
+          failure,
+          'permission denied diagnostic',
+        );
+        var attempts = 0;
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            _reviewArgs(addressType: 'unified'),
+            bootstrap: _bootstrap(
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+            ledgerSigner: (_) async {
+              attempts++;
+              if (attempts == 1) {
+                throw LedgerConnectionRequiredException(
+                  'connection failed',
+                  cause: original,
+                );
+              }
+              return _fakeSignatureBytes;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Confirm with Ledger'));
+        await _flushRealAsync(tester);
+        expect(
+          find.text(ledgerFailureGuidance(original)!.message),
+          findsOneWidget,
+        );
+        expect(
+          find.text('The transaction was rejected on your Ledger.'),
+          findsNothing,
+        );
+        expect(find.text('Open the Zcash app'), findsNothing);
+        await tester.tap(find.text('Try again'));
+        await _flushRealAsync(tester);
+        expect(attempts, 2);
+        expect(find.text('status-route'), findsOneWidget);
+        expect(rustApi.createPcztCalls, 1);
       },
     );
   }

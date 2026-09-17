@@ -11,7 +11,9 @@ import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_status_gate.dart';
 
 class LedgerConnectionRequiredException implements Exception {
-  const LedgerConnectionRequiredException(this.message);
+  const LedgerConnectionRequiredException(this.message, {this.cause});
+
+  final Object? cause;
 
   final String message;
 
@@ -116,6 +118,7 @@ class LedgerConnectionService {
 
     throw LedgerConnectionRequiredException(
       _connectionFailureMessage(account, lastConnectionError),
+      cause: lastConnectionError,
     );
   }
 
@@ -261,6 +264,7 @@ class LedgerConnectionService {
         LedgerMobileFailure.disconnected ||
         LedgerMobileFailure.bluetoothOff ||
         LedgerMobileFailure.permissionDenied ||
+        LedgerMobileFailure.locationDisabled ||
         LedgerMobileFailure.pairingRejected ||
         LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.unavailable => true,
@@ -287,6 +291,9 @@ class LedgerConnectionService {
     }
     if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
     final suffix = error == null ? '' : ' ${error.toString()}';
+    if (isLedgerMobilePlatform(_ref.read(ledgerTargetPlatformProvider))) {
+      return 'Turn on and unlock your Ledger, then reconnect with Bluetooth.$suffix';
+    }
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb =>
         'Connect and unlock your Ledger with USB, then try again.$suffix',

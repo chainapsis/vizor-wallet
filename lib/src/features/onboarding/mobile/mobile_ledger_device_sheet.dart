@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -171,14 +172,9 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
 
   void _handleFailure(int generation, Object error) {
     if (!_isCurrent(generation)) return;
-    final message = switch (error) {
-      LedgerMobileException(failure: LedgerMobileFailure.bluetoothOff) =>
-        'Turn on Bluetooth, then try again.',
-      LedgerMobileException(failure: LedgerMobileFailure.permissionDenied) =>
-        'Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.',
-      LedgerMobileException(:final message) => message,
-      _ => 'Vizor could not find Ledger devices. Try again.',
-    };
+    final message =
+        ledgerFailureGuidance(error)?.message ??
+        'Vizor could not find Ledger devices. Try again.';
     setState(() {
       _state = _DiscoveryState.failed;
       _error = message;
@@ -255,12 +251,12 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                 iconName: AppIcons.search,
                 title: 'No Ledger devices found',
                 message: 'Check that your Ledger is unlocked and try again.',
-              )
-            else
+              ),
+            if (_state == _DiscoveryState.failed)
               _StatusMessage(
                 key: const ValueKey('mobile_ledger_discovery_error'),
                 iconName: AppIcons.warningCircle,
-                title: 'Could not find your Ledger',
+                title: 'Could not connect to your Ledger',
                 message: _error ?? 'Try again.',
               ),
             if (_state == _DiscoveryState.empty ||

@@ -82,11 +82,13 @@ class LedgerAppReadinessException implements Exception {
     this.failure,
     this.message, {
     this.canReconnect = false,
+    this.cause,
   });
 
   final LedgerAppReadinessFailure failure;
   final String message;
   final bool canReconnect;
+  final Object? cause;
 
   @override
   String toString() => message;
@@ -249,6 +251,7 @@ class LedgerAppReadinessService {
         LedgerMobileFailure.rejected ||
         LedgerMobileFailure.cancelled => LedgerAppReadinessFailure.rejected,
         LedgerMobileFailure.permissionDenied ||
+        LedgerMobileFailure.locationDisabled ||
         LedgerMobileFailure.bluetoothOff ||
         LedgerMobileFailure.wrongApp ||
         LedgerMobileFailure.unavailable =>
@@ -258,6 +261,7 @@ class LedgerAppReadinessService {
         failure,
         error.message,
         canReconnect: error.failure == LedgerMobileFailure.disconnected,
+        cause: error,
       );
     }
     final raw = '$error'.toLowerCase();

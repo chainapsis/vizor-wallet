@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -422,6 +423,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _setLedgerPreSignatureFailure(Object error) {
     final raw = error.toString();
     final lower = raw.toLowerCase();
+    final guidance = ledgerFailureGuidance(error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
@@ -456,22 +458,28 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (guidance != null) {
+      failure = LedgerSigningFailurePresentation(
+        title: 'Ledger needs attention',
+        statusLabel: 'Action needed',
+        message: guidance.message,
+        showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+        actionLabel: 'Try again',
+      );
+      action = _LedgerSendRecoveryAction.retrySigning;
     } else {
-      final message =
-          lower.contains('rejected') ||
-              lower.contains('denied') ||
-              lower.contains('6985')
+      final message = lower.contains('rejected') || lower.contains('6985')
           ? 'The transaction was rejected on your Ledger.'
           : lower.contains('not found') ||
                 lower.contains('no device') ||
                 lower.contains('hid')
           ? 'Connect and unlock your Ledger. $appInstruction'
-          : '$appInstruction Then try again.';
+          : 'Ledger signing could not be completed. Check your device and try again.';
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
         message: message,
-        showDeviceAppPrompt: true,
+        showDeviceAppPrompt: false,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;

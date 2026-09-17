@@ -496,10 +496,10 @@ LedgerSigningFailurePresentation _failurePresentation(
       ),
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
-        title: 'Ledger disconnected',
-        statusLabel: 'Connection lost',
-        message: 'Reconnect your Ledger to continue.',
-        showDeviceAppPrompt: true,
+        title: 'Ledger needs attention',
+        statusLabel: 'Action needed',
+        message: 'Reconnect your Ledger and open the Zcash app.',
+        showDeviceAppPrompt: false,
         actionLabel: 'Reconnect',
       ),
   };

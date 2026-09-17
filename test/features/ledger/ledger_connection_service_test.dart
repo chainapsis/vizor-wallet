@@ -14,7 +14,66 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+
 void main() {
+  for (final platform in [
+    TargetPlatform.iOS,
+    TargetPlatform.android,
+    TargetPlatform.macOS,
+  ]) {
+    for (final stage in ['connect', 'readiness', 'sign']) {
+      for (final failure in [
+        LedgerMobileFailure.permissionDenied,
+        LedgerMobileFailure.pairingInvalid,
+        LedgerMobileFailure.pairingRejected,
+        LedgerMobileFailure.bluetoothOff,
+        LedgerMobileFailure.locationDisabled,
+      ]) {
+        test('$platform preserves $failure guidance at $stage', () async {
+          final original = LedgerMobileException(failure, 'native diagnostic');
+          final ble = _FakeBleService();
+          if (stage == 'connect') ble.connectError = original;
+          if (stage == 'readiness') ble.appError = original;
+          final container = _container(
+            notifier: _FakeAccountNotifier(
+              _ledgerAccount(
+                preference: LedgerConnectionPreference.bluetooth,
+                deviceModel: 'Nano X',
+              ),
+            ),
+            ble: ble,
+            platform: platform,
+          );
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+          var signs = 0;
+          await expectLater(
+            container
+                .read(ledgerConnectionServiceProvider)
+                .run(
+                  accountUuid: 'ledger-1',
+                  usb: () async => 'usb',
+                  bluetooth: (_) async {
+                    signs++;
+                    throw original;
+                  },
+                ),
+            throwsA(
+              predicate<Object>(
+                (error) =>
+                    ledgerFailureGuidance(error)?.message ==
+                    ledgerFailureGuidance(original)!.message,
+              ),
+            ),
+          );
+          expect(signs, stage == 'sign' ? 1 : 0);
+          expect(ble.connectCalls, 1);
+        });
+      }
+    }
+  }
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     for (final failure in [
       LedgerMobileFailure.disconnected,
