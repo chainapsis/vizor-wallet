@@ -24,6 +24,9 @@
 //! transactions to enhance).
 
 use std::collections::{BTreeMap, HashSet};
+use std::rc::Rc;
+
+use rusqlite::{types::Value, vtab::array::Array};
 
 use futures::{FutureExt, StreamExt};
 
@@ -40,10 +43,52 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
-use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{
+    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 
-use super::{lwd, SyncError, WalletDatabase};
+use super::{block_source::MemoryBlockSource, lwd, SyncError, WalletDatabase};
+
+/// A shared transaction can retain raw bytes after account deletion while losing
+/// that account's sent outputs. Requeue it when encountered by a new scan.
+///
+/// Caller holds the wallet write lock. Queue before the scan so the existing
+/// durable enhancement queue survives cancellation, errors, and process exit.
+/// No import-time or startup sweep: only transactions in this downloaded batch.
+/// Heights include transparent-only transactions omitted from compact blocks;
+/// hashes also cover transactions whose mined height was cleared by a rewind.
+pub(super) fn queue_stored_transactions(
+    db_path: &str,
+    blocks: &MemoryBlockSource,
+) -> Result<(), SyncError> {
+    let Some(heights) = blocks.height_range() else {
+        return Ok(());
+    };
+    let hashes: Array = Rc::new(
+        blocks
+            .transaction_hashes()
+            .map(|hash| Value::Blob(hash.to_vec()))
+            .collect(),
+    );
+    let conn =
+        open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).map_err(SyncError::db)?;
+    // query_type=1 is the SDK's Enhancement request. Status requests (0) and
+    // dependency links already in the queue must be preserved.
+    let count = conn.execute(
+        "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
+         SELECT txid, 1, NULL FROM transactions
+         WHERE raw IS NOT NULL
+           AND (txid IN rarray(?1) OR mined_height BETWEEN ?2 AND ?3)
+         ON CONFLICT (txid, query_type) DO NOTHING",
+        rusqlite::params![hashes, heights.start(), heights.end()],
+    )
+    .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
+    if count > 0 {
+        log::info!("sync: queued {count} stored transaction(s) for scan-time enhancement");
+    }
+    Ok(())
+}
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns `SyncError::Db`
@@ -521,6 +566,56 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+
+    #[test]
+    fn scan_enhancement_is_batch_scoped_durable_and_preserves_existing_requests() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        rusqlite::vtab::array::load_module(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, raw BLOB, mined_height INTEGER);
+             CREATE TABLE tx_retrieval_queue (
+                txid BLOB, query_type INTEGER, dependent_transaction_id INTEGER,
+                PRIMARY KEY(txid, query_type));
+             INSERT INTO transactions VALUES (X'01', X'AB', NULL), (X'02', NULL, 10),
+                (X'03', X'CD', 11), (X'05', X'EF', 10), (X'06', X'EF', 9);
+             INSERT INTO tx_retrieval_queue VALUES (X'01', 0, 7), (X'03', 1, 9);",
+        )
+        .unwrap();
+        // 01: stored raw, missing details; 02: newly scanned, no raw yet;
+        // 03/06: outside this batch; 04: unrelated chain transaction;
+        // 05: transparent-only transaction omitted from compact data.
+        let blocks = MemoryBlockSource::new(vec![CompactBlock {
+            height: 10,
+            vtx: [1, 2, 4]
+                .into_iter()
+                .map(|id| CompactTx {
+                    txid: vec![id],
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }]);
+        queue_stored_transactions(file.path().to_str().unwrap(), &blocks).unwrap();
+        queue_stored_transactions(file.path().to_str().unwrap(), &blocks).unwrap();
+        drop(conn);
+        // Reopen without running enhancement: a cancelled scan retains intent.
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let rows: Vec<(Vec<u8>, i64, Option<i64>)> = conn.prepare(
+            "SELECT txid, query_type, dependent_transaction_id FROM tx_retrieval_queue ORDER BY txid, query_type"
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (vec![1], 0, Some(7)),
+                (vec![1], 1, None),
+                (vec![3], 1, Some(9)),
+                (vec![5], 1, None)
+            ]
+        );
+    }
 
     fn scanned_transaction_missing_fee_test_db(
         mined_height: BlockHeight,

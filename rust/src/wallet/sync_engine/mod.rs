@@ -3450,6 +3450,20 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else {
+                    // A previous attempt may have scanned its final batch before
+                    // cancellation or an enhancement failure. Drain its durable
+                    // requests even when no further blocks need scanning.
+                    if !db
+                        .transaction_data_requests()
+                        .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
+                        .is_empty()
+                    {
+                        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
+                            .await?;
+                    }
+                    if should_exit() {
+                        return Ok(());
+                    }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;
                 }
@@ -3623,6 +3637,9 @@ async fn run_sync_impl(
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
+            // Persist before scanning advances scan_queue: cancellation or a crash
+            // after the scan must not lose this account's recovery work.
+            enhance::queue_stored_transactions(db_data_path, &block_source)?;
             if let Some(incoming_checkpoint_heights) = &incoming_orchard_checkpoint_heights {
                 let retained =
                     crate::wallet::sync::retain_migration_anchor_checkpoints_before_scan(
