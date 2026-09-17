@@ -63,19 +63,13 @@ final class NumericKeyboardHandler {
         configuration.background.visualEffect = UIBlurEffect(style: .systemMaterial)
       }
       configuration.cornerStyle = .capsule
-      // Figma 7819:24603: SF Pro Semibold checkmark, 19pt.
+      // Glass renders template symbols monochromatically, even with a
+      // foreground transformer. Preserve the Figma blue in the image itself.
+      let checkColor = UIColor(red: 0, green: 136.0 / 255.0, blue: 1, alpha: 1)
       configuration.image = UIImage(
         systemName: "checkmark",
         withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
-      )
-      let checkColor = UIColor(red: 0, green: 136.0 / 255.0, blue: 1, alpha: 1)
-      configuration.baseForegroundColor = checkColor
-      // Glass may transform its base foreground color. Preserve the Figma
-      // icon color at the final image-color transformation step.
-      configuration.imageColorTransformer = UIConfigurationColorTransformer { _ in
-        checkColor
-      }
-      control.tintColor = checkColor
+      )?.withTintColor(checkColor, renderingMode: .alwaysOriginal)
       control.configuration = configuration
       control.accessibilityLabel = "Done"
       control.accessibilityIdentifier = "mobile_numeric_keyboard_toolbar"
