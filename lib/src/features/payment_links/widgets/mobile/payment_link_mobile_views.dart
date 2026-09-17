@@ -41,8 +41,6 @@ const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
 const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
-const _reviewSummaryTop = 456.625;
-const _reviewSummaryHeight = 193.0;
 const _readyStatusTop = 474.0;
 // Tallest measured status block: two lines of body text plus the wait pill.
 const _readyStatusAllowance = 160.0;
@@ -487,6 +485,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
+    this.metadata,
     this.actionLabel,
     this.onAction,
     this.showLoader = false,
@@ -499,6 +498,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
+  final Widget? metadata;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -513,69 +513,74 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: actionLabel == null ? 64 : 88,
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadii.small),
-            child: SizedBox(width: 60, height: 44, child: thumbnail),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  amountText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                if (actionLabel != null)
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: actionLabel == null ? 64 : 88),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              child: SizedBox(width: 60, height: 44, child: thumbnail),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    statusText!,
+                    amountText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: context.colors.text.secondary,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
-                Text(
-                  dateText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+                  if (actionLabel != null)
+                    Text(
+                      statusText!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  metadata ??
+                      Text(
+                        dateText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          if (showLinkActions) ...[
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_copy_action'),
-              semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
-              icon: AppIcons.copy,
-              onPressed: onCopyLink,
-            ),
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_qr_action'),
-              semanticLabel: 'Show gift card QR code',
-              icon: AppIcons.qr,
-              onPressed: onShowQr,
-            ),
-          ] else if (statusText case final label?)
-            _MobileCardStatus(
-              label: actionLabel ?? label,
-              onTap: onAction,
-              showLoader: showLoader,
-            ),
-        ],
+            const SizedBox(width: AppSpacing.xs),
+            if (showLinkActions) ...[
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_copy_action'),
+                semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+                icon: AppIcons.copy,
+                onPressed: onCopyLink,
+              ),
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_qr_action'),
+                semanticLabel: 'Show gift card QR code',
+                icon: AppIcons.qr,
+                onPressed: onShowQr,
+              ),
+            ] else if (statusText case final label?)
+              _MobileCardStatus(
+                label: actionLabel ?? label,
+                onTap: onAction,
+                showLoader: showLoader,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -804,96 +809,109 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MobilePaymentLinkFrame(
-      title: title,
-      onBack: onBack,
-      // The summary hangs off a fixed offset while the CTA hangs off the
-      // bottom, so below this height the two overlap.
-      minStageHeight:
-          _reviewSummaryTop +
-          _reviewSummaryHeight +
-          AppSpacing.md +
-          _buttonHeight +
-          _bottomInset,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned(
-            top: _subtitleTop,
-            left: _sideInset,
-            right: _sideInset,
-            child: Text(
-              subtitle,
-              key: const ValueKey('payment_link_mobile_review_subtitle'),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: context.colors.text.secondary,
+    return CustomScrollView(
+      key: const ValueKey('payment_link_mobile_review_scroll'),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MobileTopNav.back(title: title, onBack: onBack),
+              const SizedBox(height: AppSpacing.sm),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _sideInset),
+                child: Text(
+                  subtitle,
+                  key: const ValueKey('payment_link_mobile_review_subtitle'),
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
               ),
+              const SizedBox(height: AppSpacing.xl + AppSpacing.sm),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _sideInset),
+                child: _MobileCardSlot(card: card),
+              ),
+              const SizedBox(height: AppSpacing.base + AppSpacing.xs),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _sideInset),
+                child: Container(
+                  key: const ValueKey('payment_link_mobile_review_summary'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.base,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.colors.background.ground,
+                    borderRadius: BorderRadius.circular(AppRadii.large),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _MobileReviewRow(
+                        label: 'Card amount',
+                        value: cardAmountText,
+                      ),
+                      _MobileReviewRow(
+                        label: kPaymentLinkCardFeeLabel,
+                        value: cardFeeText,
+                        onHelp: onFeeHelp,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        key: const ValueKey(
+                          'payment_link_mobile_review_divider',
+                        ),
+                        width: double.infinity,
+                        height: 1,
+                        child: ColoredBox(color: context.colors.border.regular),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _MobileReviewRow(
+                        label: kPaymentLinkTotalDeductedLabel,
+                        value: totalAmountText,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Only the footer fills spare viewport space. The preceding sliver
+        // contributes its actual content height to the scroll extent.
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              _sideInset,
+              AppSpacing.md,
+              _sideInset,
+              _bottomInset,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppButton(
+                  key: const ValueKey(
+                    'payment_link_mobile_review_continue_button',
+                  ),
+                  onPressed: onContinue,
+                  size: AppButtonSize.large,
+                  height: _buttonHeight,
+                  growWithContent: true,
+                  constrainContent: true,
+                  expand: true,
+                  child: Text(continueLabel, textAlign: TextAlign.center),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            top: _cardTop,
-            left: _sideInset,
-            right: _sideInset,
-            child: _MobileCardSlot(card: card),
-          ),
-          Positioned(
-            top: _reviewSummaryTop,
-            left: _sideInset,
-            right: _sideInset,
-            child: Container(
-              key: const ValueKey('payment_link_mobile_review_summary'),
-              width: double.infinity,
-              height: _reviewSummaryHeight,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.base,
-              ),
-              decoration: BoxDecoration(
-                color: context.colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-              ),
-              child: Column(
-                children: [
-                  _MobileReviewRow(label: 'Card amount', value: cardAmountText),
-                  _MobileReviewRow(
-                    label: kPaymentLinkCardFeeLabel,
-                    value: cardFeeText,
-                    onHelp: onFeeHelp,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  SizedBox(
-                    key: const ValueKey('payment_link_mobile_review_divider'),
-                    width: double.infinity,
-                    height: 1,
-                    child: ColoredBox(color: context.colors.border.regular),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _MobileReviewRow(
-                    label: kPaymentLinkTotalDeductedLabel,
-                    value: totalAmountText,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: _sideInset,
-            right: _sideInset,
-            bottom: _bottomInset,
-            child: AppButton(
-              key: const ValueKey('payment_link_mobile_review_continue_button'),
-              onPressed: onContinue,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              child: Text(continueLabel),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1740,9 +1758,9 @@ class _MobileReviewRow extends StatelessWidget {
       ),
     );
 
-    return SizedBox(
-      height: 32,
-      child: Row(
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Padding(
@@ -1755,33 +1773,39 @@ class _MobileReviewRow extends StatelessWidget {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xs,
-              AppSpacing.xxs,
-              AppSpacing.xxs,
-              AppSpacing.xxs,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  key: ValueKey('payment_link_mobile_review_value_$label'),
-                  textAlign: TextAlign.right,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: context.colors.text.primary,
+          ConstrainedBox(
+            // Reserve space for the label even for long amounts or large text.
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth / 2),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xs,
+                AppSpacing.xxs,
+                AppSpacing.xxs,
+                AppSpacing.xxs,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      value,
+                      key: ValueKey('payment_link_mobile_review_value_$label'),
+                      textAlign: TextAlign.right,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: context.colors.text.primary,
+                      ),
+                    ),
                   ),
-                ),
-                if (onHelp != null) ...[
-                  const SizedBox(width: AppSpacing.xxs),
-                  Listener(
-                    key: const ValueKey('payment_link_mobile_fee_help'),
-                    onPointerUp: (_) => onHelp!(),
-                    child: help,
-                  ),
+                  if (onHelp != null) ...[
+                    const SizedBox(width: AppSpacing.xxs),
+                    Listener(
+                      key: const ValueKey('payment_link_mobile_fee_help'),
+                      onPointerUp: (_) => onHelp!(),
+                      child: help,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],

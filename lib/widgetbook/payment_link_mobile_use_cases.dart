@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
@@ -35,6 +37,11 @@ const _fixtureTotal = '4.49 ZEC';
 const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
 const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
 const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
+
+const _amountFormatters = [
+  CommaToDotInputFormatter(),
+  DecimalAmountInputFormatter(maxFractionDigits: 8),
+];
 
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _PaymentLinkHomeFixture());
@@ -173,6 +180,34 @@ Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
       onContinue: _noop,
       onFeeHelp: _noop,
     ),
+  );
+}
+
+/// Reproduces the fee label wrapping with the fee help icon visible.
+Widget buildMobilePaymentLinkReviewWrappedFeeUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReviewMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.gift,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: '0.001',
+        showCaret: false,
+      ),
+      onBack: _noop,
+      cardAmountText: '0.001 ZEC',
+      cardFeeText: '0.0002 ZEC',
+      totalAmountText: '0.0012 ZEC',
+      onContinue: _noop,
+      onFeeHelp: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReviewLargeTextUseCase(BuildContext context) {
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+    child: buildMobilePaymentLinkReviewWrappedFeeUseCase(context),
   );
 }
 
@@ -662,6 +697,7 @@ class _FocusedAmountFixtureState extends State<_FocusedAmountFixture> {
               amountEditorKey: const ValueKey(
                 'mobile_payment_link_focused_amount_editor',
               ),
+              amountInputFormatters: _amountFormatters,
               supportingLoading: true,
               semanticLabel: 'Gift card amount input',
             ),
@@ -795,15 +831,6 @@ class _MobilePaymentLinkInteractivePreview extends StatefulWidget {
 class _MobilePaymentLinkInteractivePreviewState
     extends State<_MobilePaymentLinkInteractivePreview> {
   static const _usdPerZec = 272.0;
-  static final _amountFormatter = TextInputFormatter.withFunction((
-    oldValue,
-    newValue,
-  ) {
-    final valid = RegExp(
-      r'^(?:\d+(?:\.\d{0,8})?|\.\d{0,8})?$',
-    ).hasMatch(newValue.text);
-    return valid ? newValue : oldValue;
-  });
 
   final _amountController = TextEditingController();
   final _amountFocusNode = FocusNode();
@@ -885,7 +912,7 @@ class _MobilePaymentLinkInteractivePreviewState
           amountEditorKey: const ValueKey(
             'mobile_payment_link_interactive_amount_editor',
           ),
-          amountInputFormatters: [_amountFormatter],
+          amountInputFormatters: _amountFormatters,
           onAmountChanged: _handleAmountChanged,
           supportingText: _fiatText,
           supportingLoading: _hasPositiveAmount && _priceLoading,

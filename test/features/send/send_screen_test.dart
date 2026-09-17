@@ -35,6 +35,8 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -285,6 +287,36 @@ void main() {
 
     expect(find.byType(SendScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+        await tester.pumpAndSettle();
+      }
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('send_amount_field')),
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('send_review_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+    }
   });
 
   testWidgets('amount input preserves a middle selection while editing', (
@@ -1491,6 +1523,31 @@ void main() {
     expect(rustApi.proposeSendCalls, 1);
   });
 
+  testWidgets('Ledger TEX sends can proceed to proposal', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        bootstrap: _ledgerHardwareBootstrap,
+        spendableBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'ledger-tex',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '0.5',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsNothing);
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+    expect(rustApi.proposeSendCalls, 1);
+  });
+
   testWidgets('hardware TEX address remains available before amount', (
     tester,
   ) async {
@@ -1872,6 +1929,31 @@ final _hardwareBootstrap = AppBootstrapState(
         name: 'Keystone',
         order: 0,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerHardwareBootstrap = AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
       ),
     ],
     activeAccountUuid: 'account-1',

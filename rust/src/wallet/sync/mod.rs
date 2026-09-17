@@ -28,6 +28,7 @@ pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spe
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
+pub(crate) use pczt::preflight_orchard_spend_auth_signatures;
 mod proposal_locks;
 mod send;
 mod transactions;
@@ -59,7 +60,7 @@ pub use pczt::{
 };
 pub(crate) use pczt::{
     expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
-    txid_from_io_finalized_pczt,
+    store_and_broadcast_signed_pczts, txid_from_io_finalized_pczt, validate_signed_pczts,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
@@ -85,7 +86,8 @@ pub use send::{
     IronwoodMigrationResult,
 };
 pub(crate) use send::{
-    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
+    create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
+    shield_transparent_balance,
 };
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
@@ -464,8 +466,16 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
     crate::wallet::voting::snapshot_changes::record(db_path, height);
     let result = with_wallet_db_write_lock("sync.rewind_to_height", || {
         let mut db = open_wallet_db(db_path, network)?;
-        db.truncate_to_height(BlockHeight::from_u32(height as u32))
-            .map_err(|e| format!("{e}"))
+        // Invalidate before truncation, just as the sync-engine rewind paths do.
+        // If SQLite fails afterward, replaying lookups is safe; stale completion
+        // records after a successful rewind could skip transparent recovery.
+        super::transparent_receive_cache::invalidate_utxo_checks(db_path)?;
+        crate::wallet::sync_engine::ledger_discovery::truncate(
+            db_path,
+            &mut db,
+            BlockHeight::from_u32(height as u32),
+        )
+        .map_err(|e| format!("{e}"))
     })?;
     let actual = u32::from(result) as u64;
     crate::wallet::voting::snapshot_changes::record(db_path, actual);

@@ -40,6 +40,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 const _accountState = AccountState(
   accounts: [
     AccountInfo(
@@ -106,6 +108,26 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
+  });
+
   testWidgets('review actions use the mobile button height', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -170,6 +192,71 @@ void main() {
       const Size(60, 50),
     );
   });
+
+  testWidgets(
+    'slippage input normalizes leading decimals and keeps range checks',
+    (tester) async {
+      var submittedBps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppTheme(
+              data: AppThemeData.dark,
+              child: MobileSwapSlippageStepperModal(
+                slippageBps: 100,
+                onSubmitted: (value) => submittedBps = value,
+                onCancel: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final field = find.byKey(const ValueKey('mobile_swap_slippage_value'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['a.7', '.7%', '1 2', '1..2']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+      await tester.enterText(field, '0.555');
+      await tester.pump();
+      expect(controller.text, '0.5');
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pump();
+      expect(submittedBps, 50);
+      await tester.tap(find.byKey(const ValueKey('mobile_swap_slippage_plus')));
+      await tester.pump();
+      expect(controller.text, '0.6');
+    },
+  );
 
   testWidgets('slippage stepper changes by 0.1 percent per tap', (
     tester,

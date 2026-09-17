@@ -209,6 +209,7 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.primary,
     this.size = AppButtonSize.large,
     this.height,
+    this.growWithContent = false,
     this.contentPadding,
     this.leading,
     this.trailing,
@@ -241,6 +242,10 @@ class AppButton extends StatefulWidget {
   /// Optional visual height override for one-off composed components that
   /// use the button palette but have a different fixed height in Figma.
   final double? height;
+
+  /// Treat the configured height as a minimum, allowing wrapped content to
+  /// make the button taller. Pair with [constrainContent] for wrapping labels.
+  final bool growWithContent;
 
   /// Optional override for the button's internal padding. Default (`null`)
   /// keeps the design-system sizing for all regular buttons; narrow composed
@@ -409,13 +414,14 @@ class _AppButtonState extends State<AppButton> {
     // no-op pass-through, so callers that leave `minWidth` null keep the
     // pre-existing fully-intrinsic behavior.
     final pill = ConstrainedBox(
-      constraints: widget.minWidth != null
-          ? BoxConstraints(minWidth: widget.minWidth!)
-          : const BoxConstraints(),
+      constraints: BoxConstraints(
+        minWidth: widget.minWidth ?? 0,
+        minHeight: widget.growWithContent ? height : 0,
+      ),
       child: AnimatedContainer(
         duration: isGhost ? Duration.zero : const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        height: height,
+        height: widget.growWithContent ? null : height,
         decoration: ShapeDecoration(
           color: currentBg,
           shape: StadiumBorder(

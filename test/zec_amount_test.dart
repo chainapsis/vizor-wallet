@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
@@ -170,49 +169,6 @@ void main() {
           BigInt.from(10000),
         ).feePretty(denomination: ticker).toString(),
         '0.0001 TAZ',
-      );
-    });
-  });
-
-  group('ZecAmountInputFormatter', () {
-    const formatter = ZecAmountInputFormatter();
-
-    test('normalizes comma input to period before parsing', () {
-      final value = formatter.formatEditUpdate(
-        const TextEditingValue(text: ''),
-        const TextEditingValue(
-          text: '0,01',
-          selection: TextSelection.collapsed(offset: 4),
-        ),
-      );
-
-      expect(value.text, '0.01');
-      expect(ZecAmount.tryParse(value.text)?.zatoshi, BigInt.from(1000000));
-    });
-
-    test('rejects invalid characters and ambiguous separators', () {
-      const oldValue = TextEditingValue(text: '1.2');
-
-      expect(
-        formatter
-            .formatEditUpdate(oldValue, const TextEditingValue(text: '1.2a'))
-            .text,
-        oldValue.text,
-      );
-      expect(
-        formatter
-            .formatEditUpdate(oldValue, const TextEditingValue(text: '1,2.3'))
-            .text,
-        oldValue.text,
-      );
-      expect(
-        formatter
-            .formatEditUpdate(
-              oldValue,
-              const TextEditingValue(text: '1.123456789'),
-            )
-            .text,
-        oldValue.text,
       );
     });
   });

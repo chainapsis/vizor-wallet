@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
+import '../../support/leading_decimal_input.dart';
 
 const _shielded =
     'u1tvg2412a23kshieldedaddress000000000000000000000000k64123hhq6d';
@@ -277,9 +278,31 @@ void main() {
 
       expect(controller.text, '0.5');
       expect(typed.last, '0.5');
+      final field = find.byKey(const ValueKey('request_amount_field'));
+      await expectLeadingDecimalInput(tester, field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.25',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.x25',
+          selection: TextSelection(baseOffset: 5, extentOffset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
     });
 
-    testWidgets('the amount field stops at a zatoshi', (tester) async {
+    testWidgets('the amount field rejects excess ZEC precision', (
+      tester,
+    ) async {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
       await _pump(
@@ -289,11 +312,16 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('request_amount_field')),
+        '0.25',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
         '0.123456789',
       );
       await tester.pump();
 
-      expect(controller.text, '0.12345678');
+      expect(controller.text, '0.25');
     });
 
     testWidgets('the amount field refuses what is not part of a number', (
@@ -308,16 +336,22 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('request_amount_field')),
+        '0.25',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
         '.5 ZEC',
       );
       await tester.pump();
 
-      // The leading dot is completed rather than dropped, and the letters
-      // that would have made the URI unbuildable never land.
-      expect(controller.text, '0.5');
+      // Invalid pasted text leaves the previous amount unchanged.
+      expect(controller.text, '0.25');
     });
 
-    testWidgets('a USD-mode field stops at cents', (tester) async {
+    testWidgets('a USD-mode field rejects excess USD precision', (
+      tester,
+    ) async {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
       await _pump(
@@ -327,11 +361,16 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('request_amount_field')),
+        '12.34',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_field')),
         '35,499',
       );
       await tester.pump();
 
-      expect(controller.text, '35.49');
+      expect(controller.text, '12.34');
     });
   });
 
@@ -576,7 +615,7 @@ void main() {
       await _pump(
         tester,
         RequestAmountSheetCompose(
-          request: _empty,
+          request: _withAmount,
           amountController: controller,
           onAmountChanged: typed.add,
         ),
@@ -591,9 +630,29 @@ void main() {
 
       expect(controller.text, '0.5');
       expect(typed.last, '0.5');
+      final field = find.byKey(const ValueKey('request_amount_input'));
+      await expectLeadingDecimalInput(tester, field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.25',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '0.x25',
+          selection: TextSelection(baseOffset: 5, extentOffset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '0.25');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
     });
 
-    testWidgets('the serif field stops at a zatoshi', (tester) async {
+    testWidgets('the serif field rejects excess ZEC precision', (tester) async {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
       await _pump(
@@ -607,14 +666,21 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('request_amount_input')),
+        '0.25',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_input')),
         '0.123456789',
       );
       await tester.pump();
 
-      expect(controller.text, '0.12345678');
+      expect(controller.text, '0.25');
     });
 
-    testWidgets('a USD-mode serif field stops at cents', (tester) async {
+    testWidgets('a USD-mode serif field rejects excess USD precision', (
+      tester,
+    ) async {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
       await _pump(
@@ -628,11 +694,16 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('request_amount_input')),
+        '12.34',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('request_amount_input')),
         '35,499',
       );
       await tester.pump();
 
-      expect(controller.text, '35.49');
+      expect(controller.text, '12.34');
     });
 
     testWidgets('an untakeable unit switch is drawn as disabled', (

@@ -140,6 +140,26 @@ void main() {
     );
   }
 
+  for (final enclosedFiat in [142.23, null]) {
+    test('retry falls back to enclosed fiat: $enclosedFiat', () async {
+      final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
+      final link = _link(fiatAmount: enclosedFiat);
+      await store.saveReady(link);
+      final first = await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 200),
+      );
+      await store.markReadyToClaim(address: link.address, expected: first);
+      final retry = await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+      );
+      expect(retry.fiatSnapshot?.amount, enclosedFiat);
+      expect((await store.load()).single.fiatSnapshot?.amount, enclosedFiat);
+    });
+  }
+
   test('an old outcome cannot settle a newer submission', () async {
     final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
     final link = _link();
@@ -214,6 +234,33 @@ void main() {
     expect(await store.countReceivingForAccount('receiver'), 0);
     expect((await store.load()).single.claimLink!.toUri(), link.toUri());
   });
+
+  test(
+    'claim fiat survives repeat retention, completion and restart',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 200),
+      );
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'claim-tx',
+      );
+      await store.markReceived(address: link.address);
+      await store.clearConfirmedClaimSecret(address: link.address);
+      final record = (await PaymentLinkReceivedStore(storage).load()).single;
+      expect(record.fiatSnapshot!.amount, 200);
+      expect(record.claimLink, isNull);
+      expect(link.presentation!.fiatSnapshot!.amount, 142.23);
+    },
+  );
 
   test(
     'retains fiat after submission, completion, and restart without bearer data',
@@ -663,7 +710,10 @@ void main() {
   });
 }
 
-VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
+VizorPaymentLink _link({
+  String address = 'u1paymentlinkaddress',
+  double? fiatAmount = 142.23,
+}) {
   return VizorPaymentLink(
     network: 'main',
     address: address,
@@ -673,9 +723,11 @@ VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
     birthdayHeight: 3_456_789,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
-    presentation: const PaymentLinkPresentation(
+    presentation: PaymentLinkPresentation(
       artworkId: 'ruby',
-      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 142.23),
+      fiatSnapshot: fiatAmount == null
+          ? null
+          : PaymentLinkFiatSnapshot(amount: fiatAmount),
       message: 'Enjoy your gift!',
     ),
   );

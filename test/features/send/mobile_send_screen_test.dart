@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provid
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -45,6 +46,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
+
+import '../../support/leading_decimal_input.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
@@ -393,10 +396,10 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
 class _FakeAddressBookRepository implements AddressBookRepository {
   _FakeAddressBookRepository(this.contacts);
 
-  final List<AddressBookContact> contacts;
+  final FutureOr<List<AddressBookContact>> contacts;
 
   @override
-  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+  Future<List<AddressBookContact>> loadContacts() async => [...await contacts];
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
@@ -425,6 +428,7 @@ Widget _app({
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
   PaymentRequestPrecheck? precheck,
+  ValueChanged<Object?>? onLedgerRoute,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -446,6 +450,13 @@ Widget _app({
           paymentRequestLabel: paymentRequestLabel,
           requestedAmountZatoshi: requestedAmountZatoshi,
         ),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (_, state) {
+          onLedgerRoute?.call(state.extra);
+          return const SizedBox(key: ValueKey('mobile_send_ledger_sign_route'));
+        },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
     ],
@@ -578,6 +589,8 @@ Widget _reviewApp({
 /// SendPrefillArgs)`, so `/send` becomes the entire stack and there is nothing
 /// under it to pop.
 Widget _sendFlowRouterApp({
+  FutureOr<List<AddressBookContact>> contacts = const [],
+  FutureOr<Map<String, AccountInfo>> ownAccounts = const {},
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   MobileSendFeeEstimator? estimateFee,
@@ -708,6 +721,14 @@ Widget _sendFlowRouterApp({
           child: const Text('keystone sign'),
         ),
       ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_ledger_cancel'),
+          onPressed: () => context.pop(),
+          child: const Text('ledger sign'),
+        ),
+      ),
     ],
   );
   return ProviderScope(
@@ -724,9 +745,9 @@ Widget _sendFlowRouterApp({
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
-        _FakeAddressBookRepository(const []),
+        _FakeAddressBookRepository(contacts),
       ),
-      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -2502,6 +2523,52 @@ void main() {
     },
   );
 
+  testWidgets('Ledger cancel refreshes locked balance before enabling retry', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    final sync = _CancelRecoverySyncNotifier();
+    await tester.pumpWidget(
+      _cancelRecoveryApp(sync, signerKind: HardwareSignerKind.ledger),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 1);
+
+    sync.publishLockedBalance();
+    await tester.pumpAndSettle();
+    _discardGate = Completer<void>();
+    sync.refreshGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_ledger_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(sync.refreshCalls, 0);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+    expect(sync.refreshCalls, 1);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(_proposeCalls, 1);
+
+    sync.refreshGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNotNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('ledger sign'), findsOneWidget);
+    expect(_proposeCalls, 2);
+  });
+
   testWidgets(
     'Keystone release failure retries cleanup without a new proposal',
     (tester) async {
@@ -3305,6 +3372,93 @@ void main() {
     },
   );
 
+  for (final ownAccount in [false, true]) {
+    for (final delayed in [false, true]) {
+      testWidgets(
+        'amount recipient resolves ${ownAccount ? 'own account' : 'contact'} '
+        '${delayed ? 'after loading' : 'from entered address'} on pushed route',
+        (tester) async {
+          final contacts = Completer<List<AddressBookContact>>();
+          final ownAccounts = Completer<Map<String, AccountInfo>>();
+          void completeIdentity() {
+            contacts.complete(
+              ownAccount
+                  ? const []
+                  : const [
+                      AddressBookContact(
+                        id: 'alice',
+                        label: 'Alice',
+                        network: AddressBookNetwork.zcash,
+                        address: _shieldedAddress,
+                        profilePictureId: 'pfp-01',
+                        createdAtMs: 0,
+                        updatedAtMs: 0,
+                      ),
+                    ],
+            );
+            ownAccounts.complete(const {
+              _shieldedAddress: AccountInfo(
+                uuid: 'account-2',
+                name: 'Savings',
+                order: 1,
+                profilePictureId: 'pfp-02',
+              ),
+            });
+          }
+
+          if (!delayed) completeIdentity();
+          await tester.pumpWidget(
+            _sendFlowRouterApp(
+              initialLocation: '/send',
+              contacts: contacts.future,
+              ownAccounts: ownAccounts.future,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await _toAmountStep(tester, _shieldedAddress);
+          final row = find.byKey(
+            const ValueKey('mobile_send_amount_recipient_row'),
+          );
+          final name = ownAccount ? 'Savings' : 'Alice';
+          if (delayed) {
+            expect(
+              find.descendant(of: row, matching: find.text(name)),
+              findsNothing,
+            );
+            completeIdentity();
+            await tester.pumpAndSettle();
+          }
+          expect(
+            find.descendant(of: row, matching: find.text(name)),
+            findsOneWidget,
+          );
+          final picture = tester.widget<AppProfilePicture>(
+            find.byKey(const ValueKey('mobile_send_amount_recipient_picture')),
+          );
+          expect(picture.profilePictureId, ownAccount ? 'pfp-02' : 'pfp-01');
+          expect(
+            find.descendant(of: row, matching: find.byType(Text)),
+            findsNWidgets(2),
+          );
+
+          // Going back and entering another address must not retain the name.
+          await tester.tap(find.bySemanticsLabel('Back'));
+          await tester.pumpAndSettle();
+          await _toAmountStep(tester, _transparentAddress);
+          expect(
+            find.descendant(of: row, matching: find.text(name)),
+            findsNothing,
+          );
+          expect(
+            find.descendant(of: row, matching: find.byType(Text)),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('amount step shows animated price loading placeholder', (
     tester,
   ) async {
@@ -3328,6 +3482,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(loadingFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('mobile_send_amount_input')),
+        onIncompleteAmount: () {
+          expect(find.text('Enter amount to continue'), findsOneWidget);
+        },
+      );
+    }
   });
 
   testWidgets('amount input preserves a middle selection while editing', (
@@ -4222,6 +4399,85 @@ void main() {
     expect((leading! as AppIcon).name, AppIcons.qr);
   });
 
+  testWidgets('Ledger send uses its own enabled confirmation action', (
+    tester,
+  ) async {
+    Object? ledgerRouteArgs;
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        onLedgerRoute: (args) => ledgerRouteArgs = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+
+    final confirmButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_confirm')),
+    );
+    expect(confirmButton.onPressed, isNotNull);
+    expect((confirmButton.leading! as AppIcon).name, AppIcons.ledger);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.text('Confirm with Ledger'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(ledgerRouteArgs, isNotNull);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+  });
+
+  testWidgets('a Ledger account can send to a TEX address', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _texAddress);
+
+    expect(find.text('Ledger does not support TEX sends yet.'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+  });
+
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
@@ -4454,6 +4710,7 @@ AppButton _confirmButton(WidgetTester tester) =>
 Widget _cancelRecoveryApp(
   _CancelRecoverySyncNotifier sync, {
   bool isMaxMode = false,
+  HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(
   syncNotifier: () => sync,
   initialLocation: '/send/review',
@@ -4465,13 +4722,14 @@ Widget _cancelRecoveryApp(
     isMaxMode: isMaxMode,
     feeZatoshi: BigInt.from(10000),
   ),
-  accountState: const AccountState(
+  accountState: AccountState(
     accounts: [
       AccountInfo(
         uuid: 'account-1',
-        name: 'Keystone',
+        name: signerKind.name,
         order: 0,
         isHardware: true,
+        hardwareSignerKind: signerKind,
       ),
     ],
     activeAccountUuid: 'account-1',

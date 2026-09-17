@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `sanitized_payment_uri_error`
+// These functions are ignored because they are not marked as `pub`: `lowercase_uppercase_bech32_address`, `sanitized_payment_uri_error`
 
 /// Parses a cross-chain payment URI into the parser's versioned JSON contract.
 ///

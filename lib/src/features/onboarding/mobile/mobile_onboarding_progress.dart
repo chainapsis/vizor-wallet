@@ -27,3 +27,7 @@ const kMobileKeystoneCustomiseProgress = 6 / 7;
 /// Desktop-link import has intro, scan, account selection, contact selection,
 /// then passcode.
 const kMobileWalletLinkPasscodeProgress = 5 / 6;
+
+/// Ledger: connect, birthday, passcode, then account customisation.
+const kMobileLedgerPasscodeProgress = 0.75;
+const kMobileLedgerCustomiseProgress = 0.875;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'voting_models.dart';
+import 'voting_rust_exception.dart';
 
 class VotingRetryPolicy {
   const VotingRetryPolicy({
@@ -67,6 +68,7 @@ Future<T> retryVotingOperation<T>({
 }
 
 bool isRetryableVotingError(Object error) {
+  if (error is VotingRustException) return error.retryable;
   if (error is TimeoutException ||
       error is SocketException ||
       error is HttpException) {

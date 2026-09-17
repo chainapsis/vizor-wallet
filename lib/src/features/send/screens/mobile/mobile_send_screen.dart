@@ -705,10 +705,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   static const _notEnoughZecText = 'Not enough ZEC';
 
-  bool get _activeAccountIsHardware {
+  HardwareSignerKind? get _activeHardwareSignerKind {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (uuid == null) return false;
-    return ref.read(accountProvider.notifier).isHardwareAccount(uuid);
+    if (uuid == null) return null;
+    return ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(uuid);
   }
 
   bool get _showRecipientContinue =>
@@ -1938,9 +1940,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    final isHardware = ref
+    final hardwareSignerKind = ref
         .read(accountProvider.notifier)
-        .isHardwareAccount(accountUuid);
+        .hardwareSignerKindForAccount(accountUuid);
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
     final reviewedFeeZatoshi = _feeZatoshi!;
@@ -2015,8 +2017,22 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _reviewFeeNotice = null;
     });
 
+    if (hardwareSignerKind == HardwareSignerKind.ledger) {
+      final ledger = await context.push<LedgerBroadcastArgs>(
+        '/send/ledger-sign',
+        extra: args,
+      );
+      if (ledger == null) {
+        await _recoverCancelledProposal(args);
+        return;
+      }
+      if (!mounted) return;
+      _openStatusRoute(ledger);
+      return;
+    }
+
     KeystoneBroadcastArgs? keystone;
-    if (isHardware) {
+    if (hardwareSignerKind == HardwareSignerKind.keystone) {
       // Hand the PCZT to the device for the spend-auth signature; the
       // signing screen owns the QR display/scan round trip.
       keystone = await context.push<KeystoneBroadcastArgs>(
@@ -2735,6 +2751,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   Widget _buildAmountStep(BuildContext context) {
     final colors = context.colors;
+    final recipient = sendReviewRecipientFor(
+      contacts:
+          ref.watch(addressBookProvider).value?.contacts ??
+          const <AddressBookContact>[],
+      address: _addressController.text.trim(),
+      ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
+    );
+    final recipientLabel = recipient is SendReviewContactRecipient
+        ? recipient.name
+        : _contactLabel;
+    final recipientPictureId = recipient is SendReviewContactRecipient
+        ? recipient.profilePictureId
+        : _contactPictureId;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
@@ -2815,7 +2844,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                     key: const ValueKey(
                                       'mobile_send_amount_recipient_picture',
                                     ),
-                                    profilePictureId: _contactPictureId ?? '',
+                                    profilePictureId: recipientPictureId ?? '',
                                     size: AppProfilePictureSize.navLarge,
                                   ),
                                   const SizedBox(width: AppSpacing.s),
@@ -2825,7 +2854,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                           MainAxisAlignment.center,
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
-                                      children: _contactLabel == null
+                                      children: recipientLabel == null
                                           ? [
                                               _RecipientLineText(
                                                 _truncateAddress(
@@ -2836,7 +2865,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                             ]
                                           : [
                                               _RecipientLineText(
-                                                _contactLabel!,
+                                                recipientLabel,
                                                 color: colors.text.accent,
                                               ),
                                               const SizedBox(
@@ -3253,7 +3282,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       contacts: addressBookContacts,
       ownAccounts: ownAccounts,
     );
-    final isHardware = _activeAccountIsHardware;
+    final hardwareSignerKind = _activeHardwareSignerKind;
+    final isKeystone = hardwareSignerKind == HardwareSignerKind.keystone;
+    final isLedger = hardwareSignerKind == HardwareSignerKind.ledger;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -3383,7 +3414,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               : _confirmAndSend(),
                         ),
                   leading: AppIcon(
-                    isHardware ? AppIcons.qr : AppIcons.plane,
+                    isKeystone
+                        ? AppIcons.qr
+                        : isLedger
+                        ? AppIcons.ledger
+                        : AppIcons.plane,
                     size: 20,
                   ),
                   child: Text(
@@ -3398,7 +3433,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         ? 'Calculating fee...'
                         : !_hasCurrentReviewFeeQuote
                         ? 'Fee unavailable'
-                        : isHardware
+                        : isLedger
+                        ? 'Confirm with Ledger'
+                        : isKeystone
                         ? 'Confirm with Keystone'
                         : 'Confirm & Send',
                   ),

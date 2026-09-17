@@ -478,6 +478,152 @@ mod schedule_height_tests {
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+mod ledger_ironwood_fixture_tests {
+    use std::{env, fs};
+
+    use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, updater::Updater};
+    use zeroize::Zeroizing;
+
+    use super::*;
+
+    #[derive(Clone, Copy, Debug)]
+    struct Nu6_3MainNetwork;
+
+    impl consensus::Parameters for Nu6_3MainNetwork {
+        fn network_type(&self) -> zcash_protocol::consensus::NetworkType {
+            zcash_protocol::consensus::NetworkType::Main
+        }
+
+        fn activation_height(&self, nu: consensus::NetworkUpgrade) -> Option<BlockHeight> {
+            Some(BlockHeight::from_u32(match nu {
+                consensus::NetworkUpgrade::Overwinter => 1,
+                consensus::NetworkUpgrade::Sapling => 2,
+                consensus::NetworkUpgrade::Blossom => 3,
+                consensus::NetworkUpgrade::Heartwood => 4,
+                consensus::NetworkUpgrade::Canopy => 5,
+                consensus::NetworkUpgrade::Nu5 => 6,
+                consensus::NetworkUpgrade::Nu6 => 7,
+                consensus::NetworkUpgrade::Nu6_1 => 8,
+                consensus::NetworkUpgrade::Nu6_2 => 9,
+                consensus::NetworkUpgrade::Nu6_3 => 10,
+            }))
+        }
+    }
+
+    /// Generates a synthetic V6 PCZT with a real Ironwood spend controlled by
+    /// account 0 on the attached Ledger. The output file is temporary test
+    /// material and must never be broadcast.
+    #[test]
+    #[ignore = "requires an unlocked Ledger with the Zcash app open"]
+    fn build_device_controlled_ironwood_pczt() -> Result<(), String> {
+        let output_path = env::var("VIZOR_LEDGER_FIXTURE_PATH")
+            .map_err(|_| "VIZOR_LEDGER_FIXTURE_PATH must name the temporary PCZT file")?;
+
+        let encoded_ufvk = Zeroizing::new(crate::wallet::ledger::get_ufvk(0)?);
+        let ufvk = zcash_keys::keys::UnifiedFullViewingKey::decode(
+            &WalletNetwork::Main,
+            encoded_ufvk.as_str(),
+        )
+        .map_err(|e| format!("Decode Ledger UFVK: {e:?}"))?;
+        let orchard_fvk = ufvk
+            .orchard()
+            .cloned()
+            .ok_or("Ledger UFVK has no Orchard component")?;
+
+        let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+        let input_value = orchard::value::NoteValue::from_raw(1_000_000);
+        let rho = orchard::note::Rho::from_bytes(&[3; 32])
+            .into_option()
+            .ok_or("Synthetic Ironwood rho is invalid")?;
+        let rseed = (0u8..=255)
+            .find_map(|byte| orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option())
+            .ok_or("Could not construct a synthetic Ironwood rseed")?;
+        let note = orchard::Note::from_parts(
+            recipient,
+            input_value,
+            rho,
+            rseed,
+            orchard::note::NoteVersion::V3,
+        )
+        .into_option()
+        .ok_or("Could not construct a synthetic Ironwood note")?;
+
+        let merkle_path = dummy_orchard_merkle_path()?;
+        let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+        let ironwood_anchor = merkle_path.root(cmx);
+        let mut builder = Builder::new(
+            Nu6_3MainNetwork,
+            BlockHeight::from_u32(120),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: Some(ironwood_anchor),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        builder
+            .add_ironwood_spend::<std::convert::Infallible>(
+                orchard_fvk.clone(),
+                note,
+                merkle_path,
+            )
+            .map_err(|e| format!("Add synthetic Ironwood spend: {e}"))?;
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal)),
+                recipient,
+                Zatoshis::const_from_u64(990_000),
+                MemoBytes::empty(),
+            )
+            .map_err(|e| format!("Add synthetic Ironwood output: {e}"))?;
+
+        let build_result = builder
+            .build_for_pczt(
+                voting_crypto_deps::rand::rngs::OsRng,
+                &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            )
+            .map_err(|e| format!("Build synthetic Ironwood PCZT: {e}"))?;
+        let created = Creator::build_from_parts(build_result.pczt_parts)
+            .ok_or("Create synthetic Ironwood PCZT")?;
+        let finalized = IoFinalizer::new(created)
+            .finalize_io()
+            .map_err(|e| format!("Finalize synthetic Ironwood PCZT IO: {e:?}"))?;
+        let action_count = finalized.ironwood().actions().len();
+        let derivation_path = vec![
+            zip32::ChildIndex::hardened(32).index(),
+            zip32::ChildIndex::hardened(133).index(),
+            zip32::ChildIndex::hardened(0).index(),
+        ];
+        let pczt = Updater::new(finalized)
+            .update_ironwood_with(|mut updater| {
+                for action_index in 0..action_count {
+                    updater.update_action_with(action_index, |mut action| {
+                        action.set_spend_zip32_derivation(
+                            orchard::pczt::Zip32Derivation::parse([0; 32], derivation_path.clone())
+                                .expect("valid Ledger ZIP32 path"),
+                        );
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })
+            .map_err(|e| format!("Annotate synthetic Ironwood PCZT: {e:?}"))?
+            .finish();
+        let bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize synthetic Ironwood PCZT: {e:?}"))?;
+        fs::write(&output_path, &bytes)
+            .map_err(|e| format!("Write temporary PCZT {output_path}: {e}"))?;
+        println!(
+            "temporary Ironwood PCZT: {output_path} ({} bytes)",
+            bytes.len()
+        );
+        Ok(())
+    }
+}
+
 fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
     db_path: &str,
     network: WalletNetwork,

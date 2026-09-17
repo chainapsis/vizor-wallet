@@ -1,5 +1,3 @@
-import 'package:flutter/services.dart';
-
 import '../config/network_config.dart';
 
 final BigInt zatoshiPerZec = BigInt.from(100000000);
@@ -291,25 +289,5 @@ class ZecAmountPretty {
   String toString() {
     if (_denomStyle == ZecDenomStyle.none) return amountText;
     return '$amountText $denomText';
-  }
-}
-
-class ZecAmountInputFormatter extends TextInputFormatter {
-  const ZecAmountInputFormatter();
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text.replaceAll(',', '.');
-    if (text.isEmpty) return newValue.copyWith(text: text);
-    if (!RegExp(r'^[0-9.]*$').hasMatch(text)) return oldValue;
-    if ('.'.allMatches(text).length > 1) return oldValue;
-
-    final dotIndex = text.indexOf('.');
-    if (dotIndex != -1 && text.length - dotIndex - 1 > 8) return oldValue;
-
-    return newValue.copyWith(text: text);
   }
 }

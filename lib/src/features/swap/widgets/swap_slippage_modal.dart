@@ -7,6 +7,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../models/swap_models.dart';
 
 class SwapSlippageModal extends StatefulWidget {
@@ -504,7 +505,9 @@ class _SlippageCustomInputFormatter extends TextInputFormatter {
     TextEditingValue newValue,
   ) {
     final text = newValue.text;
-    if (text.isEmpty || _allowed.hasMatch(text)) return newValue;
-    return oldValue;
+    if (text.isNotEmpty && !_allowed.hasMatch(text)) return oldValue;
+    return const DecimalAmountInputFormatter(
+      maxFractionDigits: 2,
+    ).formatEditUpdate(oldValue, newValue);
   }
 }

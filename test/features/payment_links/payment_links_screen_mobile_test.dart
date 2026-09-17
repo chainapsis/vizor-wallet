@@ -19,11 +19,56 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 
 import '../../support/payment_links_screen_support.dart';
+import '../../support/leading_decimal_input.dart';
 
 void main() {
+  testWidgets(
+    'gift amount normalizes leading separators and preserves precision',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester, logicalSize: const Size(390, 844));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_create_button')),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(
+                    const ValueKey(
+                      'payment_link_mobile_amount_continue_button',
+                    ),
+                  ),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      await tester.enterText(field, ',12345678');
+      await tester.pumpAndSettle();
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      final controller = tester.widget<EditableText>(editable).controller;
+      expect(controller.text, '0.12345678');
+      await tester.enterText(field, '0.123456789');
+      await tester.pumpAndSettle();
+      expect(controller.text, '0.12345678');
+    },
+  );
+
   testWidgets('copying an older card preserves creation order after reload', (
     tester,
   ) async {
@@ -506,10 +551,28 @@ void main() {
       final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
       final max = find.byKey(const ValueKey('payment_link_max_button'));
       expect(find.textContaining('Use max:'), findsOneWidget);
+      final artwork = tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork;
+      expect(PaymentLinkCardArtwork.values, contains(artwork));
+      expect(
+        tester
+            .widget<PaymentLinkCardSelectorRail>(
+              find.byType(PaymentLinkCardSelectorRail),
+            )
+            .selected,
+        artwork,
+      );
 
       for (final amount in ['0', '2']) {
         await tester.enterText(editor, amount);
         await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+              .artwork,
+          artwork,
+        );
         expect(find.text('Fiat unavailable'), findsNothing);
         expect(find.textContaining(r'$'), findsNothing);
         expect(
@@ -1084,6 +1147,13 @@ void main() {
       find.byKey(const ValueKey('payment_links_mobile_create_button')),
     );
     await tester.pumpAndSettle();
+    final otherDesign = tester
+        .widgetList<PaymentLinkCardSelector>(
+          find.byType(PaymentLinkCardSelector).hitTestable(),
+        )
+        .firstWhere((selector) => !selector.selected);
+    await tester.tap(find.byKey(otherDesign.key!));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '0.1',
@@ -1119,6 +1189,20 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('0.1'), findsOneWidget);
+    expect(
+      tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork,
+      otherDesign.artwork,
+    );
+    expect(
+      tester
+          .widget<PaymentLinkCardSelectorRail>(
+            find.byType(PaymentLinkCardSelectorRail),
+          )
+          .selected,
+      otherDesign.artwork,
+    );
   });
 
   testWidgets(

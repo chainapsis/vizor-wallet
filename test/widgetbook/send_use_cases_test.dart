@@ -6,7 +6,29 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_compose_view.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
 
+import '../support/leading_decimal_input.dart';
+
 void main() {
+  testWidgets('send previews use shared decimal input behavior in both units', (
+    tester,
+  ) async {
+    for (final builder in [buildSendEmptyUseCase, buildSendUsdInputUseCase]) {
+      await _pumpSendUseCase(tester, builder);
+      final field = find.byKey(const ValueKey('send_amount_field'));
+      await expectLeadingDecimalInput(tester, field);
+      final controller = tester
+          .widget<EditableText>(
+            find.descendant(of: field, matching: find.byType(EditableText)),
+          )
+          .controller;
+      for (final invalid in ['a.5', '.5 ZEC', '0.123456789']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+    }
+  });
+
   testWidgets('send empty use case renders desktop compose shell', (
     tester,
   ) async {

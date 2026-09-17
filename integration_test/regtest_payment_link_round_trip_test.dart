@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
+import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
 const _network = 'regtest';
 const _lightwalletdUrl = String.fromEnvironment(
@@ -84,9 +85,9 @@ void main() {
         const ValueKey('payment_link_amount_editor'),
         _giftAmountText,
       );
-      await tapAppWidget(
+      await payment_link_flow.selectPaymentLinkArtworkForRegtest(
         tester,
-        const ValueKey('payment_link_card_selector_coin'),
+        'coin',
       );
       await tapAppButton(
         tester,

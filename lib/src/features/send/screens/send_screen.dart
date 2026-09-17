@@ -90,8 +90,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final walletAsync = ref.watch(walletProvider);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
-    final activeAccountIsHardware =
-        accountState?.activeAccount?.isHardware ?? false;
+    final activeHardwareSignerKind =
+        accountState?.activeAccount?.hardwareSignerKind;
     final sync = ref.watch(
       syncProvider.select(
         (value) =>
@@ -114,7 +114,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       key: ValueKey('$activeAccountUuid:${prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
-      activeAccountIsHardware: activeAccountIsHardware,
+      activeHardwareSignerKind: activeHardwareSignerKind,
       spendableBalance: spendableBalance,
       displaySpendableBalance: displaySpendableBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
@@ -128,7 +128,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     super.key,
     required this.walletAsync,
     required this.activeAccountUuid,
-    required this.activeAccountIsHardware,
+    required this.activeHardwareSignerKind,
     required this.spendableBalance,
     required this.displaySpendableBalance,
     required this.isUsingCompletedSpendableSnapshot,
@@ -137,7 +137,7 @@ class _SendComposeBody extends ConsumerStatefulWidget {
 
   final AsyncValue<WalletState> walletAsync;
   final String? activeAccountUuid;
-  final bool activeAccountIsHardware;
+  final HardwareSignerKind? activeHardwareSignerKind;
   final BigInt spendableBalance;
   final BigInt displaySpendableBalance;
   final bool isUsingCompletedSpendableSnapshot;
@@ -756,6 +756,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       '$_insufficientBalanceText (fee: $feeText)';
   bool get _showAmountError =>
       _amountError != null && _amountError!.trim().isNotEmpty;
+  String? get _ctaWarningText => null;
 
   bool get _hasCurrentMaxQuote {
     final quote = _maxQuote;
@@ -1144,8 +1145,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
       setState(() => _isSending = false);
+      ref.read(sendStatusRoutePayloadProvider.notifier).retain(reviewArgs);
       pushedReview = true;
-      await context.push('/send/review', extra: reviewArgs);
+      await context.push(
+        sendReviewRouteLocation(reviewArgs.sendFlowId),
+        extra: reviewArgs,
+      );
     } catch (e) {
       log('Send: review preparation error: $e');
       if (!mounted) return;
@@ -1644,6 +1649,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           if (_error != null) ...[
                             const SizedBox(height: AppSpacing.xs),
                             _SendGlobalError(message: _error!),
+                          ],
+                          if (_error == null && _ctaWarningText != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            _SendGlobalError(
+                              key: const ValueKey('send_cta_warning'),
+                              message: _ctaWarningText!,
+                            ),
                           ],
                         ],
                       ),
@@ -2418,7 +2430,7 @@ List<BoxShadow> _sendInputSurfaceShadow(AppColors colors) {
 }
 
 class _SendGlobalError extends StatelessWidget {
-  const _SendGlobalError({required this.message});
+  const _SendGlobalError({super.key, required this.message});
 
   final String message;
 

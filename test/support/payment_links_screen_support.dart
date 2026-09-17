@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,8 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
@@ -25,6 +28,9 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_l
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
@@ -44,6 +50,8 @@ Future<void> pumpPaymentLinksScreen(
   FakePaymentLinkOperations? operations,
   FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  PaymentLinkLedgerFundingService? ledgerFunding,
+  LedgerPcztSigner? ledgerSigner,
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
   PaymentLinkScanner? scanner,
@@ -67,6 +75,11 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        // These tests exercise funding and navigation with fake operations.
+        // Observer behavior has its own controlled service and widget tests.
+        giftCardTrackingServiceProvider.overrideWithValue(
+          _IdleGiftCardTracker(),
+        ),
         appBootstrapProvider.overrideWithValue(appBootstrap),
         if (pricingEnabled != null)
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
@@ -84,6 +97,21 @@ Future<void> pumpPaymentLinksScreen(
           paymentLinkQrShareHandlerProvider.overrideWithValue(qrShareHandler),
         if (scanner != null)
           paymentLinkScannerProvider.overrideWithValue(scanner),
+        if (ledgerFunding != null)
+          paymentLinkLedgerFundingServiceProvider.overrideWithValue(
+            ledgerFunding,
+          ),
+        if (ledgerSigner != null)
+          ledgerPcztSignerProvider.overrideWith(
+            (ref) => (accountUuid, pcztBytes) {
+              ref
+                  .read(ledgerSigningProgressProvider.notifier)
+                  .begin(accountUuid)('reviewing');
+              return ledgerSigner(accountUuid, pcztBytes);
+            },
+          ),
+        if (ledgerFunding != null)
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         if (hardwareSigning != null)
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,
@@ -211,6 +239,31 @@ const hardwareAccountState = AccountState(
 final hardwareBootstrap = AppBootstrapState(
   initialLocation: '/payment-links',
   initialAccountState: hardwareAccountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final ledgerGiftBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1ledger',
+  ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
@@ -941,4 +994,12 @@ RenderEditable findRenderEditable(RenderObject root) {
     found ??= findRenderEditable(child);
   });
   return found!;
+}
+
+class _IdleGiftCardTracker implements GiftCardTrackingService {
+  @override
+  Future<void> refresh({bool force = false}) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

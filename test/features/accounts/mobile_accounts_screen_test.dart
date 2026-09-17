@@ -36,6 +36,9 @@ AccountInfo _account(
   String name, {
   bool isSeedAnchor = false,
   bool isHardware = false,
+  HardwareSignerKind? hardwareSignerKind,
+  int? birthdayHeight,
+  int? zip32AccountIndex,
 }) => AccountInfo(
   uuid: uuid,
   name: name,
@@ -43,6 +46,9 @@ AccountInfo _account(
   profilePictureId: kDefaultProfilePictureId,
   isSeedAnchor: isSeedAnchor,
   isHardware: isHardware,
+  hardwareSignerKind: hardwareSignerKind,
+  birthdayHeight: birthdayHeight,
+  zip32AccountIndex: zip32AccountIndex,
 );
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
@@ -400,6 +406,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret phrase'), findsOneWidget);
+    expect(find.text('Account details'), findsNothing);
     expect(
       find.ancestor(
         of: find.text('View secret phrase'),
@@ -423,34 +430,46 @@ void main() {
     expect(find.text('seed phrase route b'), findsOneWidget);
   });
 
-  testWidgets('hardware account menu hides the secret passphrase shortcut', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        AccountState(
-          accounts: [
-            _account('a', 'Knight', isSeedAnchor: true),
-            _account('b', 'Keystone', isHardware: true),
-          ],
-          activeAccountUuid: 'a',
-        ),
-      ),
-    );
-    await tester.pump();
+  for (final (kind, signerName, birthday, accountIndex) in const [
+    (HardwareSignerKind.keystone, 'Keystone', 2500000, 7),
+    (HardwareSignerKind.ledger, 'Ledger', 2600000, 12),
+  ]) {
+    testWidgets(
+      '$signerName account menu hides secret passphrase and account details',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            AccountState(
+              accounts: [
+                _account('a', 'Knight', isSeedAnchor: true),
+                _account(
+                  'b',
+                  '$signerName Vault',
+                  isHardware: true,
+                  hardwareSignerKind: kind,
+                  birthdayHeight: birthday,
+                  zip32AccountIndex: accountIndex,
+                ),
+              ],
+              activeAccountUuid: 'a',
+            ),
+          ),
+        );
+        await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
-    await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+        await tester.pumpAndSettle();
 
-    expect(find.text('View secret phrase'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
-      findsNothing,
+        expect(find.text('View secret phrase'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
+          findsNothing,
+        );
+        expect(find.text('Account details'), findsNothing);
+        expect(find.text('View viewing key'), findsOneWidget);
+      },
     );
-    // Unlike the secret passphrase, a UFVK export never grants spend
-    // authority, so hardware accounts still get the viewing-key shortcut.
-    expect(find.text('View viewing key'), findsOneWidget);
-  });
+  }
 
   testWidgets('account menu opens its viewing key export', (tester) async {
     await tester.pumpWidget(

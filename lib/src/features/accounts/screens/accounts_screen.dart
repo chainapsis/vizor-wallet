@@ -1070,7 +1070,7 @@ class _AccountRowAvatar extends StatelessWidget {
             profilePictureId: account.profilePictureId,
             size: AppProfilePictureSize.large,
           ),
-          if (account.isHardware)
+          if (account.hardwareSignerKind case final signerKind?)
             Positioned(
               right: -5,
               bottom: 0,
@@ -1091,8 +1091,11 @@ class _AccountRowAvatar extends StatelessWidget {
                   height: 16,
                   child: Center(
                     child: AppIcon(
-                      AppIcons.keystone,
-                      size: 14,
+                      signerKind == HardwareSignerKind.keystone
+                          ? AppIcons.keystone
+                          : AppIcons.ledger,
+                      key: ValueKey('hardware_signer_badge_${signerKind.name}'),
+                      size: signerKind == HardwareSignerKind.ledger ? 16 : 14,
                       color: colors.icon.inverse,
                     ),
                   ),

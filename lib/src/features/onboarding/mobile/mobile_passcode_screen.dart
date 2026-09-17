@@ -93,7 +93,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     }
   }
 
-  /// Software and Keystone setup continue to account customisation without
+  /// Software, Keystone, and Ledger setup continue to account customisation without
   /// persisting the pending passcode. Wallet Link remains an immediate import.
   Future<void> _submit(String passcode) async {
     final args = widget.args;
@@ -132,6 +132,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
         await runWithSyncPausedForAccountMutation(ref, () async {
           switch (args.flow) {
+            case SetPasswordFlow.importLedger:
             case SetPasswordFlow.create:
               throw StateError(
                 'Create flow must continue through account customisation.',
@@ -300,6 +301,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
 double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
   SetPasswordFlow.create => mobileCreateProgress(7),
+  SetPasswordFlow.importLedger => kMobileLedgerPasscodeProgress,
   SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
   SetPasswordFlow.importWallet => mobileImportProgress(4),
   SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,

@@ -1140,6 +1140,7 @@ fn reserved_input_source_preserves_consolidation_selection_and_exclusions() {
     let migration_locks =
         BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
     let source = ReservedInputSource {
+        transparent_allowlist: None,
         inner: &inner,
         reserved: &reserved,
         migration_locks: &migration_locks,
@@ -1192,6 +1193,7 @@ fn reserved_input_source_does_not_apply_orchard_migration_locks_to_sapling() {
     let migration_locks =
         BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
     let source = ReservedInputSource {
+        transparent_allowlist: None,
         inner: &inner,
         reserved: &reserved,
         migration_locks: &migration_locks,
@@ -3302,4 +3304,164 @@ fn execute_result_distinguishes_rejection_without_asserting_finality() {
         assert_eq!(result.broadcasted_count, 1);
         assert_eq!(result.total_count, 2);
     }
+}
+
+#[test]
+fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
+    use crate::wallet::keys::{self, HardwareSignerKind};
+    use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+    use zcash_address::unified::{Encoding, Fvk, Ufvk};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed=keys::mnemonic_to_seed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap();
+    let ufvk = UnifiedSpendingKey::from_seed(
+        &network,
+        seed.expose_secret(),
+        zip32::AccountId::try_from(7).unwrap(),
+    )
+    .unwrap()
+    .to_unified_full_viewing_key();
+    let encoded = Ufvk::try_from_items(vec![
+        Fvk::Orchard(ufvk.orchard().unwrap().to_bytes()),
+        Fvk::P2pkh(ufvk.transparent().unwrap().serialize().try_into().unwrap()),
+    ])
+    .unwrap()
+    .encode(&network.network_type());
+    let fp = zip32::fingerprint::SeedFingerprint::from_seed(seed.expose_secret())
+        .unwrap()
+        .to_bytes();
+    let (uuid, _) = keys::import_hardware_account(
+        path,
+        network,
+        "Ledger",
+        &encoded,
+        &fp,
+        7,
+        Some(2_500_000),
+        HardwareSignerKind::Ledger,
+    )
+    .unwrap();
+    let id = parse_account_uuid(&uuid).unwrap();
+    let mut db = open_wallet_db(path, network).unwrap();
+    let tip = BlockHeight::from_u32(2_600_000);
+    db.update_chain_tip(tip).unwrap();
+    type CheckpointError = WalletError<
+        (),
+        commitment_tree::Error,
+        (),
+        <ConservativeZip317FeeRule as FeeRule>::Error,
+        (),
+        ReceivedNoteId,
+    >;
+    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
+    let internal = ufvk.transparent().unwrap().derive_internal_ivk().unwrap();
+    for i in 0..35u32 {
+        let index = NonHardenedChildIndex::from_index(i / 2).unwrap();
+        let address = if i % 2 == 0 {
+            external.derive_address(index).unwrap()
+        } else {
+            internal.derive_address(index).unwrap()
+        };
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([i as u8 + 1; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            Some(tip),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+    }
+    assert!(
+        !get_shield_transparent_status(path, network, &uuid)
+            .unwrap()
+            .can_shield
+    );
+    assert!(
+        create_shield_transparent_pczt_with_expiry(path, network, &uuid, None)
+            .err()
+            .unwrap()
+            .contains("incomplete")
+    );
+    assert!(get_ledger_shielding_progress(path, network, &uuid).unwrap_err().contains("incomplete"));
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_limit, 32);
+    assert_eq!(progress.input_count, 35);
+    assert!(!progress.below_threshold);
+    let (proposal, selected) =
+        build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
+    assert_eq!(proposal.steps().head.transparent_inputs().len(), 32);
+    assert_eq!(selected, Zatoshis::const_from_u64(32_000_000));
+    let p = zcash_client_backend::data_api::wallet::create_pczt_from_proposal::<
+        _,
+        _,
+        Infallible,
+        _,
+        Infallible,
+        _,
+    >(
+        &mut db,
+        &network,
+        id,
+        OvkPolicy::Sender,
+        &proposal,
+        None,
+        BundlePadding::DEFAULT,
+    )
+    .unwrap();
+    let bytes = p.serialize().unwrap();
+    crate::wallet::ledger::validate_pczt_account(
+        &bytes,
+        crate::wallet::ledger::ExpectedAccount {
+            account_index: 7,
+            coin_type: 133,
+            seed_fingerprint: fp,
+        },
+    )
+    .unwrap();
+    crate::wallet::ledger::build_pczt_full_signing_plan(&bytes).unwrap();
+    // Simulate the first round's inputs becoming spent, then select the remainder.
+    // The persistent signed-operation pipeline already owns real broadcast recovery.
+    let conn = Connection::open(path).unwrap();
+    for input in proposal.steps().head.transparent_inputs() {
+        conn.execute("DELETE FROM transparent_received_outputs WHERE transaction_id IN (SELECT id_tx FROM transactions WHERE txid=?1) AND output_index=?2",params![input.outpoint().hash().as_slice(),input.outpoint().n()]).unwrap();
+    }
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_count, 3);
+    let (next, _) =
+        build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
+    assert_eq!(next.steps().head.transparent_inputs().len(), 3);
+    let first = proposal
+        .steps()
+        .head
+        .transparent_inputs()
+        .iter()
+        .map(|u| u.outpoint())
+        .collect::<HashSet<_>>();
+    assert!(next
+        .steps()
+        .head
+        .transparent_inputs()
+        .iter()
+        .all(|u| !first.contains(u.outpoint())));
+    conn.execute("DELETE FROM transparent_received_outputs", []).unwrap();
+    assert_eq!(ledger_shielding_progress(&mut db, network, id).unwrap().input_count, 0);
+    let dust_address = external.derive_address(NonHardenedChildIndex::ZERO).unwrap();
+    let dust = WalletTransparentOutput::from_parts(
+        OutPoint::new([240; 32], 0),
+        // Above the spendable-output fee floor, below the shielding threshold.
+        TxOut::new(Zatoshis::const_from_u64(50_000), dust_address.script().into()),
+        Some(tip), None, None, None,
+    ).unwrap();
+    db.put_received_transparent_utxo(&dust).unwrap();
+    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    assert_eq!(progress.input_count, 1);
+    assert!(progress.below_threshold);
+
 }

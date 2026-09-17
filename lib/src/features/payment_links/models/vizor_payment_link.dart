@@ -11,7 +11,7 @@ const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
   defaultValue: false,
 );
 
-/// Display-only value captured when the sender creates the card.
+/// Display-only value captured at card creation or claim time.
 /// It never participates in funding or claim calculations.
 class PaymentLinkFiatSnapshot {
   const PaymentLinkFiatSnapshot({required this.amount, this.currency = 'USD'});

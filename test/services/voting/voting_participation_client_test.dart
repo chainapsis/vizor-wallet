@@ -33,17 +33,21 @@ class _Context implements rust.ApiVotingRoundContext {
 class _Bridge extends VotingParticipationBridge {
   List<String> keys = ['01', '02'];
   List<String> confirmed = [];
+  Completer<void>? prepareGate;
   bool used = true;
   int evaluations = 0;
   String? evidence;
   bool reject = false;
   @override
-  Future<String> prepare(rust.ApiVotingRoundContext context) async =>
-      jsonEncode({
-        'keys': keys,
-        'fingerprint': 'notes',
-        'confirmed': confirmed,
-      });
+  Future<String> prepare(rust.ApiVotingRoundContext context) async {
+    await prepareGate?.future;
+    return jsonEncode({
+      'keys': keys,
+      'fingerprint': 'notes',
+      'confirmed': confirmed,
+    });
+  }
+
   @override
   Future<String> evaluate(
     rust.ApiVotingRoundContext context,
@@ -91,6 +95,65 @@ void main() {
       },
     },
   );
+  test(
+    'local reconciliation promotes only SDK-confirmed notes without RPC',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('voting-local-');
+      addTearDown(() => directory.delete(recursive: true));
+      final cache = VotingFileCache(directory: () async => directory);
+      final keys = ['0100${'a' * 128}', '0100${'b' * 128}'];
+      final bridge = _Bridge()
+        ..keys = keys
+        ..confirmed = [keys.first];
+      final transport = http();
+      final client = VotingParticipationClient(transport, bridge, cache: cache);
+      final context = _Context('main');
+      await cache.writeNotes(context.accountUuid, client.scopeFor(context), {
+        for (final key in keys) key: {'used': false, 'height': 10},
+      });
+      await client.refreshLocal(context);
+      final notes = await cache.readNotes(
+        context.accountUuid,
+        client.scopeFor(context),
+      );
+      expect(notes[keys.first]['used'], true);
+      expect(notes[keys.last]['used'], false);
+      expect(transport.requests, isEmpty);
+      bridge.confirmed = [];
+      await client.refreshLocal(context);
+      expect(
+        (await cache.readNotes(
+          context.accountUuid,
+          client.scopeFor(context),
+        ))[keys.first]['used'],
+        true,
+      );
+    },
+  );
+
+  test(
+    'local reconciliation stops after a stale asynchronous prepare',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('voting-local-');
+      addTearDown(() => directory.delete(recursive: true));
+      final cache = VotingFileCache(directory: () async => directory);
+      final bridge = _Bridge()
+        ..confirmed = ['0100${'a' * 128}']
+        ..prepareGate = Completer<void>();
+      final client = VotingParticipationClient(http(), bridge, cache: cache);
+      var current = true;
+      final work = client.refreshLocal(
+        _Context('main'),
+        isCurrent: () => current,
+      );
+      final expectation = expectLater(work, throwsStateError);
+      current = false;
+      bridge.prepareGate!.complete();
+      await expectation;
+      expect(await directory.list(recursive: true).toList(), isEmpty);
+    },
+  );
+
   test(
     'restart reuses used and unused notes; only additions use RPC',
     () async {

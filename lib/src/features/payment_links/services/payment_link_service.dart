@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/config/swap_feature_config.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -17,6 +19,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
@@ -38,6 +41,9 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
+// Optional display pricing must not inherit transport retries or Tor bootstrap
+// waits. After this deadline the claim proceeds with the enclosed fiat value.
+const _paymentLinkClaimPriceTimeout = Duration(seconds: 1);
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
@@ -491,23 +497,25 @@ class PaymentLinkService implements PaymentLinkOperations {
           ),
           link: link,
           sourceAccountUuid: sourceAccountUuid,
-          createTransaction: (markSubmissionStarted) =>
-              runPaymentLinkFundingSubmission(
-                (markLocalSubmission) => _sendShielded(
-                  fromAccountUuid: sourceAccountUuid,
-                  toAddress: link.address,
-                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-                  memo: null,
-                  onSubmissionStarted: () async {
-                    // The durable trace has to land before the broadcast, and
-                    // the local marker only after it: a failed write leaves
-                    // the submission unmarked, which classifies the failure as
-                    // definitely-not-submitted and discards the inert draft.
-                    await markSubmissionStarted();
-                    markLocalSubmission();
-                  },
-                ),
+          createTransaction: (markSubmissionStarted) async {
+            await _registerObserver(link);
+            return runPaymentLinkFundingSubmission(
+              (markLocalSubmission) => _sendShielded(
+                fromAccountUuid: sourceAccountUuid,
+                toAddress: link.address,
+                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                memo: null,
+                onSubmissionStarted: () async {
+                  // The durable trace has to land before the broadcast, and
+                  // the local marker only after it: a failed write leaves
+                  // the submission unmarked, which classifies the failure as
+                  // definitely-not-submitted and discards the inert draft.
+                  await markSubmissionStarted();
+                  markLocalSubmission();
+                },
               ),
+            );
+          },
           // The in-memory sync tip, not a network round trip: this runs on the
           // broadcast path, and a height the wallet already knows is enough to
           // date the submission.
@@ -570,7 +578,23 @@ class PaymentLinkService implements PaymentLinkOperations {
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
+    await _registerObserver(link);
     return link;
+  }
+
+  Future<void> _registerObserver(VizorPaymentLink link) async {
+    try {
+      final tracker = _ref.read(giftCardTrackingServiceProvider);
+      final cards = await _recoveryStore.load();
+      final card = cards
+          .where((c) => c.link.address == link.address)
+          .firstOrNull;
+      if (card != null) await tracker.register(card);
+    } catch (_) {
+      // The durable draft is also a retryable registration intent. Observation
+      // failure must never turn an accepted funding into another send attempt.
+      log('Gift Card observer registration deferred');
+    }
   }
 
   Future<VizorPaymentLink> _createFundingLink({
@@ -1194,10 +1218,26 @@ class PaymentLinkService implements PaymentLinkOperations {
       accountUuid: session.accountUuid,
       claimTxids: '',
     );
+    PaymentLinkFiatSnapshot? claimFiatSnapshot;
+    if (_ref.read(swapFeatureEnabledProvider)) {
+      try {
+        final marketData = await _ref
+            .read(zecMarketDataSourceProvider)
+            .fetchMarketData()
+            .timeout(_paymentLinkClaimPriceTimeout);
+        claimFiatSnapshot = PaymentLinkFiatSnapshot.capture(
+          amountZatoshi: session.link.amountZatoshi,
+          zecUsdUnitPrice: marketData?.usdPrice,
+        );
+      } catch (_) {
+        // Price lookup is best-effort; retain the card's enclosed fiat value.
+      }
+    }
     final startedRecord = await _receivedStore.markClaimStarted(
       address: session.link.address,
       destinationAccountUuid: session.destinationAccountUuid,
       priorTxids: priorEvidence.localClaimTxids,
+      fiatSnapshot: claimFiatSnapshot,
     );
     var submissionStarted = false;
     try {

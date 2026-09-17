@@ -46,7 +46,7 @@ class SwapState {
     required this.externalAsset,
     required this.reviewVisible,
     required this.intents,
-    this.pendingKeystoneSigningIntent,
+    this.pendingHardwareSigningIntent,
     this.quoteMode = SwapQuoteMode.exactInput,
     this.amountInputMode = SwapAmountInputMode.token,
     this.receiveAmountInputMode = SwapAmountInputMode.token,
@@ -84,7 +84,7 @@ class SwapState {
   final SwapAsset externalAsset;
   final bool reviewVisible;
   final List<SwapIntent> intents;
-  final SwapIntent? pendingKeystoneSigningIntent;
+  final SwapIntent? pendingHardwareSigningIntent;
   final SwapQuoteMode quoteMode;
   final SwapAmountInputMode amountInputMode;
   final SwapAmountInputMode receiveAmountInputMode;
@@ -298,7 +298,7 @@ class SwapState {
     SwapAsset? externalAsset,
     bool? reviewVisible,
     List<SwapIntent>? intents,
-    SwapIntent? pendingKeystoneSigningIntent,
+    SwapIntent? pendingHardwareSigningIntent,
     SwapQuoteMode? quoteMode,
     SwapAmountInputMode? amountInputMode,
     SwapAmountInputMode? receiveAmountInputMode,
@@ -334,7 +334,7 @@ class SwapState {
     bool clearStatusError = false,
     bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
-    bool clearPendingKeystoneSigningIntent = false,
+    bool clearPendingHardwareSigningIntent = false,
     bool clearUserExternalContactId = false,
   }) {
     return SwapState(
@@ -345,9 +345,9 @@ class SwapState {
       externalAsset: externalAsset ?? this.externalAsset,
       reviewVisible: reviewVisible ?? this.reviewVisible,
       intents: intents ?? this.intents,
-      pendingKeystoneSigningIntent: clearPendingKeystoneSigningIntent
+      pendingHardwareSigningIntent: clearPendingHardwareSigningIntent
           ? null
-          : pendingKeystoneSigningIntent ?? this.pendingKeystoneSigningIntent,
+          : pendingHardwareSigningIntent ?? this.pendingHardwareSigningIntent,
       quoteMode: quoteMode ?? this.quoteMode,
       amountInputMode: amountInputMode ?? this.amountInputMode,
       receiveAmountInputMode:

@@ -167,6 +167,7 @@ class PaymentLinkReceivedRecord {
       status == PaymentLinkReceivedStatus.submitting;
 
   PaymentLinkReceivedRecord copyWith({
+    Object? fiatSnapshot = _fieldNotProvided,
     PaymentLinkReceivedStatus? status,
     Object? claimLink = _fieldNotProvided,
     Object? destinationAccountUuid = _fieldNotProvided,
@@ -185,7 +186,9 @@ class PaymentLinkReceivedRecord {
       createdAt: createdAt,
       artworkId: artworkId,
       message: message,
-      fiatSnapshot: fiatSnapshot,
+      fiatSnapshot: identical(fiatSnapshot, _fieldNotProvided)
+          ? this.fiatSnapshot
+          : fiatSnapshot as PaymentLinkFiatSnapshot?,
       status: status ?? this.status,
       claimLink: identical(claimLink, _fieldNotProvided)
           ? this.claimLink
@@ -345,7 +348,7 @@ class PaymentLinkReceivedStore {
         createdAt: link.createdAt.toUtc(),
         artworkId: link.presentation?.artworkId,
         message: link.presentation?.message,
-        fiatSnapshot: link.presentation?.fiatSnapshot,
+        fiatSnapshot: existing?.fiatSnapshot ?? link.presentation?.fiatSnapshot,
         status: existing?.status ?? PaymentLinkReceivedStatus.readyToClaim,
         claimLink: link,
         destinationAccountUuid: existing?.destinationAccountUuid,
@@ -438,6 +441,7 @@ class PaymentLinkReceivedStore {
     required String destinationAccountUuid,
     DateTime? updatedAt,
     List<String> priorTxids = const [],
+    PaymentLinkFiatSnapshot? fiatSnapshot,
   }) {
     return _runExclusive(() async {
       final normalizedAccountUuid = destinationAccountUuid.trim();
@@ -459,6 +463,8 @@ class PaymentLinkReceivedStore {
       }
       final submissionTime = (updatedAt ?? DateTime.now()).toUtc();
       final updated = existing.copyWith(
+        fiatSnapshot:
+            fiatSnapshot ?? existing.claimLink?.presentation?.fiatSnapshot,
         status: PaymentLinkReceivedStatus.submitting,
         availability: PaymentLinkAvailability.checking,
         archived: false,

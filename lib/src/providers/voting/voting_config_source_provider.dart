@@ -163,10 +163,16 @@ class VotingConfigSourceNotifier
   Future<VotingConfigSourceState> _load() async {
     final store = ref.read(votingConfigSourceStoreProvider);
     final stored = await store.readSourceUrl();
-    final result = _stateFromStorage(
-      stored,
-      await store.readSavedSourcesJson(),
-    );
+    final saved = await store.readSavedSourcesJson();
+    // Checked before the stored-source reset below: the harness pins the
+    // default source for this run only, and must not clear what the user
+    // actually saved.
+    if (kStageVotingHarnessConfigEnabled) {
+      return VotingConfigSourceState.defaultSource().copyWith(
+        savedSources: _decodeSavedSources(saved),
+      );
+    }
+    final result = _stateFromStorage(stored, saved);
     if (result.isDefault && stored != null && stored.trim().isNotEmpty) {
       await store.resetSourceUrl();
     }
