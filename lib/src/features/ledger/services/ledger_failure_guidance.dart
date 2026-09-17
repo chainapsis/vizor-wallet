@@ -10,9 +10,11 @@ class LedgerFailureGuidance {
     this.message, {
     this.showDeviceAppPrompt = false,
     this.bluetoothRecovery = false,
+    this.pairingRecovery = false,
   });
 
   final bool bluetoothRecovery;
+  final bool pairingRecovery;
   final String message;
   final bool showDeviceAppPrompt;
 }
@@ -42,12 +44,15 @@ LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
     ),
     LedgerMobileFailure.pairingInvalid => const LedgerFailureGuidance(
       kLedgerPairingInvalidMessage,
+      pairingRecovery: true,
     ),
     LedgerMobileFailure.pairingRejected => const LedgerFailureGuidance(
       'Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.',
+      pairingRecovery: true,
     ),
     LedgerMobileFailure.disconnected => const LedgerFailureGuidance(
       'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.',
+      pairingRecovery: true,
     ),
     LedgerMobileFailure.busy => const LedgerFailureGuidance(
       'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.',

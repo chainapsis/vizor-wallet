@@ -8,11 +8,13 @@ import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_scenarios.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'figma_compare_capture_support.dart';
+import 'ledger_pairing_capture_support.dart';
 
 // Supply an absolute output directory outside the repository.
 void main() {
   const output = String.fromEnvironment('LEDGER_CAPTURE_DIR');
   if (output.isEmpty) return;
+  runLedgerPairingCaptures(mobile: false, output: output);
   for (final scenario in figmaCompareScenarios.where(
     (s) => s.desktop && s.id.startsWith('ledger-recovery-'),
   )) {

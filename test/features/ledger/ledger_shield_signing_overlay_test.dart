@@ -93,13 +93,21 @@ void main() {
       await _pumpUntil(
         tester,
         () => find
-            .text(accessRecovery ? 'Reconnect' : 'Try again')
+            .text(
+              ledgerFailureGuidance(error)?.pairingRecovery == true
+                  ? 'Find my Ledger'
+                  : accessRecovery
+                  ? 'Reconnect'
+                  : 'Try again',
+            )
             .evaluate()
             .isNotEmpty,
       );
       expect(
         find.text(
-          accessRecovery
+          ledgerFailureGuidance(error)?.pairingRecovery == true
+              ? 'Couldn’t connect to your Ledger'
+              : accessRecovery
               ? 'Ready to reconnect'
               : ledgerFailureGuidance(error)?.message ??
                     'Ledger shielding could not be completed.',

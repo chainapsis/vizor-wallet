@@ -1,3 +1,4 @@
+import 'ledger_pairing_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
@@ -103,6 +104,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-recovery-permission',
     description: 'Ledger recovery: permission',
     builder: buildLedgerPermissionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-repairing',
+    description: 'Ledger verified re-pairing',
+    builder: buildLedgerRePairingCapture,
     desktop: true,
     mobile: true,
   ),

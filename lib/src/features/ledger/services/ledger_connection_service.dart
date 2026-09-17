@@ -33,6 +33,23 @@ class LedgerConnectionService {
   bool _running = false;
   bool _requiresReconnect = false;
 
+  /// Share exclusion with signing while re-establishing a device identity.
+  Future<T> recover<T>(Future<T> Function() action) async {
+    if (_running) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.busy,
+        'Another Ledger operation is still active.',
+      );
+    }
+    _running = true;
+    _requiresReconnect = true;
+    try {
+      return await action();
+    } finally {
+      _running = false;
+    }
+  }
+
   Future<T> run<T>({
     required String accountUuid,
     required Future<T> Function() usb,

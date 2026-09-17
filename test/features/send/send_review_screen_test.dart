@@ -1236,6 +1236,12 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
+        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+          expect(find.text('Couldn’t connect to your Ledger'), findsOneWidget);
+          expect(find.text('Find my Ledger'), findsOneWidget);
+          expect(attempts, 1);
+          return;
+        }
         expect(
           find.text(
             accessRecovery

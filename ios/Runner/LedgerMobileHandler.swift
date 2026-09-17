@@ -107,6 +107,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     switch call.method {
     case "bluetoothAccessStatus":
       result(bluetoothAccessStatus())
+    case "openBluetoothPairingSettings":
+      #if os(macOS)
+        result(NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app")))
+      #else
+        // iOS has no public URL for the Bluetooth pairing list.
+        result(false)
+      #endif
     case "openBluetoothSettings":
       #if os(macOS)
         let url = URL(fileURLWithPath: "/System/Applications/System Settings.app")

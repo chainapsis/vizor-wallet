@@ -97,3 +97,8 @@ Future<bool> prepareLedgerBluetoothDiscovery(
   }
   return service.requestPermissions();
 }
+
+/// Pairing settings are separate from the app's permission settings.
+abstract interface class LedgerBluetoothPairingSettings {
+  Future<bool> openBluetoothPairingSettings();
+}

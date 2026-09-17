@@ -123,7 +123,8 @@ class MethodChannelLedgerMobileBleService
     implements
         LedgerMobileBleService,
         LedgerProgressBleService,
-        LedgerBluetoothAccess {
+        LedgerBluetoothAccess,
+        LedgerBluetoothPairingSettings {
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
@@ -206,6 +207,11 @@ class MethodChannelLedgerMobileBleService
   @override
   Future<bool> openBluetoothSettings() async =>
       await _methods.invokeMethod<bool>('openBluetoothSettings') ?? false;
+
+  @override
+  Future<bool> openBluetoothPairingSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothPairingSettings') ??
+      false;
 
   @override
   Future<bool> requestPermissions() async {

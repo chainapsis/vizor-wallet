@@ -57,6 +57,16 @@ class LedgerMobileHandlerTest {
     private val saved = DiscoveryDevice("saved-id", "Ledger", LedgerDevice.NanoX, ConnectivityType.Bluetooth(-50))
     private val connected = mock(ConnectedDevice::class.java)
 
+    @Test fun pairingSettingsOpensBluetoothListInsteadOfAppPermissions() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        assertEquals(true, call("openBluetoothPairingSettings").value)
+        assertEquals(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
+        verifyNoInteractions(dmk)
+    }
+
     @Test fun accessStatusDoesNotPromptOrStartDiscovery() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         handler.close()

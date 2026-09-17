@@ -37,6 +37,7 @@ class LedgerSigningFailurePresentation {
     this.isError = true,
     this.showConnectionPicker = true,
     this.bluetoothRecovery = false,
+    this.pairingRecovery = false,
   });
 
   final String title;
@@ -47,6 +48,7 @@ class LedgerSigningFailurePresentation {
   final bool isError;
   final bool showConnectionPicker;
   final bool bluetoothRecovery;
+  final bool pairingRecovery;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -99,11 +101,13 @@ class LedgerSigningModal extends ConsumerWidget {
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
     if (failed &&
-        failure!.bluetoothRecovery &&
+        (failure!.bluetoothRecovery ||
+            (failure.pairingRecovery && account != null)) &&
         ref.watch(ledgerMobileBleServiceProvider) is LedgerBluetoothAccess) {
       return LedgerAccessRecoveryModal(
         key: ValueKey(accountUuid),
         account: account,
+        pairingRecovery: failure.pairingRecovery,
         onRetry: onFailureAction,
         onClose: onCancel,
       );

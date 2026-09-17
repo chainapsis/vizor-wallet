@@ -42,6 +42,7 @@ Widget _signing(
           message: guidance.message,
           showDeviceAppPrompt: guidance.showDeviceAppPrompt,
           bluetoothRecovery: guidance.bluetoothRecovery,
+          pairingRecovery: guidance.pairingRecovery,
           actionLabel: 'Try again',
         ),
       ),
@@ -135,12 +136,14 @@ Widget buildLedgerPermissionRestrictedCapture(BuildContext context) => _signing(
 );
 
 class _PermissionCaptureBle extends _CaptureBle
-    implements LedgerBluetoothAccess {
+    implements LedgerBluetoothAccess, LedgerBluetoothPairingSettings {
   _PermissionCaptureBle(
     super.failure,
     this.permission, {
     this.locationPermission = false,
   });
+  @override
+  Future<bool> openBluetoothPairingSettings() async => true;
   final bool locationPermission;
   final LedgerBluetoothPermission permission;
   @override

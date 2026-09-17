@@ -270,6 +270,10 @@ class _PaymentLinkLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingRecovery:
+                  !_checkpointed &&
+                  !_terminal &&
+                  (_deviceGuidance?.pairingRecovery ?? false),
               bluetoothRecovery:
                   !_checkpointed &&
                   !_terminal &&

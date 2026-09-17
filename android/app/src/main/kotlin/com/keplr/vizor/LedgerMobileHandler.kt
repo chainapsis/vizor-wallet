@@ -79,6 +79,12 @@ class LedgerMobileHandler(
         }
         when (call.method) {
             "bluetoothAccessStatus" -> result.success(bluetoothAccessStatus())
+            "openBluetoothPairingSettings" -> {
+                result.success(runCatching {
+                    activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                    true
+                }.getOrDefault(false))
+            }
             "openBluetoothSettings" -> {
                 val opened = runCatching {
                     activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
