@@ -506,7 +506,7 @@ fn public_rewind_cache_failure_leaves_sqlite_unchanged() {
 
 #[test]
 fn scan_enhancement_restores_shared_send_after_account_reimport() {
-    use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+    use zcash_client_backend::proto::compact_formats::CompactBlock;
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db");
@@ -569,10 +569,8 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
 
     let blocks = super::block_source::MemoryBlockSource::new(vec![CompactBlock {
         height: 2_000_010,
-        vtx: vec![CompactTx {
-            txid: payment.txid().as_ref().to_vec(),
-            ..Default::default()
-        }],
+        // Transparent-only payments are absent from shielded compact data.
+        vtx: vec![],
         ..Default::default()
     }]);
     with_wallet_db_write_lock("test.scan_enhancement", || {

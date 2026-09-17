@@ -3450,6 +3450,20 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else {
+                    // A previous attempt may have scanned its final batch before
+                    // cancellation or an enhancement failure. Drain its durable
+                    // requests even when no further blocks need scanning.
+                    if !db
+                        .transaction_data_requests()
+                        .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
+                        .is_empty()
+                    {
+                        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
+                            .await?;
+                    }
+                    if should_exit() {
+                        return Ok(());
+                    }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;
                 }

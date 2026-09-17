@@ -55,20 +55,22 @@ use super::{block_source::MemoryBlockSource, lwd, SyncError, WalletDatabase};
 ///
 /// Caller holds the wallet write lock. Queue before the scan so the existing
 /// durable enhancement queue survives cancellation, errors, and process exit.
-/// No import-time or startup sweep: only txids in this downloaded scan batch.
+/// No import-time or startup sweep: only transactions in this downloaded batch.
+/// Heights include transparent-only transactions omitted from compact blocks;
+/// hashes also cover transactions whose mined height was cleared by a rewind.
 pub(super) fn queue_stored_transactions(
     db_path: &str,
     blocks: &MemoryBlockSource,
 ) -> Result<(), SyncError> {
+    let Some(heights) = blocks.height_range() else {
+        return Ok(());
+    };
     let hashes: Array = Rc::new(
         blocks
             .transaction_hashes()
             .map(|hash| Value::Blob(hash.to_vec()))
             .collect(),
     );
-    if hashes.is_empty() {
-        return Ok(());
-    }
     let conn =
         open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).map_err(SyncError::db)?;
     // query_type=1 is the SDK's Enhancement request. Status requests (0) and
@@ -76,9 +78,10 @@ pub(super) fn queue_stored_transactions(
     let count = conn.execute(
         "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
          SELECT txid, 1, NULL FROM transactions
-         WHERE raw IS NOT NULL AND txid IN rarray(?1)
+         WHERE raw IS NOT NULL
+           AND (txid IN rarray(?1) OR mined_height BETWEEN ?2 AND ?3)
          ON CONFLICT (txid, query_type) DO NOTHING",
-        [hashes],
+        rusqlite::params![hashes, heights.start(), heights.end()],
     )
     .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
     if count > 0 {
@@ -571,17 +574,20 @@ mod tests {
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         rusqlite::vtab::array::load_module(&conn).unwrap();
         conn.execute_batch(
-            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, raw BLOB);
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, raw BLOB, mined_height INTEGER);
              CREATE TABLE tx_retrieval_queue (
                 txid BLOB, query_type INTEGER, dependent_transaction_id INTEGER,
                 PRIMARY KEY(txid, query_type));
-             INSERT INTO transactions VALUES (X'01', X'AB'), (X'02', NULL), (X'03', X'CD');
+             INSERT INTO transactions VALUES (X'01', X'AB', NULL), (X'02', NULL, 10),
+                (X'03', X'CD', 11), (X'05', X'EF', 10), (X'06', X'EF', 9);
              INSERT INTO tx_retrieval_queue VALUES (X'01', 0, 7), (X'03', 1, 9);",
         )
         .unwrap();
         // 01: stored raw, missing details; 02: newly scanned, no raw yet;
-        // 03: stored raw outside this batch; 04: unrelated chain transaction.
+        // 03/06: outside this batch; 04: unrelated chain transaction;
+        // 05: transparent-only transaction omitted from compact data.
         let blocks = MemoryBlockSource::new(vec![CompactBlock {
+            height: 10,
             vtx: [1, 2, 4]
                 .into_iter()
                 .map(|id| CompactTx {
@@ -605,7 +611,8 @@ mod tests {
             vec![
                 (vec![1], 0, Some(7)),
                 (vec![1], 1, None),
-                (vec![3], 1, Some(9))
+                (vec![3], 1, Some(9)),
+                (vec![5], 1, None)
             ]
         );
     }

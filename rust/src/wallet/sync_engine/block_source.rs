@@ -40,6 +40,10 @@ impl MemoryBlockSource {
         Self { blocks }
     }
 
+    pub(super) fn height_range(&self) -> Option<std::ops::RangeInclusive<u64>> {
+        Some(self.blocks.first()?.height..=self.blocks.last()?.height)
+    }
+
     pub(super) fn transaction_hashes(&self) -> impl Iterator<Item = &[u8]> {
         self.blocks
             .iter()
