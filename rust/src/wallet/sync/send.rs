@@ -773,6 +773,7 @@ pub(crate) fn propose_send(
     }
 
     with_wallet_db_write_lock("send.propose_send", || {
+        super::proposal_locks::require_active_session()?;
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         let proposed_tx_version =

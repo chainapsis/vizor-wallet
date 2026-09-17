@@ -29,7 +29,7 @@ mod migration;
 mod migration_wallet_ops;
 mod pczt;
 pub(crate) use pczt::preflight_orchard_spend_auth_signatures;
-mod proposal_locks;
+pub(crate) mod proposal_locks;
 mod send;
 mod transactions;
 
@@ -598,6 +598,7 @@ pub(super) fn consume_stored_proposal(
     send_flow_id: &str,
     not_found_message: &str,
 ) -> Result<StoredProposal, String> {
+    proposal_locks::require_active_session()?;
     let mut store = PROPOSAL_STORE
         .lock()
         .map_err(|e| format!("Lock error: {e}"))?;
@@ -621,6 +622,7 @@ pub(super) fn stored_proposal_lock(
     proposal_id: u64,
     send_flow_id: &str,
 ) -> Result<StoredProposalLock, String> {
+    proposal_locks::require_active_session()?;
     let store = PROPOSAL_STORE
         .lock()
         .map_err(|e| format!("Lock error: {e}"))?;
@@ -638,6 +640,7 @@ fn unlock_stored_proposal(
     proposal_id: u64,
     send_flow_id: &str,
     lock: StoredProposalLock,
+    allow_durable: bool,
 ) -> Result<(), String> {
     with_wallet_db_write_lock("sync.unlock_stored_proposal", || {
         let mut db = open_wallet_db(&lock.db_path, lock.network)?;
@@ -653,6 +656,9 @@ fn unlock_stored_proposal(
             Some(_) => return Err("Send flow mismatch before DB unlock".to_string()),
             None => return Ok(()),
         };
+        if !allow_durable && proposal_locks::is_durable(&current.db_path, current.owner)? {
+            return Ok(());
+        }
         zcash_client_backend::data_api::wallet::unlock_proposal_inputs(
             &mut db,
             &current.proposal,
@@ -669,6 +675,15 @@ pub(super) fn finish_stored_proposal(
     proposal_id: u64,
     send_flow_id: &str,
     release_inputs: bool,
+) -> Result<(), String> {
+    finish_stored_proposal_inner(proposal_id, send_flow_id, release_inputs, true)
+}
+
+fn finish_stored_proposal_inner(
+    proposal_id: u64,
+    send_flow_id: &str,
+    release_inputs: bool,
+    allow_durable: bool,
 ) -> Result<(), String> {
     let lock = {
         let mut store = PROPOSAL_STORE
@@ -690,7 +705,7 @@ pub(super) fn finish_stored_proposal(
 
     // The DB helper re-checks ownership while holding both locks. On DB
     // failure the owner record remains in place, allowing an idempotent retry.
-    unlock_stored_proposal(proposal_id, send_flow_id, lock)
+    unlock_stored_proposal(proposal_id, send_flow_id, lock, allow_durable)
 }
 
 pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) -> Result<(), String> {
@@ -712,7 +727,7 @@ pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) -> R
         }
     };
     if should_release {
-        finish_stored_proposal(proposal_id, send_flow_id, true)?;
+        finish_stored_proposal_inner(proposal_id, send_flow_id, true, false)?;
     }
     Ok(())
 }
@@ -765,6 +780,47 @@ pub(super) fn retain_stored_proposal_lock_until_expiry(
         store.locks.remove(&proposal_id);
         Ok(())
     })
+}
+
+/// Persist the point of no automatic cancellation before the first RPC. The
+/// write lock orders this transition against shutdown and ordinary discard.
+pub(super) fn mark_proposal_broadcast_started(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<(), String> {
+    with_wallet_db_write_lock("sync.begin_hardware_broadcast", || {
+        let lock = stored_proposal_lock(proposal_id, send_flow_id)?;
+        proposal_locks::mark_retain_until_expiry(&lock.db_path, lock.owner)
+    })
+}
+
+/// Best-effort normal shutdown. Never waits on device approval or network I/O.
+/// Startup recovery handles interruption of this cleanup, including SIGKILL.
+pub fn shutdown_signing_reservations() -> Result<(), String> {
+    proposal_locks::begin_shutdown();
+    // Drain creators that passed the gate before it closed. They register
+    // ownership while holding this same write lock, before we take the snapshot.
+    let proposals = with_wallet_db_write_lock("sync.shutdown_signing_snapshot", || {
+        let store = PROPOSAL_STORE.lock().map_err(|e| e.to_string())?;
+        Ok::<_, String>(
+            store
+                .locks
+                .iter()
+                .map(|(id, lock)| (*id, lock.send_flow_id.clone()))
+                .collect::<Vec<_>>(),
+        )
+    })?;
+    let mut errors = Vec::new();
+    for (id, flow) in proposals {
+        if let Err(error) = discard_stored_proposal(id, &flow) {
+            errors.push(error);
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 // ======================== Helpers ========================

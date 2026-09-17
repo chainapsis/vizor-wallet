@@ -9,6 +9,7 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
+import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -281,7 +282,17 @@ Future<void> runZcashWalletApp() async {
     app = await buildBootstrappedZcashWalletApp();
   }
   log('runtime: launching app');
-  runApp(app);
+  runApp(
+    SigningShutdownHost(
+      desktop: isDesktopLayoutPlatform,
+      coordinator: SigningShutdownCoordinator(
+        releaseReservations: rust_sync.shutdownSigningReservations,
+        onError: (error, _) =>
+            log('Shutdown reservation cleanup deferred: $error'),
+      ),
+      child: app,
+    ),
+  );
   if (isDesktopLayoutPlatform && Platform.isWindows) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(showDesktopWindow());

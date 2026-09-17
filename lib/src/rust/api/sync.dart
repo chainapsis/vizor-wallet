@@ -1129,6 +1129,11 @@ Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
   claimTxids: claimTxids,
 );
 
+/// End the foreground signing session during normal application shutdown.
+/// Durable signed or submitted transactions are retained for recovery.
+Future<void> shutdownSigningReservations() =>
+    RustLib.instance.api.crateApiSyncShutdownSigningReservations();
+
 /// Flat address-validation result for the Dart side.
 ///
 /// `wrong_network` marks the one case where `is_valid` is false but the input
