@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -18,9 +17,9 @@ import '../../support/payment_links_screen_support.dart';
 
 const _message = "It's a great day to shield your ZEC 🛡️";
 const _golden24 =
-    'EAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUmNQBAQg8AAAAAAAHvOEVHclkmQCsASXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jz32S0A';
+    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
 const _golden12 =
-    'AAcAAAAAAAAAAAAAAAAAAAAABSY1AEBCDwAAAAAAAe84RUdyWSZAKwBJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPRb2-IQ';
+    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
 String phrase(int bytes) =>
     '${List.filled(bytes == 32 ? 23 : 11, 'abandon').join(' ')} ${bytes == 32 ? 'art' : 'about'}';
 
@@ -46,25 +45,21 @@ const decorated = PaymentLinkPresentation(
   fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
 );
 String wire(VizorPaymentLink card) => card.toShareUri(compact: true).toString();
-String withBody(List<int> body) {
-  final checksum = sha256
-      .convert([...utf8.encode('VizorPaymentLink/v3\u0000'), ...body])
-      .bytes
-      .take(4);
-  return card()
-      .toShareUri(compact: true)
-      .replace(
-        fragment:
-            'v3=${base64UrlEncode([...body, ...checksum]).replaceAll('=', '')}',
-      )
-      .toString();
-}
-
-List<int> bodyOf(String link) {
-  final token = Uri.parse(link).fragment.substring(3);
-  final bytes = base64Url.decode(base64Url.normalize(token));
-  return bytes.sublist(0, bytes.length - 4);
-}
+String withJson(Object? payload) =>
+    withJsonBytes(utf8.encode(jsonEncode(payload)));
+String withJsonBytes(List<int> bytes) => card()
+    .toShareUri(compact: true)
+    .replace(fragment: 'v3=${base64UrlEncode(bytes).replaceAll('=', '')}')
+    .toString();
+List<Object?> fieldsOf(String link) =>
+    jsonDecode(
+          utf8.decode(
+            base64Url.decode(
+              base64Url.normalize(Uri.parse(link).fragment.substring(3)),
+            ),
+          ),
+        )
+        as List<Object?>;
 
 void main() {
   final api = _MnemonicVectors();
@@ -75,55 +70,52 @@ void main() {
     api.addressValidationGate = null;
   });
 
-  test(
-    'matches independently packed golden vectors and exact size targets',
-    () {
-      for (final entry in {16: _golden12, 32: _golden24}.entries) {
-        final source = card(entropyBytes: entry.key, presentation: decorated);
-        final uri = source.toShareUri(compact: true);
-        expect(uri.fragment, 'v3=${entry.value}');
-        expect(uri.toString().length, entry.key == 32 ? 185 : 164);
-        expect(uri.path, '/payment-links/open');
-        expect(uri.query, isEmpty);
-        final restored = VizorPaymentLink.parse(uri.toString());
-        expect(restored.mnemonic, source.mnemonic);
-        expect(restored.hasSameCanonicalPayload(source), isTrue);
-        expect(restored.knownAddress, isNull);
-        expect(restored.knownCreatedAt, isNull);
-        expect(restored.presentation!.message, _message);
-        expect(restored.toShareUri(compact: true), uri);
-      }
-      for (final n in [16, 32]) {
-        final extra = n == 32 ? 21 : 0;
-        expect(wire(card(entropyBytes: n)).length, 92 + extra);
-        expect(
-          wire(
-            card(
-              entropyBytes: n,
-              presentation: const PaymentLinkPresentation(
-                artworkId: 'knightMagic',
-                fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
-              ),
+  test('matches independently encoded JSON vectors and exact size targets', () {
+    for (final entry in {16: _golden12, 32: _golden24}.entries) {
+      final source = card(entropyBytes: entry.key, presentation: decorated);
+      final uri = source.toShareUri(compact: true);
+      expect(uri.fragment, 'v3=${entry.value}');
+      expect(uri.toString().length, entry.key == 32 ? 233 : 205);
+      expect(uri.path, '/payment-links/open');
+      expect(uri.query, isEmpty);
+      final restored = VizorPaymentLink.parse(uri.toString());
+      expect(restored.mnemonic, source.mnemonic);
+      expect(restored.hasSameCanonicalPayload(source), isTrue);
+      expect(restored.knownAddress, isNull);
+      expect(restored.knownCreatedAt, isNull);
+      expect(restored.presentation!.message, _message);
+      expect(restored.toShareUri(compact: true), uri);
+    }
+    for (final n in [16, 32]) {
+      final extra = n == 32 ? 28 : 0;
+      expect(wire(card(entropyBytes: n)).length, 114 + extra);
+      expect(
+        wire(
+          card(
+            entropyBytes: n,
+            presentation: const PaymentLinkPresentation(
+              artworkId: 'knightMagic',
+              fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
             ),
-          ).length,
-          104 + extra,
-        );
-        expect(
-          wire(
-            card(
-              entropyBytes: n,
-              presentation: PaymentLinkPresentation(
-                artworkId: 'knightMagic',
-                message: List.filled(128, '🎉').join(),
-                fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 11.1747),
-              ),
+          ),
+        ).length,
+        144 + extra,
+      );
+      expect(
+        wire(
+          card(
+            entropyBytes: n,
+            presentation: PaymentLinkPresentation(
+              artworkId: 'knightMagic',
+              message: List.filled(128, '🎉').join(),
+              fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 11.1747),
             ),
-          ).length,
-          789 + extra,
-        );
-      }
-    },
-  );
+          ),
+        ).length,
+        830 + extra,
+      );
+    }
+  });
 
   test(
     'v1, v2 and v3 have identical payload identity and stable v2 recovery',
@@ -226,7 +218,7 @@ void main() {
   );
 
   test('rejects v3 labels that exceed the v2 recovery limit', () async {
-    final oversized = card(label: '"' * 8000);
+    final oversized = card(label: '"' * 6000);
     final compact = wire(oversized);
     expect(compact.length, lessThan(VizorPaymentLink.maxEncodedLength));
     expect(() => oversized.toRecoveryUri(), throwsFormatException);
@@ -287,80 +279,114 @@ void main() {
     },
   );
 
-  test('rejects truncation, corruption and noncanonical Base64 before FFI', () {
-    final valid = wire(card(presentation: decorated));
-    final uri = Uri.parse(valid);
-    final token = uri.fragment.substring(3);
-    final bytes = base64Url.decode(base64Url.normalize(token));
-    for (var length = 0; length < bytes.length; length++) {
-      final truncated = base64UrlEncode(
-        bytes.take(length).toList(),
-      ).replaceAll('=', '');
-      expect(
-        () => VizorPaymentLink.parse(
-          uri.replace(fragment: 'v3=$truncated').toString(),
-        ),
-        throwsFormatException,
-      );
-    }
-    for (var i = 0; i < bytes.length; i++) {
-      final corrupt = bytes.toList();
-      corrupt[i] ^= 1;
-      expect(
-        () => VizorPaymentLink.parse(
-          uri
-              .replace(
-                fragment: 'v3=${base64UrlEncode(corrupt).replaceAll('=', '')}',
-              )
-              .toString(),
-        ),
-        throwsFormatException,
-      );
-    }
-    for (final malformed in [
-      '$token=',
-      '$token&x=secret',
-      '+$token',
-      '%41${token.substring(1)}',
-      '${token.substring(0, token.length - 1)}B',
+  test(
+    'rejects truncation, malformed JSON and noncanonical Base64 before FFI',
+    () {
+      final valid = wire(card(presentation: decorated));
+      final uri = Uri.parse(valid);
+      final token = uri.fragment.substring(3);
+      final bytes = base64Url.decode(base64Url.normalize(token));
+      for (var length = 0; length < bytes.length; length++) {
+        final truncated = base64UrlEncode(
+          bytes.take(length).toList(),
+        ).replaceAll('=', '');
+        expect(
+          () => VizorPaymentLink.parse(
+            uri.replace(fragment: 'v3=$truncated').toString(),
+          ),
+          throwsFormatException,
+        );
+      }
+      for (final malformed in [
+        <int>[0xff],
+        utf8.encode('not JSON'),
+        utf8.encode('{"network":"main"}'),
+        utf8.encode('${utf8.decode(bytes)} trailing'),
+      ]) {
+        expect(
+          () => VizorPaymentLink.parse(withJsonBytes(malformed)),
+          throwsFormatException,
+        );
+      }
+      for (final malformed in [
+        '$token=',
+        '$token&x=secret',
+        '+$token',
+        '%41${token.substring(1)}',
+        '${token.substring(0, token.length - 1)}B',
+      ]) {
+        expect(
+          () => VizorPaymentLink.parse(
+            '${uri.replace(fragment: '')}#v3=$malformed',
+          ),
+          throwsFormatException,
+        );
+      }
+      expect(api.decodingCalls, 0);
+    },
+  );
+
+  test('validates positional JSON fields before mnemonic conversion', () {
+    final plain = fieldsOf(wire(card()));
+    for (final invalid in <Object?>[
+      null,
+      {},
+      [],
+      plain.take(3).toList(),
+      [...plain, null, null, null, null, null],
+      for (final network in [null, 0, 'test']) [...plain]..[0] = network,
+      for (final entropy in [
+        null,
+        0,
+        '',
+        'not-base64!',
+        'AA==',
+        base64UrlEncode(List.filled(15, 0)).replaceAll('=', ''),
+        base64UrlEncode(List.filled(33, 0)).replaceAll('=', ''),
+      ])
+        [...plain]..[1] = entropy,
+      for (final height in [0, -1, 0x100000000, 1.5, '3483141'])
+        [...plain]..[2] = height,
+      for (final amount in [
+        0,
+        1000000,
+        '0',
+        '-1',
+        '01',
+        '1e6',
+        '2100000000000001',
+      ])
+        [...plain]..[3] = amount,
+      [...plain, 123],
+      [...plain, 'invalid!'],
+      [...plain, null, -1],
+      [...plain, null, '11.1747'],
+      [...plain, null, null, 123],
+      [...plain, null, null, 'a' * 129],
+      [...plain, null, null, null, {}],
     ]) {
       expect(
-        () => VizorPaymentLink.parse(
-          '${uri.replace(fragment: '')}#v3=$malformed',
-        ),
+        () => VizorPaymentLink.parse(withJson(invalid)),
         throwsFormatException,
       );
     }
     expect(api.decodingCalls, 0);
   });
 
-  test('rejects checksum-valid unsupported fields, bad lengths and text', () {
-    final plain = bodyOf(wire(card()));
-    for (final header in [3, 20, 32, 255]) {
-      final body = plain.toList()..[0] = header;
-      expect(
-        () => VizorPaymentLink.parse(withBody(body)),
-        throwsFormatException,
-      );
-    }
-    for (final body in [
-      plain.toList()..[1] = 16,
-      plain.toList()..fillRange(34, 38, 0),
-      plain.toList()..fillRange(38, 46, 0),
-      plain.toList()..fillRange(38, 46, 255),
-      [...plain, 1],
-      [...plain.toList()..[1] = 4, 1, 0, 255],
-      [...plain.toList()..[1] = 4, 0, 2],
-      [...plain.toList()..[1] = 1, 0],
-      [...plain.toList()..[1] = 1, 255, 4, ...utf8.encode('new ')],
-      [...plain.toList()..[1] = 2, ...List.filled(8, 255)],
-    ]) {
-      expect(
-        () => VizorPaymentLink.parse(withBody(body)),
-        throwsFormatException,
-      );
-    }
-    expect(api.decodingCalls, 0);
+  test('uses JSON null placeholders and accepts ordinary JSON whitespace', () {
+    final source = card(
+      presentation: const PaymentLinkPresentation(message: 'Hello'),
+    );
+    expect(fieldsOf(wire(source)).sublist(4), [null, null, 'Hello']);
+    final plain = card();
+    final fields = [...fieldsOf(wire(plain)), null, null, null, null];
+    final pretty = withJsonBytes(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(fields)),
+    );
+    expect(
+      VizorPaymentLink.parse(pretty).toShareUri(compact: true),
+      plain.toShareUri(compact: true),
+    );
   });
 
   test('bounds numbers, messages and labels on write', () {

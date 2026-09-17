@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
-import 'package:crypto/crypto.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';

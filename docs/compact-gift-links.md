@@ -9,65 +9,47 @@ supports existing 12, 15, 18, and 21 word phrases.
 The message remains inline. It is not placed in, or fetched from, a funding
 transaction memo. The amount and birthday retain their existing meanings.
 
-## Wire contract
+## Positional JSON schema
 
-Integers are unsigned and little endian. The payload is unpadded Base64url
-using only `A-Z`, `a-z`, `0-9`, `-`, and `_`. Padding, percent escapes,
-noncanonical trailing bits, unknown profiles/flags, trailing bytes, and malformed
-UTF-8 are rejected. The complete URL is bounded to 16 KiB before decoding.
+The fragment contains unpadded Base64url of a UTF-8 JSON array. The array uses
+these fixed positions, with at least the first four entries and at most eight:
 
-| Field | Bytes | Encoding |
-| --- | ---: | --- |
-| Header | 1 | Bits 0–1 network, bits 2–4 entropy code, bits 5–7 derivation profile |
-| Optional fields | 1 | Bit 0 artwork, bit 1 fiat, bit 2 message, bit 3 custom label; other bits zero |
-| Original entropy | 16–32 | Entropy codes 0–4 mean 16, 20, 24, 28, 32 bytes |
-| Birthday | 4 | Positive block height |
-| Recipient amount | 8 | Positive zatoshi, at most 2,100,000,000,000,000 |
-| Artwork, if present | 1 or variable | Permanent code below, or 255 followed by u8 UTF-8 length and ID |
-| Fiat, if present | 8 | Finite, nonnegative IEEE-754 binary64 USD snapshot |
-| Message, if present | 2 + length | u16 UTF-8 length, at most 512 bytes and 128 grapheme clusters |
-| Label, if present | 2 + length | u16 UTF-8 length; absent means `Payment link` |
-| Corruption checksum | 4 | First four bytes of SHA-256 over domain followed by all preceding bytes |
+| Index | Value | JSON type |
+| --- | --- | --- |
+| 0 | Network, `main` or gated `regtest` | String |
+| 1 | Original BIP-39 entropy, unpadded Base64url | String |
+| 2 | Positive birthday height, at most 4,294,967,295 | Integer |
+| 3 | Positive zatoshi, at most 2,100,000,000,000,000 | Decimal string |
+| 4 | Artwork ID, such as `knightMagic` | String or null |
+| 5 | Finite, nonnegative USD snapshot | Number or null |
+| 6 | Personal message | String or null |
+| 7 | Custom label; null or absent means `Payment link` | String or null |
 
-The checksum domain is the UTF-8 bytes of `VizorPaymentLink/v3` followed by
-one NUL byte. It detects accidental corruption; it does not authenticate the
-sender or prevent deliberate payload changes. Actual funding remains verified
-by the claim flow.
+Omit trailing null entries when writing. Keep null placeholders when a later
+optional field is present. An empty custom label is allowed. Amounts use decimal
+strings without a sign, exponent, or leading zeroes. The version is already in
+`#v3=` and is not repeated in the array.
 
-Network 0 is mainnet. Network 2 is regtest and requires the existing
-`VIZOR_PAYMENT_LINK_REGTEST_ENABLED` build flag. Codes 1 and 3 are reserved.
-Profile 0 reconstructs the same English mnemonic, uses the empty BIP-39
-passphrase, and derives ZIP32 account zero through the existing gift funding
-and import paths. Other profiles are rejected. Entropy is not a derived seed.
-Only the canonical English mnemonic is compactly shareable. A legacy phrase
-with alternate whitespace keeps its legacy link rather than changing the
-mnemonic string used by an existing claim-cache directory.
-Synchronous FFI performs only bounded mnemonic conversion; key derivation and
-address validation remain asynchronous and perform no network access.
+The complete URL is bounded to 16 KiB before decoding. Both Base64url strings
+use only `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding or noncanonical trailing
+bits. JSON whitespace and normal JSON string escaping are accepted. Wrong
+field types, missing required fields, extra fields, and out-of-range values are
+rejected using the existing presentation and recovery limits.
 
-Optional strings use the existing trimmed presentation semantics. Empty
-messages are omitted. A custom label may be empty, but must not repeat the
-implicit default. Known artwork must use its numeric code; escaped artwork
-must be a valid nonempty ASCII identifier of at most 64 characters. Unknown
-numeric codes are rejected. Unknown escaped IDs are retained and rendered
-with the existing local artwork fallback, without fetching an asset.
+Strings keep the existing trimmed semantics. Artwork IDs are ASCII identifiers
+of at most 64 characters; unknown IDs use the local artwork fallback. Messages
+remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
 
-| Code | Artwork ID |
-| ---: | --- |
-| 1 | knightMagic |
-| 2 | knight |
-| 3 | chestLava |
-| 4 | chestCave |
-| 5 | dragon |
-| 6 | gandalf |
-| 7 | crystal |
-| 8 | diamond |
-| 9 | ruby |
-| 10 | coin |
-| 11 | gift |
+Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
+mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts still
+use 32 bytes, or 24 words. A legacy phrase with alternate whitespace keeps its
+legacy link rather than changing its claim-cache identity. Synchronous FFI only
+converts mnemonic and entropy; address validation remains asynchronous and local.
 
-These assignments are permanent and independent of picker order. Never reuse
-a code for different artwork.
+This uses standard JSON serialization, with no binary header, bit flags, length
+prefixes, artwork-code registry, or custom checksum. JSON parsing validates the
+structure, and the claim flow verifies actual funding. This replaces the
+unreleased binary v3 prototype; v1/v2 compatibility is preserved.
 
 ## Compatibility and recovery
 
@@ -76,8 +58,8 @@ continues writing the established v2 JSON format. `toUri()` remains a v2 alias
 for existing callers. Sender addresses, creation times, status, funding
 transactions, and claim evidence stay in their existing secure records.
 Incoming v3 links persist through that same v2 representation. Decoding rejects
-links whose v2 recovery URI exceeds 16 KiB, including JSON escaping and Base64
-expansion of custom labels.
+links whose v2 recovery URI exceeds 16 KiB, including the expanded mnemonic,
+JSON field names, string escaping, and Base64 encoding.
 
 `preparePaymentLinkShareUri()` verifies a locally known address against the
 mnemonic before dropping it from compact sharing. A failure leaves the record
@@ -115,7 +97,7 @@ or change production release configuration.
 
 Enable local generation with `--dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`.
 Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart --dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`
-to include the desktop QR navigation regression tests.
+to include the desktop copy and QR navigation regression tests.
 The existing regtest lane accepts the corresponding environment variable:
 
 ```sh
@@ -129,9 +111,9 @@ must not be pointed at a personal wallet. Bridge regeneration uses
 `scripts/generate-rust-bridge.sh` from the repository root, which invokes FRB
 with the repository's existing expanded-Rust compatibility wrapper.
 
-Reader tests cover v1/v2 equivalence, persistence representation, corruption,
-truncation, unsupported fields, numeric bounds, unknown artwork, custom labels,
-Unicode, and exact sizes. Native tests additionally verify real BIP-39
+Reader tests cover v1/v2 equivalence, persistence representation, JSON types and
+positions, truncation, numeric bounds, unknown artwork, custom labels, Unicode,
+and exact sizes. Native tests additionally verify real BIP-39
 conversion and the retained funding address. The round-trip lane checks a real
 funded gift through copy, import, claim, and confirmation. Hardware devices,
 iOS/Android native handoff, and deployed browser behavior still require their
@@ -144,26 +126,33 @@ words followed by `art`), mainnet, height 3,483,141, amount 1,000,000 zatoshi,
 artwork `knightMagic`, USD 11.1747, and the exact message
 `It's a great day to shield your ZEC 🛡️`. Do not fund this published secret.
 
-```text
-https://link.vizor.cash/payment-links/open#v3=EAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUmNQBAQg8AAAAAAAHvOEVHclkmQCsASXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jz32S0A
+Its decoded JSON is:
+
+```json
+["main","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.1747,"It's a great day to shield your ZEC 🛡️"]
 ```
 
-It is 185 characters: 46 for the URL prefix and 139 for 104 binary bytes.
-The message occupies 43 UTF-8 bytes plus its two-byte length.
+The full link is:
+
+```text
+https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0
+```
+
+It is 233 characters: 46 for the URL prefix and 187 for the Base64url encoding
+of 140 JSON bytes. The message itself occupies 43 UTF-8 bytes.
 
 | Contents, default label | 24 words | 12 words (decoder support only) |
 | --- | ---: | ---: |
-| Plain | 113 | 92 |
-| Artwork and fiat | 125 | 104 |
-| Artwork, fiat, example message | 185 | 164 |
-| Artwork, fiat, 512-byte message | 810 | 789 |
+| Plain | 142 | 114 |
+| Artwork and fiat | 172 | 144 |
+| Artwork, fiat, example message | 233 | 205 |
+| Artwork, fiat, 512-byte message | 858 | 830 |
 
 The original v1 example in planning measured 914 characters. Its bearer secret
-is not included in source or fixtures. The earlier illustrative encoding was
-not a released v3 contract; the checksum domain and artwork table above define
-this implementation.
+is not included in source or fixtures. Positional JSON retains a 74.5% reduction
+for the decorated example, while using standard JSON tooling.
 
-Further size reductions are deferred: 12-word generation saves about 21–22
-characters; `/gift` saves 14; placing the example message on-chain saves 60 but
+Further size reductions are deferred: 12-word generation saves about 28
+characters; `/gift` saves 14; placing the example message on-chain saves about 61 but
 adds memo retrieval and its privacy/availability tradeoffs; compression has
 variable savings and adds parser complexity.
