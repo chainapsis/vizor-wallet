@@ -84,6 +84,7 @@ Widget _list({bool mobile = false, bool checking = false}) {
             address: address,
             inline: true,
             dateText: 'September 14',
+            hideStableLabel: true,
           ),
         )
       : PaymentLinkCardListRow(

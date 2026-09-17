@@ -44,7 +44,7 @@ void main() {
   );
 
   testWidgets(
-    'created cards group by pending, unused, and used without replacing row status',
+    'created cards group by usage without repeating stable row status',
     (tester) async {
       PaymentLinkRecoveryRecord recovery(
         VizorPaymentLink link,
@@ -91,11 +91,19 @@ void main() {
         lessThan(tester.getTopLeft(usedHeading).dy),
       );
       expect(find.text('Unverified'), findsOneWidget);
-      expect(find.text('Use detected'), findsOneWidget);
-      expect(find.text('Unused'), findsNWidgets(2));
-      expect(find.text('Used'), findsNWidgets(2));
+      expect(find.text('Use detected'), findsNothing);
+      expect(find.text('Unused'), findsOneWidget);
+      expect(find.text('Used'), findsOneWidget);
       expect(
-        tester.getTopLeft(find.text('Use detected')).dy,
+        tester
+            .getTopLeft(
+              find.byKey(
+                ValueKey(
+                  'payment_link_mobile_recovery_${secondIncomingLink.address}',
+                ),
+              ),
+            )
+            .dy,
         greaterThan(tester.getTopLeft(usedHeading).dy),
       );
     },

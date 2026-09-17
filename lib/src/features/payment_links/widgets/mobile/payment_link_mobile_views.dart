@@ -41,6 +41,10 @@ const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
 const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
+const _cardsFloatingActionsClearance =
+    (_buttonHeight * 2) + AppSpacing.s + _bottomInset + AppSpacing.lg;
+const _cardsFloatingActionsFadeHeight =
+    _cardsFloatingActionsClearance + AppSpacing.lg;
 const _readyStatusTop = 474.0;
 // Tallest measured status block: two lines of body text plus the wait pill.
 const _readyStatusAllowance = 160.0;
@@ -409,45 +413,94 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.base),
             Expanded(
-              child: hasCards
-                  ? activeTab == PaymentLinkCardsTab.created
-                        ? _AnimatedPaymentLinkCardsList(sections: sections)
-                        : _staticPaymentLinkCardsList(sections)
-                  : Center(
-                      child: Text(
-                        emptyLabel ?? kPaymentLinkNoReceivedCardsText,
-                        key: const ValueKey(
-                          'payment_links_mobile_cards_empty_label',
-                        ),
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: context.colors.text.secondary,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: hasCards
+                        ? activeTab == PaymentLinkCardsTab.created
+                              ? _AnimatedPaymentLinkCardsList(
+                                  sections: sections,
+                                )
+                              : _staticPaymentLinkCardsList(sections)
+                        : Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: _cardsFloatingActionsClearance,
+                            ),
+                            child: Center(
+                              child: Text(
+                                emptyLabel ?? kPaymentLinkNoReceivedCardsText,
+                                key: const ValueKey(
+                                  'payment_links_mobile_cards_empty_label',
+                                ),
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: context.colors.text.secondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: _cardsFloatingActionsFadeHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              context.colors.background.window.withValues(
+                                alpha: 0,
+                              ),
+                              context.colors.background.window,
+                            ],
+                          ),
                         ),
                       ),
                     ),
-            ),
-            const SizedBox(height: AppSpacing.base),
-            AppButton(
-              key: const ValueKey('payment_links_mobile_redeem_button'),
-              onPressed: onRedeem,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              child: Text(redeemLabel),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            AppButton(
-              key: const ValueKey('payment_links_mobile_create_button'),
-              onPressed: onCreate,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              leading: const AppIcon(
-                AppIcons.giftCardOutline,
-                size: AppIconSize.medium,
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _bottomInset,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AppButton(
+                          key: const ValueKey(
+                            'payment_links_mobile_redeem_button',
+                          ),
+                          onPressed: onRedeem,
+                          variant: AppButtonVariant.ghost,
+                          size: AppButtonSize.large,
+                          height: _buttonHeight,
+                          expand: true,
+                          child: Text(redeemLabel),
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        AppButton(
+                          key: const ValueKey(
+                            'payment_links_mobile_create_button',
+                          ),
+                          onPressed: onCreate,
+                          size: AppButtonSize.large,
+                          height: _buttonHeight,
+                          expand: true,
+                          leading: const AppIcon(
+                            AppIcons.giftCardOutline,
+                            size: AppIconSize.medium,
+                          ),
+                          child: Text(createLabel),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              child: Text(createLabel),
             ),
           ],
         ),
@@ -458,7 +511,9 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
   Widget _staticPaymentLinkCardsList(List<PaymentLinkCardsSection> sections) =>
       ListView(
         key: const ValueKey('payment_links_mobile_cards_list'),
-        padding: const EdgeInsets.only(bottom: AppSpacing.base),
+        padding: const EdgeInsets.only(
+          bottom: _cardsFloatingActionsClearance,
+        ),
         children: [
           for (final (index, section) in sections.indexed)
             if (section.cards.isNotEmpty || section.header != null) ...[
@@ -668,7 +723,7 @@ class _AnimatedPaymentLinkCardsListState
     key: const ValueKey('payment_links_mobile_cards_list'),
     child: AnimatedList(
       key: _listKey,
-      padding: const EdgeInsets.only(bottom: AppSpacing.base),
+      padding: const EdgeInsets.only(bottom: _cardsFloatingActionsClearance),
       initialItemCount: _entries.length,
       itemBuilder: (context, index, animation) =>
           _entryTransition(_entries[index], animation),

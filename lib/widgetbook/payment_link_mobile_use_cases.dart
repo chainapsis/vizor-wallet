@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
@@ -14,7 +15,10 @@ import '../src/core/widgets/comma_to_dot_input_formatter.dart';
 import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
+import '../src/features/payment_links/models/gift_card_usage.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
+import '../src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import '../src/features/payment_links/widgets/gift_card_usage_status.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.dart';
@@ -48,14 +52,53 @@ Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
 }
 
 Widget buildMobilePaymentLinkHomeCardsUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(child: _PaymentLinkCardsFixture());
+  return _withPaymentLinkCardsProviders(
+    const _MobilePaymentLinkFrame(
+      child: _PaymentLinkCardsFixture(),
+    ),
+  );
+}
+
+Widget _withPaymentLinkCardsProviders(Widget child) {
+  return ProviderScope(
+    overrides: [
+      giftCardTrackingStateProvider.overrideWith(
+        _PaymentLinkCardsTrackingState.new,
+      ),
+      giftCardUsageProvider.overrideWith((ref, address) async {
+        return switch (address) {
+          'confirming' || 'confirming-2' => const GiftCardUsage(
+            reason: GiftCardUsageReason.awaitingConfirmation,
+          ),
+          'unverified' || 'unverified-2' => const GiftCardUsage(),
+          'detected' || 'detected-2' => const GiftCardUsage(
+            status: GiftCardUsageStatus.spendDetected,
+          ),
+          'used' || 'used-2' => const GiftCardUsage(
+            status: GiftCardUsageStatus.used,
+            cleaned: true,
+          ),
+          _ => const GiftCardUsage(status: GiftCardUsageStatus.unused),
+        };
+      }),
+    ],
+    child: child,
+  );
+}
+
+class _PaymentLinkCardsTrackingState extends GiftCardTrackingStateNotifier {
+  @override
+  GiftCardTrackingState build() =>
+      const GiftCardTrackingState(failedAddresses: {'failed'});
 }
 
 Widget buildMobilePaymentLinkShareQrUseCase(BuildContext context) {
-  return _MobilePaymentLinkFrame(
-    child: MobileModalOverlay(
-      background: const _PaymentLinkCardsFixture(),
-      child: _shareSheet(PaymentLinkCardArtwork.ruby, onClose: _noop),
+  return _withPaymentLinkCardsProviders(
+    _MobilePaymentLinkFrame(
+      child: MobileModalOverlay(
+        background: const _PaymentLinkCardsFixture(),
+        child: _shareSheet(PaymentLinkCardArtwork.ruby, onClose: _noop),
+      ),
     ),
   );
 }
@@ -452,6 +495,26 @@ class _PaymentLinkCardsFixture extends StatefulWidget {
 class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
   var _activeTab = PaymentLinkCardsTab.created;
 
+  Widget _createdCard({
+    required String address,
+    required PaymentLinkCardArtwork artwork,
+    required String amount,
+    required String date,
+  }) => PaymentLinkCardListMobileRow(
+    thumbnail: _PaymentLinkThumbnail(artwork),
+    amountText: amount,
+    dateText: date,
+    showLinkActions: true,
+    onCopyLink: _noop,
+    onShowQr: () => _showQr(artwork),
+    metadata: GiftCardUsageStatusView(
+      address: address,
+      inline: true,
+      dateText: date,
+      hideStableLabel: true,
+    ),
+  );
+
   void _showQr(PaymentLinkCardArtwork artwork) {
     showAppMobileSheet<void>(
       context: context,
@@ -468,49 +531,89 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
       sections: _activeTab == PaymentLinkCardsTab.created
           ? [
               PaymentLinkCardsSection(
-                label: kPaymentLinkCreatingSectionLabel,
+                label: kPaymentLinkPendingSectionLabel,
                 cards: [
-                  PaymentLinkCardListMobileRow(
-                    thumbnail: _PaymentLinkThumbnail(
-                      PaymentLinkCardArtwork.chestLava,
-                    ),
-                    amountText: '0.25 ZEC',
-                    dateText: 'July 2',
-                    statusText: kPaymentLinkFundingIncompleteStatus,
+                  _createdCard(
+                    address: 'confirming',
+                    artwork: PaymentLinkCardArtwork.chestLava,
+                    amount: '0.25 ZEC',
+                    date: 'July 2',
                   ),
-                  PaymentLinkCardListMobileRow(
-                    thumbnail: _PaymentLinkThumbnail(
-                      PaymentLinkCardArtwork.dragon,
-                    ),
-                    amountText: '1.10 ZEC',
-                    dateText: 'July 18',
-                    statusText: kPaymentLinkPreparingStatus,
-                    showLoader: true,
+                  _createdCard(
+                    address: 'unverified',
+                    artwork: PaymentLinkCardArtwork.dragon,
+                    amount: '1.10 ZEC',
+                    date: 'July 18',
+                  ),
+                  _createdCard(
+                    address: 'confirming-2',
+                    artwork: PaymentLinkCardArtwork.gandalf,
+                    amount: '0.80 ZEC',
+                    date: 'July 16',
+                  ),
+                  _createdCard(
+                    address: 'unverified-2',
+                    artwork: PaymentLinkCardArtwork.coin,
+                    amount: '3.20 ZEC',
+                    date: 'July 12',
                   ),
                 ],
               ),
               PaymentLinkCardsSection(
-                label: kPaymentLinkPendingSectionLabel,
+                label: kPaymentLinkUnusedSectionLabel,
                 cards: [
-                  PaymentLinkCardListMobileRow(
-                    thumbnail: _PaymentLinkThumbnail(
-                      PaymentLinkCardArtwork.ruby,
-                    ),
-                    amountText: '4.45 ZEC',
-                    dateText: 'August 7',
-                    showLinkActions: true,
-                    onCopyLink: _noop,
-                    onShowQr: () => _showQr(PaymentLinkCardArtwork.ruby),
+                  _createdCard(
+                    address: 'unused',
+                    artwork: PaymentLinkCardArtwork.ruby,
+                    amount: '4.45 ZEC',
+                    date: 'August 7',
                   ),
-                  PaymentLinkCardListMobileRow(
-                    thumbnail: _PaymentLinkThumbnail(
-                      PaymentLinkCardArtwork.diamond,
-                    ),
-                    amountText: '2.50 ZEC',
-                    dateText: 'August 2',
-                    showLinkActions: true,
-                    onCopyLink: _noop,
-                    onShowQr: () => _showQr(PaymentLinkCardArtwork.diamond),
+                  _createdCard(
+                    address: 'failed',
+                    artwork: PaymentLinkCardArtwork.diamond,
+                    amount: '2.50 ZEC',
+                    date: 'August 2',
+                  ),
+                  _createdCard(
+                    address: 'unused-2',
+                    artwork: PaymentLinkCardArtwork.crystal,
+                    amount: '0.50 ZEC',
+                    date: 'July 30',
+                  ),
+                  _createdCard(
+                    address: 'unused-3',
+                    artwork: PaymentLinkCardArtwork.chestCave,
+                    amount: '6.00 ZEC',
+                    date: 'July 25',
+                  ),
+                ],
+              ),
+              PaymentLinkCardsSection(
+                label: kPaymentLinkUsedSectionLabel,
+                cards: [
+                  _createdCard(
+                    address: 'detected',
+                    artwork: PaymentLinkCardArtwork.knightMagic,
+                    amount: '0.75 ZEC',
+                    date: 'August 1',
+                  ),
+                  _createdCard(
+                    address: 'used',
+                    artwork: PaymentLinkCardArtwork.gift,
+                    amount: '1.00 ZEC',
+                    date: 'July 28',
+                  ),
+                  _createdCard(
+                    address: 'detected-2',
+                    artwork: PaymentLinkCardArtwork.knight,
+                    amount: '2.25 ZEC',
+                    date: 'July 24',
+                  ),
+                  _createdCard(
+                    address: 'used-2',
+                    artwork: PaymentLinkCardArtwork.chestLava,
+                    amount: '5.00 ZEC',
+                    date: 'July 20',
                   ),
                 ],
               ),

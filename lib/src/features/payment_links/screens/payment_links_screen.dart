@@ -2556,6 +2556,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               address: record.link.address,
               inline: true,
               dateText: _formatCardDate(record.link.createdAt),
+              hideStableLabel: true,
             )
           : null,
     );

@@ -88,6 +88,44 @@ void main() {
     );
   });
 
+  testWidgets('the list fills the page behind floating actions', (
+    tester,
+  ) async {
+    final rows = List.generate(
+      10,
+      (index) => PaymentLinkCardListMobileRow(
+        key: ValueKey('received-card-$index'),
+        thumbnail: const SizedBox(),
+        amountText: '${index + 1}.00 ZEC',
+        dateText: 'September ${index + 1}',
+        statusText: 'Received',
+      ),
+    );
+    await _pumpCards(
+      tester,
+      activeTab: PaymentLinkCardsTab.received,
+      sections: [
+        PaymentLinkCardsSection(label: 'Received', cards: rows),
+      ],
+    );
+
+    final list = find.byKey(
+      const ValueKey('payment_links_mobile_cards_list'),
+    );
+    final redeem = find.byKey(
+      const ValueKey('payment_links_mobile_redeem_button'),
+    );
+    expect(tester.getRect(list).bottom, greaterThan(tester.getRect(redeem).top));
+
+    await tester.drag(list, const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.text('10.00 ZEC'), findsOneWidget);
+    expect(
+      tester.getRect(find.text('10.00 ZEC')).bottom,
+      lessThan(tester.getRect(redeem).top),
+    );
+  });
+
   testWidgets('a funded unshared card exposes copy and QR actions', (
     tester,
   ) async {
