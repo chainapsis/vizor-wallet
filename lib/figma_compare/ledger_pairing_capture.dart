@@ -21,7 +21,7 @@ const _account = AccountInfo(
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
   zip32AccountIndex: 0,
-  ledgerDeviceId: 'old',
+  ledgerDeviceId: 'flex',
   ledgerDeviceModel: 'Flex',
 );
 
@@ -46,7 +46,7 @@ Widget buildLedgerRePairingCapture(BuildContext context) {
       ),
       ledgerBluetoothAccountConnectorProvider.overrideWithValue(
         (index, device) async => LedgerDeviceAccount(
-          ufvk: device.id == 'flex' ? 'expected' : 'different',
+          ufvk: device.id == 'other-account' ? 'different' : 'expected',
           seedFingerprint: const [],
           accountIndex: index,
           appVersion: '1',
@@ -113,6 +113,7 @@ class _Ble
     LedgerDevicesDiscovered([
       LedgerBleDevice(id: 'flex', name: 'Ledger Flex', model: 'Flex'),
       LedgerBleDevice(id: 'nano', name: 'Ledger Nano X', model: 'Nano X'),
+      LedgerBleDevice(id: 'other-account', name: 'Ledger Stax', model: 'Stax'),
     ]),
     LedgerDiscoveryEnded(),
   ]);

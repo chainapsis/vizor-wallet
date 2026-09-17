@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../providers/account_provider.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../ledger_capability.dart';
@@ -41,6 +42,7 @@ class LedgerPairingRecovery extends ConsumerStatefulWidget {
 class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
   _Stage _stage = _Stage.failed;
   bool _expanded = false;
+  bool _connectionUpdated = false;
   bool _accessRecovery = false;
   bool _invalidated = false;
   bool _settingsBusy = false;
@@ -217,7 +219,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     _notifyBusy();
     try {
       _check(generation);
-      await ref
+      final updated = await ref
           .read(ledgerPairingRecoveryServiceProvider)
           .verifyAndSave(
             accountUuid: widget.accountUuid,
@@ -229,7 +231,10 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             },
           );
       _check(generation);
-      setState(() => _stage = _Stage.ready);
+      setState(() {
+        _connectionUpdated = updated;
+        _stage = _Stage.ready;
+      });
       _notifyBusy();
     } catch (error) {
       _fail(generation, error);
@@ -279,6 +284,13 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
         onBusyChanged: widget.onBusyChanged,
       );
     }
+    final savedId = ref
+        .watch(accountProvider)
+        .value
+        ?.accounts
+        .where((account) => account.uuid == widget.accountUuid)
+        .firstOrNull
+        ?.ledgerDeviceId;
     final platform = ref.watch(ledgerTargetPlatformProvider);
     final settingsLink =
         platform != TargetPlatform.iOS &&
@@ -305,7 +317,9 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
         'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
       _Stage.saving => 'Your account matches. Saving the verified connection.',
       _Stage.ready =>
-        'Account verified. Continue when you’re ready to review the transaction on your Ledger.',
+        _connectionUpdated
+            ? 'This Ledger matches your account. Your saved connection has been updated.'
+            : 'Account verified. Continue when you’re ready to review the transaction on your Ledger.',
       _Stage.mismatch =>
         'Connect the Ledger that holds this account. Your saved connection hasn’t changed.',
     };
@@ -445,7 +459,8 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                 expand: true,
                 constrainContent: true,
                 variant: AppButtonVariant.ghost,
-                height: 56,
+                height: 64,
+                growWithContent: true,
                 contentPadding: EdgeInsets.zero,
                 onPressed: widget.enabled && !_invalidated
                     ? () => _select(device)
@@ -454,7 +469,27 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                   children: [
                     const AppIcon(AppIcons.ledger, size: 20),
                     const SizedBox(width: AppSpacing.sm),
-                    Expanded(child: Text(device.name)),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(device.name),
+                          if (ledgerDeviceDiffersFromSavedConnection(
+                            savedId,
+                            device.id,
+                          )) ...[
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              'Different from saved connection',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: context.colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                     const AppIcon(AppIcons.chevronForward, size: 16),
                   ],
                 ),

@@ -36,14 +36,17 @@ LedgerDeviceAccount exported([String key = 'expected', int index = 3]) =>
     );
 
 class FakeAccounts extends AccountNotifier {
+  FakeAccounts({this.initial = account, this.failSave = false});
+  final AccountInfo initial;
+  final bool failSave;
   int writes = 0;
   String? savedId;
   void changeActive(String uuid) => state = AsyncData(
-    AccountState(accounts: const [account], activeAccountUuid: uuid),
+    AccountState(accounts: [initial], activeAccountUuid: uuid),
   );
   @override
   AccountState build() =>
-      const AccountState(accounts: [account], activeAccountUuid: 'a');
+      AccountState(accounts: [initial], activeAccountUuid: 'a');
   @override
   Future<void> recordLedgerConnection({
     required String uuid,
@@ -52,8 +55,15 @@ class FakeAccounts extends AccountNotifier {
     String? deviceName,
     String? deviceModel,
   }) async {
+    if (failSave) throw StateError('Storage failed');
     writes++;
     savedId = deviceId;
+    state = AsyncData(
+      AccountState(
+        accounts: [initial.copyWith(ledgerDeviceId: deviceId)],
+        activeAccountUuid: 'a',
+      ),
+    );
   }
 }
 
@@ -476,5 +486,90 @@ void main() {
       expect(retries, 0);
       expect(tester.takeException(), isNull);
     });
+  }
+  for (final savedId in ['new', 'old', null, '']) {
+    for (final outcome in ['match', 'mismatch', 'save failure']) {
+      testWidgets(
+        'device hint $savedId / $outcome preserves verification boundary',
+        (tester) async {
+          final initial = AccountInfo(
+            uuid: 'a',
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+            zip32AccountIndex: 3,
+            ledgerDeviceId: savedId,
+            ledgerDeviceModel: 'Flex',
+          );
+          final ble = FakeBle();
+          final accounts = FakeAccounts(
+            initial: initial,
+            failSave: outcome == 'save failure',
+          );
+          var checks = 0;
+          final c = containerFor(
+            ble,
+            accounts,
+            export: () async {
+              checks++;
+              return exported(outcome == 'mismatch' ? 'other' : 'expected');
+            },
+          );
+          addTearDown(c.dispose);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: c,
+              child: MaterialApp(
+                home: AppTheme(
+                  data: AppThemeData.light,
+                  child: Center(
+                    child: LedgerAccessRecoveryModal(
+                      account: initial,
+                      pairingRecovery: true,
+                      onRetry: () {},
+                      onClose: () {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Find my Ledger'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Different from saved connection'),
+            savedId == 'old' ? findsOneWidget : findsNothing,
+          );
+          expect(checks, 0);
+          expect(ble.calls, isNot(contains('connect')));
+          await tester.tap(find.text('Ledger Flex'));
+          await tester.pumpAndSettle();
+          expect(
+            checks,
+            1,
+          ); // Even the saved ID must prove its account identity.
+          expect(accounts.writes, outcome == 'match' ? 1 : 0);
+          expect(
+            find.textContaining('saved connection has been updated'),
+            outcome == 'match' && savedId == 'old'
+                ? findsOneWidget
+                : findsNothing,
+          );
+          if (outcome == 'match') {
+            expect(accounts.savedId, 'new');
+            expect(find.text('Your Ledger is connected'), findsOneWidget);
+          } else {
+            expect(
+              c.read(accountProvider).value!.accounts.single.ledgerDeviceId,
+              savedId,
+            );
+            expect(find.text('Your Ledger is connected'), findsNothing);
+          }
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
   }
 }

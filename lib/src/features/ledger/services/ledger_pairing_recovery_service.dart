@@ -40,6 +40,10 @@ final ledgerPairingRecoverySessionProvider = Provider((ref) {
   return capture;
 });
 
+/// A discovery identifier is a connection hint, never proof of account identity.
+bool ledgerDeviceDiffersFromSavedConnection(String? savedId, String deviceId) =>
+    savedId != null && savedId.isNotEmpty && savedId != deviceId;
+
 class LedgerAccountMismatchException implements Exception {
   const LedgerAccountMismatchException();
 }
@@ -67,7 +71,9 @@ class LedgerPairingRecoveryService {
   LedgerPairingRecoveryService(this.ref);
   final Ref ref;
 
-  Future<void> verifyAndSave({
+  /// Returns whether a previously saved device ID was replaced, only after
+  /// verification and persistence both succeed.
+  Future<bool> verifyAndSave({
     required String accountUuid,
     required LedgerBleDevice device,
     required void Function() checkCurrent,
@@ -134,5 +140,9 @@ class LedgerPairingRecoveryService {
           );
     });
     check();
+    return ledgerDeviceDiffersFromSavedConnection(
+      account.ledgerDeviceId,
+      device.id,
+    );
   });
 }

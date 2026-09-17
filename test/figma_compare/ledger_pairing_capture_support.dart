@@ -11,6 +11,7 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
     'expanded',
     'devices',
     'ready',
+    'updated',
     'mismatch',
   ]) {
     for (final theme in [ThemeMode.light, ThemeMode.dark]) {
@@ -38,15 +39,22 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
           }
 
           if (state == 'expanded') await press('Did you reset pairing?');
-          if (['devices', 'ready', 'mismatch'].contains(state)) {
+          if (['devices', 'ready', 'updated', 'mismatch'].contains(state)) {
             await press('Find my Ledger');
           }
           if (state == 'ready') {
             await press('Ledger Flex');
             expect(find.text('Your Ledger is connected'), findsOneWidget);
           }
-          if (state == 'mismatch') {
+          if (state == 'updated') {
             await press('Ledger Nano X');
+            expect(
+              find.textContaining('saved connection has been updated'),
+              findsOneWidget,
+            );
+          }
+          if (state == 'mismatch') {
+            await press('Ledger Stax');
             expect(find.text('This Ledger doesn’t match'), findsOneWidget);
           }
         },
