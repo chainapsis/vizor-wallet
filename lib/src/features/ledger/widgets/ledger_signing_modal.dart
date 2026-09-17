@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-import 'ledger_bluetooth_recovery.dart';
+import 'ledger_access_recovery_modal.dart';
+import '../services/ledger_mobile_ble_service.dart';
+import '../services/ledger_bluetooth_access.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -96,6 +98,16 @@ class LedgerSigningModal extends ConsumerWidget {
     final account = _ledgerAccount(ref, accountUuid);
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
+    if (failed &&
+        failure!.bluetoothRecovery &&
+        ref.watch(ledgerMobileBleServiceProvider) is LedgerBluetoothAccess) {
+      return LedgerAccessRecoveryModal(
+        key: ValueKey(accountUuid),
+        account: account,
+        onRetry: onFailureAction,
+        onClose: onCancel,
+      );
+    }
     final error = failed && failure!.isError;
     final progress = ref.watch(ledgerSigningProgressProvider);
     final stage = switch (phase) {
@@ -257,10 +269,6 @@ class LedgerSigningModal extends ConsumerWidget {
               ],
             ),
           ),
-          if (failed && failure!.bluetoothRecovery) ...[
-            const SizedBox(height: AppSpacing.sm),
-            LedgerBluetoothRecovery(key: ValueKey(accountUuid)),
-          ],
           if (failed &&
               failure!.showConnectionPicker &&
               account != null &&

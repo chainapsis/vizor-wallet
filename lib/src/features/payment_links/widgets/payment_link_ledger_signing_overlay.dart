@@ -270,7 +270,10 @@ class _PaymentLinkLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
-              bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
+              bluetoothRecovery:
+                  !_checkpointed &&
+                  !_terminal &&
+                  (_deviceGuidance?.bluetoothRecovery ?? false),
               title: unavailable
                   ? 'Ledger app update required'
                   : 'Gift card funding needs attention',

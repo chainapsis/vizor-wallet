@@ -1197,6 +1197,21 @@ void main() {
           failure,
           'permission denied diagnostic',
         );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel(kLedgerMobileMethodChannel),
+          (call) async => call.method == 'bluetoothAccessStatus'
+              ? {'permission': 'granted'}
+              : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel(kLedgerMobileMethodChannel),
+            null,
+          ),
+        );
+        final accessRecovery = ledgerFailureGuidance(
+          original,
+        )!.bluetoothRecovery;
         var attempts = 0;
         await _setDesktopViewport(tester);
         await tester.pumpWidget(
@@ -1222,7 +1237,11 @@ void main() {
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
         expect(
-          find.text(ledgerFailureGuidance(original)!.message),
+          find.text(
+            accessRecovery
+                ? 'Ready to reconnect'
+                : ledgerFailureGuidance(original)!.message,
+          ),
           findsOneWidget,
         );
         expect(
@@ -1230,7 +1249,7 @@ void main() {
           findsNothing,
         );
         expect(find.text('Open the Zcash app'), findsNothing);
-        await tester.tap(find.text('Try again'));
+        await tester.tap(find.text(accessRecovery ? 'Reconnect' : 'Try again'));
         await _flushRealAsync(tester);
         expect(attempts, 2);
         expect(find.text('status-route'), findsOneWidget);

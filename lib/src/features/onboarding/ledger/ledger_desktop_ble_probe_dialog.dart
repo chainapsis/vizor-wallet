@@ -219,6 +219,56 @@ class _LedgerDesktopBleConnectDialogState
 
   @override
   Widget build(BuildContext context) {
+    final recovery =
+        _phase == _ProbePhase.failed &&
+        _bluetoothRecovery &&
+        widget.service is LedgerBluetoothAccess;
+
+    if (recovery) {
+      return Dialog(
+        key: const ValueKey('ledger_desktop_ble_connect_dialog'),
+        backgroundColor: Colors.transparent,
+        child: AppModalCard(
+          width: 328,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Ledger · Bluetooth',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ),
+                  AppButton(
+                    key: const ValueKey('ledger_desktop_ble_close'),
+                    onPressed: widget.onClose,
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.small,
+                    child: const AppIcon(
+                      AppIcons.cross,
+                      size: 16,
+                      semanticLabel: 'Close',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              LedgerBluetoothRecovery(
+                service: widget.service,
+                onRetry: () => unawaited(_startDiscovery()),
+                onClose: widget.onClose,
+                retryLabel: 'Find my Ledger',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Dialog(
       key: const ValueKey('ledger_desktop_ble_connect_dialog'),
       backgroundColor: Colors.transparent,
@@ -243,8 +293,6 @@ class _LedgerDesktopBleConnectDialogState
             ),
             const SizedBox(height: AppSpacing.sm),
             _buildBody(context),
-            if (_phase == _ProbePhase.failed && _bluetoothRecovery)
-              LedgerBluetoothRecovery(service: widget.service),
             const SizedBox(height: AppSpacing.sm),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

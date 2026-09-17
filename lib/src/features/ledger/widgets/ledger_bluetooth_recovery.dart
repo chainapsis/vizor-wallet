@@ -13,7 +13,20 @@ import '../services/ledger_mobile_ble_service.dart';
 /// Only refreshes access. Reconnecting/signing always requires the caller's
 /// explicit retry action, including after returning from system Settings.
 class LedgerBluetoothRecovery extends ConsumerStatefulWidget {
-  const LedgerBluetoothRecovery({this.service, super.key});
+  const LedgerBluetoothRecovery({
+    this.service,
+    this.onRetry,
+    this.onClose,
+    this.onBusyChanged,
+    this.retryLabel = 'Reconnect',
+    this.enabled = true,
+    super.key,
+  });
+  final bool enabled;
+  final VoidCallback? onRetry;
+  final VoidCallback? onClose;
+  final ValueChanged<bool>? onBusyChanged;
+  final String retryLabel;
   final LedgerMobileBleService? service;
 
   @override
@@ -26,6 +39,7 @@ class _LedgerBluetoothRecoveryState
     with WidgetsBindingObserver {
   LedgerBluetoothAccessStatus? _status;
   bool _busy = false;
+  bool _requestAttempted = false;
   String? _error;
   bool _refreshPending = false;
   bool _invalidated = false;
@@ -62,11 +76,13 @@ class _LedgerBluetoothRecoveryState
     final service = _service;
     if (service is! LedgerBluetoothAccess) return;
     setState(() => _busy = true);
+    widget.onBusyChanged?.call(true);
     try {
       _check ??= ref.read(ledgerDeviceRequestsProvider).capture();
       _check!();
       final access = service as LedgerBluetoothAccess;
       if (request) {
+        _requestAttempted = true;
         await service.requestPermissions();
         _check!();
         if (!mounted) return;
@@ -110,6 +126,7 @@ class _LedgerBluetoothRecoveryState
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+        widget.onBusyChanged?.call(false);
         if (_refreshPending) {
           _refreshPending = false;
           unawaited(_refresh());
@@ -122,45 +139,115 @@ class _LedgerBluetoothRecoveryState
   Widget build(BuildContext context) {
     if (_service is! LedgerBluetoothAccess) return const SizedBox.shrink();
     final status = _status;
+    final granted = status?.granted == true;
+    final radioOff = granted && status?.bluetoothEnabled == false;
+    final locationOff = granted && status?.locationEnabled == false;
+    final restricted =
+        status?.permission == LedgerBluetoothPermission.restricted;
+    final requestable =
+        status?.permission == LedgerBluetoothPermission.requestable &&
+        !_requestAttempted;
+    final ready = granted && !radioOff && !locationOff;
+    final title = status == null
+        ? 'Checking Bluetooth access'
+        : radioOff
+        ? 'Turn on Bluetooth'
+        : locationOff
+        ? 'Turn on location services'
+        : restricted
+        ? 'Access is restricted'
+        : ready
+        ? 'Ready to reconnect'
+        : requestable
+        ? (status.locationPermission
+              ? 'Allow location access'
+              : 'Allow Bluetooth access')
+        : (status.locationPermission
+              ? 'Allow location in Settings'
+              : 'Allow Bluetooth in Settings');
+    final message =
+        _error ??
+        (ready
+            ? 'Turn on your Ledger and unlock it to continue.'
+            : requestable
+            ? (status!.locationPermission
+                  ? 'This Android version needs location access to find your Ledger.'
+                  : 'Vizor needs Bluetooth access to connect to your Ledger.')
+            : (_requestAttempted &&
+                          status?.permission ==
+                              LedgerBluetoothPermission.requestable
+                      ? LedgerBluetoothAccessStatus(
+                          LedgerBluetoothPermission.settings,
+                          locationPermission: status!.locationPermission,
+                          macOS: status.macOS,
+                        ).message
+                      : status?.message) ??
+                  'Checking whether Vizor can connect to your Ledger.');
+    final label = _busy
+        ? 'Checking access'
+        : _error != null || status == null
+        ? 'Check again'
+        : restricted
+        ? 'Close'
+        : radioOff || locationOff
+        ? 'Check again'
+        : ready
+        ? widget.retryLabel
+        : requestable
+        ? 'Allow access'
+        : 'Open settings';
+    void action() {
+      if (_error != null || status == null || radioOff || locationOff) {
+        unawaited(_refresh());
+      } else if (restricted) {
+        widget.onClose?.call();
+      } else if (ready) {
+        widget.onRetry?.call();
+      } else {
+        unawaited(_refresh(request: requestable, settings: !requestable));
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_error != null || status != null) ...[
-          Text(
-            _error ?? status!.message,
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
+        Semantics(
+          liveRegion: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: AppTypography.headlineSmall.copyWith(
+                  color: context.colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                message,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.secondary,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
-        if (status?.permission == LedgerBluetoothPermission.requestable) ...[
-          AppButton(
-            onPressed: _busy || _invalidated
-                ? null
-                : () => unawaited(_refresh(request: true)),
-            variant: AppButtonVariant.secondary,
-            child: const Text('Allow permission'),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
-        if (status != null &&
-            !status.granted &&
-            status.permission != LedgerBluetoothPermission.restricted) ...[
-          AppButton(
-            onPressed: _busy || _invalidated
-                ? null
-                : () => unawaited(_refresh(settings: true)),
-            variant: AppButtonVariant.secondary,
-            child: const Text('Open settings'),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
+        ),
+        const SizedBox(height: AppSpacing.md),
         AppButton(
-          onPressed: _busy || _invalidated ? null : () => unawaited(_refresh()),
-          variant: AppButtonVariant.ghost,
-          child: Text(_busy ? 'Checking access' : 'Check access'),
+          onPressed:
+              !widget.enabled ||
+                  _busy ||
+                  _invalidated ||
+                  (ready && widget.onRetry == null) ||
+                  (restricted && widget.onClose == null)
+              ? null
+              : action,
+          expand: true,
+          constrainContent: true,
+          variant: AppButtonVariant.primary,
+          size: AppButtonSize.large,
+          child: Text(label),
         ),
       ],
     );

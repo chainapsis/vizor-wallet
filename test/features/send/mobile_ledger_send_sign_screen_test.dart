@@ -2,11 +2,11 @@
 library;
 
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
-import 'dart:typed_data';
 
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
@@ -93,6 +93,21 @@ void main() {
           ),
           _ => original,
         };
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel(kLedgerMobileMethodChannel),
+          (call) async => call.method == 'bluetoothAccessStatus'
+              ? {'permission': 'granted'}
+              : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel(kLedgerMobileMethodChannel),
+            null,
+          ),
+        );
+        final accessRecovery = ledgerFailureGuidance(
+          original,
+        )!.bluetoothRecovery;
         var attempts = 0;
         await tester.pumpWidget(
           _app(
@@ -107,7 +122,11 @@ void main() {
         await tester.tap(find.text('Open signing'));
         await tester.pumpAndSettle();
         expect(
-          find.text(ledgerFailureGuidance(original)!.message),
+          find.text(
+            accessRecovery
+                ? 'Ready to reconnect'
+                : ledgerFailureGuidance(original)!.message,
+          ),
           findsOneWidget,
         );
         expect(
@@ -115,11 +134,15 @@ void main() {
           findsNothing,
         );
         expect(find.text('Open the Zcash app'), findsNothing);
-        await tester.tap(find.text('Try again'));
+        await tester.tap(find.text(accessRecovery ? 'Reconnect' : 'Try again'));
         await tester.pumpAndSettle();
         expect(attempts, 2);
         expect(
-          find.text(ledgerFailureGuidance(original)!.message),
+          find.text(
+            accessRecovery
+                ? 'Ready to reconnect'
+                : ledgerFailureGuidance(original)!.message,
+          ),
           findsNothing,
         );
       });
