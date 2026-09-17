@@ -57,3 +57,35 @@ Do not treat the signing-phase UI improvement as a fix for this device failure.
 - [Separate action and review memory budgets](https://github.com/LedgerHQ/app-zcash/commit/12542bb41bcc307057b4613b60ed70cc6b76bf7f)
 
 Related UI analysis: [Signing phase guidance](signing-phase-guidance.md).
+
+## App-query recovery (2026-09-16)
+
+The supplied Android trace stopped at `currentApp` / `GetAppAndVersionCommand`,
+before the signing APDU plan. It does not establish a device reboot or a Zcash
+verification-memory failure. Stax working is useful comparison evidence, but
+installed OS/app versions and connection-start logs are still needed.
+
+App-name/version queries now have a 10-second deadline on Android and Apple.
+Opening-app approval and transaction review do not use this short deadline.
+Timeout/cancellation invalidates the old request and retires its native session;
+new requests remain excluded until teardown completes. Android also quarantines
+failed disconnects across Activity recreation. Apple uses the pinned BLE 1.0.1
+source in `third_party/ledger_ble_transport`, patched to abort the physical link
+and resolve a pending exchange on disconnect. A late response cannot publish a
+cancelled result. Dart clears cancelled connection metadata and resets native
+state before reconnecting. SDK raw APDU logging is disabled.
+
+Physical-device verification still required:
+
+1. With Zcash open, repeat the Android flow.
+   A stalled app query should leave preparation after about 10 seconds.
+2. After disconnect cleanup, retry without restarting Vizor. A fresh connection
+   should proceed to signing preparation, or return a concrete
+   connection error. Signing commands are never automatically replayed.
+3. Repeat on iOS, including turning the Ledger off during the query, cancelling,
+   reconnecting, and leaving an actual approval prompt open longer than 10 seconds.
+4. Compare Nano X and Stax with phone, app/OS versions, and transaction held fixed.
+
+If the OS never confirms physical disconnect, exclusion intentionally remains:
+we must not overlap a replacement request with an unretired connection. That is a
+separate OS/transport recovery failure, not permission to release the slot early.

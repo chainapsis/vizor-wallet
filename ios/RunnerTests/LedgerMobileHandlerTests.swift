@@ -12,6 +12,57 @@ import XCTest
 
 final class LedgerMobileHandlerTests: XCTestCase {
   @MainActor
+  func testAppQueryTimeoutAbortsTransportAndAllowsFreshConnection() async {
+    let transport = PendingLedgerTransport()
+    transport.drainsOnAbort = true
+    let handler = LedgerMobileHandler(transport: transport, appQueryTimeout: 10_000_000)
+    connect(handler)
+    let timedOut = expectation(description: "query timeout")
+    var completions = 0
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      completions += 1
+      XCTAssertEqual(($0 as? FlutterError)?.code, "disconnected")
+      timedOut.fulfill()
+    }
+    await fulfillment(of: [timedOut], timeout: 2)
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertEqual(transport.aborts, 1)
+    XCTAssertFalse(transport.hasPendingExchange)
+    XCTAssertFalse(transport.isConnected)
+    connect(handler)
+    transport.responses = ["01055a6361736805332e392e329000"]
+    let ready = expectation(description: "new session query")
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      XCTAssertEqual(($0 as? [String: String])?["name"], "Zcash")
+      ready.fulfill()
+    }
+    await fulfillment(of: [ready], timeout: 2)
+    XCTAssertEqual(completions, 1)
+    handler.close()
+  }
+
+  @MainActor
+  func testTimeoutKeepsOwnershipUntilAbortActuallyDrains() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport, appQueryTimeout: 10_000_000)
+    connect(handler)
+    let timedOut = expectation(description: "query timed out")
+    var completions = 0
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { _ in
+      completions += 1
+      timedOut.fulfill()
+    }
+    await fulfillment(of: [timedOut], timeout: 2)
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      XCTAssertEqual(($0 as? FlutterError)?.code, "disconnected")
+    }
+    transport.complete("01055a6361736805332e392e329000")
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertEqual(completions, 1)
+    handler.close()
+  }
+
+  @MainActor
   func testSigningProgressPrecedesReviewResponseAndStopsAfterCancellation() async {
     let transport = PendingLedgerTransport()
     let handler = LedgerMobileHandler(transport: transport)
@@ -979,6 +1030,8 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var reconnects = 0
   var connects = 0
   var scans = 0
+  var aborts = 0
+  var drainsOnAbort = false
   var deferConnectCompletion = false
   var deferDisconnectCompletion = false
   var disconnectFailures = 0
@@ -1030,6 +1083,14 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     deferredConnectFailure = nil
     isConnected = false
     failure?(BleTransportError.connectError(description: "Late failure"))
+  }
+  func abortExchange() {
+    aborts += 1
+    guard drainsOnAbort else { return } // Model a non-cooperative SDK in legacy tests.
+    isConnected = false
+    let continuation = pending
+    pending = nil
+    continuation?.resume(throwing: BleTransportError.currentConnectedError(description: "Aborted"))
   }
   func disconnect(completion: OptionalBleErrorResponse?) {
     XCTAssertNil(pending, "Must not enter the SDK's pending-disconnect wait")

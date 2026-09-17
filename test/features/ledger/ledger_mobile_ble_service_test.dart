@@ -53,6 +53,25 @@ void main() {
   }
 
   test(
+    'cancellation invalidates cached connection before native cleanup replies',
+    () async {
+      final cancelled = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'cancelSigning') await cancelled.future;
+            return null;
+          });
+      await service.connect(
+        const LedgerBleDevice(id: 'nano-x', name: 'Ledger', model: 'Nano X'),
+      );
+      final result = service.cancelSigning();
+      expect(service.connectedDeviceId, isNull);
+      cancelled.complete();
+      await result;
+    },
+  );
+
+  test(
     'native progress is scoped to the active request and ignored after cancellation',
     () async {
       final reply = Completer<Object?>();

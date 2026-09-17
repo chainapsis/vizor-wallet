@@ -219,9 +219,6 @@ class LedgerConnectionService {
           mobile.connectedDeviceId != device.id) {
         reconnected = true;
         await reconnect();
-      } else {
-        await mobile.currentApp();
-        check();
       }
       await readiness.ensureReady();
       check();

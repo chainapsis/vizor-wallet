@@ -28,3 +28,5 @@ Discarding a Scan now cancels its timeout/expiry timers, releases callbacks, and
 makes queued expiry, late timeout and stale stop/start events inert. Normal stops
 still notify once. ScanLifetimeTests exercises the production Scan and Queue with
 only CoreBluetooth radio calls substituted, including fast radio off/on recovery.
+
+App-query timeout integration: `abortExchange()` cancels the physical radio link without waiting for the APDU queue. It invalidates late callbacks but retains exchange ownership until disconnect. Raw outgoing APDU logging is removed.

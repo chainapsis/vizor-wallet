@@ -26,7 +26,8 @@ void main() {
         () async {
           final ble = _FakeBleService()
             .._connectedDeviceId = 'device-1'
-            ..appError = LedgerMobileException(failure, 'probe failed');
+            ..appError = LedgerMobileException(failure, 'probe failed')
+            ..clearAppErrorOnConnect = true;
           final container = _container(
             notifier: _FakeAccountNotifier(
               _ledgerAccount(
@@ -206,7 +207,7 @@ void main() {
   );
 
   for (final stage in ['connect', 'disconnect', 'currentApp']) {
-    test('cancellation during $stage prevents readiness and signing', () async {
+    test('cancellation during $stage prevents signing', () async {
       final pending = Completer<void>();
       final ble = _FakeBleService()
         ..pauseStage = stage
@@ -534,7 +535,7 @@ ProviderContainer _container({
       ).overrideWithValue(_ReadyDevice(available: usbReady)),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.bluetooth,
-      ).overrideWithValue(const _ReadyDevice()),
+      ).overrideWithValue(_ReadyDevice(ble: ble)),
     ],
   );
 }
@@ -573,17 +574,20 @@ AppBootstrapState _bootstrap(AccountInfo account) => AppBootstrapState(
 );
 
 class _ReadyDevice implements LedgerAppReadinessDevice {
-  const _ReadyDevice({this.available = true});
+  const _ReadyDevice({this.available = true, this.ble});
   final bool available;
+  final LedgerMobileBleService? ble;
 
   @override
-  Future<LedgerDeviceAppSnapshot> queryZcashApp() async =>
-      LedgerDeviceAppSnapshot(
-        status: available
-            ? LedgerDeviceAppStatus.open
-            : LedgerDeviceAppStatus.disconnected,
-        version: '3.9.3',
-      );
+  Future<LedgerDeviceAppSnapshot> queryZcashApp() async {
+    if (ble != null) await ble!.currentApp();
+    return LedgerDeviceAppSnapshot(
+      status: available
+          ? LedgerDeviceAppStatus.open
+          : LedgerDeviceAppStatus.disconnected,
+      version: '3.9.3',
+    );
+  }
 
   @override
   Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() => queryZcashApp();
@@ -632,6 +636,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
 class _FakeBleService implements LedgerMobileBleService {
   Object? appError;
+  bool clearAppErrorOnConnect = false;
   Object? disconnectError;
   Object? connectError;
   String? pauseStage;
@@ -649,6 +654,7 @@ class _FakeBleService implements LedgerMobileBleService {
     connectCalls++;
     if (connectError != null) throw connectError!;
     if (pauseStage == 'connect') await pause;
+    if (clearAppErrorOnConnect) appError = null;
     connectedDeviceIds.add(device.id);
     _connectedDeviceId = device.id;
   }

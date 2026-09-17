@@ -169,6 +169,7 @@ extension BleTransport: BleModuleDelegate {
 
     // One exchange owns response assembly and completion. All access is on main.
     private var pendingExchange: PendingBleExchange?
+    private var abortingExchange = false
     private var isExchanging: Bool { pendingExchange != nil }
     private var waitingToDisconnectCompletion: OptionalBleErrorResponse?
     private var disconnecting = false
@@ -303,7 +304,6 @@ extension BleTransport: BleModuleDelegate {
                 return
             }
 
-            print("Sending", "->", apduToSend.data.hexEncodedString())
             guard self.connectionUsable else {
                 callback(.failure(.currentConnectedError(description: "Reconnect the Ledger before sending another request")))
                 return
@@ -365,6 +365,20 @@ extension BleTransport: BleModuleDelegate {
                     print(error.localizedDescription)
                     failure(.writeError(description: error.localizedDescription))
                 }
+            }
+        }
+    }
+
+    public func abortExchange() {
+        DispatchQueue.main.async {
+            guard self.pendingExchange != nil, !self.abortingExchange else { return }
+            self.abortingExchange = true
+            self.connectionUsable = false
+            self.connectionGeneration += 1
+            if self.isConnected {
+                self.bleModule.cancelConnection()
+            } else {
+                self.clearConnection()
             }
         }
     }
@@ -588,11 +602,11 @@ extension BleTransport: BleModuleDelegate {
             return
         }
         send(apdu: apdu) { [weak self, weak pending] in
-            guard let self, let pending, self.pendingExchange === pending else { return }
+            guard let self, let pending, !self.abortingExchange, self.pendingExchange === pending else { return }
             apdu.next()
             if !apdu.isEmpty { self.writeAPDU(apdu) }
         } failure: { [weak self, weak pending] error in
-            guard let self, let pending, self.pendingExchange === pending else { return }
+            guard let self, let pending, !self.abortingExchange, self.pendingExchange === pending else { return }
             self.finishExchange(.failure(error))
         }
     }
@@ -662,6 +676,7 @@ extension BleTransport: BleModuleDelegate {
     }
 
     fileprivate func clearConnection() {
+        abortingExchange = false
         connectionGeneration += 1
         connectedPeripheral = nil
         connectionUsable = false

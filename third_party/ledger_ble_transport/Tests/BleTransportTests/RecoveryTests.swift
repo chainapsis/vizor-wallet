@@ -45,6 +45,33 @@ final class RecoveryTests: XCTestCase {
     }
 
     @MainActor
+    func testAbortWaitsForPhysicalDisconnectAndIgnoresLateResponse() async {
+        let radio = Radio()
+        let transport = await connected(radio)
+        radio.deferDisconnect = true
+        var results = 0
+        transport.exchange(apdu: APDU(data: [0xb0, 1, 0, 0])) { result in
+            results += 1
+            if case .success = result { XCTFail("aborted exchange succeeded") }
+        }
+        await Task.yield()
+        transport.abortExchange()
+        await Task.yield()
+        XCTAssertEqual(radio.cancellations, 1)
+        radio.deliver([5, 0, 0, 0, 2, 0x90, 0])
+        XCTAssertEqual(results, 0)
+        let busy = expectation(description: "exchange ownership retained")
+        transport.exchange(apdu: APDU(data: [0xb0, 1, 0, 0])) { result in
+            guard case .failure(.pendingActionOnDevice) = result else { XCTFail("not busy"); return }
+            busy.fulfill()
+        }
+        await fulfillment(of: [busy], timeout: 2)
+        radio.loseConnection()
+        radio.loseConnection()
+        XCTAssertEqual(results, 1)
+    }
+
+    @MainActor
     func testDisconnectCompletionWaitsForRadioTeardown() async {
         let radio = Radio()
         let transport = await connected(radio)
@@ -224,7 +251,8 @@ private final class Radio: BleTransportIO {
         completion?(.disconnected(device))
         if !deferDisconnect { loseConnection() }
     }
-    func cancelConnection() { loseConnection() }
+    var cancellations = 0
+    func cancelConnection() { cancellations += 1; if !deferDisconnect { loseConnection() } }
     func loseConnection() { delegate?.disconnected(from: device) }
     func deliver(_ bytes: [UInt8]) { listener?(Data(bytes)) }
 }

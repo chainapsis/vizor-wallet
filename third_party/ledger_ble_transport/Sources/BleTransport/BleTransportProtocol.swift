@@ -72,6 +72,9 @@ public protocol BleTransportProtocol {
 
     // MARK: - Disconnect
 
+    /// Abort a pending exchange by closing the radio link. Completion waits for disconnect.
+    func abortExchange()
+
     /// Disconnect from the passed peripheral.
     /// - Parameters:
     ///   - immediate: Whether the disconnection should be queued or executed immediately. Passing `false` will wait until the current tasks have been completed.

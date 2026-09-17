@@ -335,6 +335,9 @@ class MethodChannelLedgerMobileBleService
   Future<void> cancelSigning() {
     // Invalidate Dart retries before waiting for the native cancellation reply.
     _operationGeneration++;
+    // Native cancellation retires the BLE session. Do not advertise its cached
+    // identifier as a usable connection on the next attempt.
+    _connectedDeviceId = null;
     return _invokeVoid('cancelSigning');
   }
 
