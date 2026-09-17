@@ -270,6 +270,9 @@ class WalletRecoverySession {
               : account.name,
           'order': index,
           'isHardware': account.isHardware,
+          'hardwareSignerKind': account.hardwareSignerKind,
+          'birthdayHeight': account.birthdayHeight,
+          'zip32AccountIndex': account.zip32AccountIndex,
           'isSeedAnchor': account.isSeedAnchor,
           'profilePictureId': storedAccount?['profilePictureId'] is String
               ? storedAccount!['profilePictureId']

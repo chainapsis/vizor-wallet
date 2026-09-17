@@ -1136,7 +1136,7 @@ class _LedgerFirstAccountSecurityNotifier extends AppSecurityNotifier {
   }
 
   @override
-  void commitPasswordSetup() {
+  Future<void> commitPasswordSetup() async {
     commitCount++;
     state = const AppSecurityState(
       isPasswordConfigured: true,

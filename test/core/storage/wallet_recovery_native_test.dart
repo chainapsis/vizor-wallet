@@ -681,6 +681,7 @@ void main() {
   test('mixed software and hardware recovery verifies all accounts', () async {
     final software = await createWallet(phrase: _secondPhrase);
     final hardware = await rust.importHardwareAccount(
+      hardwareSignerKind: 'keystone',
       dbPath: getDb().path,
       network: 'main',
       name: 'Hardware fixture',
@@ -700,6 +701,16 @@ void main() {
       isTrue,
     );
     await session.reconnect();
+    final savedAccounts =
+        jsonDecode((await store.readString('zcash_accounts'))!) as List;
+    final savedHardware =
+        savedAccounts.singleWhere(
+              (account) => account['uuid'] == hardware.accountUuid,
+            )
+            as Map;
+    expect(savedHardware['hardwareSignerKind'], 'keystone');
+    expect(savedHardware['birthdayHeight'], 2_000_000);
+    expect(savedHardware['zip32AccountIndex'], 0);
     final accounts = (await loadAppBootstrap()).initialAccountState.accounts;
     expect(accounts.singleWhere((a) => a.uuid == software).isHardware, isFalse);
     expect(
@@ -757,6 +768,7 @@ void main() {
     'hardware-first recovery needs the independent device key and retains hardware identity',
     () async {
       final hardware = await rust.importHardwareAccount(
+        hardwareSignerKind: 'keystone',
         dbPath: getDb().path,
         network: 'main',
         name: 'Hardware fixture',
