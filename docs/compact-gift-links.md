@@ -75,7 +75,9 @@ a code for different artwork.
 continues writing the established v2 JSON format. `toUri()` remains a v2 alias
 for existing callers. Sender addresses, creation times, status, funding
 transactions, and claim evidence stay in their existing secure records.
-Incoming v3 links persist through that same v2 representation.
+Incoming v3 links persist through that same v2 representation. Decoding rejects
+links whose v2 recovery URI exceeds 16 KiB, including JSON escaping and Base64
+expansion of custom labels.
 
 `preparePaymentLinkShareUri()` verifies a locally known address against the
 mnemonic before dropping it from compact sharing. A failure leaves the record

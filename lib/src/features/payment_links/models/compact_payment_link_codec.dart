@@ -163,7 +163,7 @@ abstract final class _CompactPaymentLinkCodec {
       // Only BIP-39 conversion crosses FFI. Address/seed derivation and chain
       // access stay in asynchronous funding and claim operations.
       final mnemonic = rust_wallet.giftMnemonicFromEntropy(entropy: entropy);
-      return VizorPaymentLink._parsed(
+      final link = VizorPaymentLink._parsed(
         network: network,
         address: null,
         amountZatoshi: amount,
@@ -173,6 +173,9 @@ abstract final class _CompactPaymentLinkCodec {
         createdAt: null,
         presentation: presentation,
       );
+      // Accepted gifts must fit the durable recovery format before claim.
+      link.toRecoveryUri();
+      return link;
     } catch (_) {
       throw _invalid;
     }

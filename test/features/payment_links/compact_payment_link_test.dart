@@ -219,6 +219,26 @@ void main() {
     },
   );
 
+  test('rejects v3 labels that exceed the v2 recovery limit', () async {
+    final oversized = card(label: '"' * 8000);
+    final compact = wire(oversized);
+    expect(compact.length, lessThan(VizorPaymentLink.maxEncodedLength));
+    expect(() => oversized.toRecoveryUri(), throwsFormatException);
+    expect(() => VizorPaymentLink.parse(compact), throwsFormatException);
+
+    // Long labels remain supported when their escaped recovery payload fits.
+    for (final label in ['a' * 8000, '"' * 4000]) {
+      final source = card(label: label);
+      final decoded = VizorPaymentLink.parse(wire(source)).withResolvedMetadata(
+        address: source.address,
+        createdAt: source.createdAt,
+      );
+      final receiver = PaymentLinkReceivedStore(_MemoryStorage());
+      await receiver.saveReady(decoded);
+      expect((await receiver.load()).single.claimLink!.label, label);
+    }
+  });
+
   test(
     'preserves optional custom labels, unknown artwork, fiat and Unicode',
     () {
