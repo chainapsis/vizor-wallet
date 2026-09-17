@@ -184,7 +184,8 @@ class _PaymentLinkClaimAccountSheetState
                                 leading: MobileAccountAvatar(
                                   profilePictureId: account.profilePictureId,
                                   size: AppProfilePictureSize.navLarge,
-                                  isHardware: account.isHardware,
+                                  hardwareSignerKind:
+                                      account.hardwareSignerKind,
                                 ),
                                 trailing: selected
                                     ? AppIcon(

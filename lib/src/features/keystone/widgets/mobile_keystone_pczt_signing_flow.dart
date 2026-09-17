@@ -156,6 +156,9 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final String? requestAuxiliaryActionLabel;
   final VoidCallback? onRequestAuxiliaryAction;
   final bool showCancelAction;
+
+  /// Scroll the title, request details, and QR together while keeping actions
+  /// visible, including when system text scaling enlarges the request details.
   final bool allowQrContentScrolling;
   final bool forceScannerActiveForTesting;
   final bool startInScannerForTesting;
@@ -493,6 +496,56 @@ class _MobileKeystonePcztSigningFlowState
         : isFailed
         ? _error ?? widget.friendlyError(StateError('Keystone signing failed.'))
         : null;
+    final header = Column(
+      children: [
+        const SizedBox(height: _mobileKeystoneTitleTopGap),
+        _KeystoneSigningTitle(
+          title: title,
+          subtitle: subtitle,
+          titleColor: colors.text.accent,
+          subtitleColor: colors.text.accent,
+        ),
+        if (widget.signingContextLabel != null) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          _KeystoneSigningContextBadge(
+            label: widget.signingContextLabel!,
+            foreground: colors.text.accent,
+            background: colors.background.neutralSubtleOpacity,
+          ),
+        ],
+        if (widget.requestDetails != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          widget.requestDetails!,
+        ],
+      ],
+    );
+
+    Widget qrRegion(double width, double height) {
+      final availableForQr =
+          height -
+          _mobileKeystoneQrPromptGap -
+          _mobileKeystonePromptBlockHeight;
+      final frameSize = math
+          .min(_mobileKeystoneQrFrameSize, math.min(width, availableForQr))
+          .clamp(120.0, _mobileKeystoneQrFrameSize)
+          .toDouble();
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildQrFrame(frameSize: frameSize),
+            const SizedBox(height: _mobileKeystoneQrPromptGap),
+            if (message != null)
+              _KeystoneSigningPromptText(
+                text: message,
+                color: isFailed ? colors.text.destructive : colors.text.primary,
+              )
+            else
+              _KeystoneScanPrompt(color: colors.text.primary),
+          ],
+        ),
+      );
+    }
 
     return ColoredBox(
       color: colors.background.window,
@@ -518,73 +571,43 @@ class _MobileKeystonePcztSigningFlowState
               fillKey: _key('progress_fill'),
               onBack: _cancel,
             ),
-            const SizedBox(height: _mobileKeystoneTitleTopGap),
-            _KeystoneSigningTitle(
-              title: title,
-              subtitle: subtitle,
-              titleColor: colors.text.accent,
-              subtitleColor: colors.text.accent,
-            ),
-            if (widget.signingContextLabel != null) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              _KeystoneSigningContextBadge(
-                label: widget.signingContextLabel!,
-                foreground: colors.text.accent,
-                background: colors.background.neutralSubtleOpacity,
-              ),
-            ],
-            if (widget.requestDetails != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              widget.requestDetails!,
-            ],
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final availableForQr =
-                        constraints.maxHeight -
-                        _mobileKeystoneQrPromptGap -
-                        _mobileKeystonePromptBlockHeight;
-                    final frameSize = math
-                        .min(
-                          _mobileKeystoneQrFrameSize,
-                          math.min(constraints.maxWidth, availableForQr),
-                        )
-                        .clamp(120.0, _mobileKeystoneQrFrameSize)
-                        .toDouble();
-
-                    final qrContent = Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildQrFrame(frameSize: frameSize),
-                        const SizedBox(height: _mobileKeystoneQrPromptGap),
-                        if (message != null)
-                          _KeystoneSigningPromptText(
-                            text: message,
-                            color: isFailed
-                                ? colors.text.destructive
-                                : colors.text.primary,
-                          )
-                        else
-                          _KeystoneScanPrompt(color: colors.text.primary),
-                      ],
-                    );
-                    if (!widget.allowQrContentScrolling) {
-                      return Center(child: qrContent);
-                    }
-                    return SingleChildScrollView(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight,
+            if (widget.allowQrContentScrolling)
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: header),
+                    SliverLayoutBuilder(
+                      builder: (context, constraints) => SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                          ),
+                          child: qrRegion(
+                            constraints.crossAxisExtent - 2 * AppSpacing.sm,
+                            constraints.viewportMainAxisExtent -
+                                constraints.precedingScrollExtent,
+                          ),
                         ),
-                        child: Center(child: qrContent),
                       ),
-                    );
-                  },
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              header,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) =>
+                        qrRegion(constraints.maxWidth, constraints.maxHeight),
+                  ),
                 ),
               ),
-            ),
+            ],
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.sm,
@@ -599,6 +622,8 @@ class _MobileKeystonePcztSigningFlowState
                   AppButton(
                     key: _key('get_signature'),
                     expand: true,
+                    constrainContent: widget.allowQrContentScrolling,
+                    growWithContent: widget.allowQrContentScrolling,
                     onPressed: actionEnabled ? _startScanning : null,
                     trailing: const AppIcon(AppIcons.chevronForward, size: 20),
                     child: const Text('Next step'),
@@ -610,6 +635,7 @@ class _MobileKeystonePcztSigningFlowState
                       key: _key('auxiliary_action'),
                       expand: true,
                       constrainContent: true,
+                      growWithContent: widget.allowQrContentScrolling,
                       variant: AppButtonVariant.secondary,
                       onPressed: widget.onRequestAuxiliaryAction,
                       child: Text(widget.requestAuxiliaryActionLabel!),

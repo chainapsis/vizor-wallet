@@ -9,6 +9,7 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
+import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -39,6 +40,9 @@ import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/donation/donation_config.dart';
 import 'src/features/donation/screens/donation_screen.dart';
+import 'src/features/ledger/ledger_capability.dart';
+import 'src/features/ledger/services/ledger_account_service.dart';
+import 'src/features/ledger/services/ledger_operation_recovery.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
@@ -58,6 +62,8 @@ import 'src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import 'src/features/onboarding/keystone/keystone_scan_qr_screen.dart';
 import 'src/features/onboarding/keystone/keystone_select_account_screen.dart';
 import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
+import 'src/features/onboarding/ledger/ledger_connect_screen.dart';
+import 'src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
@@ -82,6 +88,7 @@ import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         SendReviewArgs,
+        resolveSendReviewRoutePayload,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
@@ -275,7 +282,17 @@ Future<void> runZcashWalletApp() async {
     app = await buildBootstrappedZcashWalletApp();
   }
   log('runtime: launching app');
-  runApp(app);
+  runApp(
+    SigningShutdownHost(
+      desktop: isDesktopLayoutPlatform,
+      coordinator: SigningShutdownCoordinator(
+        releaseReservations: rust_sync.shutdownSigningReservations,
+        onError: (error, _) =>
+            log('Shutdown reservation cleanup deferred: $error'),
+      ),
+      child: app,
+    ),
+  );
   if (isDesktopLayoutPlatform && Platform.isWindows) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(showDesktopWindow());
@@ -543,6 +560,169 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: const WelcomeScreen(showBackButton: true),
       transitionsBuilder: _onboardingFadeTransition,
     ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger',
+    redirect: (_, _) => ref.read(ledgerStaticCapabilityProvider).supported
+        ? null
+        : '/add-account',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const LedgerConnectScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/birthday',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerBirthdayArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: ImportWalletBirthdayScreen.ledger(
+          onBirthdaySelected: (birthdayHeight) async {
+            if (!context.mounted) return;
+            if (!ref.read(appSecurityProvider).isPasswordConfigured) {
+              context.go(
+                '/onboarding/ledger/set-password',
+                extra: LedgerSetPasswordArgs(
+                  account: args.account,
+                  birthdayHeight: birthdayHeight,
+                ),
+              );
+              return;
+            }
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: birthdayHeight,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/set-password',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerSetPasswordArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerSetPasswordArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: SetPasswordScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: 'Wallet Birthday Height',
+            routePath: '/onboarding/ledger/birthday',
+            routeExtra: LedgerBirthdayArgs(account: args.account),
+          ),
+          ledgerOnContinue: (password) async {
+            if (!context.mounted) return;
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: args.birthdayHeight,
+                pendingPassword: password,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/customise-account',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerCustomiseAccountArgs
+          ? null
+          : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerCustomiseAccountArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: CustomiseAccountScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: args.pendingPassword == null
+                ? 'Wallet Birthday Height'
+                : 'Set Password',
+            routePath: args.pendingPassword == null
+                ? '/onboarding/ledger/birthday'
+                : '/onboarding/ledger/set-password',
+            routeExtra: args.pendingPassword == null
+                ? LedgerBirthdayArgs(account: args.account)
+                : LedgerSetPasswordArgs(
+                    account: args.account,
+                    birthdayHeight: args.birthdayHeight,
+                  ),
+          ),
+          onFinish: (name, profilePictureId) async {
+            Future<void> importAccount() =>
+                ref.read(ledgerAccountImporterProvider)(
+                  name: name,
+                  account: args.account,
+                  birthdayHeight: args.birthdayHeight,
+                  profilePictureId: profilePictureId,
+                );
+
+            final pendingPassword = args.pendingPassword;
+            if (pendingPassword == null) {
+              await importAccount();
+              if (!context.mounted) return;
+              context.go('/home');
+              return;
+            }
+
+            final securityNotifier = ref.read(appSecurityProvider.notifier);
+            final routerRefresh = ref.read(routerRefreshProvider);
+            var passwordPrepared = false;
+            var passwordCommitted = false;
+            try {
+              await routerRefresh.pauseWhile(() async {
+                await securityNotifier.preparePasswordSetup(pendingPassword);
+                passwordPrepared = true;
+                await importAccount();
+                securityNotifier.commitPasswordSetup();
+                passwordCommitted = true;
+                if (!context.mounted) return;
+                context.go('/home');
+              });
+            } catch (_) {
+              if (passwordPrepared && !passwordCommitted) {
+                await securityNotifier.rollbackPasswordSetup();
+              }
+              rethrow;
+            }
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
   ),
   ShellRoute(
     pageBuilder: (context, state, child) => CustomTransitionPage<void>(
@@ -892,7 +1072,14 @@ Page<dynamic> buildDesktopSendReviewPage(
   BuildContext context,
   GoRouterState state,
 ) {
-  final args = state.extra;
+  final args = resolveSendReviewRoutePayload(
+    routePayload: state.extra,
+    retainedPayload: ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(sendStatusRoutePayloadProvider),
+    sendFlowId: state.uri.queryParameters['flow'],
+  );
   if (args is! SendReviewArgs) {
     return _payloadKeyedDesktopPage(
       state,
@@ -1118,6 +1305,9 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       if (args is KeystoneBroadcastArgs) {
         return SendStatusScreen(args: args.reviewArgs, keystone: args);
       }
+      if (args is LedgerBroadcastArgs) {
+        return SendStatusScreen(args: args.reviewArgs, ledger: args);
+      }
       if (args is! SendReviewArgs) return const SendScreen();
       return SendStatusScreen(args: args);
     },
@@ -1307,7 +1497,9 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // up, in `_IncomingLinkHost`.
                                     child: PaymentRequestHost(
                                       router: router,
-                                      child: child!,
+                                      child: LedgerOperationRecoveryHost(
+                                        child: child!,
+                                      ),
                                     ),
                                   ),
                                 ),

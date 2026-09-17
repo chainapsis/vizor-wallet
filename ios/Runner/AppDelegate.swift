@@ -6,6 +6,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var customHapticEngine: CHHapticEngine?
+  private var ledgerMobileHandler: LedgerMobileHandler?
 
   override func application(
     _ application: UIApplication,
@@ -51,6 +52,29 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+
+    ledgerMobileHandler?.close()
+    let ledgerMobileHandler = LedgerMobileHandler()
+    self.ledgerMobileHandler = ledgerMobileHandler
+    let ledgerMobileChannel = FlutterMethodChannel(
+      name: LedgerMobileHandler.methodChannelName,
+      binaryMessenger: messenger
+    )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    ledgerMobileHandler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
+    ledgerMobileChannel.setMethodCallHandler { call, result in
+      ledgerMobileHandler.handle(call, result: result)
+    }
+    let ledgerMobileDiscoveryChannel = FlutterEventChannel(
+      name: LedgerMobileHandler.eventChannelName,
+      binaryMessenger: messenger
+    )
+    ledgerMobileDiscoveryChannel.setStreamHandler(ledgerMobileHandler)
 
     let keychainAccessibilityMigrationHandler =
       KeychainAccessibilityMigrationChannel()

@@ -22,6 +22,8 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -508,6 +510,27 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
     await tester.pumpAndSettle();
     expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
+  });
+
+  testWidgets('Ledger cannot enter the migration flow', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        activeAccountIsHardware: true,
+        activeHardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ledger_immediate_migration_signing_overlay')),
+      findsNothing,
+    );
   });
 
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
@@ -1338,6 +1361,29 @@ void main() {
 
     expect(softwareStarted, isFalse);
     expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
+  });
+
+  testWidgets('Ledger private migration route is quarantined', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        activeAccountIsHardware: true,
+        activeHardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+    expect(find.textContaining('keystone-combined-sign-route'), findsNothing);
+    expect(
+      find.textContaining('keystone-denomination-sign-route'),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -5370,6 +5416,7 @@ Widget _migrationOptionsHarness({
   String initialLocation = '/migration/options',
   IronwoodMigrationService? migrationService,
   bool activeAccountIsHardware = false,
+  HardwareSignerKind? activeHardwareSignerKind,
   bool realStatusRoute = false,
   OrchardMigrationStatusGetter? statusGetter,
   bool coordinatorAdvancing = false,
@@ -5382,6 +5429,7 @@ Widget _migrationOptionsHarness({
   rust_sync.KeystoneMigrationSigningRequest? previewCombinedSigningRequest,
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
+  LedgerImmediateMigrationService? ledgerImmediateMigrationService,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -5513,7 +5561,10 @@ Widget _migrationOptionsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _bootstrapFor(activeAccountIsHardware: activeAccountIsHardware),
+        _bootstrapFor(
+          activeAccountIsHardware: activeAccountIsHardware,
+          activeHardwareSignerKind: activeHardwareSignerKind,
+        ),
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
       swapFeatureEnabledProvider.overrideWithValue(true),
@@ -5553,6 +5604,10 @@ Widget _migrationOptionsHarness({
       ],
       if (migrationService != null)
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
+      if (ledgerImmediateMigrationService != null)
+        ledgerImmediateMigrationServiceProvider.overrideWithValue(
+          ledgerImmediateMigrationService,
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -6208,17 +6263,22 @@ final _bootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-AppBootstrapState _bootstrapFor({required bool activeAccountIsHardware}) {
+AppBootstrapState _bootstrapFor({
+  required bool activeAccountIsHardware,
+  HardwareSignerKind? activeHardwareSignerKind,
+}) {
   if (!activeAccountIsHardware) return _bootstrap;
   return AppBootstrapState(
     initialLocation: _bootstrap.initialLocation,
-    initialAccountState: const AccountState(
+    initialAccountState: AccountState(
       accounts: [
         AccountInfo(
           uuid: 'account-1',
           name: 'Account 1',
           order: 0,
           isHardware: true,
+          hardwareSignerKind:
+              activeHardwareSignerKind ?? HardwareSignerKind.keystone,
           profilePictureId: kDefaultProfilePictureId,
         ),
       ],
@@ -6248,6 +6308,9 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+
+  @override
+  Future<void> refreshAfterSend() async {}
 }
 
 IronwoodMigrationService _keystonePrivateReviewService({
@@ -6320,6 +6383,122 @@ rust_sync.OrchardMigrationImmediatePlan _immediatePlan() {
     inputNoteCount: 1,
   );
 }
+
+// Preserved with the quarantined signer so a future capability enablement can
+// restore the end-to-end widget test without rebuilding its Ledger fixture.
+// ignore: unused_element
+LedgerImmediateMigrationService _ledgerImmediateMigrationService({
+  required Future<List<LedgerVotingSignature>> signature,
+}) {
+  return LedgerImmediateMigrationService(
+    prepare: ({required accountUuid, required approvedPlan}) async {
+      return rust_sync.KeystoneMigrationSigningRequest(
+        requestId: 'ledger-immediate-request',
+        messages: [
+          rust_sync.KeystoneMigrationMessage(
+            id: 'ledger-immediate-message',
+            redactedPczt: Uint8List.fromList([1, 2, 3]),
+            expectedSignatureCount: 1,
+          ),
+        ],
+        signingBatchLimit: 1,
+      );
+    },
+    signPczt: (_, _) => signature,
+    loadProofStatus: ({required requestId}) async {
+      return const rust_sync.KeystoneMigrationProofStatus(
+        readyCount: 1,
+        totalCount: 1,
+        isReady: true,
+        isFailed: false,
+      );
+    },
+    complete:
+        ({
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+        }) async {
+          return rust_sync.IronwoodMigrationResult(
+            txids: 'ledger-migration-txid',
+            status: 'broadcasting',
+            broadcastedCount: 1,
+            totalCount: 1,
+            feeZatoshi: BigInt.from(10_000),
+            migratedZatoshi: BigInt.from(9_990_000),
+          );
+        },
+    discard: ({required accountUuid, required requestId}) async {},
+  );
+}
+
+// ignore: unused_element
+const _ledgerMigrationSignature = <int>[
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+];
 
 IronwoodMigrationService _immediatePlanService(
   Future<rust_sync.OrchardMigrationImmediatePlan?> Function() getPlan,

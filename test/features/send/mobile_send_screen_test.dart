@@ -421,6 +421,7 @@ Widget _app({
   String? paymentRequestLabel,
   BigInt? requestedAmountZatoshi,
   PaymentRequestPrecheck? precheck,
+  ValueChanged<Object?>? onLedgerRoute,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -442,6 +443,13 @@ Widget _app({
           paymentRequestLabel: paymentRequestLabel,
           requestedAmountZatoshi: requestedAmountZatoshi,
         ),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (_, state) {
+          onLedgerRoute?.call(state.extra);
+          return const SizedBox(key: ValueKey('mobile_send_ledger_sign_route'));
+        },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
     ],
@@ -702,6 +710,14 @@ Widget _sendFlowRouterApp({
           key: const ValueKey('mobile_send_keystone_cancel'),
           onPressed: () => context.pop(),
           child: const Text('keystone sign'),
+        ),
+      ),
+      GoRoute(
+        path: '/send/ledger-sign',
+        builder: (context, _) => TextButton(
+          key: const ValueKey('mobile_send_ledger_cancel'),
+          onPressed: () => context.pop(),
+          child: const Text('ledger sign'),
         ),
       ),
     ],
@@ -2204,6 +2220,52 @@ void main() {
       expect(_proposeCalls, 2);
     },
   );
+
+  testWidgets('Ledger cancel refreshes locked balance before enabling retry', (
+    tester,
+  ) async {
+    _proposeSendSucceeds = true;
+    final sync = _CancelRecoverySyncNotifier();
+    await tester.pumpWidget(
+      _cancelRecoveryApp(sync, signerKind: HardwareSignerKind.ledger),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileSendScreen)),
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 1);
+
+    sync.publishLockedBalance();
+    await tester.pumpAndSettle();
+    _discardGate = Completer<void>();
+    sync.refreshGate = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_ledger_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Send'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(sync.refreshCalls, 0);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+
+    _discardGate!.complete();
+    await tester.pumpAndSettle();
+    expect(sync.refreshCalls, 1);
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(_proposeCalls, 1);
+
+    sync.refreshGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Not enough ZEC'), findsNothing);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNotNull);
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('ledger sign'), findsOneWidget);
+    expect(_proposeCalls, 2);
+  });
 
   testWidgets(
     'Keystone release failure retries cleanup without a new proposal',
@@ -4042,6 +4104,85 @@ void main() {
     expect((leading! as AppIcon).name, AppIcons.qr);
   });
 
+  testWidgets('Ledger send uses its own enabled confirmation action', (
+    tester,
+  ) async {
+    Object? ledgerRouteArgs;
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        onLedgerRoute: (args) => ledgerRouteArgs = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toReviewStep(tester);
+
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+
+    final confirmButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_confirm')),
+    );
+    expect(confirmButton.onPressed, isNotNull);
+    expect((confirmButton.leading! as AppIcon).name, AppIcons.ledger);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.text('Confirm with Ledger'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_ledger_sign_route')),
+      findsOneWidget,
+    );
+    expect(ledgerRouteArgs, isNotNull);
+    expect(find.text('Confirm with Keystone'), findsNothing);
+  });
+
+  testWidgets('a Ledger account can send to a TEX address', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _enterAddress(tester, _texAddress);
+
+    expect(find.text('Ledger does not support TEX sends yet.'), findsNothing);
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_send_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+
+    await _toReviewStep(tester, address: _texAddress);
+
+    expect(find.text('TEX - ${_compactReviewAddress(_texAddress)}'), findsOne);
+    expect(find.text('Confirm with Ledger'), findsOneWidget);
+  });
+
   testWidgets('a transparent recipient hides the memo entry', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
@@ -4274,6 +4415,7 @@ AppButton _confirmButton(WidgetTester tester) =>
 Widget _cancelRecoveryApp(
   _CancelRecoverySyncNotifier sync, {
   bool isMaxMode = false,
+  HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(
   syncNotifier: () => sync,
   initialLocation: '/send/review',
@@ -4285,13 +4427,14 @@ Widget _cancelRecoveryApp(
     isMaxMode: isMaxMode,
     feeZatoshi: BigInt.from(10000),
   ),
-  accountState: const AccountState(
+  accountState: AccountState(
     accounts: [
       AccountInfo(
         uuid: 'account-1',
-        name: 'Keystone',
+        name: signerKind.name,
         order: 0,
         isHardware: true,
+        hardwareSignerKind: signerKind,
       ),
     ],
     activeAccountUuid: 'account-1',

@@ -2,6 +2,14 @@
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../src/app_bootstrap.dart';
+import '../src/core/layout/app_form_factor.dart';
+import '../src/features/ledger/services/ledger_signing_progress.dart';
+import '../src/features/ledger/widgets/ledger_signing_modal.dart';
+import '../widgetbook/ledger_use_cases.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 
 import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/keystone_use_cases.dart';
@@ -23,6 +31,8 @@ import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
+import 'gift_card_usage_use_cases.dart';
+import 'mobile_method_selection_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -53,6 +63,91 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'ledger-signing-preparing',
+    description: 'Ledger signing: preparing',
+    builder: _buildLedgerSigningPreparing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing',
+    description: 'Ledger signing: processing',
+    builder: _buildLedgerSigningProcessing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-reviewing',
+    description: 'Ledger signing: reviewing',
+    builder: _buildLedgerSigningReviewing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-finishing',
+    description: 'Ledger signing: finishing',
+    builder: _buildLedgerSigningFinishing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-method-selection-ledger',
+    description: 'Mobile method selection with Ledger available',
+    builder: buildMobileMethodSelectionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-sidebar',
+    description: 'Desktop Ledger import sidebar illustration',
+    builder: _buildLedgerOnboardingSidebar,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildGiftCardUsageCheckingCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-list',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageListCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageCheckingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-list',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageListCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-share',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageShareCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-activity',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageActivityCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-ready',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageReadyCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-send-amount-contact',
     description: 'Mobile amount screen resolving a saved contact (4479:47503)',
@@ -1819,9 +1914,46 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 ];
 
+Widget _buildLedgerOnboardingSidebar(BuildContext context) => ProviderScope(
+  overrides: [appBootstrapProvider.overrideWithValue(AppBootstrapState.empty)],
+  child: const LedgerOnboardingShell(
+    activeStep: LedgerOnboardingStep.birthday,
+    backTarget: null,
+    child: SizedBox.shrink(),
+  ),
+);
+
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {
     if (scenario.id == id) return scenario;
   }
   return null;
 }
+
+Widget _buildLedgerSigningPreparing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.preparing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningReviewing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.reviewing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningFinishing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.saving,
+      signingStage: LedgerSigningStage.finishing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );

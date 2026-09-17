@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +28,11 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_ledger_signing_overlay.dart';
+import '../../support/ledger_gift_card_support.dart';
+
 void main() {
   setUpAll(() async {
     final loader = FontLoader('Geist')
@@ -35,6 +41,37 @@ void main() {
       ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
     await loader.load();
   });
+
+  testWidgets(
+    'Ledger Gift Card uses device approval instead of Keystone QR on mobile',
+    (tester) async {
+      final ledger = LedgerGiftHarness();
+      final signing = Completer<List<int>>();
+      await _pumpMobilePaymentLinks(
+        tester,
+        ledger: ledger,
+        signer: (_, _) => signing.future,
+      );
+      await _walkToApproveAndCreate(tester, settle: false);
+      expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
+      expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
+      expect(find.text('Check your Ledger'), findsOneWidget);
+      ledger.storage.writeGate = Completer<void>();
+      signing.complete([3]);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(ledger.operations.acks, 0);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pump();
+      expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
+      ledger.storage.writeGate!.complete();
+      await tester.pumpAndSettle();
+      expect(ledger.operations.acks, 1);
+      expect(ledger.operations.broadcasts, 1);
+      expect(find.byType(PaymentLinkLedgerSigningOverlay), findsNothing);
+    },
+  );
 
   testWidgets(
     'a hardware account reaches the Keystone signing round on mobile',
@@ -168,7 +205,10 @@ void main() {
   );
 }
 
-Future<void> _walkToApproveAndCreate(WidgetTester tester) async {
+Future<void> _walkToApproveAndCreate(
+  WidgetTester tester, {
+  bool settle = true,
+}) async {
   await tester.tap(
     find.byKey(const ValueKey('payment_links_mobile_create_button')),
   );
@@ -206,13 +246,21 @@ Future<void> _walkToApproveAndCreate(WidgetTester tester) async {
   await tester.tap(
     find.byKey(const ValueKey('payment_link_mobile_review_continue_button')),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
 }
 
 Future<void> _pumpMobilePaymentLinks(
   WidgetTester tester, {
   _FakePaymentLinkOperations? operations,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  LedgerGiftHarness? ledger,
+  LedgerPcztSigner? signer,
 }) async {
   await tester.binding.setSurfaceSize(const Size(393, 852));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -224,7 +272,23 @@ Future<void> _pumpMobilePaymentLinks(
           _KeystoneTestMarketData(),
         ),
         zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
-        appBootstrapProvider.overrideWithValue(_hardwareBootstrap),
+        appBootstrapProvider.overrideWithValue(
+          ledger == null ? _hardwareBootstrap : _ledgerBootstrap,
+        ),
+        if (ledger != null)
+          paymentLinkLedgerFundingServiceProvider.overrideWithValue(
+            ledger.service,
+          ),
+        if (signer != null)
+          ledgerPcztSignerProvider.overrideWith(
+            (ref) => (accountUuid, pcztBytes) {
+              ref
+                  .read(ledgerSigningProgressProvider.notifier)
+                  .begin(accountUuid)('reviewing');
+              return signer(accountUuid, pcztBytes);
+            },
+          ),
+        ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         paymentLinkOperationsProvider.overrideWithValue(
           operations ?? _FakePaymentLinkOperations(),
         ),
@@ -235,7 +299,7 @@ Future<void> _pumpMobilePaymentLinks(
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
-              accountUuid: 'hardware-account',
+              accountUuid: ledger == null ? 'hardware-account' : 'account-1',
               hasAccountScopedData: true,
               isSyncComplete: true,
               percentage: 1,
@@ -300,6 +364,32 @@ const _hardwareAccountState = AccountState(
 final _hardwareBootstrap = AppBootstrapState(
   initialLocation: '/payment-links',
   initialAccountState: _hardwareAccountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        profilePictureId: kDefaultProfilePictureId,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1hardwareaddress',
+  ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),

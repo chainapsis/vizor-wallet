@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -23,6 +24,9 @@ Widget _app({
     routes: mobileOnboardingRoutes(),
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),

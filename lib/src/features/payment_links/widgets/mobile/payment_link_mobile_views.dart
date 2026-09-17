@@ -485,6 +485,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
+    this.metadata,
     this.actionLabel,
     this.onAction,
     this.showLoader = false,
@@ -497,6 +498,7 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
+  final Widget? metadata;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -511,69 +513,74 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: actionLabel == null ? 64 : 88,
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadii.small),
-            child: SizedBox(width: 60, height: 44, child: thumbnail),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  amountText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                if (actionLabel != null)
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: actionLabel == null ? 64 : 88),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              child: SizedBox(width: 60, height: 44, child: thumbnail),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    statusText!,
+                    amountText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: context.colors.text.secondary,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.primary,
                     ),
                   ),
-                Text(
-                  dateText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+                  if (actionLabel != null)
+                    Text(
+                      statusText!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  metadata ??
+                      Text(
+                        dateText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          if (showLinkActions) ...[
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_copy_action'),
-              semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
-              icon: AppIcons.copy,
-              onPressed: onCopyLink,
-            ),
-            _MobileCardLinkAction(
-              key: const ValueKey('payment_link_mobile_card_qr_action'),
-              semanticLabel: 'Show gift card QR code',
-              icon: AppIcons.qr,
-              onPressed: onShowQr,
-            ),
-          ] else if (statusText case final label?)
-            _MobileCardStatus(
-              label: actionLabel ?? label,
-              onTap: onAction,
-              showLoader: showLoader,
-            ),
-        ],
+            const SizedBox(width: AppSpacing.xs),
+            if (showLinkActions) ...[
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_copy_action'),
+                semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+                icon: AppIcons.copy,
+                onPressed: onCopyLink,
+              ),
+              _MobileCardLinkAction(
+                key: const ValueKey('payment_link_mobile_card_qr_action'),
+                semanticLabel: 'Show gift card QR code',
+                icon: AppIcons.qr,
+                onPressed: onShowQr,
+              ),
+            ] else if (statusText case final label?)
+              _MobileCardStatus(
+                label: actionLabel ?? label,
+                onTap: onAction,
+                showLoader: showLoader,
+              ),
+          ],
+        ),
       ),
     );
   }

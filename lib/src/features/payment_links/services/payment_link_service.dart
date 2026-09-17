@@ -19,6 +19,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
@@ -496,23 +497,25 @@ class PaymentLinkService implements PaymentLinkOperations {
           ),
           link: link,
           sourceAccountUuid: sourceAccountUuid,
-          createTransaction: (markSubmissionStarted) =>
-              runPaymentLinkFundingSubmission(
-                (markLocalSubmission) => _sendShielded(
-                  fromAccountUuid: sourceAccountUuid,
-                  toAddress: link.address,
-                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-                  memo: null,
-                  onSubmissionStarted: () async {
-                    // The durable trace has to land before the broadcast, and
-                    // the local marker only after it: a failed write leaves
-                    // the submission unmarked, which classifies the failure as
-                    // definitely-not-submitted and discards the inert draft.
-                    await markSubmissionStarted();
-                    markLocalSubmission();
-                  },
-                ),
+          createTransaction: (markSubmissionStarted) async {
+            await _registerObserver(link);
+            return runPaymentLinkFundingSubmission(
+              (markLocalSubmission) => _sendShielded(
+                fromAccountUuid: sourceAccountUuid,
+                toAddress: link.address,
+                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                memo: null,
+                onSubmissionStarted: () async {
+                  // The durable trace has to land before the broadcast, and
+                  // the local marker only after it: a failed write leaves
+                  // the submission unmarked, which classifies the failure as
+                  // definitely-not-submitted and discards the inert draft.
+                  await markSubmissionStarted();
+                  markLocalSubmission();
+                },
               ),
+            );
+          },
           // The in-memory sync tip, not a network round trip: this runs on the
           // broadcast path, and a height the wallet already knows is enough to
           // date the submission.
@@ -575,7 +578,23 @@ class PaymentLinkService implements PaymentLinkOperations {
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
+    await _registerObserver(link);
     return link;
+  }
+
+  Future<void> _registerObserver(VizorPaymentLink link) async {
+    try {
+      final tracker = _ref.read(giftCardTrackingServiceProvider);
+      final cards = await _recoveryStore.load();
+      final card = cards
+          .where((c) => c.link.address == link.address)
+          .firstOrNull;
+      if (card != null) await tracker.register(card);
+    } catch (_) {
+      // The durable draft is also a retryable registration intent. Observation
+      // failure must never turn an accepted funding into another send attempt.
+      log('Gift Card observer registration deferred');
+    }
   }
 
   Future<VizorPaymentLink> _createFundingLink({

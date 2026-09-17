@@ -1,0 +1,38 @@
+
+desktop
+00:02 +68: All tests passed!
+
+apple-baseline
+	 Executed 34 tests, with 0 failures (0 unexpected) in 0.266 (0.268) seconds
+	 Executed 34 tests, with 0 failures (0 unexpected) in 0.266 (0.268) seconds
+	 Executed 34 tests, with 0 failures (0 unexpected) in 0.266 (0.269) seconds
+
+android
+BUILD SUCCESSFUL in 18s
+
+connection-repro
+00:00 +0: AUDIT TargetPlatform.iOS retry after stale transport error
+00:00 +1: AUDIT TargetPlatform.android retry after stale transport error
+00:00 +2: AUDIT TargetPlatform.macOS retry after stale transport error
+00:00 +3: All tests passed!
+
+apple-repro
+Test Case '-[RunnerTests.LedgerMobileHandlerTests testAuditDisconnectWithoutApduCompletionBlocksRepeatedRetry]' started.
+Test Case '-[RunnerTests.LedgerMobileHandlerTests testAuditDisconnectWithoutApduCompletionBlocksRepeatedRetry]' passed (0.001 seconds).
+	 Executed 35 tests, with 0 failures (0 unexpected) in 0.264 (0.266) seconds
+	 Executed 35 tests, with 0 failures (0 unexpected) in 0.264 (0.266) seconds
+	 Executed 35 tests, with 0 failures (0 unexpected) in 0.264 (0.267) seconds
+
+mobile-repro
+00:00 +0: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_mobile_test.dart: AUDIT pairing recovery guidance disappears when discovered rows remain
+00:00 +1: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +2: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +3: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +4: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +5: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +6: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.pairingInvalid guidance lost in send retry
+00:00 +7: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.permissionDenied guidance lost in send retry
+00:00 +8: /Users/yjh/.codex/worktrees/89a7/vizor-wallet/test/ledger_audit_send_test.dart: AUDIT LedgerMobileFailure.permissionDenied guidance lost in send retry
+00:01 +37: All tests passed!
+
+Android JUnit XML: tests=27 skipped=0 failures=0 errors=0

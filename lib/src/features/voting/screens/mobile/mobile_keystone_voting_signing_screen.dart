@@ -96,6 +96,19 @@ String _friendlyVotingScanError(Object error) {
       .trim();
 }
 
+/// Lines of the memo shown before its final line. The leading text is the same
+/// boilerplate on every bundle, so clamping it keeps the box compact even when
+/// a round name is long enough to wrap many times.
+const int _memoLeadMaxLines = 3;
+
+/// Lines reserved for the memo's final line, which holds the per-bundle amount.
+///
+/// `display_memo()` bounds that line at "Amount: " plus 13 whole and 8
+/// fractional digits, which needs at most three lines on the narrowest
+/// supported viewport. The fourth is headroom, and it still bounds the box if a
+/// memo ever arrives without a trailing amount line.
+const int _memoFinalLineMaxLines = 4;
+
 class _MobileVotingMemoPager extends StatefulWidget {
   const _MobileVotingMemoPager({required this.memos});
 
@@ -118,6 +131,12 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
     final index = _index.clamp(0, memos.length - 1);
     final memo = memos[index];
     final colors = context.colors;
+    final memoText = memo.displayMemo.trim();
+    final lastBreak = memoText.lastIndexOf('\n');
+    final leadLines = lastBreak < 0 ? '' : memoText.substring(0, lastBreak);
+    final finalLine = lastBreak < 0
+        ? memoText
+        : memoText.substring(lastBreak + 1);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -153,9 +172,27 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                       ),
                     ),
                     const SizedBox(height: 2),
+                    // The memo's final line carries the per-bundle amount, the
+                    // only part that differs between bundles and the reason
+                    // this pager exists. Clamping the whole memo hid it: the
+                    // leading sentence alone fills two lines, and a maxLines
+                    // cut landing on the "\n" draws no ellipsis, so the amount
+                    // vanished without a hint. Clamp only the leading lines,
+                    // which are identical on every bundle, so a long round
+                    // name cannot push the amount out or overflow the column.
+                    if (leadLines.isNotEmpty)
+                      Text(
+                        leadLines,
+                        maxLines: _memoLeadMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
                     Text(
-                      memo.displayMemo,
-                      maxLines: 2,
+                      finalLine,
+                      maxLines: _memoFinalLineMaxLines,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodySmall.copyWith(

@@ -24,6 +24,11 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    if ((activeAccount?.isLedger ?? false) &&
+        !ledgerAutomaticOrchardMigrationCapability.supported) {
+      return const _MobileMigrationRedirectHome();
+    }
     final preview = previewData;
     if (preview != null) {
       final surface = previewSurface;
@@ -83,9 +88,14 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = previewMode
+        ? null
+        : ref.watch(accountProvider).value?.activeAccount;
+    final ledgerAccount = activeAccount?.isLedger ?? false;
     final privateMigrationEnabled =
-        privateMigrationSupported ??
-        (previewMode || supportsPrivateMobileIronwoodMigration());
+        !ledgerAccount &&
+        (privateMigrationSupported ??
+            (previewMode || supportsPrivateMobileIronwoodMigration()));
     if (!privateMigrationEnabled &&
         switch (step) {
           MobileIronwoodMigrationStep.notifications => true,
@@ -93,15 +103,14 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         }) {
       return const _MobileMigrationRedirectTo('/migration/fast/review');
     }
-    final isHardware =
-        !previewMode &&
-        (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);
+    final isHardware = !previewMode && (activeAccount?.isKeystone ?? false);
     return switch (step) {
       MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         privateEnabled: privateMigrationEnabled,
+        privateUnavailableForLedger: ledgerAccount,
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
@@ -216,6 +225,10 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    if (activeAccount?.isLedger ?? false) {
+      return const _MobileMigrationRedirectHome();
+    }
     final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
     final data = ref.watch(ironwoodMigrationFlowDataProvider);
 
@@ -237,9 +250,7 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         }
         final status = cta.status;
         final accountUuid = cta.accountUuid;
-        final isHardware =
-            ref.watch(accountProvider).value?.activeAccount?.isHardware ??
-            false;
+        final isHardware = activeAccount?.isKeystone ?? false;
         if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
             status == null ||
             accountUuid == null ||

@@ -20,6 +20,7 @@ ff = "0.14"
 jubjub = { package = "zakura-jubjub", version = "=1.2.0" }
 bls12_381 = { package = "zakura-bls12-381", version = "=1.2.0" }
 rand_core = "0.6"
+secp256k1 = "0.29"
 
 # Key generation
 bip0039 = "0.12"
@@ -121,7 +122,7 @@ version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.0.0"
+version = "=5.0.1"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -155,6 +156,10 @@ features = ["std"]
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+ledger-transport = "0.11.0"
+ledger-transport-hid = "0.11.0"
+
 [dev-dependencies]
 # Deterministic signatures for validator-rotation verification tests.
 ed25519-consensus = "2.1"
@@ -175,7 +180,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-version = "=5.0.0"
+version = "=5.0.1"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]

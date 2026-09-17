@@ -1,0 +1,151 @@
+--- a/test/features/ledger/ledger_connection_service_test.dart
++++ b/test/features/ledger/ledger_connection_service_test.dart
+@@ -15,6 +15,26 @@
+ import 'package:zcash_wallet/src/rust/api/ledger.dart';
+ 
+ void main() {
++  for (final platform in [TargetPlatform.iOS, TargetPlatform.android, TargetPlatform.macOS]) {
++    test('AUDIT $platform retry after stale transport error', () async {
++      final ble = _AuditBle().._connectedDeviceId = 'device-1';
++      final container = _container(notifier: _FakeAccountNotifier(_ledgerAccount(
++        preference: LedgerConnectionPreference.bluetooth, deviceModel: 'Nano X')),
++        ble: ble, platform: platform);
++      addTearDown(container.dispose);
++      await container.read(accountProvider.future);
++      for (var attempt = 0; attempt < 2; attempt++) {
++        final run = container.read(ledgerConnectionServiceProvider).run(
++          accountUuid: 'ledger-1', usb: () async => 'usb', bluetooth: (_) async => 'signed');
++        if (platform == TargetPlatform.macOS) { expect(await run, 'signed'); }
++        else { await expectLater(run, throwsA(isA<LedgerConnectionRequiredException>())); }
++      }
++      expect(ble.disconnectCalls, platform == TargetPlatform.macOS ? 2 : 0);
++      expect(ble.connectCalls, platform == TargetPlatform.macOS ? 2 : 0);
++      expect(ble.permissionCalls, 0);
++    });
++  }
++
+   test(
+     'cancellation during transport metadata persistence suppresses signed result',
+     () async {
+@@ -541,3 +561,12 @@
+   @override
+   Future<void> cancelSigning() async {}
+ }
++
++class _AuditBle extends _FakeBleService {
++  int permissionCalls = 0;
++  @override
++  Future<LedgerMobileAppInfo> currentApp() async => throw const LedgerMobileException(
++    LedgerMobileFailure.unavailable, 'stale transport');
++  @override
++  Future<bool> requestPermissions() async { permissionCalls++; return true; }
++}
+--- a/test/features/onboarding/mobile_ledger_connect_screen_test.dart
++++ b/test/features/onboarding/mobile_ledger_connect_screen_test.dart
+@@ -35,7 +35,27 @@
+       ..devicePixelRatio = 1;
+   });
+ 
+-  group('mobile method selection Ledger visibility', () {
++  testWidgets('AUDIT pairing recovery guidance disappears when discovered rows remain', (tester) async {
++    final ble = _FakeBleService();
++    await tester.pumpWidget(AppTheme(data: AppThemeData.light, child: MaterialApp(
++      home: MobileLedgerDeviceSheet(service: ble, onSelected: (_) {}, onClose: () {}))));
++    await tester.pump();
++    await tester.pump(const Duration(milliseconds: 300));
++    ble.emit(const LedgerDevicesDiscovered([LedgerBleDevice(id: 'audit-device', name: 'Audit Ledger', model: 'Nano X')]));
++    await tester.pump();
++    final pending = Completer<void>();
++    ble.pendingConnect = pending.future;
++    await tester.tap(find.byKey(const ValueKey('mobile_ledger_device_audit-device')));
++    await tester.pump();
++    pending.completeError(const LedgerMobileException(LedgerMobileFailure.pairingInvalid, kLedgerPairingInvalidMessage));
++    await tester.pump();
++    await tester.pump(const Duration(milliseconds: 300));
++    expect(find.text('Try again'), findsOneWidget);
++    expect(find.text('Audit Ledger'), findsOneWidget);
++    expect(find.text(kLedgerPairingInvalidMessage), findsNothing);
++  });
++
++  group('mobile method selection Ledger visibility' , () {
+     testWidgets('shows Ledger for iOS and Android mainnet software wallets', (
+       tester,
+     ) async {
+--- a/test/features/send/mobile_ledger_send_sign_screen_test.dart
++++ b/test/features/send/mobile_ledger_send_sign_screen_test.dart
+@@ -2,6 +2,7 @@
+ library;
+ 
+ import 'dart:async';
++import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+ import 'dart:typed_data';
+ 
+ import 'package:flutter/material.dart';
+@@ -59,6 +60,25 @@
+       ..devicePixelRatio = 1;
+   });
+ 
++  for (final failure in [
++    const LedgerMobileException(LedgerMobileFailure.pairingInvalid, kLedgerPairingInvalidMessage),
++    const LedgerMobileException(LedgerMobileFailure.permissionDenied, 'Bluetooth permission is required to connect to Ledger.'),
++  ]) {
++    testWidgets('AUDIT ${failure.failure} guidance lost in send retry', (tester) async {
++      var attempts = 0;
++      await tester.pumpWidget(_app(operationService: _FakeOperationService(), signer: (_) async {
++        attempts++; throw failure;
++      }));
++      await tester.tap(find.text('Open signing'));
++      await tester.pumpAndSettle();
++      expect(find.text(failure.message), findsNothing);
++      expect(find.text('Try again'), findsOneWidget);
++      await tester.tap(find.text('Try again'));
++      await tester.pumpAndSettle();
++      expect(attempts, 2);
++      expect(find.text(failure.message), findsNothing);
++    });
++  }
+   for (final args in [_args, _texArgs]) {
+     testWidgets(
+       'uses latest fallback after parameter wait for ${args.addressType}',
+--- a/ios/RunnerTests/LedgerMobileHandlerTests.swift
++++ b/ios/RunnerTests/LedgerMobileHandlerTests.swift
+@@ -11,6 +11,39 @@
+ @testable import Runner
+ 
+ final class LedgerMobileHandlerTests: XCTestCase {
++  @MainActor
++  func testAuditDisconnectWithoutApduCompletionBlocksRepeatedRetry() async {
++    let transport = PendingLedgerTransport()
++    let handler = LedgerMobileHandler(transport: transport)
++    connect(handler)
++    let started = expectation(description: "APDU pending")
++    transport.onExchange = { started.fulfill() }
++    var results: [Any?] = []
++    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { results.append($0) }
++    await fulfillment(of: [started], timeout: 2)
++    transport.simulateDisconnect()
++    for _ in 0..<20 { await Task.yield() }
++    XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "disconnected")
++    for _ in 0..<3 {
++      for method in ["disconnect", "startDiscovery"] {
++        handler.handle(FlutterMethodCall(methodName: method, arguments: nil)) { value in
++          XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
++        }
++      }
++      connect(handler) { value in XCTAssertEqual((value as? FlutterError)?.code, "unavailable") }
++    }
++    XCTAssertFalse(transport.isConnected)
++    XCTAssertTrue(transport.hasPendingExchange)
++    XCTAssertEqual(transport.connects, 1)
++    XCTAssertEqual(transport.scans, 0)
++    XCTAssertEqual(transport.disconnects, 0)
++    // Test-only callback to release the continuation; a lost device supplies no such callback.
++    transport.onExchange = nil
++    transport.complete("9000")
++    for _ in 0..<20 { await Task.yield() }
++    handler.close()
++  }
++
+   func testInvalidPairingIsDistinctFromRejectionAndDisconnection() {
+     let invalid = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue)
+     XCTAssertTrue(ledgerPairingInformationIsInvalid(invalid))

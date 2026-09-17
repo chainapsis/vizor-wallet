@@ -147,3 +147,8 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Ship the USB permission setup with bundles/AppImages; installation on the host
+# remains an explicit administrator action.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/udev/"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/ledger-usb" COMPONENT Runtime)

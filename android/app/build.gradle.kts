@@ -121,7 +121,8 @@ android {
         applicationId = "com.keplr.vizor"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 24
+        // Ledger Mobile DMK 0.0.4 publishes an Android AAR with minSdk 30.
+        minSdk = 30
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -170,8 +171,12 @@ flutter {
 }
 
 dependencies {
+    implementation("io.github.ledgerhq:device-management-kit:0.0.4")
+    // DMK exposes OpenApplicationDeviceAction's FlowRedux supertype publicly.
+    implementation("com.freeletics.flowredux:flowredux:1.2.2")
     // Biometric passcode escrow (BiometricPrompt + Keystore-bound key).
     implementation("androidx.biometric:biometric:1.1.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("org.mockito:mockito-core:5.21.0")

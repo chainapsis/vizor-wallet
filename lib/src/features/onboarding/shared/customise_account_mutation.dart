@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
+import '../../ledger/services/ledger_account_service.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart'
     show clearCreateOnboardingSecretState;
@@ -46,6 +47,13 @@ Future<void> runCustomisedAccountMutation(
             zip32Index: setupArgs.requiredKeystoneZip32Index,
             birthdayHeight: setupArgs.importBirthdayHeight,
           );
+        case SetPasswordFlow.importLedger:
+          await ref.read(ledgerAccountImporterProvider)(
+            name: accountName,
+            profilePictureId: profilePictureId,
+            account: setupArgs.ledgerAccount!,
+            birthdayHeight: setupArgs.importBirthdayHeight,
+          );
         case SetPasswordFlow.importWalletLink:
           throw StateError('Wallet Link does not use account customisation.');
       }
@@ -61,6 +69,7 @@ void clearCustomisedAccountDraft(WidgetRef ref, SetPasswordFlow flow) {
       clearCreateOnboardingSecretState(ref.read);
     case SetPasswordFlow.importKeystone:
       ref.read(keystoneOnboardingProvider.notifier).resetScan();
+    case SetPasswordFlow.importLedger:
     case SetPasswordFlow.importWallet:
       break;
     case SetPasswordFlow.importWalletLink:

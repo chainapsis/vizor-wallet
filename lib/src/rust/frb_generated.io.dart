@@ -3,7 +3,9 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/gift_card_tracking.dart';
 import 'api/keystone.dart';
+import 'api/ledger.dart';
 import 'api/network_privacy.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
@@ -21,6 +23,7 @@ import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
+import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -75,6 +78,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RustStreamSink<ApiVotingObservability>
   dco_decode_StreamSink_api_voting_observability_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<LedgerSigningEvent>
+  dco_decode_StreamSink_ledger_signing_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -448,6 +455,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   GeneratedSoftwareAccount dco_decode_generated_software_account(dynamic raw);
 
   @protected
+  GiftCardUsageEvidence dco_decode_gift_card_usage_evidence(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -500,6 +510,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
+
+  @protected
+  LedgerAccountExport dco_decode_ledger_account_export(dynamic raw);
+
+  @protected
+  LedgerActionSig dco_decode_ledger_action_sig(dynamic raw);
+
+  @protected
+  LedgerApduCommand dco_decode_ledger_apdu_command(dynamic raw);
+
+  @protected
+  LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
+
+  @protected
+  LedgerPcztApduPlan dco_decode_ledger_pczt_apdu_plan(dynamic raw);
+
+  @protected
+  LedgerShieldingProgress dco_decode_ledger_shielding_progress(dynamic raw);
+
+  @protected
+  LedgerSignedOperation dco_decode_ledger_signed_operation(dynamic raw);
+
+  @protected
+  LedgerSignedOperationBroadcastResult
+  dco_decode_ledger_signed_operation_broadcast_result(dynamic raw);
+
+  @protected
+  LedgerSigningEvent dco_decode_ledger_signing_event(dynamic raw);
+
+  @protected
+  LedgerUfvkApduPlan dco_decode_ledger_ufvk_apdu_plan(dynamic raw);
+
+  @protected
+  LegacyHardwareAccount dco_decode_legacy_hardware_account(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -586,6 +630,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneSigningRequest> dco_decode_list_keystone_signing_request(
+    dynamic raw,
+  );
+
+  @protected
+  List<LedgerActionSig> dco_decode_list_ledger_action_sig(dynamic raw);
+
+  @protected
+  List<LedgerApduCommand> dco_decode_list_ledger_apdu_command(dynamic raw);
+
+  @protected
+  List<LedgerSignedOperation> dco_decode_list_ledger_signed_operation(
+    dynamic raw,
+  );
+
+  @protected
+  List<LegacyHardwareAccount> dco_decode_list_legacy_hardware_account(
     dynamic raw,
   );
 
@@ -1275,6 +1335,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<LedgerSigningEvent>
+  sse_decode_StreamSink_ledger_signing_event_Sse(SseDeserializer deserializer);
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
@@ -1756,6 +1820,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  GiftCardUsageEvidence sse_decode_gift_card_usage_evidence(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -1826,6 +1895,58 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KeystoneSigningRequest sse_decode_keystone_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerAccountExport sse_decode_ledger_account_export(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerActionSig sse_decode_ledger_action_sig(SseDeserializer deserializer);
+
+  @protected
+  LedgerApduCommand sse_decode_ledger_apdu_command(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
+
+  @protected
+  LedgerPcztApduPlan sse_decode_ledger_pczt_apdu_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerShieldingProgress sse_decode_ledger_shielding_progress(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerSignedOperation sse_decode_ledger_signed_operation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerSignedOperationBroadcastResult
+  sse_decode_ledger_signed_operation_broadcast_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerSigningEvent sse_decode_ledger_signing_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LedgerUfvkApduPlan sse_decode_ledger_ufvk_apdu_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LegacyHardwareAccount sse_decode_legacy_hardware_account(
     SseDeserializer deserializer,
   );
 
@@ -1932,6 +2053,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneSigningRequest> sse_decode_list_keystone_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LedgerActionSig> sse_decode_list_ledger_action_sig(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LedgerApduCommand> sse_decode_list_ledger_apdu_command(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LedgerSignedOperation> sse_decode_list_ledger_signed_operation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LegacyHardwareAccount> sse_decode_list_legacy_hardware_account(
     SseDeserializer deserializer,
   );
 
@@ -2809,6 +2950,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_ledger_signing_event_Sse(
+    RustStreamSink<LedgerSigningEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
@@ -3385,6 +3532,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_gift_card_usage_evidence(
+    GiftCardUsageEvidence self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -3471,6 +3624,72 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_keystone_signing_request(
     KeystoneSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_account_export(
+    LedgerAccountExport self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_action_sig(
+    LedgerActionSig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_apdu_command(
+    LedgerApduCommand self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_device_app(
+    LedgerDeviceApp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_pczt_apdu_plan(
+    LedgerPcztApduPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_shielding_progress(
+    LedgerShieldingProgress self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_signed_operation(
+    LedgerSignedOperation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_signed_operation_broadcast_result(
+    LedgerSignedOperationBroadcastResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_signing_event(
+    LedgerSigningEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_ufvk_apdu_plan(
+    LedgerUfvkApduPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_legacy_hardware_account(
+    LegacyHardwareAccount self,
     SseSerializer serializer,
   );
 
@@ -3600,6 +3819,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_keystone_signing_request(
     List<KeystoneSigningRequest> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ledger_action_sig(
+    List<LedgerActionSig> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ledger_apdu_command(
+    List<LedgerApduCommand> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ledger_signed_operation(
+    List<LedgerSignedOperation> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_legacy_hardware_account(
+    List<LegacyHardwareAccount> self,
     SseSerializer serializer,
   );
 
