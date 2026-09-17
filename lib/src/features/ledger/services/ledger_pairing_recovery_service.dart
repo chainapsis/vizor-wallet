@@ -78,7 +78,24 @@ class LedgerPairingRecoveryService {
     required LedgerBleDevice device,
     required void Function() checkCurrent,
     required void Function() onSaving,
-  }) => ref.read(ledgerConnectionServiceProvider).recover(() async {
+  }) => ref
+      .read(ledgerConnectionServiceProvider)
+      .recover(
+        () => verifyAndSaveWithinConnection(
+          accountUuid: accountUuid,
+          device: device,
+          checkCurrent: checkCurrent,
+          onSaving: onSaving,
+        ),
+      );
+
+  /// Caller must hold the connection service's operation exclusion.
+  Future<bool> verifyAndSaveWithinConnection({
+    required String accountUuid,
+    required LedgerBleDevice device,
+    required void Function() checkCurrent,
+    required void Function() onSaving,
+  }) async {
     final epoch = ref.read(ledgerDeviceRequestsProvider).capture();
     final session = ref.read(ledgerPairingRecoverySessionProvider)();
     void check() {
@@ -144,5 +161,5 @@ class LedgerPairingRecoveryService {
       account.ledgerDeviceId,
       device.id,
     );
-  });
+  }
 }

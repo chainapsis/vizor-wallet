@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import 'ledger_access_recovery_modal.dart';
+import '../services/ledger_device_selection.dart';
 import '../services/ledger_mobile_ble_service.dart';
 import '../services/ledger_bluetooth_access.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
@@ -98,6 +99,18 @@ class LedgerSigningModal extends ConsumerWidget {
     final appName = ledgerZcashAppName(networkName);
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final account = _ledgerAccount(ref, accountUuid);
+    final selection = ref.watch(ledgerDeviceSelectionProvider);
+    if (selection != null &&
+        selection.accountUuid == accountUuid &&
+        account != null) {
+      return LedgerAccessRecoveryModal(
+        key: ObjectKey(selection),
+        account: account,
+        selectionRequest: selection,
+        onRetry: null,
+        onClose: onCancel,
+      );
+    }
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
     if (failed &&
@@ -108,6 +121,7 @@ class LedgerSigningModal extends ConsumerWidget {
         key: ValueKey(accountUuid),
         account: account,
         pairingRecovery: failure.pairingRecovery,
+        retrySelectsDevice: true,
         onRetry: onFailureAction,
         onClose: onCancel,
       );

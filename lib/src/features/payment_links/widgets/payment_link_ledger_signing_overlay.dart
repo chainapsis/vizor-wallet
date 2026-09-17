@@ -10,6 +10,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../send/screens/mobile/mobile_send_screen.dart'
@@ -71,7 +72,9 @@ class _PaymentLinkLedgerSigningOverlayState
   void initState() {
     super.initState();
     _service = ref.read(paymentLinkLedgerFundingServiceProvider);
-    _sign = ref.read(ledgerPcztSignerProvider);
+    final scope = LedgerConnectionScope();
+    final sign = ref.read(ledgerPcztSignerProvider);
+    _sign = (uuid, pczt) => scope.run(() => sign(uuid, pczt));
     _cancelDevice = ref.read(ledgerOperationCancellerProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_active) _start();

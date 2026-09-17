@@ -1,3 +1,6 @@
+import '../../../providers/account_provider.dart';
+import '../../ledger/services/ledger_device_selection.dart';
+import '../../ledger/widgets/ledger_access_recovery_modal.dart';
 import 'dart:async';
 
 import '../../ledger/services/ledger_signing_progress.dart';
@@ -1177,6 +1180,24 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
+    final selection = ref.watch(ledgerDeviceSelectionProvider);
+    if (selection != null && selection.accountUuid == accountUuid) {
+      final account = ref
+          .watch(accountProvider)
+          .value
+          ?.accounts
+          .where((a) => a.uuid == accountUuid)
+          .firstOrNull;
+      if (account != null) {
+        return LedgerAccessRecoveryModal(
+          key: ObjectKey(selection),
+          account: account,
+          selectionRequest: selection,
+          onRetry: null,
+          onClose: onCancel,
+        );
+      }
+    }
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final failed = readiness.phase == LedgerAppReadinessPhase.failed;
     final progress = ref.watch(ledgerSigningProgressProvider);

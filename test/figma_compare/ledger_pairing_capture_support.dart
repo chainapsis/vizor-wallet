@@ -62,3 +62,49 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
     }
   }
 }
+
+void runLedgerSelectionCaptures({
+  required bool mobile,
+  required String output,
+}) {
+  for (final state in ['devices', 'mismatch', 'signing', if (!mobile) 'usb']) {
+    for (final theme in [ThemeMode.light, ThemeMode.dark]) {
+      final size = mobile ? const Size(393, 852) : const Size(800, 720);
+      runFigmaCompareCaptureTest(
+        expectedFormFactor: mobile
+            ? AppFormFactor.mobile
+            : AppFormFactor.desktop,
+        defaultLogicalSize: size,
+        defaultPixelRatio: 2,
+        overrideConfiguration: FigmaCompareConfiguration(
+          scenarioId: 'ledger-device-selection',
+          themeMode: theme,
+          outputPath:
+              '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/selection-$state.png',
+          logicalSize: size,
+          pixelRatio: 2,
+        ),
+        beforeCapture: (tester) async {
+          for (var i = 0; i < 8; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          expect(find.text('Select your Ledger'), findsOneWidget);
+          final label = switch (state) {
+            'mismatch' => 'Ledger Stax',
+            'signing' => 'Ledger Nano X',
+            'usb' => 'USB',
+            _ => null,
+          };
+          if (label != null) {
+            tester
+                .widget<AppButton>(find.widgetWithText(AppButton, label))
+                .onPressed!();
+            for (var i = 0; i < 8; i++) {
+              await tester.pump(const Duration(milliseconds: 50));
+            }
+          }
+        },
+      );
+    }
+  }
+}

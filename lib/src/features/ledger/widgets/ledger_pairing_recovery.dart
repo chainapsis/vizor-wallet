@@ -11,6 +11,7 @@ import '../ledger_capability.dart';
 import '../services/ledger_bluetooth_access.dart';
 import '../services/ledger_connection_service.dart';
 import '../services/ledger_device_request.dart';
+import '../services/ledger_device_selection.dart';
 import '../services/ledger_failure_guidance.dart';
 import '../services/ledger_mobile_ble_service.dart';
 import '../services/ledger_pairing_recovery_service.dart';
@@ -26,6 +27,8 @@ class LedgerPairingRecovery extends ConsumerStatefulWidget {
     required this.onClose,
     required this.onBusyChanged,
     this.enabled = true,
+    this.selectionRequest,
+    this.retrySelectsDevice = false,
     super.key,
   });
   final String accountUuid;
@@ -33,6 +36,8 @@ class LedgerPairingRecovery extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
   final ValueChanged<bool> onBusyChanged;
   final bool enabled;
+  final LedgerDeviceSelectionRequest? selectionRequest;
+  final bool retrySelectsDevice;
 
   @override
   ConsumerState<LedgerPairingRecovery> createState() =>
@@ -75,6 +80,12 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     } catch (_) {
       _invalidated = true;
       _epoch = () => throw StateError('Cancelled');
+    }
+    if (widget.selectionRequest != null) {
+      _stage = _Stage.scanning;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_scan(initial: true));
+      });
     }
   }
 
@@ -139,8 +150,12 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     _notifyBusy();
   }
 
-  Future<void> _scan() async {
-    if (_busy || !widget.enabled || _invalidated) return;
+  Future<void> _scan({bool initial = false}) async {
+    if ((_busy && !initial) || !widget.enabled || _invalidated) return;
+    if (widget.retrySelectsDevice) {
+      widget.onRetry?.call();
+      return;
+    }
     final generation = ++_generation;
     setState(() {
       _stage = _Stage.scanning;
@@ -153,19 +168,24 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
       _check(generation);
       unawaited(_subscription?.cancel());
       _subscription = null;
-      await ref.read(ledgerConnectionServiceProvider).recover(() async {
-        await _mobile.stopDiscovery();
-        _check(generation);
-        await _mobile.disconnect();
-        _check(generation);
-        if (!await prepareLedgerBluetoothDiscovery(_mobile)) {
-          throw const LedgerMobileException(
-            LedgerMobileFailure.permissionDenied,
-            'Allow Bluetooth access to find your Ledger.',
-          );
-        }
-        _check(generation);
-      });
+      if (widget.selectionRequest case final request?) {
+        request.requireCurrent();
+        await request.prepare();
+      } else {
+        await ref.read(ledgerConnectionServiceProvider).recover(() async {
+          await _mobile.stopDiscovery();
+          _check(generation);
+          await _mobile.disconnect();
+          _check(generation);
+          if (!await prepareLedgerBluetoothDiscovery(_mobile)) {
+            throw const LedgerMobileException(
+              LedgerMobileFailure.permissionDenied,
+              'Allow Bluetooth access to find your Ledger.',
+            );
+          }
+          _check(generation);
+        });
+      }
       _check(generation);
       _subscription = _mobile.discoverDevices().listen(
         (event) {
@@ -219,6 +239,14 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     _notifyBusy();
     try {
       _check(generation);
+      if (widget.selectionRequest case final request?) {
+        await request.select(device, () => _check(generation), () {
+          setState(() => _stage = _Stage.saving);
+          _notifyBusy();
+        });
+        // The owning operation resumes on this verified connection.
+        return;
+      }
       final updated = await ref
           .read(ledgerPairingRecoveryServiceProvider)
           .verifyAndSave(

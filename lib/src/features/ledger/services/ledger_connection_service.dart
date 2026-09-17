@@ -1,9 +1,10 @@
 import 'dart:developer' show log;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ledger_bluetooth_access.dart';
+import 'ledger_device_selection.dart';
+import 'ledger_pairing_recovery_service.dart';
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
@@ -31,7 +32,7 @@ class LedgerConnectionService {
 
   final Ref _ref;
   bool _running = false;
-  bool _requiresReconnect = false;
+  int _connectionGeneration = 0;
 
   /// Share exclusion with signing while re-establishing a device identity.
   Future<T> recover<T>(Future<T> Function() action) async {
@@ -42,7 +43,7 @@ class LedgerConnectionService {
       );
     }
     _running = true;
-    _requiresReconnect = true;
+    _connectionGeneration++;
     try {
       return await action();
     } finally {
@@ -80,6 +81,51 @@ class LedgerConnectionService {
   }) async {
     final check = _ref.read(ledgerDeviceRequestsProvider).capture();
     final account = _account(accountUuid);
+    final scope = LedgerConnectionScope.current ?? LedgerConnectionScope();
+    final session = _ref.read(ledgerPairingRecoverySessionProvider)();
+    final requestCheck = check;
+    void checkContext() {
+      requestCheck();
+      session();
+    }
+
+    final cached = scope.selected;
+    if (cached != null) {
+      try {
+        cached.check();
+        checkContext();
+        if (cached.accountUuid != accountUuid) {
+          throw StateError('Ledger account changed.');
+        }
+        if (cached.device == null) {
+          final result = await _runUsb(checkContext, usb);
+          checkContext();
+          return result;
+        }
+        final mobile = _ref.read(ledgerMobileBleServiceProvider);
+        if (mobile.connectedDeviceId != cached.device!.id) {
+          throw const LedgerMobileException(
+            LedgerMobileFailure.disconnected,
+            'Select your Ledger again.',
+          );
+        }
+        await _ref
+            .read(
+              ledgerAppReadinessServiceForTransportProvider(
+                LedgerConnectionTransport.bluetooth,
+              ),
+            )
+            .ensureReady();
+        checkContext();
+        final result = await bluetooth(mobile);
+        checkContext();
+        return result;
+      } catch (_) {
+        scope.selected = null;
+        rethrow;
+      }
+    }
+    _connectionGeneration++;
     final candidates = _candidates(account);
     Object? lastConnectionError;
 
@@ -95,6 +141,11 @@ class LedgerConnectionService {
           LedgerConnectionTransport.bluetooth => await _runBluetooth(
             check,
             account,
+            scope,
+            () {
+              operationStarted = true;
+              return usb();
+            },
             (mobile) {
               operationStarted = true;
               return bluetooth(mobile);
@@ -103,7 +154,12 @@ class LedgerConnectionService {
         };
         check();
         try {
-          await _recordSuccess(account, transport);
+          await _recordSuccess(
+            account,
+            scope.selected != null && scope.selected!.device == null
+                ? LedgerConnectionTransport.usb
+                : transport,
+          );
         } catch (error, stackTrace) {
           log(
             'Failed to persist the successful Ledger transport.',
@@ -115,15 +171,7 @@ class LedgerConnectionService {
         check();
         return result;
       } catch (error) {
-        if (transport == LedgerConnectionTransport.bluetooth &&
-            ((error is LedgerMobileException &&
-                    ledgerFailureInvalidatesConnection(error.failure)) ||
-                (error is LedgerAppReadinessException &&
-                    (error.failure == LedgerAppReadinessFailure.disconnected ||
-                        error.failure ==
-                            LedgerAppReadinessFailure.unavailable)))) {
-          _requiresReconnect = true;
-        }
+        scope.selected = null;
         check();
         // Only connection preparation may fall back; never replay an operation.
         if (operationStarted) rethrow;
@@ -161,13 +209,9 @@ class LedgerConnectionService {
       LedgerConnectionPreference.bluetooth => const [
         LedgerConnectionTransport.bluetooth,
       ],
-      LedgerConnectionPreference.automatic => [
-        ?account.ledgerLastTransport,
-        if (account.ledgerLastTransport != LedgerConnectionTransport.usb)
-          LedgerConnectionTransport.usb,
-        if (account.ledgerDeviceId != null &&
-            account.ledgerLastTransport != LedgerConnectionTransport.bluetooth)
-          LedgerConnectionTransport.bluetooth,
+      LedgerConnectionPreference.automatic => const [
+        LedgerConnectionTransport.usb,
+        LedgerConnectionTransport.bluetooth,
       ],
     };
   }
@@ -190,76 +234,76 @@ class LedgerConnectionService {
   Future<T> _runBluetooth<T>(
     void Function() check,
     AccountInfo account,
+    LedgerConnectionScope scope,
+    Future<T> Function() usb,
     Future<T> Function(LedgerMobileBleService mobile) operation,
   ) async {
     await _ref.read(ledgerMobileSigningStatusGateProvider).waitUntilReady();
     check();
-    final deviceId = account.ledgerDeviceId;
-    if (deviceId == null) {
-      throw const LedgerConnectionRequiredException(
-        'No Bluetooth device is paired with this Ledger account.',
-      );
-    }
-    final platform = _ref.read(ledgerTargetPlatformProvider);
-    if (ledgerBluetoothTransportCapabilityForModel(
-          model: account.ledgerDeviceModel,
-          platform: platform,
-        ) ==
-        LedgerBluetoothCapability.unsupported) {
-      throw LedgerConnectionRequiredException(
-        '${account.ledgerDeviceModel ?? 'This Ledger model'} does not support Bluetooth.',
-      );
+    final session = _ref.read(ledgerPairingRecoverySessionProvider)();
+    final generation = _connectionGeneration;
+    void guard() {
+      check();
+      session();
+      if (generation != _connectionGeneration) {
+        throw const LedgerMobileException(
+          LedgerMobileFailure.disconnected,
+          'Select your Ledger again.',
+        );
+      }
     }
 
     final mobile = _ref.read(ledgerMobileBleServiceProvider);
-    await requireLedgerBluetoothAccess(mobile);
-    check();
-    final device = LedgerBleDevice(
-      id: deviceId,
-      name: account.ledgerDeviceName ?? 'Ledger',
-      model: account.ledgerDeviceModel ?? 'Ledger',
-    );
-    Future<void> reconnect() async {
-      // Keep this set until cleanup AND connect have both completed. A null
-      // Dart identity may still have a connected/dirty native transport.
-      _requiresReconnect = true;
-      await mobile.disconnect();
-      check();
-      await mobile.connect(device);
-      check();
-      _requiresReconnect = false;
+    final selected = await _ref
+        .read(ledgerDeviceSelectionProvider.notifier)
+        .request(
+          LedgerDeviceSelectionRequest(
+            accountUuid: account.uuid,
+            check: guard,
+            cancelDevice: () async {
+              try {
+                await mobile.cancelSigning();
+              } finally {
+                await mobile.stopDiscovery();
+              }
+            },
+            prepareDiscovery: () async {
+              guard();
+              await mobile.stopDiscovery();
+              guard();
+              await mobile.disconnect();
+              guard();
+              if (!await prepareLedgerBluetoothDiscovery(mobile)) {
+                throw const LedgerMobileException(
+                  LedgerMobileFailure.permissionDenied,
+                  'Allow Bluetooth access to find your Ledger.',
+                );
+              }
+              guard();
+            },
+            verify: (device, current, saving) => _ref
+                .read(ledgerPairingRecoveryServiceProvider)
+                .verifyAndSaveWithinConnection(
+                  accountUuid: account.uuid,
+                  device: device,
+                  checkCurrent: current,
+                  onSaving: saving,
+                ),
+          ),
+        );
+    guard();
+    scope.selected = selected;
+    if (selected.device == null) {
+      // Explicit user action; USB retains its existing preparation/signing path.
+      return _runUsb(guard, usb);
     }
-
-    final readiness = _ref.read(
-      ledgerAppReadinessServiceForTransportProvider(
-        LedgerConnectionTransport.bluetooth,
-      ),
-    );
-    var reconnected = false;
-    try {
-      if (platform == TargetPlatform.macOS ||
-          _requiresReconnect ||
-          mobile.connectedDeviceId != device.id) {
-        reconnected = true;
-        await reconnect();
-      }
-      await readiness.ensureReady();
-      check();
-    } catch (error) {
-      check();
-      final disconnected =
-          error is LedgerMobileException &&
-              error.failure == LedgerMobileFailure.disconnected ||
-          error is LedgerAppReadinessException && error.canReconnect;
-      // Only a failed existing connection gets one automatic preparation retry.
-      // Never retry a pairing problem or any operation that reached the signer.
-      if (!disconnected || ledgerPairingNeedsReset(error) || reconnected) {
-        rethrow;
-      }
-      await reconnect();
-      await readiness.ensureReady();
-      check();
+    if (mobile.connectedDeviceId != selected.device!.id) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.disconnected,
+        'Select your Ledger again.',
+      );
     }
+    // Verification already prepared this connection. Do not reconnect here.
     return operation(mobile);
   }
 
@@ -267,7 +311,7 @@ class LedgerConnectionService {
     AccountInfo account,
     LedgerConnectionTransport transport,
   ) async {
-    if (account.ledgerLastTransport == transport) return;
+    if (_account(account.uuid).ledgerLastTransport == transport) return;
     await _ref
         .read(accountProvider.notifier)
         .recordLedgerConnection(uuid: account.uuid, transport: transport);

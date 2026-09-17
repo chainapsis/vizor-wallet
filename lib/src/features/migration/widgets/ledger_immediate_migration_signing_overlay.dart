@@ -1,3 +1,4 @@
+import '../../ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -64,7 +65,11 @@ class _LedgerImmediateMigrationSigningOverlayState
     super.dispose();
   }
 
-  Future<void> _run() async {
+  final _connectionScope = LedgerConnectionScope();
+
+  Future<void> _run() => _connectionScope.run(_runInScope);
+
+  Future<void> _runInScope() async {
     final cancellation = LedgerImmediateMigrationCancellation();
     _cancellation = cancellation;
     if (mounted) {

@@ -1,3 +1,9 @@
+import 'dart:async';
+import '../src/providers/rpc_endpoint_provider.dart';
+import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/features/ledger/services/ledger_connection_service.dart';
+import '../src/features/ledger/services/ledger_signing_progress.dart';
+import '../src/features/ledger/widgets/ledger_signing_modal.dart';
 // Deterministic recovery interactions: no wallet data, Rust, or native IO.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,20 +27,28 @@ const _account = AccountInfo(
   isHardware: true,
   hardwareSignerKind: HardwareSignerKind.ledger,
   zip32AccountIndex: 0,
+  ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
   ledgerDeviceId: 'flex',
   ledgerDeviceModel: 'Flex',
 );
 
-Widget buildLedgerRePairingCapture(BuildContext context) {
+Widget buildLedgerRePairingCapture(BuildContext context) =>
+    _buildCapture(context);
+Widget buildLedgerDeviceSelectionCapture(BuildContext context) =>
+    _buildCapture(context, selectFirst: true);
+Widget _buildCapture(BuildContext context, {bool selectFirst = false}) {
   final mobile = kAppFormFactor == AppFormFactor.mobile;
-  const modal = LedgerAccessRecoveryModal(
-    account: _account,
-    pairingRecovery: true,
-    onRetry: _noop,
-    onClose: _noop,
-  );
+  final Widget modal = selectFirst
+      ? const _SelectionCaptureHost()
+      : const LedgerAccessRecoveryModal(
+          account: _account,
+          pairingRecovery: true,
+          onRetry: _noop,
+          onClose: _noop,
+        );
   return ProviderScope(
     overrides: [
+      rpcEndpointProvider.overrideWith(_Rpc.new),
       accountProvider.overrideWith(_Accounts.new),
       appSecurityProvider.overrideWith(_Security.new),
       ledgerTargetPlatformProvider.overrideWithValue(
@@ -55,7 +69,7 @@ Widget buildLedgerRePairingCapture(BuildContext context) {
       ledgerRustOperationCancellerProvider.overrideWithValue(() async {}),
     ],
     child: mobile
-        ? const MobileLedgerSigningSurface(
+        ? MobileLedgerSigningSurface(
             title: 'Confirm transaction',
             onBack: _noop,
             canLeave: true,
@@ -63,7 +77,7 @@ Widget buildLedgerRePairingCapture(BuildContext context) {
           )
         : ColoredBox(
             color: context.colors.background.window,
-            child: const Center(child: modal),
+            child: Center(child: modal),
           ),
   );
 }
@@ -135,4 +149,59 @@ class _Security extends AppSecurityNotifier {
   @override
   AppSecurityState build() =>
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+}
+
+class _Rpc extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+}
+
+class _SelectionCaptureHost extends ConsumerStatefulWidget {
+  const _SelectionCaptureHost();
+  @override
+  ConsumerState<_SelectionCaptureHost> createState() =>
+      _SelectionCaptureHostState();
+}
+
+class _SelectionCaptureHostState extends ConsumerState<_SelectionCaptureHost> {
+  final _signing = Completer<void>();
+  var _reviewing = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        ref
+            .read(ledgerConnectionServiceProvider)
+            .run<void>(
+              accountUuid: _account.uuid,
+              usb: () async {},
+              bluetooth: (_) {
+                if (mounted) setState(() => _reviewing = true);
+                return _signing.future;
+              },
+            )
+            .catchError((Object _) {}),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    if (!_signing.isCompleted) _signing.complete();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => LedgerSigningModal(
+    phase: LedgerSigningModalPhase.awaitingDevice,
+    failure: null,
+    signingStage: _reviewing
+        ? LedgerSigningStage.reviewing
+        : LedgerSigningStage.preparing,
+    accountUuid: _account.uuid,
+    onCancel: _noop,
+    onFailureAction: null,
+  );
 }

@@ -11,6 +11,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_operation_recovery.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
@@ -48,6 +49,7 @@ class SwapLedgerSigningOverlay extends ConsumerStatefulWidget {
 
 class _SwapLedgerSigningOverlayState
     extends ConsumerState<SwapLedgerSigningOverlay> {
+  final LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
@@ -197,9 +199,8 @@ class _SwapLedgerSigningOverlayState
         _pcztWithProofs = pcztWithProofs;
       });
 
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        draft.pcztBytes,
+      final signedPczt = await _connectionScope.run(
+        () => ref.read(ledgerPcztSignerProvider)(accountUuid, draft.pcztBytes),
       );
       if (!mounted || _cancelled) return;
       await _checkpointAndBroadcast(
@@ -277,9 +278,8 @@ class _SwapLedgerSigningOverlayState
     });
     try {
       final accountUuid = widget.intent.accountUuid!;
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        draft.pcztBytes,
+      final signedPczt = await _connectionScope.run(
+        () => ref.read(ledgerPcztSignerProvider)(accountUuid, draft.pcztBytes),
       );
       if (!mounted || _cancelled) return;
       final operationKind = widget.intent.payMode

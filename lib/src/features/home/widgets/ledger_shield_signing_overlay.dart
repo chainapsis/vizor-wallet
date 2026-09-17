@@ -14,6 +14,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
@@ -55,6 +56,7 @@ class LedgerShieldSigningOverlay extends ConsumerStatefulWidget {
 
 class _LedgerShieldSigningOverlayState
     extends ConsumerState<LedgerShieldSigningOverlay> {
+  final LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
@@ -204,9 +206,11 @@ class _LedgerShieldSigningOverlayState
 
       final signedPczt =
           _signedPczt ??
-          await ref.read(ledgerPcztSignerProvider)(
-            accountUuid,
-            shieldPczt.pcztBytes,
+          await _connectionScope.run<List<int>>(
+            () => ref.read(ledgerPcztSignerProvider)(
+              accountUuid,
+              shieldPczt.pcztBytes,
+            ),
           );
       if (!mounted || _cancelled) return;
       _requireOriginalContext();
@@ -295,7 +299,9 @@ class _LedgerShieldSigningOverlayState
       }
       final signedPczt =
           _signedPczt ??
-          await ref.read(ledgerPcztSignerProvider)(accountUuid, pcztBytes);
+          await _connectionScope.run<List<int>>(
+            () => ref.read(ledgerPcztSignerProvider)(accountUuid, pcztBytes),
+          );
       if (!mounted || _cancelled) return;
       _requireOriginalContext();
       _signedPczt = signedPczt;

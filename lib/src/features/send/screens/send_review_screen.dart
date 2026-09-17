@@ -34,6 +34,7 @@ import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -114,6 +115,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   final List<List<int>> _keystoneSignatures = [];
   int _keystoneRound = 0;
   SaplingParamsStatus? _keystoneSaplingParams;
+  LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase? _ledgerPhase;
   LedgerSigningFailurePresentation? _ledgerFailure;
   _LedgerSendRecoveryAction? _ledgerRecoveryAction;
@@ -245,6 +247,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   void _showLedgerSigningModal() {
     if (_ledgerPhase != null) return;
+    _connectionScope = LedgerConnectionScope();
     final generation = ++_ledgerAttemptGeneration;
     setState(() {
       _ledgerPhase = LedgerSigningModalPhase.preparing;
@@ -349,9 +352,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _ledgerRound = index;
           _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
         });
-        final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-          _reviewArgs.proposalAccountUuid,
-          signerPczts[index],
+        final signedPczt = await _connectionScope.run(
+          () => ref.read(ledgerPcztSignerProvider)(
+            _reviewArgs.proposalAccountUuid,
+            signerPczts![index],
+          ),
         );
         if (!_isCurrentLedgerAttempt(generation)) return;
         _ledgerSignedPczts.add(List<int>.unmodifiable(signedPczt));

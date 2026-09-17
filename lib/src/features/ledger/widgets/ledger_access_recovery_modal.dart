@@ -9,6 +9,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_device_request.dart';
+import '../services/ledger_device_selection.dart';
 import 'ledger_bluetooth_recovery.dart';
 import 'ledger_pairing_recovery.dart';
 
@@ -19,10 +20,14 @@ class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
     required this.onRetry,
     required this.onClose,
     this.pairingRecovery = false,
+    this.selectionRequest,
+    this.retrySelectsDevice = false,
     super.key,
   });
   final AccountInfo? account;
   final bool pairingRecovery;
+  final LedgerDeviceSelectionRequest? selectionRequest;
+  final bool retrySelectsDevice;
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   @override
@@ -39,6 +44,10 @@ class _LedgerAccessRecoveryModalState
 
   Future<void> _select(bool usb) async {
     if (_saving || _accessBusy || _usb == usb) return;
+    if (widget.selectionRequest != null) {
+      setState(() => _usb = usb);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -66,17 +75,26 @@ class _LedgerAccessRecoveryModalState
   }
 
   @override
+  void dispose() {
+    widget.selectionRequest?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final platform = ref.watch(ledgerTargetPlatformProvider);
     final account = widget.account;
     final canChoose =
         platform == TargetPlatform.macOS &&
-        account?.ledgerDeviceId != null &&
+        (widget.selectionRequest != null || account?.ledgerDeviceId != null) &&
         ledgerBluetoothTransportCapabilityForModel(
               model: account?.ledgerDeviceModel,
               platform: platform,
             ) ==
             LedgerBluetoothCapability.supported;
+    final showTransportChoice = widget.selectionRequest != null
+        ? platform == TargetPlatform.macOS
+        : canChoose;
     return AppModalCard(
       width: 328,
       child: SingleChildScrollView(
@@ -88,7 +106,7 @@ class _LedgerAccessRecoveryModalState
               children: [
                 Expanded(
                   child: Text(
-                    canChoose ? 'Ledger' : 'Ledger · Bluetooth',
+                    showTransportChoice ? 'Ledger' : 'Ledger · Bluetooth',
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -96,7 +114,12 @@ class _LedgerAccessRecoveryModalState
                 ),
                 if (widget.onClose != null)
                   AppButton(
-                    onPressed: _saving ? null : widget.onClose,
+                    onPressed: _saving
+                        ? null
+                        : () {
+                            widget.selectionRequest?.cancel();
+                            widget.onClose?.call();
+                          },
                     variant: AppButtonVariant.ghost,
                     size: AppButtonSize.small,
                     child: const AppIcon(
@@ -107,7 +130,7 @@ class _LedgerAccessRecoveryModalState
                   ),
               ],
             ),
-            if (canChoose) ...[
+            if (showTransportChoice) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
                 'Connection',
@@ -176,13 +199,19 @@ class _LedgerAccessRecoveryModalState
               AppButton(
                 expand: true,
                 constrainContent: true,
-                onPressed: _saving ? null : widget.onRetry,
+                onPressed: _saving
+                    ? null
+                    : widget.selectionRequest?.selectUsb ?? widget.onRetry,
                 size: AppButtonSize.large,
                 child: const Text('Connect'),
               ),
-            ] else if (widget.pairingRecovery && account != null)
+            ] else if ((widget.pairingRecovery ||
+                    widget.selectionRequest != null) &&
+                account != null)
               LedgerPairingRecovery(
                 accountUuid: account.uuid,
+                selectionRequest: widget.selectionRequest,
+                retrySelectsDevice: widget.retrySelectsDevice,
                 onRetry: widget.onRetry,
                 onClose: widget.onClose,
                 enabled: !_saving,

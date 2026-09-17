@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -60,7 +62,12 @@ class FakeAccounts extends AccountNotifier {
     savedId = deviceId;
     state = AsyncData(
       AccountState(
-        accounts: [initial.copyWith(ledgerDeviceId: deviceId)],
+        accounts: [
+          initial.copyWith(
+            ledgerDeviceId: deviceId,
+            ledgerLastTransport: transport,
+          ),
+        ],
         activeAccountUuid: 'a',
       ),
     );
@@ -143,6 +150,7 @@ ProviderContainer containerFor(
   TargetPlatform platform = TargetPlatform.macOS,
 }) => ProviderContainer(
   overrides: [
+    rpcEndpointProvider.overrideWith(FakeRpc.new),
     ledgerMobileBleServiceProvider.overrideWithValue(ble),
     appSecurityProvider.overrideWith(FakeSecurity.new),
     accountProvider.overrideWith(() => accounts),
@@ -572,4 +580,9 @@ void main() {
       );
     }
   }
+}
+
+class FakeRpc extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig("main");
 }

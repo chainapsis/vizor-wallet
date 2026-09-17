@@ -10,7 +10,17 @@ class LedgerDeviceRequests {
   int _readinessRequest = 0;
   int _cancellations = 0;
 
-  void cancel() => _generation++;
+  final _listeners = <void Function()>{};
+  void addCancellationListener(void Function() listener) =>
+      _listeners.add(listener);
+  void removeCancellationListener(void Function() listener) =>
+      _listeners.remove(listener);
+  void cancel() {
+    _generation++;
+    for (final listener in _listeners.toList()) {
+      listener();
+    }
+  }
 
   Future<void> cancelWhile(Future<void> Function() cancelNative) async {
     cancel();

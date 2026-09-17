@@ -14,6 +14,7 @@ import 'ledger_pairing_capture_support.dart';
 void main() {
   const output = String.fromEnvironment('LEDGER_CAPTURE_DIR');
   if (output.isEmpty) return;
+  runLedgerSelectionCaptures(mobile: false, output: output);
   runLedgerPairingCaptures(mobile: false, output: output);
   for (final scenario in figmaCompareScenarios.where(
     (s) => s.desktop && s.id.startsWith('ledger-recovery-'),
