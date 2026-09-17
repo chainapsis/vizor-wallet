@@ -485,6 +485,7 @@ class _ActivityTransactionStatusScreenState
     return _ReceiptContentColumn(
       child: ShieldedReceiptView(
         status: _shieldedStatusFor(tx),
+        isIronwood: tx.displayPool == 'ironwood',
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
         txIdText: truncatedTxid(tx.txidHex),
