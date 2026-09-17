@@ -105,7 +105,9 @@ void main() {
       );
       expect(
         find.text(
-          ledgerFailureGuidance(error)?.pairingRecovery == true
+          ledgerFailureGuidance(error)?.pairingInvalid == true
+              ? 'Pair your Ledger again'
+              : ledgerFailureGuidance(error)?.pairingRecovery == true
               ? 'Couldn’t connect to your Ledger'
               : accessRecovery
               ? 'Ready to reconnect'

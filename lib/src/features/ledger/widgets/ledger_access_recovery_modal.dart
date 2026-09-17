@@ -22,12 +22,14 @@ class LedgerAccessRecoveryModal extends ConsumerStatefulWidget {
     required this.onRetry,
     required this.onClose,
     this.pairingRecovery = false,
+    this.pairingInvalid = false,
     this.selectionRequest,
     this.retrySelectsDevice = false,
     super.key,
   });
   final AccountInfo? account;
   final bool pairingRecovery;
+  final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
   final bool retrySelectsDevice;
   final VoidCallback? onRetry;
@@ -95,6 +97,7 @@ class _LedgerAccessRecoveryModalState
                 widget.onClose?.call();
               },
         pairingRecovery: widget.pairingRecovery,
+        pairingInvalid: widget.pairingInvalid,
         selectionRequest: widget.selectionRequest,
         retrySelectsDevice: widget.retrySelectsDevice,
       );
@@ -227,6 +230,7 @@ class _LedgerAccessRecoveryModalState
                 account != null)
               LedgerPairingRecovery(
                 accountUuid: account.uuid,
+                pairingInvalid: widget.pairingInvalid,
                 selectionRequest: widget.selectionRequest,
                 retrySelectsDevice: widget.retrySelectsDevice,
                 onRetry: widget.onRetry,

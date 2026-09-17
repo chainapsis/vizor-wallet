@@ -31,6 +31,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
     required this.onClose,
     required this.onBusyChanged,
     this.enabled = true,
+    this.pairingInvalid = false,
     this.selectionRequest,
     this.retrySelectsDevice = false,
     super.key,
@@ -41,6 +42,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
   final ValueChanged<bool> onBusyChanged;
   final bool enabled;
+  final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
   final bool retrySelectsDevice;
 
@@ -52,6 +54,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
 class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   LedgerPairingStage _stage = LedgerPairingStage.failed;
   bool _expanded = false;
+  late bool pairingInvalid = widget.pairingInvalid;
   bool _connectionUpdated = false;
   bool _sameSavedDevice = false;
   LedgerBleDevice? selectedDevice;
@@ -150,6 +153,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
           ? LedgerPairingStage.mismatch
           : LedgerPairingStage.failed;
       _devices = const [];
+      pairingInvalid = ledgerFailureGuidance(error)?.pairingInvalid == true;
       _accessRecovery = ledgerFailureGuidance(error)?.bluetoothRecovery == true;
       _error =
           error is LedgerAccountMismatchException ||
@@ -170,6 +174,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     final generation = ++_generation;
     setState(() {
       _stage = LedgerPairingStage.scanning;
+      pairingInvalid = false;
       _error = null;
       _devices = const [];
       _accessRecovery = false;

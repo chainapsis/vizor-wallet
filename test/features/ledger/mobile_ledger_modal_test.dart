@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,6 +43,71 @@ Widget harness(Widget child, {double scale = 1}) => MaterialApp(
 );
 
 void main() {
+  for (final failure in [
+    LedgerMobileFailure.pairingInvalid,
+    LedgerMobileFailure.disconnected,
+    LedgerMobileFailure.pairingRejected,
+  ]) {
+    testWidgets('$failure retains the cause from selection to recovery UI', (
+      tester,
+    ) async {
+      final ble = _FailingPairingBle(failure);
+      final c = fixture.containerFor(
+        ble,
+        fixture.FakeAccounts(),
+        platform: TargetPlatform.iOS,
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            MobileLedgerSigningSurface(
+              canLeave: true,
+              onBack: () {},
+              child: LedgerSigningModal(
+                accountUuid: 'a',
+                phase: LedgerSigningModalPhase.awaitingDevice,
+                failure: null,
+                onCancel: () {},
+                onFailureAction: null,
+              ),
+            ),
+          ),
+        ),
+      );
+      final operation = c
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'a',
+            usb: () async => 'usb',
+            bluetooth: (_) async => 'signed',
+          )
+          .then<Object>((value) => value, onError: (Object error) => error);
+      await frames(tester);
+      await tester.tap(find.text('Ledger Flex'));
+      await frames(tester);
+      final invalid = failure == LedgerMobileFailure.pairingInvalid;
+      expect(
+        find.text('Pair your Ledger again'),
+        invalid ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text('Did you reset pairing?'),
+        invalid ? findsNothing : findsOneWidget,
+      );
+      expect(
+        find.textContaining('Open Settings > Bluetooth.'),
+        invalid ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Open settings'), findsNothing);
+      c.read(ledgerDeviceSelectionProvider)!.cancel();
+      await operation;
+      await frames(tester);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     testWidgets('$platform selecting saved device keeps the signer alive', (
       tester,
@@ -277,4 +343,13 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+class _FailingPairingBle extends fixture.FakeBle {
+  _FailingPairingBle(this.failure);
+  final LedgerMobileFailure failure;
+  @override
+  Future<void> connect(LedgerBleDevice device) async {
+    throw LedgerMobileException(failure, 'Native connection failure');
+  }
 }

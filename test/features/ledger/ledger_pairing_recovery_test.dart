@@ -319,6 +319,36 @@ void main() {
     TargetPlatform.iOS,
     TargetPlatform.android,
   ]) {
+    testWidgets('$platform confirmed invalid pairing is visible immediately', (
+      tester,
+    ) async {
+      final c = containerFor(FakeBle(), FakeAccounts(), platform: platform);
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Center(
+                child: LedgerAccessRecoveryModal(
+                  account: account,
+                  pairingRecovery: true,
+                  pairingInvalid: true,
+                  onRetry: () {},
+                  onClose: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Pair your Ledger again'), findsOneWidget);
+      expect(find.text('Remove the old pairing'), findsOneWidget);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
     testWidgets('$platform disclosure and verified reconnect never auto-sign', (
       tester,
     ) async {

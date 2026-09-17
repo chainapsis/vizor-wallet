@@ -273,6 +273,7 @@ class _PaymentLinkLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
               pairingRecovery:
                   !_checkpointed &&
                   !_terminal &&

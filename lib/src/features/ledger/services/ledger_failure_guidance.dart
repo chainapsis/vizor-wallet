@@ -11,10 +11,12 @@ class LedgerFailureGuidance {
     this.showDeviceAppPrompt = false,
     this.bluetoothRecovery = false,
     this.pairingRecovery = false,
+    this.pairingInvalid = false,
   });
 
   final bool bluetoothRecovery;
   final bool pairingRecovery;
+  final bool pairingInvalid;
   final String message;
   final bool showDeviceAppPrompt;
 }
@@ -44,6 +46,7 @@ LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
     ),
     LedgerMobileFailure.pairingInvalid => const LedgerFailureGuidance(
       kLedgerPairingInvalidMessage,
+      pairingInvalid: true,
       pairingRecovery: true,
     ),
     LedgerMobileFailure.pairingRejected => const LedgerFailureGuidance(

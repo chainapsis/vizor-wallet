@@ -691,6 +691,7 @@ class _SwapLedgerSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
               pairingRecovery:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&

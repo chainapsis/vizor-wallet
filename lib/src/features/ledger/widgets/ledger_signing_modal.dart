@@ -41,6 +41,7 @@ class LedgerSigningFailurePresentation {
     this.showConnectionPicker = true,
     this.bluetoothRecovery = false,
     this.pairingRecovery = false,
+    this.pairingInvalid = false,
   });
 
   final String title;
@@ -52,6 +53,7 @@ class LedgerSigningFailurePresentation {
   final bool showConnectionPicker;
   final bool bluetoothRecovery;
   final bool pairingRecovery;
+  final bool pairingInvalid;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -123,6 +125,7 @@ class LedgerSigningModal extends ConsumerWidget {
         key: ValueKey(accountUuid),
         account: account,
         pairingRecovery: failure.pairingRecovery,
+        pairingInvalid: failure.pairingInvalid,
         retrySelectsDevice: true,
         onRetry: onFailureAction,
         onClose: onCancel,

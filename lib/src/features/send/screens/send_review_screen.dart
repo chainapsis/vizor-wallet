@@ -471,6 +471,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
         pairingRecovery: guidance.pairingRecovery,
+        pairingInvalid: guidance.pairingInvalid,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;

@@ -122,7 +122,14 @@ void main() {
         await tester.tap(find.text('Open signing'));
         await tester.pumpAndSettle();
         if (ledgerFailureGuidance(original)!.pairingRecovery) {
-          expect(find.text('Couldn’t connect to your Ledger'), findsOneWidget);
+          expect(
+            find.text(
+              ledgerFailureGuidance(original)!.pairingInvalid
+                  ? 'Pair your Ledger again'
+                  : 'Couldn’t connect to your Ledger',
+            ),
+            findsOneWidget,
+          );
           expect(find.text('Find my Ledger'), findsOneWidget);
           expect(attempts, 1);
           return;

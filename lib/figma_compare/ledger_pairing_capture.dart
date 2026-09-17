@@ -37,6 +37,9 @@ const _account = AccountInfo(
 Widget buildLedgerMobileLargeTextCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true, modalTextScale: 1.8);
 
+Widget buildLedgerInvalidPairingCapture(BuildContext context) =>
+    _buildCapture(context, pairingInvalid: true);
+
 Widget buildLedgerRePairingCapture(BuildContext context) =>
     _buildCapture(context);
 Widget buildLedgerDeviceSelectionCapture(BuildContext context) =>
@@ -50,6 +53,7 @@ Widget buildLedgerSearchingDevicesCapture(BuildContext context) =>
 Widget _buildCapture(
   BuildContext context, {
   bool selectFirst = false,
+  bool pairingInvalid = false,
   bool holdReadiness = false,
   String? scan,
   double? modalTextScale,
@@ -57,9 +61,10 @@ Widget _buildCapture(
   final mobile = kAppFormFactor == AppFormFactor.mobile;
   final Widget modal = selectFirst
       ? const _SelectionCaptureHost()
-      : const LedgerAccessRecoveryModal(
+      : LedgerAccessRecoveryModal(
           account: _account,
           pairingRecovery: true,
+          pairingInvalid: pairingInvalid,
           onRetry: _noop,
           onClose: _noop,
         );

@@ -22,6 +22,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
     required this.onClose,
     required this.onBusyChanged,
     this.enabled = true,
+    this.pairingInvalid = false,
     this.selectionRequest,
     this.retrySelectsDevice = false,
     super.key,
@@ -31,12 +32,14 @@ class LedgerPairingRecovery extends ConsumerWidget {
   final VoidCallback? onClose;
   final ValueChanged<bool> onBusyChanged;
   final bool enabled;
+  final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
   final bool retrySelectsDevice;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => LedgerPairingSession(
     accountUuid: accountUuid,
+    pairingInvalid: pairingInvalid,
     onRetry: onRetry,
     onClose: onClose,
     onBusyChanged: onBusyChanged,
@@ -73,7 +76,10 @@ class LedgerPairingRecovery extends ConsumerWidget {
         platform != TargetPlatform.iOS &&
         c.service is LedgerBluetoothPairingSettings;
     final title = switch (c.stage) {
-      LedgerPairingStage.failed => 'Couldn’t connect to your Ledger',
+      LedgerPairingStage.failed =>
+        c.pairingInvalid
+            ? 'Pair your Ledger again'
+            : 'Couldn’t connect to your Ledger',
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? (c.stage == LedgerPairingStage.scanning
@@ -88,7 +94,9 @@ class LedgerPairingRecovery extends ConsumerWidget {
     };
     final message = switch (c.stage) {
       LedgerPairingStage.failed =>
-        'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
+        c.pairingInvalid
+            ? 'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'
+            : 'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? 'Keep your Ledger nearby and unlocked.'
@@ -141,39 +149,43 @@ class LedgerPairingRecovery extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Semantics(
-                  expanded: c.expanded,
-                  child: AppButton(
-                    key: const ValueKey('ledger_pairing_help'),
-                    size: AppButtonSize.small,
-                    height: 52,
-                    contentPadding: EdgeInsets.zero,
-                    variant: AppButtonVariant.ghost,
-                    expand: true,
-                    constrainContent: true,
-                    onPressed: enabled && !c.busy ? c.toggleHelp : null,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Did you reset pairing?',
-                            style: AppTypography.bodySmall,
+                if (!c.pairingInvalid)
+                  Semantics(
+                    expanded: c.expanded,
+                    child: AppButton(
+                      key: const ValueKey('ledger_pairing_help'),
+                      size: AppButtonSize.small,
+                      height: 52,
+                      contentPadding: EdgeInsets.zero,
+                      variant: AppButtonVariant.ghost,
+                      expand: true,
+                      constrainContent: true,
+                      onPressed: enabled && !c.busy ? c.toggleHelp : null,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Did you reset pairing?',
+                              style: AppTypography.bodySmall,
+                            ),
                           ),
-                        ),
-                        RotatedBox(
-                          quarterTurns: c.expanded ? 3 : 1,
-                          child: const AppIcon(
-                            AppIcons.chevronForward,
-                            size: 16,
+                          RotatedBox(
+                            quarterTurns: c.expanded ? 3 : 1,
+                            child: const AppIcon(
+                              AppIcons.chevronForward,
+                              size: 16,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (c.expanded)
+                if (c.expanded || c.pairingInvalid)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    padding: EdgeInsets.only(
+                      top: c.pairingInvalid ? AppSpacing.sm : 0,
+                      bottom: AppSpacing.sm,
+                    ),
                     child: Column(
                       children: [
                         _step(

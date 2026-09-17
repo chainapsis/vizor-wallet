@@ -20,6 +20,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
     required this.onRetry,
     required this.onClose,
     this.pairingRecovery = false,
+    this.pairingInvalid = false,
     this.selectionRequest,
     this.retrySelectsDevice = false,
     super.key,
@@ -28,6 +29,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   final bool pairingRecovery;
+  final bool pairingInvalid;
   final LedgerDeviceSelectionRequest? selectionRequest;
   final bool retrySelectsDevice;
 
@@ -46,6 +48,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
     final platform = ref.watch(ledgerTargetPlatformProvider);
     return LedgerPairingSession(
       accountUuid: account!.uuid,
+      pairingInvalid: pairingInvalid,
       onRetry: onRetry,
       onClose: onClose,
       selectionRequest: selectionRequest,
@@ -72,7 +75,10 @@ class MobileLedgerAccessContent extends ConsumerWidget {
           LedgerPairingStage.saving => 'Saving your connection',
           LedgerPairingStage.ready => 'Your Ledger is connected',
           LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
-          LedgerPairingStage.failed => 'Couldn’t connect to your Ledger',
+          LedgerPairingStage.failed =>
+            c.pairingInvalid
+                ? 'Pair your Ledger again'
+                : 'Couldn’t connect to your Ledger',
         };
         final message = switch (c.stage) {
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
@@ -92,7 +98,9 @@ class MobileLedgerAccessContent extends ConsumerWidget {
           LedgerPairingStage.mismatch =>
             'Choose the Ledger that holds this account. Your saved connection hasn’t changed.',
           LedgerPairingStage.failed =>
-            'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
+            c.pairingInvalid
+                ? 'Your Ledger no longer recognizes this Bluetooth pairing.'
+                : 'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
         };
         return MobileLedgerSheetContent(
           title: title,
@@ -157,25 +165,26 @@ class MobileLedgerAccessContent extends ConsumerWidget {
               MobileLedgerIdentity(ledgerDeviceLabel(c.selectedDevice!)),
             if (c.stage == LedgerPairingStage.failed) ...[
               const SizedBox(height: AppSpacing.sm),
-              AppButton(
-                key: const ValueKey('ledger_pairing_help'),
-                variant: AppButtonVariant.ghost,
-                expand: true,
-                constrainContent: true,
-                growWithContent: true,
-                contentPadding: EdgeInsets.zero,
-                onPressed: c.busy ? null : c.toggleHelp,
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('Did you reset pairing?')),
-                    RotatedBox(
-                      quarterTurns: c.expanded ? 3 : 1,
-                      child: const AppIcon(AppIcons.chevronForward, size: 16),
-                    ),
-                  ],
+              if (!c.pairingInvalid)
+                AppButton(
+                  key: const ValueKey('ledger_pairing_help'),
+                  variant: AppButtonVariant.ghost,
+                  expand: true,
+                  constrainContent: true,
+                  growWithContent: true,
+                  contentPadding: EdgeInsets.zero,
+                  onPressed: c.busy ? null : c.toggleHelp,
+                  child: Row(
+                    children: [
+                      const Expanded(child: Text('Did you reset pairing?')),
+                      RotatedBox(
+                        quarterTurns: c.expanded ? 3 : 1,
+                        child: const AppIcon(AppIcons.chevronForward, size: 16),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (c.expanded) ...[
+              if (c.expanded || c.pairingInvalid) ...[
                 MobileLedgerMessage(
                   platform == TargetPlatform.iOS
                       ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device. Then come back and find your Ledger again.'
