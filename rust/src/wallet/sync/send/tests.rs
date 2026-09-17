@@ -3397,6 +3397,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     let (proposal, selected) =
         build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
     assert_eq!(proposal.steps().head.transparent_inputs().len(), 32);
+    assert_eq!(proposal.steps().head.balance().proposed_change().len(), 1);
     assert_eq!(selected, Zatoshis::const_from_u64(32_000_000));
     let p = zcash_client_backend::data_api::wallet::create_pczt_from_proposal::<
         _,
