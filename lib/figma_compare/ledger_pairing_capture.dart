@@ -142,8 +142,8 @@ class _Ble
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() => Stream.fromIterable(const [
     LedgerDevicesDiscovered([
-      LedgerBleDevice(id: 'flex', name: 'Ledger Flex', model: 'Flex'),
-      LedgerBleDevice(id: 'nano', name: 'Ledger Nano X', model: 'Nano X'),
+      LedgerBleDevice(id: 'flex', name: 'F52C', model: 'Flex'),
+      LedgerBleDevice(id: 'nano', name: 'A37E', model: 'Nano X'),
       LedgerBleDevice(id: 'other-account', name: 'Ledger Stax', model: 'Stax'),
     ]),
     LedgerDiscoveryEnded(),

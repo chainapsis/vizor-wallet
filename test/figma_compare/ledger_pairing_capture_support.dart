@@ -43,11 +43,11 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
             await press('Find my Ledger');
           }
           if (state == 'ready') {
-            await press('Ledger Flex');
+            await press('Ledger Flex · F52C');
             expect(find.text('Your Ledger is connected'), findsOneWidget);
           }
           if (state == 'updated') {
-            await press('Ledger Nano X');
+            await press('Ledger Nano X · A37E');
             expect(
               find.textContaining('saved connection has been updated'),
               findsOneWidget,
@@ -99,9 +99,9 @@ void runLedgerSelectionCaptures({
           }
           expect(find.text('Select your Ledger'), findsOneWidget);
           final label = switch (state) {
-            'known-connecting' || 'known-signing' => 'Ledger Flex',
+            'known-connecting' || 'known-signing' => 'Ledger Flex · F52C',
             'mismatch' => 'Ledger Stax',
-            'signing' => 'Ledger Nano X',
+            'signing' => 'Ledger Nano X · A37E',
             'usb' => 'USB',
             _ => null,
           };

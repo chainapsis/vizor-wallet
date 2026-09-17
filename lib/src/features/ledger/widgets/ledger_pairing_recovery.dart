@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ledger_device_label.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../core/widgets/app_button.dart';
@@ -519,7 +520,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(device.name),
+                          Text(ledgerDeviceLabel(device)),
                           if (ledgerDeviceDiffersFromSavedConnection(
                             savedId,
                             device.id,

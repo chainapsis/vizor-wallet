@@ -321,14 +321,16 @@ void main() {
     final deviceRow = find.byKey(const ValueKey('mobile_ledger_device_nano-x'));
     expect(deviceRow, findsOneWidget);
     expect(tester.getSize(deviceRow).height, greaterThanOrEqualTo(44));
-    await tester.tap(find.text('Rowan Ledger'));
+    await tester.tap(find.text('Ledger Nano X · Rowan Ledger'));
     await tester.pump();
-    expect(find.text('Connecting to Rowan Ledger'), findsOneWidget);
+    expect(
+      find.text('Connecting to Ledger Nano X · Rowan Ledger'),
+      findsOneWidget,
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(ble.connectedIds, ['nano-x']);
-    expect(find.text('Rowan Ledger'), findsOneWidget);
-    expect(find.text('Nano X'), findsOneWidget);
+    expect(find.text('Ledger Nano X · Rowan Ledger'), findsOneWidget);
 
     final advanced = find.byKey(
       const ValueKey('mobile_ledger_advanced_options_disclosure'),
@@ -430,12 +432,12 @@ void main() {
       final error = LedgerMobileException(failure, 'native diagnostic');
       final connection = Completer<void>();
       ble.pendingConnect = connection.future;
-      await tester.tap(find.text('Recovery Ledger'));
+      await tester.tap(find.text('Ledger Nano X · Recovery Ledger'));
       await tester.pump();
       connection.completeError(error);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Recovery Ledger'), findsOneWidget);
+      expect(find.text('Ledger Nano X · Recovery Ledger'), findsOneWidget);
       expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
       ble.pendingConnect = null;
       await tester.tap(find.text('Try again'));
@@ -521,7 +523,7 @@ void main() {
         } else {
           ble.pendingStop = pending.future;
         }
-        await tester.tap(find.text('Rowan Ledger'));
+        await tester.tap(find.text('Ledger Stax · Rowan Ledger'));
         await tester.pump();
         await tester.tap(find.bySemanticsLabel('Close'));
         await tester.pump();
@@ -582,7 +584,7 @@ void main() {
         ]),
       );
       await tester.pump();
-      await tester.tap(find.text('Rowan Ledger'));
+      await tester.tap(find.text('Ledger Stax · Rowan Ledger'));
       await tester.pump();
       Navigator.of(tester.element(find.byType(MobileLedgerDeviceSheet))).pop();
       expect(ble.cancelCalls, 1);
@@ -647,7 +649,7 @@ void main() {
       'requestPermissions',
       'discoverDevices',
     ]);
-    await tester.tap(find.text('Rowan Ledger'));
+    await tester.tap(find.text('Ledger Stax · Rowan Ledger'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(ble.connectedIds, ['stax']);
     expect(ble.cancelCalls, 0);

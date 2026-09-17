@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -275,17 +276,10 @@ class _DeviceSelectionCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              selected.name,
+              ledgerDeviceLabel(selected),
               key: const ValueKey('mobile_ledger_selected_device_name'),
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
-              ),
-            ),
-            Text(
-              selected.model,
-              key: const ValueKey('mobile_ledger_selected_device_model'),
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
               ),
             ),
           ],

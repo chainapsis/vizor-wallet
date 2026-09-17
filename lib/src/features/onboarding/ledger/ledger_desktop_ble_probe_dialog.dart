@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_bluetooth_access.dart';
 import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
@@ -361,7 +362,7 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.connecting => (
         AppIcons.loader,
-        'Connecting to ${_connectedDevice?.name ?? 'Ledger'}',
+        'Connecting to ${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)}',
         'Approve Bluetooth pairing on the device if prompted.',
       ),
       _ProbePhase.readingAccount => (
@@ -371,7 +372,7 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.ready => (
         AppIcons.ledger,
-        '${_connectedDevice?.name ?? 'Ledger'} is ready',
+        '${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)} is ready',
         'Zcash ${_account?.appVersion ?? ''} approved account ${_account?.accountIndex ?? ''} over Bluetooth.',
       ),
       _ProbePhase.empty => (
@@ -439,7 +440,8 @@ class _DeviceRow extends StatelessWidget {
       expand: true,
       constrainContent: true,
       leading: const AppIcon(AppIcons.ledger),
-      child: Text('${device.name}  ·  ${device.model}'),
+      growWithContent: true,
+      child: Text(ledgerDeviceLabel(device)),
     );
   }
 }

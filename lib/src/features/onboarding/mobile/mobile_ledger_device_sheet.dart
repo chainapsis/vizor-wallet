@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_bluetooth_access.dart';
 import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
@@ -317,7 +318,7 @@ class _LedgerDeviceRow extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${device.name}, ${device.model}',
+      label: ledgerDeviceLabel(device),
       child: GestureDetector(
         key: ValueKey('mobile_ledger_device_${device.id}'),
         behavior: HitTestBehavior.opaque,
@@ -345,15 +346,11 @@ class _LedgerDeviceRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      connecting ? 'Connecting to ${device.name}' : device.name,
+                      connecting
+                          ? 'Connecting to ${ledgerDeviceLabel(device)}'
+                          : ledgerDeviceLabel(device),
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
-                      ),
-                    ),
-                    Text(
-                      device.model,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.secondary,
                       ),
                     ),
                   ],
