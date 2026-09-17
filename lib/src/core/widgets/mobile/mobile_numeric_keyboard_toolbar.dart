@@ -1,7 +1,11 @@
+import 'dart:ui' show ImageFilter;
+
+import 'package:flutter/cupertino.dart' show CupertinoColors;
 import 'package:flutter/material.dart';
 
 import '../../layout/app_form_factor.dart';
 import '../../theme/app_theme.dart';
+import '../app_icon.dart';
 
 /// Adds a dismiss action to every focused OS numeric keyboard, including
 /// fields inside routes and sheets. Custom passcode keypads do not open an
@@ -18,7 +22,7 @@ class MobileNumericKeyboardToolbar extends StatefulWidget {
 
 class _MobileNumericKeyboardToolbarState
     extends State<MobileNumericKeyboardToolbar> {
-  static const _height = 44.0;
+  static const _buttonSize = 48.0;
   bool _updateScheduled = false;
 
   @override
@@ -62,49 +66,59 @@ class _MobileNumericKeyboardToolbarState
     return Stack(
       fit: StackFit.expand,
       children: [
-        MediaQuery(
-          // Reserve toolbar space for the same keyboard avoidance already
-          // used by each route or sheet. Keep the router subtree mounted.
-          data: visible
-              ? media.copyWith(
-                  viewInsets: media.viewInsets.copyWith(
-                    bottom: media.viewInsets.bottom + _height,
-                  ),
-                )
-              : media,
-          child: widget.child,
-        ),
+        widget.child,
         if (visible)
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: media.viewInsets.bottom,
-            height: _height,
+            right: media.padding.right + AppSpacing.sm,
+            bottom: media.viewInsets.bottom + AppSpacing.sm,
+            width: _buttonSize,
+            height: _buttonSize,
             child: TextFieldTapRegion(
-              child: Material(
-                key: const ValueKey('mobile_numeric_keyboard_toolbar'),
-                color: context.colors.background.raised,
+              child: Semantics(
+                label: 'Done',
+                button: true,
                 child: DecoratedBox(
+                  key: const ValueKey('mobile_numeric_keyboard_toolbar'),
                   decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: context.colors.border.regular),
-                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: media.padding.left + AppSpacing.sm,
-                      right: media.padding.right + AppSpacing.sm,
-                    ),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => focus?.unfocus(),
-                        style: TextButton.styleFrom(
-                          foregroundColor: context.colors.text.primary,
-                          textStyle: AppTypography.labelLarge,
-                          minimumSize: const Size(64, _height),
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: Material(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xBB303033)
+                            : const Color(0xCCFFFFFF),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => focus?.unfocus(),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Center(
+                              child: ExcludeSemantics(
+                                child: AppIcon(
+                                  AppIcons.check,
+                                  size: 28,
+                                  color: CupertinoColors.activeBlue.resolveFrom(
+                                    context,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        child: const Text('Done'),
                       ),
                     ),
                   ),

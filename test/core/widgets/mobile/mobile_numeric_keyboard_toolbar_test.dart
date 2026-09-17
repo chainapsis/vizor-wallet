@@ -16,15 +16,16 @@ const captureKey = ValueKey('numeric_keyboard_capture');
 Future<void> pumpHost(
   WidgetTester tester, {
   TextInputType type = TextInputType.number,
+  bool dark = false,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(390, 844);
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
-      theme: buildLegacyLightTheme(),
+      theme: dark ? buildLegacyDarkTheme() : buildLegacyLightTheme(),
       builder: (context, child) => AppTheme(
-        data: AppThemeData.light,
+        data: dark ? AppThemeData.dark : AppThemeData.light,
         child: RepaintBoundary(
           key: captureKey,
           child: MobileNumericKeyboardToolbar(child: child!),
@@ -67,7 +68,7 @@ void main() {
     const TextInputType.numberWithOptions(decimal: true),
     TextInputType.phone,
   ]) {
-    testWidgets('Done dismisses $type and reserves toolbar space', (
+    testWidgets('Done dismisses $type without resizing content', (
       tester,
     ) async {
       await pumpHost(tester, type: type);
@@ -90,19 +91,40 @@ void main() {
       }
       expect(
         tester.getRect(find.byKey(toolbar)),
-        const Rect.fromLTWH(0, 500, 390, 44),
+        const Rect.fromLTWH(326, 480, 48, 48),
       );
       expect(
         MediaQuery.viewInsetsOf(tester.element(find.byType(Scaffold))).bottom,
-        344,
+        300,
       );
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.byKey(toolbar));
       await tester.pumpAndSettle();
       expect(find.byKey(toolbar), findsNothing);
       expect(tester.testTextInput.isVisible, isFalse);
       expect(find.text('123'), findsOneWidget);
     });
   }
+
+  testWidgets('dark floating button retains accessible Done action', (
+    tester,
+  ) async {
+    await pumpHost(tester, dark: true);
+    await tester.enterText(find.byKey(const ValueKey('number')), '123');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Done'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    const outputDir = String.fromEnvironment('NUMERIC_KEYBOARD_CAPTURE_DIR');
+    if (outputDir.isNotEmpty) {
+      await expectLater(
+        find.byKey(captureKey),
+        matchesGoldenFile(File('$outputDir/numeric-keyboard-dark.png').uri),
+      );
+    }
+    await tester.tap(find.byKey(toolbar));
+    await tester.pumpAndSettle();
+    expect(find.byKey(toolbar), findsNothing);
+  });
 
   testWidgets('text focus and OS dismissal hide the toolbar', (tester) async {
     await pumpHost(tester);
@@ -129,7 +151,7 @@ void main() {
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
     await tester.pumpAndSettle();
     expect(find.byKey(toolbar), findsOneWidget);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.byKey(toolbar));
     await tester.pumpAndSettle();
     expect(find.byKey(toolbar), findsNothing);
     expect(find.text('10'), findsOneWidget);
