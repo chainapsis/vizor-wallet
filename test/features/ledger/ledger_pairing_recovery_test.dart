@@ -169,8 +169,8 @@ ProviderContainer containerFor(
       (_) async => 'expected',
     ),
     ledgerBluetoothAccountConnectorProvider.overrideWithValue((index, d) async {
-      expectSync(index, 3);
-      expectSync(d.id, 'new');
+      expect(index, 3);
+      expect(d.id, 'new');
       return export == null ? exported() : await export();
     }),
     ledgerRustOperationCancellerProvider.overrideWithValue(() async {}),

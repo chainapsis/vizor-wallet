@@ -69,8 +69,6 @@ void main() {
         expect(signs, 0);
         await tester.tap(find.text('Ledger Flex'));
         await pumpFrames(tester);
-        await tester.pump(const Duration(seconds: 1));
-        await pumpFrames(tester);
         expect(await result, 'signed');
         expect(signs, 1);
         expect(ble.calls.where((e) => e == 'connect').length, 1);
@@ -262,8 +260,6 @@ void main() {
     await tester.tap(find.text('Choose another Ledger'));
     await pumpFrames(tester);
     await tester.tap(find.text('Ledger Flex'));
-    await pumpFrames(tester);
-    await tester.pump(const Duration(seconds: 1));
     await pumpFrames(tester);
     expect(await result, 'signed');
     expect(signs, 1);

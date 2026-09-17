@@ -182,10 +182,6 @@ class LedgerPairingRecoveryService {
           );
     });
     check();
-    // Let the Ledger's viewing-key confirmation screen finish before handing
-    // this Bluetooth connection to signing (iOS, Android and macOS).
-    await Future<void>.delayed(const Duration(seconds: 1));
-    check();
     return ledgerDeviceDiffersFromSavedConnection(
       account.ledgerDeviceId,
       device.id,

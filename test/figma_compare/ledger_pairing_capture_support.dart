@@ -49,8 +49,6 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
           }
           if (state == 'updated') {
             await press('Ledger Nano X · A37E');
-            await tester.pump(const Duration(seconds: 1));
-            await tester.pumpAndSettle();
             expect(
               find.textContaining('saved connection has been updated'),
               findsOneWidget,
@@ -126,10 +124,6 @@ void runLedgerSelectionCaptures({
                 .onPressed!();
             for (var i = 0; i < 8; i++) {
               await tester.pump(const Duration(milliseconds: 50));
-            }
-            if (state == 'signing') {
-              await tester.pump(const Duration(seconds: 1));
-              await tester.pump();
             }
           }
         },
