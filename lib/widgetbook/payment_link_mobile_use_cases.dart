@@ -397,6 +397,7 @@ Widget buildMobilePaymentLinkInteractiveUseCase(BuildContext context) {
 
 Widget _artworkSelector(PaymentLinkCardArtwork selected) {
   return PaymentLinkCardSelectorRail(
+    loop: true,
     artworks: PaymentLinkCardArtwork.values,
     selected: selected,
     width: _mobilePreviewSize.width,
@@ -925,6 +926,7 @@ class _MobilePaymentLinkInteractivePreviewState
           semanticLabel: 'Gift card amount input',
         ),
         cardSelector: PaymentLinkCardSelectorRail(
+          loop: true,
           artworks: PaymentLinkCardArtwork.values,
           selected: _artwork,
           width: _mobilePreviewSize.width,

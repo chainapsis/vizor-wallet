@@ -24,6 +24,7 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
     this.edgeMaskInset = 17,
     this.edgeFadeFraction = 0.15,
     this.inactiveOpacity = 0.5,
+    this.loop = false,
     super.key,
   }) : assert(artworks.length > 0),
        assert(
@@ -59,6 +60,9 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   final double edgeFadeFraction;
   final double inactiveOpacity;
 
+  /// Mobile artwork selection loops; desktop keeps its bounded rail.
+  final bool loop;
+
   @override
   State<PaymentLinkCardSelectorRail> createState() =>
       _PaymentLinkCardSelectorRailState();
@@ -70,6 +74,10 @@ class _PaymentLinkCardSelectorRailState
 
   late final ScrollController _controller;
 
+  // Rebase to this equivalent cycle after scrolling so both directions keep
+  // ample room without building the off-screen copies.
+  int get _loopOrigin => widget.artworks.length * 1000;
+
   double get _itemStride =>
       widget.itemWidth + PaymentLinkCardSelectorRail.itemGap;
 
@@ -77,7 +85,9 @@ class _PaymentLinkCardSelectorRailState
   void initState() {
     super.initState();
     _controller = ScrollController(
-      initialScrollOffset: _scrollOffsetFor(widget.selected),
+      initialScrollOffset:
+          (_loopOriginForMode + widget.artworks.indexOf(widget.selected)) *
+          _itemStride,
     );
   }
 
@@ -85,7 +95,9 @@ class _PaymentLinkCardSelectorRailState
   void didUpdateWidget(covariant PaymentLinkCardSelectorRail oldWidget) {
     super.didUpdateWidget(oldWidget);
     final artworksChanged = !_sameArtworks(oldWidget.artworks, widget.artworks);
-    final itemWidthChanged = oldWidget.itemWidth != widget.itemWidth;
+    final itemWidthChanged =
+        oldWidget.itemWidth != widget.itemWidth ||
+        oldWidget.loop != widget.loop;
     if (!artworksChanged &&
         !itemWidthChanged &&
         oldWidget.selected == widget.selected) {
@@ -112,9 +124,31 @@ class _PaymentLinkCardSelectorRailState
     return true;
   }
 
+  int get _loopOriginForMode => widget.loop ? _loopOrigin : 0;
+
+  void _normalizeLoopOffset() {
+    if (!widget.loop ||
+        !mounted ||
+        !_controller.hasClients ||
+        _controller.position.isScrollingNotifier.value) {
+      return;
+    }
+    final cycle = widget.artworks.length * _itemStride;
+    final target = _loopOrigin * _itemStride + _controller.offset % cycle;
+    if ((_controller.offset - target).abs() > 0.01) {
+      _controller.jumpTo(target);
+    }
+  }
+
   double _scrollOffsetFor(PaymentLinkCardArtwork artwork) {
     final index = widget.artworks.indexOf(artwork);
-    return index < 0 ? 0 : _scrollOffsetForIndex(index);
+    if (index < 0) return 0;
+    if (!widget.loop) return _scrollOffsetForIndex(index);
+    final current = _controller.hasClients
+        ? _controller.offset / _itemStride
+        : _loopOrigin.toDouble();
+    final cycle = ((current - index) / widget.artworks.length).round();
+    return _scrollOffsetForIndex(cycle * widget.artworks.length + index);
   }
 
   double _scrollOffsetForIndex(int index) {
@@ -212,51 +246,65 @@ class _PaymentLinkCardSelectorRailState
                     PointerDeviceKind.mouse,
                   },
                 ),
-                child: ListView.builder(
-                  key: const ValueKey('payment_link_card_selector_scroll'),
-                  controller: _controller,
-                  padding: EdgeInsets.symmetric(horizontal: endPadding),
-                  physics: const ClampingScrollPhysics(),
-                  scrollDirection: Axis.horizontal,
-                  itemExtent: _itemStride,
-                  itemCount: widget.artworks.length,
-                  semanticChildCount: widget.artworks.length,
-                  itemBuilder: (context, index) {
-                    final artwork = widget.artworks[index];
-                    return Center(
-                      child: PaymentLinkCardSelector(
-                        key: ValueKey(
-                          'payment_link_card_selector_${artwork.name}',
-                        ),
-                        artwork: artwork,
-                        selected: artwork == widget.selected,
-                        onSelected: () {
-                          widget.onSelected(artwork);
-                          final target = _scrollOffsetForIndex(index).clamp(
-                            _controller.position.minScrollExtent,
-                            _controller.position.maxScrollExtent,
-                          );
-                          final disableAnimations =
-                              MediaQuery.maybeOf(context)?.disableAnimations ??
-                              false;
-                          if (disableAnimations) {
-                            _controller.jumpTo(target);
-                          } else {
-                            _controller.animateTo(
-                              target,
-                              duration: _selectionDuration,
-                              curve: Curves.easeOutCubic,
-                            );
-                          }
-                        },
-                        itemWidth: widget.itemWidth,
-                        itemHeight: widget.itemHeight,
-                        artworkWidth: widget.artworkWidth,
-                        artworkHeight: widget.artworkHeight,
-                        inactiveOpacity: widget.inactiveOpacity,
-                      ),
+                child: NotificationListener<ScrollEndNotification>(
+                  onNotification: (_) {
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => _normalizeLoopOffset(),
                     );
+                    return false;
                   },
+                  child: ListView.builder(
+                    key: const ValueKey('payment_link_card_selector_scroll'),
+                    controller: _controller,
+                    padding: EdgeInsets.symmetric(horizontal: endPadding),
+                    physics: const ClampingScrollPhysics(),
+                    scrollDirection: Axis.horizontal,
+                    itemExtent: _itemStride,
+                    itemCount: widget.loop ? null : widget.artworks.length,
+                    semanticChildCount: widget.loop
+                        ? null
+                        : widget.artworks.length,
+                    addSemanticIndexes: !widget.loop,
+                    itemBuilder: (context, index) {
+                      final artwork =
+                          widget.artworks[index % widget.artworks.length];
+                      return Center(
+                        child: PaymentLinkCardSelector(
+                          key: ValueKey(
+                            'payment_link_card_selector_${artwork.name}',
+                          ),
+                          artwork: artwork,
+                          selected: artwork == widget.selected,
+                          onSelected: () {
+                            widget.onSelected(artwork);
+                            final target = _scrollOffsetForIndex(index).clamp(
+                              _controller.position.minScrollExtent,
+                              _controller.position.maxScrollExtent,
+                            );
+                            final disableAnimations =
+                                MediaQuery.maybeOf(
+                                  context,
+                                )?.disableAnimations ??
+                                false;
+                            if (disableAnimations) {
+                              _controller.jumpTo(target);
+                            } else {
+                              _controller.animateTo(
+                                target,
+                                duration: _selectionDuration,
+                                curve: Curves.easeOutCubic,
+                              );
+                            }
+                          },
+                          itemWidth: widget.itemWidth,
+                          itemHeight: widget.itemHeight,
+                          artworkWidth: widget.artworkWidth,
+                          artworkHeight: widget.artworkHeight,
+                          inactiveOpacity: widget.inactiveOpacity,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

@@ -1247,10 +1247,7 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (phase == _TxPhase.pending)
-            _SpinningIcon(color: color)
-          else
-            AppIcon(iconName, size: 20, color: color),
+          AppIcon(iconName, size: 20, color: color),
           const SizedBox(width: AppSpacing.xxs),
           Flexible(
             child: Text(
@@ -1266,44 +1263,6 @@ class _StatusChip extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The in-progress loader, slowly rotating; static under reduce-motion.
-class _SpinningIcon extends StatefulWidget {
-  const _SpinningIcon({required this.color});
-
-  final Color color;
-
-  @override
-  State<_SpinningIcon> createState() => _SpinningIconState();
-}
-
-class _SpinningIconState extends State<_SpinningIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1200),
-  );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final motion = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-    if (motion && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!motion && _controller.isAnimating) {
-      _controller.stop();
-    }
-    return RotationTransition(
-      turns: _controller,
-      child: AppIcon(AppIcons.loader, size: 20, color: widget.color),
     );
   }
 }

@@ -384,6 +384,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   PaymentLinkTabAction(
+                    iconSize: 20,
                     key: const ValueKey('payment_links_mobile_created_tab'),
                     icon: AppIcons.plane,
                     label: kPaymentLinkCreatedTabLabel,
@@ -394,6 +395,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   PaymentLinkTabAction(
+                    iconSize: 20,
                     key: const ValueKey('payment_links_mobile_received_tab'),
                     icon: AppIcons.importWallet,
                     label: kPaymentLinkReceivedTabLabel,
@@ -617,7 +619,7 @@ class _MobileCardLinkAction extends StatelessWidget {
           child: Center(
             child: AppIcon(
               icon,
-              size: AppIconSize.medium,
+              size: 20,
               color: onPressed == null
                   ? colors.icon.disabled
                   : colors.icon.regular,
@@ -1044,7 +1046,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                           ),
                           onPressed: onCopy,
                           size: AppButtonSize.mediumLarge,
-                          leading: const AppIcon(AppIcons.copy),
+                          leading: const AppIcon(AppIcons.copy, size: 20),
                           child: Text(copyLabel),
                         )
                       else

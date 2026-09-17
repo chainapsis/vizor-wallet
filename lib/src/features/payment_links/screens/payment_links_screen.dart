@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -1096,6 +1097,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  void _confirmCardCreated({required bool broadcastAccepted}) {
+    if (kAppFormFactor == AppFormFactor.mobile && broadcastAccepted) {
+      unawaited(AppHaptics.sendSuccess());
+    }
+  }
+
   Future<void> _createFundedLink() async {
     if (_operationInProgress) return;
     if (_pendingFundingMetadata != null) {
@@ -1201,6 +1208,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
     } catch (_) {
       if (mounted) _showError('Gift card creation failed. Try again.');
     } finally {
@@ -1248,6 +1256,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: pending.broadcastAccepted);
     } catch (_) {
       if (mounted) {
         _showError(
@@ -1381,6 +1390,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _confirmCardCreated(
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
+    );
     unawaited(_refreshFundingProgress());
     if (result.status == 'broadcasted_storage_failed' ||
         result.status == 'broadcast_unknown') {
@@ -2012,6 +2024,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _page = PaymentLinksLocalPage.home;
         });
         if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+          unawaited(AppHaptics.sendSuccess());
           context.go('/home');
         } else {
           // Pending or partial broadcast is not success. The Received row

@@ -2,9 +2,9 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -27,6 +27,21 @@ import '../../support/payment_links_screen_support.dart';
 import '../../support/leading_decimal_input.dart';
 
 void main() {
+  final haptics = <String>[];
+  const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+  setUp(() {
+    haptics.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, (call) async {
+          haptics.add(call.method);
+          return true;
+        });
+  });
+  tearDown(
+    () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, null),
+  );
+
   testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {
@@ -307,6 +322,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        expect(haptics, isEmpty);
         final hasFiat = settings.$1 && settings.$3 != null;
         void expectSavedFiat() {
           expect(
@@ -525,6 +541,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(operations.createdFiatSnapshots, hasLength(1));
+        expect(haptics, ['sendSuccess']);
         expect(
           operations.createdFiatSnapshots.single?.amount,
           pricingEnabled ? 125 : null,
@@ -978,6 +995,7 @@ void main() {
       prepare.complete();
       await tester.pumpAndSettle();
       expect(find.text('Claiming...'), findsOneWidget);
+      expect(haptics, isEmpty);
       final submitted = operations.claimedSessions.single;
       expect(submitted.destinationAccountUuid, 'account-2');
       expect(submitted.destinationAddress, 'u1account-2address');
@@ -1225,6 +1243,7 @@ void main() {
         '/payment-links',
       );
       expect(find.text('Claiming...'), findsOneWidget);
+      expect(haptics, isEmpty);
 
       await tester.tap(
         find.byKey(const ValueKey('payment_link_mobile_claim_button')),
@@ -1236,6 +1255,7 @@ void main() {
       claim.complete(broadcastedClaimResult);
       await _pumpClaimFrames(tester);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+      expect(haptics, ['sendSuccess']);
       expect(
         find.byKey(const ValueKey('payment_links_mobile_screen')),
         findsNothing,
@@ -1322,6 +1342,7 @@ void main() {
           find.text('Claim result is not confirmed. Check its status.'),
           findsOneWidget,
         );
+        expect(haptics, isEmpty);
         expect(find.text('Claim the gift'), findsNothing);
         expect(find.text('Try again'), findsNothing);
       },
