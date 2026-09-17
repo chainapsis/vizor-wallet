@@ -91,6 +91,14 @@ class FakeBle
     LedgerBluetoothPermission.granted,
   );
   List<LedgerBleDevice> devices = [device];
+  Future<void>? readinessGate;
+  @override
+  Future<LedgerMobileAppInfo> currentApp() async {
+    calls.add('ready');
+    await readinessGate;
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
+  }
+
   bool failDiscovery = false;
   @override
   String? connectedDeviceId;
@@ -167,6 +175,45 @@ ProviderContainer containerFor(
   ],
 );
 void main() {
+  for (final failure in ['cancel', 'readiness']) {
+    test('saved device $failure does not export or save', () async {
+      final pending = Completer<void>();
+      final ble = FakeBle()..readinessGate = pending.future;
+      final accounts = FakeAccounts(
+        initial: account.copyWith(ledgerDeviceId: 'new'),
+      );
+      var exports = 0;
+      final c = containerFor(
+        ble,
+        accounts,
+        export: () async {
+          exports++;
+          return exported();
+        },
+      );
+      addTearDown(c.dispose);
+      final operation = c
+          .read(ledgerPairingRecoveryServiceProvider)
+          .verifyAndSave(
+            accountUuid: 'a',
+            device: device,
+            checkCurrent: () {},
+            onSaving: () => fail('Saved device must not enter persistence'),
+          );
+      final assertion = expectLater(operation, throwsA(anything));
+      await Future<void>.delayed(Duration.zero);
+      expect(ble.calls, contains('ready'));
+      if (failure == 'cancel') {
+        c.read(ledgerDeviceRequestsProvider).cancel();
+        pending.complete();
+      } else {
+        pending.completeError(StateError('Device disconnected'));
+      }
+      await assertion;
+      expect(exports, 0);
+      expect(accounts.writes, 0);
+    });
+  }
   for (final key in ['expected', 'wrong']) {
     test('only matching UFVK commits connection: $key', () async {
       final ble = FakeBle();
@@ -554,19 +601,19 @@ void main() {
           expect(ble.calls, isNot(contains('connect')));
           await tester.tap(find.text('Ledger Flex'));
           await tester.pumpAndSettle();
+          expect(checks, savedId == 'new' ? 0 : 1);
           expect(
-            checks,
-            1,
-          ); // Even the saved ID must prove its account identity.
-          expect(accounts.writes, outcome == 'match' ? 1 : 0);
+            accounts.writes,
+            savedId != 'new' && outcome == 'match' ? 1 : 0,
+          );
           expect(
             find.textContaining('saved connection has been updated'),
             outcome == 'match' && savedId == 'old'
                 ? findsOneWidget
                 : findsNothing,
           );
-          if (outcome == 'match') {
-            expect(accounts.savedId, 'new');
+          if (outcome == 'match' || savedId == 'new') {
+            expect(accounts.savedId, savedId == 'new' ? isNull : 'new');
             expect(find.text('Your Ledger is connected'), findsOneWidget);
           } else {
             expect(

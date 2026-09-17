@@ -48,6 +48,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
   _Stage _stage = _Stage.failed;
   bool _expanded = false;
   bool _connectionUpdated = false;
+  bool _sameSavedDevice = false;
   bool _accessRecovery = false;
   bool _invalidated = false;
   bool _settingsBusy = false;
@@ -108,7 +109,10 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     if (_stage == _Stage.scanning || _stage == _Stage.devices) {
       unawaited(_stopQuietly());
     }
-    if (_stage == _Stage.verifying) unawaited(_cancelQuietly());
+    if (_stage == _Stage.verifying &&
+        widget.selectionRequest?.completed != true) {
+      unawaited(_cancelQuietly());
+    }
     super.dispose();
   }
 
@@ -232,7 +236,15 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     final generation = ++_generation;
     unawaited(_subscription?.cancel());
     _subscription = null;
+    final savedId = ref
+        .read(accountProvider)
+        .value
+        ?.accounts
+        .where((a) => a.uuid == widget.accountUuid)
+        .firstOrNull
+        ?.ledgerDeviceId;
     setState(() {
+      _sameSavedDevice = ledgerDeviceMatchesSavedConnection(savedId, device.id);
       _stage = _Stage.verifying;
       _error = null;
     });
@@ -331,7 +343,8 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                   ? 'Finding your Ledger'
                   : 'No Ledger devices found')
             : 'Select your Ledger',
-      _Stage.verifying => 'Check your Ledger',
+      _Stage.verifying =>
+        _sameSavedDevice ? 'Connecting to your Ledger' : 'Check your Ledger',
       _Stage.saving => 'Saving your connection',
       _Stage.ready => 'Your Ledger is connected',
       _Stage.mismatch => 'This Ledger doesn’t match',
@@ -339,14 +352,18 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     final message = switch (_stage) {
       _Stage.failed =>
         'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
-      _Stage.scanning || _Stage.devices =>
-        'Choose your Ledger. Vizor will check that it matches this account.',
+      _Stage.scanning ||
+      _Stage.devices => 'Choose the Ledger you want to use for this account.',
       _Stage.verifying =>
-        'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
+        _sameSavedDevice
+            ? 'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'
+            : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
       _Stage.saving => 'Your account matches. Saving the verified connection.',
       _Stage.ready =>
         _connectionUpdated
             ? 'This Ledger matches your account. Your saved connection has been updated.'
+            : _sameSavedDevice
+            ? 'Continue when you’re ready to review the transaction on your Ledger.'
             : 'Account verified. Continue when you’re ready to review the transaction on your Ledger.',
       _Stage.mismatch =>
         'Connect the Ledger that holds this account. Your saved connection hasn’t changed.',
@@ -543,7 +560,8 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
               : _scan,
           child: Text(switch (_stage) {
             _Stage.scanning => 'Searching',
-            _Stage.verifying => 'Checking account',
+            _Stage.verifying =>
+              _sameSavedDevice ? 'Connecting' : 'Checking account',
             _Stage.saving => 'Saving',
             _Stage.ready => 'Continue signing',
             _Stage.mismatch => 'Choose another Ledger',

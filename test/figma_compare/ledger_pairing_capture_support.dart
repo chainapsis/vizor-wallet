@@ -67,7 +67,14 @@ void runLedgerSelectionCaptures({
   required bool mobile,
   required String output,
 }) {
-  for (final state in ['devices', 'mismatch', 'signing', if (!mobile) 'usb']) {
+  for (final state in [
+    'devices',
+    'known-connecting',
+    'known-signing',
+    'mismatch',
+    'signing',
+    if (!mobile) 'usb',
+  ]) {
     for (final theme in [ThemeMode.light, ThemeMode.dark]) {
       final size = mobile ? const Size(393, 852) : const Size(800, 720);
       runFigmaCompareCaptureTest(
@@ -77,7 +84,9 @@ void runLedgerSelectionCaptures({
         defaultLogicalSize: size,
         defaultPixelRatio: 2,
         overrideConfiguration: FigmaCompareConfiguration(
-          scenarioId: 'ledger-device-selection',
+          scenarioId: state == 'known-connecting'
+              ? 'ledger-known-device-connecting'
+              : 'ledger-device-selection',
           themeMode: theme,
           outputPath:
               '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/selection-$state.png',
@@ -90,6 +99,7 @@ void runLedgerSelectionCaptures({
           }
           expect(find.text('Select your Ledger'), findsOneWidget);
           final label = switch (state) {
+            'known-connecting' || 'known-signing' => 'Ledger Flex',
             'mismatch' => 'Ledger Stax',
             'signing' => 'Ledger Nano X',
             'usb' => 'USB',

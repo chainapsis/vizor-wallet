@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,6 +78,71 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'saved device shows connection copy and does not cancel the resumed signer',
+    (tester) async {
+      final readiness = Completer<void>();
+      final ble = fixture.FakeBle()..readinessGate = readiness.future;
+      final accounts = fixture.FakeAccounts(
+        initial: fixture.account.copyWith(
+          ledgerDeviceId: 'new',
+          ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+        ),
+      );
+      final c = fixture.containerFor(
+        ble,
+        accounts,
+        platform: TargetPlatform.iOS,
+        export: () async => throw StateError('UFVK must not be requested'),
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Center(
+                child: LedgerSigningModal(
+                  phase: LedgerSigningModalPhase.awaitingDevice,
+                  failure: null,
+                  onCancel: () {},
+                  onFailureAction: null,
+                  accountUuid: 'a',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final signed = Completer<String>();
+      final result = c
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'a',
+            usb: () async => 'usb',
+            bluetooth: (_) => signed.future,
+          );
+      await pumpFrames(tester);
+      await tester.tap(find.text('Ledger Flex'));
+      await pumpFrames(tester);
+      expect(find.text('Connecting to your Ledger'), findsOneWidget);
+      expect(
+        find.textContaining('approve sharing the viewing key'),
+        findsNothing,
+      );
+      expect(find.text('Checking account'), findsNothing);
+      readiness.complete();
+      await pumpFrames(tester);
+      expect(c.read(ledgerDeviceSelectionProvider), isNull);
+      expect(ble.calls, isNot(contains('cancel')));
+      expect(accounts.writes, 0);
+      signed.complete('signed');
+      expect(await result, 'signed');
+      expect(tester.takeException(), isNull);
+    },
+  );
   for (final cancel in ['close', 'dispose', 'lock', 'account']) {
     testWidgets('$cancel closes selection without signing', (tester) async {
       final ble = fixture.FakeBle();

@@ -36,7 +36,13 @@ Widget buildLedgerRePairingCapture(BuildContext context) =>
     _buildCapture(context);
 Widget buildLedgerDeviceSelectionCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true);
-Widget _buildCapture(BuildContext context, {bool selectFirst = false}) {
+Widget buildLedgerKnownDeviceConnectingCapture(BuildContext context) =>
+    _buildCapture(context, selectFirst: true, holdReadiness: true);
+Widget _buildCapture(
+  BuildContext context, {
+  bool selectFirst = false,
+  bool holdReadiness = false,
+}) {
   final mobile = kAppFormFactor == AppFormFactor.mobile;
   final Widget modal = selectFirst
       ? const _SelectionCaptureHost()
@@ -54,7 +60,9 @@ Widget _buildCapture(BuildContext context, {bool selectFirst = false}) {
       ledgerTargetPlatformProvider.overrideWithValue(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
       ),
-      ledgerMobileBleServiceProvider.overrideWithValue(_Ble()),
+      ledgerMobileBleServiceProvider.overrideWithValue(
+        _Ble(holdReadiness: holdReadiness),
+      ),
       ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
         (_) async => 'expected',
       ),
@@ -108,10 +116,19 @@ class _Ble
         LedgerMobileBleService,
         LedgerBluetoothAccess,
         LedgerBluetoothPairingSettings {
+  _Ble({bool holdReadiness = false})
+    : _readiness = holdReadiness ? Completer<void>() : null;
+  final Completer<void>? _readiness;
   @override
   String? connectedDeviceId;
   @override
   Future<void> stopDiscovery() async {}
+  @override
+  Future<LedgerMobileAppInfo> currentApp() async {
+    await _readiness?.future;
+    return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
+  }
+
   @override
   Future<void> disconnect() async {
     connectedDeviceId = null;
@@ -139,7 +156,10 @@ class _Ble
   @override
   Future<bool> openBluetoothSettings() async => true;
   @override
-  Future<void> cancelSigning() async {}
+  Future<void> cancelSigning() async {
+    if (_readiness?.isCompleted == false) _readiness!.complete();
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw StateError('Unexpected capture IO: ${invocation.memberName}');

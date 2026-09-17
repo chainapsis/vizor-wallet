@@ -114,6 +114,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     desktop: true,
     mobile: true,
   ),
+
+  FigmaCompareScenario(
+    id: 'ledger-known-device-connecting',
+    description: 'Saved Ledger connection without viewing-key approval',
+    builder: buildLedgerKnownDeviceConnectingCapture,
+    desktop: true,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'ledger-repairing',
     description: 'Ledger verified re-pairing',

@@ -91,6 +91,8 @@ void main() {
           expect(await result, 'signed');
           expect(ble.connectedDeviceIds, ['selected']);
           expect(signs, 1);
+          expect(ble.keyReads, saved == 'selected' ? 0 : 1);
+          expect(ble.exports, saved == 'selected' ? 0 : 1);
           expect(accounts.recordedTransports, [
             LedgerConnectionTransport.bluetooth,
           ]);
@@ -534,6 +536,37 @@ void main() {
       }
     }
   }
+
+  test(
+    'reset saved device propagates signing failure without requesting a viewing key',
+    () async {
+      final ble = _FakeBleService()..exportKey = 'different-seed';
+      final accounts = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.bluetooth,
+          deviceModel: 'Flex',
+        ).copyWith(
+          ledgerDeviceId: 'selected',
+          ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+        ),
+      );
+      final c = _container(notifier: accounts, ble: ble);
+      addTearDown(c.dispose);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final result = run(
+          c,
+          sign: () async =>
+              throw StateError('Invalid spend authorization signature'),
+        );
+        final expected = expectLater(result, throwsStateError);
+        await (await pending(c)).select(selectedDevice, () {}, () {});
+        await expected;
+      }
+      expect(ble.exports, 0);
+      expect(ble.keyReads, 0);
+      expect(accounts.recordedTransports, isEmpty);
+    },
+  );
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
     for (final preference in LedgerConnectionPreference.values) {
       for (final usbReady in [true, false]) {
@@ -668,13 +701,15 @@ ProviderContainer _container({
       accountProvider.overrideWith(() => notifier),
       ledgerTargetPlatformProvider.overrideWithValue(platform),
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
-      ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
-        (_) async => 'expected',
-      ),
+      ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue((_) async {
+        ble.keyReads++;
+        return 'expected';
+      }),
       ledgerBluetoothAccountConnectorProvider.overrideWithValue((
         index,
         device,
       ) async {
+        ble.exports++;
         await ble.currentApp();
         return LedgerDeviceAccount(
           ufvk: ble.exportKey,
@@ -792,6 +827,8 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeBleService implements LedgerMobileBleService {
+  int keyReads = 0;
+  int exports = 0;
   int cancelCalls = 0;
   void Function()? onCancel;
   String exportKey = 'expected';

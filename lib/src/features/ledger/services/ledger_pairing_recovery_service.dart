@@ -5,6 +5,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'ledger_account_service.dart';
+import 'ledger_app_readiness_service.dart';
 import 'ledger_bluetooth_access.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_device_request.dart';
@@ -44,6 +45,11 @@ final ledgerPairingRecoverySessionProvider = Provider((ref) {
 bool ledgerDeviceDiffersFromSavedConnection(String? savedId, String deviceId) =>
     savedId != null && savedId.isNotEmpty && savedId != deviceId;
 
+/// A saved connection may skip viewing-key approval. Signing still validates
+/// returned signatures; this does not assert the device's current seed.
+bool ledgerDeviceMatchesSavedConnection(String? savedId, String deviceId) =>
+    savedId != null && savedId.isNotEmpty && savedId == deviceId;
+
 class LedgerAccountMismatchException implements Exception {
   const LedgerAccountMismatchException();
 }
@@ -67,6 +73,7 @@ final ledgerPairingRecoveryServiceProvider = Provider(
 
 /// Rebinds only after exporting and comparing the complete account viewing key.
 /// Device names, model names and Bluetooth identifiers are not account identity.
+/// A matching saved ID reconnects with app readiness only; no rebind is needed.
 class LedgerPairingRecoveryService {
   LedgerPairingRecoveryService(this.ref);
   final Ref ref;
@@ -117,9 +124,15 @@ class LedgerPairingRecoveryService {
       );
     }
     final lifecycle = ref.read(ledgerOperationLifecycleProvider);
-    final expected = await lifecycle.run(
-      () => ref.read(ledgerRecoveryAccountKeyLoaderProvider)(accountUuid),
+    final sameDevice = ledgerDeviceMatchesSavedConnection(
+      account.ledgerDeviceId,
+      device.id,
     );
+    final expected = sameDevice
+        ? null
+        : await lifecycle.run(
+            () => ref.read(ledgerRecoveryAccountKeyLoaderProvider)(accountUuid),
+          );
     check();
     final mobile = ref.read(ledgerMobileBleServiceProvider);
     await requireLedgerBluetoothAccess(mobile);
@@ -130,13 +143,25 @@ class LedgerPairingRecoveryService {
     check();
     await mobile.connect(device);
     check();
+    if (sameDevice) {
+      await ref
+          .read(
+            ledgerAppReadinessServiceForTransportProvider(
+              LedgerConnectionTransport.bluetooth,
+            ),
+          )
+          .ensureReady();
+      check();
+      return false;
+    }
     // This requests viewing-key approval, never a transaction signature.
     final exported = await ref.read(ledgerBluetoothAccountConnectorProvider)(
       account.zip32AccountIndex!,
       device,
     );
     check();
-    if (expected.isEmpty ||
+    if (expected == null ||
+        expected.isEmpty ||
         exported.ufvk != expected ||
         exported.accountIndex != account.zip32AccountIndex) {
       throw const LedgerAccountMismatchException();
