@@ -427,6 +427,68 @@ void main() {
     );
   }
 
+  for (final pending in ['validation', 'failed validation', 'clipboard']) {
+    testWidgets(
+      'compact copy handles navigation while awaiting $pending',
+      (tester) async {
+        final record = PaymentLinkRecoveryRecord(
+          link: card(),
+          sourceAccountUuid: 'account-1',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          state: PaymentLinkRecoveryState.funded,
+          updatedAt: DateTime.utc(2026, 9, 14),
+          fundingTxids: '01' * 32,
+        );
+        final validationGate = Completer<void>();
+        final copyGate = Completer<void>();
+        api.addressValidationGate = validationGate;
+        api.failAddress = pending == 'failed validation';
+        final clipboard = FakePaymentLinkClipboard(copyCompleter: copyGate);
+        final operations = FakePaymentLinkOperations(records: [record]);
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          clipboard: clipboard,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_card_copy_action')),
+        );
+        await tester.pump();
+        expect(clipboard.copiedSecrets, isEmpty);
+        if (pending == 'clipboard') {
+          validationGate.complete();
+          await tester.pump();
+          expect(clipboard.copiedSecrets, hasLength(1));
+        }
+        expect(operations.sharedLinks, isEmpty);
+
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_create_card_button')),
+        );
+        await tester.pumpAndSettle();
+        final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
+        await tester.enterText(editor, '0.25');
+        if (!validationGate.isCompleted) validationGate.complete();
+        copyGate.complete();
+        await tester.pumpAndSettle();
+
+        // A successful clipboard write still needs its shared-state update.
+        final copies = pending == 'clipboard' ? 1 : 0;
+        expect(clipboard.copiedSecrets, hasLength(copies));
+        expect(operations.sharedLinks, hasLength(copies));
+        expect(find.byType(AlertDialog), findsNothing);
+        final editable = find.descendant(
+          of: editor,
+          matching: find.byType(EditableText),
+          matchRoot: true,
+        );
+        expect(tester.widget<EditableText>(editable).controller.text, '0.25');
+        expect(tester.takeException(), isNull);
+      },
+      skip: !kPaymentLinkCompactSharing,
+    );
+  }
+
   test('bounded random input never exposes its payload in an error', () {
     final random = Random(741);
     for (var n = 0; n < 200; n++) {

@@ -1416,7 +1416,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         link,
         compatibility: compatibility,
       );
-      if (!mounted || !_isCurrentNavigation(epoch)) return;
+      if (!mounted || epoch != _mobileNavigationEpoch) return;
       await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
       try {
         await ref
@@ -1430,7 +1430,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         }
       }
     } catch (_) {
-      if (mounted && _isCurrentNavigation(epoch)) {
+      if (mounted && epoch == _mobileNavigationEpoch) {
         if (compatibility) {
           _showError('Gift link could not be copied.');
         } else {
