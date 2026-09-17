@@ -103,6 +103,7 @@ class _LedgerAccessRecoveryModalState
       );
     }
     final platform = ref.watch(ledgerTargetPlatformProvider);
+    final darkMode = context.appTheme == AppThemeData.dark;
     final account = widget.account;
     final canChoose =
         platform == TargetPlatform.macOS &&
@@ -183,6 +184,20 @@ class _LedgerAccessRecoveryModalState
                           variant: _usb == usb
                               ? AppButtonVariant.secondary
                               : AppButtonVariant.ghost,
+                          enabledBackgroundColor: darkMode && _usb == usb
+                              ? context.colors.background.inverse.withValues(
+                                  alpha: 0.85,
+                                )
+                              : null,
+                          pressedBackgroundColor: darkMode && _usb == usb
+                              ? context.colors.background.inverse
+                              : null,
+                          enabledLabelColor: darkMode && _usb == usb
+                              ? context.colors.text.inverse
+                              : null,
+                          pressedLabelColor: darkMode && _usb == usb
+                              ? context.colors.text.inverse
+                              : null,
                           child: Text(usb ? 'USB' : 'Bluetooth'),
                         ),
                       ),
