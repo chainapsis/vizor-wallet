@@ -19,7 +19,6 @@ class PaymentLinkShareSheet extends StatefulWidget {
     required this.onShareError,
     required this.onCopyLink,
     required this.onClose,
-    this.onCopyCompatibilityLink,
     super.key,
   });
 
@@ -29,7 +28,6 @@ class PaymentLinkShareSheet extends StatefulWidget {
   final VoidCallback onShareError;
   final Future<void> Function() onCopyLink;
   final VoidCallback onClose;
-  final Future<void> Function()? onCopyCompatibilityLink;
 
   @override
   State<PaymentLinkShareSheet> createState() => _PaymentLinkShareSheetState();
@@ -58,13 +56,11 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
     }
   }
 
-  Future<void> _copy({bool compatibility = false}) async {
+  Future<void> _copy() async {
     if (_copying) return;
     setState(() => _copying = true);
     try {
-      await (compatibility
-          ? widget.onCopyCompatibilityLink!
-          : widget.onCopyLink)();
+      await widget.onCopyLink();
     } finally {
       if (mounted) setState(() => _copying = false);
     }
@@ -113,13 +109,6 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               onPressed: _copying ? null : _copy,
               child: Text(_copying ? 'Copying...' : 'Copy link'),
             ),
-            if (widget.onCopyCompatibilityLink != null)
-              AppButton(
-                variant: AppButtonVariant.ghost,
-                expand: true,
-                onPressed: _copying ? null : () => _copy(compatibility: true),
-                child: const Text('Copy link for older Vizor'),
-              ),
           ],
         ),
       ),

@@ -27,30 +27,6 @@ import '../../support/payment_links_screen_support.dart';
 import '../../support/leading_decimal_input.dart';
 
 void main() {
-  testWidgets('copies a v1 link for older Vizor from the QR share view', (
-    tester,
-  ) async {
-    final clipboard = FakePaymentLinkClipboard();
-    await pumpPaymentLinksScreen(
-      tester,
-      operations: FakePaymentLinkOperations(records: [fundedRecovery]),
-      clipboard: clipboard,
-      logicalSize: const Size(390, 844),
-    );
-    await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
-    await tester.pumpAndSettle();
-    final action = find.text('Copy link for older Vizor');
-    await tester.ensureVisible(action);
-    await tester.tap(action);
-    await tester.pumpAndSettle();
-    final copied = clipboard.copiedSecrets.single;
-    expect(Uri.parse(copied).fragment, startsWith('v1='));
-    final restored = VizorPaymentLink.parse(copied);
-    expect(restored.hasSameCanonicalPayload(incomingLink), isTrue);
-    expect(restored.address, incomingLink.address);
-    expect(restored.createdAt, incomingLink.createdAt);
-  });
-
   testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {

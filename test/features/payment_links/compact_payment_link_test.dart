@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../support/payment_links_screen_support.dart';
+import '../../support/legacy_payment_link.dart';
 
 const _message = "It's a great day to shield your ZEC 🛡️";
 const _golden24 =
@@ -121,7 +122,9 @@ void main() {
     'v1, v2 and v3 have identical payload identity and stable v2 recovery',
     () {
       final source = card(presentation: decorated);
-      final v1 = VizorPaymentLink.parse(source.toCompatibilityUri().toString());
+      final v1 = VizorPaymentLink.parse(
+        legacyPaymentLinkUri(source).toString(),
+      );
       final v2 = VizorPaymentLink.parse(source.toRecoveryUri().toString());
       final v3 = VizorPaymentLink.parse(wire(source));
       for (final item in [v1, v2, v3]) {
@@ -135,7 +138,6 @@ void main() {
       }
       expect(v1.address, source.address);
       expect(v1.createdAt, source.createdAt);
-      expect(() => v3.toCompatibilityUri(), throwsFormatException);
       expect(source.toShareUri(compact: false), source.toRecoveryUri());
       expect(
         v3.hasSameCanonicalPayload(
@@ -203,7 +205,7 @@ void main() {
       );
       receiver = PaymentLinkReceivedStore(receiverStorage);
       await receiver.saveReady(
-        VizorPaymentLink.parse(source.toCompatibilityUri().toString()),
+        VizorPaymentLink.parse(legacyPaymentLinkUri(source).toString()),
       );
       final restoredReceiver = (await receiver.load()).single;
       expect(restoredReceiver.status, PaymentLinkReceivedStatus.receiving);
@@ -261,7 +263,7 @@ void main() {
   );
 
   test(
-    'fails safely on address mismatch without replacing the original link',
+    'rejects an address mismatch without replacing the recovery record',
     () async {
       final source = card();
       final saved = source.toRecoveryUri();
@@ -272,12 +274,67 @@ void main() {
         throwsFormatException,
       );
       expect(source.toRecoveryUri(), saved);
-      expect(
-        await preparePaymentLinkShareUri(source, compatibility: true),
-        source.toCompatibilityUri(),
-      );
     },
   );
+
+  for (final action in ['copy', 'qr']) {
+    testWidgets(
+      'failed compact $action preserves the card and can be retried',
+      (tester) async {
+        final source = card();
+        final saved = source.toRecoveryUri();
+        final record = PaymentLinkRecoveryRecord(
+          link: source,
+          sourceAccountUuid: 'account-1',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          state: PaymentLinkRecoveryState.funded,
+          updatedAt: DateTime.utc(2026, 9, 14),
+          fundingTxids: '01' * 32,
+        );
+        final clipboard = FakePaymentLinkClipboard();
+        final operations = FakePaymentLinkOperations(records: [record]);
+        api.failAddress = true;
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          clipboard: clipboard,
+        );
+        final button = find.byKey(
+          ValueKey('payment_link_card_${action}_action'),
+        );
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            action == 'copy'
+                ? 'Gift link could not be copied.'
+                : 'Gift link could not be shared.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(clipboard.copiedSecrets, isEmpty);
+        expect(operations.sharedLinks, isEmpty);
+        expect(
+          (await operations.loadCreatedLinkRecoveries()).single.link
+              .toRecoveryUri(),
+          saved,
+        );
+
+        api.failAddress = false;
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        if (action == 'copy') {
+          expect(clipboard.copiedSecrets.single, wire(source));
+          expect(operations.sharedLinks, hasLength(1));
+        } else {
+          expect(find.byType(PaymentLinkQrShareCard), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      skip: !kPaymentLinkCompactSharing,
+    );
+  }
 
   test(
     'rejects truncation, malformed JSON and noncanonical Base64 before FFI',

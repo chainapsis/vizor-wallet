@@ -1402,20 +1402,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
-  Future<void> _copyPaymentLink(
-    VizorPaymentLink link, {
-    bool compatibility = false,
-  }) async {
+  Future<void> _copyPaymentLink(VizorPaymentLink link) async {
     if (_operationInProgress || _copyingLinkAddresses.contains(link.address)) {
       return;
     }
     setState(() => _copyingLinkAddresses.add(link.address));
     final epoch = _mobileNavigationEpoch;
     try {
-      final uri = await preparePaymentLinkShareUri(
-        link,
-        compatibility: compatibility,
-      );
+      final uri = await preparePaymentLinkShareUri(link);
       if (!mounted || epoch != _mobileNavigationEpoch) return;
       await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
       try {
@@ -1431,11 +1425,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
     } catch (_) {
       if (mounted && epoch == _mobileNavigationEpoch) {
-        if (compatibility) {
-          _showError('Gift link could not be copied.');
-        } else {
-          _showShareFailure(link);
-        }
+        _showError('Gift link could not be copied.');
       }
     } finally {
       if (mounted) setState(() => _copyingLinkAddresses.remove(link.address));
@@ -2112,39 +2102,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     );
   }
 
-  void _showShareFailure(VizorPaymentLink link) {
-    if (!kPaymentLinkCompactSharing ||
-        link.knownAddress == null ||
-        link.knownCreatedAt == null) {
-      _showError('Gift link could not be shared.');
-      return;
-    }
-    unawaited(
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Gift link unavailable'),
-          content: const Text(
-            'You can try copying the original link for this card.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                unawaited(_copyPaymentLink(link, compatibility: true));
-              },
-              child: const Text('Copy original link'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) =>
       GiftCardTrackingScope(child: _buildContent(context));
@@ -2577,7 +2534,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       shareData = (await preparePaymentLinkShareUri(record.link)).toString();
     } catch (_) {
       if (mounted && epoch == _mobileNavigationEpoch) {
-        _showShareFailure(record.link);
+        _showError('Gift link could not be shared.');
       }
       return;
     } finally {
@@ -2603,8 +2560,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               }
             },
             onCopyLink: () => _copyPaymentLink(record.link),
-            onCopyCompatibilityLink: () =>
-                _copyPaymentLink(record.link, compatibility: true),
             onClose: () => Navigator.of(sheetContext).pop(),
           ),
         ),
@@ -2640,9 +2595,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           : () => _copyPaymentLink(record.link),
       saveLabel: saving ? 'Saving...' : 'Save QR code',
       copyLabel: copying ? 'Copying...' : 'Copy link',
-      onCopyCompatibilityLink: _operationInProgress || copying
-          ? null
-          : () => _copyPaymentLink(record.link, compatibility: true),
     );
   }
 

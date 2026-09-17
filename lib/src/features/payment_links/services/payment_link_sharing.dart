@@ -6,9 +6,7 @@ import '../models/vizor_payment_link.dart';
 Future<Uri> preparePaymentLinkShareUri(
   VizorPaymentLink link, {
   bool compact = kPaymentLinkCompactSharing,
-  bool compatibility = false,
 }) async {
-  if (compatibility) return link.toCompatibilityUri();
   if (compact && link.knownAddress != null) {
     try {
       await rust_wallet.validateGiftAddress(

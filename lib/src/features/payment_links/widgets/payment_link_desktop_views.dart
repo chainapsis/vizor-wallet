@@ -959,7 +959,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
     this.shareCardKey,
     this.saveLabel = 'Save QR code',
     this.copyLabel = 'Copy link',
-    this.onCopyCompatibilityLink,
     super.key,
   });
 
@@ -971,7 +970,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
   final Key? shareCardKey;
   final String saveLabel;
   final String copyLabel;
-  final VoidCallback? onCopyCompatibilityLink;
 
   @override
   Widget build(BuildContext context) {
@@ -1012,12 +1010,6 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
                 leading: const AppIcon(AppIcons.copy),
                 child: Text(copyLabel),
               ),
-              if (onCopyCompatibilityLink != null)
-                AppButton(
-                  onPressed: onCopyCompatibilityLink,
-                  variant: AppButtonVariant.ghost,
-                  child: const Text('Copy link for older Vizor'),
-                ),
             ],
           ),
         ),

@@ -275,22 +275,6 @@ class VizorPaymentLink {
       ? _uri('v3=${_CompactPaymentLinkCodec.encode(this)}')
       : toRecoveryUri();
 
-  /// Share with v1-only readers when the original metadata is available.
-  Uri toCompatibilityUri() {
-    if (_address == null || _address.trim().isEmpty || _createdAt == null) {
-      throw const FormatException('Gift card metadata is not available yet.');
-    }
-    final payload =
-        jsonDecode(utf8.decode(base64Url.decode(_encodedPayload())))
-            as Map<String, dynamic>;
-    payload['v'] = _legacyVersion;
-    payload['address'] = _address.trim();
-    payload['createdAt'] = _createdAt.toUtc().toIso8601String();
-    return _uri(
-      '$_legacyFragmentPrefix${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
-    );
-  }
-
   static Uri _uri(String fragment) {
     final uri = Uri(
       scheme: VizorDeepLink.scheme,

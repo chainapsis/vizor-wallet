@@ -18,6 +18,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import '../test/support/legacy_payment_link.dart';
+
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
@@ -172,7 +174,7 @@ void main() {
       expect(link.hasSameCanonicalPayload(fundingRecovery.link), isTrue);
       for (final uri in [
         fundingRecovery.link.toRecoveryUri(),
-        fundingRecovery.link.toCompatibilityUri(),
+        legacyPaymentLinkUri(fundingRecovery.link),
         fundingRecovery.link.toShareUri(compact: true),
       ]) {
         final recovered = VizorPaymentLink.parse(uri.toString());

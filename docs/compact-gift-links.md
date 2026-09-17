@@ -42,9 +42,10 @@ remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
 
 Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
 mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts still
-use 32 bytes, or 24 words. A legacy phrase with alternate whitespace keeps its
-legacy link rather than changing its claim-cache identity. Synchronous FFI only
-converts mnemonic and entropy; address validation remains asynchronous and local.
+use 32 bytes, or 24 words. Compact sharing rejects legacy phrases with alternate
+whitespace without changing their recovery records or claim-cache identity.
+Synchronous FFI only converts mnemonic and entropy; address validation remains
+asynchronous and local.
 
 This uses standard JSON serialization, with no binary header, bit flags, length
 prefixes, artwork-code registry, or custom checksum. JSON parsing validates the
@@ -63,19 +64,18 @@ JSON field names, string escaping, and Base64 encoding.
 
 `preparePaymentLinkShareUri()` verifies a locally known address against the
 mnemonic before dropping it from compact sharing. A failure leaves the record
-untouched. Funding creation checks the selected share, recovery, and v1
-compatibility representations before the durable draft and broadcast. All
-funding signers share this path. No retry replaces a funded secret.
+untouched and reports a sharing error. Funding creation checks the selected
+share and recovery representations before the durable draft and broadcast.
+All funding signers share this path. No retry replaces a funded secret.
 
 The claim cache continues using network, mnemonic, and birthday, including its
 existing legacy-directory preference when submission evidence exists. Intake
 equality continues comparing normalized logical payloads rather than the wire
 version. Different amounts, birthdays, labels, or presentation remain distinct.
 
-The desktop and mobile QR share views offer **Copy link for older Vizor**.
-This emits v1 with the original address and time when those are known. It
-controls the same gift, with the same secret; it does not create another gift.
-A decoded v2/v3 link without resolved metadata cannot yet produce v1.
+Desktop and mobile share the selected format without an older-version copy
+option. Recipients must upgrade to a v3-capable Vizor to claim compact links.
+Existing v1 and v2 links remain readable.
 
 | Reader | v1 | v2 | v3 |
 | --- | --- | --- | --- |
@@ -84,8 +84,8 @@ A decoded v2/v3 link without resolved metadata cannot yet produce v1.
 | This implementation | Yes | Yes | Yes |
 
 An older installed app may intercept a new link before a browser fallback can
-help. Testers need this build for v3, or the sender must use the compatibility
-copy action. Turning off the writer does not remove any reader.
+help. Testers need this build for v3. Turning off the compact writer restores
+v2 sharing without removing any reader.
 
 ## Rollout and local testing
 

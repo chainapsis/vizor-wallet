@@ -642,7 +642,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     // represent it. All funding signers use this same creation path.
     await preparePaymentLinkShareUri(link);
     link.toRecoveryUri();
-    link.toCompatibilityUri();
     return link;
   }
 

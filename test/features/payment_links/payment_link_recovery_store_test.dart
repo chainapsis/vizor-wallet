@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 
+import '../../support/legacy_payment_link.dart';
+
 void main() {
   test(
     'rejects an unreleased record without its saved claim fee reserve',
@@ -450,7 +452,7 @@ void main() {
           'version': 1,
           'records': [
             {
-              'link': _legacyLinkUri(link),
+              'link': legacyPaymentLinkUri(link).toString(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'shared',
@@ -833,25 +835,6 @@ VizorPaymentLink _link() {
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
   );
-}
-
-String _legacyLinkUri(VizorPaymentLink link) {
-  final payload = {
-    'v': 1,
-    'network': link.network,
-    'address': link.address,
-    'amountZatoshi': link.amountZatoshi.toString(),
-    'mnemonic': link.mnemonic,
-    'birthdayHeight': link.birthdayHeight,
-    'label': link.label,
-    'createdAt': link.createdAt.toUtc().toIso8601String(),
-  };
-  return Uri(
-    scheme: 'https',
-    host: 'link.vizor.cash',
-    path: '/payment-links/open',
-    fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
-  ).toString();
 }
 
 class _FakePaymentLinkRecoveryStorage implements PaymentLinkRecoveryStorage {
