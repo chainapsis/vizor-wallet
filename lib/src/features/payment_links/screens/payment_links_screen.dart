@@ -2576,14 +2576,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     try {
       shareData = (await preparePaymentLinkShareUri(record.link)).toString();
     } catch (_) {
-      if (mounted && _isCurrentNavigation(epoch)) {
+      if (mounted && epoch == _mobileNavigationEpoch) {
         _showShareFailure(record.link);
       }
       return;
     } finally {
       _preparingShareQr = false;
     }
-    if (!mounted || !_isCurrentNavigation(epoch)) return;
+    if (!mounted || epoch != _mobileNavigationEpoch) return;
     if (kAppFormFactor == AppFormFactor.mobile) {
       unawaited(
         showAppMobileSheet<void>(

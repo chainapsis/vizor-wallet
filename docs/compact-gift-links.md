@@ -114,6 +114,8 @@ recipient capability check is introduced. This PR does not deploy the gateway
 or change production release configuration.
 
 Enable local generation with `--dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`.
+Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart --dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`
+to include the desktop QR navigation regression tests.
 The existing regtest lane accepts the corresponding environment variable:
 
 ```sh

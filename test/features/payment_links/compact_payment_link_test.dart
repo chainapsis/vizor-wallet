@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_sharing.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
+import '../../support/payment_links_screen_support.dart';
 
 const _message = "It's a great day to shield your ZEC 🛡️";
 const _golden24 =
@@ -67,6 +72,7 @@ void main() {
   setUp(() {
     api.failAddress = false;
     api.decodingCalls = 0;
+    api.addressValidationGate = null;
   });
 
   test(
@@ -370,6 +376,57 @@ void main() {
     }
   });
 
+  for (final startAnotherCard in [false, true]) {
+    testWidgets(
+      'compact QR respects desktop navigation after validation ($startAnotherCard)',
+      (tester) async {
+        final record = PaymentLinkRecoveryRecord(
+          link: card(),
+          sourceAccountUuid: 'account-1',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          state: PaymentLinkRecoveryState.funded,
+          updatedAt: DateTime.utc(2026, 9, 14),
+          fundingTxids: '01' * 32,
+        );
+        final gate = Completer<void>();
+        api.addressValidationGate = gate;
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: FakePaymentLinkOperations(records: [record]),
+        );
+        await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
+        await tester.pump();
+        expect(find.byType(PaymentLinkQrShareCard), findsNothing);
+
+        final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
+        if (startAnotherCard) {
+          await tester.tap(
+            find.byKey(const ValueKey('payment_link_create_card_button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.enterText(editor, '0.25');
+        }
+        gate.complete();
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(PaymentLinkQrShareCard),
+          startAnotherCard ? findsNothing : findsOneWidget,
+        );
+        if (startAnotherCard) {
+          final editable = find.descendant(
+            of: editor,
+            matching: find.byType(EditableText),
+            matchRoot: true,
+          );
+          expect(tester.widget<EditableText>(editable).controller.text, '0.25');
+        }
+        expect(tester.takeException(), isNull);
+      },
+      skip: !kPaymentLinkCompactSharing,
+    );
+  }
+
   test('bounded random input never exposes its payload in an error', () {
     final random = Random(741);
     for (var n = 0; n < 200; n++) {
@@ -396,6 +453,7 @@ void main() {
 class _MnemonicVectors implements RustLibApi {
   bool failAddress = false;
   int decodingCalls = 0;
+  Completer<void>? addressValidationGate;
   @override
   Uint8List crateApiWalletGiftMnemonicToEntropy({required String mnemonic}) {
     for (final length in [16, 32]) {
@@ -419,8 +477,15 @@ class _MnemonicVectors implements RustLibApi {
     required String network,
     required String address,
   }) async {
+    await addressValidationGate?.future;
     if (failAddress) throw StateError('Mismatch');
   }
+
+  @override
+  Future<BigInt> crateApiWalletGetLatestBlockHeight({
+    required String lightwalletdUrl,
+    required String network,
+  }) async => BigInt.from(3500000);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
