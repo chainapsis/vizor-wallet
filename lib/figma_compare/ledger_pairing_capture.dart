@@ -38,10 +38,15 @@ Widget buildLedgerDeviceSelectionCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true);
 Widget buildLedgerKnownDeviceConnectingCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true, holdReadiness: true);
+Widget buildLedgerSearchingCapture(BuildContext context) =>
+    _buildCapture(context, selectFirst: true, scan: 'empty');
+Widget buildLedgerSearchingDevicesCapture(BuildContext context) =>
+    _buildCapture(context, selectFirst: true, scan: 'devices');
 Widget _buildCapture(
   BuildContext context, {
   bool selectFirst = false,
   bool holdReadiness = false,
+  String? scan,
 }) {
   final mobile = kAppFormFactor == AppFormFactor.mobile;
   final Widget modal = selectFirst
@@ -61,7 +66,7 @@ Widget _buildCapture(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
       ),
       ledgerMobileBleServiceProvider.overrideWithValue(
-        _Ble(holdReadiness: holdReadiness),
+        _Ble(holdReadiness: holdReadiness, scan: scan),
       ),
       ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
         (_) async => 'expected',
@@ -116,13 +121,18 @@ class _Ble
         LedgerMobileBleService,
         LedgerBluetoothAccess,
         LedgerBluetoothPairingSettings {
-  _Ble({bool holdReadiness = false})
+  _Ble({bool holdReadiness = false, this.scan})
     : _readiness = holdReadiness ? Completer<void>() : null;
   final Completer<void>? _readiness;
+  final String? scan;
+  Completer<void>? _scanStop;
   @override
   String? connectedDeviceId;
   @override
-  Future<void> stopDiscovery() async {}
+  Future<void> stopDiscovery() async {
+    if (_scanStop?.isCompleted == false) _scanStop!.complete();
+  }
+
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     await _readiness?.future;
@@ -140,14 +150,24 @@ class _Ble
   }
 
   @override
-  Stream<LedgerDiscoveryUpdate> discoverDevices() => Stream.fromIterable(const [
-    LedgerDevicesDiscovered([
-      LedgerBleDevice(id: 'flex', name: 'F52C', model: 'Flex'),
-      LedgerBleDevice(id: 'nano', name: 'A37E', model: 'Nano X'),
-      LedgerBleDevice(id: 'other-account', name: 'Ledger Stax', model: 'Stax'),
-    ]),
-    LedgerDiscoveryEnded(),
-  ]);
+  Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
+    final stopped = Completer<void>();
+    _scanStop = stopped;
+    if (scan != 'empty') {
+      yield const LedgerDevicesDiscovered([
+        LedgerBleDevice(id: 'flex', name: 'F52C', model: 'Flex'),
+        LedgerBleDevice(id: 'nano', name: 'A37E', model: 'Nano X'),
+        LedgerBleDevice(
+          id: 'other-account',
+          name: 'Ledger Stax',
+          model: 'Stax',
+        ),
+      ]);
+    }
+    if (scan != null) await stopped.future;
+    yield const LedgerDiscoveryEnded();
+  }
+
   @override
   Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async =>
       const LedgerBluetoothAccessStatus(LedgerBluetoothPermission.granted);

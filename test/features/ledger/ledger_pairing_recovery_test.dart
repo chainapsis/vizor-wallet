@@ -402,11 +402,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Find my Ledger'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Ledger Flex'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Check your Ledger'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     pending.complete(exported());

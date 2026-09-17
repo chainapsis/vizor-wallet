@@ -69,6 +69,8 @@ void runLedgerSelectionCaptures({
 }) {
   for (final state in [
     'devices',
+    'searching',
+    'searching-devices',
     'known-connecting',
     'known-signing',
     'mismatch',
@@ -84,9 +86,12 @@ void runLedgerSelectionCaptures({
         defaultLogicalSize: size,
         defaultPixelRatio: 2,
         overrideConfiguration: FigmaCompareConfiguration(
-          scenarioId: state == 'known-connecting'
-              ? 'ledger-known-device-connecting'
-              : 'ledger-device-selection',
+          scenarioId: switch (state) {
+            'searching' => 'ledger-searching',
+            'searching-devices' => 'ledger-searching-devices',
+            'known-connecting' => 'ledger-known-device-connecting',
+            _ => 'ledger-device-selection',
+          },
           themeMode: theme,
           outputPath:
               '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/selection-$state.png',
@@ -97,7 +102,14 @@ void runLedgerSelectionCaptures({
           for (var i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 50));
           }
-          expect(find.text('Select your Ledger'), findsOneWidget);
+          expect(
+            find.text(
+              state == 'searching'
+                  ? 'Finding your Ledger'
+                  : 'Select your Ledger',
+            ),
+            findsOneWidget,
+          );
           final label = switch (state) {
             'known-connecting' || 'known-signing' => 'Ledger Flex · F52C',
             'mismatch' => 'Ledger Stax',

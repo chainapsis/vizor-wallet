@@ -108,6 +108,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-searching',
+    description: 'Ledger discovery in progress',
+    builder: buildLedgerSearchingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-searching-devices',
+    description: 'Ledger discovery with selectable devices',
+    builder: buildLedgerSearchingDevicesCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-device-selection',
     description: 'Ledger select before Bluetooth interaction',
     builder: buildLedgerDeviceSelectionCapture,

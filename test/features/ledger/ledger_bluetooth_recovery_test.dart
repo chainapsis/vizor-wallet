@@ -189,7 +189,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Allow access'));
       await tester.pump();
-      await tester.tap(find.text('Checking access'));
+      await tester.tap(find.text('Checking Bluetooth access…'));
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);

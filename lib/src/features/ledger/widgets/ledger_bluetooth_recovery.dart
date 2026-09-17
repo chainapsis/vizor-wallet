@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ledger_progress_status.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../services/ledger_bluetooth_access.dart';
@@ -234,21 +235,24 @@ class _LedgerBluetoothRecoveryState
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        AppButton(
-          onPressed:
-              !widget.enabled ||
-                  _busy ||
-                  _invalidated ||
-                  (ready && widget.onRetry == null) ||
-                  (restricted && widget.onClose == null)
-              ? null
-              : action,
-          expand: true,
-          constrainContent: true,
-          variant: AppButtonVariant.primary,
-          size: AppButtonSize.large,
-          child: Text(label),
-        ),
+        if (_busy)
+          const LedgerProgressStatus(label: 'Checking Bluetooth access…')
+        else
+          AppButton(
+            onPressed:
+                !widget.enabled ||
+                    _busy ||
+                    _invalidated ||
+                    (ready && widget.onRetry == null) ||
+                    (restricted && widget.onClose == null)
+                ? null
+                : action,
+            expand: true,
+            constrainContent: true,
+            variant: AppButtonVariant.primary,
+            size: AppButtonSize.large,
+            child: Text(label),
+          ),
       ],
     );
   }

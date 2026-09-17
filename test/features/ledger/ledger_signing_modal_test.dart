@@ -239,7 +239,8 @@ void main() {
 
     expect(find.text('Finishing transaction'), findsOneWidget);
     expect(find.text('Please wait'), findsOneWidget);
-    expect(find.text('Finishing'), findsOneWidget);
+    expect(find.text('Finishing'), findsNothing);
+    expect(find.text('Waiting'), findsNothing);
     expect(find.text('Cancel'), findsNothing);
     expect(find.text('Open the Zcash app'), findsNothing);
   });

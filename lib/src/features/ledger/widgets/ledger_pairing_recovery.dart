@@ -18,6 +18,7 @@ import '../services/ledger_mobile_ble_service.dart';
 import '../services/ledger_pairing_recovery_service.dart';
 import '../services/ledger_signing_service.dart';
 import 'ledger_bluetooth_recovery.dart';
+import 'ledger_progress_status.dart';
 
 enum _Stage { failed, scanning, devices, verifying, saving, ready, mismatch }
 
@@ -353,8 +354,10 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     final message = switch (_stage) {
       _Stage.failed =>
         'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
-      _Stage.scanning ||
-      _Stage.devices => 'Choose the Ledger you want to use for this account.',
+      _Stage.scanning || _Stage.devices =>
+        _devices.isEmpty
+            ? 'Keep your Ledger nearby and unlocked.'
+            : 'Choose the Ledger you want to use for this account.',
       _Stage.verifying =>
         _sameSavedDevice
             ? 'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'
@@ -543,33 +546,49 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             ),
           ),
         const SizedBox(height: AppSpacing.md),
-        AppButton(
-          expand: true,
-          constrainContent: true,
-          size: AppButtonSize.large,
-          onPressed: _busy || !widget.enabled || _invalidated
-              ? null
-              : _stage == _Stage.ready
-              ? () {
-                  try {
-                    _check(_generation);
-                    widget.onRetry?.call();
-                  } catch (error) {
-                    _fail(_generation, error);
+        if (_busy)
+          LedgerProgressStatus(
+            label: switch (_stage) {
+              _Stage.scanning =>
+                _devices.isEmpty
+                    ? 'Searching nearby…'
+                    : 'Still searching nearby…',
+              _Stage.verifying =>
+                _sameSavedDevice
+                    ? 'Connecting…'
+                    : 'Follow the prompts on your Ledger',
+              _Stage.saving => 'Saving connection…',
+              _ => 'Opening Bluetooth settings…',
+            },
+          )
+        else
+          AppButton(
+            expand: true,
+            constrainContent: true,
+            size: AppButtonSize.large,
+            onPressed: _busy || !widget.enabled || _invalidated
+                ? null
+                : _stage == _Stage.ready
+                ? () {
+                    try {
+                      _check(_generation);
+                      widget.onRetry?.call();
+                    } catch (error) {
+                      _fail(_generation, error);
+                    }
                   }
-                }
-              : _scan,
-          child: Text(switch (_stage) {
-            _Stage.scanning => 'Searching',
-            _Stage.verifying =>
-              _sameSavedDevice ? 'Connecting' : 'Checking account',
-            _Stage.saving => 'Saving',
-            _Stage.ready => 'Continue signing',
-            _Stage.mismatch => 'Choose another Ledger',
-            _Stage.devices => 'Search again',
-            _ => 'Find my Ledger',
-          }),
-        ),
+                : _scan,
+            child: Text(switch (_stage) {
+              _Stage.scanning => 'Searching',
+              _Stage.verifying =>
+                _sameSavedDevice ? 'Connecting' : 'Checking account',
+              _Stage.saving => 'Saving',
+              _Stage.ready => 'Continue signing',
+              _Stage.mismatch => 'Choose another Ledger',
+              _Stage.devices => 'Search again',
+              _ => 'Find my Ledger',
+            }),
+          ),
       ],
     );
   }

@@ -167,11 +167,7 @@ class LedgerSigningModal extends ConsumerWidget {
     if (!failed && roundFeeNotice != null) {
       message = '$message ${roundFeeNotice!}';
     }
-    final actionLabel = failed
-        ? failure!.actionLabel
-        : stage == LedgerSigningStage.finishing
-        ? 'Finishing'
-        : 'Waiting';
+    final actionLabel = failed ? failure!.actionLabel : null;
     final showDeviceAppPrompt = switch (phase) {
       LedgerSigningModalPhase.saving ||
       LedgerSigningModalPhase.broadcasting => false,
@@ -248,7 +244,11 @@ class LedgerSigningModal extends ConsumerWidget {
                   height: 32,
                   child: Center(
                     child: AppIcon(
-                      failed ? AppIcons.warningCircle : AppIcons.loader,
+                      failed
+                          ? AppIcons.warningCircle
+                          : stage == LedgerSigningStage.reviewing
+                          ? AppIcons.ledger
+                          : AppIcons.loader,
                       size: failed ? 24 : 20,
                       color: error
                           ? colors.icon.destructive
