@@ -39,14 +39,19 @@ void main() {
       usb('Read Ledger HID packet: hidapi error: device disconnected'),
       contains('interrupted'),
     );
+    expect(
+      usb('ledger_transport: Write Ledger HID packet: device disconnected'),
+      contains('interrupted'),
+    );
     expect(usb('Proposal not found (expired or already consumed)'), isNull);
     expect(usb('User rejected approval (0x6985)'), isNull);
+    expect(usb('connection reset by peer'), isNull);
   });
 
   test('signatures from a different Ledger name the account mismatch', () {
     for (final error in [
-      'Apply Ledger Orchard signature at action 0: InvalidSpendAuthSignature',
-      'Validate Ledger transparent signature 1: InvalidSignature',
+      'ledger_signature_mismatch: Apply Orchard signature at action 0: InvalidSpendAuthSignature',
+      'ledger_signature_mismatch: Validate Ledger transparent signature 1: InvalidSignature',
     ]) {
       expect(
         ledgerActionableErrorMessage(error),
@@ -54,6 +59,13 @@ void main() {
       );
       expect(ledgerRequestNeedsRebuilding(error), isFalse);
     }
+    // Only the Rust prefix identifies a mismatch.
+    expect(
+      ledgerActionableErrorMessage(
+        'Apply Orchard signature at action 0: InvalidSpendAuthSignature',
+      ),
+      isNull,
+    );
   });
 
   test('only transaction counts are classified as smaller transfers', () {

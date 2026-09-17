@@ -268,40 +268,53 @@ class LedgerAppReadinessService {
       );
     }
     final kind = classifyLedgerError(error);
-    final (failure, message) = switch (kind) {
-      LedgerFailureKind.usbPermission => (
-        LedgerAppReadinessFailure.unavailable,
+    final message = switch (kind) {
+      LedgerFailureKind.usbPermission =>
         'Connect and unlock your Ledger over USB. If it is connected, install '
             'the Ledger udev rules on Linux, then unplug and reconnect it.',
-      ),
-      LedgerFailureKind.userRejected => (
-        LedgerAppReadinessFailure.rejected,
+      LedgerFailureKind.userRejected =>
         'The request was rejected on your Ledger. Try again when ready.',
-      ),
-      // Same failure as a cancelled mobile request: never a transport fallback.
-      LedgerFailureKind.cancelled => (
-        LedgerAppReadinessFailure.rejected,
-        'Ledger operation was cancelled.',
-      ),
-      LedgerFailureKind.deviceLocked => (
-        LedgerAppReadinessFailure.locked,
-        'Unlock your Ledger, then try again.',
-      ),
-      LedgerFailureKind.transportLost => (
-        LedgerAppReadinessFailure.disconnected,
+      LedgerFailureKind.cancelled => 'Ledger operation was cancelled.',
+      LedgerFailureKind.deviceLocked => 'Unlock your Ledger, then try again.',
+      LedgerFailureKind.transportLost =>
         'Reconnect and unlock your Ledger, then try again.',
-      ),
-      _ => (
-        kind == LedgerFailureKind.deviceBusy
-            ? LedgerAppReadinessFailure.busy
-            : LedgerAppReadinessFailure.unavailable,
+      _ =>
         ledgerActionableErrorMessage(error) ??
             'Vizor could not prepare the Ledger Zcash app. Try again.',
-      ),
     };
-    return LedgerAppReadinessException(failure, message, cause: error);
+    return LedgerAppReadinessException(
+      ledgerReadinessFailureFor(kind),
+      message,
+      cause: error,
+    );
   }
 }
+
+/// Automatic mode tries the next transport only after `disconnected` or
+/// `unavailable`. A refused request, a busy or stuck app, and signatures from
+/// other keys fail the same way over any transport, so they never fall back.
+LedgerAppReadinessFailure ledgerReadinessFailureFor(LedgerFailureKind kind) =>
+    switch (kind) {
+      LedgerFailureKind.userRejected ||
+      LedgerFailureKind.cancelled ||
+      LedgerFailureKind.hostRequestRejected ||
+      LedgerFailureKind.signatureMismatch => LedgerAppReadinessFailure.rejected,
+      LedgerFailureKind.deviceBusy ||
+      LedgerFailureKind.appWrongState => LedgerAppReadinessFailure.busy,
+      LedgerFailureKind.deviceLocked => LedgerAppReadinessFailure.locked,
+      LedgerFailureKind.transportLost => LedgerAppReadinessFailure.disconnected,
+      LedgerFailureKind.appUpdateRequired =>
+        LedgerAppReadinessFailure.unsupportedVersion,
+      LedgerFailureKind.usbPermission ||
+      LedgerFailureKind.pinNotSet ||
+      LedgerFailureKind.appNotInstalled ||
+      LedgerFailureKind.wrongApp ||
+      LedgerFailureKind.deviceInternalError ||
+      LedgerFailureKind.unknownStatus ||
+      LedgerFailureKind.capacityExceeded ||
+      LedgerFailureKind.saplingUnsupported ||
+      LedgerFailureKind.other => LedgerAppReadinessFailure.unavailable,
+    };
 
 class _RustLedgerAppReadinessDevice implements LedgerAppReadinessDevice {
   const _RustLedgerAppReadinessDevice();

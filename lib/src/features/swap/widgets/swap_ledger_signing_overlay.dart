@@ -665,10 +665,8 @@ class _SwapLedgerSigningOverlayState
     if (kind == LedgerFailureKind.wrongApp) {
       return '$appInstruction Then try again.';
     }
-    if (lower.contains('no ledger') || lower.contains('hid')) {
-      return ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
-          'Connect and unlock your Ledger. $appInstruction';
-    }
+    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    if (usb != null) return usb;
     if (lower.contains('sapling')) {
       return 'This Ledger preview does not support Sapling inputs or outputs.';
     }

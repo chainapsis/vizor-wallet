@@ -55,13 +55,10 @@ String? ledgerActionableErrorMessage(
         'This gift card includes more inputs or outputs than your Ledger can sign at once. Go back and create a gift card with a smaller amount.',
     };
   }
-  final text = error.toString().toLowerCase();
-  if ((text.contains('apply ledger') && text.contains('signature at action')) ||
-      text.contains('validate ledger transparent signature')) {
-    // The device signed, but its keys are not this account's keys.
+  if (kind == LedgerFailureKind.signatureMismatch) {
     return 'The signatures from this Ledger do not match this account. Connect the Ledger that holds this account, then try again.';
   }
-  if (text.contains('ledger supports at most')) {
+  if (error.toString().toLowerCase().contains('ledger supports at most')) {
     return 'Your Ledger cannot sign this transaction format. Go back and create a new request.';
   }
   return switch (kind) {
@@ -110,8 +107,9 @@ String? ledgerUsbErrorMessage(
   required String appInstruction,
   TargetPlatform? platform,
 }) {
+  if (!isLedgerUsbTransportError(error)) return null;
   final text = error.toString().toLowerCase();
-  if (text.contains('no ledger device found')) {
+  if (text.contains('no ledger device')) {
     return 'Connect and unlock your Ledger. $appInstruction';
   }
   if (text.contains('open ledger hid device')) {
@@ -125,10 +123,7 @@ String? ledgerUsbErrorMessage(
   if (text.contains('initialize ledger hid')) {
     return 'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.';
   }
-  if (text.contains('ledger hid')) {
-    return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger, then try again.';
-  }
-  return null;
+  return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger, then try again.';
 }
 
 /// Retrying the same request cannot succeed; the caller must build a new one

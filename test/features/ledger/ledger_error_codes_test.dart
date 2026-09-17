@@ -70,6 +70,29 @@ void main() {
       ),
       LedgerFailureKind.usbPermission,
     );
+    expect(
+      classifyLedgerError(
+        'ledger_signature_mismatch: Validate Ledger transparent signature 0: InvalidSignature',
+      ),
+      LedgerFailureKind.signatureMismatch,
+    );
+    expect(
+      classifyLedgerError(
+        'ledger_transport: Read Ledger HID packet: device disconnected',
+      ),
+      LedgerFailureKind.transportLost,
+    );
+  });
+
+  test('wallet and network text is not read as a lost Ledger connection', () {
+    for (final error in [
+      'Proposal not found (expired or already consumed)',
+      'connection reset by peer',
+      'lightwalletd stream disconnected',
+      'Bluetooth is not available on this host',
+    ]) {
+      expect(classifyLedgerError(StateError(error)), LedgerFailureKind.other);
+    }
   });
 
   test('typed exceptions classify by their failure, not their text', () {

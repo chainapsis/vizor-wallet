@@ -139,7 +139,7 @@ class _LedgerImmediateMigrationSigningOverlayState
     if (kind == LedgerFailureKind.wrongApp) {
       return 'Open the Zcash app on your Ledger, then try again.';
     }
-    if (message.contains('no ledger') || message.contains('hid')) {
+    if (isLedgerUsbTransportError(error)) {
       return 'Connect and unlock your Ledger, then open the Zcash app.';
     }
     if (message.contains('plan changed')) {

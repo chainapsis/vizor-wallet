@@ -389,6 +389,63 @@ void main() {
     },
   );
 
+  // Only a lost or unusable USB connection may try Bluetooth; refusals of the
+  // request, a busy or stuck app, and other keys fail the same way there.
+  for (final (usbError, fallsBack) in const [
+    ('ledger_transport: No Ledger device found. Connect and unlock.', true),
+    (
+      'ledger_linux_usb_access: Open Ledger HID device: Permission denied',
+      true,
+    ),
+    ('ledger_status_6985: Ledger request was rejected', false),
+    ('ledger_status_5515: Ledger device is locked', false),
+    ('ledger_status_6a80: Ledger rejected the PCZT data or key path', false),
+    ('ledger_status_6986: Ledger Zcash app returned status 0x6986', false),
+    ('ledger_status_6601: Ledger device is busy switching apps', false),
+    ('ledger_status_b007: Ledger Zcash app is in the wrong state', false),
+    (
+      'ledger_signature_mismatch: Validate Ledger transparent signature 0',
+      false,
+    ),
+  ]) {
+    test('Automatic USB readiness failure ${usbError.split(':').first} '
+        '${fallsBack ? 'falls back' : 'stays on USB'}', () async {
+      final notifier = _FakeAccountNotifier(
+        _ledgerAccount(
+          preference: LedgerConnectionPreference.automatic,
+          deviceModel: 'Nano X',
+        ),
+      );
+      final ble = _FakeBleService();
+      final container = _container(
+        notifier: notifier,
+        ble: ble,
+        usbError: StateError(usbError),
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      final operation = container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () => throw StateError('operation must not start'),
+            bluetooth: (_) async => 'signed-over-ble',
+          );
+
+      if (fallsBack) {
+        expect(await operation, 'signed-over-ble');
+        expect(ble.connectCalls, 1);
+      } else {
+        await expectLater(
+          operation,
+          throwsA(isA<LedgerAppReadinessException>()),
+        );
+        expect(ble.connectCalls, 0);
+      }
+    });
+  }
+
   for (final metadataFailure in [false, true]) {
     test(
       'does not replay an operation (metadata failure: $metadataFailure)',
@@ -523,6 +580,7 @@ ProviderContainer _container({
   required _FakeBleService ble,
   TargetPlatform platform = TargetPlatform.macOS,
   bool usbReady = true,
+  Object? usbError,
 }) {
   return ProviderContainer(
     overrides: [
@@ -532,7 +590,7 @@ ProviderContainer _container({
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.usb,
-      ).overrideWithValue(_ReadyDevice(available: usbReady)),
+      ).overrideWithValue(_ReadyDevice(available: usbReady, error: usbError)),
       ledgerAppReadinessDeviceForTransportProvider(
         LedgerConnectionTransport.bluetooth,
       ).overrideWithValue(_ReadyDevice(ble: ble)),
@@ -574,12 +632,14 @@ AppBootstrapState _bootstrap(AccountInfo account) => AppBootstrapState(
 );
 
 class _ReadyDevice implements LedgerAppReadinessDevice {
-  const _ReadyDevice({this.available = true, this.ble});
+  const _ReadyDevice({this.available = true, this.ble, this.error});
   final bool available;
   final LedgerMobileBleService? ble;
+  final Object? error;
 
   @override
   Future<LedgerDeviceAppSnapshot> queryZcashApp() async {
+    if (error case final error?) throw error;
     if (ble != null) await ble!.currentApp();
     return LedgerDeviceAppSnapshot(
       status: available

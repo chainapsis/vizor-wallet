@@ -41,6 +41,9 @@ enum LedgerFailureKind {
   unknownStatus,
   cancelled,
   capacityExceeded,
+
+  /// The signatures verify against keys other than this account's.
+  signatureMismatch,
   usbPermission,
   transportLost,
   saplingUnsupported,
@@ -116,23 +119,31 @@ LedgerFailureKind classifyLedgerError(Object error) {
   if (raw.contains('ledger_capacity:')) {
     return LedgerFailureKind.capacityExceeded;
   }
+  if (raw.contains('ledger_signature_mismatch:')) {
+    return LedgerFailureKind.signatureMismatch;
+  }
   if (raw.contains('ledger_linux_usb_access')) {
     return LedgerFailureKind.usbPermission;
   }
 
-  // Device decisions always carry a code; wording such as "rejected" also
-  // appears in network broadcast failures, so only transport text is read.
-  final lower = raw.toLowerCase();
-  if (lower.contains('sapling')) return LedgerFailureKind.saplingUnsupported;
-  if (lower.contains('no ledger') ||
-      lower.contains('not found') ||
-      lower.contains('no device') ||
-      lower.contains('hid') ||
-      lower.contains('disconnect') ||
-      lower.contains('bluetooth')) {
-    return LedgerFailureKind.transportLost;
+  // Device decisions always carry a code; wording such as "rejected" or
+  // "not found" also appears in wallet and network failures.
+  if (raw.toLowerCase().contains('sapling')) {
+    return LedgerFailureKind.saplingUnsupported;
   }
+  if (isLedgerUsbTransportError(error)) return LedgerFailureKind.transportLost;
   return LedgerFailureKind.other;
+}
+
+/// Whether [error] is a USB HID transport failure: prefixed by Rust, or HID
+/// wording from builds before the prefix that no network error uses.
+bool isLedgerUsbTransportError(Object error) {
+  final lower = error.toString().toLowerCase();
+  return lower.contains('ledger_transport:') ||
+      lower.contains('ledger_linux_usb_access') ||
+      lower.contains('no ledger device') ||
+      lower.contains('ledger hid') ||
+      lower.contains('hidapi');
 }
 
 Object? _cause(Object error) => switch (error) {
