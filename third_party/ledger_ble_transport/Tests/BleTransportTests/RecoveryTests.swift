@@ -13,6 +13,41 @@ final class RecoveryTests: XCTestCase {
     }
 
     @MainActor
+    func testNativeDisconnectCauseSurvivesPendingExchangeAndHandshake() async {
+        let native = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue,
+                             userInfo: [NSLocalizedDescriptionKey: "Localized text is irrelevant"])
+        for handshaking in [false, true] {
+            let radio = Radio()
+            radio.answerMtu = !handshaking
+            let transport = handshaking
+                ? BleTransport(configuration: nil, debugMode: false, module: radio, handshakeTimeout: 60)
+                : await connected(radio)
+            let failed = expectation(description: "original cause delivered")
+            var calls = 0
+            let check: (BleTransportError) -> Void = { error in
+                calls += 1
+                XCTAssertEqual(error.underlyingError?.domain, native.domain)
+                XCTAssertEqual(error.underlyingError?.code, native.code)
+                failed.fulfill()
+            }
+            if handshaking {
+                transport.connect(toPeripheralID: radio.device, disconnectedCallback: nil,
+                                  success: { _ in XCTFail("unexpected connection") }, failure: check)
+            } else {
+                transport.exchange(apdu: APDU(data: [0xb0, 1, 0, 0])) { result in
+                    if case .failure(let error) = result { check(error) }
+                    else { XCTFail("unexpected response") }
+                }
+            }
+            await Task.yield()
+            radio.loseConnection(error: native)
+            await fulfillment(of: [failed], timeout: 2)
+            radio.loseConnection(error: native)
+            XCTAssertEqual(calls, 1)
+        }
+    }
+
+    @MainActor
     func testDisconnectSettlesExchangeOnceAndDiscardsPartialBytes() async {
         let radio = Radio()
         let transport = await connected(radio)
@@ -253,7 +288,7 @@ private final class Radio: BleTransportIO {
     }
     var cancellations = 0
     func cancelConnection() { cancellations += 1; if !deferDisconnect { loseConnection() } }
-    func loseConnection() { delegate?.disconnected(from: device) }
+    func loseConnection(error: Error? = nil) { delegate?.disconnected(from: device, error: error) }
     func deliver(_ bytes: [UInt8]) { listener?(Data(bytes)) }
 }
 

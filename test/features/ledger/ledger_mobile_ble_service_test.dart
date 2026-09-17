@@ -191,6 +191,7 @@ void main() {
             throw PlatformException(
               code: 'pairing_invalid',
               message: 'Native description',
+              details: {'nativeDomain': 'CBErrorDomain', 'nativeCode': 14},
             );
           });
       await expectLater(
@@ -199,6 +200,8 @@ void main() {
         ),
         throwsA(
           isA<LedgerMobileException>()
+              .having((e) => e.nativeDomain, 'nativeDomain', 'CBErrorDomain')
+              .having((e) => e.nativeCode, 'nativeCode', 14)
               .having(
                 (e) => e.failure,
                 'failure',

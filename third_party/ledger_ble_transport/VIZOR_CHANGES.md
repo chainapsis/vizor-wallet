@@ -30,3 +30,13 @@ still notify once. ScanLifetimeTests exercises the production Scan and Queue wit
 only CoreBluetooth radio calls substituted, including fast radio off/on recovery.
 
 App-query timeout integration: `abortExchange()` cancels the physical radio link without waiting for the APDU queue. It invalidates late callbacks but retains exchange ownership until disconnect. Raw outgoing APDU logging is removed.
+
+Pairing error preservation (2026-09-17): native failures now retain their NSError
+(domain/code) in BleTransportError.underlying alongside the previous transport
+context. Physical disconnection callbacks carry Error? instead of dropping the
+cause; both a pending handshake and an active exchange receive it. The shared
+Apple handler maps confirmed CBError.peerRemovedPairingInformation to
+pairing_invalid, independent of localized text and callback ordering. Explicit
+cancellation, nil-error app switching and once-only draining retain their behavior.
+The local DisconnectionResponse callback signature differs from upstream; preserve
+it and its callers when updating this vendored package.

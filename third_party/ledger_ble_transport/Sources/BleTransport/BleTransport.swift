@@ -10,6 +10,14 @@ import CoreBluetooth
 
 /// Errors thrown when scanning/sending/receiving/connecting
 public enum BleTransportError: LocalizedError {
+    /// Keep CoreBluetooth identity alongside the transport operation context.
+    indirect case underlying(error: NSError, fallback: BleTransportError)
+
+    public var underlyingError: NSError? {
+        if case .underlying(let error, _) = self { return error }
+        return nil
+    }
+
     case pendingActionOnDevice
     case userRefusedOnDevice
     case scanningTimedOut
@@ -25,6 +33,8 @@ public enum BleTransportError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .underlying(_, let fallback):
+            return fallback.errorDescription
         case .pendingActionOnDevice:
             return "Pending action on device"
         case .userRefusedOnDevice:
@@ -56,6 +66,7 @@ public enum BleTransportError: LocalizedError {
     /// `id` is defined by what the JS bindings are returning and using for error handling
     public var id: String? {
         switch self {
+        case .underlying(_, let fallback): return fallback.id
         case .pendingActionOnDevice:
             return "TransportRaceCondition"
         case .userRefusedOnDevice:
@@ -130,8 +141,8 @@ public enum BleStatusError: LocalizedError, Hashable {
 }
 
 extension BleTransport: BleModuleDelegate {
-    func disconnected(from peripheral: PeripheralIdentifier) {
-        clearConnection()
+    func disconnected(from peripheral: PeripheralIdentifier, error: Error?) {
+        clearConnection(error: error)
     }
 
     func bluetoothAvailable(_ available: Bool) {
@@ -156,7 +167,7 @@ extension BleTransport: BleModuleDelegate {
     private let debugMode: Bool
 
     private let configuration: BleTransportConfiguration
-    private var disconnectedCallback: EmptyResponse? /// Once `disconnectCallback` is set it never becomes `nil` again so we can reuse it in methods where we reconnect to the peripheral blindly like `openApp/closeApp`
+    private var disconnectedCallback: DisconnectionResponse? /// Once `disconnectCallback` is set it never becomes `nil` again so we can reuse it in methods where we reconnect to the peripheral blindly like `openApp/closeApp`
     private var connectFailure: ((BleTransportError)->())?
 
     private var scanDuration: TimeInterval = 5.0 /// `scanDuration` will be overriden every time a value gets passed to `scan/create`
@@ -253,7 +264,7 @@ extension BleTransport: BleModuleDelegate {
                 self.updatePeripheralsServicesTuple(discoveries: discoveries)
                 if let error = error {
                     print("Stopped scanning with error: \(error)")
-                    stopped(.scanError(description: error.localizedDescription))
+                    stopped(.underlying(error: error as NSError, fallback: .scanError(description: error.localizedDescription)))
                 } else if timedOut {
                     stopped(.scanningTimedOut)
                 } else {
@@ -270,7 +281,7 @@ extension BleTransport: BleModuleDelegate {
         }
     }
 
-    public func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
+    public func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
 
         guard isBluetoothAvailable else { failure(.bluetoothNotAvailable); return }
 
@@ -363,7 +374,7 @@ extension BleTransport: BleModuleDelegate {
                     self.send(value: value, retryWithResponse: true, success: success, failure: failure)
                 } else {
                     print(error.localizedDescription)
-                    failure(.writeError(description: error.localizedDescription))
+                    failure(.underlying(error: error as NSError, fallback: .writeError(description: error.localizedDescription)))
                 }
             }
         }
@@ -396,14 +407,14 @@ extension BleTransport: BleModuleDelegate {
                 let callback = self.disconnectCompletion
                 self.disconnectCompletion = nil
                 self.disconnecting = false
-                callback?(.lowerLevelError(description: error.localizedDescription))
+                callback?(.underlying(error: error as NSError, fallback: .lowerLevelError(description: error.localizedDescription)))
             }
             // Success completes in clearConnection, after the module queue and
             // notifications have drained. Never reconnect ahead of that event.
         }
     }
 
-    public func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
+    public func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
 
         guard connectSuccess == nil && !disconnecting else { failure(.pendingActionOnDevice); return }
         guard !isConnected else { failure(.connectError(description: "Already connected to a peripheral")); return }
@@ -447,7 +458,7 @@ extension BleTransport: BleModuleDelegate {
                     }
                 case .failure(let error):
                     if case ConnectionError.timedOut = error { self.disconnecting = true }
-                    self.failConnect(.connectError(description: error.localizedDescription))
+                    self.failConnect(.underlying(error: error as NSError, fallback: .connectError(description: error.localizedDescription)))
                 }
             }
         }
@@ -646,10 +657,11 @@ extension BleTransport: BleModuleDelegate {
             case .success(let apdu):
                 apduReceived(apdu)
             case .failure(let error):
-                if (error as NSError).code == CBATTError.insufficientEncryption.rawValue {
-                    failure(.pairingError(description: error.localizedDescription))
+                if (error as NSError).domain == CBATTErrorDomain &&
+                    (error as NSError).code == CBATTError.insufficientEncryption.rawValue {
+                    failure(.underlying(error: error as NSError, fallback: .pairingError(description: error.localizedDescription)))
                 } else {
-                    failure(.listenError(description: error.localizedDescription))
+                    failure(.underlying(error: error as NSError, fallback: .listenError(description: error.localizedDescription)))
                 }
             }
         } setupFinished: {
@@ -675,7 +687,7 @@ extension BleTransport: BleModuleDelegate {
         if let connectedPeripheral { completion?(connectedPeripheral) }
     }
 
-    fileprivate func clearConnection() {
+    fileprivate func clearConnection(error: Error? = nil) {
         abortingExchange = false
         connectionGeneration += 1
         connectedPeripheral = nil
@@ -693,10 +705,12 @@ extension BleTransport: BleModuleDelegate {
         disconnectCompletion = nil
         disconnecting = false
         // Release SDK ownership and buffers before any reentrant client callback.
-        finishExchange(.failure(.currentConnectedError(description: "Ledger disconnected")))
-        connectError?(.connectError(description: "Ledger disconnected during initialization"))
+        let exchangeFailure = BleTransportError.currentConnectedError(description: "Ledger disconnected")
+        let connectionFailure = BleTransportError.connectError(description: "Ledger disconnected during initialization")
+        finishExchange(.failure(error.map { .underlying(error: $0 as NSError, fallback: exchangeFailure) } ?? exchangeFailure))
+        connectError?(error.map { .underlying(error: $0 as NSError, fallback: connectionFailure) } ?? connectionFailure)
         notify?()
-        disconnected?()
+        disconnected?(error)
         disconnectedResult?(nil)
     }
 
@@ -794,7 +808,7 @@ extension BleTransport {
         }
     }
     @discardableResult
-    public func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
+    public func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier {
         let lock = NSLock()
         return try await withCheckedThrowingContinuation { continuation in
 
@@ -817,7 +831,7 @@ extension BleTransport {
         }
     }
     @discardableResult
-    public func connect(toPeripheralID: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
+    public func connect(toPeripheralID: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier {
         let lock = NSLock()
         return try await withCheckedThrowingContinuation { continuation in
 

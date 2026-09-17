@@ -30,7 +30,15 @@ enum LedgerMobileFailure {
 }
 
 class LedgerMobileException implements Exception {
-  const LedgerMobileException(this.failure, this.message);
+  const LedgerMobileException(
+    this.failure,
+    this.message, {
+    this.nativeDomain,
+    this.nativeCode,
+  });
+
+  final String? nativeDomain;
+  final int? nativeCode;
 
   final LedgerMobileFailure failure;
   final String message;
@@ -457,6 +465,7 @@ class MethodChannelLedgerMobileBleService
           _errorFromCode(
             value['code'] as String? ?? 'unavailable',
             value['message'] as String? ?? 'Ledger discovery failed.',
+            details: value['details'],
           ),
         );
       default:
@@ -475,6 +484,7 @@ class MethodChannelLedgerMobileBleService
       error.code == 'pairing_invalid'
           ? kLedgerPairingInvalidMessage
           : error.message ?? 'Ledger mobile connection failed.',
+      details: error.details,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {
       _connectedDeviceId = null;
@@ -482,7 +492,11 @@ class MethodChannelLedgerMobileBleService
     return mapped;
   }
 
-  static LedgerMobileException _errorFromCode(String code, String message) {
+  static LedgerMobileException _errorFromCode(
+    String code,
+    String message, {
+    Object? details,
+  }) {
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
       'permission_denied' => LedgerMobileFailure.permissionDenied,
@@ -497,7 +511,16 @@ class MethodChannelLedgerMobileBleService
       'cancelled' => LedgerMobileFailure.cancelled,
       _ => LedgerMobileFailure.unavailable,
     };
-    return LedgerMobileException(failure, message);
+    return LedgerMobileException(
+      failure,
+      message,
+      nativeDomain: details is Map && details['nativeDomain'] is String
+          ? details['nativeDomain'] as String
+          : null,
+      nativeCode: details is Map && details['nativeCode'] is int
+          ? details['nativeCode'] as int
+          : null,
+    );
   }
 }
 

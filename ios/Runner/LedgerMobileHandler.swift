@@ -561,9 +561,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     let generation = connectionGeneration
     transport.connect(
       toPeripheralID: device,
-      disconnectedCallback: { [weak self] in
+      disconnectedCallback: { [weak self] error in
         DispatchQueue.main.async {
-          self?.handleDisconnected(generation: generation)
+          self?.handleDisconnected(generation: generation, error: error)
         }
       },
       success: { [self] connected in
@@ -656,13 +656,17 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func handleDisconnected(generation: Int) {
+  private func handleDisconnected(generation: Int, error: Error?) {
     guard generation == connectionGeneration else { return }
     connectedDevice = nil
     if exchangeRecoversFromDisconnect { return }
+    let mapped = error.map { flutterError(for: $0 as? BleTransportError ??
+      BleTransportError.underlying(error: $0 as NSError,
+        fallback: .currentConnectedError(description: "Ledger disconnected"))) }
     cancelExchangeOperation(
-      code: "disconnected",
-      message: "The Ledger disconnected. Reconnect and try again.",
+      code: mapped?.code ?? "disconnected",
+      message: mapped?.message ?? "The Ledger disconnected. Reconnect and try again.",
+      details: mapped?.details,
       cancelPreparation: false
     )
   }
@@ -692,9 +696,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
           let reconnectGeneration = connectionGeneration
           let connected = try await transport.connect(
             toPeripheralID: device,
-            disconnectedCallback: { [weak self] in
+            disconnectedCallback: { [weak self] error in
               DispatchQueue.main.async {
-                self?.handleDisconnected(generation: reconnectGeneration)
+                self?.handleDisconnected(generation: reconnectGeneration, error: error)
               }
             }
           )
@@ -884,6 +888,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private func cancelExchangeOperation(
     code: String,
     message: String,
+    details: Any? = nil,
     cancelPreparation: Bool = true
   ) {
     // App switching may disconnect BLE without cancelling the user's request.
@@ -896,7 +901,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         connectionGeneration += 1
         connectedDevice = nil
         transportCallbackResult = nil
-        pending(flutterError(code: code, message: message))
+        pending(FlutterError(code: code, message: message, details: details))
       }
     }
     guard let pending = exchangeResult else { return }
@@ -907,7 +912,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     queryDeadlineTask?.cancel()
     exchangeTask?.cancel()
     transportStorage?.abortExchange()
-    pending(flutterError(code: code, message: message))
+    pending(FlutterError(code: code, message: message, details: details))
   }
 
   private func finishExchange(generation: Int, value: Any) {
@@ -973,6 +978,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func flutterError(for error: Error) -> FlutterError {
+    let mapped = classifyFlutterError(error)
+    let native = (error as? BleTransportError)?.underlyingError ?? (error as NSError)
+    return FlutterError(code: mapped.code, message: mapped.message,
+                        details: ["nativeDomain": native.domain, "nativeCode": native.code])
+  }
+
+  private func classifyFlutterError(_ error: Error) -> FlutterError {
     if ledgerPairingInformationIsInvalid(error) {
       return flutterError(
         code: "pairing_invalid",
@@ -1035,6 +1047,8 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
     if let transportError = error as? BleTransportError {
       switch transportError {
+      case .underlying(_, let fallback):
+        return classifyFlutterError(fallback)
       case .bluetoothNotAvailable:
         if authorization() == .denied
           || authorization() == .restricted
@@ -1083,6 +1097,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       "type": "error",
       "code": mapped.code,
       "message": mapped.message ?? "Ledger discovery failed.",
+      "details": mapped.details ?? [:],
     ]
   }
 
@@ -1248,6 +1263,8 @@ struct LedgerMobileAppSwitchCoordinator {
     }
     guard let error = error as? BleTransportError else { return false }
     switch error {
+    case .underlying(_, let fallback):
+      return isTransientTransitionError(fallback)
     case .connectError, .currentConnectedError, .writeError, .readError,
       .listenError, .pendingActionOnDevice, .scanningTimedOut, .scanError:
       return true
@@ -1404,27 +1421,9 @@ extension Array where Element == [UInt8] {
   }
 }
 
-/// BleTransport 1.0.1 flattens CoreBluetooth errors to localized descriptions.
-/// Compare against the OS's own localized description, not an English substring.
+/// Pairing identity comes from CoreBluetooth, never localized message text.
 func ledgerPairingInformationIsInvalid(_ error: Error) -> Bool {
-  let native = error as NSError
-  if native.domain == CBErrorDomain,
+  let native = (error as? BleTransportError)?.underlyingError ?? (error as NSError)
+  return native.domain == CBErrorDomain &&
     native.code == CBError.peerRemovedPairingInformation.rawValue
-  {
-    return true
-  }
-  let expected = NSError(
-    domain: CBErrorDomain,
-    code: CBError.peerRemovedPairingInformation.rawValue
-  ).localizedDescription
-  guard let transportError = error as? BleTransportError else { return false }
-  switch transportError {
-  case .connectError(let description), .currentConnectedError(let description),
-    .writeError(let description), .readError(let description),
-    .listenError(let description), .pairingError(let description),
-    .lowerLevelError(let description):
-    return description == expected
-  default:
-    return false
-  }
 }
