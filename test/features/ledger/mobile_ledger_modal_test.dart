@@ -196,6 +196,44 @@ void main() {
     }
   }
   testWidgets(
+    'failed cancellation re-enables dismissal without allowing duplicate calls',
+    (tester) async {
+      var calls = 0;
+      Widget surface(bool canLeave) => harness(
+        MobileLedgerSigningSurface(
+          canLeave: canLeave,
+          onBack: () => calls++,
+          child: const MobileLedgerSheetContent(
+            title: 'Confirm on your Ledger',
+            onClose: null,
+            children: [MobileLedgerMessage('Waiting for your Ledger.')],
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      await tester.binding.handlePopRoute();
+      expect(calls, 1);
+
+      await tester.pumpWidget(surface(false));
+      await tester.binding.handlePopRoute();
+      expect(calls, 1);
+
+      // Cleanup failed and the owner allows another cancellation attempt.
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      await tester.binding.handlePopRoute();
+      expect(calls, 2);
+
+      // A fast failure may coalesce the busy and recovery updates in one frame.
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      expect(calls, 3);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'small viewport and large text retain close and scrollable action',
     (tester) async {
       tester.view.physicalSize = const Size(320, 568);

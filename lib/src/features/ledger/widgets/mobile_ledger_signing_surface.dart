@@ -29,6 +29,15 @@ class _MobileLedgerSigningSurfaceState
   bool _closing = false;
   double _dragDistance = 0;
 
+  @override
+  void didUpdateWidget(covariant MobileLedgerSigningSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The owner can keep this surface mounted after cleanup fails. Its latest
+    // canLeave value permits another attempt, even when the busy and failure
+    // updates were coalesced into a single frame.
+    if (widget.canLeave) _closing = false;
+  }
+
   void _dismiss() {
     if (!widget.canLeave || _closing) return;
     _closing = true;
