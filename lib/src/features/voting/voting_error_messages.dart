@@ -9,9 +9,9 @@ const kMinimumVotingBundleWeightZatoshi = 12500000;
 
 const kLedgerVotingCancelledMessage = 'Ledger voting approval was cancelled.';
 
-final _ledgerCodePrefix = RegExp(
-  r'ledger_(?:status_[0-9a-f]{4}|cancelled|capacity|linux_usb_access):\s*',
-);
+/// Every stable `ledger_*:` code Rust prefixes an error with, including ones
+/// added after this file, so none of them can reach the screen.
+final _ledgerCodePrefix = RegExp(r'ledger_[a-z0-9_]+:\s*');
 
 /// Copy for a failed Ledger vote approval, chosen by failure kind so codes
 /// such as `ledger_status_6985:` never reach the screen.

@@ -44,5 +44,15 @@ void main() {
       ),
       'Ledger Zcash app returned status',
     );
+    expect(
+      friendlyVotingErrorText('ledger_transport: No Ledger device found.'),
+      'No Ledger device found.',
+    );
+    expect(
+      friendlyVotingErrorText(
+        'ledger_signature_mismatch: Validate Ledger transparent signature 0',
+      ),
+      'Validate Ledger transparent signature 0',
+    );
   });
 }

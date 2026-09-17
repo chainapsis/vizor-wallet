@@ -814,6 +814,17 @@ fn signature_mismatch(message: String) -> String {
     format!("{SIGNATURE_MISMATCH_PREFIX}{message}")
 }
 
+/// Whether applying a transparent signature failed because the signature did
+/// not verify, rather than because the PCZT input was malformed or incomplete.
+fn is_transparent_signature_verification_failure(error: &pczt::roles::signer::Error) -> bool {
+    matches!(
+        error,
+        pczt::roles::signer::Error::TransparentSign(
+            transparent::pczt::SignerError::InvalidExternalSignature
+        )
+    )
+}
+
 fn preflight_device_signatures(
     pczt_bytes: &[u8],
     signatures: &[SpendAuthSignature],
@@ -899,9 +910,14 @@ fn apply_signatures(
         signer
             .append_transparent_signature(input_index, signature)
             .map_err(|e| {
-                signature_mismatch(format!(
-                    "Validate Ledger transparent signature {input_index}: {e:?}"
-                ))
+                let message = format!("Validate Ledger transparent signature {input_index}: {e:?}");
+                // Only a signature that fails verification means the device
+                // signed with another key; the rest are PCZT construction bugs.
+                if is_transparent_signature_verification_failure(&e) {
+                    signature_mismatch(message)
+                } else {
+                    message
+                }
             })?;
     }
 
@@ -1022,6 +1038,26 @@ mod tests {
             )),
             "Missing 1 required compact spend-authorization signature(s)"
         );
+    }
+
+    #[test]
+    fn only_an_unverifiable_transparent_signature_reads_as_a_signature_mismatch() {
+        use pczt::roles::signer::Error;
+
+        assert!(is_transparent_signature_verification_failure(
+            &Error::TransparentSign(transparent::pczt::SignerError::InvalidExternalSignature)
+        ));
+        for other in [
+            Error::InvalidIndex,
+            Error::TransparentSign(transparent::pczt::SignerError::MissingPreimage),
+            Error::TransparentSign(transparent::pczt::SignerError::UnsupportedPubkey),
+            Error::TransparentSign(transparent::pczt::SignerError::WrongSpendingKey),
+        ] {
+            assert!(
+                !is_transparent_signature_verification_failure(&other),
+                "{other:?}"
+            );
+        }
     }
 
     #[test]
