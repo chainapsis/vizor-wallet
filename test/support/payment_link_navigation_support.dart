@@ -45,18 +45,24 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<PaymentLinkClaimSession> prepareClaim(
     VizorPaymentLink link, {
     bool allowLongSync = false,
-  }) async => PaymentLinkClaimSession(
-    link: link,
-    destinationAddress: 'u1receiver',
-    destinationAccountUuid: 'account-1',
-    directory: Directory('/tmp/vizor-payment-link-navigation-test'),
-    dbPath: '/tmp/vizor-payment-link-navigation-test/wallet.db',
-    accountUuid: 'payment-link-account',
-    totalZatoshi: link.amountZatoshi,
-    claimableZatoshi: link.amountZatoshi,
-    feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
-    fundingConfirmationCount: kPaymentLinkClaimConfirmationTarget,
-  );
+  }) async {
+    final resolved = link.withResolvedMetadata(
+      address: paymentLinkNavigationLink.address,
+      createdAt: paymentLinkNavigationLink.createdAt,
+    );
+    return PaymentLinkClaimSession(
+      link: resolved,
+      destinationAddress: 'u1receiver',
+      destinationAccountUuid: 'account-1',
+      directory: Directory('/tmp/vizor-payment-link-navigation-test'),
+      dbPath: '/tmp/vizor-payment-link-navigation-test/wallet.db',
+      accountUuid: 'payment-link-account',
+      totalZatoshi: link.amountZatoshi,
+      claimableZatoshi: link.amountZatoshi,
+      feeZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+      fundingConfirmationCount: kPaymentLinkClaimConfirmationTarget,
+    );
+  }
 
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {}

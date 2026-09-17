@@ -486,7 +486,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
-    // Gift Card v1 funds one generated shielded UA with a single transaction.
+    // Gift Card funding uses one generated shielded UA and one transaction.
     // The current selector's multi-step TEX path cannot apply to this address.
     // The common send result still uses `txids`; that does not imply multi-tx
     // card creation support. Revisit activity and fee aggregation if this changes.
@@ -1008,10 +1008,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     required bool allowLongSync,
   }) async {
     log('PaymentLinkClaim: preparation started');
-    final existingRecord = await _receivedStore.find(link.address);
-    if (existingRecord?.isClaimInFlight ?? false) {
-      throw const PaymentLinkClaimInFlightException();
-    }
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -1063,7 +1059,7 @@ class PaymentLinkService implements PaymentLinkOperations {
               accountAddresses: [
                 for (final account in accounts) account.unifiedAddress,
               ],
-              expectedAddress: link.address,
+              expectedAddress: link.knownAddress,
             )) {
           if (accounts != null) {
             log(
@@ -1095,10 +1091,16 @@ class PaymentLinkService implements PaymentLinkOperations {
         importedAddress = imported.address;
         importedAccountUuid = imported.accountUuid;
       }
-      if (importedAddress != link.address) {
+      final advertisedAddress = link.knownAddress;
+      if (advertisedAddress != null && importedAddress != advertisedAddress) {
         throw const FormatException(
           'Payment link address does not match its recovery phrase.',
         );
+      }
+      link = link.withResolvedMetadata(address: importedAddress);
+      final existingRecord = await _receivedStore.find(link.address);
+      if (existingRecord?.isClaimInFlight ?? false) {
+        throw const PaymentLinkClaimInFlightException();
       }
       log('PaymentLinkClaim: recovery address validated');
 
@@ -1136,6 +1138,16 @@ class PaymentLinkService implements PaymentLinkOperations {
         accountUuid: importedAccountUuid,
         limit: null,
       );
+      link = resolvePaymentLinkCreatedAt(
+        link: link,
+        transactions: transactions,
+      );
+      if (!link.isCreatedAtProvisional) {
+        await _receivedStore.resolveProvisionalCreatedAt(
+          address: link.address,
+          createdAt: link.createdAt,
+        );
+      }
       final fundingConfirmationCount =
           paymentLinkFundingConfirmationCountForClaim(
             recipientAmountZatoshi: link.amountZatoshi,

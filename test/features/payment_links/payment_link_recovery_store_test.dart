@@ -424,6 +424,8 @@ void main() {
           'records': [
             {
               'link': link.toUri().toString(),
+              'address': link.address,
+              'createdAt': link.createdAt.toIso8601String(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'shared',
@@ -441,6 +443,29 @@ void main() {
       expect(record.link.mnemonic, link.mnemonic);
     });
 
+    test('loads local metadata from a legacy v1 link', () async {
+      final link = _link();
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': _legacyLinkUri(link),
+              'sourceAccountUuid': 'source-account',
+              'claimFeeReserveZatoshi': '10000',
+              'state': 'shared',
+              'fundingTxids': 'funding-txid',
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+
+      expect(record.link.address, link.address);
+      expect(record.link.createdAt, link.createdAt);
+    });
+
     test('rejects recovery states outside the v1 schema', () async {
       final link = _link();
       final storage = _FakePaymentLinkRecoveryStorage()
@@ -449,6 +474,8 @@ void main() {
           'records': [
             {
               'link': link.toUri().toString(),
+              'address': link.address,
+              'createdAt': link.createdAt.toIso8601String(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'unsupported',
@@ -472,6 +499,8 @@ void main() {
           'records': [
             {
               'link': link.toUri().toString(),
+              'address': link.address,
+              'createdAt': link.createdAt.toIso8601String(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'draft',
@@ -496,6 +525,8 @@ void main() {
           'records': [
             {
               'link': link.toUri().toString(),
+              'address': link.address,
+              'createdAt': link.createdAt.toIso8601String(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'draft',
@@ -730,6 +761,8 @@ void main() {
           'records': [
             {
               'link': link.toUri().toString(),
+              'address': link.address,
+              'createdAt': link.createdAt.toIso8601String(),
               'sourceAccountUuid': 'source-account',
               'claimFeeReserveZatoshi': '10000',
               'state': 'draft',
@@ -800,6 +833,25 @@ VizorPaymentLink _link() {
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
   );
+}
+
+String _legacyLinkUri(VizorPaymentLink link) {
+  final payload = {
+    'v': 1,
+    'network': link.network,
+    'address': link.address,
+    'amountZatoshi': link.amountZatoshi.toString(),
+    'mnemonic': link.mnemonic,
+    'birthdayHeight': link.birthdayHeight,
+    'label': link.label,
+    'createdAt': link.createdAt.toUtc().toIso8601String(),
+  };
+  return Uri(
+    scheme: 'https',
+    host: 'link.vizor.cash',
+    path: '/payment-links/open',
+    fragment: 'v1=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+  ).toString();
 }
 
 class _FakePaymentLinkRecoveryStorage implements PaymentLinkRecoveryStorage {
