@@ -1,3 +1,5 @@
+import '../../../core/layout/app_form_factor.dart';
+import 'mobile/mobile_ledger_signing_content.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -176,6 +178,26 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.awaitingDevice => true,
     };
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return MobileLedgerSigningContent(
+        title: !failed && stage == LedgerSigningStage.reviewing
+            ? 'Confirm on your Ledger'
+            : title,
+        message: message,
+        status:
+            !failed && stage == LedgerSigningStage.reviewing && roundCount == 1
+            ? 'Waiting for your approval'
+            : statusLabel,
+        active:
+            stage != LedgerSigningStage.reviewing &&
+            readiness.phase != LedgerAppReadinessPhase.confirmOpening,
+        failed: failed,
+        account: account,
+        onClose: onCancel,
+        actionLabel: actionLabel,
+        onAction: onFailureAction,
+      );
+    }
     return AppModalCard(
       width: 328,
       child: Column(

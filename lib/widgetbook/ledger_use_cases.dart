@@ -1,3 +1,5 @@
+import '../src/providers/sync_provider.dart';
+import 'send_use_cases.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
 // ignore_for_file: depend_on_referenced_packages
 
@@ -194,6 +196,7 @@ Widget buildLedgerSigningPreview({
       if (bluetoothService != null)
         ledgerMobileBleServiceProvider.overrideWithValue(bluetoothService),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
+      syncProvider.overrideWith(_LedgerPreviewSync.new),
       accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
       ledgerTargetPlatformProvider.overrideWithValue(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
@@ -206,11 +209,17 @@ Widget buildLedgerSigningPreview({
         ? SizedBox(
             width: 393,
             height: 852,
-            child: MobileLedgerSigningSurface(
-              title: mobileTitle,
-              onBack: () {},
-              canLeave: phase != LedgerSigningModalPhase.broadcasting,
-              child: modal,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Builder(builder: buildMobileSendReviewDefaultUseCase),
+                MobileLedgerSigningSurface(
+                  title: mobileTitle,
+                  onBack: () {},
+                  canLeave: phase != LedgerSigningModalPhase.broadcasting,
+                  child: modal,
+                ),
+              ],
             ),
           )
         : Center(child: modal),
@@ -692,4 +701,9 @@ class _LedgerPreviewProgressController extends LedgerSigningProgressController {
   @override
   LedgerSigningProgress? build() =>
       LedgerSigningProgress(_ledgerAccount.uuid, stage);
+}
+
+class _LedgerPreviewSync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
 }

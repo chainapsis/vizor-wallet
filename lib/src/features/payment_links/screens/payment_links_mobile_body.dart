@@ -7,6 +7,8 @@
 /// file is left with the state machine plus one render tree instead of two.
 library;
 
+import '../widgets/payment_link_ledger_signing_overlay.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -623,7 +625,16 @@ class _PaymentLinksMobileNavigatorState
                   ),
                 ),
               ),
-            if (signing != null)
+            if (signing is PaymentLinkLedgerSigningOverlay)
+              CustomTransitionPage<Object?>(
+                key: _signingKey,
+                opaque: false,
+                transitionsBuilder:
+                    (context, animation, secondaryAnimation, child) =>
+                        FadeTransition(opacity: animation, child: child),
+                child: AppToastHost(child: signing),
+              )
+            else if (signing != null)
               CupertinoPage<Object?>(
                 key: _signingKey,
                 // The shared signing flow owns its decode/finalization guard.

@@ -55,7 +55,7 @@ void main() {
       await _walkToApproveAndCreate(tester, settle: false);
       expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
       expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
-      expect(find.text('Check your Ledger'), findsOneWidget);
+      expect(find.text('Confirm on your Ledger'), findsOneWidget);
       ledger.storage.writeGate = Completer<void>();
       signing.complete([3]);
       for (var i = 0; i < 5; i++) {

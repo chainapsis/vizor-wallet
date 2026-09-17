@@ -265,7 +265,11 @@ void main() {
       await tester.tap(find.text('Open signing'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Close',
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(MobileLedgerSendSignScreen), findsOneWidget);
@@ -302,7 +306,11 @@ void main() {
       final queuedRetry = tester
           .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
           .onFailureAction!;
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Close',
+        ),
+      );
       await tester.pump();
       queuedRetry();
       await tester.pump();
@@ -344,7 +352,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Keystone'), findsNothing);
-    await tester.tap(find.text('Cancel'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Close',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Open signing'), findsOneWidget);
@@ -507,7 +520,11 @@ void main() {
     );
     await tester.tap(find.text('Open signing'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Close',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Open signing'), findsOneWidget);
@@ -573,7 +590,7 @@ void main() {
     expect(find.text('Processing with Ledger'), findsOneWidget);
     firstProgress('reviewing');
     await tester.pump();
-    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Confirm on your Ledger'), findsOneWidget);
     expect(find.text('Transaction 1 of 2'), findsOneWidget);
 
     first.complete(const [4]);
@@ -587,7 +604,7 @@ void main() {
     expect(find.text('Preparing transaction'), findsOneWidget);
     secondProgress('reviewing');
     await tester.pump();
-    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Confirm on your Ledger'), findsOneWidget);
     expect(find.text('Transaction 2 of 2'), findsOneWidget);
 
     second.complete(const [8]);

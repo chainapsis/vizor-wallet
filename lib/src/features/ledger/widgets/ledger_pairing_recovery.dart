@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,19 +8,14 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_bluetooth_access.dart';
-import '../services/ledger_connection_service.dart';
-import '../services/ledger_device_request.dart';
 import '../services/ledger_device_selection.dart';
-import '../services/ledger_failure_guidance.dart';
-import '../services/ledger_mobile_ble_service.dart';
 import '../services/ledger_pairing_recovery_service.dart';
-import '../services/ledger_signing_service.dart';
 import 'ledger_bluetooth_recovery.dart';
 import 'ledger_progress_status.dart';
 
-enum _Stage { failed, scanning, devices, verifying, saving, ready, mismatch }
+import 'ledger_pairing_session.dart';
 
-class LedgerPairingRecovery extends ConsumerStatefulWidget {
+class LedgerPairingRecovery extends ConsumerWidget {
   const LedgerPairingRecovery({
     required this.accountUuid,
     required this.onRetry,
@@ -42,334 +35,77 @@ class LedgerPairingRecovery extends ConsumerStatefulWidget {
   final bool retrySelectsDevice;
 
   @override
-  ConsumerState<LedgerPairingRecovery> createState() =>
-      _LedgerPairingRecoveryState();
-}
+  Widget build(BuildContext context, WidgetRef ref) => LedgerPairingSession(
+    accountUuid: accountUuid,
+    onRetry: onRetry,
+    onClose: onClose,
+    onBusyChanged: onBusyChanged,
+    enabled: enabled,
+    selectionRequest: selectionRequest,
+    retrySelectsDevice: retrySelectsDevice,
+    builder: (context, session) => _buildContent(context, ref, session),
+  );
 
-class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
-  _Stage _stage = _Stage.failed;
-  bool _expanded = false;
-  bool _connectionUpdated = false;
-  bool _sameSavedDevice = false;
-  bool _accessRecovery = false;
-  bool _invalidated = false;
-  bool _settingsBusy = false;
-  String? _error;
-  List<LedgerBleDevice> _devices = const [];
-  StreamSubscription<LedgerDiscoveryUpdate>? _subscription;
-  int _generation = 0;
-  late final LedgerMobileBleService _mobile;
-  late final LedgerOperationCanceller _cancel;
-  late final void Function() _epoch;
-
-  bool get _busy =>
-      _stage == _Stage.scanning ||
-      _stage == _Stage.verifying ||
-      _stage == _Stage.saving ||
-      _settingsBusy;
-
-  @override
-  void initState() {
-    super.initState();
-    _mobile = ref.read(ledgerMobileBleServiceProvider);
-    _cancel = ref.read(ledgerOperationCancellerProvider);
-    try {
-      final request = ref.read(ledgerDeviceRequestsProvider).capture();
-      final session = ref.read(ledgerPairingRecoverySessionProvider)();
-      _epoch = () {
-        request();
-        session();
-      };
-    } catch (_) {
-      _invalidated = true;
-      _epoch = () => throw StateError('Cancelled');
-    }
-    if (widget.selectionRequest != null) {
-      _stage = _Stage.scanning;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_scan(initial: true));
-      });
-    }
-  }
-
-  void _check(int generation) {
-    _epoch();
-    if (!mounted || _invalidated || generation != _generation) {
-      throw const LedgerMobileException(
-        LedgerMobileFailure.cancelled,
-        'Cancelled',
-      );
-    }
-  }
-
-  void _notifyBusy() => widget.onBusyChanged(_busy);
-
-  @override
-  void dispose() {
-    _generation++;
-    unawaited(_subscription?.cancel());
-    if (_stage == _Stage.scanning || _stage == _Stage.devices) {
-      unawaited(_stopQuietly());
-    }
-    if (_stage == _Stage.verifying &&
-        widget.selectionRequest?.completed != true) {
-      unawaited(_cancelQuietly());
-    }
-    super.dispose();
-  }
-
-  Future<void> _cancelQuietly() async {
-    try {
-      await _cancel();
-    } catch (_) {}
-  }
-
-  Future<void> _stopQuietly() async {
-    try {
-      await _mobile.stopDiscovery();
-    } catch (_) {}
-  }
-
-  void _fail(int generation, Object error) {
-    if (!mounted || generation != _generation) return;
-    _generation++;
-    unawaited(_subscription?.cancel());
-    _subscription = null;
-    try {
-      _epoch();
-    } catch (_) {
-      _invalidated = true;
-    }
-    setState(() {
-      _stage = error is LedgerAccountMismatchException
-          ? _Stage.mismatch
-          : _Stage.failed;
-      _devices = const [];
-      _accessRecovery = ledgerFailureGuidance(error)?.bluetoothRecovery == true;
-      _error =
-          error is LedgerAccountMismatchException ||
-              ledgerFailureGuidance(error)?.pairingRecovery == true
-          ? null
-          : ledgerFailureGuidance(error)?.message ??
-                'Could not reconnect. Try finding your Ledger again.';
-    });
-    _notifyBusy();
-  }
-
-  Future<void> _scan({bool initial = false}) async {
-    if ((_busy && !initial) || !widget.enabled || _invalidated) return;
-    if (widget.retrySelectsDevice) {
-      widget.onRetry?.call();
-      return;
-    }
-    final generation = ++_generation;
-    setState(() {
-      _stage = _Stage.scanning;
-      _error = null;
-      _devices = const [];
-      _accessRecovery = false;
-    });
-    _notifyBusy();
-    try {
-      _check(generation);
-      unawaited(_subscription?.cancel());
-      _subscription = null;
-      if (widget.selectionRequest case final request?) {
-        request.requireCurrent();
-        await request.prepare();
-      } else {
-        await ref.read(ledgerConnectionServiceProvider).recover(() async {
-          await _mobile.stopDiscovery();
-          _check(generation);
-          await _mobile.disconnect();
-          _check(generation);
-          if (!await prepareLedgerBluetoothDiscovery(_mobile)) {
-            throw const LedgerMobileException(
-              LedgerMobileFailure.permissionDenied,
-              'Allow Bluetooth access to find your Ledger.',
-            );
-          }
-          _check(generation);
-        });
-      }
-      _check(generation);
-      _subscription = _mobile.discoverDevices().listen(
-        (event) {
-          try {
-            _check(generation);
-            switch (event) {
-              case LedgerDevicesDiscovered(:final devices):
-                setState(() {
-                  _devices = devices;
-                });
-              case LedgerDiscoveryEnded():
-                setState(() {
-                  _stage = _Stage.devices;
-                });
-                _notifyBusy();
-              case LedgerDiscoveryFailed(:final error):
-                _fail(generation, error);
-            }
-          } catch (error) {
-            _fail(generation, error);
-          }
-        },
-        onError: (Object error) => _fail(generation, error),
-        onDone: () {
-          if (mounted &&
-              generation == _generation &&
-              _stage == _Stage.scanning) {
-            setState(() => _stage = _Stage.devices);
-            _notifyBusy();
-          }
-        },
-      );
-    } catch (error) {
-      _fail(generation, error);
-    }
-  }
-
-  Future<void> _select(LedgerBleDevice device) async {
-    if ((_stage != _Stage.scanning && _stage != _Stage.devices) ||
-        !widget.enabled ||
-        _invalidated) {
-      return;
-    }
-    final generation = ++_generation;
-    unawaited(_subscription?.cancel());
-    _subscription = null;
-    final savedId = ref
-        .read(accountProvider)
-        .value
-        ?.accounts
-        .where((a) => a.uuid == widget.accountUuid)
-        .firstOrNull
-        ?.ledgerDeviceId;
-    setState(() {
-      _sameSavedDevice = ledgerDeviceMatchesSavedConnection(savedId, device.id);
-      _stage = _Stage.verifying;
-      _error = null;
-    });
-    _notifyBusy();
-    try {
-      _check(generation);
-      if (widget.selectionRequest case final request?) {
-        await request.select(device, () => _check(generation), () {
-          setState(() => _stage = _Stage.saving);
-          _notifyBusy();
-        });
-        // The owning operation resumes on this verified connection.
-        return;
-      }
-      final updated = await ref
-          .read(ledgerPairingRecoveryServiceProvider)
-          .verifyAndSave(
-            accountUuid: widget.accountUuid,
-            device: device,
-            checkCurrent: () => _check(generation),
-            onSaving: () {
-              setState(() => _stage = _Stage.saving);
-              _notifyBusy();
-            },
-          );
-      _check(generation);
-      setState(() {
-        _connectionUpdated = updated;
-        _stage = _Stage.ready;
-      });
-      _notifyBusy();
-    } catch (error) {
-      _fail(generation, error);
-    }
-  }
-
-  Future<void> _settings() async {
-    if (_busy || !widget.enabled || _invalidated) return;
-    final generation = _generation;
-    setState(() => _settingsBusy = true);
-    _notifyBusy();
-    try {
-      _check(generation);
-      final opened = await (_mobile as LedgerBluetoothPairingSettings)
-          .openBluetoothPairingSettings();
-      _check(generation);
-      if (!opened) {
-        setState(
-          () => _error =
-              'Open Bluetooth settings manually to remove the old pairing.',
-        );
-      }
-    } catch (_) {
-      if (mounted && generation == _generation) {
-        setState(
-          () => _error =
-              'Open Bluetooth settings manually to remove the old pairing.',
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _settingsBusy = false);
-        _notifyBusy();
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_accessRecovery) {
+  Widget _buildContent(
+    BuildContext context,
+    WidgetRef ref,
+    LedgerPairingSessionState c,
+  ) {
+    if (c.accessRecovery) {
       return LedgerBluetoothRecovery(
-        service: _mobile,
-        onRetry: _scan,
-        onClose: widget.onClose,
+        service: c.service,
+        onRetry: c.scan,
+        onClose: onClose,
         retryLabel: 'Find my Ledger',
-        enabled: widget.enabled,
-        onBusyChanged: widget.onBusyChanged,
+        enabled: enabled,
+        onBusyChanged: onBusyChanged,
       );
     }
     final savedId = ref
         .watch(accountProvider)
         .value
         ?.accounts
-        .where((account) => account.uuid == widget.accountUuid)
+        .where((account) => account.uuid == accountUuid)
         .firstOrNull
         ?.ledgerDeviceId;
     final platform = ref.watch(ledgerTargetPlatformProvider);
     final settingsLink =
         platform != TargetPlatform.iOS &&
-        _mobile is LedgerBluetoothPairingSettings;
-    final title = switch (_stage) {
-      _Stage.failed => 'Couldn’t connect to your Ledger',
-      _Stage.scanning || _Stage.devices =>
-        _devices.isEmpty
-            ? (_stage == _Stage.scanning
+        c.service is LedgerBluetoothPairingSettings;
+    final title = switch (c.stage) {
+      LedgerPairingStage.failed => 'Couldn’t connect to your Ledger',
+      LedgerPairingStage.scanning || LedgerPairingStage.devices =>
+        c.devices.isEmpty
+            ? (c.stage == LedgerPairingStage.scanning
                   ? 'Finding your Ledger'
                   : 'No Ledger devices found')
             : 'Select your Ledger',
-      _Stage.verifying =>
-        _sameSavedDevice ? 'Connecting to your Ledger' : 'Check your Ledger',
-      _Stage.saving => 'Saving your connection',
-      _Stage.ready => 'Your Ledger is connected',
-      _Stage.mismatch => 'This Ledger doesn’t match',
+      LedgerPairingStage.verifying =>
+        c.sameSavedDevice ? 'Connecting to your Ledger' : 'Check your Ledger',
+      LedgerPairingStage.saving => 'Saving your connection',
+      LedgerPairingStage.ready => 'Your Ledger is connected',
+      LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
     };
-    final message = switch (_stage) {
-      _Stage.failed =>
+    final message = switch (c.stage) {
+      LedgerPairingStage.failed =>
         'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
-      _Stage.scanning || _Stage.devices =>
-        _devices.isEmpty
+      LedgerPairingStage.scanning || LedgerPairingStage.devices =>
+        c.devices.isEmpty
             ? 'Keep your Ledger nearby and unlocked.'
             : 'Choose the Ledger you want to use for this account.',
-      _Stage.verifying =>
-        _sameSavedDevice
+      LedgerPairingStage.verifying =>
+        c.sameSavedDevice
             ? 'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'
             : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
-      _Stage.saving => 'Your account matches. Saving the verified connection.',
-      _Stage.ready =>
-        _connectionUpdated
+      LedgerPairingStage.saving =>
+        'Your account matches. Saving the verified connection.',
+      LedgerPairingStage.ready =>
+        c.connectionUpdated
             ? 'This Ledger matches your account. Your saved connection has been updated.'
-            : _sameSavedDevice
+            : c.sameSavedDevice
             ? 'Continue when you’re ready to review the transaction on your Ledger.'
             : 'Account verified. Continue when you’re ready to review the transaction on your Ledger.',
-      _Stage.mismatch =>
+      LedgerPairingStage.mismatch =>
         'Connect the Ledger that holds this account. Your saved connection hasn’t changed.',
     };
     return Column(
@@ -392,7 +128,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             color: context.colors.text.secondary,
           ),
         ),
-        if (_stage == _Stage.failed) ...[
+        if (c.stage == LedgerPairingStage.failed) ...[
           const SizedBox(height: AppSpacing.md),
           Container(
             decoration: BoxDecoration(
@@ -406,7 +142,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Semantics(
-                  expanded: _expanded,
+                  expanded: c.expanded,
                   child: AppButton(
                     key: const ValueKey('ledger_pairing_help'),
                     size: AppButtonSize.small,
@@ -415,9 +151,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                     variant: AppButtonVariant.ghost,
                     expand: true,
                     constrainContent: true,
-                    onPressed: widget.enabled && !_busy
-                        ? () => setState(() => _expanded = !_expanded)
-                        : null,
+                    onPressed: enabled && !c.busy ? c.toggleHelp : null,
                     child: Row(
                       children: [
                         Expanded(
@@ -427,7 +161,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                           ),
                         ),
                         RotatedBox(
-                          quarterTurns: _expanded ? 3 : 1,
+                          quarterTurns: c.expanded ? 3 : 1,
                           child: const AppIcon(
                             AppIcons.chevronForward,
                             size: 16,
@@ -437,12 +171,13 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                     ),
                   ),
                 ),
-                if (_expanded)
+                if (c.expanded)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: Column(
                       children: [
                         _step(
+                          context,
                           '1',
                           'Remove the old pairing',
                           platform == TargetPlatform.iOS
@@ -458,8 +193,8 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                                     AppIcons.arrowTopRight,
                                     size: 14,
                                   ),
-                                  onPressed: widget.enabled && !_busy
-                                      ? _settings
+                                  onPressed: enabled && !c.busy
+                                      ? c.settings
                                       : null,
                                   child: Text(
                                     'Open settings',
@@ -472,6 +207,7 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         _step(
+                          context,
                           '2',
                           'Come back and reconnect',
                           'Keep your Ledger unlocked, then select “Find my Ledger” below.',
@@ -484,18 +220,19 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             ),
           ),
         ],
-        if (_error != null)
+        if (c.error != null)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm),
             child: Text(
-              _error!,
+              c.error!,
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.secondary,
               ),
             ),
           ),
-        if (_stage == _Stage.devices || _stage == _Stage.scanning)
-          ..._devices.map(
+        if (c.stage == LedgerPairingStage.devices ||
+            c.stage == LedgerPairingStage.scanning)
+          ...c.devices.map(
             (device) => Container(
               decoration: BoxDecoration(
                 border: Border(
@@ -511,8 +248,8 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
                 height: 64,
                 growWithContent: true,
                 contentPadding: EdgeInsets.zero,
-                onPressed: widget.enabled && !_invalidated
-                    ? () => _select(device)
+                onPressed: enabled && !c.invalidated
+                    ? () => c.select(device)
                     : null,
                 child: Row(
                   children: [
@@ -546,18 +283,18 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             ),
           ),
         const SizedBox(height: AppSpacing.md),
-        if (_busy)
+        if (c.busy)
           LedgerProgressStatus(
-            label: switch (_stage) {
-              _Stage.scanning =>
-                _devices.isEmpty
+            label: switch (c.stage) {
+              LedgerPairingStage.scanning =>
+                c.devices.isEmpty
                     ? 'Searching nearby…'
                     : 'Still searching nearby…',
-              _Stage.verifying =>
-                _sameSavedDevice
+              LedgerPairingStage.verifying =>
+                c.sameSavedDevice
                     ? 'Connecting…'
                     : 'Follow the prompts on your Ledger',
-              _Stage.saving => 'Saving connection…',
+              LedgerPairingStage.saving => 'Saving connection…',
               _ => 'Opening Bluetooth settings…',
             },
           )
@@ -566,26 +303,19 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
             expand: true,
             constrainContent: true,
             size: AppButtonSize.large,
-            onPressed: _busy || !widget.enabled || _invalidated
+            onPressed: c.busy || !enabled || c.invalidated
                 ? null
-                : _stage == _Stage.ready
-                ? () {
-                    try {
-                      _check(_generation);
-                      widget.onRetry?.call();
-                    } catch (error) {
-                      _fail(_generation, error);
-                    }
-                  }
-                : _scan,
-            child: Text(switch (_stage) {
-              _Stage.scanning => 'Searching',
-              _Stage.verifying =>
-                _sameSavedDevice ? 'Connecting' : 'Checking account',
-              _Stage.saving => 'Saving',
-              _Stage.ready => 'Continue signing',
-              _Stage.mismatch => 'Choose another Ledger',
-              _Stage.devices => 'Search again',
+                : c.stage == LedgerPairingStage.ready
+                ? c.continueSigning
+                : c.scan,
+            child: Text(switch (c.stage) {
+              LedgerPairingStage.scanning => 'Searching',
+              LedgerPairingStage.verifying =>
+                c.sameSavedDevice ? 'Connecting' : 'Checking account',
+              LedgerPairingStage.saving => 'Saving',
+              LedgerPairingStage.ready => 'Continue signing',
+              LedgerPairingStage.mismatch => 'Choose another Ledger',
+              LedgerPairingStage.devices => 'Search again',
               _ => 'Find my Ledger',
             }),
           ),
@@ -593,7 +323,13 @@ class _LedgerPairingRecoveryState extends ConsumerState<LedgerPairingRecovery> {
     );
   }
 
-  Widget _step(String number, String title, String body, Widget? action) => Row(
+  Widget _step(
+    BuildContext context,
+    String number,
+    String title,
+    String body,
+    Widget? action,
+  ) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Container(

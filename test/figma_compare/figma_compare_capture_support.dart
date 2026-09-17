@@ -21,6 +21,7 @@ void runFigmaCompareCaptureTest({
   required double defaultPixelRatio,
   FigmaCompareConfiguration? overrideConfiguration,
   Future<void> Function(WidgetTester tester)? beforeCapture,
+  TargetPlatform mobilePlatform = TargetPlatform.iOS,
 }) {
   final testName =
       'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
@@ -34,7 +35,7 @@ void runFigmaCompareCaptureTest({
     );
 
     if (expectedFormFactor == AppFormFactor.mobile) {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      debugDefaultTargetPlatformOverride = mobilePlatform;
     }
 
     final configuration =

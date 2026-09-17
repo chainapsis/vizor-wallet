@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_bluetooth_access.dart';
-import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
+import '../../ledger/widgets/mobile/mobile_ledger_bluetooth_content.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -223,78 +223,83 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) _abandonConnection();
       },
-      child: MobileModalScaffold(
-        key: const ValueKey('mobile_ledger_device_sheet'),
-        title: 'Select your Ledger',
-        onClose: _close,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (recovery)
-              LedgerBluetoothRecovery(
-                service: widget.service,
-                onRetry: () => unawaited(_startDiscovery()),
-                onClose: _close,
-                retryLabel: 'Find my Ledger',
-              )
-            else ...[
-              Text(
-                'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
+      child: recovery
+          ? MobileLedgerBluetoothContent(
+              key: const ValueKey('mobile_ledger_device_sheet'),
+              service: widget.service,
+              onRetry: () => unawaited(_startDiscovery()),
+              onClose: _close,
+              retryLabel: 'Find my Ledger',
+            )
+          : MobileModalScaffold(
+              key: const ValueKey('mobile_ledger_device_sheet'),
+              title: 'Select your Ledger',
+              onClose: _close,
+              constrainBody: true,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Unlock your Ledger, turn on Bluetooth, and keep it nearby.',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (_devices.isNotEmpty)
+                      ..._devices.map(
+                        (device) => Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                          child: _LedgerDeviceRow(
+                            device: device,
+                            connecting: _connectingDeviceId == device.id,
+                            enabled: !busy,
+                            onTap: () => unawaited(_connect(device)),
+                          ),
+                        ),
+                      )
+                    else if (_state == _DiscoveryState.requestingPermission ||
+                        _state == _DiscoveryState.scanning)
+                      const _StatusMessage(
+                        key: ValueKey('mobile_ledger_scanning'),
+                        iconName: AppIcons.loader,
+                        title: 'Scanning for Ledger devices',
+                        message: 'This can take a few seconds.',
+                      )
+                    else if (_state == _DiscoveryState.empty)
+                      const _StatusMessage(
+                        key: ValueKey('mobile_ledger_empty'),
+                        iconName: AppIcons.search,
+                        title: 'No Ledger devices found',
+                        message:
+                            'Check that your Ledger is unlocked and try again.',
+                      ),
+                    if (_state == _DiscoveryState.failed)
+                      _StatusMessage(
+                        key: const ValueKey('mobile_ledger_discovery_error'),
+                        iconName: AppIcons.warningCircle,
+                        title: 'Could not connect to your Ledger',
+                        message: _error ?? 'Try again.',
+                      ),
+
+                    if (_state == _DiscoveryState.empty ||
+                        _state == _DiscoveryState.failed) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      AppButton(
+                        key: const ValueKey('mobile_ledger_discovery_retry'),
+                        onPressed: busy
+                            ? null
+                            : () => unawaited(_startDiscovery()),
+                        variant: AppButtonVariant.secondary,
+                        child: const Text('Try again'),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              if (_devices.isNotEmpty)
-                ..._devices.map(
-                  (device) => Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: _LedgerDeviceRow(
-                      device: device,
-                      connecting: _connectingDeviceId == device.id,
-                      enabled: !busy,
-                      onTap: () => unawaited(_connect(device)),
-                    ),
-                  ),
-                )
-              else if (_state == _DiscoveryState.requestingPermission ||
-                  _state == _DiscoveryState.scanning)
-                const _StatusMessage(
-                  key: ValueKey('mobile_ledger_scanning'),
-                  iconName: AppIcons.loader,
-                  title: 'Scanning for Ledger devices',
-                  message: 'This can take a few seconds.',
-                )
-              else if (_state == _DiscoveryState.empty)
-                const _StatusMessage(
-                  key: ValueKey('mobile_ledger_empty'),
-                  iconName: AppIcons.search,
-                  title: 'No Ledger devices found',
-                  message: 'Check that your Ledger is unlocked and try again.',
-                ),
-              if (_state == _DiscoveryState.failed)
-                _StatusMessage(
-                  key: const ValueKey('mobile_ledger_discovery_error'),
-                  iconName: AppIcons.warningCircle,
-                  title: 'Could not connect to your Ledger',
-                  message: _error ?? 'Try again.',
-                ),
-
-              if (_state == _DiscoveryState.empty ||
-                  _state == _DiscoveryState.failed) ...[
-                const SizedBox(height: AppSpacing.sm),
-                AppButton(
-                  key: const ValueKey('mobile_ledger_discovery_retry'),
-                  onPressed: busy ? null : () => unawaited(_startDiscovery()),
-                  variant: AppButtonVariant.secondary,
-                  child: const Text('Try again'),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
+            ),
     );
   }
 }
@@ -337,6 +342,7 @@ class _LedgerDeviceRow extends StatelessWidget {
             children: [
               AppIcon(
                 connecting ? AppIcons.loader : AppIcons.ledger,
+                animated: connecting,
                 size: 20,
                 color: colors.icon.regular,
               ),
@@ -389,7 +395,12 @@ class _StatusMessage extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AppIcon(iconName, size: 20, color: colors.icon.muted),
+          AppIcon(
+            iconName,
+            animated: iconName == AppIcons.loader,
+            size: 20,
+            color: colors.icon.regular,
+          ),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: Column(

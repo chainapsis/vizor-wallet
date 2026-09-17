@@ -1,3 +1,5 @@
+import '../../../core/layout/app_form_factor.dart';
+import 'mobile/mobile_ledger_access_content.dart';
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -82,6 +84,21 @@ class _LedgerAccessRecoveryModalState
 
   @override
   Widget build(BuildContext context) {
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return MobileLedgerAccessContent(
+        account: widget.account,
+        onRetry: widget.onRetry,
+        onClose: widget.onClose == null
+            ? null
+            : () {
+                widget.selectionRequest?.cancel();
+                widget.onClose?.call();
+              },
+        pairingRecovery: widget.pairingRecovery,
+        selectionRequest: widget.selectionRequest,
+        retrySelectsDevice: widget.retrySelectsDevice,
+      );
+    }
     final platform = ref.watch(ledgerTargetPlatformProvider);
     final account = widget.account;
     final canChoose =

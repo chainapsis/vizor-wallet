@@ -274,7 +274,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final child = extra is MobileSwapLedgerSignArgs
             ? MobileSwapLedgerSignScreen(args: extra)
             : const MobileSwapScreen();
-        return CupertinoPage(key: state.pageKey, child: child);
+        return CustomTransitionPage(
+          key: state.pageKey,
+          child: child,
+          opaque: false,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        );
       },
     ),
     GoRoute(
@@ -363,7 +369,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final child = extra is SendReviewArgs
             ? MobileLedgerSendSignScreen(args: extra)
             : const MobileSendScreen(useRouteSteps: true);
-        return CupertinoPage(key: state.pageKey, child: child);
+        return CustomTransitionPage(
+          key: state.pageKey,
+          child: child,
+          opaque: false,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        );
       },
     ),
     GoRoute(
@@ -439,8 +451,11 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/home/ledger-shield',
-      pageBuilder: (context, state) => CupertinoPage(
+      pageBuilder: (context, state) => CustomTransitionPage(
         key: state.pageKey,
+        opaque: false,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
         child: const MobileLedgerShieldScreen(),
       ),
     ),

@@ -1,7 +1,6 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -122,7 +121,9 @@ void main() {
                 builder: (context, state) {
                   livePayload = state.extra;
                   final page =
-                      route.pageBuilder!(context, state) as CupertinoPage;
+                      route.pageBuilder!(context, state)
+                          as CustomTransitionPage;
+                  expect(page.opaque, isFalse);
                   return Text(page.child.runtimeType.toString());
                 },
               ),

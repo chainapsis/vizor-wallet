@@ -108,6 +108,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-mobile-large-text',
+    description: 'Mobile Ledger picker with large text',
+    builder: buildLedgerMobileLargeTextCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-searching',
     description: 'Ledger discovery in progress',
     builder: buildLedgerSearchingCapture,

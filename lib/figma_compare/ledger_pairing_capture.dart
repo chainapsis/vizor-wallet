@@ -1,3 +1,4 @@
+import '../widgetbook/send_use_cases.dart';
 import 'dart:async';
 import '../src/providers/rpc_endpoint_provider.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
@@ -30,7 +31,11 @@ const _account = AccountInfo(
   ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
   ledgerDeviceId: 'flex',
   ledgerDeviceModel: 'Flex',
+  ledgerDeviceName: 'F52C',
 );
+
+Widget buildLedgerMobileLargeTextCapture(BuildContext context) =>
+    _buildCapture(context, selectFirst: true, modalTextScale: 1.8);
 
 Widget buildLedgerRePairingCapture(BuildContext context) =>
     _buildCapture(context);
@@ -47,6 +52,7 @@ Widget _buildCapture(
   bool selectFirst = false,
   bool holdReadiness = false,
   String? scan,
+  double? modalTextScale,
 }) {
   final mobile = kAppFormFactor == AppFormFactor.mobile;
   final Widget modal = selectFirst
@@ -82,11 +88,24 @@ Widget _buildCapture(
       ledgerRustOperationCancellerProvider.overrideWithValue(() async {}),
     ],
     child: mobile
-        ? MobileLedgerSigningSurface(
-            title: 'Confirm transaction',
-            onBack: _noop,
-            canLeave: true,
-            child: modal,
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              buildMobileSendReviewDefaultUseCase(context),
+              MobileLedgerSigningSurface(
+                title: 'Confirm transaction',
+                onBack: _noop,
+                canLeave: true,
+                child: modalTextScale == null
+                    ? modal
+                    : MediaQuery(
+                        data: MediaQuery.of(context).copyWith(
+                          textScaler: TextScaler.linear(modalTextScale),
+                        ),
+                        child: modal,
+                      ),
+              ),
+            ],
           )
         : ColoredBox(
             color: context.colors.background.window,
