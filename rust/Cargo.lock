@@ -4172,7 +4172,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7157,9 +7157,9 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96c3cd8d61342d6f6643710abdb4f43be542af65e56680836d216b5fe4da6bb9"
+checksum = "ce66dba0fda960016f2ed6b87edcdd0706d8d3914859bd6d51ec0b618aa2d103"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -7172,9 +7172,9 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24d6aea25b42da138799b32a8fa03047249ddf669eb3203aa3b6fb324038b727"
+checksum = "aeb68896149059f300d8b2f08586cbde59889decfe106a05e3347b04f61b98c5"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -8375,9 +8375,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "5.0.1"
+version = "5.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7328ebd71373556a182557b9f2c6bbd4e1f27f7726dec506c98191288dc5fdd"
+checksum = "4af2f5884d9c5d47b6b6cb7407c096d750eb64958161e9c902260d1c82a94c21"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
