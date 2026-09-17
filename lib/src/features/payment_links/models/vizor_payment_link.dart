@@ -159,6 +159,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime createdAt,
     this.presentation,
+    this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
 
@@ -171,6 +172,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime? createdAt,
     required this.presentation,
+    this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
 
@@ -187,6 +189,9 @@ class VizorPaymentLink {
   final int birthdayHeight;
   final String label;
   final DateTime? _createdAt;
+
+  /// Local-only provenance; never included in the shared payload.
+  final bool isCreatedAtProvisional;
   final PaymentLinkPresentation? presentation;
 
   /// The address derived from [mnemonic], when it is known locally.
@@ -215,6 +220,7 @@ class VizorPaymentLink {
   VizorPaymentLink withResolvedMetadata({
     String? address,
     DateTime? createdAt,
+    bool? isCreatedAtProvisional,
   }) {
     return VizorPaymentLink._parsed(
       network: network,
@@ -224,6 +230,8 @@ class VizorPaymentLink {
       birthdayHeight: birthdayHeight,
       label: label,
       createdAt: createdAt ?? _createdAt,
+      isCreatedAtProvisional:
+          isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
     );
   }

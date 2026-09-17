@@ -91,6 +91,25 @@ int paymentLinkFundingConfirmationCountForClaim({
   return min(confirmationCount, kPaymentLinkClaimConfirmationTarget);
 }
 
+/// Preserve original/legacy dates, but replace a local fallback once mined.
+@visibleForTesting
+VizorPaymentLink resolvePaymentLinkCreatedAt({
+  required VizorPaymentLink link,
+  required List<rust_sync.TransactionInfo> transactions,
+  DateTime Function()? now,
+}) {
+  if (link.knownCreatedAt != null && !link.isCreatedAtProvisional) return link;
+  final fundingTime = paymentLinkFundingCreatedAt(
+    recipientAmountZatoshi: link.amountZatoshi,
+    transactions: transactions,
+  );
+  return link.withResolvedMetadata(
+    createdAt:
+        fundingTime ?? link.knownCreatedAt ?? (now ?? DateTime.now)().toUtc(),
+    isCreatedAtProvisional: fundingTime == null,
+  );
+}
+
 @visibleForTesting
 DateTime? paymentLinkFundingCreatedAt({
   required BigInt recipientAmountZatoshi,

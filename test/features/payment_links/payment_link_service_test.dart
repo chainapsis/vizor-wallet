@@ -31,6 +31,51 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('provisional creation time refreshes after funding mines', () {
+    final unresolved = VizorPaymentLink.parse(_link().toUri().toString());
+    final firstTime = DateTime.utc(2026, 9, 1);
+    final provisional = resolvePaymentLinkCreatedAt(
+      link: unresolved,
+      transactions: [],
+      now: () => firstTime,
+    );
+    expect(provisional.isCreatedAtProvisional, isTrue);
+    final waiting = resolvePaymentLinkCreatedAt(
+      link: provisional,
+      transactions: [],
+      now: () => firstTime.add(const Duration(days: 1)),
+    );
+    expect(waiting.createdAt, firstTime);
+    final transactions = [
+      _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        accountBalanceDelta: paymentLinkFundingAmountZatoshi(
+          _link().amountZatoshi,
+        ).toInt(),
+        minedHeight: 100,
+        blockTime: 1800000000,
+      ),
+    ];
+    final confirmed = resolvePaymentLinkCreatedAt(
+      link: waiting,
+      transactions: transactions,
+    );
+    expect(
+      confirmed.createdAt,
+      DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+    );
+    expect(confirmed.isCreatedAtProvisional, isFalse);
+    expect(
+      resolvePaymentLinkCreatedAt(
+        link: _link(),
+        transactions: transactions,
+      ).createdAt,
+      _link().createdAt,
+    );
+    expect(confirmed.toUri(), unresolved.toUri());
+  });
+
   test(
     'orphan cleanup preserves other accounts and networks and retries file failures',
     () async {
@@ -658,6 +703,60 @@ void main() {
           (await store.load()).single.availability,
           PaymentLinkAvailability.failed,
         );
+      },
+    );
+
+    test(
+      'retained receipt recovery refreshes a persisted provisional date',
+      () async {
+        api.poolFixture = true;
+        api.localClaimTxids = ['pending'];
+        final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
+        api.claimHistory = [
+          _transaction(
+            txid: 'funding',
+            txKind: 'received',
+            minedHeight: 95,
+            accountBalanceDelta: paymentLinkFundingAmountZatoshi(
+              link.amountZatoshi,
+            ).toInt(),
+            blockTime: 1800000000,
+          ),
+          _transaction(txid: 'pending', txKind: 'sent'),
+        ];
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(link);
+        await store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'receiver',
+        );
+        await store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'pending',
+        );
+        final before = (await store.load()).single;
+        final directory = Directory(
+          '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+        );
+        await directory.create();
+        await File(
+          '${directory.path}/zcash_wallet.db',
+        ).writeAsString('retained');
+        await container.read(syncProvider.future);
+        final after = (await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        )).single;
+        expect(
+          after.createdAt,
+          DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+        );
+        expect(after.isCreatedAtProvisional, isFalse);
+        expect(after.claimLink!.isCreatedAtProvisional, isFalse);
+        expect(after.claimTxids, before.claimTxids);
+        expect(after.status, before.status);
+        expect(after.claimSubmittedAt, before.claimSubmittedAt);
       },
     );
 

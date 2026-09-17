@@ -7,6 +7,69 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  test(
+    'provisional date survives restart and lifecycle, enrichment preserves claim metadata',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        priorTxids: ['old'],
+      );
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'pending',
+      );
+      store = PaymentLinkReceivedStore(storage);
+      final before = (await store.load()).single;
+      expect(before.isCreatedAtProvisional, isTrue);
+      expect(before.claimLink!.isCreatedAtProvisional, isTrue);
+      final minedTime = DateTime.utc(2026, 9, 17);
+      await store.resolveProvisionalCreatedAt(
+        address: link.address,
+        createdAt: minedTime,
+      );
+      final after = (await PaymentLinkReceivedStore(storage).load()).single;
+      expect(after.createdAt, minedTime);
+      expect(after.claimLink!.createdAt, minedTime);
+      expect(after.isCreatedAtProvisional, isFalse);
+      expect(after.claimLink!.isCreatedAtProvisional, isFalse);
+      expect(after.status, before.status);
+      expect(after.updatedAt, before.updatedAt);
+      expect(after.claimSubmittedAt, before.claimSubmittedAt);
+      expect(after.claimTxids, before.claimTxids);
+      expect(after.destinationAccountUuid, before.destinationAccountUuid);
+      await store.saveReady(link); // A stale provisional preview arrives late.
+      expect((await store.load()).single.createdAt, minedTime);
+      expect((await store.load()).single.isCreatedAtProvisional, isFalse);
+      await store.resolveProvisionalCreatedAt(
+        address: link.address,
+        createdAt: minedTime.add(const Duration(days: 1)),
+      );
+      expect((await store.load()).single.createdAt, minedTime);
+    },
+  );
+
+  test('old records without provenance preserve their date', () async {
+    final storage = _FakePaymentLinkReceivedStorage();
+    final store = PaymentLinkReceivedStore(storage);
+    await store.saveReady(_link());
+    final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+    (payload['records'] as List).single.remove('isCreatedAtProvisional');
+    storage.value = jsonEncode(payload);
+    await store.resolveProvisionalCreatedAt(
+      address: _link().address,
+      createdAt: DateTime.utc(2026, 9, 17),
+    );
+    final restored = (await store.load()).single;
+    expect(restored.createdAt, _link().createdAt);
+    expect(restored.claimLink!.isCreatedAtProvisional, isFalse);
+  });
+
   for (final version in [1, 2]) {
     for (final mismatch in [false, true]) {
       test(

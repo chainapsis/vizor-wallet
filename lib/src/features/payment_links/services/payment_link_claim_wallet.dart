@@ -126,6 +126,18 @@ class PaymentLinkClaimWallet {
       accountUuid: accounts.single.uuid,
       limit: null,
     );
+    final fundingTime = paymentLinkFundingCreatedAt(
+      recipientAmountZatoshi: link.amountZatoshi,
+      transactions: transactions,
+    );
+    if (record.isCreatedAtProvisional && fundingTime != null) {
+      await _ref
+          .read(paymentLinkReceivedStoreProvider)
+          .resolveProvisionalCreatedAt(
+            address: record.address,
+            createdAt: fundingTime,
+          );
+    }
     final evidence = await rust_sync.getPaymentLinkSpendEvidence(
       dbPath: tempWallet.dbPath,
       accountUuid: accounts.single.uuid,

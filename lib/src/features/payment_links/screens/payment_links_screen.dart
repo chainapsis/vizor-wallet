@@ -1672,7 +1672,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         });
         return;
       }
-      setState(() => _receivedClaimSession = refreshed);
+      setState(() {
+        _receivedClaimSession = refreshed;
+        _receivedLink = refreshed.link;
+      });
     } catch (error) {
       log(
         'PaymentLinkClaim: confirmation refresh failed '

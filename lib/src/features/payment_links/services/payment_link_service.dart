@@ -1119,15 +1119,16 @@ class PaymentLinkService implements PaymentLinkOperations {
         accountUuid: importedAccountUuid,
         limit: null,
       );
-      link = link.withResolvedMetadata(
-        createdAt:
-            link.knownCreatedAt ??
-            paymentLinkFundingCreatedAt(
-              recipientAmountZatoshi: link.amountZatoshi,
-              transactions: transactions,
-            ) ??
-            DateTime.now().toUtc(),
+      link = resolvePaymentLinkCreatedAt(
+        link: link,
+        transactions: transactions,
       );
+      if (!link.isCreatedAtProvisional) {
+        await _receivedStore.resolveProvisionalCreatedAt(
+          address: link.address,
+          createdAt: link.createdAt,
+        );
+      }
       final fundingConfirmationCount =
           paymentLinkFundingConfirmationCountForClaim(
             recipientAmountZatoshi: link.amountZatoshi,
