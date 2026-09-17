@@ -21,6 +21,7 @@ enum LedgerPairingStage {
   devices,
   verifying,
   saving,
+  saved,
   ready,
   mismatch,
 }
@@ -57,7 +58,6 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   LedgerPairingStage _stage = LedgerPairingStage.failed;
   LedgerRequestFailure requestFailure = LedgerRequestFailure.other;
   late bool pairingInvalid = widget.pairingInvalid;
-  bool _connectionUpdated = false;
   bool _sameSavedDevice = false;
   LedgerBleDevice? selectedDevice;
   bool _accessRecovery = false;
@@ -308,14 +308,24 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     try {
       _check(generation);
       if (widget.selectionRequest case final request?) {
-        await request.select(device, () => _check(generation), () {
-          setState(() => _stage = LedgerPairingStage.saving);
+        final outcome = await request.select(
+          device,
+          () => _check(generation),
+          () {
+            setState(() => _stage = LedgerPairingStage.saving);
+            _notifyBusy();
+          },
+        );
+        if (outcome == LedgerDeviceSelectionOutcome.saved) {
+          _check(generation);
+          setState(() => _stage = LedgerPairingStage.saved);
           _notifyBusy();
-        });
-        // The owning operation resumes on this verified connection.
+        }
+        // A previously saved device resumes the owning operation. A newly
+        // saved device stays here until the user explicitly starts discovery.
         return;
       }
-      final updated = await ref
+      await ref
           .read(ledgerPairingRecoveryServiceProvider)
           .verifyAndSave(
             accountUuid: widget.accountUuid,
@@ -328,8 +338,9 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
           );
       _check(generation);
       setState(() {
-        _connectionUpdated = updated;
-        _stage = LedgerPairingStage.ready;
+        _stage = _sameSavedDevice
+            ? LedgerPairingStage.ready
+            : LedgerPairingStage.saved;
       });
       _notifyBusy();
     } catch (error) {
@@ -373,7 +384,6 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   bool get invalidated => _invalidated;
   bool get accessRecovery => _accessRecovery;
   bool get sameSavedDevice => _sameSavedDevice;
-  bool get connectionUpdated => _connectionUpdated;
   String? get error => _error;
   List<LedgerBleDevice> get devices => _devices;
   LedgerMobileBleService get service => _mobile;

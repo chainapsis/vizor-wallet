@@ -87,6 +87,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
       LedgerPairingStage.verifying =>
         c.sameSavedDevice ? 'Connecting to your Ledger' : 'Check your Ledger',
       LedgerPairingStage.saving => 'Saving your connection',
+      LedgerPairingStage.saved => 'Ledger saved',
       LedgerPairingStage.ready => 'Your Ledger is connected',
       LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
     };
@@ -105,12 +106,10 @@ class LedgerPairingRecovery extends ConsumerWidget {
             : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
       LedgerPairingStage.saving =>
         'Your account matches. Saving the verified connection.',
+      LedgerPairingStage.saved =>
+        'This Ledger matches your account and is now saved. Find it again to continue.',
       LedgerPairingStage.ready =>
-        c.connectionUpdated
-            ? 'This Ledger matches your account. Your saved connection has been updated.'
-            : c.sameSavedDevice
-            ? 'Continue when you’re ready to review the transaction on your Ledger.'
-            : 'Account verified. Continue when you’re ready to review the transaction on your Ledger.',
+        'Continue when you’re ready to review the transaction on your Ledger.',
       LedgerPairingStage.mismatch =>
         'Connect the Ledger that holds this account. Your saved connection hasn’t changed.',
     };
@@ -134,8 +133,8 @@ class LedgerPairingRecovery extends ConsumerWidget {
             color: context.colors.text.secondary,
           ),
         ),
-        if (c.stage == LedgerPairingStage.failed &&
-            !c.pairingInvalid &&
+        if ((c.stage == LedgerPairingStage.saved ||
+                (c.stage == LedgerPairingStage.failed && !c.pairingInvalid)) &&
             c.selectedDevice != null) ...[
           const SizedBox(height: AppSpacing.md),
           Row(

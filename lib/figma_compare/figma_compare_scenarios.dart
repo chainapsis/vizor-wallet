@@ -137,6 +137,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 
   FigmaCompareScenario(
+    id: 'ledger-saved',
+    description: 'Save another Ledger, then wait for manual rediscovery',
+    builder: buildLedgerDeviceSelectionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-known-device-connecting',
     description: 'Saved Ledger connection without viewing-key approval',
     builder: buildLedgerKnownDeviceConnectingCapture,

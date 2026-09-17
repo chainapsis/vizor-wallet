@@ -466,9 +466,15 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Ledger Flex'));
         await tester.pumpAndSettle();
-        expect(find.text('Your Ledger is connected'), findsOneWidget);
+        expect(find.text('Ledger saved'), findsOneWidget);
         expect(accounts.savedId, 'new');
         expect(retries, 0);
+        await tester.tap(find.text('Find my Ledger'));
+        await tester.pumpAndSettle();
+        expect(retries, 0);
+        await tester.tap(find.text('Ledger Flex'));
+        await tester.pumpAndSettle();
+        expect(find.text('Your Ledger is connected'), findsOneWidget);
         await tester.tap(find.text('Continue signing'));
         expect(retries, 1);
         expect(tester.takeException(), isNull);
@@ -706,14 +712,19 @@ void main() {
             savedId != 'new' && outcome == 'match' ? 1 : 0,
           );
           expect(
-            find.textContaining('saved connection has been updated'),
-            outcome == 'match' && savedId == 'old'
+            find.text('Ledger saved'),
+            outcome == 'match' && savedId != 'new'
                 ? findsOneWidget
                 : findsNothing,
           );
           if (outcome == 'match' || savedId == 'new') {
             expect(accounts.savedId, savedId == 'new' ? isNull : 'new');
-            expect(find.text('Your Ledger is connected'), findsOneWidget);
+            expect(
+              find.text(
+                savedId == 'new' ? 'Your Ledger is connected' : 'Ledger saved',
+              ),
+              findsOneWidget,
+            );
           } else {
             expect(
               c.read(accountProvider).value!.accounts.single.ledgerDeviceId,

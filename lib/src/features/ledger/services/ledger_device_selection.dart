@@ -32,6 +32,8 @@ typedef LedgerSelectionVerifier =
       void Function() onSaving,
     );
 
+enum LedgerDeviceSelectionOutcome { selected, saved }
+
 /// The connection service owns exclusion while this request is visible. UI may
 /// scan and verify through this request, but cannot start a second operation.
 class LedgerDeviceSelectionRequest {
@@ -79,7 +81,7 @@ class LedgerDeviceSelectionRequest {
     }
   }
 
-  Future<bool> select(
+  Future<LedgerDeviceSelectionOutcome> select(
     LedgerBleDevice device,
     void Function() current,
     void Function() onSaving,
@@ -96,17 +98,25 @@ class LedgerDeviceSelectionRequest {
       current();
     }
 
-    final work = verify(device, guard, onSaving);
+    var savedConnection = false;
+    final work = verify(device, guard, () {
+      savedConnection = true;
+      onSaving();
+    });
     final drained = work.then<void>(
       (_) {},
       onError: (Object _, StackTrace stack) {},
     );
     _work = drained;
     try {
-      final updated = await work;
+      await work;
       guard();
+      // Viewing-key approval ends this connection attempt. Keep the owning
+      // operation pending until the user finds and selects a device again.
+      // Use the save boundary, including accounts without a previous device ID.
+      if (savedConnection) return LedgerDeviceSelectionOutcome.saved;
       _result.complete(LedgerSelectedConnection(accountUuid, device, check));
-      return updated;
+      return LedgerDeviceSelectionOutcome.selected;
     } finally {
       if (identical(_work, drained)) _work = null;
     }

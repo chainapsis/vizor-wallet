@@ -49,10 +49,7 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
           }
           if (state == 'updated') {
             await press('Ledger Nano X · A37E');
-            expect(
-              find.textContaining('saved connection has been updated'),
-              findsOneWidget,
-            );
+            expect(find.text('Ledger saved'), findsOneWidget);
           }
           if (state == 'mismatch') {
             await press('Ledger Stax');
@@ -126,6 +123,25 @@ void runLedgerSelectionCaptures({
               await tester.pump(const Duration(milliseconds: 50));
             }
           }
+          if (state == 'signing') {
+            expect(find.text('Ledger saved'), findsOneWidget);
+            tester
+                .widget<AppButton>(
+                  find.widgetWithText(AppButton, 'Find my Ledger'),
+                )
+                .onPressed!();
+            for (var i = 0; i < 8; i++) {
+              await tester.pump(const Duration(milliseconds: 50));
+            }
+            tester
+                .widget<AppButton>(
+                  find.widgetWithText(AppButton, 'Ledger Nano X · A37E'),
+                )
+                .onPressed!();
+            for (var i = 0; i < 8; i++) {
+              await tester.pump(const Duration(milliseconds: 50));
+            }
+          }
         },
       );
     }
@@ -173,6 +189,45 @@ void runLedgerRequestFailureCaptures({
           );
           expect(find.text('Did you reset pairing?'), findsNothing);
           expect(find.text('Try again'), findsOneWidget);
+        },
+      );
+    }
+  }
+}
+
+void runLedgerSavedCaptures({required bool mobile, required String output}) {
+  for (final largeText in [false, if (mobile) true]) {
+    for (final theme in [ThemeMode.light, ThemeMode.dark]) {
+      final size = mobile ? const Size(393, 852) : const Size(800, 720);
+      runFigmaCompareCaptureTest(
+        expectedFormFactor: mobile
+            ? AppFormFactor.mobile
+            : AppFormFactor.desktop,
+        defaultLogicalSize: size,
+        defaultPixelRatio: 2,
+        overrideConfiguration: FigmaCompareConfiguration(
+          scenarioId: largeText ? 'ledger-mobile-large-text' : 'ledger-saved',
+          themeMode: theme,
+          outputPath:
+              '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/saved${largeText ? '-large-text' : ''}.png',
+          logicalSize: size,
+          pixelRatio: 2,
+        ),
+        beforeCapture: (tester) async {
+          for (var i = 0; i < 8; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          tester
+              .widget<AppButton>(
+                find.widgetWithText(AppButton, 'Ledger Nano X · A37E'),
+              )
+              .onPressed!();
+          await tester.pumpAndSettle();
+          expect(find.text('Ledger saved'), findsOneWidget);
+          expect(find.text('Ledger Nano X · A37E'), findsOneWidget);
+          expect(find.text('Find my Ledger'), findsOneWidget);
+          expect(find.text('Go back'), findsNothing);
+          expect(find.text('Continue signing'), findsNothing);
         },
       );
     }

@@ -34,6 +34,19 @@ Future<LedgerDeviceSelectionRequest> pending(ProviderContainer c) async {
   throw StateError('No selection request');
 }
 
+// Models the explicit second discovery/selection after saving a new device.
+Future<void> selectAndReconnect(LedgerDeviceSelectionRequest request) async {
+  final outcome = await request.select(selectedDevice, () {}, () {});
+  if (outcome == LedgerDeviceSelectionOutcome.saved) {
+    expect(request.completed, false);
+    await request.prepare();
+    expect(
+      await request.select(selectedDevice, () {}, () {}),
+      LedgerDeviceSelectionOutcome.selected,
+    );
+  }
+}
+
 Future<String> run(
   ProviderContainer c, {
   Future<String> Function()? sign,
@@ -51,7 +64,7 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.macOS,
   ]) {
-    for (final saved in ['device-1', 'selected', null]) {
+    for (final saved in ['device-1', 'selected', null, '']) {
       test(
         '$platform waits for selection even with saved ID $saved and live connection',
         () async {
@@ -87,9 +100,34 @@ void main() {
           await request.prepare();
           expect(ble.connectCalls, 0);
           expect(signs, 0);
-          await request.select(selectedDevice, () {}, () {});
+          final outcome = await request.select(selectedDevice, () {}, () {});
+          if (saved != 'selected') {
+            expect(outcome, LedgerDeviceSelectionOutcome.saved);
+            expect(request.completed, false);
+            expect(signs, 0);
+            expect(ble.connectCalls, 1);
+            expect(
+              c
+                  .read(accountProvider)
+                  .requireValue
+                  .accounts
+                  .single
+                  .ledgerDeviceId,
+              'selected',
+            );
+            await request.prepare();
+            expect(
+              await request.select(selectedDevice, () {}, () {}),
+              LedgerDeviceSelectionOutcome.selected,
+            );
+          } else {
+            expect(outcome, LedgerDeviceSelectionOutcome.selected);
+          }
           expect(await result, 'signed');
-          expect(ble.connectedDeviceIds, ['selected']);
+          expect(ble.connectedDeviceIds, [
+            'selected',
+            if (saved != 'selected') 'selected',
+          ]);
           expect(signs, 1);
           expect(ble.keyReads, saved == 'selected' ? 0 : 1);
           expect(ble.exports, saved == 'selected' ? 0 : 1);
@@ -132,7 +170,7 @@ void main() {
       addTearDown(c.dispose);
       final result = run(c);
       final request = await pending(c);
-      await request.select(selectedDevice, () {}, () {});
+      await selectAndReconnect(request);
       expect(await result, 'ble');
     },
   );
@@ -185,16 +223,16 @@ void main() {
     addTearDown(c.dispose);
     final scope = LedgerConnectionScope();
     final first = scope.run(() => run(c));
-    await (await pending(c)).select(selectedDevice, () {}, () {});
+    await selectAndReconnect(await pending(c));
     expect(await first, 'ble');
     expect(await scope.run(() => run(c)), 'ble');
-    expect(ble.connectCalls, 1);
+    expect(ble.connectCalls, 2);
     final next = LedgerConnectionScope().run(() => run(c));
     final request = await pending(c);
-    expect(ble.connectCalls, 1);
-    await request.select(selectedDevice, () {}, () {});
-    expect(await next, 'ble');
     expect(ble.connectCalls, 2);
+    await selectAndReconnect(request);
+    expect(await next, 'ble');
+    expect(ble.connectCalls, 3);
   });
   test('sign failure is not replayed and invalidates selection', () async {
     final ble = _FakeBleService();
@@ -226,7 +264,7 @@ void main() {
       first,
       throwsA(isA<LedgerMobileException>()),
     );
-    await (await pending(c)).select(selectedDevice, () {}, () {});
+    await selectAndReconnect(await pending(c));
     await expectation;
     expect(signs, 1);
     expect(scope.selected, isNull);
@@ -369,10 +407,10 @@ void main() {
       addTearDown(c.dispose);
       final firstScope = LedgerConnectionScope();
       final first = firstScope.run(() => run(c));
-      await (await pending(c)).select(selectedDevice, () {}, () {});
+      await selectAndReconnect(await pending(c));
       await first;
       final second = LedgerConnectionScope().run(() => run(c));
-      await (await pending(c)).select(selectedDevice, () {}, () {});
+      await selectAndReconnect(await pending(c));
       await second;
       var signs = 0;
       await expectLater(
@@ -519,7 +557,7 @@ void main() {
             );
             if (stage == 'sign') {
               final expectation = expectLater(result, matcher);
-              await request.select(selectedDevice, () {}, () {});
+              await selectAndReconnect(request);
               await expectation;
             } else {
               await expectLater(
@@ -530,7 +568,7 @@ void main() {
               await expectLater(result, throwsA(isA<LedgerMobileException>()));
             }
             expect(signs, stage == 'sign' ? 1 : 0);
-            expect(ble.connectCalls, 1);
+            expect(ble.connectCalls, stage == 'sign' ? 2 : 1);
           },
         );
       }
@@ -559,7 +597,7 @@ void main() {
               throw StateError('Invalid spend authorization signature'),
         );
         final expected = expectLater(result, throwsStateError);
-        await (await pending(c)).select(selectedDevice, () {}, () {});
+        await selectAndReconnect(await pending(c));
         await expected;
       }
       expect(ble.exports, 0);

@@ -56,7 +56,7 @@ void main() {
         if (select) {
           await tester.tap(find.text('Ledger Flex'));
           await tester.pumpAndSettle();
-          expect(find.text('Your Ledger is connected'), findsOneWidget);
+          expect(find.text('Ledger saved'), findsOneWidget);
           expect(accounts.writes, 1);
         } else {
           ble.updates.add(const LedgerDiscoveryEnded());

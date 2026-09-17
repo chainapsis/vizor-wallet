@@ -178,120 +178,157 @@ void main() {
   }
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('$platform selecting saved device keeps the signer alive', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(393, 852);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final ble = fixture.FakeBle();
-      final c = fixture.containerFor(
-        ble,
-        fixture.FakeAccounts(
-          initial: fixture.account.copyWith(ledgerDeviceId: 'new'),
-        ),
-        platform: platform,
-      );
-      addTearDown(c.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: c,
-          child: harness(
-            MobileLedgerSigningSurface(
-              canLeave: true,
-              onBack: () {},
-              child: LedgerSigningModal(
-                accountUuid: 'a',
-                phase: LedgerSigningModalPhase.awaitingDevice,
-                failure: null,
-                onCancel: () {},
-                onFailureAction: null,
-              ),
+    for (final replacement in [false, true]) {
+      testWidgets(
+        '$platform selecting device keeps the signer alive (replacement: $replacement)',
+        (tester) async {
+          tester.view.physicalSize = const Size(393, 852);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final ble = fixture.FakeBle();
+          final accounts = fixture.FakeAccounts(
+            initial: fixture.account.copyWith(
+              ledgerDeviceId: replacement ? 'old' : 'new',
             ),
-          ),
-        ),
-      );
-      final signed = Completer<String>();
-      final result = c
-          .read(ledgerConnectionServiceProvider)
-          .run(
-            accountUuid: 'a',
-            usb: () async => 'usb',
-            bluetooth: (_) => signed.future,
           );
-      await frames(tester);
-      expect(find.byType(AppModalCard), findsNothing);
-      expect(find.byType(MobileModalCard), findsOneWidget);
-      expect(find.text('Review send'), findsOneWidget);
-      expect(find.text('Select your Ledger'), findsOneWidget);
-      expect(find.text('USB'), findsNothing);
-      expect(ble.calls, isNot(contains('connect')));
-      await tester.tap(find.text('Ledger Flex'));
-      await frames(tester);
-      expect(c.read(ledgerDeviceSelectionProvider), isNull);
-      expect(ble.calls, isNot(contains('cancel')));
-      signed.complete('signed');
-      expect(await result, 'signed');
-      expect(tester.takeException(), isNull);
-    });
-  }
-  testWidgets(
-    'close settles pending selection before owner removes the sheet',
-    (tester) async {
-      final ble = fixture.FakeBle();
-      final c = fixture.containerFor(
-        ble,
-        fixture.FakeAccounts(),
-        platform: TargetPlatform.iOS,
-      );
-      addTearDown(c.dispose);
-      var closes = 0;
-      var signs = 0;
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: c,
-          child: harness(
-            MobileLedgerSigningSurface(
-              canLeave: true,
-              onBack: () {},
-              child: LedgerSigningModal(
+          var exports = 0;
+          final c = fixture.containerFor(
+            ble,
+            accounts,
+            platform: platform,
+            export: () async {
+              exports++;
+              return fixture.exported('expected');
+            },
+          );
+          addTearDown(c.dispose);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: c,
+              child: harness(
+                MobileLedgerSigningSurface(
+                  canLeave: true,
+                  onBack: () {},
+                  child: LedgerSigningModal(
+                    accountUuid: 'a',
+                    phase: LedgerSigningModalPhase.awaitingDevice,
+                    failure: null,
+                    onCancel: () {},
+                    onFailureAction: null,
+                  ),
+                ),
+              ),
+            ),
+          );
+          final signed = Completer<String>();
+          final result = c
+              .read(ledgerConnectionServiceProvider)
+              .run(
                 accountUuid: 'a',
-                phase: LedgerSigningModalPhase.awaitingDevice,
-                failure: null,
-                onCancel: () => closes++,
-                onFailureAction: null,
+                usb: () async => 'usb',
+                bluetooth: (_) => signed.future,
+              );
+          await frames(tester);
+          expect(find.byType(AppModalCard), findsNothing);
+          expect(find.byType(MobileModalCard), findsOneWidget);
+          expect(find.text('Review send'), findsOneWidget);
+          expect(find.text('Select your Ledger'), findsOneWidget);
+          expect(find.text('USB'), findsNothing);
+          expect(ble.calls, isNot(contains('connect')));
+          await tester.tap(find.text('Ledger Flex'));
+          await frames(tester);
+          if (replacement) {
+            expect(find.text('Ledger saved'), findsOneWidget);
+            expect(find.byType(MobileModalCard), findsOneWidget);
+            expect(find.text('Review send'), findsOneWidget);
+            expect(find.text('Go back'), findsNothing);
+            expect(find.text('Continue signing'), findsNothing);
+            expect(c.read(ledgerDeviceSelectionProvider)!.completed, false);
+            expect(accounts.writes, 1);
+            final calls = List<String>.of(ble.calls);
+            await frames(tester);
+            expect(ble.calls, calls);
+            await tester.tap(find.text('Find my Ledger'));
+            await frames(tester);
+            expect(find.text('Different from saved connection'), findsNothing);
+            await tester.tap(find.text('Ledger Flex'));
+            await frames(tester);
+          }
+          expect(exports, replacement ? 1 : 0);
+          expect(accounts.writes, replacement ? 1 : 0);
+          expect(c.read(ledgerDeviceSelectionProvider), isNull);
+          expect(ble.calls, isNot(contains('cancel')));
+          signed.complete('signed');
+          expect(await result, 'signed');
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+  for (final saved in [false, true]) {
+    testWidgets(
+      'close settles pending selection before owner removes the sheet (saved: $saved)',
+      (tester) async {
+        final ble = fixture.FakeBle();
+        final c = fixture.containerFor(
+          ble,
+          fixture.FakeAccounts(),
+          platform: TargetPlatform.iOS,
+        );
+        addTearDown(c.dispose);
+        var closes = 0;
+        var signs = 0;
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: harness(
+              MobileLedgerSigningSurface(
+                canLeave: true,
+                onBack: () {},
+                child: LedgerSigningModal(
+                  accountUuid: 'a',
+                  phase: LedgerSigningModalPhase.awaitingDevice,
+                  failure: null,
+                  onCancel: () => closes++,
+                  onFailureAction: null,
+                ),
               ),
             ),
           ),
-        ),
-      );
-      final result = c
-          .read(ledgerConnectionServiceProvider)
-          .run(
-            accountUuid: 'a',
-            usb: () async => 'usb',
-            bluetooth: (_) async {
-              signs++;
-              return 'signed';
-            },
-          )
-          .then<Object>((value) => value, onError: (Object error) => error);
-      await frames(tester);
-      final request = c.read(ledgerDeviceSelectionProvider)!;
-      await tester.tap(
-        find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'Close',
-        ),
-      );
-      await frames(tester);
-      expect(request.completed, isTrue);
-      expect(closes, 1);
-      expect(signs, 0);
-      expect(await result, isNot('signed'));
-      expect(c.read(ledgerDeviceSelectionProvider), isNull);
-    },
-  );
+        );
+        final result = c
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'a',
+              usb: () async => 'usb',
+              bluetooth: (_) async {
+                signs++;
+                return 'signed';
+              },
+            )
+            .then<Object>((value) => value, onError: (Object error) => error);
+        await frames(tester);
+        final request = c.read(ledgerDeviceSelectionProvider)!;
+        if (saved) {
+          await tester.tap(find.text('Ledger Flex'));
+          await frames(tester);
+          expect(find.text('Ledger saved'), findsOneWidget);
+        }
+        await tester.tap(
+          find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == 'Close',
+          ),
+        );
+        await frames(tester);
+        expect(request.completed, isTrue);
+        expect(closes, 1);
+        expect(signs, 0);
+        expect(await result, isNot('signed'));
+        expect(c.read(ledgerDeviceSelectionProvider), isNull);
+      },
+    );
+  }
   for (final action in ['backdrop', 'drag', 'back']) {
     for (final canLeave in [true, false]) {
       testWidgets('$action honors cancellation guard ($canLeave)', (

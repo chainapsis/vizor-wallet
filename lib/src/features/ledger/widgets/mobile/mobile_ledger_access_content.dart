@@ -73,6 +73,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
                 ? 'Connecting to your Ledger'
                 : 'Check your Ledger',
           LedgerPairingStage.saving => 'Saving your connection',
+          LedgerPairingStage.saved => 'Ledger saved',
           LedgerPairingStage.ready => 'Your Ledger is connected',
           LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
           LedgerPairingStage.failed =>
@@ -91,10 +92,10 @@ class MobileLedgerAccessContent extends ConsumerWidget {
                 : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
           LedgerPairingStage.saving =>
             'Your account matches. Saving the verified connection.',
+          LedgerPairingStage.saved =>
+            'This Ledger matches your account and is now saved. Find it again to continue.',
           LedgerPairingStage.ready =>
-            c.connectionUpdated
-                ? 'This Ledger matches your account. Your saved connection has been updated.'
-                : 'Continue when you’re ready to review the transaction on your Ledger.',
+            'Continue when you’re ready to review the transaction on your Ledger.',
           LedgerPairingStage.mismatch =>
             'Choose the Ledger that holds this account. Your saved connection hasn’t changed.',
           LedgerPairingStage.failed =>

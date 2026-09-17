@@ -156,7 +156,26 @@ class _Accounts extends AccountNotifier {
     String? deviceId,
     String? deviceName,
     String? deviceModel,
-  }) async {}
+  }) async {
+    final current = state.requireValue;
+    state = AsyncData(
+      current.copyWith(
+        accounts: [
+          for (final account in current.accounts)
+            if (account.uuid == uuid)
+              account.copyWith(
+                ledgerLastTransport: transport,
+                ledgerDeviceId: deviceId,
+                ledgerDeviceName: deviceName,
+                ledgerDeviceModel: deviceModel,
+              )
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
   @override
   Future<void> updateLedgerConnectionPreference(
     String uuid,
