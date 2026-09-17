@@ -31,6 +31,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -1257,6 +1258,44 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Try again'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Ledger status 0x6a80 asks for a new transaction without blaming the user',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(
+              'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger signing failed'), findsOneWidget);
+      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(find.textContaining('rejected on your Ledger'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+        findsNothing,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Create new transaction'), findsOneWidget);
+      expect(signerCalls, 1);
     },
   );
 

@@ -9,6 +9,8 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_operation_recovery.dart';
@@ -52,6 +54,7 @@ class _SwapLedgerSigningOverlayState
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  bool _requestNeedsRebuilding = false;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<int>? _pcztWithProofs;
@@ -641,10 +644,21 @@ class _SwapLedgerSigningOverlayState
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
+    _requestNeedsRebuilding = false;
     if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
       return kLedgerLegacyOrchardRecoveryUnavailableMessage;
     }
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: widget.intent.payMode
+          ? LedgerRequestKind.payment
+          : LedgerRequestKind.swap,
+    );
+    if (actionable != null) {
+      _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
+      return actionable;
+    }
+    if (classifyLedgerError(error) == LedgerFailureKind.userRejected) {
       return 'The ZEC deposit was rejected on your Ledger.';
     }
     if (lower.contains('no ledger') || lower.contains('hid')) {
@@ -666,6 +680,11 @@ class _SwapLedgerSigningOverlayState
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
+    // Retrying the same request fails the same way on the device.
+    final requestNeedsRebuilding =
+        _requestNeedsRebuilding &&
+        !postBroadcastRecovery &&
+        !_operationClaimUnavailable;
     final expiredRecovery =
         pendingBroadcastResult != null &&
         classifyLedgerDepositBroadcastResult(pendingBroadcastResult) ==
@@ -712,11 +731,14 @@ class _SwapLedgerSigningOverlayState
               showDeviceAppPrompt:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&
-                  !legacyOrchardRecoveryUnavailable,
+                  !legacyOrchardRecoveryUnavailable &&
+                  !requestNeedsRebuilding,
               showConnectionPicker:
                   !postBroadcastRecovery && !_operationClaimUnavailable,
               actionLabel:
-                  legacyOrchardRecoveryUnavailable || _operationClaimUnavailable
+                  legacyOrchardRecoveryUnavailable ||
+                      _operationClaimUnavailable ||
+                      requestNeedsRebuilding
                   ? null
                   : postBroadcastRecovery
                   ? expiredRecovery
@@ -730,7 +752,8 @@ class _SwapLedgerSigningOverlayState
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
               !_operationClaimUnavailable &&
-              !legacyOrchardRecoveryUnavailable
+              !legacyOrchardRecoveryUnavailable &&
+              !requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
     );

@@ -12,6 +12,8 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
@@ -58,6 +60,7 @@ class _LedgerShieldSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   bool _canRetry = false;
+  bool _requestNeedsRebuilding = false;
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
@@ -532,11 +535,20 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: LedgerRequestKind.shield,
+    );
+    _requestNeedsRebuilding =
+        actionable != null && ledgerRequestNeedsRebuilding(error);
+    // Retrying the same request fails the same way on the device.
+    if (_requestNeedsRebuilding) _canRetry = false;
+    if (actionable != null) return actionable;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    if (classifyLedgerError(error) == LedgerFailureKind.userRejected) {
       return 'The shield transaction was rejected on your Ledger.';
     }
     if (lower.contains('no ledger') || lower.contains('hid')) {
@@ -593,7 +605,7 @@ class _LedgerShieldSigningOverlayState
                   : 'Ledger signing failed',
               statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
-              showDeviceAppPrompt: !_pausedEarly,
+              showDeviceAppPrompt: !_pausedEarly && !_requestNeedsRebuilding,
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,

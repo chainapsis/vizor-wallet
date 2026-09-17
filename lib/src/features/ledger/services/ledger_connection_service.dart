@@ -5,15 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
+import '../ledger_error_codes.dart';
+import '../ledger_error_messages.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_status_gate.dart';
 
 class LedgerConnectionRequiredException implements Exception {
-  const LedgerConnectionRequiredException(this.message);
+  const LedgerConnectionRequiredException(this.message, {this.cause});
 
   final String message;
+
+  /// The last connection error, kept so callers can classify it.
+  final Object? cause;
 
   @override
   String toString() => message;
@@ -116,6 +121,7 @@ class LedgerConnectionService {
 
     throw LedgerConnectionRequiredException(
       _connectionFailureMessage(account, lastConnectionError),
+      cause: lastConnectionError,
     );
   }
 
@@ -271,21 +277,22 @@ class LedgerConnectionService {
         LedgerMobileFailure.cancelled => false,
       };
     }
-    final lower = error.toString().toLowerCase();
-    return lower.contains('no ledger') ||
-        lower.contains('no device') ||
-        lower.contains('not found') ||
-        lower.contains('disconnected') ||
-        lower.contains('hid') ||
-        lower.contains('bluetooth');
+    return switch (classifyLedgerError(error)) {
+      LedgerFailureKind.transportLost ||
+      LedgerFailureKind.usbPermission => true,
+      _ => false,
+    };
   }
 
   String _connectionFailureMessage(AccountInfo account, Object? error) {
+    final actionable = error == null
+        ? null
+        : ledgerActionableErrorMessage(error);
+    if (actionable != null) return actionable;
     if (!ledgerSupportsBluetooth(_ref.read(ledgerTargetPlatformProvider))) {
       final suffix = error == null ? '' : ' ${error.toString()}';
       return 'Connect and unlock your Ledger with USB, then try again.$suffix';
     }
-    if (ledgerPairingNeedsReset(error)) return kLedgerPairingInvalidMessage;
     final suffix = error == null ? '' : ' ${error.toString()}';
     return switch (account.ledgerConnectionPreference) {
       LedgerConnectionPreference.usb =>

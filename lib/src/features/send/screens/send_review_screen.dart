@@ -32,6 +32,8 @@ import '../../keystone/services/keystone_batch_signing.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
@@ -427,6 +429,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     );
     late final LedgerSigningFailurePresentation failure;
     late final _LedgerSendRecoveryAction? action;
+    final actionable = ledgerActionableErrorMessage(error);
 
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
@@ -456,17 +459,37 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (ledgerRequestNeedsRebuilding(error) && actionable != null) {
+      // Retrying the same request fails the same way on the device.
+      final updateRequired =
+          classifyLedgerError(error) == LedgerFailureKind.unsupportedCommand;
+      failure = LedgerSigningFailurePresentation(
+        title: updateRequired
+            ? 'Ledger app update required'
+            : ledgerRequestExceedsCapacity(error)
+            ? kLedgerSmallerTransferTitle
+            : 'Ledger signing failed',
+        statusLabel: updateRequired
+            ? 'Update required'
+            : 'New transaction required',
+        message: actionable,
+        showDeviceAppPrompt: false,
+        actionLabel: updateRequired ? null : 'Create new transaction',
+      );
+      action = updateRequired
+          ? null
+          : _LedgerSendRecoveryAction.createNewTransaction;
     } else {
       final message =
-          lower.contains('rejected') ||
-              lower.contains('denied') ||
-              lower.contains('6985')
-          ? 'The transaction was rejected on your Ledger.'
-          : lower.contains('not found') ||
-                lower.contains('no device') ||
-                lower.contains('hid')
-          ? 'Connect and unlock your Ledger. $appInstruction'
-          : '$appInstruction Then try again.';
+          actionable ??
+          switch (classifyLedgerError(error)) {
+            LedgerFailureKind.userRejected =>
+              'The transaction was rejected on your Ledger.',
+            LedgerFailureKind.transportLost ||
+            LedgerFailureKind.usbPermission =>
+              'Connect and unlock your Ledger. $appInstruction',
+            _ => '$appInstruction Then try again.',
+          };
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',

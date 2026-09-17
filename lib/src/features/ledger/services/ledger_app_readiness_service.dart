@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import '../ledger_error_codes.dart';
+import '../ledger_error_messages.dart';
 import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 
@@ -82,11 +84,15 @@ class LedgerAppReadinessException implements Exception {
     this.failure,
     this.message, {
     this.canReconnect = false,
+    this.cause,
   });
 
   final LedgerAppReadinessFailure failure;
   final String message;
   final bool canReconnect;
+
+  /// The transport or device error this failure was classified from.
+  final Object? cause;
 
   @override
   String toString() => message;
@@ -258,44 +264,42 @@ class LedgerAppReadinessService {
         failure,
         error.message,
         canReconnect: error.failure == LedgerMobileFailure.disconnected,
+        cause: error,
       );
     }
-    final raw = '$error'.toLowerCase();
-    if (raw.contains('ledger_linux_usb_access')) {
-      return const LedgerAppReadinessException(
+    final kind = classifyLedgerError(error);
+    final (failure, message) = switch (kind) {
+      LedgerFailureKind.usbPermission => (
         LedgerAppReadinessFailure.unavailable,
         'Connect and unlock your Ledger over USB. If it is connected, install '
-        'the Ledger udev rules on Linux, then unplug and reconnect it.',
-      );
-    }
-    if (raw.contains('rejected') ||
-        raw.contains('denied') ||
-        raw.contains('6985')) {
-      return const LedgerAppReadinessException(
+            'the Ledger udev rules on Linux, then unplug and reconnect it.',
+      ),
+      LedgerFailureKind.userRejected => (
         LedgerAppReadinessFailure.rejected,
         'The request was rejected on your Ledger. Try again when ready.',
-      );
-    }
-    if (raw.contains('locked') || raw.contains('5515')) {
-      return const LedgerAppReadinessException(
+      ),
+      // Same failure as a cancelled mobile request: never a transport fallback.
+      LedgerFailureKind.cancelled => (
+        LedgerAppReadinessFailure.rejected,
+        'Ledger operation was cancelled.',
+      ),
+      LedgerFailureKind.deviceLocked => (
         LedgerAppReadinessFailure.locked,
         'Unlock your Ledger, then try again.',
-      );
-    }
-    if (raw.contains('disconnect') ||
-        raw.contains('no ledger') ||
-        raw.contains('not found') ||
-        raw.contains('no device') ||
-        raw.contains('hid')) {
-      return const LedgerAppReadinessException(
+      ),
+      LedgerFailureKind.transportLost => (
         LedgerAppReadinessFailure.disconnected,
         'Reconnect and unlock your Ledger, then try again.',
-      );
-    }
-    return const LedgerAppReadinessException(
-      LedgerAppReadinessFailure.unavailable,
-      'Vizor could not prepare the Ledger Zcash app. Try again.',
-    );
+      ),
+      _ => (
+        kind == LedgerFailureKind.deviceBusy
+            ? LedgerAppReadinessFailure.busy
+            : LedgerAppReadinessFailure.unavailable,
+        ledgerActionableErrorMessage(error) ??
+            'Vizor could not prepare the Ledger Zcash app. Try again.',
+      ),
+    };
+    return LedgerAppReadinessException(failure, message, cause: error);
   }
 }
 

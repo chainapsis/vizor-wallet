@@ -14,6 +14,8 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
@@ -159,7 +161,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
         _phase = _LedgerConnectPhase.idle;
         _error = error is LedgerAppReadinessException
             ? error.message
-            : _friendlyError('$error');
+            : _friendlyError(error);
       });
     }
   }
@@ -192,14 +194,20 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     return null;
   }
 
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
+  String _friendlyError(Object error) {
+    final lower = '$error'.toLowerCase();
     final networkName = ref.read(rpcEndpointProvider).networkName;
     final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    final kind = classifyLedgerError(error);
+    if (kind == LedgerFailureKind.hostRequestRejected) {
+      return kLedgerViewingKeyRequestRejectedMessage;
+    }
+    final actionable = ledgerActionableErrorMessage(error);
+    if (actionable != null) return actionable;
+    if (kind == LedgerFailureKind.userRejected) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
-    if (lower.contains('locked') || lower.contains('5515')) {
+    if (kind == LedgerFailureKind.deviceLocked) {
       return 'Unlock your Ledger. $appInstruction';
     }
     if (lower.contains('not found') || lower.contains('hid')) {

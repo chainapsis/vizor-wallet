@@ -10,6 +10,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
@@ -123,8 +125,13 @@ class _MobileLedgerConnectScreenState
         _ => error.message,
       };
     }
-    final lower = '$error'.toLowerCase();
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    final kind = classifyLedgerError(error);
+    if (kind == LedgerFailureKind.hostRequestRejected) {
+      return kLedgerViewingKeyRequestRejectedMessage;
+    }
+    final actionable = ledgerActionableErrorMessage(error);
+    if (actionable != null) return actionable;
+    if (kind == LedgerFailureKind.userRejected) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
     return 'Vizor could not read this Ledger account. Check the connection and try again.';

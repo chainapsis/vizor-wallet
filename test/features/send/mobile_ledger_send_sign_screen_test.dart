@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
@@ -200,6 +201,36 @@ void main() {
       cancellation.complete();
       await tester.pumpAndSettle();
       expect(find.text('Open signing'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Ledger status 0x6a80 asks for a new transaction without blaming the user',
+    (tester) async {
+      var signCalls = 0;
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async {
+            signCalls++;
+            throw StateError(
+              'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+            );
+          },
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(find.textContaining('rejected on your Ledger'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+        findsNothing,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Create new transaction'), findsOneWidget);
+      expect(signCalls, 1);
     },
   );
 

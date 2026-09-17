@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -314,6 +315,39 @@ void main() {
     );
     expect(importCalls, 0);
     expect(find.text('home-route'), findsNothing);
+  });
+
+  testWidgets('status 0x6a80 does not read as a device rejection', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var importCalls = 0;
+
+    await tester.pumpWidget(
+      _harness(
+        connector: (_) => Future.error(
+          StateError(
+            'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+          ),
+        ),
+        importer:
+            ({
+              required name,
+              required account,
+              required birthdayHeight,
+              required profilePictureId,
+            }) async {
+              importCalls++;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
+    expect(find.textContaining('rejected on your Ledger'), findsNothing);
+    expect(importCalls, 0);
   });
 
   testWidgets('keeps the import route while showing the readiness stage', (

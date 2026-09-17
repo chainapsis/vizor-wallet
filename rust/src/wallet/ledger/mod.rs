@@ -613,7 +613,12 @@ fn is_dashboard_app(name: &str) -> bool {
 }
 
 fn is_terminal_app_transition_error(error: &str) -> bool {
-    error.contains("locked")
+    matches!(
+        apdu::ledger_status_word(error),
+        Some(
+            0x5515 | 0x6982 | 0x5303 | 0x5502 | 0x6807 | 0x5501 | 0x6985 | 0x6a80 | 0x6e00 | 0x6d00
+        )
+    ) || error.contains("locked")
         || error.contains("PIN is not set")
         || error.contains("not installed")
         || error.contains("rejected")
@@ -937,7 +942,7 @@ fn signing_status_cooldown_remaining(ready_at: Option<Instant>, now: Instant) ->
 
 fn classify_operation_state(cancelled: bool, timed_out: bool) -> Result<(), String> {
     if cancelled {
-        Err("Ledger operation was cancelled. Retry when ready.".into())
+        Err("ledger_cancelled: Ledger operation was cancelled. Retry when ready.".into())
     } else if timed_out {
         Err(
             "Ledger operation timed out waiting for the device. Reopen the Zcash app and retry."
@@ -1003,7 +1008,7 @@ mod tests {
         assert_eq!(classify_operation_state(false, false), Ok(()));
         assert!(classify_operation_state(true, false)
             .unwrap_err()
-            .contains("cancelled"));
+            .starts_with("ledger_cancelled: "));
         assert!(classify_operation_state(false, true)
             .unwrap_err()
             .contains("timed out"));
@@ -1062,6 +1067,16 @@ mod tests {
         assert!(is_terminal_app_transition_error(
             "Ledger request was rejected on the device"
         ));
+        for status in [0x5515, 0x5502, 0x6807, 0x5501, 0x6985, 0x6a80, 0x6d00] {
+            assert!(is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
+        for status in [0x6601, 0x6901, 0xb007] {
+            assert!(!is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
     }
 
     #[derive(Clone, Copy, Debug)]

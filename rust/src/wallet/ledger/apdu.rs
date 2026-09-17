@@ -99,7 +99,30 @@ pub(crate) fn decode_raw_response(response: &[u8]) -> Result<Vec<u8>, String> {
     Ok(response[..response.len() - 2].to_vec())
 }
 
+const STATUS_PREFIX: &str = "ledger_status_";
+
+/// Every device status error starts with a stable `ledger_status_xxxx: `
+/// prefix so callers classify by code; the text after it is for diagnostics.
 pub(crate) fn map_status_word(status: u16) -> String {
+    format!("{STATUS_PREFIX}{status:04x}: {}", status_word_text(status))
+}
+
+/// Reads the status word back out of an error produced by [`map_status_word`],
+/// including when it is embedded in a longer message.
+pub(crate) fn ledger_status_word(error: &str) -> Option<u16> {
+    let (_, rest) = error.split_once(STATUS_PREFIX)?;
+    let (code, _) = rest.split_once(':')?;
+    if code.len() != 4
+        || !code
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return None;
+    }
+    u16::from_str_radix(code, 16).ok()
+}
+
+fn status_word_text(status: u16) -> String {
     match status {
         0x5515 | 0x6982 | 0x5303 => {
             "Ledger device is locked; unlock it and reopen the Zcash app".into()
@@ -165,5 +188,52 @@ mod tests {
                 .unwrap_err()
                 .contains("before the declared length")
         );
+    }
+
+    #[test]
+    fn every_status_word_error_carries_its_code_prefix() {
+        for status in [
+            0x5515, 0x6982, 0x5303, 0x5501, 0x6985, 0x5502, 0x5223, 0x6601, 0x670a, 0x6807, 0x6901,
+            0x6a80, 0x6e00, 0x6d00, 0xb007, 0x6f01,
+        ] {
+            let error = map_status_word(status);
+            assert!(
+                error.starts_with(&format!("ledger_status_{status:04x}: ")),
+                "{error}"
+            );
+            assert_eq!(ledger_status_word(&error), Some(status));
+        }
+        assert_eq!(
+            map_status_word(0x6a80),
+            "ledger_status_6a80: Ledger rejected the PCZT data or key path"
+        );
+        assert_eq!(
+            map_status_word(0x6f01),
+            "ledger_status_6f01: Ledger Zcash app returned status 0x6f01"
+        );
+    }
+
+    #[test]
+    fn status_word_is_read_only_from_a_well_formed_prefix() {
+        assert_eq!(
+            ledger_status_word(
+                "Ledger did not become ready in Zcash after switching apps: ledger_status_6601: busy"
+            ),
+            Some(0x6601)
+        );
+        assert_eq!(
+            ledger_status_word(&decode_raw_response(&[0x6a, 0x80]).unwrap_err()),
+            Some(0x6a80)
+        );
+        for error in [
+            "Ledger request was rejected or the PCZT was not finalized",
+            "User rejected (0x6985)",
+            "ledger_status_6A80: uppercase",
+            "ledger_status_6a8: short",
+            "ledger_status_6a80 missing colon",
+            "ledger_status_",
+        ] {
+            assert_eq!(ledger_status_word(error), None, "{error}");
+        }
     }
 }
