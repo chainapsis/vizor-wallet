@@ -1850,6 +1850,25 @@ async fn store_and_broadcast_pczts_inner(
     })
 }
 
+/// A compact signature response that could not be applied.
+#[derive(Debug)]
+pub(crate) enum SpendAuthSignatureError {
+    /// A signature failed verification against its action, so a key other
+    /// than this account's produced it.
+    Mismatch(String),
+    /// The response is malformed, incomplete, or targets the wrong actions.
+    Invalid(String),
+}
+
+impl From<SpendAuthSignatureError> for String {
+    fn from(error: SpendAuthSignatureError) -> Self {
+        match error {
+            SpendAuthSignatureError::Mismatch(message)
+            | SpendAuthSignatureError::Invalid(message) => message,
+        }
+    }
+}
+
 /// Applies externally-produced Orchard-protocol spend-authorization
 /// signatures to a parsed PCZT.
 ///
@@ -1860,27 +1879,28 @@ async fn store_and_broadcast_pczts_inner(
 fn apply_compact_orchard_spend_auth_signatures(
     pczt: pczt::Pczt,
     sigs: &[pczt::roles::signer::SpendAuthSignature],
-) -> Result<pczt::Pczt, String> {
+) -> Result<pczt::Pczt, SpendAuthSignatureError> {
     use pczt::roles::signer::Signer;
 
-    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
+    let mut signer = Signer::new(pczt)
+        .map_err(|e| SpendAuthSignatureError::Invalid(format!("Create PCZT signer: {e:?}")))?;
     let mut seen_sigs = std::collections::HashSet::new();
     for action_sig in sigs {
         if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
-            return Err(format!(
+            return Err(SpendAuthSignatureError::Invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         signer
             .apply_orchard_spend_auth_signature(action_sig)
             .map_err(|e| {
-                format!(
+                SpendAuthSignatureError::Mismatch(format!(
                     "Apply {:?} signature at action {}: {e:?}",
                     action_sig.value_pool(),
                     action_sig.action_index()
-                )
+                ))
             })?;
     }
 
@@ -1909,8 +1929,18 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     base_pczt_bytes: &[u8],
     sigs: &[pczt::roles::signer::SpendAuthSignature],
 ) -> Result<(), String> {
+    check_orchard_spend_auth_signatures(base_pczt_bytes, sigs).map_err(String::from)
+}
+
+/// [`preflight_orchard_spend_auth_signatures`] that keeps a key mismatch
+/// distinguishable from a malformed response.
+pub(crate) fn check_orchard_spend_auth_signatures(
+    base_pczt_bytes: &[u8],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<(), SpendAuthSignatureError> {
+    let invalid = SpendAuthSignatureError::Invalid;
     let pczt = pczt::Pczt::parse(base_pczt_bytes)
-        .map_err(|e| format!("Parse base PCZT for signature preflight: {e:?}"))?;
+        .map_err(|e| invalid(format!("Parse base PCZT for signature preflight: {e:?}")))?;
 
     let required = unsigned_orchard_action_locations(&pczt);
 
@@ -1918,26 +1948,26 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     for action_sig in sigs {
         let location = (action_sig.value_pool(), action_sig.action_index());
         if !provided.insert(location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         if !required.contains(&location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Unexpected compact signature for pool {:?} action {}; the action is absent or already authorized",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
     }
 
     if provided.len() != required.len() {
-        return Err(format!(
+        return Err(invalid(format!(
             "Missing {} required compact spend-authorization signature(s)",
             required.len() - provided.len()
-        ));
+        )));
     }
 
     apply_compact_orchard_spend_auth_signatures(pczt, sigs).map(|_| ())
@@ -2776,12 +2806,14 @@ mod tests {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.
         use super::super::{
-            apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
+            apply_sigs_and_extract, check_orchard_spend_auth_signatures,
+            ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
             expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
             extract_transaction_from_pczt, ironwood_orchard_proving_key,
             preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
             prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
+            SpendAuthSignatureError,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -3233,6 +3265,21 @@ mod tests {
             let invalid = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[invalid])
                 .expect_err("an invalid signature must fail cryptographic verification");
             assert!(invalid.contains("Apply Orchard signature"));
+
+            // Only a failed verification reads as a key mismatch.
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                invalid_bytes,
+            );
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]),
+                Err(SpendAuthSignatureError::Mismatch(_))
+            ));
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[]),
+                Err(SpendAuthSignatureError::Invalid(_))
+            ));
         }
 
         #[test]

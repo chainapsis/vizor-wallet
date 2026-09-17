@@ -58,6 +58,9 @@ const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
     "ledger_legacy_orchard_recovery_unsupported: The current Ledger Zcash app cannot sign a transaction that spends legacy Orchard funds into Ironwood.";
+/// Leads errors where the device's signatures verify against keys other than
+/// this account's, so the UI can ask for the Ledger that holds the account.
+const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAppInfo {
@@ -339,7 +342,7 @@ pub fn finalize_pczt_signing(
 ) -> Result<Vec<SpendAuthSignature>, String> {
     let (commands, requests) = build_signing_plan(pczt_bytes, false)?;
     let (_, shielded) = decode_signing_responses(&commands, &requests, responses)?;
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &shielded)?;
+    preflight_device_signatures(pczt_bytes, &shielded)?;
     Ok(shielded)
 }
 
@@ -695,7 +698,7 @@ pub fn sign_pczt_with_progress(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &signatures)?;
+    preflight_device_signatures(pczt_bytes, &signatures)?;
     Ok(signatures)
 }
 
@@ -807,6 +810,27 @@ pub fn sign_pczt_full_with_progress(
     Err(unsupported_platform())
 }
 
+fn signature_mismatch(message: String) -> String {
+    format!("{SIGNATURE_MISMATCH_PREFIX}{message}")
+}
+
+fn preflight_device_signatures(
+    pczt_bytes: &[u8],
+    signatures: &[SpendAuthSignature],
+) -> Result<(), String> {
+    crate::wallet::sync::check_orchard_spend_auth_signatures(pczt_bytes, signatures)
+        .map_err(device_signature_error)
+}
+
+fn device_signature_error(error: crate::wallet::sync::SpendAuthSignatureError) -> String {
+    match error {
+        crate::wallet::sync::SpendAuthSignatureError::Mismatch(message) => {
+            signature_mismatch(message)
+        }
+        crate::wallet::sync::SpendAuthSignatureError::Invalid(message) => message,
+    }
+}
+
 fn apply_signatures(
     pczt_bytes: &[u8],
     parsed: &parse::ParsedPczt,
@@ -821,7 +845,7 @@ fn apply_signatures(
         ));
     }
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, shielded_signatures)?;
+    preflight_device_signatures(pczt_bytes, shielded_signatures)?;
 
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Ledger signatures: {e:?}"))?;
@@ -874,18 +898,22 @@ fn apply_signatures(
 
         signer
             .append_transparent_signature(input_index, signature)
-            .map_err(|e| format!("Validate Ledger transparent signature {input_index}: {e:?}"))?;
+            .map_err(|e| {
+                signature_mismatch(format!(
+                    "Validate Ledger transparent signature {input_index}: {e:?}"
+                ))
+            })?;
     }
 
     for signature in shielded_signatures {
         signer
             .apply_orchard_spend_auth_signature(signature)
             .map_err(|e| {
-                format!(
+                signature_mismatch(format!(
                     "Apply Ledger {:?} signature at action {}: {e:?}",
                     signature.value_pool(),
                     signature.action_index()
-                )
+                ))
             })?;
     }
 
@@ -977,6 +1005,24 @@ mod tests {
         consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
         value::Zatoshis,
     };
+
+    #[test]
+    fn only_failed_signature_verification_reads_as_a_signature_mismatch() {
+        use crate::wallet::sync::SpendAuthSignatureError;
+
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Mismatch(
+                "Apply Orchard signature at action 0: InvalidSpendAuthSignature".into()
+            )),
+            "ledger_signature_mismatch: Apply Orchard signature at action 0: InvalidSpendAuthSignature"
+        );
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Invalid(
+                "Missing 1 required compact spend-authorization signature(s)".into()
+            )),
+            "Missing 1 required compact spend-authorization signature(s)"
+        );
+    }
 
     #[test]
     fn cancellation_targets_only_the_active_operation_generation() {
