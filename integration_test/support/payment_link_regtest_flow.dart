@@ -213,8 +213,17 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
   expect(link.network, paymentLinkRegtestNetwork);
   expect(link.presentation?.artworkId, artworkId);
   expect(link.presentation?.message, message);
+  final operations = ProviderScope.containerOf(
+    tester.element(find.byType(ZcashWalletApp)),
+  ).read(paymentLinkOperationsProvider);
+  final recovery = (await operations.loadCreatedLinkRecoveries()).singleWhere(
+    (record) => link.hasSameCanonicalPayload(record.link),
+  );
   await tapPaymentLinkText(tester, 'Return home');
-  return link;
+  return link.withResolvedMetadata(
+    address: recovery.link.address,
+    createdAt: recovery.link.createdAt,
+  );
 }
 
 Future<void> claimPaymentLinkForRegtest(
