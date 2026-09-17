@@ -43,7 +43,7 @@ void main() {
             ),
           ),
         );
-        await tester.tap(find.text('Find my Ledger'));
+        await tester.tap(find.text('Try again'));
         await tester.pump();
         await tester.pump();
         expect(find.text('Searching nearby…'), findsOneWidget);

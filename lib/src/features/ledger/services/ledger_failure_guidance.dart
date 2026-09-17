@@ -78,3 +78,44 @@ LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
     LedgerMobileFailure.unavailable => LedgerFailureGuidance(error.message),
   };
 }
+
+/// Two presentations for the general request-failure surface. Pairing evidence
+/// and Bluetooth access recovery remain separate from this presentation.
+enum LedgerRequestFailure {
+  declined,
+  other;
+
+  static LedgerRequestFailure fromError(Object error) {
+    if (error is LedgerConnectionRequiredException) {
+      return error.cause == null ? other : fromError(error.cause!);
+    }
+    if (error is LedgerAppReadinessException) {
+      return error.cause == null
+          ? (error.failure == LedgerAppReadinessFailure.rejected
+                ? declined
+                : other)
+          : fromError(error.cause!);
+    }
+    if (error is LedgerMobileException) {
+      return error.failure == LedgerMobileFailure.rejected ? declined : other;
+    }
+    // Rust APDU parsing currently returns text. This is an estimate, not proof
+    // that the user pressed Reject (e.g. 0x6985 can also mean an unfinished PCZT).
+    final message = error.toString().toLowerCase();
+    return message.contains('rejected') || message.contains('6985')
+        ? declined
+        : other;
+  }
+
+  String get title => switch (this) {
+    declined => 'Request declined',
+    other => 'Couldn’t complete the request',
+  };
+
+  String get message => switch (this) {
+    declined =>
+      'The request appears to have been declined on your Ledger. Try again when you’re ready.',
+    other =>
+      'Check your Ledger and make sure the Zcash app is open, then try again.',
+  };
+}

@@ -74,7 +74,8 @@ void main() {
         ),
       );
       await frames(tester);
-      expect(find.text('Did you reset pairing?'), findsOneWidget);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(find.text('Couldn’t complete the request'), findsOneWidget);
       ble.pairingInvalidEvidence.value = true;
       await frames(tester);
       expect(find.text('Pair your Ledger again'), findsOneWidget);
@@ -95,6 +96,9 @@ void main() {
     LedgerMobileFailure.pairingInvalid,
     LedgerMobileFailure.disconnected,
     LedgerMobileFailure.pairingRejected,
+    LedgerMobileFailure.rejected,
+    LedgerMobileFailure.locked,
+    LedgerMobileFailure.unavailable,
   ]) {
     testWidgets('$failure retains the cause from selection to recovery UI', (
       tester,
@@ -102,7 +106,9 @@ void main() {
       final ble = _FailingPairingBle(failure);
       final c = fixture.containerFor(
         ble,
-        fixture.FakeAccounts(),
+        fixture.FakeAccounts(
+          initial: fixture.account.copyWith(ledgerDeviceId: fixture.device.id),
+        ),
         platform: TargetPlatform.iOS,
       );
       addTearDown(c.dispose);
@@ -135,20 +141,35 @@ void main() {
       await frames(tester);
       await tester.tap(find.text('Ledger Flex'));
       await frames(tester);
+      if (ble.failsAfterConnect) {
+        expect(ble.calls, contains('connect'));
+      }
       final invalid = failure == LedgerMobileFailure.pairingInvalid;
       expect(
         find.text('Pair your Ledger again'),
         invalid ? findsOneWidget : findsNothing,
       );
-      expect(
-        find.text('Did you reset pairing?'),
-        invalid ? findsNothing : findsOneWidget,
-      );
+      expect(find.text('Did you reset pairing?'), findsNothing);
       expect(
         find.textContaining('Open Settings > Bluetooth.'),
         invalid ? findsOneWidget : findsNothing,
       );
       expect(find.text('Open settings'), findsNothing);
+      if (!invalid) {
+        expect(
+          find.text(
+            failure == LedgerMobileFailure.rejected
+                ? 'Request declined'
+                : 'Couldn’t complete the request',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsOneWidget);
+        expect(find.text('Couldn’t connect to your Ledger'), findsNothing);
+        await tester.tap(find.text('Try again'));
+        await frames(tester);
+        expect(find.text('Select your Ledger'), findsOneWidget);
+      }
       c.read(ledgerDeviceSelectionProvider)!.cancel();
       await operation;
       await frames(tester);
@@ -362,7 +383,7 @@ void main() {
             canLeave: true,
             onBack: () => closes++,
             child: MobileLedgerSheetContent(
-              title: 'Couldn’t connect to your Ledger',
+              title: 'Pair your Ledger again',
               onClose: () => closes++,
               children: [
                 const MobileLedgerMessage(
@@ -396,8 +417,24 @@ void main() {
 class _FailingPairingBle extends fixture.FakeBle {
   _FailingPairingBle(this.failure);
   final LedgerMobileFailure failure;
+  bool get failsAfterConnect =>
+      failure == LedgerMobileFailure.rejected ||
+      failure == LedgerMobileFailure.locked ||
+      failure == LedgerMobileFailure.unavailable;
+
   @override
   Future<void> connect(LedgerBleDevice device) async {
-    throw LedgerMobileException(failure, 'Native connection failure');
+    if (!failsAfterConnect) {
+      throw LedgerMobileException(failure, 'Native connection failure');
+    }
+    await super.connect(device);
+  }
+
+  @override
+  Future<LedgerMobileAppInfo> currentApp() async {
+    if (failsAfterConnect) {
+      throw LedgerMobileException(failure, 'Native app request failure');
+    }
+    return super.currentApp();
   }
 }

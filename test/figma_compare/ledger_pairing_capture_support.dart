@@ -7,8 +7,8 @@ import 'figma_compare_capture_support.dart';
 
 void runLedgerPairingCaptures({required bool mobile, required String output}) {
   for (final state in [
-    'collapsed',
-    'expanded',
+    'failed',
+    'pairing-invalid',
     'devices',
     'ready',
     'updated',
@@ -23,7 +23,9 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
         defaultLogicalSize: size,
         defaultPixelRatio: 2,
         overrideConfiguration: FigmaCompareConfiguration(
-          scenarioId: 'ledger-repairing',
+          scenarioId: state == 'pairing-invalid'
+              ? 'ledger-pairing-invalid'
+              : 'ledger-repairing',
           themeMode: theme,
           outputPath:
               '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/pairing-$state.png',
@@ -38,9 +40,8 @@ void runLedgerPairingCaptures({required bool mobile, required String output}) {
             await tester.pumpAndSettle();
           }
 
-          if (state == 'expanded') await press('Did you reset pairing?');
           if (['devices', 'ready', 'updated', 'mismatch'].contains(state)) {
-            await press('Find my Ledger');
+            await press('Try again');
           }
           if (state == 'ready') {
             await press('Ledger Flex · F52C');
@@ -125,6 +126,53 @@ void runLedgerSelectionCaptures({
               await tester.pump(const Duration(milliseconds: 50));
             }
           }
+        },
+      );
+    }
+  }
+}
+
+void runLedgerRequestFailureCaptures({
+  required bool mobile,
+  required String output,
+}) {
+  for (final kind in ['declined', 'failed']) {
+    for (final theme in [ThemeMode.light, ThemeMode.dark]) {
+      final size = mobile ? const Size(393, 852) : const Size(800, 720);
+      runFigmaCompareCaptureTest(
+        expectedFormFactor: mobile
+            ? AppFormFactor.mobile
+            : AppFormFactor.desktop,
+        defaultLogicalSize: size,
+        defaultPixelRatio: 2,
+        overrideConfiguration: FigmaCompareConfiguration(
+          scenarioId: 'ledger-request-$kind',
+          themeMode: theme,
+          outputPath:
+              '$output/${mobile ? 'mobile' : 'desktop'}/${theme.name}/request-$kind.png',
+          logicalSize: size,
+          pixelRatio: 2,
+        ),
+        beforeCapture: (tester) async {
+          for (var i = 0; i < 8; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          tester
+              .widget<AppButton>(
+                find.widgetWithText(AppButton, 'Ledger Flex · F52C'),
+              )
+              .onPressed!();
+          await tester.pumpAndSettle();
+          expect(
+            find.text(
+              kind == 'declined'
+                  ? 'Request declined'
+                  : 'Couldn’t complete the request',
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Did you reset pairing?'), findsNothing);
+          expect(find.text('Try again'), findsOneWidget);
         },
       );
     }

@@ -92,10 +92,12 @@ class FakeBle
   );
   List<LedgerBleDevice> devices = [device];
   Future<void>? readinessGate;
+  Object? readinessFailure;
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     calls.add('ready');
     await readinessGate;
+    if (readinessFailure case final error?) throw error;
     return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 
@@ -175,6 +177,72 @@ ProviderContainer containerFor(
   ],
 );
 void main() {
+  for (final declined in [true, false]) {
+    testWidgets('macOS post-connect failure (declined: $declined) can retry', (
+      tester,
+    ) async {
+      final ble = FakeBle()
+        ..readinessFailure = LedgerMobileException(
+          declined
+              ? LedgerMobileFailure.rejected
+              : LedgerMobileFailure.unavailable,
+          'Native request failed',
+        );
+      final accounts = FakeAccounts(
+        initial: account.copyWith(ledgerDeviceId: device.id),
+      );
+      final c = containerFor(ble, accounts);
+      addTearDown(c.dispose);
+      var retries = 0;
+      var closes = 0;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Center(
+                child: LedgerAccessRecoveryModal(
+                  account: account,
+                  pairingRecovery: true,
+                  onRetry: () => retries++,
+                  onClose: () => closes++,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ledger Flex'));
+      await tester.pumpAndSettle();
+      expect(ble.calls, containsAllInOrder(['connect', 'ready']));
+      expect(
+        find.text(
+          declined ? 'Request declined' : 'Couldn’t complete the request',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Ledger Flex'), findsOneWidget);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(find.text('Remove the old pairing'), findsNothing);
+      expect(find.text('Open settings'), findsNothing);
+      expect(find.text('Native request failed'), findsNothing);
+      expect(find.text('USB'), findsOneWidget);
+      expect(find.text('Bluetooth'), findsOneWidget);
+      expect(accounts.writes, 0);
+      expect(retries, 0);
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select your Ledger'), findsOneWidget);
+      expect(find.text('Ledger Flex'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Close'));
+      expect(closes, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
   for (final failure in ['cancel', 'readiness']) {
     test('saved device $failure does not export or save', () async {
       final pending = Completer<void>();
@@ -349,62 +417,63 @@ void main() {
       expect(find.text('Did you reset pairing?'), findsNothing);
       expect(tester.takeException(), isNull);
     });
-    testWidgets('$platform disclosure and verified reconnect never auto-sign', (
-      tester,
-    ) async {
-      final ble = FakeBle();
-      final accounts = FakeAccounts();
-      final c = containerFor(ble, accounts, platform: platform);
-      addTearDown(c.dispose);
-      var retries = 0;
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: c,
-          child: MaterialApp(
-            home: AppTheme(
-              data: AppThemeData.light,
-              child: Center(
-                child: LedgerAccessRecoveryModal(
-                  account: account,
-                  pairingRecovery: true,
-                  onRetry: () => retries++,
-                  onClose: () {},
+    testWidgets(
+      '$platform confirmed pairing recovery and verified reconnect never auto-sign',
+      (tester) async {
+        final ble = FakeBle();
+        final accounts = FakeAccounts();
+        final c = containerFor(ble, accounts, platform: platform);
+        addTearDown(c.dispose);
+        var retries = 0;
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: MaterialApp(
+              home: AppTheme(
+                data: AppThemeData.light,
+                child: Center(
+                  child: LedgerAccessRecoveryModal(
+                    account: account,
+                    pairingRecovery: true,
+                    pairingInvalid: true,
+                    onRetry: () => retries++,
+                    onClose: () {},
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Remove the old pairing'), findsNothing);
-      await tester.tap(find.text('Did you reset pairing?'));
-      await tester.pumpAndSettle();
-      expect(find.text('Remove the old pairing'), findsOneWidget);
-      expect(
-        find.text('Open settings'),
-        platform == TargetPlatform.iOS ? findsNothing : findsOneWidget,
-      );
-      if (platform != TargetPlatform.iOS) {
-        await tester.ensureVisible(find.text('Open settings'));
-        await tester.tap(find.text('Open settings'));
+        );
         await tester.pumpAndSettle();
-        expect(ble.calls, ['settings']);
-      }
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
-      expect(retries, 0);
-      await tester.ensureVisible(find.text('Find my Ledger'));
-      await tester.tap(find.text('Find my Ledger'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Ledger Flex'));
-      await tester.pumpAndSettle();
-      expect(find.text('Your Ledger is connected'), findsOneWidget);
-      expect(accounts.savedId, 'new');
-      expect(retries, 0);
-      await tester.tap(find.text('Continue signing'));
-      expect(retries, 1);
-      expect(tester.takeException(), isNull);
-    });
+        expect(find.text('Remove the old pairing'), findsOneWidget);
+        expect(
+          find.text('Open settings'),
+          platform == TargetPlatform.iOS ? findsNothing : findsOneWidget,
+        );
+        if (platform != TargetPlatform.iOS) {
+          await tester.ensureVisible(find.text('Open settings'));
+          await tester.tap(find.text('Open settings'));
+          await tester.pumpAndSettle();
+          expect(ble.calls, ['settings']);
+        }
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(retries, 0);
+        await tester.ensureVisible(find.text('Find my Ledger'));
+        await tester.tap(find.text('Find my Ledger'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ledger Flex'));
+        await tester.pumpAndSettle();
+        expect(find.text('Your Ledger is connected'), findsOneWidget);
+        expect(accounts.savedId, 'new');
+        expect(retries, 0);
+        await tester.tap(find.text('Continue signing'));
+        expect(retries, 1);
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
   testWidgets('dismissed verification cannot persist late approval', (
     tester,
@@ -433,7 +502,7 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.text('Find my Ledger'));
+    await tester.tap(find.text('Try again'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Ledger Flex'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -471,9 +540,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Find my Ledger'));
+    await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text('Couldn’t connect to your Ledger'), findsOneWidget);
+    expect(find.text('Couldn’t complete the request'), findsOneWidget);
     expect(find.text('Ledger Flex'), findsNothing);
     expect(accounts.writes, 0);
   });
@@ -552,7 +621,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Find my Ledger'));
+      await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
       if (scenario == 'mismatch') {
         await tester.tap(find.text('Ledger Flex'));
@@ -621,7 +690,7 @@ void main() {
             ),
           );
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Find my Ledger'));
+          await tester.tap(find.text('Try again'));
           await tester.pumpAndSettle();
           expect(
             find.text('Different from saved connection'),

@@ -95,7 +95,7 @@ void main() {
         () => find
             .text(
               ledgerFailureGuidance(error)?.pairingRecovery == true
-                  ? 'Find my Ledger'
+                  ? 'Try again'
                   : accessRecovery
                   ? 'Reconnect'
                   : 'Try again',
@@ -108,7 +108,7 @@ void main() {
           ledgerFailureGuidance(error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
               : ledgerFailureGuidance(error)?.pairingRecovery == true
-              ? 'Couldn’t connect to your Ledger'
+              ? 'Couldn’t complete the request'
               : accessRecovery
               ? 'Ready to reconnect'
               : ledgerFailureGuidance(error)?.message ??

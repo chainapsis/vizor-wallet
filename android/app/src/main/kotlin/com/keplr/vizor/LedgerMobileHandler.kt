@@ -17,6 +17,7 @@ import com.ledger.devicemanagement.api.DeviceOperationResult
 import com.ledger.devicemanagement.api.apdu.apdu
 import com.ledger.devicemanagement.api.apdu.chunkApduPayload
 import com.ledger.devicemanagement.api.apdu.uniqueApduPayload
+import com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
 import com.ledger.devicemanagement.api.command.getappandversion.GetAppAndVersionCommand
 import com.ledger.devicemanagement.api.connection.ConnectedDevice
@@ -738,6 +739,9 @@ class LedgerMobileHandler(
 
     private fun operationFailure(result: MethodChannel.Result, reason: DeviceOperationFailureReason) {
         when (reason) {
+            OpenApplicationCommandFailureReason.UserConsentRejected -> result.error(
+                "rejected", "The Ledger request was rejected on the device.", null,
+            )
             DeviceOperationFailureReason.DeviceBusy -> result.error(
                 "busy", "Another Ledger operation is still active.", null,
             )

@@ -151,6 +151,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-request-declined',
+    description: 'Request declined after selecting the saved Ledger',
+    builder: buildLedgerRequestDeclinedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-request-failed',
+    description: 'General request failure after selecting the saved Ledger',
+    builder: buildLedgerRequestFailedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-pairing-invalid',
     description: 'Confirmed invalid Bluetooth pairing',
     builder: buildLedgerInvalidPairingCapture,

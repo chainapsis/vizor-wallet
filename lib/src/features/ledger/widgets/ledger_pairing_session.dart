@@ -55,7 +55,7 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
 
 class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   LedgerPairingStage _stage = LedgerPairingStage.failed;
-  bool _expanded = false;
+  LedgerRequestFailure requestFailure = LedgerRequestFailure.other;
   late bool pairingInvalid = widget.pairingInvalid;
   bool _connectionUpdated = false;
   bool _sameSavedDevice = false;
@@ -197,12 +197,8 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       _devices = const [];
       pairingInvalid = ledgerFailureGuidance(error)?.pairingInvalid == true;
       _accessRecovery = ledgerFailureGuidance(error)?.bluetoothRecovery == true;
-      _error =
-          error is LedgerAccountMismatchException ||
-              ledgerFailureGuidance(error)?.pairingRecovery == true
-          ? null
-          : ledgerFailureGuidance(error)?.message ??
-                'Could not reconnect. Try finding your Ledger again.';
+      requestFailure = LedgerRequestFailure.fromError(error);
+      _error = null;
     });
     _observePairingEvidence();
     _onPairingEvidence();
@@ -378,14 +374,12 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   bool get accessRecovery => _accessRecovery;
   bool get sameSavedDevice => _sameSavedDevice;
   bool get connectionUpdated => _connectionUpdated;
-  bool get expanded => _expanded;
   String? get error => _error;
   List<LedgerBleDevice> get devices => _devices;
   LedgerMobileBleService get service => _mobile;
   Future<void> scan() => _scan();
   Future<void> select(LedgerBleDevice device) => _select(device);
   Future<void> settings() => _settings();
-  void toggleHelp() => setState(() => _expanded = !_expanded);
   void continueSigning() {
     try {
       _check(_generation);

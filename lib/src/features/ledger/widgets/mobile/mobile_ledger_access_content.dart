@@ -78,7 +78,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
           LedgerPairingStage.failed =>
             c.pairingInvalid
                 ? 'Pair your Ledger again'
-                : 'Couldn’t connect to your Ledger',
+                : c.requestFailure.title,
         };
         final message = switch (c.stage) {
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
@@ -100,7 +100,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
           LedgerPairingStage.failed =>
             c.pairingInvalid
                 ? 'Your Ledger no longer recognizes this Bluetooth pairing.'
-                : 'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
+                : c.requestFailure.message,
         };
         return MobileLedgerSheetContent(
           title: title,
@@ -163,41 +163,20 @@ class MobileLedgerAccessContent extends ConsumerWidget {
             ],
             if (!choosing && c.selectedDevice != null)
               MobileLedgerIdentity(ledgerDeviceLabel(c.selectedDevice!)),
-            if (c.stage == LedgerPairingStage.failed) ...[
+            if (c.stage == LedgerPairingStage.failed && c.pairingInvalid) ...[
               const SizedBox(height: AppSpacing.sm),
-              if (!c.pairingInvalid)
+              MobileLedgerMessage(
+                platform == TargetPlatform.iOS
+                    ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device. Then come back and find your Ledger again.'
+                    : 'Open Bluetooth settings and remove your Ledger’s saved pairing. Then come back and find your Ledger again.',
+              ),
+              if (platform != TargetPlatform.iOS &&
+                  c.service is LedgerBluetoothPairingSettings)
                 AppButton(
-                  key: const ValueKey('ledger_pairing_help'),
                   variant: AppButtonVariant.ghost,
-                  expand: true,
-                  constrainContent: true,
-                  growWithContent: true,
-                  contentPadding: EdgeInsets.zero,
-                  onPressed: c.busy ? null : c.toggleHelp,
-                  child: Row(
-                    children: [
-                      const Expanded(child: Text('Did you reset pairing?')),
-                      RotatedBox(
-                        quarterTurns: c.expanded ? 3 : 1,
-                        child: const AppIcon(AppIcons.chevronForward, size: 16),
-                      ),
-                    ],
-                  ),
+                  onPressed: c.busy ? null : c.settings,
+                  child: const Text('Open settings'),
                 ),
-              if (c.expanded || c.pairingInvalid) ...[
-                MobileLedgerMessage(
-                  platform == TargetPlatform.iOS
-                      ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device. Then come back and find your Ledger again.'
-                      : 'Open Bluetooth settings and remove your Ledger’s saved pairing. Then come back and find your Ledger again.',
-                ),
-                if (platform != TargetPlatform.iOS &&
-                    c.service is LedgerBluetoothPairingSettings)
-                  AppButton(
-                    variant: AppButtonVariant.ghost,
-                    onPressed: c.busy ? null : c.settings,
-                    child: const Text('Open settings'),
-                  ),
-              ],
             ],
             if (c.error != null) ...[
               const SizedBox(height: AppSpacing.sm),
@@ -222,6 +201,8 @@ class MobileLedgerAccessContent extends ConsumerWidget {
                   LedgerPairingStage.ready => 'Continue signing',
                   LedgerPairingStage.mismatch => 'Choose another Ledger',
                   LedgerPairingStage.devices => 'Search again',
+                  LedgerPairingStage.failed when !c.pairingInvalid =>
+                    'Try again',
                   _ => 'Find my Ledger',
                 },
                 onPressed: c.invalidated

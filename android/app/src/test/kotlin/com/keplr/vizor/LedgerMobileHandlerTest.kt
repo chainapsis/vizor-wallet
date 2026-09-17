@@ -910,6 +910,26 @@ class LedgerMobileHandlerTest {
         assertEquals(1, result.completions)
     }
 
+    @Test fun appOpenConsentRejectionKeepsItsTypedFailureAndCanRetry() = runTest(dispatcher) {
+        var queries = 0
+        useReadiness(
+            query = { queries++; DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")) },
+            open = { flowOf(DeviceActionResult.Failure(
+                com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason.UserConsentRejected
+            )) },
+        )
+        val rejected = call("openZcashApp")
+        runCurrent()
+        assertEquals("rejected", rejected.error)
+        assertEquals(1, rejected.completions)
+        assertEquals(0, queries)
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
+        assertEquals(1, queries)
+    }
+
     @Test fun readinessErrorsAndEmptyAppActionAlwaysSettleAndReleaseTheSlot() = runTest(dispatcher) {
         for (method in listOf("currentApp", "openZcashApp")) {
             var failOnce = true

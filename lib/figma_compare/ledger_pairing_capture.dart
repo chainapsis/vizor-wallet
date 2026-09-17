@@ -34,6 +34,17 @@ const _account = AccountInfo(
   ledgerDeviceName: 'F52C',
 );
 
+Widget buildLedgerRequestDeclinedCapture(BuildContext context) => _buildCapture(
+  context,
+  selectFirst: true,
+  requestFailure: LedgerMobileFailure.rejected,
+);
+Widget buildLedgerRequestFailedCapture(BuildContext context) => _buildCapture(
+  context,
+  selectFirst: true,
+  requestFailure: LedgerMobileFailure.unavailable,
+);
+
 Widget buildLedgerMobileLargeTextCapture(BuildContext context) =>
     _buildCapture(context, selectFirst: true, modalTextScale: 1.8);
 
@@ -63,6 +74,7 @@ Widget _buildCapture(
   bool selectFirst = false,
   bool pairingInvalid = false,
   bool holdReadiness = false,
+  LedgerMobileFailure? requestFailure,
   String? scan,
   double? modalTextScale,
 }) {
@@ -85,7 +97,11 @@ Widget _buildCapture(
         targetPlatform ?? (mobile ? TargetPlatform.iOS : TargetPlatform.macOS),
       ),
       ledgerMobileBleServiceProvider.overrideWithValue(
-        _Ble(holdReadiness: holdReadiness, scan: scan),
+        _Ble(
+          holdReadiness: holdReadiness,
+          scan: scan,
+          requestFailure: requestFailure,
+        ),
       ),
       ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
         (_) async => 'expected',
@@ -153,10 +169,11 @@ class _Ble
         LedgerMobileBleService,
         LedgerBluetoothAccess,
         LedgerBluetoothPairingSettings {
-  _Ble({bool holdReadiness = false, this.scan})
+  _Ble({bool holdReadiness = false, this.scan, this.requestFailure})
     : _readiness = holdReadiness ? Completer<void>() : null;
   final Completer<void>? _readiness;
   final String? scan;
+  final LedgerMobileFailure? requestFailure;
   Completer<void>? _scanStop;
   @override
   String? connectedDeviceId;
@@ -168,6 +185,9 @@ class _Ble
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     await _readiness?.future;
+    if (requestFailure != null) {
+      throw LedgerMobileException(requestFailure!, 'Capture request failed');
+    }
     return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 

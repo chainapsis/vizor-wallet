@@ -77,9 +77,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
         c.service is LedgerBluetoothPairingSettings;
     final title = switch (c.stage) {
       LedgerPairingStage.failed =>
-        c.pairingInvalid
-            ? 'Pair your Ledger again'
-            : 'Couldn’t connect to your Ledger',
+        c.pairingInvalid ? 'Pair your Ledger again' : c.requestFailure.title,
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? (c.stage == LedgerPairingStage.scanning
@@ -96,7 +94,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
       LedgerPairingStage.failed =>
         c.pairingInvalid
             ? 'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'
-            : 'Unlock your Ledger and keep it nearby. Find it again to reconnect.',
+            : c.requestFailure.message,
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? 'Keep your Ledger nearby and unlocked.'
@@ -136,7 +134,30 @@ class LedgerPairingRecovery extends ConsumerWidget {
             color: context.colors.text.secondary,
           ),
         ),
-        if (c.stage == LedgerPairingStage.failed) ...[
+        if (c.stage == LedgerPairingStage.failed &&
+            !c.pairingInvalid &&
+            c.selectedDevice != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              AppIcon(
+                AppIcons.ledger,
+                size: 20,
+                color: context.colors.icon.regular,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  ledgerDeviceLabel(c.selectedDevice!),
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (c.stage == LedgerPairingStage.failed && c.pairingInvalid) ...[
           const SizedBox(height: AppSpacing.md),
           Container(
             decoration: BoxDecoration(
@@ -149,85 +170,53 @@ class LedgerPairingRecovery extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (!c.pairingInvalid)
-                  Semantics(
-                    expanded: c.expanded,
-                    child: AppButton(
-                      key: const ValueKey('ledger_pairing_help'),
-                      size: AppButtonSize.small,
-                      height: 52,
-                      contentPadding: EdgeInsets.zero,
-                      variant: AppButtonVariant.ghost,
-                      expand: true,
-                      constrainContent: true,
-                      onPressed: enabled && !c.busy ? c.toggleHelp : null,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Did you reset pairing?',
-                              style: AppTypography.bodySmall,
-                            ),
-                          ),
-                          RotatedBox(
-                            quarterTurns: c.expanded ? 3 : 1,
-                            child: const AppIcon(
-                              AppIcons.chevronForward,
-                              size: 16,
-                            ),
-                          ),
-                        ],
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: AppSpacing.sm,
+                    bottom: AppSpacing.sm,
+                  ),
+                  child: Column(
+                    children: [
+                      _step(
+                        context,
+                        '1',
+                        'Remove the old pairing',
+                        platform == TargetPlatform.iOS
+                            ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'
+                            : 'Open ${platform == TargetPlatform.macOS ? 'System Settings > Bluetooth' : 'Bluetooth settings'}. If your Ledger is listed, remove its saved pairing.',
+                        settingsLink
+                            ? AppButton(
+                                variant: AppButtonVariant.ghost,
+                                size: AppButtonSize.small,
+                                height: 44,
+                                contentPadding: EdgeInsets.zero,
+                                trailing: const AppIcon(
+                                  AppIcons.arrowTopRight,
+                                  size: 14,
+                                ),
+                                onPressed: enabled && !c.busy
+                                    ? c.settings
+                                    : null,
+                                child: Text(
+                                  'Open settings',
+                                  style: AppTypography.bodySmall.copyWith(
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              )
+                            : null,
                       ),
-                    ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _step(
+                        context,
+                        '2',
+                        'Come back and reconnect',
+                        'Keep your Ledger unlocked, then select “Find my Ledger” below.',
+                        null,
+                      ),
+                    ],
                   ),
-                if (c.expanded || c.pairingInvalid)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      top: c.pairingInvalid ? AppSpacing.sm : 0,
-                      bottom: AppSpacing.sm,
-                    ),
-                    child: Column(
-                      children: [
-                        _step(
-                          context,
-                          '1',
-                          'Remove the old pairing',
-                          platform == TargetPlatform.iOS
-                              ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'
-                              : 'Open ${platform == TargetPlatform.macOS ? 'System Settings > Bluetooth' : 'Bluetooth settings'}. If your Ledger is listed, remove its saved pairing.',
-                          settingsLink
-                              ? AppButton(
-                                  variant: AppButtonVariant.ghost,
-                                  size: AppButtonSize.small,
-                                  height: 44,
-                                  contentPadding: EdgeInsets.zero,
-                                  trailing: const AppIcon(
-                                    AppIcons.arrowTopRight,
-                                    size: 14,
-                                  ),
-                                  onPressed: enabled && !c.busy
-                                      ? c.settings
-                                      : null,
-                                  child: Text(
-                                    'Open settings',
-                                    style: AppTypography.bodySmall.copyWith(
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                )
-                              : null,
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        _step(
-                          context,
-                          '2',
-                          'Come back and reconnect',
-                          'Keep your Ledger unlocked, then select “Find my Ledger” below.',
-                          null,
-                        ),
-                      ],
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
@@ -328,6 +317,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
               LedgerPairingStage.ready => 'Continue signing',
               LedgerPairingStage.mismatch => 'Choose another Ledger',
               LedgerPairingStage.devices => 'Search again',
+              LedgerPairingStage.failed when !c.pairingInvalid => 'Try again',
               _ => 'Find my Ledger',
             }),
           ),
