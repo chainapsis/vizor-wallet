@@ -279,7 +279,7 @@ void main() {
         isFalse,
       );
 
-      pendingAccount.completeError(StateError('request rejected 6985'));
+      pendingAccount.completeError(StateError(_deviceRejected));
       await tester.pumpAndSettle();
       semantics.dispose();
     },
@@ -293,7 +293,7 @@ void main() {
 
     await tester.pumpWidget(
       _harness(
-        connector: (_) => Future.error(StateError('request rejected 6985')),
+        connector: (_) => Future.error(StateError(_deviceRejected)),
         importer:
             ({
               required name,
@@ -379,7 +379,7 @@ void main() {
     expect(find.text('Connect Ledger'), findsWidgets);
     expect(find.text('home-route'), findsNothing);
 
-    pendingAccount.completeError(StateError('request rejected 6985'));
+    pendingAccount.completeError(StateError(_deviceRejected));
     await tester.pumpAndSettle();
   });
 
@@ -444,7 +444,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('birthday-uview-bluetooth'), findsOneWidget);
   });
+
+  for (final (error, message) in const [
+    (_deviceRejected, 'The viewing-key request was rejected on your Ledger.'),
+    (
+      'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+      kLedgerViewingKeyRequestRejectedMessage,
+    ),
+  ]) {
+    testWidgets(
+      'macOS Bluetooth probe explains ${error.substring(0, 18)} by its code',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            connector: (_) =>
+                Future.error(StateError('USB should not be used')),
+            bluetoothConnector: (_, _) => Future.error(StateError(error)),
+            importer:
+                ({
+                  required name,
+                  required account,
+                  required birthdayHeight,
+                  required profilePictureId,
+                }) async {},
+            bleService: _FakeLedgerBleService(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text(message), findsOneWidget);
+        expect(find.textContaining('ledger_status_'), findsNothing);
+      },
+    );
+  }
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';
 
 Widget _harness({
   required LedgerAccountConnector connector,

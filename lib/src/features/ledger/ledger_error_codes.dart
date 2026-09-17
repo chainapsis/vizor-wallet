@@ -26,8 +26,13 @@ enum LedgerFailureKind {
   /// 0x6a80, 0x6986: the app refused data Vizor built, not a user decision.
   hostRequestRejected,
 
-  /// 0x6e00, 0x6d00.
-  unsupportedCommand,
+  /// 0x6e00, 0x6d00: the running app does not know the command, so another
+  /// app or the dashboard is open instead of Zcash.
+  wrongApp,
+
+  /// The Zcash app is older than Vizor supports. Only the typed readiness
+  /// check reports this; no device status word means it.
+  appUpdateRequired,
 
   /// 0x5223.
   deviceInternalError,
@@ -43,11 +48,6 @@ enum LedgerFailureKind {
 }
 
 final _statusWordPattern = RegExp(r'ledger_status_([0-9a-f]{4}):');
-
-// Transaction-count limits only; the per-output derivation limit is not one.
-final _legacyCapacityPattern = RegExp(
-  r'ledger supports at most \d+ (transparent inputs|transparent outputs|shielded actions); found \d+',
-);
 
 /// The device status word carried by [error], including wrapped causes.
 int? ledgerStatusWord(Object error) {
@@ -66,7 +66,7 @@ LedgerFailureKind ledgerFailureKindForStatusWord(int status) =>
       0x6601 || 0x6901 => LedgerFailureKind.deviceBusy,
       0xb007 => LedgerFailureKind.appWrongState,
       0x6a80 || 0x6986 => LedgerFailureKind.hostRequestRejected,
-      0x6e00 || 0x6d00 => LedgerFailureKind.unsupportedCommand,
+      0x6e00 || 0x6d00 => LedgerFailureKind.wrongApp,
       0x5223 => LedgerFailureKind.deviceInternalError,
       _ => LedgerFailureKind.unknownStatus,
     };
@@ -88,7 +88,7 @@ LedgerFailureKind classifyLedgerError(Object error) {
       LedgerAppReadinessFailure.locked => LedgerFailureKind.deviceLocked,
       LedgerAppReadinessFailure.disconnected => LedgerFailureKind.transportLost,
       LedgerAppReadinessFailure.unsupportedVersion =>
-        LedgerFailureKind.unsupportedCommand,
+        LedgerFailureKind.appUpdateRequired,
       LedgerAppReadinessFailure.unavailable => LedgerFailureKind.other,
     };
   }
@@ -103,7 +103,7 @@ LedgerFailureKind classifyLedgerError(Object error) {
       LedgerMobileFailure.locked => LedgerFailureKind.deviceLocked,
       LedgerMobileFailure.rejected => LedgerFailureKind.userRejected,
       LedgerMobileFailure.cancelled => LedgerFailureKind.cancelled,
-      LedgerMobileFailure.wrongApp ||
+      LedgerMobileFailure.wrongApp => LedgerFailureKind.wrongApp,
       LedgerMobileFailure.unavailable => LedgerFailureKind.other,
     };
   }
@@ -120,23 +120,10 @@ LedgerFailureKind classifyLedgerError(Object error) {
     return LedgerFailureKind.usbPermission;
   }
 
-  // Unprefixed text from older builds, native layers, and test doubles.
+  // Device decisions always carry a code; wording such as "rejected" also
+  // appears in network broadcast failures, so only transport text is read.
   final lower = raw.toLowerCase();
-  if (_legacyCapacityPattern.hasMatch(lower)) {
-    return LedgerFailureKind.capacityExceeded;
-  }
-  if (lower.contains('0x6a80') ||
-      lower.contains('pczt data') ||
-      lower.contains('0x6986')) {
-    return LedgerFailureKind.hostRequestRejected;
-  }
   if (lower.contains('sapling')) return LedgerFailureKind.saplingUnsupported;
-  if (lower.contains('rejected') || lower.contains('6985')) {
-    return LedgerFailureKind.userRejected;
-  }
-  if (lower.contains('locked') || lower.contains('5515')) {
-    return LedgerFailureKind.deviceLocked;
-  }
   if (lower.contains('no ledger') ||
       lower.contains('not found') ||
       lower.contains('no device') ||
@@ -145,7 +132,6 @@ LedgerFailureKind classifyLedgerError(Object error) {
       lower.contains('bluetooth')) {
     return LedgerFailureKind.transportLost;
   }
-  if (lower.contains('denied')) return LedgerFailureKind.userRejected;
   return LedgerFailureKind.other;
 }
 

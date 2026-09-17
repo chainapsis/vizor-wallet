@@ -4264,6 +4264,62 @@ void main() {
     },
   );
 
+  for (final (error, message) in const [
+    (
+      'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized',
+      'The vote signature was rejected on your Ledger. Retry to sign again.',
+    ),
+    (
+      'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+      'Vizor built a vote request that the Zcash app on your Ledger could not accept. Your vote was not signed.',
+    ),
+  ]) {
+    testWidgets(
+      'Ledger voting failure ${error.substring(0, 18)} hides its status code',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1512, 982));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final recovery = _MutableVotingRecoveryApi()..state = _recoveryState();
+        final container = _statusContainer(
+          accountOverride: _LedgerAccountNotifier.new,
+          activeAccountUuid: () async => 'ledger-1',
+          accountIsHardware: true,
+          hardwareAccountUuids: const {'ledger-1'},
+          recoveryApi: recovery,
+          rust: _VotingStatusRustApi(recovery),
+          hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+          overrides: [
+            ledgerVotingPcztSignerProvider.overrideWithValue(
+              (_, _) async => throw StateError(error),
+            ),
+            ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+          ],
+        );
+        addTearDown(container.dispose);
+        const key = VotingSessionKey(
+          roundId: _roundId,
+          accountUuid: 'ledger-1',
+        );
+        container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: _statusHarness(),
+          ),
+        );
+        await _pumpUntilFound(tester, find.text(message), attempts: 100);
+
+        expect(find.text(message), findsOneWidget);
+        expect(find.textContaining('ledger_status_'), findsNothing);
+        expect(
+          container.read(votingSubmissionJobProvider(key)).status,
+          VotingSubmissionJobStatus.error,
+        );
+      },
+    );
+  }
+
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
     tester,
   ) async {

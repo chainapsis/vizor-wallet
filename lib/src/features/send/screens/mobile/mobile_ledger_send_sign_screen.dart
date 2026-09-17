@@ -355,24 +355,16 @@ class _MobileLedgerSendSignScreenState
       action = null;
     } else if (ledgerRequestNeedsRebuilding(error) && actionable != null) {
       // Retrying the same request fails the same way on the device.
-      final updateRequired =
-          classifyLedgerError(error) == LedgerFailureKind.unsupportedCommand;
       presentation = LedgerSigningFailurePresentation(
-        title: updateRequired
-            ? 'Ledger app update required'
-            : ledgerRequestExceedsCapacity(error)
+        title: ledgerRequestExceedsCapacity(error)
             ? kLedgerSmallerTransferTitle
             : 'Ledger signing failed',
-        statusLabel: updateRequired
-            ? 'Update required'
-            : 'New transaction required',
+        statusLabel: 'New transaction required',
         message: actionable,
         showDeviceAppPrompt: false,
-        actionLabel: updateRequired ? null : 'Create new transaction',
+        actionLabel: 'Create new transaction',
       );
-      action = updateRequired
-          ? null
-          : _LedgerSendRecoveryAction.createNewTransaction;
+      action = _LedgerSendRecoveryAction.createNewTransaction;
     } else {
       final message =
           actionable ??

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 
 void main() {
   test('USB transport failures are told apart', () {
@@ -42,17 +43,6 @@ void main() {
     expect(usb('User rejected approval (0x6985)'), isNull);
   });
 
-  test('shielding input limit copy counts the approvals', () {
-    final message = ledgerShieldingInputLimitMessage(inputCount: 41, limit: 32);
-    expect(message, contains('up to 32'));
-    expect(message, contains('all 41 inputs'));
-    expect(message, contains('2 approvals'));
-    expect(
-      ledgerShieldingInputLimitMessage(inputCount: 65, limit: 32),
-      contains('3 approvals'),
-    );
-  });
-
   test('signatures from a different Ledger name the account mismatch', () {
     for (final error in [
       'Apply Ledger Orchard signature at action 0: InvalidSpendAuthSignature',
@@ -74,7 +64,7 @@ void main() {
     ]) {
       expect(
         ledgerRequestExceedsCapacity(
-          'Ledger supports at most 32 $label; found 33',
+          'ledger_capacity: Ledger supports at most 32 $label; found 33',
         ),
         isTrue,
       );
@@ -89,16 +79,17 @@ void main() {
     expect(ledgerRequestExceedsCapacity('0x6986'), isFalse);
     expect(
       ledgerRequestExceedsCapacity(
-        'ledger_capacity: Ledger supports at most 32 transparent outputs; found 33',
+        'Ledger supports at most 32 transparent outputs; found 33',
       ),
-      isTrue,
+      isFalse,
     );
   });
 
   test(
     'capacity guidance follows the real action, not a generic amount edit',
     () {
-      const error = 'Ledger supports at most 32 transparent inputs; found 33';
+      const error =
+          'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33';
       final messages = {
         for (final kind in LedgerRequestKind.values)
           kind: ledgerActionableErrorMessage(error, requestKind: kind)!,
@@ -117,7 +108,10 @@ void main() {
       );
       expect(
         messages[LedgerRequestKind.shield],
-        contains('cannot split this request yet'),
+        allOf(
+          contains('nothing was shielded for this approval'),
+          isNot(contains('cannot split')),
+        ),
       );
       expect(
         messages[LedgerRequestKind.migration],
@@ -127,25 +121,23 @@ void main() {
         messages[LedgerRequestKind.voting],
         isNot(contains('try a smaller amount')),
       );
+      expect(
+        messages[LedgerRequestKind.giftCard],
+        contains('create a gift card with a smaller amount'),
+      );
     },
   );
 
-  test(
-    'preconditions and capacity require a new request, not reconnection',
-    () {
-      for (final error in [
-        'Ledger signing preconditions were not met (0x6986)',
-        'Ledger supports at most 32 transparent inputs; found 33',
-      ]) {
-        expect(ledgerRequestNeedsRebuilding(error), isTrue);
-        expect(ledgerActionableErrorMessage(error), isNotNull);
-        expect(
-          ledgerActionableErrorMessage(error),
-          isNot(contains('rejected')),
-        );
-      }
-    },
-  );
+  test('preconditions and capacity require a new request, not reconnection', () {
+    for (final error in [
+      'ledger_status_6986: Ledger Zcash app returned status 0x6986',
+      'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33',
+    ]) {
+      expect(ledgerRequestNeedsRebuilding(error), isTrue);
+      expect(ledgerActionableErrorMessage(error), isNotNull);
+      expect(ledgerActionableErrorMessage(error), isNot(contains('rejected')));
+    }
+  });
 
   test(
     'device internal failures request an app restart without blaming users',
@@ -181,16 +173,25 @@ void main() {
           'Install the Zcash app on your Ledger with Ledger Live, then try again.',
       'ledger_status_5502: Ledger device PIN is not set':
           'Set up a PIN on your Ledger, then try again.',
-      'ledger_status_6e00: Ledger device does not support this command class':
-          'Update the Zcash app on your Ledger to 3.9.3 or newer, then try again.',
-      'ledger_status_6d00: The running Ledger app does not support this command':
-          'Update the Zcash app on your Ledger to 3.9.3 or newer, then try again.',
     };
     for (final MapEntry(key: error, value: message) in expected.entries) {
       expect(ledgerActionableErrorMessage(error), message, reason: error);
       expect(message, isNot(contains('rejected')));
     }
+    // Only the typed version check asks for an app update.
+    expect(
+      ledgerActionableErrorMessage(
+        const LedgerAppReadinessException(
+          LedgerAppReadinessFailure.unsupportedVersion,
+          'Update the Ledger Zcash app to version 3.9.3 or newer.',
+        ),
+      ),
+      'Update the Zcash app on your Ledger to 3.9.3 or newer, then try again.',
+    );
+    // Surfaces word these themselves.
     for (final error in [
+      'ledger_status_6e00: Ledger device does not support this command class',
+      'ledger_status_6d00: The running Ledger app does not support this command',
       'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized',
       'ledger_status_5501: Ledger request was rejected on the device',
       'ledger_status_5515: Ledger device is locked; unlock it and reopen the Zcash app',
@@ -204,17 +205,38 @@ void main() {
   test('only requests the device refuses as built need rebuilding', () {
     for (final error in [
       'ledger_status_6a80: Ledger rejected the PCZT data or key path',
-      'ledger_status_6d00: The running Ledger app does not support this command',
       'ledger_capacity: Ledger supports at most 32 shielded actions; found 33',
     ]) {
       expect(ledgerRequestNeedsRebuilding(error), isTrue, reason: error);
     }
     for (final error in [
+      'ledger_status_6d00: The running Ledger app does not support this command',
       'ledger_status_b007: Ledger Zcash app is in the wrong state; close and reopen the app',
       'ledger_status_6601: Ledger device is busy switching apps; retry shortly',
     ]) {
       expect(ledgerRequestNeedsRebuilding(error), isFalse, reason: error);
     }
+  });
+
+  test('host-rejected copy follows the request that was refused', () {
+    const error =
+        'ledger_status_6a80: Ledger rejected the PCZT data or key path';
+    for (final kind in [LedgerRequestKind.voting, LedgerRequestKind.giftCard]) {
+      final message = ledgerActionableErrorMessage(error, requestKind: kind)!;
+      expect(
+        message,
+        isNot(kLedgerHostRequestRejectedMessage),
+        reason: '$kind',
+      );
+      expect(message, isNot(contains('rejected')), reason: '$kind');
+    }
+    expect(
+      ledgerActionableErrorMessage(
+        error,
+        requestKind: LedgerRequestKind.giftCard,
+      ),
+      contains('create a new gift card'),
+    );
   });
 
   test('user cancellation and unrelated failures retain existing handling', () {

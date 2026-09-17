@@ -1,9 +1,38 @@
 import '../../services/voting/voting_rust_exception.dart';
+import '../ledger/ledger_error_codes.dart';
+import '../ledger/ledger_error_messages.dart';
 import 'voting_formatters.dart';
 import '../../rust/third_party/zcash_voting/wire.dart';
 
 /// Default bundle weight the round requires when the SDK payload omits it.
 const kMinimumVotingBundleWeightZatoshi = 12500000;
+
+const kLedgerVotingCancelledMessage = 'Ledger voting approval was cancelled.';
+
+final _ledgerCodePrefix = RegExp(
+  r'ledger_(?:status_[0-9a-f]{4}|cancelled|capacity|linux_usb_access):\s*',
+);
+
+/// Copy for a failed Ledger vote approval, chosen by failure kind so codes
+/// such as `ledger_status_6985:` never reach the screen.
+String ledgerVotingErrorMessage(
+  Object error, {
+  required String appInstruction,
+}) {
+  return switch (classifyLedgerError(error)) {
+    LedgerFailureKind.userRejected =>
+      'The vote signature was rejected on your Ledger. Retry to sign again.',
+    LedgerFailureKind.cancelled => kLedgerVotingCancelledMessage,
+    LedgerFailureKind.deviceLocked => 'Unlock your Ledger. $appInstruction',
+    LedgerFailureKind.wrongApp => '$appInstruction Then retry.',
+    _ =>
+      ledgerActionableErrorMessage(
+            error,
+            requestKind: LedgerRequestKind.voting,
+          ) ??
+          friendlyVotingErrorMessage(error),
+  };
+}
 
 String friendlyVotingErrorMessage(Object error) {
   final rustError = votingRustExceptionOf(error);
@@ -62,7 +91,7 @@ String _formatZec(BigInt zatoshi) {
 }
 
 String _normalizedVotingErrorText(String text) {
-  var message = text.trim();
+  var message = text.replaceAll(_ledgerCodePrefix, '').trim();
   for (final prefix in const [
     'Exception: ',
     'StateError: ',

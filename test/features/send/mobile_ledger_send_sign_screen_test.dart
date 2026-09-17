@@ -177,7 +177,7 @@ void main() {
           operationService: _FakeOperationService(),
           signer: (_) async {
             signCalls++;
-            throw StateError('6985 rejected');
+            throw StateError(_deviceRejected);
           },
           canceller: () => cancellation.future,
         ),
@@ -349,7 +349,7 @@ void main() {
         signer: (pczt) async {
           signedInputs.add(List<int>.of(pczt));
           signCalls++;
-          if (signCalls == 2) throw StateError('rejected on Ledger');
+          if (signCalls == 2) throw StateError(_deviceRejected);
           return [signCalls + 10];
         },
       ),
@@ -413,7 +413,7 @@ void main() {
         operationService: _FakeOperationService(),
         signer: (_) async {
           signCalls++;
-          if (signCalls == 2) throw StateError('6985 rejected');
+          if (signCalls == 2) throw StateError(_deviceRejected);
           return const [4];
         },
         canceller: () async => cancelCalls++,
@@ -711,3 +711,6 @@ class _Route extends RpcEndpointFailoverNotifier {
     );
   }
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

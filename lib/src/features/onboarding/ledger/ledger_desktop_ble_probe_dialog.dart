@@ -7,6 +7,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 
@@ -194,7 +196,15 @@ class _LedgerDesktopBleConnectDialogState
       LedgerMobileException(:final message) => message,
       UnsupportedError() =>
         'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-      _ => 'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+      _ => switch (classifyLedgerError(error)) {
+        LedgerFailureKind.userRejected =>
+          'The viewing-key request was rejected on your Ledger.',
+        LedgerFailureKind.hostRequestRejected =>
+          kLedgerViewingKeyRequestRejectedMessage,
+        _ =>
+          ledgerActionableErrorMessage(error) ??
+              'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+      },
     };
     _fail(message);
   }

@@ -6,8 +6,17 @@ import 'ledger_error_codes.dart';
 import 'services/ledger_mobile_ble_service.dart';
 
 /// Messages for failures that opening the app or changing transport cannot fix.
-/// Keep status codes in the Rust error for diagnostics, not in the UI copy.
-enum LedgerRequestKind { send, swap, payment, shield, migration, voting }
+/// Status codes stay in Rust errors; the UI shows one only in the
+/// unexpected-error fallback.
+enum LedgerRequestKind {
+  send,
+  swap,
+  payment,
+  shield,
+  migration,
+  voting,
+  giftCard,
+}
 
 const kLedgerSmallerTransferTitle = 'Ledger requires a smaller transfer';
 
@@ -37,11 +46,13 @@ String? ledgerActionableErrorMessage(
       LedgerRequestKind.payment =>
         'This payment is too large for your Ledger to sign at once. Go back and arrange a smaller payment or use another payment method. Do not send a smaller amount to this payment address.',
       LedgerRequestKind.shield =>
-        'This shielding request includes more inputs than your Ledger can sign at once. Vizor cannot split this request yet. Return to your wallet; nothing was shielded for this request.',
+        'This shielding request includes more inputs than your Ledger can sign at once. Return to your wallet and try again; nothing was shielded for this approval.',
       LedgerRequestKind.migration =>
         'This migration request exceeds your Ledger’s signing limit. Return to review. Retrying the same request will not reduce its size.',
       LedgerRequestKind.voting =>
         'This voting request exceeds your Ledger’s signing limit. Your vote was not signed. Changing a transfer amount will not fix this voting request.',
+      LedgerRequestKind.giftCard =>
+        'This gift card includes more inputs or outputs than your Ledger can sign at once. Go back and create a gift card with a smaller amount.',
     };
   }
   final text = error.toString().toLowerCase();
@@ -54,7 +65,13 @@ String? ledgerActionableErrorMessage(
     return 'Your Ledger cannot sign this transaction format. Go back and create a new request.';
   }
   return switch (kind) {
-    LedgerFailureKind.hostRequestRejected => kLedgerHostRequestRejectedMessage,
+    LedgerFailureKind.hostRequestRejected => switch (requestKind) {
+      LedgerRequestKind.voting =>
+        'Vizor built a vote request that the Zcash app on your Ledger could not accept. Your vote was not signed.',
+      LedgerRequestKind.giftCard =>
+        'Vizor built a gift card request that the Zcash app on your Ledger could not accept. Go back and create a new gift card. Nothing was sent.',
+      _ => kLedgerHostRequestRejectedMessage,
+    },
     LedgerFailureKind.appWrongState =>
       'Close and reopen the Zcash app on your Ledger, then try again.',
     LedgerFailureKind.deviceBusy =>
@@ -63,7 +80,7 @@ String? ledgerActionableErrorMessage(
       'Install the Zcash app on your Ledger with Ledger Live, then try again.',
     LedgerFailureKind.pinNotSet =>
       'Set up a PIN on your Ledger, then try again.',
-    LedgerFailureKind.unsupportedCommand =>
+    LedgerFailureKind.appUpdateRequired =>
       'Update the Zcash app on your Ledger to $kMinimumLedgerZcashAppVersion or newer, then try again.',
     LedgerFailureKind.deviceInternalError ||
     LedgerFailureKind.unknownStatus => _unexpectedStatusMessage(error),
@@ -114,25 +131,12 @@ String? ledgerUsbErrorMessage(
   return null;
 }
 
-/// Shown on the home card while a Ledger account holds more transparent
-/// inputs than one device approval can sign; shielding then asks for the
-/// approvals one after another.
-String ledgerShieldingInputLimitMessage({
-  required int inputCount,
-  required int limit,
-}) {
-  final approvals = (inputCount + limit - 1) ~/ limit;
-  return 'Ledger shields up to $limit transparent inputs per approval. '
-      'Shielding all $inputCount inputs takes $approvals approvals in a row on your Ledger.';
-}
-
 /// Retrying the same request cannot succeed; the caller must build a new one
-/// (or the user must update the Zcash app) instead of offering a retry.
+/// instead of offering a retry.
 bool ledgerRequestNeedsRebuilding(Object error) {
   return switch (classifyLedgerError(error)) {
     LedgerFailureKind.hostRequestRejected ||
-    LedgerFailureKind.capacityExceeded ||
-    LedgerFailureKind.unsupportedCommand => true,
+    LedgerFailureKind.capacityExceeded => true,
     _ => error.toString().toLowerCase().contains('ledger supports at most'),
   };
 }

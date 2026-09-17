@@ -658,11 +658,16 @@ class _SwapLedgerSigningOverlayState
       _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
       return actionable;
     }
-    if (classifyLedgerError(error) == LedgerFailureKind.userRejected) {
+    final kind = classifyLedgerError(error);
+    if (kind == LedgerFailureKind.userRejected) {
       return 'The ZEC deposit was rejected on your Ledger.';
     }
+    if (kind == LedgerFailureKind.wrongApp) {
+      return '$appInstruction Then try again.';
+    }
     if (lower.contains('no ledger') || lower.contains('hid')) {
-      return 'Connect and unlock your Ledger. $appInstruction';
+      return ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+          'Connect and unlock your Ledger. $appInstruction';
     }
     if (lower.contains('sapling')) {
       return 'This Ledger preview does not support Sapling inputs or outputs.';

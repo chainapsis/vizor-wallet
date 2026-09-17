@@ -1200,7 +1200,7 @@ void main() {
           ledgerSigner: (pcztBytes) async {
             signingRequests.add([...pcztBytes]);
             if (signingRequests.length == 1) {
-              throw StateError('Ledger rejected the test PCZT');
+              throw StateError(_deviceRejected);
             }
             return _fakeSignatureBytes;
           },
@@ -1382,7 +1382,7 @@ void main() {
         ledgerSigner: (_) async {
           signerCalls++;
           if (signerCalls == 2) {
-            throw StateError('Ledger request rejected on device');
+            throw StateError(_deviceRejected);
           }
           return [9, 1];
         },
@@ -1541,7 +1541,7 @@ void main() {
         ),
         ledgerSigner: (_) async {
           signerCalls++;
-          throw StateError('6985 rejected');
+          throw StateError(_deviceRejected);
         },
         ledgerCanceller: () => cancellation.future,
       ),
@@ -3053,3 +3053,6 @@ class _FallbackRoute extends RpcEndpointFailoverNotifier {
     fallbackCandidates: const [],
   );
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

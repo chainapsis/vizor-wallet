@@ -8,6 +8,8 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
+import '../../ledger/ledger_error_codes.dart';
+import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
@@ -58,6 +60,7 @@ class _PaymentLinkLedgerSigningOverlayState
   bool _cancelled = false;
   bool _checkpointed = false;
   bool _terminal = false;
+  bool _requestNeedsRebuilding = false;
   String? _error;
 
   bool get _active => mounted && !_cancelled;
@@ -166,16 +169,36 @@ class _PaymentLinkLedgerSigningOverlayState
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
           _terminal = error is LedgerGiftFundingTerminalException;
+          _requestNeedsRebuilding = false;
           _error = _terminal
               ? LedgerGiftFundingTerminalException.message
               : isLedgerLegacyOrchardRecoveryUnsupported(error)
               ? kLedgerLegacyOrchardRecoveryUnavailableMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : 'Ledger signing could not be completed. Check your device and try again.';
+              : _ledgerFailureMessage(error);
         });
       }
     }
+  }
+
+  String _ledgerFailureMessage(Object error) {
+    final actionable = ledgerActionableErrorMessage(
+      error,
+      requestKind: LedgerRequestKind.giftCard,
+    );
+    // Retrying the same request fails the same way on the device.
+    _requestNeedsRebuilding =
+        actionable != null && ledgerRequestNeedsRebuilding(error);
+    if (actionable != null) return actionable;
+    return switch (classifyLedgerError(error)) {
+      LedgerFailureKind.userRejected =>
+        'The gift card funding was rejected on your Ledger.',
+      LedgerFailureKind.wrongApp =>
+        'Open the Zcash app on your Ledger, then try again.',
+      _ =>
+        'Ledger signing could not be completed. Check your device and try again.',
+    };
   }
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {
@@ -257,6 +280,7 @@ class _PaymentLinkLedgerSigningOverlayState
   Widget build(BuildContext context) {
     final unavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final canRetry = !unavailable && !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
       accountUuid: widget.sourceAccountUuid,
@@ -266,19 +290,19 @@ class _PaymentLinkLedgerSigningOverlayState
               title: unavailable
                   ? 'Ledger app update required'
                   : 'Gift card funding needs attention',
-              statusLabel: 'Action needed',
+              statusLabel: _requestNeedsRebuilding
+                  ? 'New gift card required'
+                  : 'Action needed',
               message: _error!,
-              showDeviceAppPrompt: !_checkpointed && !unavailable,
-              actionLabel: unavailable || _terminal ? null : 'Try again',
+              showDeviceAppPrompt:
+                  !_checkpointed && !unavailable && !_requestNeedsRebuilding,
+              actionLabel: canRetry ? 'Try again' : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to gift card',
       onFailureAction:
-          _phase == LedgerSigningModalPhase.failed &&
-              !_cancelled &&
-              !unavailable &&
-              !_terminal
+          _phase == LedgerSigningModalPhase.failed && !_cancelled && canRetry
           ? _start
           : null,
     );

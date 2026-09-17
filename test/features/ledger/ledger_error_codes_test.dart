@@ -22,8 +22,8 @@ void main() {
       0xb007: LedgerFailureKind.appWrongState,
       0x6a80: LedgerFailureKind.hostRequestRejected,
       0x6986: LedgerFailureKind.hostRequestRejected,
-      0x6e00: LedgerFailureKind.unsupportedCommand,
-      0x6d00: LedgerFailureKind.unsupportedCommand,
+      0x6e00: LedgerFailureKind.wrongApp,
+      0x6d00: LedgerFailureKind.wrongApp,
       0x5223: LedgerFailureKind.deviceInternalError,
       0x670a: LedgerFailureKind.unknownStatus,
       0x6f01: LedgerFailureKind.unknownStatus,
@@ -82,7 +82,7 @@ void main() {
       LedgerMobileFailure.disconnected: LedgerFailureKind.transportLost,
       LedgerMobileFailure.locked: LedgerFailureKind.deviceLocked,
       LedgerMobileFailure.rejected: LedgerFailureKind.userRejected,
-      LedgerMobileFailure.wrongApp: LedgerFailureKind.other,
+      LedgerMobileFailure.wrongApp: LedgerFailureKind.wrongApp,
       LedgerMobileFailure.cancelled: LedgerFailureKind.cancelled,
       LedgerMobileFailure.unavailable: LedgerFailureKind.other,
     };
@@ -100,7 +100,7 @@ void main() {
       LedgerAppReadinessFailure.locked: LedgerFailureKind.deviceLocked,
       LedgerAppReadinessFailure.disconnected: LedgerFailureKind.transportLost,
       LedgerAppReadinessFailure.unsupportedVersion:
-          LedgerFailureKind.unsupportedCommand,
+          LedgerFailureKind.appUpdateRequired,
       LedgerAppReadinessFailure.unavailable: LedgerFailureKind.other,
     };
     expect(readiness.keys, containsAll(LedgerAppReadinessFailure.values));
@@ -159,28 +159,36 @@ void main() {
     );
   });
 
-  test('unprefixed legacy text keeps its established classification', () {
+  test('network broadcast rejections are not read as device rejections', () {
+    for (final error in [
+      'Broadcast rejected by lightwalletd: bad-txns-inputs-spent (code 18)',
+      StateError('Shield transaction broadcast rejected: mempool full'),
+    ]) {
+      expect(classifyLedgerError(error), LedgerFailureKind.other);
+    }
+  });
+
+  test('unprefixed text classifies only transport and Sapling failures', () {
     const legacy = {
-      'User rejected (0x6985)': LedgerFailureKind.userRejected,
-      '6985 rejected': LedgerFailureKind.userRejected,
-      'Ledger request rejected on device': LedgerFailureKind.userRejected,
-      'Ledger rejected the PCZT data or key path':
-          LedgerFailureKind.hostRequestRejected,
+      'User rejected (0x6985)': LedgerFailureKind.other,
+      '6985 rejected': LedgerFailureKind.other,
+      'Ledger request rejected on device': LedgerFailureKind.other,
+      'Ledger rejected the PCZT data or key path': LedgerFailureKind.other,
       'Ledger signing preconditions were not met (0x6986)':
-          LedgerFailureKind.hostRequestRejected,
-      'status 0x6a80': LedgerFailureKind.hostRequestRejected,
+          LedgerFailureKind.other,
+      'status 0x6a80': LedgerFailureKind.other,
       'Ledger supports at most 32 shielded actions; found 33':
-          LedgerFailureKind.capacityExceeded,
+          LedgerFailureKind.other,
       'This Ledger preview does not support Sapling outputs':
           LedgerFailureKind.saplingUnsupported,
-      'Ledger device is locked': LedgerFailureKind.deviceLocked,
+      'Ledger device is locked': LedgerFailureKind.other,
       'No Ledger device found. Connect and unlock your Ledger.':
           LedgerFailureKind.transportLost,
       "Open Ledger HID device: hidapi error: Failed to open a device with path '/dev/hidraw3': Permission denied":
           LedgerFailureKind.transportLost,
       'Read Ledger HID packet: hidapi error: device disconnected':
           LedgerFailureKind.transportLost,
-      'request denied': LedgerFailureKind.userRejected,
+      'request denied': LedgerFailureKind.other,
       'Ledger supports at most one BIP-32 derivation per transparent output; found 2':
           LedgerFailureKind.other,
       'Ledger Zcash app returned status 0x6f01': LedgerFailureKind.other,

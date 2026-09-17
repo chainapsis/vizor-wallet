@@ -543,16 +543,24 @@ class _LedgerShieldSigningOverlayState
         actionable != null && ledgerRequestNeedsRebuilding(error);
     // Retrying the same request fails the same way on the device.
     if (_requestNeedsRebuilding) _canRetry = false;
+    final kind = classifyLedgerError(error);
+    if (kind == LedgerFailureKind.hostRequestRejected && _round > 1) {
+      return 'Vizor built a request that the Zcash app on your Ledger could not accept. This approval was not sent; earlier approvals in this session were already broadcast.';
+    }
     if (actionable != null) return actionable;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
-    if (classifyLedgerError(error) == LedgerFailureKind.userRejected) {
+    if (kind == LedgerFailureKind.userRejected) {
       return 'The shield transaction was rejected on your Ledger.';
     }
+    if (kind == LedgerFailureKind.wrongApp) {
+      return '$appInstruction Then try again.';
+    }
     if (lower.contains('no ledger') || lower.contains('hid')) {
-      return 'Connect and unlock your Ledger. $appInstruction';
+      return ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+          'Connect and unlock your Ledger. $appInstruction';
     }
     if (lower.contains('sync')) {
       return 'Sync the wallet before shielding transparent balance.';

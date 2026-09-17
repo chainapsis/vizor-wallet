@@ -132,8 +132,12 @@ class _LedgerImmediateMigrationSigningOverlayState
         actionable != null && ledgerRequestNeedsRebuilding(error);
     if (actionable != null) return actionable;
     final message = error.toString().toLowerCase();
-    if (classifyLedgerError(error) == LedgerFailureKind.userRejected) {
+    final kind = classifyLedgerError(error);
+    if (kind == LedgerFailureKind.userRejected) {
       return 'The migration transaction was rejected on your Ledger.';
+    }
+    if (kind == LedgerFailureKind.wrongApp) {
+      return 'Open the Zcash app on your Ledger, then try again.';
     }
     if (message.contains('no ledger') || message.contains('hid')) {
       return 'Connect and unlock your Ledger, then open the Zcash app.';
