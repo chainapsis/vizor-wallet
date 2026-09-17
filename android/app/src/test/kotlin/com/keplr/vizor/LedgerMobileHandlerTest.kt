@@ -394,8 +394,6 @@ class LedgerMobileHandlerTest {
             assertEquals("attempt-1", id)
             events += phase
         }
-        val diagnostics = mutableListOf<String>()
-        handler.onDiagnostic = { diagnostics += it }
         val result = Result()
         handler.handle(MethodCall("exchangeApdus", mapOf(
             "progressId" to "attempt-1",
@@ -404,37 +402,11 @@ class LedgerMobileHandlerTest {
         runCurrent()
         assertEquals(listOf("sending", "reviewing", "exchange"), events)
         assertEquals(0, result.completions)
-        assertTrue(diagnostics.any { it.contains("apdu_start") && it.contains("header=e0:58:80:01") })
-        assertFalse(diagnostics.any { it.contains("apdu_end") })
         response!!.resume(DeviceOperationResult.Success(byteArrayOf(0x90.toByte(), 0)))
         runCurrent()
         assertEquals(listOf("sending", "reviewing", "exchange", "finishing"), events)
-        assertTrue(diagnostics.any { it.contains("apdu_end") && it.contains("sw=9000") && it.contains("response_bytes=2") })
         assertEquals(1, result.completions)
         assertNull(result.error)
-    }
-
-    @Test fun diagnosticsExcludeTransactionPayloadsAndDeviceIdentifiers() = runTest(dispatcher) {
-        val secretRequest = "PRIVATE_REQUEST".toByteArray()
-        val secretResponse = "PRIVATE_RESPONSE".toByteArray()
-        useExchange { DeviceOperationResult.Success(secretResponse + byteArrayOf(0x90.toByte(), 0)) }
-        val diagnostics = mutableListOf<String>()
-        handler.onDiagnostic = { diagnostics += it }
-        val result = Result()
-        handler.handle(MethodCall("exchangeApdus", mapOf(
-            "progressId" to "test-attempt",
-            "commands" to listOf(signingCommand(0) + ("data" to secretRequest)),
-        )), result)
-        runCurrent()
-        val log = diagnostics.joinToString("\n")
-        assertTrue(log.contains("data_bytes=${secretRequest.size}"))
-        assertTrue(log.contains("response_bytes=${secretResponse.size + 2}"))
-        for (secret in listOf(secretRequest, secretResponse)) {
-            assertFalse(log.contains(String(secret)))
-            assertFalse(log.contains(secret.joinToString("") { "%02x".format(it.toInt() and 0xff) }))
-        }
-        assertFalse(log.contains("connected-id"))
-        assertEquals(1, result.completions)
     }
 
     @Test fun rejectedReviewDoesNotReportFinishing() = runTest(dispatcher) {

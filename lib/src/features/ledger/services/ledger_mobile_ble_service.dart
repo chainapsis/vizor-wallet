@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../rust/api/ledger.dart' as rust_ledger;
-import 'ledger_diagnostics.dart';
 
 const kLedgerPairingInvalidMessage =
     'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
@@ -123,20 +122,7 @@ class MethodChannelLedgerMobileBleService
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
-           reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration)) {
-    _progressChannel.setMethodCallHandler((call) async {
-      if (call.method == 'diagnostic' && call.arguments is String) {
-        ledgerTrace(call.arguments as String);
-        return;
-      }
-      if (call.method != 'progress' || call.arguments is! Map) return;
-      final arguments = call.arguments as Map;
-      final phase = arguments['phase'];
-      if (phase is String) {
-        _progressObservers[arguments['requestId']]?.call(phase);
-      }
-    });
-  }
+           reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
 
   static const _progressChannel = MethodChannel(
     'com.zcash.wallet/ledger_mobile/signing_progress',
@@ -151,6 +137,14 @@ class MethodChannelLedgerMobileBleService
   ) async {
     final generation = _operationGeneration;
     final id = '${++_nextProgressId}';
+    _progressChannel.setMethodCallHandler((call) async {
+      if (call.method != 'progress' || call.arguments is! Map) return;
+      final arguments = call.arguments as Map;
+      final phase = arguments['phase'];
+      if (phase is String) {
+        _progressObservers[arguments['requestId']]?.call(phase);
+      }
+    });
     _progressObservers[id] = (phase) {
       if (generation == _operationGeneration) onProgress(phase);
     };
@@ -301,9 +295,6 @@ class MethodChannelLedgerMobileBleService
       var reviewBusyAttempts = 0;
       while (pending.isNotEmpty) {
         _checkOperationActive(generation);
-        ledgerTrace(
-          'ble_batch request=$progressId completed=${completed.length} pending=${pending.length}',
-        );
         final responses = await _invokeApduResponses('exchangeApdus', {
           'commands': pending.map(_encodeCommand).toList(growable: false),
           'progressId': ?progressId,
@@ -316,9 +307,6 @@ class MethodChannelLedgerMobileBleService
           final response = responses[index];
           if (_hasStatus(response, _reviewBusyStatus)) {
             reviewBusyAttempts++;
-            ledgerTrace(
-              'ble_review_busy request=$progressId command=${completed.length} retry=$reviewBusyAttempts',
-            );
             if (reviewBusyAttempts == _reviewBusyMaxAttempts ||
                 index >= pending.length) {
               completed.add(response);

@@ -247,27 +247,7 @@ impl LedgerTransport {
     ) -> Result<Vec<u8>, String> {
         let command = build_command(cla, ins, p1, p2, data)?;
         let response = retry_review_busy(
-            || {
-                #[cfg(debug_assertions)]
-                let started = std::time::Instant::now();
-                #[cfg(debug_assertions)]
-                log::info!("[LedgerTrace][usb] apdu_start header={cla:02x}:{ins:02x}:{p1:02x}:{p2:02x} data_bytes={}", command.data.len());
-                let result = self.exchange_hid(&command);
-                #[cfg(debug_assertions)]
-                match &result {
-                    Ok(response) => log::info!(
-                        "[LedgerTrace][usb] apdu_end ms={} response_bytes={} sw={:04x}",
-                        started.elapsed().as_millis(),
-                        response.data().len() + 2,
-                        response.retcode()
-                    ),
-                    Err(_) => log::info!(
-                        "[LedgerTrace][usb] apdu_error ms={}",
-                        started.elapsed().as_millis()
-                    ),
-                }
-                result
-            },
+            || self.exchange_hid(&command),
             |response| response.retcode(),
             || {
                 self.operation.check()?;

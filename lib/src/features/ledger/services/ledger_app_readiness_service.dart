@@ -4,7 +4,6 @@ import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
 import 'ledger_device_request.dart';
-import 'ledger_diagnostics.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -97,15 +96,7 @@ class LedgerAppReadinessController extends Notifier<LedgerAppReadinessState> {
   @override
   LedgerAppReadinessState build() => const LedgerAppReadinessState.idle();
 
-  void update(LedgerAppReadinessState next) {
-    final version = RegExp(r'^\d+\.\d+\.\d+$').hasMatch(next.version ?? '')
-        ? next.version
-        : null;
-    ledgerTrace(
-      'readiness phase=${next.phase.name} failure=${next.failure?.name} version=$version',
-    );
-    state = next;
-  }
+  void update(LedgerAppReadinessState next) => state = next;
 }
 
 final ledgerAppReadinessStateProvider =

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'ledger_diagnostics.dart';
 
 /// Coarse user-facing stages, independent of device connection/readiness state.
 enum LedgerSigningStage { preparing, sending, reviewing, finishing }
@@ -24,14 +23,9 @@ class LedgerSigningProgressController extends Notifier<LedgerSigningProgress?> {
   /// Each attempt owns its observer. Late native/USB events cannot update a retry.
   void Function(String) begin(String accountUuid) {
     final generation = ++_generation;
-    final elapsed = Stopwatch()..start();
-    ledgerTrace('signing_begin attempt=$generation');
     state = LedgerSigningProgress(accountUuid, LedgerSigningStage.preparing);
     return (phase) {
-      if (generation != _generation) {
-        ledgerTrace('signing_late_event attempt=$generation phase=$phase');
-        return;
-      }
+      if (generation != _generation) return;
       final stage = switch (phase) {
         'sending' => LedgerSigningStage.sending,
         'reviewing' => LedgerSigningStage.reviewing,
@@ -39,9 +33,6 @@ class LedgerSigningProgressController extends Notifier<LedgerSigningProgress?> {
         _ => null,
       };
       if (stage != null && stage.index > (state?.stage.index ?? -1)) {
-        ledgerTrace(
-          'signing_phase attempt=$generation phase=$phase elapsed_ms=${elapsed.elapsedMilliseconds}',
-        );
         state = LedgerSigningProgress(accountUuid, stage);
       }
     };
@@ -49,7 +40,6 @@ class LedgerSigningProgressController extends Notifier<LedgerSigningProgress?> {
 
   void cancel() {
     final generation = ++_generation;
-    ledgerTrace('signing_cancel generation=$generation');
     // Callers also cancel from widget disposal. Invalidate events immediately,
     // but notify UI listeners after that lifecycle has finished.
     scheduleMicrotask(() {

@@ -48,17 +48,6 @@ class LedgerMobileHandler(
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
 ) : EventChannel.StreamHandler {
     var onSigningProgress: ((String, String) -> Unit)? = null
-    var onDiagnostic: ((String) -> Unit)? = null
-    private var diagnosticSequence = 0L
-
-    // Metadata only; never log APDU payloads or SDK error descriptions.
-    private fun trace(message: String) {
-        if (!BuildConfig.DEBUG) return
-        val line = "[LedgerTrace][android] uptime_ms=${android.os.SystemClock.elapsedRealtime()} $message"
-        android.util.Log.i("LedgerTrace", line)
-        onDiagnostic?.invoke(line)
-    }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var operation: DeviceRequest? = null
     private var closed = false
@@ -73,7 +62,6 @@ class LedgerMobileHandler(
     private var permissionResult: MethodChannel.Result? = null
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
-        trace("method=${call.method} operation_pending=${operation != null}")
         if (closed) {
             result.error("cancelled", "Ledger connection was closed.", null)
             return
@@ -373,12 +361,10 @@ class LedgerMobileHandler(
     private suspend fun queryApp(device: ConnectedDevice, request: DeviceRequest) {
         currentCoroutineContext().ensureActive()
         request.device = device
-        trace("app_query_start")
         val app = withTimeout(APP_QUERY_TIMEOUT_MS) {
             dmk.executeCommand(device.uid, GetAppAndVersionCommand())
         }
         currentCoroutineContext().ensureActive()
-        trace("app_query_end")
         when (app) {
             is DeviceOperationResult.Success -> request.success(app.value.asFlutterMap())
             is DeviceOperationResult.Failure -> operationFailure(request, app.reason)
@@ -455,16 +441,12 @@ class LedgerMobileHandler(
         launchOperation(result) { request ->
             val device = requireConnected(request) ?: return@launchOperation
             fun report(phase: String) { progressId?.let { onSigningProgress?.invoke(it, phase) } }
-            trace("batch_start request=${progressId ?: "none"} commands=${commands.size}")
             report("sending")
             val responses = mutableListOf<ByteArray>()
             for (command in commands) {
                 currentCoroutineContext().ensureActive()
                 val startsReview = (command.ins == 0x56 || command.ins == 0x58) && command.p2 == 1
-                if (startsReview) {
-                    trace("review_boundary request=${progressId ?: "none"}")
-                    report("reviewing")
-                }
+                if (startsReview) report("reviewing")
                 val response = exchange(device.uid, command, request) ?: return@launchOperation
                 if (startsReview && response.hasSuccessStatus()) report("finishing")
                 responses += response
@@ -489,18 +471,7 @@ class LedgerMobileHandler(
         }
         stopDiscovery()
         val scan = discoveryJob
-        val diagnosticResult = result?.let { target -> object : MethodChannel.Result {
-            override fun success(value: Any?) {
-                trace("operation_result success cleanup=$cleanup")
-                target.success(value)
-            }
-            override fun error(code: String, message: String?, details: Any?) {
-                trace("operation_result code=$code cleanup=$cleanup")
-                target.error(code, message, details)
-            }
-            override fun notImplemented() { target.notImplemented() }
-        } }
-        val request = DeviceRequest(diagnosticResult, cleanup)
+        val request = DeviceRequest(result, cleanup)
         val job = scope.launch(
             context = if (cleanup) NonCancellable else kotlin.coroutines.EmptyCoroutineContext,
             start = CoroutineStart.LAZY,
@@ -558,7 +529,7 @@ class LedgerMobileHandler(
                 cleanupRequestedFor = device.uid
                 if (cleanupDevice?.uid == device.uid) cleanupDevice = null
             } catch (_: Exception) {
-                trace("session_cleanup_failed")
+                // Keep the session quarantined until a later cleanup succeeds.
             }
         }
     }
@@ -596,25 +567,8 @@ class LedgerMobileHandler(
         request: DeviceRequest,
     ): ByteArray? {
         currentCoroutineContext().ensureActive()
-        val sequence = ++diagnosticSequence
-        val started = android.os.SystemClock.elapsedRealtime()
-        val header = listOf(command.cla, command.ins, command.p1, command.p2).joinToString(":") { "%02x".format(it) }
-        trace("apdu_start seq=$sequence header=$header data_bytes=${command.data.size}")
         request.device = connectedDevice
-        val operation = try {
-            sendApdu(uid, command)
-        } catch (error: Exception) {
-            trace("apdu_error seq=$sequence ms=${android.os.SystemClock.elapsedRealtime() - started} type=${error.javaClass.simpleName}")
-            throw error
-        }
-        when (operation) {
-            is DeviceOperationResult.Success -> {
-                val bytes = operation.value
-                val status = if (bytes.size >= 2) bytes.takeLast(2).joinToString("") { "%02x".format(it.toInt() and 0xff) } else "short"
-                trace("apdu_end seq=$sequence ms=${android.os.SystemClock.elapsedRealtime() - started} response_bytes=${bytes.size} sw=$status")
-            }
-            is DeviceOperationResult.Failure -> trace("apdu_failure seq=$sequence ms=${android.os.SystemClock.elapsedRealtime() - started} type=${operation.reason.javaClass.simpleName}")
-        }
+        val operation = sendApdu(uid, command)
         currentCoroutineContext().ensureActive()
         return when (operation) {
             is DeviceOperationResult.Success -> operation.value
@@ -777,7 +731,7 @@ private object LedgerDmkHolder {
     fun get(activity: Activity): DeviceManagementKitApi {
         return instance ?: deviceManagementKit {
             context = activity.applicationContext
-            // SDK debug logs include raw APDUs and responses. Use LedgerTrace metadata only.
+            // SDK debug logs include raw APDUs and responses; keep them disabled.
             enableLog = false
         }.also { instance = it }
     }

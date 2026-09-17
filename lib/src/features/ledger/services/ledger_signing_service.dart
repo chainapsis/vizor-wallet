@@ -10,7 +10,6 @@ import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_device_request.dart';
-import 'ledger_diagnostics.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_progress.dart';
 import 'ledger_signing_status_gate.dart';
@@ -113,9 +112,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
         .read(ledgerSigningProgressProvider.notifier)
         .begin(accountUuid);
     capability.requireSupported();
-    ledgerTrace('wallet_path_start');
     final dbPath = await loadWalletDbPath();
-    ledgerTrace('wallet_path_end connection_start');
     check();
     return ref
         .read(ledgerConnectionServiceProvider)
@@ -130,39 +127,32 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
             network: networkName,
           )).signedPczt!,
           bluetooth: (mobile) async {
-            return ref.read(ledgerMobileSigningStatusGateProvider).run(() async {
-              check();
-              ledgerTrace(
-                'plan_start compact=false pczt_bytes=${pcztBytes.length}',
-              );
-              final plan = await rust_ledger.ledgerBuildPcztFullSigningApduPlan(
-                dbPath: dbPath,
-                accountUuid: accountUuid,
-                pcztBytes: pcztBytes,
-                network: networkName,
-              );
-              check();
-              ledgerTrace(
-                'plan_end commands=${plan.commands.length} data_bytes=${plan.commands.fold<int>(0, (sum, command) => sum + command.data.length)}',
-              );
-              final responses = await _exchangeWithProgress(
-                mobile,
-                plan.commands,
-                progress,
-              );
-              check();
-              ledgerTrace('finalize_start compact=false');
-              final result = await rust_ledger
-                  .ledgerFinalizeMobilePcztFullSigning(
-                    dbPath: dbPath,
-                    accountUuid: accountUuid,
-                    pcztBytes: pcztBytes,
-                    network: networkName,
-                    responses: responses,
-                  );
-              ledgerTrace('finalize_end compact=false');
-              return result;
-            });
+            return ref.read(ledgerMobileSigningStatusGateProvider).run(
+              () async {
+                check();
+                final plan = await rust_ledger
+                    .ledgerBuildPcztFullSigningApduPlan(
+                      dbPath: dbPath,
+                      accountUuid: accountUuid,
+                      pcztBytes: pcztBytes,
+                      network: networkName,
+                    );
+                check();
+                final responses = await _exchangeWithProgress(
+                  mobile,
+                  plan.commands,
+                  progress,
+                );
+                check();
+                return rust_ledger.ledgerFinalizeMobilePcztFullSigning(
+                  dbPath: dbPath,
+                  accountUuid: accountUuid,
+                  pcztBytes: pcztBytes,
+                  network: networkName,
+                  responses: responses,
+                );
+              },
+            );
           },
         );
   };
@@ -177,9 +167,7 @@ final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
         .read(ledgerAppReadinessStateProvider.notifier)
         .update(const LedgerAppReadinessState.idle());
     ref.read(ledgerSigningProgressProvider.notifier).begin(accountUuid);
-    ledgerTrace('support_validation_start pczt_bytes=${pcztBytes.length}');
     await validate(pcztBytes);
-    ledgerTrace('support_validation_end');
     check();
     return sign(accountUuid, pcztBytes);
   };
@@ -202,9 +190,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         .read(ledgerSigningProgressProvider.notifier)
         .begin(accountUuid);
     capability.requireSupported();
-    ledgerTrace('wallet_path_start');
     final dbPath = await loadWalletDbPath();
-    ledgerTrace('wallet_path_end connection_start');
     check();
     final signatures = await ref
         .read(ledgerConnectionServiceProvider)
@@ -260,7 +246,6 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required String networkName,
 }) async {
   check();
-  ledgerTrace('plan_start compact=true pczt_bytes=${pcztBytes.length}');
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
     dbPath: dbPath,
     accountUuid: accountUuid,
@@ -268,25 +253,19 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     network: networkName,
   );
   check();
-  ledgerTrace(
-    'plan_end commands=${plan.commands.length} data_bytes=${plan.commands.fold<int>(0, (sum, command) => sum + command.data.length)}',
-  );
   final responses = await _exchangeWithProgress(
     mobile,
     plan.commands,
     progress,
   );
   check();
-  ledgerTrace('finalize_start compact=true');
-  final result = await rust_ledger.ledgerFinalizeMobilePcztSigning(
+  return rust_ledger.ledgerFinalizeMobilePcztSigning(
     dbPath: dbPath,
     accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
     responses: responses,
   );
-  ledgerTrace('finalize_end compact=true');
-  return result;
 }
 
 Future<List<Uint8List>> _exchangeWithProgress(

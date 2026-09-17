@@ -1109,9 +1109,6 @@ class MainFlutterWindow: NSWindow {
       name: "com.zcash.wallet/ledger_mobile/signing_progress",
       binaryMessenger: messenger
     )
-    handler.onDiagnostic = { line in
-      signingProgressChannel.invokeMethod("diagnostic", arguments: line)
-    }
     handler.onSigningProgress = { requestId, phase in
       signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
     }

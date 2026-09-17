@@ -7,7 +7,6 @@ import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_device_request.dart';
-import 'ledger_diagnostics.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_status_gate.dart';
 
@@ -66,12 +65,10 @@ class LedgerConnectionService {
 
     for (final transport in candidates) {
       check();
-      ledgerTrace('connection_start transport=${transport.name}');
       var operationStarted = false;
       try {
         final result = switch (transport) {
           LedgerConnectionTransport.usb => await _runUsb(check, () {
-            ledgerTrace('connection_ready transport=${transport.name}');
             operationStarted = true;
             return usb();
           }),
@@ -79,7 +76,6 @@ class LedgerConnectionService {
             check,
             account,
             (mobile) {
-              ledgerTrace('connection_ready transport=${transport.name}');
               operationStarted = true;
               return bluetooth(mobile);
             },
@@ -108,9 +104,6 @@ class LedgerConnectionService {
                             LedgerAppReadinessFailure.unavailable)))) {
           _requiresReconnect = true;
         }
-        ledgerTrace(
-          'connection_error transport=${transport.name} operation_started=$operationStarted type=${error.runtimeType}',
-        );
         check();
         // Only connection preparation may fall back; never replay an operation.
         if (operationStarted) rethrow;
