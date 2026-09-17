@@ -8,6 +8,7 @@ import org.robolectric.Shadows.shadowOf
 import io.flutter.plugin.common.EventChannel
 import com.ledger.devicemanagement.api.command.Command
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
+import com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason
 import com.ledger.devicemanagement.api.deviceaction.DeviceAction
 import com.ledger.devicemanagement.api.deviceaction.DeviceActionResult
 import kotlinx.coroutines.flow.Flow
@@ -730,6 +731,16 @@ class LedgerMobileHandlerTest {
         runCurrent()
         assertEquals(0, queries)
         assertEquals("cancelled", result.error)
+        assertEquals(1, result.completions)
+    }
+
+    @Test fun declinedAppOpeningReportsARejectionNotAnUnavailableDevice() = runTest(dispatcher) {
+        useReadiness(open = {
+            flowOf(DeviceActionResult.Failure(OpenApplicationCommandFailureReason.UserConsentRejected))
+        })
+        val result = call("openZcashApp")
+        runCurrent()
+        assertEquals("rejected", result.error)
         assertEquals(1, result.completions)
     }
 

@@ -13,6 +13,7 @@ import com.ledger.devicemanagement.api.apdu.chunkApduPayload
 import com.ledger.devicemanagement.api.apdu.uniqueApduPayload
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
 import com.ledger.devicemanagement.api.command.getappandversion.GetAppAndVersionCommand
+import com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason
 import com.ledger.devicemanagement.api.connection.ConnectedDevice
 import com.ledger.devicemanagement.api.connection.ConnectionResult
 import com.ledger.devicemanagement.api.deviceaction.DeviceActionResult
@@ -647,6 +648,12 @@ class LedgerMobileHandler(
             DeviceOperationFailureReason.DeviceLocked -> result.error(
                 "locked",
                 "Unlock your Ledger and reopen the Zcash app.",
+                null,
+            )
+            // 0x5501 from the open-app request: the user declined on the device.
+            OpenApplicationCommandFailureReason.UserConsentRejected -> result.error(
+                "rejected",
+                "Opening the Zcash app was rejected on your Ledger.",
                 null,
             )
             DeviceOperationFailureReason.DeviceDisconnected,
