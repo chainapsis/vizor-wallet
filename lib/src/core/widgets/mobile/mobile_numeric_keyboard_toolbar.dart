@@ -1,15 +1,10 @@
-import 'dart:ui' show ImageFilter;
-
-import 'package:flutter/cupertino.dart' show CupertinoColors;
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../layout/app_form_factor.dart';
-import '../../theme/app_theme.dart';
-import '../app_icon.dart';
 
-/// Adds a dismiss action to every focused OS numeric keyboard, including
+/// Adds a native dismiss action to every focused iOS numeric keyboard, including
 /// fields inside routes and sheets. Custom passcode keypads do not open an
 /// EditableText connection and are unaffected.
 class MobileNumericKeyboardToolbar extends StatefulWidget {
@@ -25,7 +20,6 @@ class MobileNumericKeyboardToolbar extends StatefulWidget {
 class _MobileNumericKeyboardToolbarState
     extends State<MobileNumericKeyboardToolbar>
     with WidgetsBindingObserver {
-  static const _buttonSize = 48.0;
   bool _updateScheduled = false;
   static const _channel = MethodChannel('com.zcash.wallet/numeric_keyboard');
   bool? _nativeVisible;
@@ -35,16 +29,14 @@ class _MobileNumericKeyboardToolbarState
   @override
   void initState() {
     super.initState();
-    if (kAppFormFactor == AppFormFactor.mobile) {
+    if (kAppFormFactor == AppFormFactor.mobile && _usesNative) {
       WidgetsBinding.instance.addObserver(this);
       FocusManager.instance.addListener(_focusChanged);
-      if (_usesNative) {
-        _channel.setMethodCallHandler((call) async {
-          if (call.method == 'dismiss') {
-            FocusManager.instance.primaryFocus?.unfocus();
-          }
-        });
-      }
+      _channel.setMethodCallHandler((call) async {
+        if (call.method == 'dismiss') {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      });
     }
   }
 
@@ -79,7 +71,9 @@ class _MobileNumericKeyboardToolbarState
 
   @override
   Widget build(BuildContext context) {
-    if (kAppFormFactor != AppFormFactor.mobile) return widget.child;
+    if (kAppFormFactor != AppFormFactor.mobile || !_usesNative) {
+      return widget.child;
+    }
     final media = MediaQuery.of(context);
     final focus = FocusManager.instance.primaryFocus;
     final editable = focus?.context
@@ -91,82 +85,12 @@ class _MobileNumericKeyboardToolbarState
         (editable.keyboardType.index == TextInputType.number.index ||
             editable.keyboardType == TextInputType.phone);
     final visible = numeric && media.viewInsets.bottom > 0;
-    if (_usesNative) {
-      final dark = Theme.of(context).brightness == Brightness.dark;
-      if (_nativeVisible != visible || _nativeDark != dark) {
-        _nativeVisible = visible;
-        _nativeDark = dark;
-        _channel.invokeMethod<void>('update', {
-          'visible': visible,
-          'dark': dark,
-        });
-      }
-      return widget.child;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    if (_nativeVisible != visible || _nativeDark != dark) {
+      _nativeVisible = visible;
+      _nativeDark = dark;
+      _channel.invokeMethod<void>('update', {'visible': visible, 'dark': dark});
     }
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.child,
-        if (visible)
-          Positioned(
-            right: media.padding.right + AppSpacing.sm,
-            bottom: media.viewInsets.bottom + AppSpacing.sm,
-            width: _buttonSize,
-            height: _buttonSize,
-            child: TextFieldTapRegion(
-              child: Semantics(
-                label: 'Done',
-                button: true,
-                child: DecoratedBox(
-                  key: const ValueKey('mobile_numeric_keyboard_toolbar'),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                      child: Material(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xBB303033)
-                            : const Color(0xCCFFFFFF),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => focus?.unfocus(),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Center(
-                              child: ExcludeSemantics(
-                                child: AppIcon(
-                                  AppIcons.check,
-                                  size: 28,
-                                  color: CupertinoColors.activeBlue.resolveFrom(
-                                    context,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
+    return widget.child;
   }
 }

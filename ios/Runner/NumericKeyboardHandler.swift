@@ -63,11 +63,12 @@ final class NumericKeyboardHandler {
         configuration.background.visualEffect = UIBlurEffect(style: .systemMaterial)
       }
       configuration.cornerStyle = .capsule
+      // Figma 7819:24603: SF Pro Semibold checkmark, 19pt.
       configuration.image = UIImage(
         systemName: "checkmark",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
       )
-      configuration.baseForegroundColor = .systemBlue
+      configuration.baseForegroundColor = UIColor(red: 0, green: 136.0 / 255.0, blue: 1, alpha: 1)
       control.configuration = configuration
       control.accessibilityLabel = "Done"
       control.accessibilityIdentifier = "mobile_numeric_keyboard_toolbar"
@@ -77,7 +78,7 @@ final class NumericKeyboardHandler {
       NSLayoutConstraint.activate([
         control.widthAnchor.constraint(equalToConstant: 48),
         control.heightAnchor.constraint(equalToConstant: 48),
-        control.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+        control.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -11),
         control.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16),
       ])
       host = view
