@@ -503,3 +503,87 @@ fn public_rewind_invalidates_checks_and_recovers_outputs_without_duplicates() {
 fn public_rewind_cache_failure_leaves_sqlite_unchanged() {
     public_rewind_fixture(true);
 }
+
+#[test]
+fn scan_enhancement_restores_shared_send_after_account_reimport() {
+    use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let sender_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let recipient_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (sender, _) =
+        keys::init_db_and_create_account(path, network, &sender_seed, Some(2_000_000), "sender")
+            .unwrap();
+    keys::add_account(path, network, "recipient", &recipient_seed, Some(2_000_000)).unwrap();
+    let address = |seed: &secrecy::SecretVec<u8>| {
+        TransparentAddress::decode(
+            &network,
+            &keys::software_account_transparent_addresses(network, seed, 0, 1).unwrap()[0],
+        )
+        .unwrap()
+    };
+    let funding = legacy_transaction(OutPoint::new([42; 32], 0), address(&sender_seed), 1_000_000);
+    let payment = legacy_transaction(
+        OutPoint::new(*funding.txid().as_ref(), 0),
+        address(&recipient_seed),
+        900_000,
+    );
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(2_000_100))
+        .unwrap();
+    store_transparent_outputs(&mut db, &[downloaded(&sender, &funding, 2_000_001)]).unwrap();
+    decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
+    decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
+    drop(db);
+
+    let sent_amount = |uuid: &str| -> i64 {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.query_row(
+            "SELECT COALESCE(SUM(s.value), 0) FROM sent_notes s
+             JOIN accounts a ON a.id=s.from_account_id
+             JOIN transactions t ON t.id_tx=s.transaction_id
+             WHERE a.uuid=?1 AND t.txid=?2",
+            rusqlite::params![
+                uuid::Uuid::parse_str(uuid).unwrap().as_bytes().as_slice(),
+                payment.txid().as_ref()
+            ],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(sent_amount(&sender), 900_000);
+    keys::delete_account(path, network, &sender).unwrap();
+    let (reimported, _) =
+        keys::add_account(path, network, "sender again", &sender_seed, Some(2_000_000)).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    // Rescanning first rediscovers the sender's funding input. The shared
+    // payment's raw bytes survived deletion, but its sender metadata did not.
+    store_transparent_outputs(&mut db, &[downloaded(&reimported, &funding, 2_000_001)]).unwrap();
+    decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
+    assert_eq!(sent_amount(&reimported), 0);
+    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
+        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+
+    let blocks = super::block_source::MemoryBlockSource::new(vec![CompactBlock {
+        height: 2_000_010,
+        vtx: vec![CompactTx {
+            txid: payment.txid().as_ref().to_vec(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }]);
+    with_wallet_db_write_lock("test.scan_enhancement", || {
+        enhance::queue_stored_transactions(path, &blocks)
+    })
+    .unwrap();
+    assert!(db.transaction_data_requests().unwrap().iter().any(|request|
+        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    // The existing enhancement handler performs this operation after scanning.
+    decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
+    assert_eq!(sent_amount(&reimported), 900_000);
+    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
+        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+}

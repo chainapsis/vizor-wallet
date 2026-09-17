@@ -3623,6 +3623,9 @@ async fn run_sync_impl(
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
+            // Persist before scanning advances scan_queue: cancellation or a crash
+            // after the scan must not lose this account's recovery work.
+            enhance::queue_stored_transactions(db_data_path, &block_source)?;
             if let Some(incoming_checkpoint_heights) = &incoming_orchard_checkpoint_heights {
                 let retained =
                     crate::wallet::sync::retain_migration_anchor_checkpoints_before_scan(

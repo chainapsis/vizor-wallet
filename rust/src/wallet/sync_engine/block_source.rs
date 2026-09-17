@@ -40,6 +40,12 @@ impl MemoryBlockSource {
         Self { blocks }
     }
 
+    pub(super) fn transaction_hashes(&self) -> impl Iterator<Item = &[u8]> {
+        self.blocks
+            .iter()
+            .flat_map(|block| block.vtx.iter().map(|tx| tx.txid.as_slice()))
+    }
+
     /// Returns whether this source contains exactly the requested half-open
     /// range in ascending, contiguous order.
     pub(super) fn contains_exact_range(&self, start: u32, end: u32) -> bool {
