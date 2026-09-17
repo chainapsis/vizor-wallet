@@ -1237,25 +1237,41 @@ void main() {
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
         if (ledgerFailureGuidance(original)!.pairingRecovery) {
-          expect(find.text('Couldn’t connect to your Ledger'), findsOneWidget);
-          expect(find.text('Find my Ledger'), findsOneWidget);
-          expect(attempts, 1);
-          return;
+          final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
+          expect(
+            find.text(
+              pairingInvalid
+                  ? 'Pair your Ledger again'
+                  : 'Couldn’t complete the request',
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.text('Remove the old pairing'),
+            pairingInvalid ? findsOneWidget : findsNothing,
+          );
+        } else {
+          expect(
+            find.text(
+              accessRecovery
+                  ? 'Ready to reconnect'
+                  : ledgerFailureGuidance(original)!.message,
+            ),
+            findsOneWidget,
+          );
         }
-        expect(
-          find.text(
-            accessRecovery
-                ? 'Ready to reconnect'
-                : ledgerFailureGuidance(original)!.message,
-          ),
-          findsOneWidget,
-        );
+        expect(attempts, 1);
         expect(
           find.text('The transaction was rejected on your Ledger.'),
           findsNothing,
         );
         expect(find.text('Open the Zcash app'), findsNothing);
-        await tester.tap(find.text(accessRecovery ? 'Reconnect' : 'Try again'));
+        final retryLabel = failure == LedgerMobileFailure.pairingInvalid
+            ? 'Find my Ledger'
+            : accessRecovery
+            ? 'Reconnect'
+            : 'Try again';
+        await tester.tap(find.text(retryLabel));
         await _flushRealAsync(tester);
         expect(attempts, 2);
         expect(find.text('status-route'), findsOneWidget);
