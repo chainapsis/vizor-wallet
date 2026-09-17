@@ -171,6 +171,8 @@ Widget buildLedgerSigningPreview({
   int roundNumber = 1,
   int roundCount = 1,
   bool mobile = false,
+  LedgerSigningFailurePresentation? failureOverride,
+  String mobileTitle = 'Ledger',
 }) {
   final modal = LedgerSigningModal(
     phase: phase,
@@ -178,7 +180,7 @@ Widget buildLedgerSigningPreview({
         ? signingStage
         : LedgerSigningStage.preparing,
     failure: phase == LedgerSigningModalPhase.failed
-        ? _failurePresentation(failureMode)
+        ? failureOverride ?? _failurePresentation(failureMode)
         : null,
     onCancel: () {},
     onFailureAction: () {},
@@ -202,6 +204,7 @@ Widget buildLedgerSigningPreview({
             width: 393,
             height: 852,
             child: MobileLedgerSigningSurface(
+              title: mobileTitle,
               onBack: () {},
               canLeave: phase != LedgerSigningModalPhase.broadcasting,
               child: modal,

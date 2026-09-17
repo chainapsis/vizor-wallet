@@ -33,6 +33,7 @@ import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
+import 'ledger_recovery_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -63,6 +64,62 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission',
+    description: 'Ledger recovery: permission',
+    builder: buildLedgerPermissionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-pairing',
+    description: 'Ledger recovery: pairing',
+    builder: buildLedgerPairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-bluetooth-off',
+    description: 'Ledger recovery: bluetooth-off',
+    builder: buildLedgerBluetoothOffCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-disconnected',
+    description: 'Ledger recovery: disconnected',
+    builder: buildLedgerDisconnectedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-busy',
+    description: 'Ledger recovery: busy',
+    builder: buildLedgerBusyCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location',
+    description: 'Ledger recovery: location',
+    builder: buildLedgerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-pairing',
+    description: 'Ledger recovery: picker-pairing',
+    builder: buildLedgerPickerPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-location',
+    description: 'Ledger recovery: picker-location',
+    builder: buildLedgerPickerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'ledger-signing-preparing',
     description: 'Ledger signing: preparing',
