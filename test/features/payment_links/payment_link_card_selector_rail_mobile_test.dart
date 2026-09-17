@@ -11,6 +11,74 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 void main() {
+  testWidgets('mobile loop exposes one finite artwork cycle to semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    PaymentLinkCardArtwork? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Scaffold(
+            body: Center(
+              child: PaymentLinkCardSelectorRail(
+                loop: true,
+                artworks: PaymentLinkCardArtwork.values,
+                selected: PaymentLinkCardArtwork.crystal,
+                onSelected: (artwork) => selected = artwork,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final list = tester.widget<ListView>(
+      find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+    );
+    expect(list.semanticChildCount, isNull);
+
+    List<String> announcedDesigns() {
+      final labels = <String>[];
+      void visit(SemanticsNode node) {
+        final label = node.getSemanticsData().label;
+        if (label.endsWith('card design')) labels.add(label);
+        node.visitChildren((child) {
+          visit(child);
+          return true;
+        });
+      }
+
+      visit(
+        tester.getSemantics(
+          find.byKey(const ValueKey('payment_link_card_selector_rail')),
+        ),
+      );
+      return labels;
+    }
+
+    for (final drag in [const Offset(-1400, 0), const Offset(1400, 0)]) {
+      expect(
+        announcedDesigns(),
+        PaymentLinkCardArtwork.values
+            .map((artwork) => '${artwork.semanticLabel} card design')
+            .toList(),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+        drag,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    tester.semantics.tap(find.semantics.byLabel('Gift box card design'));
+    await tester.pumpAndSettle();
+    expect(selected, PaymentLinkCardArtwork.gift);
+    semantics.dispose();
+  });
+
   testWidgets('mobile rail wraps both ends and selects the adjacent copy', (
     tester,
   ) async {

@@ -179,6 +179,28 @@ class _PaymentLinkCardSelectorRailState
     );
   }
 
+  void _selectArtwork(
+    PaymentLinkCardArtwork artwork, {
+    required double target,
+  }) {
+    widget.onSelected(artwork);
+    final offset = target.clamp(
+      _controller.position.minScrollExtent,
+      _controller.position.maxScrollExtent,
+    );
+    final disableAnimations =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disableAnimations) {
+      _controller.jumpTo(offset);
+    } else {
+      _controller.animateTo(
+        offset,
+        duration: _selectionDuration,
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -253,57 +275,78 @@ class _PaymentLinkCardSelectorRailState
                     );
                     return false;
                   },
-                  child: ListView.builder(
-                    key: const ValueKey('payment_link_card_selector_scroll'),
-                    controller: _controller,
-                    padding: EdgeInsets.symmetric(horizontal: endPadding),
-                    physics: const ClampingScrollPhysics(),
-                    scrollDirection: Axis.horizontal,
-                    itemExtent: _itemStride,
-                    itemCount: widget.loop ? null : widget.artworks.length,
-                    semanticChildCount: widget.loop
-                        ? null
-                        : widget.artworks.length,
-                    addSemanticIndexes: !widget.loop,
-                    itemBuilder: (context, index) {
-                      final artwork =
-                          widget.artworks[index % widget.artworks.length];
-                      return Center(
-                        child: PaymentLinkCardSelector(
-                          key: ValueKey(
-                            'payment_link_card_selector_${artwork.name}',
+                  child: Stack(
+                    children: [
+                      ExcludeSemantics(
+                        excluding: widget.loop,
+                        child: ListView.builder(
+                          key: const ValueKey(
+                            'payment_link_card_selector_scroll',
                           ),
-                          artwork: artwork,
-                          selected: artwork == widget.selected,
-                          onSelected: () {
-                            widget.onSelected(artwork);
-                            final target = _scrollOffsetForIndex(index).clamp(
-                              _controller.position.minScrollExtent,
-                              _controller.position.maxScrollExtent,
+                          controller: _controller,
+                          padding: EdgeInsets.symmetric(horizontal: endPadding),
+                          physics: const ClampingScrollPhysics(),
+                          scrollDirection: Axis.horizontal,
+                          itemExtent: _itemStride,
+                          itemCount: widget.loop
+                              ? null
+                              : widget.artworks.length,
+                          semanticChildCount: widget.loop
+                              ? null
+                              : widget.artworks.length,
+                          itemBuilder: (context, index) {
+                            final artwork =
+                                widget.artworks[index % widget.artworks.length];
+                            return Center(
+                              child: PaymentLinkCardSelector(
+                                key: ValueKey(
+                                  'payment_link_card_selector_${artwork.name}',
+                                ),
+                                artwork: artwork,
+                                selected: artwork == widget.selected,
+                                onSelected: () {
+                                  _selectArtwork(
+                                    artwork,
+                                    target: _scrollOffsetForIndex(index),
+                                  );
+                                },
+                                itemWidth: widget.itemWidth,
+                                itemHeight: widget.itemHeight,
+                                artworkWidth: widget.artworkWidth,
+                                artworkHeight: widget.artworkHeight,
+                                inactiveOpacity: widget.inactiveOpacity,
+                              ),
                             );
-                            final disableAnimations =
-                                MediaQuery.maybeOf(
-                                  context,
-                                )?.disableAnimations ??
-                                false;
-                            if (disableAnimations) {
-                              _controller.jumpTo(target);
-                            } else {
-                              _controller.animateTo(
-                                target,
-                                duration: _selectionDuration,
-                                curve: Curves.easeOutCubic,
-                              );
-                            }
                           },
-                          itemWidth: widget.itemWidth,
-                          itemHeight: widget.itemHeight,
-                          artworkWidth: widget.artworkWidth,
-                          artworkHeight: widget.artworkHeight,
-                          inactiveOpacity: widget.inactiveOpacity,
                         ),
-                      );
-                    },
+                      ),
+                      if (widget.loop)
+                        Positioned.fill(
+                          child: Semantics(
+                            container: true,
+                            explicitChildNodes: true,
+                            child: Row(
+                              children: [
+                                for (final artwork in widget.artworks)
+                                  Expanded(
+                                    child: Semantics(
+                                      container: true,
+                                      button: true,
+                                      selected: artwork == widget.selected,
+                                      label:
+                                          '${artwork.semanticLabel} card design',
+                                      onTap: () => _selectArtwork(
+                                        artwork,
+                                        target: _scrollOffsetFor(artwork),
+                                      ),
+                                      child: const SizedBox.expand(),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
