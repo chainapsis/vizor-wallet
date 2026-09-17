@@ -25,6 +25,7 @@
 		5736417E0A4E184E8572693A /* WalletPathResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5736417D0A4E184E8572693A /* WalletPathResolver.swift */; };
 		KEYMIG010000000000000001 /* KeychainAccessibilityMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */; };
 		LEDGERIOS010000000000001 /* LedgerMobileHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */; };
+		NUMPADIOS010000000000001 /* NumericKeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = NUMPADIOS000000000000001 /* NumericKeyboardHandler.swift */; };
 		LEDGERIOS010000000000002 /* BleTransport in Frameworks */ = {isa = PBXBuildFile; productRef = LEDGERIOS030000000000001 /* BleTransport */; };
 		LEDGERIOS010000000000003 /* LedgerMobileHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
@@ -108,6 +109,7 @@
 		5736417D0A4E184E8572693A /* WalletPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletPathResolver.swift; sourceTree = "<group>"; };
 		KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainAccessibilityMigrator.swift; sourceTree = "<group>"; };
 		LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMobileHandler.swift; sourceTree = "<group>"; };
+		NUMPADIOS000000000000001 /* NumericKeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumericKeyboardHandler.swift; sourceTree = "<group>"; };
 		LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMobileHandlerTests.swift; sourceTree = "<group>"; };
 		603F096B051231C6A1C6A5B1 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		64501DB95B6D078121FE7DE1 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
@@ -290,6 +292,7 @@
 				5736417D0A4E184E8572693A /* WalletPathResolver.swift */,
 				KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */,
 				LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */,
+				NUMPADIOS000000000000001 /* NumericKeyboardHandler.swift */,
 				ZSYNC000ED2DC5600515810 /* zcash_sync.h */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -564,6 +567,7 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				LEDGERIOS010000000000001 /* LedgerMobileHandler.swift in Sources */,
+				NUMPADIOS010000000000001 /* NumericKeyboardHandler.swift in Sources */,
 				OUTBOX010000000000000001 /* BackgroundMigrationOutbox.swift in Sources */,
 				OUTBOX010000000000000002 /* BackgroundMigrationOutboxStore.swift in Sources */,
 				OUTBOX010000000000000004 /* BackgroundMigrationOutboxRunner.swift in Sources */,

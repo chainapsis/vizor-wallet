@@ -4,6 +4,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/legacy_material_theme.dart';
@@ -63,6 +65,44 @@ Future<void> pumpHost(
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+  testWidgets('iOS uses native control and dismisses through channel', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('com.zcash.wallet/numeric_keyboard');
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    await pumpHost(tester);
+    await tester.enterText(find.byKey(const ValueKey('number')), '123');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(calls.last.arguments, {'visible': true, 'dark': false});
+    expect(find.byKey(toolbar), findsNothing);
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(const MethodCall('dismiss')),
+      (_) {},
+    );
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(calls.last.arguments['visible'], isFalse);
+    expect(find.text('123'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   for (final type in [
     TextInputType.number,
     const TextInputType.numberWithOptions(decimal: true),

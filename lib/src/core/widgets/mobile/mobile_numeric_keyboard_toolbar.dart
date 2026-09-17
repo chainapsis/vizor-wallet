@@ -2,6 +2,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoColors;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../../layout/app_form_factor.dart';
 import '../../theme/app_theme.dart';
@@ -21,15 +23,36 @@ class MobileNumericKeyboardToolbar extends StatefulWidget {
 }
 
 class _MobileNumericKeyboardToolbarState
-    extends State<MobileNumericKeyboardToolbar> {
+    extends State<MobileNumericKeyboardToolbar>
+    with WidgetsBindingObserver {
   static const _buttonSize = 48.0;
   bool _updateScheduled = false;
+  static const _channel = MethodChannel('com.zcash.wallet/numeric_keyboard');
+  bool? _nativeVisible;
+  bool? _nativeDark;
+  bool get _usesNative => defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
     super.initState();
     if (kAppFormFactor == AppFormFactor.mobile) {
+      WidgetsBinding.instance.addObserver(this);
       FocusManager.instance.addListener(_focusChanged);
+      if (_usesNative) {
+        _channel.setMethodCallHandler((call) async {
+          if (call.method == 'dismiss') {
+            FocusManager.instance.primaryFocus?.unfocus();
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _nativeVisible = null;
+      _focusChanged();
     }
   }
 
@@ -45,7 +68,12 @@ class _MobileNumericKeyboardToolbarState
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     FocusManager.instance.removeListener(_focusChanged);
+    if (kAppFormFactor == AppFormFactor.mobile && _usesNative) {
+      _channel.invokeMethod<void>('update', {'visible': false, 'dark': false});
+      _channel.setMethodCallHandler(null);
+    }
     super.dispose();
   }
 
@@ -63,6 +91,18 @@ class _MobileNumericKeyboardToolbarState
         (editable.keyboardType.index == TextInputType.number.index ||
             editable.keyboardType == TextInputType.phone);
     final visible = numeric && media.viewInsets.bottom > 0;
+    if (_usesNative) {
+      final dark = Theme.of(context).brightness == Brightness.dark;
+      if (_nativeVisible != visible || _nativeDark != dark) {
+        _nativeVisible = visible;
+        _nativeDark = dark;
+        _channel.invokeMethod<void>('update', {
+          'visible': visible,
+          'dark': dark,
+        });
+      }
+      return widget.child;
+    }
     return Stack(
       fit: StackFit.expand,
       children: [

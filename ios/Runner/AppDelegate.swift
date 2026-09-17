@@ -5,6 +5,7 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var numericKeyboardHandler: NumericKeyboardHandler?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
 
@@ -52,6 +53,7 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
 
     ledgerMobileHandler?.close()
     let ledgerMobileHandler = LedgerMobileHandler()
