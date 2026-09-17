@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class LedgerMobileHandler(
     private val activity: Activity,
@@ -54,6 +55,8 @@ class LedgerMobileHandler(
     private var discoveryRequested = false
     private val discoveredDevices = mutableMapOf<String, DiscoveryDevice>()
     private var connectedDevice: ConnectedDevice? = null
+    private var cleanupDevice: ConnectedDevice? = null
+    private var cleanupRequestedFor: String? = null
     private var permissionResult: MethodChannel.Result? = null
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -129,7 +132,7 @@ class LedgerMobileHandler(
 
     private fun startDiscovery(result: MethodChannel.Result) {
         if (sdkJobs[dmk] != null) {
-            result.error("unavailable", "A Ledger operation is already active.", null)
+            result.error("busy", "A Ledger operation is already active.", null)
             return
         }
         if (requiredPermissions().any {
@@ -152,7 +155,7 @@ class LedgerMobileHandler(
     private fun beginDiscovery() {
         if (sdkJobs[dmk] != null) {
             discoveryRequested = false
-            emitError("unavailable", "A Ledger operation is already active.")
+            emitError("busy", "A Ledger operation is already active.")
             return
         }
         val generation = ++discoveryGeneration
@@ -230,10 +233,21 @@ class LedgerMobileHandler(
         launchOperation(result) { request ->
             val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
             currentCoroutineContext().ensureActive()
-            when (val connection = dmk.connectDevice(device)) {
+            // A failed cleanup must not be bypassed by a new connection.
+            cleanupDevice?.let { stale ->
+                dmk.disconnectDevice(stale)
+                cleanupRequestedFor = stale.uid
+                cleanupDevice = null
+            }
+            when (val connection = connectAfterCleanup(device)) {
                 is ConnectionResult.Connected -> {
                     if (!request.pending) {
-                        withContext(NonCancellable) { dmk.disconnectDevice(connection.device) }
+                        withContext(NonCancellable) {
+                            cleanupDevice = connection.device
+                            dmk.disconnectDevice(connection.device)
+                            cleanupRequestedFor = connection.device.uid
+                            cleanupDevice = null
+                        }
                     } else {
                         currentCoroutineContext().ensureActive()
                         connectedDevice = connection.device
@@ -243,6 +257,26 @@ class LedgerMobileHandler(
                 is ConnectionResult.Disconnected -> connectionFailure(request, connection.failure)
             }
         }
+    }
+
+    private suspend fun connectAfterCleanup(device: DiscoveryDevice): ConnectionResult {
+        // DMK releases its public session before asynchronous GATT teardown
+        // removes the transport map. Only that precise post-cleanup condition
+        // is safe to wait through; never replay APDUs or general connect errors.
+        for (attempt in 0..50) {
+            currentCoroutineContext().ensureActive()
+            val result = dmk.connectDevice(device)
+            val failure = (result as? ConnectionResult.Disconnected)?.failure
+            if (cleanupRequestedFor != device.uid ||
+                failure !is ConnectionResult.Failure.Unknown ||
+                failure.msg != "Device already connected" || attempt == 50
+            ) {
+                if (result is ConnectionResult.Connected) cleanupRequestedFor = null
+                return result
+            }
+            delay(100)
+        }
+        error("bounded connect retry must return")
     }
 
     private suspend fun rediscoverDevice(deviceId: String): DiscoveryDevice {
@@ -287,20 +321,30 @@ class LedgerMobileHandler(
     private fun disconnect(result: MethodChannel.Result?) {
         val previous = operation
         if (previous?.cleanup == true) {
-            result?.error("unavailable", "A Ledger operation is already active.", null)
+            result?.error("busy", "A Ledger operation is already active.", null)
             return
         }
         previous?.cancel()
         stopDiscovery()
         val scan = discoveryJob
-        val device = connectedDevice
+        val device = cleanupDevice ?: connectedDevice
+        cleanupDevice = device
         connectedDevice = null
         // Reserve the slot synchronously, including while the cancelled SDK
         // request drains. Cleanup itself cannot be cancelled by UI navigation.
         launchOperation(result, cleanup = true) { request ->
             previous?.job?.join()
             scan?.join()
-            if (device != null) dmk.disconnectDevice(device)
+            // Cancellation can finish connecting after this cleanup was queued.
+            // Recover that target (or a session inherited from an old handler)
+            // only after the previous SDK job has drained.
+            val target = cleanupDevice ?: device ?: dmk.getConnectedDevices().singleOrNull()
+            if (target != null) {
+                cleanupDevice = target
+                dmk.disconnectDevice(target)
+                cleanupRequestedFor = target.uid
+                cleanupDevice = null
+            }
             request.success(null)
         }
     }
@@ -416,7 +460,7 @@ class LedgerMobileHandler(
     ) {
         val sdkJob = sdkJobs[dmk]
         if (!cleanup && (operation != null || (sdkJob != null && sdkJob !== discoveryJob))) {
-            result?.error("unavailable", "A Ledger operation is already active.", null)
+            result?.error("busy", "A Ledger operation is already active.", null)
             return
         }
         stopDiscovery()
@@ -520,6 +564,10 @@ class LedgerMobileHandler(
     private fun ByteArray.asUnsignedList(): List<Int> = map { it.toInt() and 0xff }
 
     private fun requireConnected(result: MethodChannel.Result): ConnectedDevice? {
+        if (cleanupDevice != null) {
+            result.error("disconnected", "Reconnect the Ledger to finish connection cleanup.", null)
+            return null
+        }
         if (connectedDevice == null) {
             connectedDevice = dmk.getConnectedDevices().singleOrNull()
         }
@@ -552,6 +600,9 @@ class LedgerMobileHandler(
 
     private fun operationFailure(result: MethodChannel.Result, reason: DeviceOperationFailureReason) {
         when (reason) {
+            DeviceOperationFailureReason.DeviceBusy -> result.error(
+                "busy", "Another Ledger operation is still active.", null,
+            )
             DeviceOperationFailureReason.DeviceLocked -> result.error(
                 "locked",
                 "Unlock your Ledger and reopen the Zcash app.",

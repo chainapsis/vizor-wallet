@@ -111,6 +111,55 @@ class LedgerMobileHandlerTest {
         verify(dmk, times(1)).startDiscoveringDevices()
     }
 
+    @Test fun reconnectWaitsOnlyForKnownPostCleanupTransportTeardown() = runTest(dispatcher) {
+        for (eventuallyReady in listOf(true, false)) {
+            handler.close()
+            runCurrent()
+            var attempts = 0
+            var cleaning = false
+            `when`(connected.uid).thenReturn(saved.uid)
+            `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(saved))))
+            val sdk = object : DeviceManagementKitApi by dmk {
+                override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult {
+                    attempts++
+                    return if (!cleaning || (eventuallyReady && attempts == 4)) ConnectionResult.Connected(connected)
+                    else ConnectionResult.Disconnected(ConnectionResult.Failure.Unknown("Device already connected"))
+                }
+                override suspend fun disconnectDevice(device: ConnectedDevice) { cleaning = true }
+            }
+            handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+            val initial = call("connect")
+            runCurrent()
+            assertNull(initial.error)
+            call("disconnect")
+            runCurrent()
+            val retry = call("connect")
+            runCurrent()
+            assertEquals(0, retry.completions)
+            assertEquals("busy", call("connect").error)
+            advanceTimeBy(5_100)
+            runCurrent()
+            assertEquals(1, retry.completions)
+            if (eventuallyReady) {
+                assertNull(retry.error)
+                assertEquals(4, attempts)
+            } else {
+                assertEquals("disconnected", retry.error)
+                assertEquals(52, attempts) // initial + 51 bounded attempts
+            }
+        }
+    }
+
+    @Test fun alreadyConnectedWithoutCleanupIsNotRetried() = runTest(dispatcher) {
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(saved))))
+        `when`(dmk.connectDevice(saved)).thenReturn(ConnectionResult.Disconnected(
+            ConnectionResult.Failure.Unknown("Device already connected")))
+        val result = call("connect")
+        runCurrent()
+        assertEquals("disconnected", result.error)
+        verify(dmk, times(1)).connectDevice(saved)
+    }
+
     @Test fun absentSavedDeviceTimesOutAndStopsDiscovery() = runTest(dispatcher) {
         var stopped = false
         `when`(dmk.startDiscoveringDevices()).thenReturn(flow {
@@ -172,8 +221,8 @@ class LedgerMobileHandlerTest {
         runCurrent()
         val second = call("connect", "other")
         val discovery = call("startDiscovery")
-        assertEquals("unavailable", second.error)
-        assertEquals("unavailable", discovery.error)
+        assertEquals("busy", second.error)
+        assertEquals("busy", discovery.error)
         assertEquals(0, first.completions)
         call("cancelSigning")
         runCurrent()
@@ -210,12 +259,42 @@ class LedgerMobileHandlerTest {
         assertNotNull(pending)
         call("cancelSigning")
         val overlapping = call("connect")
-        assertEquals("unavailable", overlapping.error)
+        assertEquals("busy", overlapping.error)
         pending!!.resume(ConnectionResult.Connected(connected))
         runCurrent()
         assertEquals("cancelled", result.error)
         assertEquals(1, result.completions)
         verify(dmk).disconnectDevice(connected)
+    }
+
+    @Test fun queuedDisconnectRecoversCleanupFailureFromLateCancelledConnect() = runTest(dispatcher) {
+        var pending: Continuation<ConnectionResult>? = null
+        var cleanups = 0
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(saved))))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult =
+                suspendCoroutine { pending = it }
+            override suspend fun disconnectDevice(connectedDevice: ConnectedDevice) {
+                assertSame(connected, connectedDevice)
+                cleanups++
+                if (cleanups == 1) throw IllegalStateException("late cleanup failed")
+            }
+        }
+        handler.close()
+        runCurrent()
+        handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
+        val abandoned = call("connect")
+        runCurrent()
+        val cleanup = call("disconnect")
+        runCurrent()
+        assertEquals(0, cleanup.completions)
+        pending!!.resume(ConnectionResult.Connected(connected))
+        runCurrent()
+        assertEquals("cancelled", abandoned.error)
+        assertEquals(1, abandoned.completions)
+        assertNull(cleanup.error)
+        assertEquals(1, cleanup.completions)
+        assertEquals(2, cleanups)
     }
 
     private fun exchangeCall(method: String = "exchangeUfvk"): Result {
@@ -377,12 +456,12 @@ class LedgerMobileHandlerTest {
         val first = exchangeCall()
         runCurrent()
         assertNotNull(pending)
-        assertEquals("unavailable", exchangeCall().error)
-        assertEquals("unavailable", exchangeCall("exchangeApdus").error)
+        assertEquals("busy", exchangeCall().error)
+        assertEquals("busy", exchangeCall("exchangeApdus").error)
         call("cancelSigning")
-        assertEquals("unavailable", call("connect").error)
-        assertEquals("unavailable", call("startDiscovery").error)
-        assertEquals("unavailable", exchangeCall().error)
+        assertEquals("busy", call("connect").error)
+        assertEquals("busy", call("startDiscovery").error)
+        assertEquals("busy", exchangeCall().error)
         // The payload length requires a continuation if the stale reply is accepted.
         pending!!.resume(DeviceOperationResult.Success(byteArrayOf(0, 4, 0x90.toByte(), 0)))
         runCurrent()
@@ -455,7 +534,7 @@ class LedgerMobileHandlerTest {
         useExchange { awaitCancellation() }
         val signing = exchangeCall("exchangeApdus")
         runCurrent()
-        assertEquals("unavailable", exchangeCall().error)
+        assertEquals("busy", exchangeCall().error)
         call("cancelSigning")
         runCurrent()
         assertEquals("cancelled", signing.error)
@@ -541,10 +620,10 @@ class LedgerMobileHandlerTest {
             for (cancel in listOf(false, true)) {
                 if (cancel) call("cancelSigning")
                 for (other in listOf("connect", "currentApp", "openZcashApp", "startDiscovery")) {
-                    assertEquals("$method blocks $other", "unavailable", call(other).error)
+                    assertEquals("$method blocks $other", "busy", call(other).error)
                 }
-                assertEquals("unavailable", exchangeCall().error)
-                assertEquals("unavailable", exchangeCall("exchangeApdus").error)
+                assertEquals("busy", exchangeCall().error)
+                assertEquals("busy", exchangeCall("exchangeApdus").error)
             }
             pending!!.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")))
             runCurrent()
@@ -563,15 +642,15 @@ class LedgerMobileHandlerTest {
         useExchange { awaitCancellation() }
         exchangeCall()
         runCurrent()
-        assertEquals("unavailable", call("currentApp").error)
-        assertEquals("unavailable", call("openZcashApp").error)
+        assertEquals("busy", call("currentApp").error)
+        assertEquals("busy", call("openZcashApp").error)
         call("cancelSigning")
         runCurrent()
         `when`(dmk.startDiscoveringDevices()).thenReturn(flow { awaitCancellation() })
         call("connect")
         runCurrent()
-        assertEquals("unavailable", call("currentApp").error)
-        assertEquals("unavailable", call("openZcashApp").error)
+        assertEquals("busy", call("currentApp").error)
+        assertEquals("busy", call("openZcashApp").error)
     }
 
     @Test fun cancelledAppApprovalCannotStartTheVersionQuery() = runTest(dispatcher) {
@@ -630,12 +709,12 @@ class LedgerMobileHandlerTest {
         runCurrent()
         assertNull(cleanup)
         assertEquals("cancelled", abandoned.error)
-        assertEquals("unavailable", call("connect").error)
+        assertEquals("busy", call("connect").error)
         query!!.resume(DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")))
         runCurrent()
         assertNotNull(cleanup)
-        assertEquals("unavailable", call("currentApp").error)
-        assertEquals("unavailable", call("disconnect").error)
+        assertEquals("busy", call("currentApp").error)
+        assertEquals("busy", call("disconnect").error)
         call("cancelSigning") // Cleanup must continue even after another UI cancel.
         assertEquals(0, disconnect.completions)
         handler.close()
@@ -648,7 +727,11 @@ class LedgerMobileHandlerTest {
     }
 
     @Test fun disconnectFailureCompletesItsResultAndAllowsRetry() = runTest(dispatcher) {
-        useReadiness(disconnect = { throw IllegalStateException("disconnect failed") })
+        var cleanups = 0
+        useReadiness(disconnect = {
+            cleanups++
+            if (cleanups == 1) throw IllegalStateException("disconnect failed")
+        })
         call("currentApp")
         runCurrent()
         val disconnect = call("disconnect")
@@ -657,8 +740,12 @@ class LedgerMobileHandlerTest {
         assertEquals(1, disconnect.completions)
         val retry = call("currentApp")
         runCurrent()
-        assertNull(retry.error)
+        assertEquals("disconnected", retry.error)
         assertEquals(1, retry.completions)
+        val cleanupRetry = call("disconnect")
+        runCurrent()
+        assertNull(cleanupRetry.error)
+        assertEquals(2, cleanups)
     }
 
     @Test fun closeCompletesPermissionRequestAndIgnoresLateGrant() = runTest(dispatcher) {
@@ -726,8 +813,8 @@ class LedgerMobileHandlerTest {
         runCurrent()
         handler.close()
         handler = LedgerMobileHandler(mock(Activity::class.java), sdk)
-        assertEquals("unavailable", call("connect").error)
-        assertEquals("unavailable", call("currentApp").error)
+        assertEquals("busy", call("connect").error)
+        assertEquals("busy", call("currentApp").error)
         pending!!.resume(ConnectionResult.Connected(connected))
         runCurrent()
         assertEquals("cancelled", old.error)

@@ -20,6 +20,38 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  for (final method in [
+    'currentApp',
+    'openZcashApp',
+    'exchangeApdus',
+    'disconnect',
+  ]) {
+    test(
+      '$method transport failure invalidates identity before retry',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == 'connect') return null;
+              throw PlatformException(
+                code: 'disconnected',
+                message: 'link failed',
+              );
+            });
+        await service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Nano X'),
+        );
+        expect(service.connectedDeviceId, 'device');
+        await expectLater(switch (method) {
+          'currentApp' => service.currentApp(),
+          'openZcashApp' => service.requestOpenZcashApp(),
+          'disconnect' => service.disconnect(),
+          _ => service.exchangeApdus([]),
+        }, throwsA(isA<LedgerMobileException>()));
+        expect(service.connectedDeviceId, isNull);
+      },
+    );
+  }
+
   test(
     'native progress is scoped to the active request and ignored after cancellation',
     () async {

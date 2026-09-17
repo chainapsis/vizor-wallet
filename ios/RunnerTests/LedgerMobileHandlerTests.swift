@@ -70,6 +70,39 @@ final class LedgerMobileHandlerTests: XCTestCase {
   }
 
   @MainActor
+  func testRadioLossSettlesSdkExchangeAndAllowsUserRetry() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "query pending")
+    transport.onExchange = { started.fulfill() }
+    let failed = expectation(description: "query completed")
+    var completions = 0
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { value in
+      completions += 1
+      XCTAssertNotNil(value as? FlutterError)
+      failed.fulfill()
+    }
+    await fulfillment(of: [started], timeout: 2)
+    transport.failExchangeOnDisconnect()
+    await fulfillment(of: [failed], timeout: 2)
+    // Let the handler's SDK Task release its operation lease.
+    await Task.yield()
+    connect(handler)
+    transport.onExchange = nil
+    transport.responses = ["01055a6361736805332e392e3201029000"]
+    let ready = expectation(description: "new query")
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) { value in
+      XCTAssertNil(value as? FlutterError)
+      ready.fulfill()
+    }
+    await fulfillment(of: [ready], timeout: 2)
+    XCTAssertEqual(completions, 1)
+    XCTAssertEqual(transport.connects, 2)
+    handler.close()
+  }
+
+  @MainActor
   func testPickerCancellationDrainsLateConnectBeforeReconnect() async {
     let transport = PendingLedgerTransport()
     transport.deferConnectCompletion = true
@@ -80,13 +113,13 @@ final class LedgerMobileHandlerTests: XCTestCase {
     handler.handle(FlutterMethodCall(methodName: "cancelSigning", arguments: nil)) { XCTAssertNil($0) }
     XCTAssertEqual(results.count, 1)
     XCTAssertEqual((results[0] as? FlutterError)?.code, "cancelled")
-    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "busy") }
     XCTAssertEqual(transport.connects, 1)
     transport.completeConnect()
     XCTAssertEqual(transport.disconnects, 1)
     XCTAssertEqual(results.count, 1)
-    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
-    handler.handle(ufvkCall) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "busy") }
+    handler.handle(ufvkCall) { XCTAssertEqual(($0 as? FlutterError)?.code, "busy") }
     XCTAssertTrue(transport.commands.isEmpty)
     transport.completeDisconnect()
     transport.deferConnectCompletion = false
@@ -126,7 +159,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     transport.completeConnect()
     XCTAssertTrue(transport.isConnected)
     XCTAssertEqual(transport.disconnects, 1)
-    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "unavailable") }
+    connect(handler) { XCTAssertEqual(($0 as? FlutterError)?.code, "busy") }
     XCTAssertEqual(transport.disconnects, 2)
     XCTAssertEqual(transport.connects, 1)
     XCTAssertFalse(transport.isConnected)
@@ -187,7 +220,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
 
       // A second import shares the occupied native slot.
       handler.handle(ufvkCall) { value in
-        XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+        XCTAssertEqual((value as? FlutterError)?.code, "busy")
       }
       handler.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) { value in
         XCTAssertEqual((value as? FlutterError)?.message,
@@ -249,13 +282,13 @@ final class LedgerMobileHandlerTests: XCTestCase {
     XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "cancelled")
 
     handler.handle(FlutterMethodCall(methodName: "disconnect", arguments: nil)) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     connect(handler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     handler.handle(FlutterMethodCall(methodName: "startDiscovery", arguments: nil)) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.disconnects, 0)
     XCTAssertEqual(transport.connects, 1)
@@ -361,7 +394,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     connect(handler) { _ in }
 
     handler.handle(FlutterMethodCall(methodName: "startDiscovery", arguments: nil)) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.scans, 0)
     transport.completeConnect()
@@ -388,7 +421,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     handler.handle(
       FlutterMethodCall(methodName: "currentApp", arguments: nil)
     ) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
 
     XCTAssertEqual(results.compactMap { $0 as? FlutterError }.first?.code, "cancelled")
@@ -442,7 +475,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     oldHandler.close()
     let replacementHandler = LedgerMobileHandler(transport: transport)
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.connects, 1)
     XCTAssertEqual(transport.disconnects, 0)
@@ -456,7 +489,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     XCTAssertEqual(transport.disconnects, 1)
 
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.connects, 1)
 
@@ -481,7 +514,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     oldHandler = nil
     let replacementHandler = LedgerMobileHandler(transport: transport)
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.connects, 1)
     XCTAssertEqual(transport.disconnects, 0)
@@ -490,7 +523,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
     await Task.yield()
     XCTAssertEqual(transport.disconnects, 1)
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
 
     transport.completeDisconnect()
@@ -512,7 +545,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
 
     let replacementHandler = LedgerMobileHandler(transport: transport)
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.connects, 1)
 
@@ -533,7 +566,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
 
     let replacementHandler = LedgerMobileHandler(transport: transport)
     connect(replacementHandler) { value in
-      XCTAssertEqual((value as? FlutterError)?.code, "unavailable")
+      XCTAssertEqual((value as? FlutterError)?.code, "busy")
     }
     XCTAssertEqual(transport.connects, 1)
     XCTAssertTrue(transport.isConnected)
@@ -1046,6 +1079,14 @@ private final class PendingLedgerTransport: BleTransportProtocol {
 
   func loseConnectionWithoutCallback() {
     isConnected = false
+  }
+
+  func failExchangeOnDisconnect() {
+    let continuation = pending
+    pending = nil
+    isConnected = false
+    continuation?.resume(throwing: BleTransportError.currentConnectedError(description: "Ledger disconnected"))
+    simulateDisconnect()
   }
 
   func simulateDisconnect(callbackIndex: Int? = nil, markDisconnected: Bool = true) {

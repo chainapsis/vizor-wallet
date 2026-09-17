@@ -15,6 +15,151 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
 
 void main() {
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final failure in [
+      LedgerMobileFailure.disconnected,
+      LedgerMobileFailure.unavailable,
+      LedgerMobileFailure.busy,
+    ]) {
+      test(
+        '$platform recovers failed sessions without replacing busy approval ($failure)',
+        () async {
+          final ble = _FakeBleService()
+            .._connectedDeviceId = 'device-1'
+            ..appError = LedgerMobileException(failure, 'probe failed');
+          final container = _container(
+            notifier: _FakeAccountNotifier(
+              _ledgerAccount(
+                preference: LedgerConnectionPreference.bluetooth,
+                deviceModel: 'Nano X',
+              ),
+            ),
+            ble: ble,
+            platform: platform,
+          );
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+          var signs = 0;
+          Future<String> run() => container
+              .read(ledgerConnectionServiceProvider)
+              .run(
+                accountUuid: 'ledger-1',
+                usb: () async => 'usb',
+                bluetooth: (_) async {
+                  signs++;
+                  return 'signed';
+                },
+              );
+          if (failure == LedgerMobileFailure.disconnected) {
+            expect(await run(), 'signed');
+            expect(ble.disconnectCalls, 1);
+            expect(ble.connectCalls, 1);
+          } else {
+            await expectLater(run(), throwsA(isA<Exception>()));
+            expect(signs, 0);
+            expect(ble.disconnectCalls, 0);
+            ble.appError = null;
+            expect(await run(), 'signed');
+            expect(
+              ble.disconnectCalls,
+              failure == LedgerMobileFailure.busy ? 0 : 1,
+            );
+            expect(
+              ble.connectCalls,
+              failure == LedgerMobileFailure.busy ? 0 : 1,
+            );
+          }
+        },
+      );
+    }
+  }
+
+  test(
+    'failed cleanup cannot be bypassed and failed connect is not repeated',
+    () async {
+      final ble = _FakeBleService()
+        ..disconnectError = const LedgerMobileException(
+          LedgerMobileFailure.disconnected,
+          'cleanup failed',
+        );
+      final container = _container(
+        notifier: _FakeAccountNotifier(
+          _ledgerAccount(
+            preference: LedgerConnectionPreference.bluetooth,
+            deviceModel: 'Nano X',
+          ),
+        ),
+        ble: ble,
+        platform: TargetPlatform.iOS,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      Future<String> run() => container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'usb',
+            bluetooth: (_) async => 'signed',
+          );
+      await expectLater(run(), throwsA(isA<Exception>()));
+      expect(ble.disconnectCalls, 1);
+      expect(ble.connectCalls, 0);
+      ble.disconnectError = null;
+      ble.connectError = const LedgerMobileException(
+        LedgerMobileFailure.disconnected,
+        'connect failed',
+      );
+      await expectLater(run(), throwsA(isA<Exception>()));
+      expect(ble.connectCalls, 1);
+      ble.connectError = null;
+      expect(await run(), 'signed');
+      expect(ble.connectCalls, 2);
+    },
+  );
+
+  test(
+    'APDU failure is not replayed but the next request reconnects',
+    () async {
+      final ble = _FakeBleService().._connectedDeviceId = 'device-1';
+      final container = _container(
+        notifier: _FakeAccountNotifier(
+          _ledgerAccount(
+            preference: LedgerConnectionPreference.bluetooth,
+            deviceModel: 'Nano X',
+          ),
+        ),
+        ble: ble,
+        platform: TargetPlatform.android,
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      var signs = 0;
+      Future<String> run() => container
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'ledger-1',
+            usb: () async => 'usb',
+            bluetooth: (_) async {
+              signs++;
+              if (signs == 1) {
+                throw const LedgerMobileException(
+                  LedgerMobileFailure.disconnected,
+                  'lost response',
+                );
+              }
+              return 'signed';
+            },
+          );
+      await expectLater(run(), throwsA(isA<LedgerMobileException>()));
+      expect(signs, 1);
+      expect(ble.connectCalls, 0);
+      expect(await run(), 'signed');
+      expect(signs, 2);
+      expect(ble.disconnectCalls, 1);
+      expect(ble.connectCalls, 1);
+    },
+  );
+
   test(
     'cancellation during transport metadata persistence suppresses signed result',
     () async {
@@ -486,6 +631,9 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeBleService implements LedgerMobileBleService {
+  Object? appError;
+  Object? disconnectError;
+  Object? connectError;
   String? pauseStage;
   Future<void>? pause;
   var connectCalls = 0;
@@ -499,6 +647,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> connect(LedgerBleDevice device) async {
     connectCalls++;
+    if (connectError != null) throw connectError!;
     if (pauseStage == 'connect') await pause;
     connectedDeviceIds.add(device.id);
     _connectedDeviceId = device.id;
@@ -507,6 +656,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<void> disconnect() async {
     disconnectCalls++;
+    if (disconnectError != null) throw disconnectError!;
     if (pauseStage == 'disconnect') await pause;
     _connectedDeviceId = null;
   }
@@ -514,6 +664,7 @@ class _FakeBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     if (pauseStage == 'currentApp') await pause;
+    if (appError != null) throw appError!;
     return const LedgerMobileAppInfo(name: 'Zcash', version: '3.9.3');
   }
 

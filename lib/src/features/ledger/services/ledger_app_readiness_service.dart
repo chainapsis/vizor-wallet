@@ -30,6 +30,7 @@ enum LedgerAppReadinessPhase {
 }
 
 enum LedgerAppReadinessFailure {
+  busy,
   rejected,
   locked,
   disconnected,
@@ -77,10 +78,15 @@ class LedgerAppReadinessState {
 }
 
 class LedgerAppReadinessException implements Exception {
-  const LedgerAppReadinessException(this.failure, this.message);
+  const LedgerAppReadinessException(
+    this.failure,
+    this.message, {
+    this.canReconnect = false,
+  });
 
   final LedgerAppReadinessFailure failure;
   final String message;
+  final bool canReconnect;
 
   @override
   String toString() => message;
@@ -225,6 +231,7 @@ class LedgerAppReadinessService {
         throw const LedgerAppReadinessException(
           LedgerAppReadinessFailure.disconnected,
           'Reconnect and unlock your Ledger, then try again.',
+          canReconnect: true,
         );
     }
   }
@@ -233,6 +240,7 @@ class LedgerAppReadinessService {
     if (error is LedgerAppReadinessException) return error;
     if (error is LedgerMobileException) {
       final failure = switch (error.failure) {
+        LedgerMobileFailure.busy => LedgerAppReadinessFailure.busy,
         LedgerMobileFailure.pairingInvalid ||
         LedgerMobileFailure.pairingRejected ||
         LedgerMobileFailure.disconnected =>
@@ -246,7 +254,11 @@ class LedgerAppReadinessService {
         LedgerMobileFailure.unavailable =>
           LedgerAppReadinessFailure.unavailable,
       };
-      return LedgerAppReadinessException(failure, error.message);
+      return LedgerAppReadinessException(
+        failure,
+        error.message,
+        canReconnect: error.failure == LedgerMobileFailure.disconnected,
+      );
     }
     final raw = '$error'.toLowerCase();
     if (raw.contains('ledger_linux_usb_access')) {
