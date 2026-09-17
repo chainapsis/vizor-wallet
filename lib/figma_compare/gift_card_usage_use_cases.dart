@@ -99,13 +99,16 @@ Widget _list({bool mobile = false, bool checking = false}) {
       ? [
           PaymentLinkCardsSection(
             label: 'Pending',
-            cards: ['awaiting', 'unknown', 'detected'].map(row).toList(),
+            cards: ['awaiting', 'unknown'].map(row).toList(),
           ),
           PaymentLinkCardsSection(
             label: 'Unused',
             cards: ['unused', 'failed'].map(row).toList(),
           ),
-          PaymentLinkCardsSection(label: 'Used', cards: [row('used')]),
+          PaymentLinkCardsSection(
+            label: 'Used',
+            cards: ['detected', 'used'].map(row).toList(),
+          ),
         ]
       : [
           PaymentLinkCardsSection(

@@ -94,6 +94,10 @@ void main() {
       expect(find.text('Use detected'), findsOneWidget);
       expect(find.text('Unused'), findsNWidgets(2));
       expect(find.text('Used'), findsNWidgets(2));
+      expect(
+        tester.getTopLeft(find.text('Use detected')).dy,
+        greaterThan(tester.getTopLeft(usedHeading).dy),
+      );
     },
   );
 

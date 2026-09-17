@@ -2386,6 +2386,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           final status = usage?.status ?? record.usage.status;
           final cards = switch ((fundingReady, status)) {
             (true, GiftCardUsageStatus.unused) => unusedCards,
+            (true, GiftCardUsageStatus.spendDetected) => usedCards,
             (true, GiftCardUsageStatus.used) => usedCards,
             _ => pendingCards,
           };

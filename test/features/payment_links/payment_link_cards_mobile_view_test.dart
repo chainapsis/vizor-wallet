@@ -13,6 +13,56 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 void main() {
   setUpAll(loadFigmaCompareFonts);
 
+  testWidgets('a detected use animates into the Used section', (tester) async {
+    const movingKey = ValueKey('moving-card');
+    Widget row(Key key, String status) => PaymentLinkCardListMobileRow(
+      key: key,
+      thumbnail: const SizedBox(),
+      amountText: '0.25 ZEC',
+      dateText: 'September 17',
+      statusText: status,
+    );
+    List<PaymentLinkCardsSection> sections({required bool detected}) => [
+      PaymentLinkCardsSection(
+        label: kPaymentLinkPendingSectionLabel,
+        cards: detected ? const [] : [row(movingKey, 'Checking use')],
+      ),
+      PaymentLinkCardsSection(
+        label: kPaymentLinkUnusedSectionLabel,
+        cards: [row(const ValueKey('unused-card'), 'Unused card')],
+      ),
+      PaymentLinkCardsSection(
+        label: kPaymentLinkUsedSectionLabel,
+        cards: [
+          if (detected) row(movingKey, 'Use detected'),
+          row(const ValueKey('used-card'), 'Used card'),
+        ],
+      ),
+    ];
+
+    await tester.binding.setSurfaceSize(const Size(393, 773));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_cardsApp(sections: sections(detected: false)));
+    await tester.pumpAndSettle();
+    final oldTop = tester.getTopLeft(find.byKey(movingKey)).dy;
+
+    await tester.pumpWidget(_cardsApp(sections: sections(detected: true)));
+    await tester.pump();
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(find.byKey(movingKey), findsWidgets);
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(movingKey), findsOneWidget);
+    final usedHeading = find.text(kPaymentLinkUsedSectionLabel);
+    expect(
+      tester.getTopLeft(find.byKey(movingKey)).dy,
+      greaterThan(tester.getTopLeft(usedHeading).dy),
+    );
+    expect(tester.getTopLeft(find.byKey(movingKey)).dy, isNot(oldTop));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('an empty tab keeps the create and redeem actions reachable', (
     tester,
   ) async {
@@ -163,27 +213,39 @@ Future<void> _pumpCards(
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   await tester.pumpWidget(
-    MaterialApp(
-      builder: (_, navigator) =>
-          AppTheme(data: AppThemeData.dark, child: navigator!),
-      home: Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(
-          width: 393,
-          height: 773,
-          child: PaymentLinkCardsMobileView(
-            sections: sections,
-            activeTab: activeTab,
-            onTabSelected: onTabSelected,
-            emptyLabel: emptyLabel,
-            onBack: _noop,
-            onCreate: _noop,
-            onRedeem: _noop,
-          ),
-        ),
-      ),
+    _cardsApp(
+      sections: sections,
+      activeTab: activeTab,
+      onTabSelected: onTabSelected,
+      emptyLabel: emptyLabel,
     ),
   );
 }
+
+Widget _cardsApp({
+  required List<PaymentLinkCardsSection> sections,
+  PaymentLinkCardsTab activeTab = PaymentLinkCardsTab.created,
+  ValueChanged<PaymentLinkCardsTab>? onTabSelected,
+  String? emptyLabel,
+}) => MaterialApp(
+  builder: (_, navigator) =>
+      AppTheme(data: AppThemeData.dark, child: navigator!),
+  home: Directionality(
+    textDirection: TextDirection.ltr,
+    child: SizedBox(
+      width: 393,
+      height: 773,
+      child: PaymentLinkCardsMobileView(
+        sections: sections,
+        activeTab: activeTab,
+        onTabSelected: onTabSelected,
+        emptyLabel: emptyLabel,
+        onBack: _noop,
+        onCreate: _noop,
+        onRedeem: _noop,
+      ),
+    ),
+  ),
+);
 
 void _noop() {}
