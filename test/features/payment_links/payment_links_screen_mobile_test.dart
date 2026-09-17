@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
@@ -40,6 +41,60 @@ void main() {
   tearDown(
     () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(hapticsChannel, null),
+  );
+
+  testWidgets(
+    'created cards group by pending, unused, and used without replacing row status',
+    (tester) async {
+      PaymentLinkRecoveryRecord recovery(
+        VizorPaymentLink link,
+        GiftCardUsageStatus status,
+      ) => PaymentLinkRecoveryRecord(
+        link: link,
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: DateTime.utc(2026, 9, 17),
+        fundingTxids: 'funding-${link.address}',
+        usage: GiftCardUsage(status: status),
+      );
+      final records = [
+        recovery(incomingLink, GiftCardUsageStatus.unknown),
+        recovery(secondIncomingLink, GiftCardUsageStatus.spendDetected),
+        recovery(otherAccountLink, GiftCardUsageStatus.unused),
+        recovery(unknownOriginLink, GiftCardUsageStatus.used),
+      ];
+      final usages = {
+        for (final record in records) record.link.address: record.usage,
+      };
+
+      await pumpPaymentLinksScreen(
+        tester,
+        logicalSize: const Size(390, 844),
+        operations: FakePaymentLinkOperations(records: records),
+        giftCardUsages: usages,
+      );
+      await tester.pumpAndSettle();
+
+      final pendingHeading = find.text('Pending').first;
+      final unusedHeading = find.text('Unused').first;
+      final usedHeading = find.text('Used').first;
+      expect(pendingHeading, findsOneWidget);
+      expect(unusedHeading, findsOneWidget);
+      expect(usedHeading, findsOneWidget);
+      expect(
+        tester.getTopLeft(pendingHeading).dy,
+        lessThan(tester.getTopLeft(unusedHeading).dy),
+      );
+      expect(
+        tester.getTopLeft(unusedHeading).dy,
+        lessThan(tester.getTopLeft(usedHeading).dy),
+      );
+      expect(find.text('Unverified'), findsOneWidget);
+      expect(find.text('Use detected'), findsOneWidget);
+      expect(find.text('Unused'), findsNWidgets(2));
+      expect(find.text('Used'), findsNWidgets(2));
+    },
   );
 
   testWidgets(

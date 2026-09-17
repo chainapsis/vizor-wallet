@@ -25,7 +25,9 @@ import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
+import '../models/gift_card_usage.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
@@ -2179,6 +2181,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
+          groupCreatedByUsage: true,
         ),
         activeCardsTab: _activeCardsTab,
         selectedArtwork: _selectedArtwork,
@@ -2359,16 +2362,53 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// The Gift Card grouping both form factors render.
   ///
-  /// Created Cards split into `Creating` / `Pending` by funding readiness and
-  /// received Cards form one list; only the row widgets differ per form
-  /// factor, so the grouping and the tab selection stay here rather than
-  /// being restated in the mobile view.
+  /// Desktop keeps its existing `Creating` / `Pending` funding groups. Mobile
+  /// groups Created Cards by usage as `Pending` / `Unused` / `Used`; the row
+  /// widgets still own their existing detailed status and actions. Received
+  /// Cards keep their existing grouping on both form factors.
   List<PaymentLinkCardsSection> _cardsSections({
     required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
     required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
     List<Widget> emptyReceivedCards = const <Widget>[],
+    bool groupCreatedByUsage = false,
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
+      if (groupCreatedByUsage) {
+        final pendingCards = <Widget>[];
+        final unusedCards = <Widget>[];
+        final usedCards = <Widget>[];
+        for (final record in _visibleRecoveries) {
+          final fundingReady =
+              _fundingProgressByAddress[record.link.address]?.isReady ?? false;
+          final usage = ref
+              .watch(giftCardUsageProvider(record.link.address))
+              .value;
+          final status = usage?.status ?? record.usage.status;
+          final cards = switch ((fundingReady, status)) {
+            (true, GiftCardUsageStatus.unused) => unusedCards,
+            (true, GiftCardUsageStatus.used) => usedCards,
+            _ => pendingCards,
+          };
+          cards.add(recoveryRow(record));
+        }
+        return <PaymentLinkCardsSection>[
+          if (pendingCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkPendingSectionLabel,
+              cards: pendingCards,
+            ),
+          if (unusedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUnusedSectionLabel,
+              cards: unusedCards,
+            ),
+          if (usedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUsedSectionLabel,
+              cards: usedCards,
+            ),
+        ];
+      }
       final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
       for (final record in _visibleRecoveries) {
