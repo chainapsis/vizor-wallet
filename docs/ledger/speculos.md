@@ -64,7 +64,50 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   shielding-progress API for one shieldable input; it does not run live discovery.
 - `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
   Zcash 3.9.3 does not establish support; retain the production compatibility guard.
+- Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
+  requests from synthetic eligible Ironwood notes. It verifies the zero-value
+  foreign-hotkey output, then signs the SDK-redacted bytes through the production
+  desktop/mobile signer. Ledger-only SDK compatibility enables account-OVK
+  recovery and printable ASCII memos; software/Keystone retain SDK defaults.
+  This covers SDK setup/request generation and device signing, not snapshot
+  discovery, PIR/proving, vote-session orchestration or chain submission.
+- Saved signing contexts are reused unchanged; enabling output review does not
+  repair an old failed PCZT. Account-OVK holders can recover the hotkey output
+  and memo from published effects when Ledger output review is enabled.
 - Speculos validates device-app/APDU behavior, not physical USB/Bluetooth or
   production broadcast. Externally managed mobile endpoints need their own
   forwarding; the Docker runner keeps APIs on host loopback, not the LAN.
 - Custom images/ELFs and other host architectures require separate validation.
+
+### Desktop voting through final tally
+
+Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
+regtest voting prerequisites available. This lane builds the pinned app with
+`--features testnet` and changes its install paths to `44'/1'` and `32'/1'` in a
+disposable checkout. `VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build;
+the mainnet `VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
+
+The distributed Zcash app uses coin type 133. Its source has a testnet feature
+for coin type 1, but the install paths do not change automatically. Vizor's
+production mainnet restriction remains in place. This test variant is not an
+officially distributed testnet app.
+
+The lane runs software and Ledger accounts against separate fresh local chains
+using the same public disposable mnemonic, funded notes, four proposals and
+decision 0. The helper exports the real device UFVK at coin type 1 and re-encodes
+it from testnet to regtest without changing its keys. The Ledger case imports it
+as a hardware account with no mnemonic stored in Vizor. Funding and migration
+are prepared with the software fixture before this import; this lane does not
+test Ledger shielding.
+
+Only the test's Ledger signer provider is replaced: it invokes a Rust helper
+that uses the production APDU transport and signature verification against the
+simulator. A loopback HTTP bridge lets the sandboxed macOS app call the helper. This bypasses the product API's mainnet account gate; the existing
+mainnet signing scenarios cover that wrapper separately. SDK delegation,
+proof generation, vote submission, share processing and final tally stay real.
+Each run waits for `FINALIZED` and checks all 64 revealed shares, one ballot for
+each selected option and zero for every other option.
+
+`E2E_LEDGER_VOTING=true` or `false` selects one account type when rerunning a
+failed case; the default runs both. `E2E_VOTE_WINDOW_SECS` defaults to 300; increase it on slower hosts. Results and
+device logs are retained in the printed Speculos artifact directory.
