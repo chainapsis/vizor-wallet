@@ -10,12 +10,15 @@ import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../providers/account_provider.dart';
 
+/// Allows account selection while [onConfirm] awaits card preparation.
+/// Confirmation returning false dismisses an invalidated selection; throwing
+/// leaves the account selected so preparation can be retried.
 Future<bool> showPaymentLinkClaimAccountSheet({
   required BuildContext context,
   required BigInt amountZatoshi,
   required List<AccountInfo> accounts,
   required String activeAccountUuid,
-  required Future<void> Function(String accountUuid) onConfirm,
+  required Future<bool> Function(String accountUuid) onConfirm,
 }) async {
   final confirmed = await showAppMobileSheet<bool>(
     context: context,
@@ -48,7 +51,10 @@ class PaymentLinkClaimAccountSheet extends StatefulWidget {
   final BigInt amountZatoshi;
   final List<AccountInfo> accounts;
   final String activeAccountUuid;
-  final Future<void> Function(String accountUuid) onConfirm;
+
+  /// True continues to submission; false closes an invalidated selection.
+  /// A thrown error keeps the selected account available for retry.
+  final Future<bool> Function(String accountUuid) onConfirm;
   final VoidCallback onConfirmed;
   final VoidCallback onClose;
 
@@ -81,8 +87,14 @@ class _PaymentLinkClaimAccountSheetState
       _failed = false;
     });
     try {
-      await widget.onConfirm(_selectedAccountUuid);
-      if (mounted) widget.onConfirmed();
+      final confirmed = await widget.onConfirm(_selectedAccountUuid);
+      if (mounted) {
+        if (confirmed) {
+          widget.onConfirmed();
+        } else {
+          widget.onClose();
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => _failed = true);
     } finally {

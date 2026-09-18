@@ -67,7 +67,7 @@ class PaymentLinkClaimWallet {
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<void>(
           operation: 'Gift Card claim sync',
-          action: (endpoint) {
+          action: (endpoint) async {
             if (endpoint.networkName != network) {
               throw StateError(
                 'Payment link is for $network, but this wallet is using '
@@ -80,6 +80,7 @@ class PaymentLinkClaimWallet {
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: network,
               allowResubmit: allowResubmit,
+              sourceDbPath: await getWalletDbPath(),
             );
           },
         );

@@ -36,6 +36,51 @@ import '../../support/leading_decimal_input.dart';
 
 void main() {
   testWidgets(
+    'desktop previews a pasted card while checking and ignores a late result after back',
+    (tester) async {
+      final gate = Completer<void>();
+      final operations = FakePaymentLinkOperations(
+        prepareClaimGates: {1: gate},
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+      expect(find.text('You’ve received\na gift card!'), findsOneWidget);
+      expect(find.text('Claim the gift card'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('payment_link_claim_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('payment_link_claim_button')));
+      await tester.pump();
+      expect(find.text('Preparing...'), findsOneWidget);
+      expect(operations.claimedSessions, isEmpty);
+      await tester.tap(find.byType(AppBackLink));
+      await tester.pumpAndSettle();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('You’ve received\na gift card!'), findsNothing);
+      expect(operations.discardedClaimAddresses, [incomingLink.address]);
+      expect(operations.receivedRecords, isEmpty);
+      expect(operations.claimedSessions, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {
       await pumpPaymentLinksScreen(tester);

@@ -120,9 +120,10 @@ void main() {
           }
           if (state == 'checking') {
             expect(
-              find.byKey(const ValueKey('payment_link_mobile_redeem_checking')),
+              find.byKey(const ValueKey('payment_link_mobile_received_view')),
               findsOneWidget,
             );
+            expect(find.text('Claim the gift'), findsOneWidget);
           } else {
             expect(
               find.text(switch (state) {
