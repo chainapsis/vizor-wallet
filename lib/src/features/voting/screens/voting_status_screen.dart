@@ -391,7 +391,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
-            onRetry: _retry,
+            onRetry: _jobRetry(job),
             onClear: _clearError,
           );
         }
@@ -418,7 +418,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
-        onRetry: _retry,
+        onRetry: _jobRetry(job),
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
             : null,
@@ -547,7 +547,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
           terminalDelegationNotice: state.terminalDelegationNotice,
-          onRetry: _retry,
+          onRetry: _jobRetry(job),
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
               : null,
@@ -645,6 +645,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         .map((progress) => progress.message!)
         .toList(growable: false);
     return messages.isEmpty ? null : messages.last;
+  }
+
+  VoidCallback? _jobRetry(VotingSubmissionJobState? job) {
+    // Resending a request the Ledger refused would fail the same way forever.
+    return (job?.retryable ?? true) ? _retry : null;
   }
 
   void _retry() {
@@ -1052,11 +1057,12 @@ class VotingStatusContent extends StatelessWidget {
                         variant: AppButtonVariant.secondary,
                         child: const Text('Clear'),
                       ),
-                    AppButton(
-                      onPressed: onRetry,
-                      variant: AppButtonVariant.primary,
-                      child: const Text('Retry'),
-                    ),
+                    if (onRetry != null)
+                      AppButton(
+                        onPressed: onRetry,
+                        variant: AppButtonVariant.primary,
+                        child: const Text('Retry'),
+                      ),
                   ],
                 ),
               ],
