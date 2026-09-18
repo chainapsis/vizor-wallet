@@ -74,13 +74,22 @@ class PaymentLinkClaimWallet {
                 '${endpoint.networkName}.',
               );
             }
+            String? sourceDbPath;
+            try {
+              sourceDbPath = await getWalletDbPath();
+            } catch (error) {
+              log(
+                'PaymentLinkClaimWallet: root cache path unavailable; '
+                'using server roots: $error',
+              );
+            }
             return rust_sync.runPaymentLinkClaimSync(
               claimId: claimId,
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: network,
               allowResubmit: allowResubmit,
-              sourceDbPath: await getWalletDbPath(),
+              sourceDbPath: sourceDbPath,
             );
           },
         );

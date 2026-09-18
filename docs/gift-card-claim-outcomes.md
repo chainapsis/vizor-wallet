@@ -22,8 +22,9 @@ subtree roots. Older cards retain the legacy pool path. Preparation can seed
 its tree with completed roots from the main wallet's SQLite snapshot after
 matching the snapshot block hash against the server and checking overlapping
 roots. A complete cache at the current tip needs no root RPC; a partial or
-older cache fetches the missing suffix. Missing or incompatible cache data
-falls back to the server. This copies public roots, not accounts or notes.
+older cache fetches the missing suffix. If the main wallet path or compatible
+cache data is unavailable, preparation falls back to the server. This copies
+public roots, not accounts or notes.
 The compact scan still includes all pool metadata required by the current
 backend scanner. Root timing logs report cache reuse and elapsed milliseconds.
 
