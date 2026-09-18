@@ -451,7 +451,7 @@ void main() {
     expect(find.text('Scan a Zcash QR code to continue'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_qr_scan_card'))),
-      const Size(361, 694),
+      const Size(361, 710),
     );
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('mobile_send_qr_scan_card'))),
@@ -468,7 +468,7 @@ void main() {
     expect(find.text('Loading...'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_send_qr_scan_card'))),
-      const Size(361, 694),
+      const Size(361, 710),
     );
 
     await _pumpMobileSendUseCase(
