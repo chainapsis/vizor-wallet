@@ -21,6 +21,8 @@ import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
@@ -314,7 +316,8 @@ void main() {
       await tester.pump();
       await _pumpUntil(
         tester,
-        () => tester.any(find.text('Waiting for approval')),
+        () =>
+            tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
         description: 'Ledger device approval prompt',
         timeout: const Duration(minutes: 2),
       );
@@ -731,7 +734,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Waiting for approval')),
+    () => tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
     description: 'Ledger shield approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -873,7 +876,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Waiting for approval · 1 of 2')),
+    () => tester.any(_ledgerSigningText('Transaction 1 of 2')),
     description: 'Ledger TEX first approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -882,7 +885,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
   final secondApproval = _approveNextReview(fixture.signingApiUrl);
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Waiting for approval · 2 of 2')),
+    () => tester.any(_ledgerSigningText('Transaction 2 of 2')),
     description: 'Ledger TEX second approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -1006,7 +1009,7 @@ Future<void> _runLedgerSwapScenario(
   await tester.pump();
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Waiting for approval')),
+    () => tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
     description: '${scenario.label} Ledger approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -1827,6 +1830,11 @@ List<int> _decodeHex(String value) {
       int.parse(value.substring(index, index + 2), radix: 16),
   ];
 }
+
+Finder _ledgerSigningText(String text) => find.descendant(
+  of: find.byType(LedgerSigningModal),
+  matching: find.text(text),
+);
 
 Future<bool> _approveNextReview(String apiUrl) async {
   final client = HttpClient();
