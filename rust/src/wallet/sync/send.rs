@@ -3386,7 +3386,7 @@ fn build_shielding_proposal(
         );
     }
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, false);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3469,7 +3469,7 @@ fn build_ledger_shielding_round(
         transparent_allowlist: Some(&allowed),
     };
     let (change_strategy, selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None);
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, true);
     let proposal = selector
         .propose_shielding(
             &network,
@@ -3534,8 +3534,14 @@ fn propose_send_with_reserved_notes(
         transparent_allowlist: None,
     };
     let zip318 = db.pool_migration_params();
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Account not found")?;
+    let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
+        == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
     let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None);
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
 
     input_selector
         .propose_transaction(
@@ -6448,10 +6454,11 @@ fn order_resubmittable_transactions(
 
 /// ZIP-317 change-strategy / input-selector factory used by both
 /// `propose_send` and `estimate_fee`. Keeps the configuration
-/// (Orchard-preferred change, minimum 0.1 ZEC output split) in one
+/// (single change output for Ledger, minimum 0.1 ZEC output split otherwise) in one
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
+    is_ledger: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
@@ -6461,10 +6468,15 @@ fn zip317_helper<DbT: InputSource>(
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),
-        SplitPolicy::with_min_output_value(
-            NonZeroUsize::new(4).unwrap(),
-            Zatoshis::const_from_u64(1000_0000),
-        ),
+        if is_ledger {
+            // The Ledger app rejects a second shielded change output during PCZT validation.
+            SplitPolicy::single_output()
+        } else {
+            SplitPolicy::with_min_output_value(
+                NonZeroUsize::new(4).unwrap(),
+                Zatoshis::const_from_u64(1000_0000),
+            )
+        },
     );
     (change_strategy, GreedyInputSelector::new())
 }
