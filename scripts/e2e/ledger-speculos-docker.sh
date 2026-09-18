@@ -5,15 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LANE="${1:-desktop}"
 case "$LANE" in
   -h|--help)
-    echo 'Usage: scripts/e2e/ledger-speculos-docker.sh [desktop|mobile|smoke]'
+    echo 'Usage: scripts/e2e/ledger-speculos-docker.sh [desktop|mobile|smoke|signing-smoke]'
     echo 'Optional: VIZOR_LEDGER_SPECULOS_ELF, VIZOR_LEDGER_E2E_SCENARIO, FLUTTER_DEVICE'
     echo 'See docs/ledger/speculos.md for setup, pinned versions, and limitations.'
     exit 0 ;;
-  desktop|mobile|smoke) ;;
+  desktop|mobile|smoke|signing-smoke) ;;
   *) echo "Unknown lane: $LANE" >&2; exit 2 ;;
 esac
 source "$ROOT_DIR/scripts/e2e/ledger-speculos-scenarios.sh"
-if [[ "$LANE" != smoke ]]; then
+if [[ "$LANE" == desktop || "$LANE" == mobile ]]; then
   for cmd in cargo fvm base64 gzip; do
     command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
   done
@@ -31,6 +31,9 @@ if [[ "$LANE" != smoke ]]; then
     echo "No matching scenario: $VIZOR_LEDGER_E2E_SCENARIO" >&2
     exit 2
   fi
+fi
+if [[ "$LANE" == signing-smoke ]]; then
+  command -v cargo >/dev/null || { echo "Missing command: cargo" >&2; exit 1; }
 fi
 for cmd in docker git curl jq; do
   command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
@@ -111,13 +114,17 @@ run_flutter_scenario() {
   if [[ -n "$FILTER" && "$name" != "$FILTER" ]]; then return; fi
   COUNT=$((COUNT + 1))
   stop_containers
-  start_instance ufvk
+  start_instance device
   export VIZOR_LEDGER_SPECULOS_UFVK_API_URL="$INSTANCE_URL"
-  start_instance signing
   export VIZOR_LEDGER_SPECULOS_SIGNING_API_URL="$INSTANCE_URL"
   echo "Running $name (log: $RUN_DIR/scenario-$COUNT.log)"
   if [[ "$LANE" == smoke ]]; then
-    echo "Both Speculos instances ready." > "$RUN_DIR/scenario-$COUNT.log"
+    echo "Speculos instance ready." > "$RUN_DIR/scenario-$COUNT.log"
+  elif [[ "$LANE" == signing-smoke ]]; then
+    cargo run --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
+      --example ledger_zcash_speculos_poc -- desktop-smoke \
+      --api-url "$INSTANCE_URL" --signing-api-url "$INSTANCE_URL" \
+      > "$RUN_DIR/scenario-$COUNT.log" 2>&1 || code=$?
   else
     local runner=macos
     if [[ "$LANE" == mobile ]]; then runner=mobile; fi
@@ -125,8 +132,7 @@ run_flutter_scenario() {
       bash "$ROOT_DIR/scripts/e2e/flutter-$runner-ledger-speculos.sh" \
       > "$RUN_DIR/scenario-$COUNT.log" 2>&1 || code=$?
   fi
-  docker logs "$RESOURCE-ufvk" > "$RUN_DIR/scenario-$COUNT-ufvk.log" 2>&1 || true
-  docker logs "$RESOURCE-signing" > "$RUN_DIR/scenario-$COUNT-signing.log" 2>&1 || true
+  docker logs "$RESOURCE-device" > "$RUN_DIR/scenario-$COUNT-device.log" 2>&1 || true
   printf '%s\t%s\n' "$code" "$name" | tee -a "$RUN_DIR/results.tsv"
   if ((code != 0)); then RESULT=1; fi
   stop_containers
@@ -134,6 +140,9 @@ run_flutter_scenario() {
 if [[ "$LANE" == smoke ]]; then
   FILTER=""
   run_flutter_scenario 'Speculos startup smoke'
+elif [[ "$LANE" == signing-smoke ]]; then
+  FILTER=""
+  run_flutter_scenario 'UFVK export then signing on one device'
 else
   ledger_speculos_scenarios "$LANE"
 fi

@@ -26,11 +26,7 @@ if [[ -z "$FLUTTER_DEVICE" ]]; then
   exit 1
 fi
 if [[ -z "$UFVK_API_URL" || -z "$SIGNING_API_URL" ]]; then
-  echo "set distinct VIZOR_LEDGER_SPECULOS_UFVK_API_URL and VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" >&2
-  exit 1
-fi
-if [[ "$UFVK_API_URL" == "$SIGNING_API_URL" ]]; then
-  echo "Ledger UFVK and signing E2E endpoints must be different fresh Speculos instances" >&2
+  echo "set VIZOR_LEDGER_SPECULOS_UFVK_API_URL and VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" >&2
   exit 1
 fi
 
