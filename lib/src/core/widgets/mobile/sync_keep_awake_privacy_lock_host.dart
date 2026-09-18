@@ -142,6 +142,9 @@ class _SyncKeepAwakePrivacyLockHostState
       return;
     }
 
+    // The privacy overlay does not replace the underlying route. Dismiss its
+    // input connection and native keyboard controls before covering the content.
+    FocusManager.instance.primaryFocus?.unfocus();
     ref.read(syncKeepAwakePrivacyLockProvider.notifier).lock();
   }
 

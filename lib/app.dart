@@ -24,6 +24,7 @@ import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/app_toast.dart';
@@ -1498,7 +1499,9 @@ class ZcashWalletApp extends ConsumerWidget {
                                     child: PaymentRequestHost(
                                       router: router,
                                       child: LedgerOperationRecoveryHost(
-                                        child: child!,
+                                        child: MobileNumericKeyboardToolbar(
+                                          child: child!,
+                                        ),
                                       ),
                                     ),
                                   ),
