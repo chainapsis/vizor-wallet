@@ -78,3 +78,23 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   production broadcast. Externally managed mobile endpoints need their own
   forwarding; the Docker runner keeps APIs on host loopback, not the LAN.
 - Custom images/ELFs and other host architectures require separate validation.
+
+### Desktop voting through final tally
+
+Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
+regtest voting prerequisites available. `VIZOR_LEDGER_SPECULOS_ELF` can reuse the
+pinned Nano S+ build. The runner uses only a public disposable test mnemonic.
+
+This lane runs software and Ledger accounts against separate fresh local chains.
+Both use the same funded notes, four proposals and decision 0. The Ledger case
+imports the Speculos UFVK as a hardware account and signs real SDK requests via
+the desktop signer before generating proofs and submitting votes. Only device
+button presses are automated. Each run waits for `FINALIZED` and checks all 64
+revealed shares, one ballot for each selected option and zero for every other
+option. `E2E_VOTE_WINDOW_SECS` defaults to 300; increase it on slower hosts.
+Results and device logs are retained in the printed Speculos artifact directory.
+
+Current validation: the software case passes through final tally. The Ledger
+case currently fails during account export with `Ledger is currently supported
+only for Zcash mainnet`, before signing or vote submission. This lane remains
+failing until a valid regtest hardware-account setup is available.

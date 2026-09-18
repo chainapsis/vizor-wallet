@@ -53,6 +53,8 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'support/speculos_review.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -132,7 +134,7 @@ void main() {
               .dx,
         ),
       );
-      final importApproval = _approveNextReview(fixture.ufvkApiUrl);
+      final importApproval = approveNextSpeculosReview(fixture.ufvkApiUrl);
       await _pumpUntil(
         tester,
         () => tester.any(
@@ -315,7 +317,7 @@ void main() {
       expect(find.text('Review send'), findsOneWidget);
       expect(find.byKey(const ValueKey('send_confirm_button')), findsOneWidget);
 
-      final signingApproval = _approveNextReview(fixture.signingApiUrl);
+      final signingApproval = approveNextSpeculosReview(fixture.signingApiUrl);
       await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
       await tester.pump();
       await _pumpUntil(
@@ -410,7 +412,7 @@ void main() {
       await container.read(accountProvider.future);
 
       Future<void> signRound() async {
-        final approval = _approveNextReview(fixture.signingApiUrl);
+        final approval = approveNextSpeculosReview(fixture.signingApiUrl);
         final signed = container.read(ledgerPcztSignerProvider)(
           fixture.accountUuid,
           fixture.pcztBytes,
@@ -454,7 +456,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
   await container.read(accountProvider.future);
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
-  final approval = _approveNextReview(fixture.signingApiUrl);
+  final approval = approveNextSpeculosReview(fixture.signingApiUrl);
   final signed = container.read(ledgerPcztTransportSignerProvider)(
     fixture.accountUuid,
     unsigned,
@@ -496,7 +498,7 @@ Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
   for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
     // Already redacted by the SDK hardware signing-request path.
     final pczt = fixture.votingBundlePczts[bundleIndex];
-    final approval = _approveNextReview(fixture.signingApiUrl);
+    final approval = approveNextSpeculosReview(fixture.signingApiUrl);
     final signatures = container.read(ledgerVotingPcztSignerProvider)(
       fixture.accountUuid,
       pczt,
@@ -710,7 +712,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
     ],
   );
   addTearDown(router.dispose);
-  final approval = _approveNextReview(fixture.signingApiUrl);
+  final approval = approveNextSpeculosReview(fixture.signingApiUrl);
 
   await tester.pumpWidget(
     ProviderScope(
@@ -878,7 +880,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
   expect(find.text('Review send'), findsOneWidget);
   expect(find.text('TEX'), findsOneWidget);
 
-  final firstApproval = _approveNextReview(fixture.signingApiUrl);
+  final firstApproval = approveNextSpeculosReview(fixture.signingApiUrl);
   await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
   await _pumpUntil(
     tester,
@@ -888,7 +890,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
   );
   expect(await firstApproval, isTrue);
 
-  final secondApproval = _approveNextReview(fixture.signingApiUrl);
+  final secondApproval = approveNextSpeculosReview(fixture.signingApiUrl);
   await _pumpUntil(
     tester,
     () => tester.any(_ledgerSigningText('Transaction 2 of 2')),
@@ -1010,7 +1012,7 @@ Future<void> _runLedgerSwapScenario(
 
   await tester.ensureVisible(startButton);
   await tester.pump();
-  final signingApproval = _approveNextReview(fixture.signingApiUrl);
+  final signingApproval = approveNextSpeculosReview(fixture.signingApiUrl);
   await tester.tap(startButton);
   await tester.pump();
   await _pumpUntil(
@@ -1840,78 +1842,6 @@ Finder _ledgerSigningText(String text) => find.descendant(
   of: find.byType(LedgerSigningModal),
   matching: find.text(text),
 );
-
-Future<bool> _approveNextReview(String apiUrl) async {
-  final client = HttpClient();
-  final deadline = DateTime.now().add(const Duration(minutes: 2));
-  var reviewStarted = false;
-  try {
-    while (DateTime.now().isBefore(deadline)) {
-      final screen = await _currentScreenText(client, apiUrl);
-      final normalized = screen.toLowerCase();
-      if (normalized.contains('review') ||
-          normalized.contains('export') ||
-          normalized.contains('viewing key')) {
-        reviewStarted = true;
-      }
-      if (reviewStarted) {
-        if (normalized.contains('approve') ||
-            normalized.contains('accept') ||
-            normalized.contains('confirm') ||
-            normalized.contains('sign transaction')) {
-          await _pressButton(client, apiUrl, 'both');
-          return true;
-        }
-        await _pressButton(
-          client,
-          apiUrl,
-          normalized.contains('cancel') ? 'left' : 'right',
-        );
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-    }
-    throw TimeoutException('Speculos review did not become approvable.');
-  } finally {
-    client.close();
-  }
-}
-
-Future<String> _currentScreenText(HttpClient client, String apiUrl) async {
-  final request = await client.getUrl(
-    Uri.parse('$apiUrl/events?currentscreenonly=true'),
-  );
-  final response = await request.close();
-  final body = await utf8.decoder.bind(response).join();
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw HttpException(
-      'Speculos events returned HTTP ${response.statusCode}.',
-    );
-  }
-  final decoded = jsonDecode(body) as Map<String, dynamic>;
-  final events = decoded['events']! as List<dynamic>;
-  return events
-      .cast<Map<String, dynamic>>()
-      .map((event) => event['text'])
-      .whereType<String>()
-      .join(' ');
-}
-
-Future<void> _pressButton(
-  HttpClient client,
-  String apiUrl,
-  String button,
-) async {
-  final request = await client.postUrl(Uri.parse('$apiUrl/button/$button'));
-  request.headers.contentType = ContentType.json;
-  request.write(jsonEncode({'action': 'press-and-release'}));
-  final response = await request.close();
-  await response.drain<void>();
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw HttpException(
-      'Speculos button returned HTTP ${response.statusCode}.',
-    );
-  }
-}
 
 Future<void> _pumpUntil(
   WidgetTester tester,

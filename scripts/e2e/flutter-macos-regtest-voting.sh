@@ -193,7 +193,7 @@ PATH="$SHIM_DIR:$VOTE_SDK_DIR:$PATH" \
   SVOTE_API_URL="http://127.0.0.1:$VOTE_PORT" \
   ZASHI_LIGHTWALLETD="127.0.0.1:$LWD_PORT" \
   ZASHI_PIR_URL="http://127.0.0.1:$PIR_PORT" \
-  ZASHI_SNAPSHOT_HEIGHT="$SNAPSHOT_HEIGHT" ZASHI_VOTE_WINDOW_SECS=7200 \
+  ZASHI_SNAPSHOT_HEIGHT="$SNAPSHOT_HEIGHT" ZASHI_VOTE_WINDOW_SECS="${E2E_VOTE_WINDOW_SECS:-7200}" \
   cargo test --manifest-path "$VOTE_SDK_DIR/e2e-tests/Cargo.toml" \
   --test create_round_for_zashi create_round_for_zashi -- --ignored --nocapture \
   >"$LOG_DIR/$1" 2>&1
@@ -309,6 +309,9 @@ if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
 fi
 voting_defines=( \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+  --dart-define=ZCASH_E2E_LEDGER_VOTING="${E2E_LEDGER_VOTING:-false}" \
+  --dart-define=ZCASH_E2E_FINAL_TALLY="${E2E_FINAL_TALLY:-false}" \
+  --dart-define=VIZOR_LEDGER_SPECULOS_API_URL="${VIZOR_LEDGER_SPECULOS_SIGNING_API_URL:-}" \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
@@ -361,3 +364,9 @@ jq -e '.tree.next_index > 0' < <(curl -fsS \
   "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/commitment-tree/$ROUND_ID/latest") \
   >/dev/null
 echo "voting E2E passed; round=$ROUND_ID snapshot=$SNAPSHOT_HEIGHT metrics=$METRICS"
+
+if [[ "${E2E_FINAL_TALLY:-false}" == true ]]; then
+  python3 "$ROOT_DIR/scripts/e2e/assert-voting-final-tally.py" \
+    --api-url "http://127.0.0.1:$VOTE_PORT" --round-id "$ROUND_ID" \
+    --output "$LOG_DIR/final-tally-${E2E_LEDGER_VOTING:-false}.json"
+fi
