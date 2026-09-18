@@ -54,6 +54,9 @@ use zcash_client_sqlite::{util::SystemClock, wallet::commitment_tree, WalletDb};
 const DEFAULT_API_URL: &str = "http://127.0.0.1:5000";
 const APDU_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const API_TIMEOUT: Duration = Duration::from_secs(3);
+// The harness can sign immediately after export, without the product's page
+// transitions. Let Speculos finish its UFVK status screen before the next APDU.
+const SPECULOS_UFVK_STATUS_WAIT: Duration = Duration::from_secs(4);
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
 const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
@@ -107,6 +110,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         .transpose()?
         .unwrap_or(false);
     let export = export_result.map_err(|error| format!("Desktop UFVK export failed: {error}"))?;
+    thread::sleep(SPECULOS_UFVK_STATUS_WAIT);
 
     let temp_dir =
         tempfile::tempdir().map_err(|error| format!("Create desktop smoke directory: {error}"))?;
@@ -398,9 +402,7 @@ fn export_account_from_speculos(
         ufvk_responses.push(continuation);
     }
     let export = ledger_parse_mobile_ufvk_responses(0, network.to_string(), ufvk_responses)?;
-    // Raw APDU mode bypasses the desktop operation cooldown. Wait for the UFVK
-    // status screen here too, so the same instance can accept the next request.
-    thread::sleep(Duration::from_secs(4));
+    thread::sleep(SPECULOS_UFVK_STATUS_WAIT);
     Ok((export, automated_review))
 }
 
