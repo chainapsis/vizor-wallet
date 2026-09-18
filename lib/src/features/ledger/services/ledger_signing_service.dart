@@ -118,6 +118,8 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
+          onBluetoothConnected: (device) =>
+              progress('preparing', deviceModel: device.model),
           usb: () async => (await _signUsbWithProgress(
             progress: progress,
             compact: false,
@@ -196,6 +198,8 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
         .read(ledgerConnectionServiceProvider)
         .run(
           accountUuid: accountUuid,
+          onBluetoothConnected: (device) =>
+              progress('preparing', deviceModel: device.model),
           usb: () async => (await _signUsbWithProgress(
             progress: progress,
             compact: true,
@@ -292,7 +296,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
-  required void Function(String) progress,
+  required LedgerSigningProgressReporter progress,
 }) async {
   rust_ledger.LedgerSigningEvent? result;
   await for (final event in rust_ledger.ledgerSignWithProgress(
@@ -308,7 +312,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     if (event.phase == 'complete') {
       result = event;
     } else {
-      progress(event.phase);
+      progress(event.phase, deviceModel: event.deviceModel);
     }
   }
   if (result == null) {

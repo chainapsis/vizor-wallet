@@ -453,6 +453,8 @@ mod tests {
 /// Operation-local signing events. Closing the observer must not cancel signing.
 pub struct LedgerSigningEvent {
     pub phase: String,
+    /// Model of the USB device opened for this signing attempt; never cached account metadata.
+    pub device_model: Option<String>,
     pub signed_pczt: Option<Vec<u8>>,
     pub signatures: Vec<LedgerActionSig>,
     pub error: Option<String>,
@@ -467,9 +469,10 @@ pub fn ledger_sign_with_progress(
     compact: bool,
     sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
 ) {
-    let progress = |phase: &str| {
+    let progress = |phase: &str, device_model: Option<&str>| {
         let _ = sink.add(LedgerSigningEvent {
             phase: phase.into(),
+            device_model: device_model.map(str::to_owned),
             signed_pczt: None,
             signatures: vec![],
             error: None,
@@ -494,6 +497,7 @@ pub fn ledger_sign_with_progress(
         };
         Ok(LedgerSigningEvent {
             phase: "complete".into(),
+            device_model: None,
             signed_pczt,
             signatures,
             error: None,
@@ -501,6 +505,7 @@ pub fn ledger_sign_with_progress(
     })();
     let _ = sink.add(result.unwrap_or_else(|error| LedgerSigningEvent {
         phase: "failed".into(),
+        device_model: None,
         signed_pczt: None,
         signatures: vec![],
         error: Some(error),

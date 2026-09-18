@@ -249,6 +249,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                 constrainContent: true,
                 variant: AppButtonVariant.ghost,
                 height: 64,
+                borderRadius: BorderRadius.circular(AppRadii.small),
                 growWithContent: true,
                 contentPadding: EdgeInsets.zero,
                 onPressed: enabled && !c.invalidated

@@ -10717,12 +10717,14 @@ impl SseDecode for crate::api::ledger::LedgerSigningEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_deviceModel = <Option<String>>::sse_decode(deserializer);
         let mut var_signedPczt = <Option<Vec<u8>>>::sse_decode(deserializer);
         let mut var_signatures =
             <Vec<crate::api::ledger::LedgerActionSig>>::sse_decode(deserializer);
         let mut var_error = <Option<String>>::sse_decode(deserializer);
         return crate::api::ledger::LedgerSigningEvent {
             phase: var_phase,
+            device_model: var_deviceModel,
             signed_pczt: var_signedPczt,
             signatures: var_signatures,
             error: var_error,
@@ -16158,6 +16160,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerSigningEvent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.phase.into_into_dart().into_dart(),
+            self.device_model.into_into_dart().into_dart(),
             self.signed_pczt.into_into_dart().into_dart(),
             self.signatures.into_into_dart().into_dart(),
             self.error.into_into_dart().into_dart(),
@@ -19648,6 +19651,7 @@ impl SseEncode for crate::api::ledger::LedgerSigningEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.phase, serializer);
+        <Option<String>>::sse_encode(self.device_model, serializer);
         <Option<Vec<u8>>>::sse_encode(self.signed_pczt, serializer);
         <Vec<crate::api::ledger::LedgerActionSig>>::sse_encode(self.signatures, serializer);
         <Option<String>>::sse_encode(self.error, serializer);

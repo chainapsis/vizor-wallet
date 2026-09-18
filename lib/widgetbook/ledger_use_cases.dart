@@ -176,7 +176,11 @@ Widget buildLedgerSigningPreview({
   LedgerSigningFailurePresentation? failureOverride,
   String mobileTitle = 'Ledger',
   LedgerMobileBleService? bluetoothService,
+  String deviceModel = 'Ledger Flex',
 }) {
+  final canLeave =
+      phase != LedgerSigningModalPhase.saving &&
+      phase != LedgerSigningModalPhase.broadcasting;
   final modal = LedgerSigningModal(
     phase: phase,
     signingStage: readiness == LedgerSigningPlaygroundReadiness.ready
@@ -185,7 +189,7 @@ Widget buildLedgerSigningPreview({
     failure: phase == LedgerSigningModalPhase.failed
         ? failureOverride ?? _failurePresentation(failureMode)
         : null,
-    onCancel: () {},
+    onCancel: canLeave ? () {} : null,
     onFailureAction: () {},
     accountUuid: _ledgerAccount.uuid,
     roundNumber: roundNumber,
@@ -197,7 +201,20 @@ Widget buildLedgerSigningPreview({
         ledgerMobileBleServiceProvider.overrideWithValue(bluetoothService),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
       syncProvider.overrideWith(_LedgerPreviewSync.new),
-      accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
+      accountProvider.overrideWith(
+        () => _LedgerPreviewAccountNotifier(
+          account: _ledgerAccount.copyWith(
+            ledgerDeviceName: deviceModel,
+            ledgerDeviceModel: deviceModel,
+          ),
+        ),
+      ),
+      ledgerSigningProgressProvider.overrideWith(
+        () => _LedgerPreviewProgressController(
+          signingStage,
+          deviceModel: deviceModel,
+        ),
+      ),
       ledgerTargetPlatformProvider.overrideWithValue(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
       ),
@@ -216,7 +233,7 @@ Widget buildLedgerSigningPreview({
                 MobileLedgerSigningSurface(
                   title: mobileTitle,
                   onBack: () {},
-                  canLeave: phase != LedgerSigningModalPhase.broadcasting,
+                  canLeave: canLeave,
                   child: modal,
                 ),
               ],
@@ -248,6 +265,38 @@ Widget buildLedgerVotingPlaygroundUseCase(BuildContext context) {
     bundleNumber: requestedBundle > bundleCount ? bundleCount : requestedBundle,
     bundleCount: bundleCount,
     displayMemo: memo,
+  );
+}
+
+/// Static production voting panel for deterministic signing-state captures.
+Widget buildLedgerVotingProcessingPreview({required bool mobile}) {
+  final panel = LedgerVotingSigningPanel(
+    accountUuid: _ledgerAccount.uuid,
+    displayMemo: 'Delegate voting power for this round.',
+    bundleIndex: 0,
+    bundleCount: 2,
+    onCancel: () {},
+  );
+  return ProviderScope(
+    overrides: [
+      ledgerSigningProgressProvider.overrideWith(
+        () => _LedgerPreviewProgressController(LedgerSigningStage.sending),
+      ),
+      ledgerAppReadinessStateProvider.overrideWith(
+        () => _LedgerPreviewReadinessController(
+          _readinessState(LedgerSigningPlaygroundReadiness.ready),
+        ),
+      ),
+    ],
+    child: mobile
+        ? MobileLedgerSigningSurface(
+            onBack: () {},
+            canLeave: true,
+            child: panel,
+          )
+        : Center(
+            child: SizedBox(width: 460, child: IntrinsicHeight(child: panel)),
+          ),
   );
 }
 
@@ -545,8 +594,12 @@ LedgerAppReadinessState _readinessState(
 }
 
 class _LedgerPreviewAccountNotifier extends AccountNotifier {
+  _LedgerPreviewAccountNotifier({this.account = _ledgerAccount});
+  final AccountInfo account;
+
   @override
-  FutureOr<AccountState> build() => _ledgerAccountState;
+  FutureOr<AccountState> build() =>
+      _ledgerAccountState.copyWith(accounts: [account]);
 
   @override
   Future<void> recordLedgerConnection({
@@ -675,12 +728,19 @@ final _ledgerBootstrap = AppBootstrapState(
 );
 
 class _LedgerPreviewProgressController extends LedgerSigningProgressController {
-  _LedgerPreviewProgressController(this.stage);
+  _LedgerPreviewProgressController(
+    this.stage, {
+    this.deviceModel = 'Ledger Flex',
+  });
   final LedgerSigningStage stage;
+  final String? deviceModel;
 
   @override
-  LedgerSigningProgress? build() =>
-      LedgerSigningProgress(_ledgerAccount.uuid, stage);
+  LedgerSigningProgress? build() => LedgerSigningProgress(
+    _ledgerAccount.uuid,
+    stage,
+    deviceModel: deviceModel,
+  );
 }
 
 class _LedgerPreviewSync extends SyncNotifier {

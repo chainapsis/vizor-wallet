@@ -470,12 +470,16 @@ class LedgerSignedOperationBroadcastResult {
 /// Operation-local signing events. Closing the observer must not cancel signing.
 class LedgerSigningEvent {
   final String phase;
+
+  /// Model of the USB device opened for this signing attempt; never cached account metadata.
+  final String? deviceModel;
   final Uint8List? signedPczt;
   final List<LedgerActionSig> signatures;
   final String? error;
 
   const LedgerSigningEvent({
     required this.phase,
+    this.deviceModel,
     this.signedPczt,
     required this.signatures,
     this.error,
@@ -484,6 +488,7 @@ class LedgerSigningEvent {
   @override
   int get hashCode =>
       phase.hashCode ^
+      deviceModel.hashCode ^
       signedPczt.hashCode ^
       signatures.hashCode ^
       error.hashCode;
@@ -494,6 +499,7 @@ class LedgerSigningEvent {
       other is LedgerSigningEvent &&
           runtimeType == other.runtimeType &&
           phase == other.phase &&
+          deviceModel == other.deviceModel &&
           signedPczt == other.signedPczt &&
           signatures == other.signatures &&
           error == other.error;

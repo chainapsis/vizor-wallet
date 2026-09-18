@@ -157,7 +157,11 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
     var title = failed ? failure!.title : stage.title;
-    var message = failed ? failure!.message : stage.message;
+    var message = failed
+        ? failure!.message
+        : stage.messageForDevice(
+            progress?.accountUuid == accountUuid ? progress?.deviceModel : null,
+          );
     var statusLabel = failed ? failure!.statusLabel : stage.status;
     if (roundCount > 1) {
       final progress = 'Transaction $roundNumber of $roundCount';

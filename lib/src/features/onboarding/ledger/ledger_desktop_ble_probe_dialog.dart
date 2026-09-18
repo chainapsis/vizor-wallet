@@ -443,6 +443,7 @@ class _DeviceRow extends StatelessWidget {
       key: ValueKey('ledger_desktop_ble_device_${device.id}'),
       onPressed: onTap,
       variant: AppButtonVariant.secondary,
+      borderRadius: BorderRadius.circular(AppRadii.small),
       expand: true,
       constrainContent: true,
       leading: const AppIcon(AppIcons.ledger),

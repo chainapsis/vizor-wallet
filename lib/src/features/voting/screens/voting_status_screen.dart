@@ -1266,7 +1266,11 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
         },
         stage == LedgerSigningStage.preparing
             ? 'Please wait while Vizor prepares your request.'
-            : stage.message,
+            : stage.messageForDevice(
+                progress?.accountUuid == accountUuid
+                    ? progress?.deviceModel
+                    : null,
+              ),
       ),
     };
     if (kAppFormFactor == AppFormFactor.mobile) {

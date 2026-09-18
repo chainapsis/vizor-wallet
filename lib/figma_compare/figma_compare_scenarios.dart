@@ -247,6 +247,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-processing-nano',
+    description: 'Ledger signing: Nano X preparation time guidance',
+    builder: _buildLedgerSigningProcessingNano,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-checking',
+    description: 'Ledger signing: checking device readiness',
+    builder: _buildLedgerSigningChecking,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-opening',
+    description: 'Ledger signing: confirm opening Zcash',
+    builder: _buildLedgerSigningOpening,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing-multiple',
+    description: 'Ledger signing: processing transaction one of two',
+    builder: _buildLedgerSigningProcessingMultiple,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-reviewing',
     description: 'Ledger signing: reviewing',
     builder: _buildLedgerSigningReviewing,
@@ -256,6 +280,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-signing-finishing',
     description: 'Ledger signing: finishing',
     builder: _buildLedgerSigningFinishing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-voting-processing',
+    description: 'Ledger voting: processing panel without caller background',
+    builder: _buildLedgerVotingProcessing,
     mobile: true,
   ),
   FigmaCompareScenario(
@@ -2115,6 +2145,14 @@ Widget _buildLedgerSigningProcessing(BuildContext context) =>
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
 
+Widget _buildLedgerSigningProcessingNano(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      deviceModel: 'Ledger Nano X',
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
 Widget _buildLedgerSigningReviewing(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.awaitingDevice,
@@ -2122,9 +2160,36 @@ Widget _buildLedgerSigningReviewing(BuildContext context) =>
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
 
+Widget _buildLedgerSigningChecking(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      readiness: LedgerSigningPlaygroundReadiness.checkingDevice,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningOpening(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      readiness: LedgerSigningPlaygroundReadiness.confirmOpening,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessingMultiple(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      roundCount: 2,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
 Widget _buildLedgerSigningFinishing(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.saving,
       signingStage: LedgerSigningStage.finishing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerVotingProcessing(BuildContext context) =>
+    buildLedgerVotingProcessingPreview(
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );

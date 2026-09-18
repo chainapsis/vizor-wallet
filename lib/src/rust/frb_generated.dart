@@ -11834,13 +11834,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LedgerSigningEvent dco_decode_ledger_signing_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return LedgerSigningEvent(
       phase: dco_decode_String(arr[0]),
-      signedPczt: dco_decode_opt_list_prim_u_8_strict(arr[1]),
-      signatures: dco_decode_list_ledger_action_sig(arr[2]),
-      error: dco_decode_opt_String(arr[3]),
+      deviceModel: dco_decode_opt_String(arr[1]),
+      signedPczt: dco_decode_opt_list_prim_u_8_strict(arr[2]),
+      signatures: dco_decode_list_ledger_action_sig(arr[3]),
+      error: dco_decode_opt_String(arr[4]),
     );
   }
 
@@ -15866,11 +15867,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_phase = sse_decode_String(deserializer);
+    var var_deviceModel = sse_decode_opt_String(deserializer);
     var var_signedPczt = sse_decode_opt_list_prim_u_8_strict(deserializer);
     var var_signatures = sse_decode_list_ledger_action_sig(deserializer);
     var var_error = sse_decode_opt_String(deserializer);
     return LedgerSigningEvent(
       phase: var_phase,
+      deviceModel: var_deviceModel,
       signedPczt: var_signedPczt,
       signatures: var_signatures,
       error: var_error,
@@ -20552,6 +20555,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.phase, serializer);
+    sse_encode_opt_String(self.deviceModel, serializer);
     sse_encode_opt_list_prim_u_8_strict(self.signedPczt, serializer);
     sse_encode_list_ledger_action_sig(self.signatures, serializer);
     sse_encode_opt_String(self.error, serializer);
