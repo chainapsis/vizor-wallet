@@ -61,6 +61,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
     this.showCheckedAt = false,
     this.inline = false,
     this.dateText,
+    this.hideStableLabel = false,
     super.key,
   });
   final String address;
@@ -69,6 +70,10 @@ class GiftCardUsageStatusView extends ConsumerWidget {
 
   /// Mobile metadata: date and status share a line when they fit.
   final String? dateText;
+
+  /// Hides status text already expressed by a surrounding grouped section.
+  /// Transient checking and failure labels remain visible.
+  final bool hideStableLabel;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usage =
@@ -76,6 +81,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         const GiftCardUsage();
     final state = ref.watch(giftCardTrackingStateProvider);
     final checking = !usage.cleaned && state.checking;
+    final failed = !usage.cleaned && !checking && state.failedFor(address);
     final label = checking && usage.status == GiftCardUsageStatus.unknown
         ? 'Checking…'
         : usage.label;
@@ -89,7 +95,6 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         ? ' · Update failed'
         : '';
     if (inline) {
-      final failed = !usage.cleaned && !checking && state.failedFor(address);
       final description =
           'Card use: $label'
           '${checking
@@ -98,6 +103,25 @@ class GiftCardUsageStatusView extends ConsumerWidget {
               ? '. Update failed'
               : ''}'
           '${usage.explanation == null ? '' : '. ${usage.explanation}'}';
+      final visibleLabel = hideStableLabel &&
+              usage.status != GiftCardUsageStatus.unknown
+          ? checking
+                ? 'Checking…'
+                : failed
+                ? 'Update failed'
+                : null
+          : label;
+      final date = dateText;
+      final style = AppTypography.bodyMedium.copyWith(
+        color: context.colors.text.secondary,
+      );
+      if (visibleLabel == null && date != null) {
+        return Semantics(
+          label: '$date. $description',
+          excludeSemantics: true,
+          child: Text(date, style: style),
+        );
+      }
       final status = AppTooltip(
         message: description,
         tapToShow: true,
@@ -129,7 +153,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
               ],
               Flexible(
                 child: Text(
-                  label,
+                  visibleLabel ?? label,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: dateText == null ? TextAlign.end : TextAlign.start,
@@ -145,11 +169,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
           ),
         ),
       );
-      final date = dateText;
       if (date == null) return status;
-      final style = AppTypography.bodyMedium.copyWith(
-        color: context.colors.text.secondary,
-      );
       return LayoutBuilder(
         builder: (context, constraints) {
           double widthOf(String text) {
@@ -166,9 +186,9 @@ class GiftCardUsageStatusView extends ConsumerWidget {
 
           final indicatorWidth = checking || failed ? 16 + AppSpacing.xxs : 0;
           final fits =
-              widthOf(date) +
+                  widthOf(date) +
                   widthOf(' · ') +
-                  widthOf(label) +
+                  widthOf(visibleLabel ?? label) +
                   indicatorWidth <=
               constraints.maxWidth;
           if (fits) {

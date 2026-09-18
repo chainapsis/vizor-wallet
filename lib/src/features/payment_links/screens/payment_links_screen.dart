@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -24,7 +25,9 @@ import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
+import '../models/gift_card_usage.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
@@ -1096,6 +1099,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  void _confirmCardCreated({required bool broadcastAccepted}) {
+    if (kAppFormFactor == AppFormFactor.mobile && broadcastAccepted) {
+      unawaited(AppHaptics.sendSuccess());
+    }
+  }
+
   Future<void> _createFundedLink() async {
     if (_operationInProgress) return;
     if (_pendingFundingMetadata != null) {
@@ -1201,6 +1210,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
     } catch (_) {
       if (mounted) _showError('Gift card creation failed. Try again.');
     } finally {
@@ -1248,6 +1258,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: pending.broadcastAccepted);
     } catch (_) {
       if (mounted) {
         _showError(
@@ -1381,6 +1392,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _confirmCardCreated(
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
+    );
     unawaited(_refreshFundingProgress());
     if (result.status == 'broadcasted_storage_failed' ||
         result.status == 'broadcast_unknown') {
@@ -2012,6 +2026,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _page = PaymentLinksLocalPage.home;
         });
         if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+          unawaited(AppHaptics.sendSuccess());
           context.go('/home');
         } else {
           // Pending or partial broadcast is not success. The Received row
@@ -2166,6 +2181,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
+          groupCreatedByUsage: true,
         ),
         activeCardsTab: _activeCardsTab,
         selectedArtwork: _selectedArtwork,
@@ -2346,16 +2362,54 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// The Gift Card grouping both form factors render.
   ///
-  /// Created Cards split into `Creating` / `Pending` by funding readiness and
-  /// received Cards form one list; only the row widgets differ per form
-  /// factor, so the grouping and the tab selection stay here rather than
-  /// being restated in the mobile view.
+  /// Desktop keeps its existing `Creating` / `Pending` funding groups. Mobile
+  /// groups Created Cards by usage as `Pending` / `Unused` / `Used`; the row
+  /// widgets still own their existing detailed status and actions. Received
+  /// Cards keep their existing grouping on both form factors.
   List<PaymentLinkCardsSection> _cardsSections({
     required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
     required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
     List<Widget> emptyReceivedCards = const <Widget>[],
+    bool groupCreatedByUsage = false,
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
+      if (groupCreatedByUsage) {
+        final pendingCards = <Widget>[];
+        final unusedCards = <Widget>[];
+        final usedCards = <Widget>[];
+        for (final record in _visibleRecoveries) {
+          final fundingReady =
+              _fundingProgressByAddress[record.link.address]?.isReady ?? false;
+          final usage = ref
+              .watch(giftCardUsageProvider(record.link.address))
+              .value;
+          final status = usage?.status ?? record.usage.status;
+          final cards = switch ((fundingReady, status)) {
+            (true, GiftCardUsageStatus.unused) => unusedCards,
+            (true, GiftCardUsageStatus.spendDetected) => usedCards,
+            (true, GiftCardUsageStatus.used) => usedCards,
+            _ => pendingCards,
+          };
+          cards.add(recoveryRow(record));
+        }
+        return <PaymentLinkCardsSection>[
+          if (pendingCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkPendingSectionLabel,
+              cards: pendingCards,
+            ),
+          if (unusedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUnusedSectionLabel,
+              cards: unusedCards,
+            ),
+          if (usedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUsedSectionLabel,
+              cards: usedCards,
+            ),
+        ];
+      }
       final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
       for (final record in _visibleRecoveries) {
@@ -2502,6 +2556,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               address: record.link.address,
               inline: true,
               dateText: _formatCardDate(record.link.createdAt),
+              hideStableLabel: true,
             )
           : null,
     );

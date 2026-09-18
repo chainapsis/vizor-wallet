@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
@@ -61,6 +62,7 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
 }) async {
@@ -80,6 +82,11 @@ Future<void> pumpPaymentLinksScreen(
         giftCardTrackingServiceProvider.overrideWithValue(
           _IdleGiftCardTracker(),
         ),
+        if (giftCardUsages != null)
+          giftCardUsageProvider.overrideWith(
+            (ref, address) async =>
+                giftCardUsages[address] ?? const GiftCardUsage(),
+          ),
         appBootstrapProvider.overrideWithValue(appBootstrap),
         if (pricingEnabled != null)
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),

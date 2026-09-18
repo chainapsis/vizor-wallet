@@ -272,6 +272,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
         semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
+        loop: true,
         artworks: PaymentLinkCardArtwork.values,
         selected: selectedArtwork,
         width: 393,
