@@ -269,7 +269,7 @@ class _ResettingAccountNotifier extends AccountNotifier {
   FutureOr<AccountState> build() => _bootstrap('/settings').initialAccountState;
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     resetWalletCalled = true;
     state = const AsyncData(AccountState());
     ref.read(appSecurityProvider.notifier).reset();

@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
@@ -23,7 +24,7 @@ import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -70,6 +71,8 @@ Widget _app(
   BiometricUnlockNotifier Function()? biometricNotifier,
   SyncNotifier Function()? syncNotifier,
   Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
+  Map<String, int> unsharedGiftCardCounts = const {},
+  Set<String> unsharedGiftCardCheckFailures = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -109,6 +112,12 @@ Widget _app(
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _FakeMigrationCoordinator(migrationStatuses),
       ),
+      paymentLinkUnsharedFundedCountProvider.overrideWith((ref, uuid) async {
+        if (unsharedGiftCardCheckFailures.contains(uuid)) {
+          throw StateError('unshared gift card check failed');
+        }
+        return unsharedGiftCardCounts[uuid] ?? 0;
+      }),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -155,6 +164,10 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   final AccountState initialState;
   final Object? removeError;
+
+  /// Runs before a removal or reset; throwing aborts it.
+  void Function(int? confirmedUnsharedGiftCardCount)? beforeRemove;
+  final List<int?> confirmedUnsharedGiftCardCounts = [];
   var resetCount = 0;
   String? removedUuid;
 
@@ -162,8 +175,13 @@ class _FakeAccountNotifier extends AccountNotifier {
   FutureOr<AccountState> build() => initialState;
 
   @override
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     if (removeError case final error?) throw error;
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     removedUuid = uuid;
     final previous = state.value ?? initialState;
     final remaining = [
@@ -184,7 +202,9 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     resetCount += 1;
     state = const AsyncData(AccountState());
   }
@@ -584,14 +604,199 @@ void main() {
 
   for (final testCase in [
     (
-      name: 'unshared Gift Cards',
-      error: const PaymentLinkUnsharedGiftCardsException(
-        sourceAccountUuid: 'a',
-        count: 1,
-      ),
+      name: 'one unshared gift card',
+      accounts: const ['a', 'b'],
+      count: 1,
       message:
-          'Copy your unshared gift card links before deleting this account.',
+          '1 funded gift card link has not been shared. Removing this '
+          'account loses it. Copy the link first.',
     ),
+    (
+      name: 'several unshared gift cards',
+      accounts: const ['a', 'b'],
+      count: 3,
+      message:
+          '3 funded gift card links have not been shared. Removing this '
+          'account loses them. Copy the links first.',
+    ),
+    (
+      name: 'unshared gift cards on the last account',
+      accounts: const ['a'],
+      count: 2,
+      message:
+          '2 funded gift card links have not been shared. Resetting Vizor '
+          'loses them. Copy the links first.',
+    ),
+    (
+      name: 'a failed unshared check',
+      accounts: const ['a', 'b'],
+      count: null,
+      message:
+          "Couldn't check for unshared gift card links. Copy any links you "
+          'still need before removing this account.',
+    ),
+    (
+      name: 'a failed unshared check on the last account',
+      accounts: const ['a'],
+      count: null,
+      message:
+          "Couldn't check for unshared gift card links. Copy any links you "
+          'still need before resetting Vizor.',
+    ),
+  ]) {
+    testWidgets('removal sheet warns about ${testCase.name}', (tester) async {
+      final accountState = AccountState(
+        accounts: [for (final uuid in testCase.accounts) _account(uuid, uuid)],
+        activeAccountUuid: 'a',
+      );
+      final accountNotifier = _FakeAccountNotifier(accountState);
+
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          syncNotifier: _FakeWalletMutationSyncNotifier.new,
+          unsharedGiftCardCounts: {'a': ?testCase.count},
+          unsharedGiftCardCheckFailures: {if (testCase.count == null) 'a'},
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testCase.message), findsOneWidget);
+      final confirm = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      expect(confirm.onPressed, isNotNull);
+    });
+  }
+
+  for (final (isLastAccount, recheckFailed) in [
+    (false, false),
+    (true, false),
+    (false, true),
+    (true, true),
+  ]) {
+    testWidgets('removal sheet reopens after the post-drain recheck '
+        '(last account: $isLastAccount, recheck failed: $recheckFailed)', (
+      tester,
+    ) async {
+      final accountState = AccountState(
+        accounts: [
+          _account('a', 'Active'),
+          if (!isLastAccount) _account('b', 'Replacement'),
+        ],
+        activeAccountUuid: 'a',
+      );
+      final counts = {'a': 0};
+      final accountNotifier = _FakeAccountNotifier(accountState);
+      accountNotifier.beforeRemove = (confirmed) {
+        accountNotifier.beforeRemove = null;
+        if (recheckFailed) {
+          throw UnsharedGiftCardsChangedException(confirmedCount: confirmed!);
+        }
+        counts['a'] = 2;
+        throw UnsharedGiftCardsChangedException(
+          confirmedCount: confirmed!,
+          count: 2,
+        );
+      };
+
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          syncNotifier: _FakeWalletMutationSyncNotifier.new,
+          unsharedGiftCardCounts: counts,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      final subject = isLastAccount
+          ? 'Resetting Vizor'
+          : 'Removing this account';
+      final action = isLastAccount
+          ? 'resetting Vizor'
+          : 'removing this account';
+      expect(
+        find.text(
+          recheckFailed
+              ? "Couldn't check for unshared gift card links. Copy any links "
+                    'you still need before $action.'
+              : '2 funded gift card links have not been shared. $subject '
+                    'loses them. Copy the links first.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(accountNotifier.confirmedUnsharedGiftCardCounts, [
+        0,
+        if (recheckFailed) null else 2,
+      ]);
+      if (isLastAccount) {
+        expect(accountNotifier.resetCount, 1);
+      } else {
+        expect(accountNotifier.removedUuid, 'a');
+      }
+    });
+  }
+
+  testWidgets('removal sheet has no gift card warning without unshared cards', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [_account('a', 'Active'), _account('b', 'Replacement')],
+      activeAccountUuid: 'a',
+    );
+
+    await tester.pumpWidget(
+      _app(
+        accountState,
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+        syncNotifier: _FakeWalletMutationSyncNotifier.new,
+        unsharedGiftCardCounts: const {'b': 2},
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_unshared_gift_cards')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      findsOneWidget,
+    );
+  });
+
+  for (final testCase in [
     (
       name: 'incoming Gift Cards',
       error: const PaymentLinkInFlightClaimsException(

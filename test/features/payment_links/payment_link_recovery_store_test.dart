@@ -218,8 +218,161 @@ void main() {
       expect(restartedRecords.single.state, PaymentLinkRecoveryState.draft);
       expect(restartedRecords.single.fundingTxids, 'prepared-hardware-txid');
       expect(restartedRecords.single.preparedExpiryHeight, 3_456_829);
-      expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+      // Never handed to the network, so it does not block account deletion.
+      expect(await store.countUnsharedFundedForAccount('source-account'), 0);
     });
+
+    test('a prepared hardware draft records the broadcast boundary without '
+        'becoming ambiguous', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'source-account',
+      );
+      await store.markPrepared(
+        address: link.address,
+        fundingTxid: 'prepared-hardware-txid',
+        expiryHeight: 3_456_829,
+      );
+
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight,
+      );
+
+      final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+      expect(record.submittedAtHeight, _submissionHeight);
+      expect(record.fundingTxids, 'prepared-hardware-txid');
+      expect(record.isAmbiguousSubmission, isFalse);
+      expect(await store.countUnsharedFundedForAccount('source-account'), 1);
+      await expectLater(
+        store.removeUnsubmittedPreparedDraft(address: link.address),
+        throwsStateError,
+      );
+    });
+
+    test('only a draft past its broadcast boundary blocks deletion', () {
+      final link = _link();
+      PaymentLinkRecoveryRecord record(
+        PaymentLinkRecoveryState state, {
+        String sourceAccountUuid = 'source-account',
+        String? fundingTxids,
+        int? preparedExpiryHeight,
+        int? submittedAtHeight,
+      }) => PaymentLinkRecoveryRecord(
+        link: link,
+        sourceAccountUuid: sourceAccountUuid,
+        state: state,
+        updatedAt: DateTime.utc(2026, 9, 1),
+        fundingTxids: fundingTxids,
+        preparedExpiryHeight: preparedExpiryHeight,
+        submittedAtHeight: submittedAtHeight,
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+      const draft = PaymentLinkRecoveryState.draft;
+      final cases = <String, (PaymentLinkRecoveryRecord, bool)>{
+        'inert draft': (record(draft), false),
+        'prepared only': (
+          record(draft, fundingTxids: 'txid', preparedExpiryHeight: 120),
+          false,
+        ),
+        'prepared, broadcast started': (
+          record(
+            draft,
+            fundingTxids: 'txid',
+            preparedExpiryHeight: 120,
+            submittedAtHeight: 100,
+          ),
+          true,
+        ),
+        'ambiguous submission': (record(draft, submittedAtHeight: 0), true),
+        'software txid recorded': (
+          record(draft, fundingTxids: 'txid', submittedAtHeight: 100),
+          true,
+        ),
+        'funded': (
+          record(PaymentLinkRecoveryState.funded, fundingTxids: 'txid'),
+          true,
+        ),
+        'shared': (
+          record(PaymentLinkRecoveryState.shared, fundingTxids: 'txid'),
+          false,
+        ),
+        'other account': (
+          record(
+            PaymentLinkRecoveryState.funded,
+            sourceAccountUuid: 'other-account',
+            fundingTxids: 'txid',
+          ),
+          false,
+        ),
+      };
+      for (final MapEntry(key: name, value: (record, blocks))
+          in cases.entries) {
+        expect(
+          countUnsharedFundedPaymentLinks([
+            record,
+          ], sourceAccountUuid: 'source-account'),
+          blocks ? 1 : 0,
+          reason: name,
+        );
+      }
+    });
+
+    test(
+      'drops only the deleted account drafts that never reached the network',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        VizorPaymentLink linkAt(String address) => VizorPaymentLink(
+          network: 'main',
+          address: address,
+          amountZatoshi: BigInt.from(100000),
+          mnemonic: _link().mnemonic,
+          birthdayHeight: 3_456_789,
+          label: 'Payment link',
+          createdAt: DateTime.utc(2026, 8, 5, 12),
+        );
+        Future<void> save(String address, String account) => store.saveDraft(
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          link: linkAt(address),
+          sourceAccountUuid: account,
+        );
+        await save('u1inert', 'source-account');
+        await save('u1prepared', 'source-account');
+        await store.markPrepared(
+          address: 'u1prepared',
+          fundingTxid: 'prepared-txid',
+          expiryHeight: 120,
+        );
+        await save('u1submitted', 'source-account');
+        await store.markPrepared(
+          address: 'u1submitted',
+          fundingTxid: 'submitted-txid',
+          expiryHeight: 120,
+        );
+        await store.markSubmissionStarted(
+          address: 'u1submitted',
+          chainHeight: 100,
+        );
+        await save('u1funded', 'source-account');
+        await store.markFunded(address: 'u1funded', fundingTxids: 'funded');
+        await save('u1other', 'other-account');
+
+        expect(
+          await store.removeUnsubmittedDraftsForAccount('source-account'),
+          2,
+        );
+
+        expect(
+          [for (final record in await store.load()) record.link.address],
+          ['u1submitted', 'u1funded', 'u1other'],
+        );
+      },
+    );
 
     test('removes a definitely canceled hardware draft', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
@@ -245,7 +398,9 @@ void main() {
     test(
       'keeps the prepared txid when post-broadcast metadata retries fail',
       () async {
-        final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {3, 4});
+        // Writes: 1 saveDraft, 2 markPrepared, 3 the broadcast marker, 4+5 the
+        // two markFunded attempts.
+        final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {4, 5});
         final store = PaymentLinkRecoveryStore(storage);
         final link = _link();
         await store.saveDraft(
@@ -257,6 +412,10 @@ void main() {
           address: link.address,
           fundingTxid: 'prepared-hardware-txid',
           expiryHeight: 3_456_829,
+        );
+        await store.markSubmissionStarted(
+          address: link.address,
+          chainHeight: _submissionHeight,
         );
 
         final funding = await PaymentLinkFundingRecovery(store).complete(
@@ -648,7 +807,7 @@ void main() {
     });
 
     test(
-      'a draft that already knows its txid needs no submission marker',
+      'a recorded broadcast txid fills in a missing submission marker',
       () async {
         final storage = _FakePaymentLinkRecoveryStorage();
         final store = PaymentLinkRecoveryStore(storage);
@@ -662,18 +821,37 @@ void main() {
           address: link.address,
           fundingTxids: 'funding-txid',
         );
-
+        // An existing marker is the earlier, safer height and is kept.
         await store.markSubmissionStarted(
           address: link.address,
           chainHeight: _submissionHeight,
         );
 
         final record = (await PaymentLinkRecoveryStore(storage).load()).single;
-        expect(record.submittedAtHeight, isNull);
+        expect(record.submittedAtHeight, 0);
         expect(record.fundingTxids, 'funding-txid');
         expect(record.isAmbiguousSubmission, isFalse);
       },
     );
+
+    test('marks a Ledger broadcast only when its draft still exists', () async {
+      final store = PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage());
+
+      expect(
+        await store.markSubmissionStartedIfPresent(
+          address: _link().address,
+          chainHeight: _submissionHeight,
+        ),
+        isNull,
+      );
+      await expectLater(
+        store.markSubmissionStarted(
+          address: _link().address,
+          chainHeight: _submissionHeight,
+        ),
+        throwsStateError,
+      );
+    });
 
     test('an ambiguous submission cannot be removed as inert', () async {
       final storage = _FakePaymentLinkRecoveryStorage();
