@@ -108,9 +108,9 @@ class MobileModalCard extends StatelessWidget {
   /// Bottom sheets retain the default side and safe-area-aware bottom gaps.
   final EdgeInsets? margin;
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
+  /// Default bottom clearance shared by the card and content that sizes
+  /// itself to the space above it. Explicit [margin] overrides this gap.
+  static double bottomGapFor(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final keyboardInset = mediaQuery.viewInsets.bottom;
 
@@ -128,6 +128,12 @@ class MobileModalCard extends StatelessWidget {
       // 16px visual gap above whatever inset the device reports.
       bottomGap = AppSpacing.sm + mediaQuery.viewPadding.bottom;
     }
+    return bottomGap;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
 
     final Widget card = transparentBackground
         ? child
@@ -161,7 +167,7 @@ class MobileModalCard extends StatelessWidget {
           EdgeInsets.only(
             left: sideMargin,
             right: sideMargin,
-            bottom: bottomGap,
+            bottom: bottomGapFor(context),
           ),
       child: card,
     );
