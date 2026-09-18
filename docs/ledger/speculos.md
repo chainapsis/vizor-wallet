@@ -11,8 +11,8 @@ their wallet fixtures separately and print those paths in the scenario logs.
 # Build the ELF and verify emulator startup without launching Flutter.
 scripts/e2e/ledger-speculos-docker.sh smoke
 
-# Export UFVK and immediately sign through the production desktop transport
-# on the same emulator (no Flutter UI or broadcast).
+# Export UFVK, wait for its status screen, then sign through the production
+# desktop transport on the same emulator (no Flutter UI or broadcast).
 scripts/e2e/ledger-speculos-docker.sh signing-smoke
 
 # All desktop journeys, with hidden macOS windows by default.
@@ -71,17 +71,18 @@ exports the same URL as both `VIZOR_LEDGER_SPECULOS_UFVK_API_URL` and
 `VIZOR_LEDGER_SPECULOS_SIGNING_API_URL` to the existing E2E runner. The emulator is
 recreated before each journey, including fixture preparation.
 
-UFVK export leaves the Zcash app showing a status screen, just like signing.
-The desktop transport now applies its existing four-second operation cooldown
-after UFVK export as well as after signing. Previously only signing started that
-cooldown; an immediate PCZT request after UFVK export could receive no response.
-Separate emulators masked this missing wait. The raw APDU harness also waits
-four seconds after export because it bypasses the desktop operation guard.
+UFVK export leaves the emulated Zcash app showing a status screen. An immediate
+PCZT request during that screen can receive no response. Both the raw APDU and
+desktop smoke harness paths wait four seconds after export before continuing,
+so one emulator can serve both requests. This delay exists only in the developer
+harness; production UFVK handling and the existing post-signing cooldown are
+unchanged. The harness does not model the product's account-connection and
+signing page transitions.
 
-`signing-smoke` exercises UFVK approval, account import, PCZT signing approval,
-and finalization on the same instance through the production desktop transport.
-It is the focused regression check for this transition. It does not validate the
-mobile BLE path or physical hardware.
+`signing-smoke` exercises UFVK approval, the harness-only wait, account import,
+PCZT signing approval, and finalization on the same instance through the
+production desktop transport. It validates this emulator setup, not immediate
+export-to-sign behavior in the product, the mobile BLE path, or physical hardware.
 
 The existing `flutter-macos-ledger-speculos.sh` and
 `flutter-mobile-ledger-speculos.sh` still support externally managed endpoints.
