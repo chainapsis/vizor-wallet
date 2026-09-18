@@ -42,7 +42,9 @@ class AccountRemoveModal extends StatefulWidget {
   final int receivingGiftCardCount;
   final bool checkingReceivingGiftCards;
   final bool receivingGiftCardCheckFailed;
-  final int unsharedGiftCardCount;
+
+  /// Null when the unshared gift card check failed or is still running.
+  final int? unsharedGiftCardCount;
   final VoidCallback onCancel;
   final Future<bool> Function(String password) onConfirmPassword;
   final Future<void> Function(AccountRemoveProgressCallback onProgress)
@@ -200,6 +202,10 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   Widget build(BuildContext context) {
     final passwordMessage = _passwordMessage;
     final removalBlockMessage = _removalBlockMessage;
+    final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      widget.unsharedGiftCardCount,
+      walletReset: widget.isLastAccount,
+    );
 
     return AccountModalCard(
       child: Column(
@@ -225,14 +231,11 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               message: removalBlockMessage,
             ),
           ],
-          if (widget.unsharedGiftCardCount > 0) ...[
+          if (unsharedGiftCardWarning != null) ...[
             const SizedBox(height: AppSpacing.sm),
             _AccountRemoveWarningPanel(
               key: const ValueKey('account_remove_unshared_gift_card_warning'),
-              message: unsharedGiftCardRemovalWarning(
-                widget.unsharedGiftCardCount,
-                walletReset: widget.isLastAccount,
-              ),
+              message: unsharedGiftCardWarning,
             ),
           ],
           const SizedBox(height: AppSpacing.sm),

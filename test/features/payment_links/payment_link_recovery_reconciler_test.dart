@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -426,6 +428,20 @@ void main() {
       final reconciler = _abandonmentReconciler(fixture.store);
 
       expect((await reconciler.load()).single.submittedAtHeight, 100);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    });
+
+    test('keeps a legacy draft whose broadcast was never marked', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+      final legacy = jsonDecode(fixture.storage.value!) as Map<String, dynamic>
+        ..remove('submissionMarkersRecorded');
+      fixture.storage.value = jsonEncode(legacy);
+      final reconciler = _abandonmentReconciler(fixture.store);
+
+      expect((await reconciler.load()).single.submittedAtHeight, 0);
       expect(
         await reconciler.countUnsharedFundedForAccount('source-account'),
         1,

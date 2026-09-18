@@ -72,6 +72,7 @@ Widget _app(
   SyncNotifier Function()? syncNotifier,
   Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
   Map<String, int> unsharedGiftCardCounts = const {},
+  Set<String> unsharedGiftCardCheckFailures = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -111,9 +112,12 @@ Widget _app(
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _FakeMigrationCoordinator(migrationStatuses),
       ),
-      paymentLinkUnsharedFundedCountProvider.overrideWith(
-        (ref, uuid) async => unsharedGiftCardCounts[uuid] ?? 0,
-      ),
+      paymentLinkUnsharedFundedCountProvider.overrideWith((ref, uuid) async {
+        if (unsharedGiftCardCheckFailures.contains(uuid)) {
+          throw StateError('unshared gift card check failed');
+        }
+        return unsharedGiftCardCounts[uuid] ?? 0;
+      }),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -612,6 +616,22 @@ void main() {
           '2 funded gift card links have not been shared. Resetting Vizor '
           'loses them. Copy the links first.',
     ),
+    (
+      name: 'a failed unshared check',
+      accounts: const ['a', 'b'],
+      count: null,
+      message:
+          "Couldn't check for unshared gift card links. Copy any links you "
+          'still need before removing this account.',
+    ),
+    (
+      name: 'a failed unshared check on the last account',
+      accounts: const ['a'],
+      count: null,
+      message:
+          "Couldn't check for unshared gift card links. Copy any links you "
+          'still need before resetting Vizor.',
+    ),
   ]) {
     testWidgets('removal sheet warns about ${testCase.name}', (tester) async {
       final accountState = AccountState(
@@ -625,7 +645,8 @@ void main() {
           accountState,
           accountNotifier: () => accountNotifier,
           syncNotifier: _FakeWalletMutationSyncNotifier.new,
-          unsharedGiftCardCounts: {'a': testCase.count},
+          unsharedGiftCardCounts: {'a': ?testCase.count},
+          unsharedGiftCardCheckFailures: {if (testCase.count == null) 'a'},
         ),
       );
       await tester.pump();

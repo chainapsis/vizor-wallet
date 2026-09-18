@@ -441,14 +441,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         migrationStatus != null &&
         (migrationStatus.activeRunId != null ||
             isIronwoodMigrationInProgressPhase(migrationStatus.phase));
-    int unsharedGiftCardCount;
+    int? unsharedGiftCardCount;
     try {
       unsharedGiftCardCount = await ref.read(
         paymentLinkUnsharedFundedCountProvider(account.uuid).future,
       );
     } catch (e, st) {
       log('MobileAccounts: unshared gift card count failed: $e\n$st');
-      unsharedGiftCardCount = 0;
     }
     if (!mounted) return;
     final confirmed = await showAppMobileSheet<bool>(
@@ -721,7 +720,9 @@ class _RemoveAccountSheet extends StatelessWidget {
   final AccountInfo account;
   final bool isLastAccount;
   final bool hasActiveMigration;
-  final int unsharedGiftCardCount;
+
+  /// Null when the unshared gift card check failed.
+  final int? unsharedGiftCardCount;
 
   static const _titleStyle = TextStyle(
     fontFamily: 'Geist',
@@ -770,6 +771,10 @@ class _RemoveAccountSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      unsharedGiftCardCount,
+      walletReset: isLastAccount,
+    );
     return MobileModalScaffold(
       title: 'Remove account',
       onClose: () => Navigator.of(context).pop(false),
@@ -787,13 +792,10 @@ class _RemoveAccountSheet extends StatelessWidget {
             _description,
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
-          if (unsharedGiftCardCount > 0) ...[
+          if (unsharedGiftCardWarning != null) ...[
             const SizedBox(height: AppSpacing.s),
             Text(
-              unsharedGiftCardRemovalWarning(
-                unsharedGiftCardCount,
-                walletReset: isLastAccount,
-              ),
+              unsharedGiftCardWarning,
               key: const ValueKey('mobile_account_remove_unshared_gift_cards'),
               style: _bodyStyle.copyWith(color: colors.text.warning),
             ),

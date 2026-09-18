@@ -9,6 +9,9 @@ import '../models/gift_card_usage.dart';
 import 'payment_link_lifecycle_revision.dart';
 
 const _storageVersion = 1;
+// Envelope flag: every draft in this payload was written by a build that marks
+// the broadcast boundary. Older builds ignore it and drop it on rewrite.
+const _submissionMarkersKey = 'submissionMarkersRecorded';
 const _fundingMetadataWriteAttempts = 2;
 
 final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
@@ -25,8 +28,18 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
 enum PaymentLinkRecoveryState { draft, funded, shared }
 
 /// Removal confirmation copy for funded gift card links that were never
-/// shared; removal proceeds, so the user must copy them first.
-String unsharedGiftCardRemovalWarning(int count, {required bool walletReset}) {
+/// shared; removal proceeds, so the user must copy them first. A null [count]
+/// means the check failed or has not finished.
+String? unsharedGiftCardRemovalWarning(
+  int? count, {
+  required bool walletReset,
+}) {
+  if (count == null) {
+    final action = walletReset ? 'resetting Vizor' : 'removing this account';
+    return "Couldn't check for unshared gift card links. "
+        'Copy any links you still need before $action.';
+  }
+  if (count <= 0) return null;
   final subject = walletReset ? 'Resetting Vizor' : 'Removing this account';
   if (count == 1) {
     return '1 funded gift card link has not been shared. '
@@ -615,7 +628,11 @@ class PaymentLinkRecoveryStore {
           'Recovery payload records are missing.',
         );
       }
-      return [for (final item in items) _recordFromJson(item)];
+      final records = [for (final item in items) _recordFromJson(item)];
+      if (decoded[_submissionMarkersKey] == true) return records;
+      return [
+        for (final record in records) _withLegacySubmissionMarker(record),
+      ];
     } on PaymentLinkRecoveryStoreFormatException {
       rethrow;
     } catch (error) {
@@ -634,6 +651,7 @@ class PaymentLinkRecoveryStore {
     await _storage.write(
       jsonEncode({
         'version': _storageVersion,
+        _submissionMarkersKey: true,
         'records': [for (final record in records) _recordToJson(record)],
       }),
     );
@@ -767,6 +785,24 @@ PaymentLinkRecoveryRecord? _findByAddress(
     if (record.link.address == address) return record;
   }
   return null;
+}
+
+/// Older builds could broadcast a draft's funding without writing the marker,
+/// so a legacy draft carrying a txid is treated as submitted at an unknown
+/// height.
+PaymentLinkRecoveryRecord _withLegacySubmissionMarker(
+  PaymentLinkRecoveryRecord record,
+) {
+  if (record.state != PaymentLinkRecoveryState.draft ||
+      record.submittedAtHeight != null ||
+      (record.fundingTxids?.trim().isEmpty ?? true)) {
+    return record;
+  }
+  return record.copyWith(
+    state: record.state,
+    updatedAt: record.updatedAt,
+    submittedAtHeight: 0,
+  );
 }
 
 PaymentLinkRecoveryRecord _findRequired(

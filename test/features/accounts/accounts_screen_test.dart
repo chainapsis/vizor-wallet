@@ -1049,6 +1049,43 @@ void main() {
     expect(accountNotifier.removedUuid, 'account-2');
   });
 
+  testWidgets('remove account warns when the unshared check fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCheckFailures: const {'account-2'},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.text(
+        "Couldn't check for unshared gift card links. Copy any links you "
+        'still need before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
   testWidgets(
     'remove account has no Gift Card warning without unshared cards',
     (tester) async {
@@ -1506,6 +1543,7 @@ Widget _accountsHarness({
   Map<String, int> pendingSwapCounts = const {},
   Map<String, int> receivingGiftCardCounts = const {},
   Map<String, int> unsharedGiftCardCounts = const {},
+  Set<String> unsharedGiftCardCheckFailures = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -1563,6 +1601,9 @@ Widget _accountsHarness({
         ref,
         accountUuid,
       ) async {
+        if (unsharedGiftCardCheckFailures.contains(accountUuid)) {
+          throw StateError('unshared gift card check failed');
+        }
         return unsharedGiftCardCounts[accountUuid] ?? 0;
       }),
       appSecurityProvider.overrideWith(

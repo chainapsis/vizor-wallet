@@ -373,8 +373,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                         modalReceivingGiftCardCount.isLoading,
                     receivingGiftCardCheckFailed:
                         modalReceivingGiftCardCount.hasError,
-                    unsharedGiftCardCount:
-                        modalUnsharedGiftCardCount.value ?? 0,
+                    unsharedGiftCardCount: modalUnsharedGiftCardCount.hasError
+                        ? null
+                        : modalUnsharedGiftCardCount.value,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)
