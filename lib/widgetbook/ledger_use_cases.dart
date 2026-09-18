@@ -177,6 +177,9 @@ Widget buildLedgerSigningPreview({
   String mobileTitle = 'Ledger',
   LedgerMobileBleService? bluetoothService,
 }) {
+  final canLeave =
+      phase != LedgerSigningModalPhase.saving &&
+      phase != LedgerSigningModalPhase.broadcasting;
   final modal = LedgerSigningModal(
     phase: phase,
     signingStage: readiness == LedgerSigningPlaygroundReadiness.ready
@@ -185,7 +188,7 @@ Widget buildLedgerSigningPreview({
     failure: phase == LedgerSigningModalPhase.failed
         ? failureOverride ?? _failurePresentation(failureMode)
         : null,
-    onCancel: () {},
+    onCancel: canLeave ? () {} : null,
     onFailureAction: () {},
     accountUuid: _ledgerAccount.uuid,
     roundNumber: roundNumber,
@@ -216,7 +219,7 @@ Widget buildLedgerSigningPreview({
                 MobileLedgerSigningSurface(
                   title: mobileTitle,
                   onBack: () {},
-                  canLeave: phase != LedgerSigningModalPhase.broadcasting,
+                  canLeave: canLeave,
                   child: modal,
                 ),
               ],
@@ -248,6 +251,38 @@ Widget buildLedgerVotingPlaygroundUseCase(BuildContext context) {
     bundleNumber: requestedBundle > bundleCount ? bundleCount : requestedBundle,
     bundleCount: bundleCount,
     displayMemo: memo,
+  );
+}
+
+/// Static production voting panel for deterministic signing-state captures.
+Widget buildLedgerVotingProcessingPreview({required bool mobile}) {
+  final panel = LedgerVotingSigningPanel(
+    accountUuid: _ledgerAccount.uuid,
+    displayMemo: 'Delegate voting power for this round.',
+    bundleIndex: 0,
+    bundleCount: 2,
+    onCancel: () {},
+  );
+  return ProviderScope(
+    overrides: [
+      ledgerSigningProgressProvider.overrideWith(
+        () => _LedgerPreviewProgressController(LedgerSigningStage.sending),
+      ),
+      ledgerAppReadinessStateProvider.overrideWith(
+        () => _LedgerPreviewReadinessController(
+          _readinessState(LedgerSigningPlaygroundReadiness.ready),
+        ),
+      ),
+    ],
+    child: mobile
+        ? MobileLedgerSigningSurface(
+            onBack: () {},
+            canLeave: true,
+            child: panel,
+          )
+        : Center(
+            child: SizedBox(width: 460, child: IntrinsicHeight(child: panel)),
+          ),
   );
 }
 
