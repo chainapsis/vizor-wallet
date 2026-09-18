@@ -61,7 +61,7 @@ void main() {
       'ledger_status_5223: Ledger Zcash app returned status':
           LedgerRequestFailure.unexpectedStatus,
       'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33':
-          LedgerRequestFailure.requestRejected,
+          LedgerRequestFailure.requestTooLarge,
       'ledger_cancelled: Ledger operation was cancelled. Retry when ready.':
           LedgerRequestFailure.cancelled,
       'ledger_transport: Write Ledger HID packet: device disconnected':
@@ -147,7 +147,8 @@ void main() {
       for (final failure in LedgerRequestFailure.values) {
         expect(
           failure.retryable,
-          failure != LedgerRequestFailure.requestRejected,
+          failure != LedgerRequestFailure.requestRejected &&
+              failure != LedgerRequestFailure.requestTooLarge,
           reason: '$failure',
         );
       }
@@ -163,7 +164,7 @@ void main() {
       )!;
       expect(guidance.retryable, isFalse);
       expect(guidance.message, kLedgerHostRequestRejectedMessage);
-      expect(guidance.message, contains('create a new request'));
+      expect(guidance.message, contains('Create a new'));
       expect(guidance.showDeviceAppPrompt, isFalse);
       expect(
         LedgerRequestFailure.requestRejected.title,
@@ -190,7 +191,13 @@ void main() {
         'ledger_status_6a84: Ledger ran out of memory for this transaction; try a smaller amount',
       )!;
       expect(guidance.retryable, isFalse);
-      expect(guidance.message, contains('try a smaller amount'));
+      expect(guidance.message, contains('Try a smaller amount'));
+      expect(
+        LedgerRequestFailure.fromError(
+          'ledger_status_6a84: Ledger ran out of memory',
+        ).title,
+        'Request too large',
+      );
     });
 
     test('a wrong PIN asks the user to unlock the Ledger', () {
@@ -219,7 +226,7 @@ void main() {
         'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33',
       )!;
       expect(guidance.retryable, isFalse);
-      expect(guidance.message, contains('try a smaller amount'));
+      expect(guidance.message, contains('Try a smaller amount'));
     });
 
     test('a status inside a connection failure reaches the guidance', () {
@@ -274,7 +281,7 @@ void main() {
       );
       expect(
         LedgerRequestFailure.appUpdateRequired.message,
-        'Update the Zcash app on your Ledger to 3.9.3 or newer, then try again.',
+        'Update the Zcash app to 3.9.3 or newer.',
       );
     });
 
@@ -283,13 +290,13 @@ void main() {
         'ledger_status_6986: Ledger Zcash app returned status 0x6986':
             kLedgerHostRequestRejectedMessage,
         'ledger_status_b007: Ledger Zcash app is in the wrong state; close and reopen the app':
-            'Close and reopen the Zcash app on your Ledger, then try again.',
+            'Close and reopen the Zcash app.',
         'ledger_status_6601: Ledger device is busy switching apps; retry shortly':
-            'Your Ledger is busy. Wait a moment, then try again.',
+            'Your Ledger is busy. Try again in a moment.',
         'ledger_status_6901: Ledger display is busy starting a review; retry shortly':
-            'Your Ledger is busy. Wait a moment, then try again.',
+            'Your Ledger is busy. Try again in a moment.',
         'ledger_status_6807: The Zcash app is not installed on this Ledger':
-            'Install the Zcash app on your Ledger with Ledger Live, then try again.',
+            'Install the Zcash app with Ledger Live.',
         'ledger_status_5502: Ledger device PIN is not set':
             'Set up a PIN on your Ledger, then try again.',
         'ledger_status_5515: Ledger device is locked; unlock it and reopen the Zcash app':
@@ -320,7 +327,7 @@ void main() {
         expect(
           guidance.message,
           allOf(
-            contains('Close and reopen'),
+            contains('Reopen the Zcash app'),
             contains('(0x$code)'),
             isNot(contains('rejected')),
           ),
@@ -334,7 +341,7 @@ void main() {
         'ledger_signature_mismatch: Validate Ledger transparent signature 1: InvalidSignature',
       ]) {
         final guidance = ledgerFailureGuidance(error)!;
-        expect(guidance.message, contains('do not match this account'));
+        expect(guidance.message, 'Connect the Ledger that holds this account.');
         expect(guidance.retryable, isTrue);
       }
       // Only the Rust prefix identifies a mismatch.
@@ -352,7 +359,7 @@ void main() {
       final guidance = ledgerFailureGuidance(derivation)!;
       expect(guidance.retryable, isFalse);
       expect(guidance.message, isNot(contains('smaller amount')));
-      expect(guidance.message, contains('create a new request'));
+      expect(guidance.message, contains('Create a new'));
     });
 
     test(
@@ -366,34 +373,34 @@ void main() {
         };
         expect(
           messages[LedgerRequestKind.send],
-          contains('try a smaller amount'),
+          contains('Try a smaller amount'),
         );
-        expect(
-          messages[LedgerRequestKind.swap],
-          contains('review the new quote'),
-        );
+        expect(messages[LedgerRequestKind.swap], contains('Start a new swap'));
         expect(
           messages[LedgerRequestKind.payment],
-          contains('Do not send a smaller amount'),
-        );
-        expect(
-          messages[LedgerRequestKind.shield],
           allOf(
-            contains('nothing was shielded for this approval'),
-            isNot(contains('cannot split')),
+            contains('Start a new payment'),
+            contains('Don’t send a smaller amount'),
           ),
         );
         expect(
+          messages[LedgerRequestKind.shield],
+          contains('Nothing was shielded'),
+        );
+        expect(
           messages[LedgerRequestKind.migration],
-          contains('Return to review'),
+          contains('Nothing was migrated'),
         );
         expect(
           messages[LedgerRequestKind.voting],
-          isNot(contains('try a smaller amount')),
+          allOf(
+            contains('Your vote was not signed'),
+            isNot(contains('smaller')),
+          ),
         );
         expect(
           messages[LedgerRequestKind.giftCard],
-          contains('create a gift card with a smaller amount'),
+          contains('Create a gift card with a smaller amount'),
         );
       },
     );
@@ -422,7 +429,7 @@ void main() {
           error,
           requestKind: LedgerRequestKind.giftCard,
         )!.message,
-        contains('create a new gift card'),
+        contains('Create a new gift card'),
       );
     });
 

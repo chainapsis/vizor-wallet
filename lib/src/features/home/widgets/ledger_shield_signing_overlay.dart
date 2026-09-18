@@ -557,7 +557,7 @@ class _LedgerShieldSigningOverlayState
     if (failure == LedgerRequestFailure.requestRejected &&
         classifyLedgerError(error) == LedgerFailureKind.hostRequestRejected &&
         _round > 1) {
-      return 'Vizor built a request that the Zcash app on your Ledger could not accept. This approval was not sent; earlier approvals in this session were already broadcast.';
+      return 'Your Ledger couldn’t accept this approval. Earlier approvals were already sent.';
     }
     if (guidance != null) return guidance.message;
     final lower = error.toString().toLowerCase();

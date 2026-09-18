@@ -667,7 +667,7 @@ class _SwapLedgerSigningOverlayState
     final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
     if (usb != null) return usb;
     if (lower.contains('sapling')) {
-      return 'This Ledger preview does not support Sapling inputs or outputs.';
+      return kLedgerSaplingRecipientMessage;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return 'The ZEC deposit could not be broadcast.';

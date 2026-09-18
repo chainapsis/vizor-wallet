@@ -64,8 +64,9 @@ LedgerFailureGuidance? ledgerFailureGuidance(
 
   final failure = LedgerRequestFailure.fromError(error);
   return switch (failure) {
-    LedgerRequestFailure.requestRejected => LedgerFailureGuidance(
-      _requestRejectedMessage(error, requestKind),
+    LedgerRequestFailure.requestRejected ||
+    LedgerRequestFailure.requestTooLarge => LedgerFailureGuidance(
+      _rebuildMessage(error, requestKind),
       retryable: false,
     ),
     LedgerRequestFailure.wrongApp ||
@@ -147,9 +148,13 @@ LedgerFailureGuidance _mobileGuidance(
 enum LedgerRequestFailure {
   declined,
 
-  /// The app refused a request Vizor built, or the request exceeds what the
-  /// device can sign. Sending the same request again fails the same way.
+  /// The app refused or could not parse a request Vizor built. Sending the
+  /// same request again fails the same way.
   requestRejected,
+
+  /// The request exceeds what the device can sign or hold in memory. Sending
+  /// the same request again fails the same way.
+  requestTooLarge,
   deviceLocked,
   pinNotSet,
   wrongApp,
@@ -166,8 +171,8 @@ enum LedgerRequestFailure {
   static LedgerRequestFailure fromError(Object error) =>
       switch (classifyLedgerError(error)) {
         LedgerFailureKind.userRejected => declined,
-        LedgerFailureKind.hostRequestRejected ||
-        LedgerFailureKind.capacityExceeded => requestRejected,
+        LedgerFailureKind.hostRequestRejected => requestRejected,
+        LedgerFailureKind.capacityExceeded => requestTooLarge,
         LedgerFailureKind.deviceLocked => deviceLocked,
         LedgerFailureKind.pinNotSet => pinNotSet,
         LedgerFailureKind.wrongApp => wrongApp,
@@ -186,11 +191,12 @@ enum LedgerRequestFailure {
       };
 
   /// Whether sending the same request again can succeed.
-  bool get retryable => this != requestRejected;
+  bool get retryable => this != requestRejected && this != requestTooLarge;
 
   String get title => switch (this) {
     declined => 'Request declined',
     requestRejected => 'Request could not be accepted',
+    requestTooLarge => 'Request too large',
     deviceLocked => 'Unlock your Ledger',
     pinNotSet => 'Set up a PIN on your Ledger',
     wrongApp => 'Open the Zcash app',
@@ -205,68 +211,70 @@ enum LedgerRequestFailure {
   };
 
   String get message => switch (this) {
-    declined =>
-      'The request appears to have been declined on your Ledger. Try again when you’re ready.',
+    declined => 'Declined on your Ledger. Try again when ready.',
     requestRejected => kLedgerHostRequestRejectedMessage,
+    requestTooLarge => 'Too many inputs for your Ledger. Try a smaller amount.',
     deviceLocked => 'Unlock your Ledger, then try again.',
     pinNotSet => 'Set up a PIN on your Ledger, then try again.',
-    wrongApp => 'Open the Zcash app on your Ledger, then try again.',
-    appNotInstalled =>
-      'Install the Zcash app on your Ledger with Ledger Live, then try again.',
+    wrongApp => 'Open the Zcash app on your Ledger.',
+    appNotInstalled => 'Install the Zcash app with Ledger Live.',
     appUpdateRequired =>
-      'Update the Zcash app on your Ledger to $kMinimumLedgerZcashAppVersion or newer, then try again.',
-    appWrongState =>
-      'Close and reopen the Zcash app on your Ledger, then try again.',
-    busy => 'Your Ledger is busy. Wait a moment, then try again.',
-    cancelled => 'The Ledger request was cancelled. Try again when ready.',
-    transportLost => 'Reconnect and unlock your Ledger, then try again.',
-    signatureMismatch =>
-      'The signatures from this Ledger do not match this account. Connect the Ledger that holds this account, then try again.',
+      'Update the Zcash app to $kMinimumLedgerZcashAppVersion or newer.',
+    appWrongState => 'Close and reopen the Zcash app.',
+    busy => 'Your Ledger is busy. Try again in a moment.',
+    cancelled => 'Request cancelled. Try again when ready.',
+    transportLost => 'Reconnect and unlock your Ledger.',
+    signatureMismatch => 'Connect the Ledger that holds this account.',
     unexpectedStatus =>
-      'Your Ledger returned an unexpected error. Close and reopen the Zcash app, then try again.',
-    other =>
-      'Check your Ledger and make sure the Zcash app is open, then try again.',
+      'Unexpected Ledger error. Reopen the Zcash app and try again.',
+    other => 'Check your Ledger and open the Zcash app, then try again.',
   };
 }
 
 const kLedgerHostRequestRejectedMessage =
-    'Vizor built a request that the Zcash app on your Ledger could not accept. Go back and create a new request. Nothing was sent.';
+    'Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.';
 
 const kLedgerViewingKeyRequestRejectedMessage =
-    'The Zcash app on your Ledger could not accept this viewing-key request. Check the account number, then try again.';
+    'Your Ledger couldn’t accept this viewing-key request. Check the account number.';
+
+const kLedgerSaplingRecipientMessage =
+    'Your Ledger can’t send to a Sapling address. Create a new request.';
 
 // Rust rejects a transparent output with several BIP-32 derivations before
 // any device exchange; its wallet-built message is the only evidence.
 bool _exceedsTransactionFormat(Object error) =>
     error.toString().toLowerCase().contains('ledger supports at most');
 
-String _requestRejectedMessage(Object error, LedgerRequestKind kind) {
+String _rebuildMessage(Object error, LedgerRequestKind kind) {
   if (classifyLedgerError(error) == LedgerFailureKind.capacityExceeded) {
     return switch (kind) {
       LedgerRequestKind.send || LedgerRequestKind.viewingKey =>
-        'This transfer includes more inputs or outputs than your Ledger can sign at once. Go back and try a smaller amount.',
+        LedgerRequestFailure.requestTooLarge.message,
       LedgerRequestKind.swap =>
-        'This deposit is too large for your Ledger to sign at once. Start a new swap with a smaller amount and review the new quote. Nothing was sent for this request.',
+        'Too large for your Ledger. Start a new swap with a smaller amount.',
       LedgerRequestKind.payment =>
-        'This payment is too large for your Ledger to sign at once. Go back and arrange a smaller payment or use another payment method. Do not send a smaller amount to this payment address.',
+        'Too large for your Ledger. Start a new payment. Don’t send a smaller amount to this address.',
       LedgerRequestKind.shield =>
-        'This shielding request includes more inputs than your Ledger can sign at once. Return to your wallet and try again; nothing was shielded for this approval.',
+        'Too many inputs for your Ledger. Try again. Nothing was shielded.',
+      // Ledger migration spends every Orchard note in one transaction and
+      // nothing splits it, so there is no smaller request to make.
       LedgerRequestKind.migration =>
-        'This migration request exceeds your Ledger’s signing limit. Return to review. Retrying the same request will not reduce its size.',
+        'Too many notes for your Ledger to migrate at once. Nothing was migrated.',
+      // The round's bundle policy fixes the vote's size.
       LedgerRequestKind.voting =>
-        'This voting request exceeds your Ledger’s signing limit. Your vote was not signed. Changing a transfer amount will not fix this voting request.',
+        'This vote has too many notes for your Ledger. Your vote was not signed.',
       LedgerRequestKind.giftCard =>
-        'This gift card includes more inputs or outputs than your Ledger can sign at once. Go back and create a gift card with a smaller amount.',
+        'Too large for your Ledger. Create a gift card with a smaller amount.',
     };
   }
   if (_exceedsTransactionFormat(error)) {
-    return 'Your Ledger cannot sign this transaction format. Go back and create a new request.';
+    return 'Your Ledger can’t sign this transaction type. Create a new request.';
   }
   return switch (kind) {
     LedgerRequestKind.voting =>
-      'Vizor built a vote request that the Zcash app on your Ledger could not accept. Your vote was not signed.',
+      'Your Ledger couldn’t accept this vote request. Your vote was not signed.',
     LedgerRequestKind.giftCard =>
-      'Vizor built a gift card request that the Zcash app on your Ledger could not accept. Go back and create a new gift card. Nothing was sent.',
+      'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.',
     LedgerRequestKind.viewingKey => kLedgerViewingKeyRequestRejectedMessage,
     _ => kLedgerHostRequestRejectedMessage,
   };
@@ -277,7 +285,7 @@ String _unexpectedStatusMessage(Object error) {
   final code = status == null
       ? ''
       : ' (0x${status.toRadixString(16).padLeft(4, '0')})';
-  return 'Your Ledger returned an unexpected error$code. Close and reopen the Zcash app, then try again.';
+  return 'Unexpected Ledger error$code. Reopen the Zcash app and try again.';
 }
 
 String ledgerUsbPermissionMessage(TargetPlatform platform) {

@@ -458,15 +458,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',
         statusLabel: 'Unsupported transaction',
-        message:
-            'This Ledger preview does not support Sapling inputs or outputs.',
+        message: kLedgerSaplingRecipientMessage,
         showDeviceAppPrompt: false,
       );
       action = null;
     } else if (guidance != null && !guidance.retryable) {
       // Retrying the same request fails the same way on the device.
       failure = LedgerSigningFailurePresentation(
-        title: LedgerRequestFailure.requestRejected.title,
+        title: LedgerRequestFailure.fromError(error).title,
         statusLabel: 'New transaction required',
         message: guidance.message,
         showDeviceAppPrompt: false,

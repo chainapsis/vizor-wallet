@@ -50,7 +50,7 @@ void main() {
     ('6985', 'The gift card funding was rejected on your Ledger.', true),
     (
       '6a80',
-      'Vizor built a gift card request that the Zcash app on your Ledger could not accept. Go back and create a new gift card. Nothing was sent.',
+      'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.',
       false,
     ),
   ]) {

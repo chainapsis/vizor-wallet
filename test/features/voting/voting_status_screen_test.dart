@@ -4272,12 +4272,12 @@ void main() {
     ),
     (
       'ledger_status_6a80: Ledger rejected the PCZT data or key path',
-      'Vizor built a vote request that the Zcash app on your Ledger could not accept. Your vote was not signed.',
+      'Your Ledger couldn’t accept this vote request. Your vote was not signed.',
       false,
     ),
     (
       'ledger_capacity: voting PCZT exceeds the Ledger action limit',
-      'This voting request exceeds your Ledger’s signing limit. Your vote was not signed. Changing a transfer amount will not fix this voting request.',
+      'This vote has too many notes for your Ledger. Your vote was not signed.',
       false,
     ),
   ]) {
