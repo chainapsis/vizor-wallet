@@ -299,6 +299,24 @@ COMMIT_JSON="$(curl -fsS "http://127.0.0.1:$VOTE_RPC_PORT/commit")"
 CHAIN_ID="$(jq -r '.result.signed_header.header.chain_id' <<<"$COMMIT_JSON")"
 VALIDATOR_HASH="$(jq -r '.result.signed_header.header.validators_hash' <<<"$COMMIT_JSON")"
 
+if [[ "${E2E_LEDGER_VOTING:-false}" == true ]]; then
+  signer_port_file="$LOG_DIR/ledger-signer.port"
+  rm -f "$signer_port_file"
+  python3 "$ROOT_DIR/scripts/e2e/ledger-regtest-signer.py" \
+    --helper "$VIZOR_LEDGER_REGTEST_HELPER" \
+    --speculos-url "$VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" \
+    --account "$VIZOR_LEDGER_REGTEST_ACCOUNT" --port-file "$signer_port_file" \
+    > "$LOG_DIR/ledger-signer.log" 2>&1 &
+  signer_pid=$!
+  pids+=("$signer_pid")
+  for ((attempt=0; attempt<50; attempt++)); do
+    [[ -s "$signer_port_file" ]] && break
+    kill -0 "$signer_pid" || { cat "$LOG_DIR/ledger-signer.log" >&2; exit 1; }
+    sleep 0.1
+  done
+  export VIZOR_LEDGER_REGTEST_SIGNER_URL="http://127.0.0.1:$(cat "$signer_port_file")"
+fi
+
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
 flutter_test_command=(
@@ -310,6 +328,7 @@ fi
 voting_defines=( \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_LEDGER_VOTING="${E2E_LEDGER_VOTING:-false}" \
+  --dart-define=VIZOR_LEDGER_REGTEST_SIGNER_URL="${VIZOR_LEDGER_REGTEST_SIGNER_URL:-}" \
   --dart-define=ZCASH_E2E_FINAL_TALLY="${E2E_FINAL_TALLY:-false}" \
   --dart-define=VIZOR_LEDGER_SPECULOS_API_URL="${VIZOR_LEDGER_SPECULOS_SIGNING_API_URL:-}" \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \

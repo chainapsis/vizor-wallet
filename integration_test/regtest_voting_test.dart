@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart' show InkWell;
 import 'package:flutter/widgets.dart';
@@ -9,17 +10,16 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_onboarding_flow.dart';
-import 'support/speculos_review.dart';
 import 'support/voting_discovery_regtest.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
@@ -30,7 +30,9 @@ const _bip39Passphrase = 'TREZOR';
 const _password = 'Vizor123!';
 const _ledger = bool.fromEnvironment('ZCASH_E2E_LEDGER_VOTING');
 const _finalTally = bool.fromEnvironment('ZCASH_E2E_FINAL_TALLY');
-const _speculosUrl = String.fromEnvironment('VIZOR_LEDGER_SPECULOS_API_URL');
+const _ledgerSignerUrl = String.fromEnvironment(
+  'VIZOR_LEDGER_REGTEST_SIGNER_URL',
+);
 const _roundId = String.fromEnvironment('ZCASH_E2E_VOTE_ROUND_ID');
 const _reuseMigratedWallet = bool.fromEnvironment(
   'ZCASH_E2E_REUSE_MIGRATED_WALLET',
@@ -59,12 +61,12 @@ void main() {
             ...votingDiscoveryRegtestOverrides(),
             if (_ledger)
               ledgerVotingPcztSignerProvider.overrideWith((ref) {
-                final sign = ref.watch(ledgerActionPcztSignerProvider);
                 return (accountUuid, pczt) async {
-                  final approval = approveNextSpeculosReview(_speculosUrl);
-                  final signatures = await sign(accountUuid, pczt);
-                  expect(await approval, isTrue);
+                  final signatures = await _signRegtestPczt(pczt);
                   ledgerSignatures += signatures.length;
+                  _log(
+                    'Ledger returned ${signatures.length} verified signatures',
+                  );
                   return signatures;
                 };
               }),
@@ -79,19 +81,16 @@ void main() {
         await container
             .read(appSecurityProvider.notifier)
             .preparePasswordSetup(_password);
-        final approval = approveNextSpeculosReview(_speculosUrl);
-        final account = await rust_ledger.ledgerExportAccount(
-          accountIndex: 0,
-          network: 'regtest',
-        );
-        expect(await approval, isTrue);
+        final account =
+            await _ledgerRequest('/account') as Map<String, dynamic>;
         await container
             .read(accountProvider.notifier)
             .importLedgerAccount(
               name: 'Regtest Ledger',
-              ufvk: account.ufvk,
-              seedFingerprint: account.seedFingerprint,
-              zip32Index: account.accountIndex,
+              ufvk: account['ufvk'] as String,
+              seedFingerprint: (account['seed_fingerprint'] as List)
+                  .cast<int>(),
+              zip32Index: account['account_index'] as int,
               birthdayHeight: 500,
             );
         container.read(appSecurityProvider.notifier).commitPasswordSetup();
@@ -275,9 +274,20 @@ void main() {
       _log('waiting for real delegation, commitment, and share proofs');
       await _pumpUntil(
         tester,
-        () => tester.any(
-          find.byKey(const ValueKey('voting_submission_done_button')),
-        ),
+        () {
+          final job = providerContainer.read(
+            votingSubmissionJobProvider(draftKey),
+          );
+          if (job.errorMessage != null) fail(job.errorMessage!);
+          final session = providerContainer.read(
+            votingSessionProvider(_roundId),
+          );
+          if (session.hasError) fail('Voting session failed: ${session.error}');
+          if (session.value?.error != null) fail(session.value!.error!.message);
+          return tester.any(
+            find.byKey(const ValueKey('voting_submission_done_button')),
+          );
+        },
         description: 'confirmed voting receipt',
         timeout: const Duration(minutes: 40),
       );
@@ -449,4 +459,37 @@ Future<void> _pumpUntil(
 
 void _log(String message) {
   debugPrint('[voting-regtest-e2e] $message');
+}
+
+Future<List<LedgerVotingSignature>> _signRegtestPczt(List<int> pczt) async {
+  final signatures = await _ledgerRequest('/sign', pczt) as List;
+  return signatures
+      .map(
+        (dynamic signature) => LedgerVotingSignature(
+          pool: signature['pool'] as int,
+          actionIndex: signature['action_index'] as int,
+          signature: (signature['signature'] as List).cast<int>(),
+        ),
+      )
+      .toList();
+}
+
+Future<dynamic> _ledgerRequest(String path, [List<int>? pczt]) async {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+  try {
+    final uri = Uri.parse('$_ledgerSignerUrl$path');
+    final request = await client.openUrl(pczt == null ? 'GET' : 'POST', uri);
+    if (pczt != null) {
+      request.contentLength = pczt.length;
+      request.add(pczt);
+    }
+    final response = await request.close().timeout(const Duration(minutes: 6));
+    final body = await utf8.decoder.bind(response).join();
+    if (response.statusCode != 200) {
+      throw StateError('Ledger helper HTTP ${response.statusCode}: $body');
+    }
+    return jsonDecode(body);
+  } finally {
+    client.close(force: true);
+  }
 }
