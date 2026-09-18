@@ -301,16 +301,16 @@ void main() {
 
     // The sheet hugs the calendar instead of claiming the full
     // scroll-controlled height: panel + the AppSpacing.sm padding, plus
-    // the modal base frame's bottom gap (AppSpacing.base) that floats the
+    // the modal base frame's bottom gap (AppSpacing.sm) that floats the
     // card off the screen edge. No device safe-area inset in tests, so
-    // the gap is the bare AppSpacing.base on both platform branches.
+    // the gap is the bare AppSpacing.sm on both platform branches.
     final panelHeight = tester
         .getSize(find.byType(ImportBirthdayCalendarPanel))
         .height;
     final sheetHeight = tester.getSize(find.byType(BottomSheet)).height;
     expect(
       sheetHeight,
-      closeTo(panelHeight + AppSpacing.sm * 2 + AppSpacing.base, 1.0),
+      closeTo(panelHeight + AppSpacing.sm * 3, 1.0),
     );
 
     // The panel is its own card, so the sheet surface stays invisible —
