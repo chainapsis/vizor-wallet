@@ -352,7 +352,7 @@ void main() {
       await tester.tap(find.text('Open signing'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Request could not be accepted'), findsOneWidget);
+      expect(find.text('Request not accepted'), findsOneWidget);
       expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(

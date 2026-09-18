@@ -168,7 +168,7 @@ void main() {
       expect(guidance.showDeviceAppPrompt, isFalse);
       expect(
         LedgerRequestFailure.requestRejected.title,
-        'Request could not be accepted',
+        'Request not accepted',
       );
     });
 
@@ -375,7 +375,10 @@ void main() {
           messages[LedgerRequestKind.send],
           contains('Try a smaller amount'),
         );
-        expect(messages[LedgerRequestKind.swap], contains('Start a new swap'));
+        expect(
+          messages[LedgerRequestKind.swap],
+          'Start a new swap with a smaller amount. This one is discarded.',
+        );
         expect(
           messages[LedgerRequestKind.payment],
           allOf(
@@ -389,14 +392,11 @@ void main() {
         );
         expect(
           messages[LedgerRequestKind.migration],
-          contains('Nothing was migrated'),
+          contains('can’t split it yet'),
         );
         expect(
           messages[LedgerRequestKind.voting],
-          allOf(
-            contains('Your vote was not signed'),
-            isNot(contains('smaller')),
-          ),
+          'This vote is too large for your Ledger to sign.',
         );
         expect(
           messages[LedgerRequestKind.giftCard],

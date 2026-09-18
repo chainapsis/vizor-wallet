@@ -221,9 +221,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(ble.calls, containsAllInOrder(['connect', 'ready']));
       expect(
-        find.text(
-          declined ? 'Request declined' : 'Couldn’t complete the request',
-        ),
+        find.text(declined ? 'Request declined' : 'Request failed'),
         findsOneWidget,
       );
       expect(find.text('Ledger Flex'), findsOneWidget);

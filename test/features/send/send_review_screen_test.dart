@@ -1240,9 +1240,7 @@ void main() {
           final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
           expect(
             find.text(
-              pairingInvalid
-                  ? 'Pair your Ledger again'
-                  : 'Couldn’t complete the request',
+              pairingInvalid ? 'Pair your Ledger again' : 'Request failed',
             ),
             findsOneWidget,
           );
@@ -1384,7 +1382,7 @@ void main() {
       await tester.tap(find.text('Confirm with Ledger'));
       await _flushRealAsync(tester);
 
-      expect(find.text('Request could not be accepted'), findsOneWidget);
+      expect(find.text('Request not accepted'), findsOneWidget);
       expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(

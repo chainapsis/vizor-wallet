@@ -108,7 +108,7 @@ void main() {
           ledgerFailureGuidance(error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
               : ledgerFailureGuidance(error)?.pairingRecovery == true
-              ? 'Couldn’t complete the request'
+              ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
               : ledgerFailureGuidance(error)?.message ??

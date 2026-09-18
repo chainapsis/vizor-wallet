@@ -76,7 +76,7 @@ void main() {
       );
       await frames(tester);
       expect(find.text('Did you reset pairing?'), findsNothing);
-      expect(find.text('Couldn’t complete the request'), findsOneWidget);
+      expect(find.text('Request failed'), findsOneWidget);
       ble.pairingInvalidEvidence.value = true;
       await frames(tester);
       expect(find.text('Pair your Ledger again'), findsOneWidget);

@@ -4277,7 +4277,7 @@ void main() {
     ),
     (
       'ledger_capacity: voting PCZT exceeds the Ledger action limit',
-      'This vote has too many notes for your Ledger. Your vote was not signed.',
+      'This vote is too large for your Ledger to sign.',
       false,
     ),
   ]) {

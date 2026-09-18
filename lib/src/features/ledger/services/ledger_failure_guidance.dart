@@ -195,19 +195,20 @@ enum LedgerRequestFailure {
 
   String get title => switch (this) {
     declined => 'Request declined',
-    requestRejected => 'Request could not be accepted',
+    requestRejected => 'Request not accepted',
     requestTooLarge => 'Request too large',
-    deviceLocked => 'Unlock your Ledger',
-    pinNotSet => 'Set up a PIN on your Ledger',
+    deviceLocked => 'Ledger locked',
+    pinNotSet => 'PIN required',
     wrongApp => 'Open the Zcash app',
-    appNotInstalled => 'Install the Zcash app',
+    appNotInstalled => 'Zcash app missing',
     appUpdateRequired => 'Update the Zcash app',
     appWrongState => 'Reopen the Zcash app',
-    busy => 'Your Ledger is busy',
+    busy => 'Ledger is busy',
     cancelled => 'Request cancelled',
-    transportLost => 'Couldn’t reach your Ledger',
-    signatureMismatch => 'This Ledger doesn’t match',
-    unexpectedStatus || other => 'Couldn’t complete the request',
+    transportLost => 'Ledger not reachable',
+    signatureMismatch => 'Wrong Ledger',
+    unexpectedStatus => 'Ledger error',
+    other => 'Request failed',
   };
 
   String get message => switch (this) {
@@ -251,18 +252,18 @@ String _rebuildMessage(Object error, LedgerRequestKind kind) {
       LedgerRequestKind.send || LedgerRequestKind.viewingKey =>
         LedgerRequestFailure.requestTooLarge.message,
       LedgerRequestKind.swap =>
-        'Too large for your Ledger. Start a new swap with a smaller amount.',
+        'Start a new swap with a smaller amount. This one is discarded.',
       LedgerRequestKind.payment =>
-        'Too large for your Ledger. Start a new payment. Don’t send a smaller amount to this address.',
+        'Start a new payment. Don’t send a smaller amount to this address.',
       LedgerRequestKind.shield =>
         'Too many inputs for your Ledger. Try again. Nothing was shielded.',
-      // Ledger migration spends every Orchard note in one transaction and
-      // nothing splits it, so there is no smaller request to make.
+      // The planner does not size steps by Ledger limits, and retrying sends
+      // the same step.
       LedgerRequestKind.migration =>
-        'Too many notes for your Ledger to migrate at once. Nothing was migrated.',
+        'This migration step is too large for your Ledger to sign. Vizor can’t split it yet.',
       // The round's bundle policy fixes the vote's size.
       LedgerRequestKind.voting =>
-        'This vote has too many notes for your Ledger. Your vote was not signed.',
+        'This vote is too large for your Ledger to sign.',
       LedgerRequestKind.giftCard =>
         'Too large for your Ledger. Create a gift card with a smaller amount.',
     };

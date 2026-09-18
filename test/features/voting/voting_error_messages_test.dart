@@ -27,7 +27,7 @@ void main() {
         'ledger_capacity: Ledger supports at most 32 shielded actions; found 33',
         appInstruction: app,
       ),
-      contains('Your vote was not signed.'),
+      'This vote is too large for your Ledger to sign.',
     );
   });
 
