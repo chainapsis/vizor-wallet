@@ -74,10 +74,11 @@ recreated before each journey, including fixture preparation.
 UFVK export leaves the emulated Zcash app showing a status screen. An immediate
 PCZT request during that screen can receive no response. Both the raw APDU and
 desktop smoke harness paths wait four seconds after export before continuing,
-so one emulator can serve both requests. This delay exists only in the developer
-harness; production UFVK handling and the existing post-signing cooldown are
-unchanged. The harness does not model the product's account-connection and
-signing page transitions.
+so one emulator can serve both requests. The desktop import-and-send Flutter
+scenario also waits after export because it advances onboarding faster than a
+person. These delays exist only in the developer harnesses; production UFVK
+handling and the existing post-signing cooldown are unchanged. The harness does
+not model the product's account-connection and signing page transitions.
 
 `signing-smoke` exercises UFVK approval, the harness-only wait, account import,
 PCZT signing approval, and finalization on the same instance through the
