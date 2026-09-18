@@ -982,8 +982,9 @@ void main() {
   });
 
   test(
-    'account removal is rejected while it owns an unshared Gift Card',
+    'account removal proceeds while it owns an unshared funded Gift Card',
     () async {
+      _mockAccountRemovalPlatform();
       final recoveryStorage = _AccountTestPaymentLinkRecoveryStorage();
       final recoveryStore = PaymentLinkRecoveryStore(recoveryStorage);
       final link = VizorPaymentLink(
@@ -1014,19 +1015,10 @@ void main() {
 
       await container.read(accountProvider.future);
 
-      await expectLater(
-        container.read(accountProvider.notifier).removeAccount('account-2'),
-        throwsA(
-          isA<PaymentLinkUnsharedGiftCardsException>()
-              .having((error) => error.count, 'count', 1)
-              .having(
-                (error) => error.sourceAccountUuid,
-                'sourceAccountUuid',
-                'account-2',
-              ),
-        ),
-      );
-      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(container.read(accountProvider).value!.accounts, hasLength(1));
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
     },
   );
 
@@ -1059,27 +1051,7 @@ void main() {
     }
 
     test('do not block removal and are dropped with the account', () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      final supportDirectory = Directory.systemTemp.createTempSync(
-        'vizor-account-removal',
-      );
-      addTearDown(() {
-        if (supportDirectory.existsSync()) {
-          supportDirectory.deleteSync(recursive: true);
-        }
-      });
-      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(pathProvider, (call) async {
-            if (call.method == 'getApplicationSupportDirectory') {
-              return supportDirectory.path;
-            }
-            throw MissingPluginException('Unexpected path provider call.');
-          });
-      addTearDown(() {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(pathProvider, null);
-      });
+      _mockAccountRemovalPlatform();
       final recoveryStore = PaymentLinkRecoveryStore(
         _AccountTestPaymentLinkRecoveryStorage(),
       );
@@ -1103,7 +1075,8 @@ void main() {
       );
     });
 
-    test('block removal once a broadcast started', () async {
+    test('keep a draft past the broadcast boundary on removal', () async {
+      _mockAccountRemovalPlatform();
       final recoveryStore = PaymentLinkRecoveryStore(
         _AccountTestPaymentLinkRecoveryStorage(),
       );
@@ -1121,17 +1094,9 @@ void main() {
       addTearDown(container.dispose);
       await container.read(accountProvider.future);
 
-      await expectLater(
-        container.read(accountProvider.notifier).removeAccount('account-2'),
-        throwsA(
-          isA<PaymentLinkUnsharedGiftCardsException>().having(
-            (error) => error.count,
-            'count',
-            1,
-          ),
-        ),
-      );
-      expect(_rustApi.deletedAccountUuids, isEmpty);
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
       expect(await recoveryStore.load(), hasLength(1));
     });
   });
@@ -1597,4 +1562,28 @@ class _FailingHomeCacheStore implements VotingHomeCacheStore {
   @override
   Future<void> write(String value) async =>
       throw StateError('disk write failed');
+}
+
+void _mockAccountRemovalPlatform() {
+  FlutterSecureStorage.setMockInitialValues({});
+  final supportDirectory = Directory.systemTemp.createTempSync(
+    'vizor-account-removal',
+  );
+  addTearDown(() {
+    if (supportDirectory.existsSync()) {
+      supportDirectory.deleteSync(recursive: true);
+    }
+  });
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (call) async {
+        if (call.method == 'getApplicationSupportDirectory') {
+          return supportDirectory.path;
+        }
+        throw MissingPluginException('Unexpected path provider call.');
+      });
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+  });
 }

@@ -1012,7 +1012,7 @@ void main() {
     );
   });
 
-  testWidgets('remove account is blocked while it has an unshared Gift Card', (
+  testWidgets('remove account warns about unshared Gift Cards but proceeds', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -1035,7 +1035,8 @@ void main() {
 
     expect(
       find.text(
-        'This account has 1 unshared gift card link. Copy it before removing this account.',
+        '1 funded gift card link has not been shared. Removing this account '
+        'loses it. Copy the link first.',
       ),
       findsOneWidget,
     );
@@ -1045,8 +1046,34 @@ void main() {
     await tester.tap(find.text('Remove'));
     await tester.pumpAndSettle();
 
-    expect(accountNotifier.removedUuid, isNull);
+    expect(accountNotifier.removedUuid, 'account-2');
   });
+
+  testWidgets(
+    'remove account has no Gift Card warning without unshared cards',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      await tester.pumpWidget(
+        _accountsHarness(
+          accountNotifier: () =>
+              _FakeAccountNotifier(_bootstrap.initialAccountState),
+          unsharedGiftCardCounts: const {'account-1': 2},
+        ),
+      );
+      await tester.pump();
+
+      await _openRemoveAccountModal(tester, 'account-2');
+
+      expect(
+        find.byKey(const ValueKey('account_remove_unshared_gift_card_warning')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('remove account is blocked while it receives a Gift Card', (
     tester,
@@ -1337,6 +1364,7 @@ void main() {
       _accountsHarness(
         accountNotifier: () => accountNotifier,
         syncNotifier: () => syncNotifier,
+        unsharedGiftCardCounts: const {'account-1': 2},
       ),
     );
     await tester.pump();
@@ -1348,6 +1376,13 @@ void main() {
     await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
 
+    expect(
+      find.text(
+        '2 funded gift card links have not been shared. Resetting Vizor '
+        'loses them. Copy the links first.',
+      ),
+      findsOneWidget,
+    );
     expect(
       find.textContaining(
         'Removing this account will completely reset the Vizor app.',

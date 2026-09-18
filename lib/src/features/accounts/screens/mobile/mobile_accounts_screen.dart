@@ -28,6 +28,7 @@ import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../payment_links/services/payment_link_received_store.dart';
+import '../../../payment_links/services/payment_link_recovery_reconciler.dart';
 import '../../../payment_links/services/payment_link_recovery_store.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
 
@@ -440,12 +441,23 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         migrationStatus != null &&
         (migrationStatus.activeRunId != null ||
             isIronwoodMigrationInProgressPhase(migrationStatus.phase));
+    int unsharedGiftCardCount;
+    try {
+      unsharedGiftCardCount = await ref.read(
+        paymentLinkUnsharedFundedCountProvider(account.uuid).future,
+      );
+    } catch (e, st) {
+      log('MobileAccounts: unshared gift card count failed: $e\n$st');
+      unsharedGiftCardCount = 0;
+    }
+    if (!mounted) return;
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
       builder: (_) => _RemoveAccountSheet(
         account: account,
         isLastAccount: isLastAccount,
         hasActiveMigration: hasActiveMigration,
+        unsharedGiftCardCount: unsharedGiftCardCount,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -498,7 +510,6 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         showAppToast(context, switch (e) {
           PaymentLinkInFlightClaimsException() => e.toString(),
           WalletResetInFlightGiftCardClaimsException() => e.toString(),
-          PaymentLinkUnsharedGiftCardsException() => e.toString(),
           _ when isLastAccount => "Couldn't reset Vizor",
           _ => "Couldn't remove the account",
         }, iconName: AppIcons.cross);
@@ -704,11 +715,13 @@ class _RemoveAccountSheet extends StatelessWidget {
     required this.account,
     required this.isLastAccount,
     required this.hasActiveMigration,
+    required this.unsharedGiftCardCount,
   });
 
   final AccountInfo account;
   final bool isLastAccount;
   final bool hasActiveMigration;
+  final int unsharedGiftCardCount;
 
   static const _titleStyle = TextStyle(
     fontFamily: 'Geist',
@@ -774,6 +787,17 @@ class _RemoveAccountSheet extends StatelessWidget {
             _description,
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
+          if (unsharedGiftCardCount > 0) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              unsharedGiftCardRemovalWarning(
+                unsharedGiftCardCount,
+                walletReset: isLastAccount,
+              ),
+              key: const ValueKey('mobile_account_remove_unshared_gift_cards'),
+              style: _bodyStyle.copyWith(color: colors.text.warning),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_account_remove_confirm'),

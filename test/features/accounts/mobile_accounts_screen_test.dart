@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
@@ -23,7 +24,7 @@ import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -70,6 +71,7 @@ Widget _app(
   BiometricUnlockNotifier Function()? biometricNotifier,
   SyncNotifier Function()? syncNotifier,
   Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
+  Map<String, int> unsharedGiftCardCounts = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -108,6 +110,9 @@ Widget _app(
       ),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _FakeMigrationCoordinator(migrationStatuses),
+      ),
+      paymentLinkUnsharedFundedCountProvider.overrideWith(
+        (ref, uuid) async => unsharedGiftCardCounts[uuid] ?? 0,
       ),
     ],
     child: MaterialApp.router(
@@ -584,14 +589,96 @@ void main() {
 
   for (final testCase in [
     (
-      name: 'unshared Gift Cards',
-      error: const PaymentLinkUnsharedGiftCardsException(
-        sourceAccountUuid: 'a',
-        count: 1,
-      ),
+      name: 'one unshared gift card',
+      accounts: const ['a', 'b'],
+      count: 1,
       message:
-          'Copy your unshared gift card links before deleting this account.',
+          '1 funded gift card link has not been shared. Removing this '
+          'account loses it. Copy the link first.',
     ),
+    (
+      name: 'several unshared gift cards',
+      accounts: const ['a', 'b'],
+      count: 3,
+      message:
+          '3 funded gift card links have not been shared. Removing this '
+          'account loses them. Copy the links first.',
+    ),
+    (
+      name: 'unshared gift cards on the last account',
+      accounts: const ['a'],
+      count: 2,
+      message:
+          '2 funded gift card links have not been shared. Resetting Vizor '
+          'loses them. Copy the links first.',
+    ),
+  ]) {
+    testWidgets('removal sheet warns about ${testCase.name}', (tester) async {
+      final accountState = AccountState(
+        accounts: [for (final uuid in testCase.accounts) _account(uuid, uuid)],
+        activeAccountUuid: 'a',
+      );
+      final accountNotifier = _FakeAccountNotifier(accountState);
+
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          syncNotifier: _FakeWalletMutationSyncNotifier.new,
+          unsharedGiftCardCounts: {'a': testCase.count},
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(testCase.message), findsOneWidget);
+      final confirm = tester.widget<AppButton>(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      expect(confirm.onPressed, isNotNull);
+    });
+  }
+
+  testWidgets('removal sheet has no gift card warning without unshared cards', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [_account('a', 'Active'), _account('b', 'Replacement')],
+      activeAccountUuid: 'a',
+    );
+
+    await tester.pumpWidget(
+      _app(
+        accountState,
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+        syncNotifier: _FakeWalletMutationSyncNotifier.new,
+        unsharedGiftCardCounts: const {'b': 2},
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_unshared_gift_cards')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      findsOneWidget,
+    );
+  });
+
+  for (final testCase in [
     (
       name: 'incoming Gift Cards',
       error: const PaymentLinkInFlightClaimsException(

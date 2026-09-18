@@ -274,9 +274,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         ? ref.watch(swapPendingIntentCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
     final modalUnsharedGiftCardCount =
-        modalAccount != null &&
-            !isLastModalAccount &&
-            _activeModal == _AccountModalType.removeAccount
+        modalAccount != null && _activeModal == _AccountModalType.removeAccount
         ? ref.watch(paymentLinkUnsharedFundedCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
     // Kept for the last account too: its removal is a full reset, which
@@ -377,10 +375,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                         modalReceivingGiftCardCount.hasError,
                     unsharedGiftCardCount:
                         modalUnsharedGiftCardCount.value ?? 0,
-                    checkingUnsharedGiftCards:
-                        modalUnsharedGiftCardCount.isLoading,
-                    unsharedGiftCardCheckFailed:
-                        modalUnsharedGiftCardCount.hasError,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)

@@ -24,18 +24,16 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
 
 enum PaymentLinkRecoveryState { draft, funded, shared }
 
-class PaymentLinkUnsharedGiftCardsException implements Exception {
-  const PaymentLinkUnsharedGiftCardsException({
-    required this.sourceAccountUuid,
-    required this.count,
-  });
-
-  final String sourceAccountUuid;
-  final int count;
-
-  @override
-  String toString() =>
-      'Copy your unshared gift card links before deleting this account.';
+/// Removal confirmation copy for funded gift card links that were never
+/// shared; removal proceeds, so the user must copy them first.
+String unsharedGiftCardRemovalWarning(int count, {required bool walletReset}) {
+  final subject = walletReset ? 'Resetting Vizor' : 'Removing this account';
+  if (count == 1) {
+    return '1 funded gift card link has not been shared. '
+        '$subject loses it. Copy the link first.';
+  }
+  return '$count funded gift card links have not been shared. '
+      '$subject loses them. Copy the links first.';
 }
 
 const _fieldNotProvided = Object();
