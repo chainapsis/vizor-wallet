@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -15,6 +19,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_onboarding_flow.dart';
+import 'support/speculos_review.dart';
 import 'support/voting_discovery_regtest.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
@@ -23,6 +28,9 @@ const _mnemonic =
     'abandon abandon about';
 const _bip39Passphrase = 'TREZOR';
 const _password = 'Vizor123!';
+const _ledger = bool.fromEnvironment('ZCASH_E2E_LEDGER_VOTING');
+const _finalTally = bool.fromEnvironment('ZCASH_E2E_FINAL_TALLY');
+const _speculosUrl = String.fromEnvironment('VIZOR_LEDGER_SPECULOS_API_URL');
 const _roundId = String.fromEnvironment('ZCASH_E2E_VOTE_ROUND_ID');
 const _reuseMigratedWallet = bool.fromEnvironment(
   'ZCASH_E2E_REUSE_MIGRATED_WALLET',
@@ -40,16 +48,63 @@ void main() {
         fail('ZCASH_E2E_VOTE_ROUND_ID must be a 64-character round id.');
       }
       addTearDown(_cleanupE2eWalletState);
-      if (!_reuseMigratedWallet) {
+      if (!_reuseMigratedWallet || _ledger) {
         await _cleanupE2eWalletState();
       }
 
+      var ledgerSignatures = 0;
       await tester.pumpWidget(
         await buildBootstrappedZcashWalletApp(
-          overrides: votingDiscoveryRegtestOverrides(),
+          overrides: [
+            ...votingDiscoveryRegtestOverrides(),
+            if (_ledger)
+              ledgerVotingPcztSignerProvider.overrideWith((ref) {
+                final sign = ref.watch(ledgerActionPcztSignerProvider);
+                return (accountUuid, pczt) async {
+                  final approval = approveNextSpeculosReview(_speculosUrl);
+                  final signatures = await sign(accountUuid, pczt);
+                  expect(await approval, isTrue);
+                  ledgerSignatures += signatures.length;
+                  return signatures;
+                };
+              }),
+          ],
         ),
       );
-      if (_reuseMigratedWallet) {
+      if (_ledger) {
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(ZcashWalletApp)),
+        );
+        await container.read(accountProvider.future);
+        await container
+            .read(appSecurityProvider.notifier)
+            .preparePasswordSetup(_password);
+        final approval = approveNextSpeculosReview(_speculosUrl);
+        final account = await rust_ledger.ledgerExportAccount(
+          accountIndex: 0,
+          network: 'regtest',
+        );
+        expect(await approval, isTrue);
+        await container
+            .read(accountProvider.notifier)
+            .importLedgerAccount(
+              name: 'Regtest Ledger',
+              ufvk: account.ufvk,
+              seedFingerprint: account.seedFingerprint,
+              zip32Index: account.accountIndex,
+              birthdayHeight: 500,
+            );
+        container.read(appSecurityProvider.notifier).commitPasswordSetup();
+        final imported = (await container.read(
+          accountProvider.future,
+        )).accounts.single;
+        expect(imported.isHardware, isTrue);
+        expect(imported.hardwareSignerKind?.name, 'ledger');
+        expect(
+          await container.read(accountProvider.notifier).getActiveMnemonic(),
+          isNull,
+        );
+      } else if (_reuseMigratedWallet) {
         _log('opening wallet preserved by the Orchard-to-Ironwood E2E');
         await tester.pump(const Duration(milliseconds: 500));
         if (tester.any(find.byKey(const ValueKey('unlock_password_field')))) {
@@ -173,6 +228,9 @@ void main() {
         '${eligibleSession.eligibleWeightZatoshi} zatoshi',
       );
 
+      if (_finalTally) {
+        expect(eligibleSession.eligibleWeightZatoshi, BigInt.from(12500000));
+      }
       final accountUuid = eligibleSession.accountUuid;
       expect(accountUuid, isNotNull);
       final draftKey = VotingSessionKey(
@@ -226,7 +284,10 @@ void main() {
       final done = find.byKey(const ValueKey('voting_submission_done_button'));
       final button = tester.widget<AppButton>(done);
       expect(button.onPressed, isNotNull);
-      _log('vote completed and confirmation receipt is actionable');
+      if (_ledger) expect(ledgerSignatures, 1);
+      _log(
+        'vote completed and confirmation receipt is actionable; ledgerSignatures=$ledgerSignatures',
+      );
     },
     timeout: const Timeout(Duration(minutes: 45)),
   );

@@ -5,11 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LANE="${1:-desktop}"
 case "$LANE" in
   -h|--help)
-    echo 'Usage: scripts/e2e/ledger-speculos-docker.sh [desktop|mobile|smoke|signing-smoke]'
+    echo 'Usage: scripts/e2e/ledger-speculos-docker.sh [desktop|mobile|smoke|signing-smoke|voting-tally]'
     echo 'Optional: VIZOR_LEDGER_SPECULOS_ELF, VIZOR_LEDGER_E2E_SCENARIO, FLUTTER_DEVICE'
     echo 'See docs/ledger/speculos.md for setup, pinned versions, and limitations.'
     exit 0 ;;
-  desktop|mobile|smoke|signing-smoke) ;;
+  desktop|mobile|smoke|signing-smoke|voting-tally) ;;
   *) echo "Unknown lane: $LANE" >&2; exit 2 ;;
 esac
 source "$ROOT_DIR/scripts/e2e/ledger-speculos-scenarios.sh"
@@ -110,9 +110,14 @@ start_instance() {
   local purpose="$1" id port attempt
   id="$RESOURCE-$purpose"
   CONTAINERS+=("$id")
+  local seed_args=()
+  if [[ "$LANE" == voting-tally ]]; then
+    # Same disposable mnemonic used by desktop_regtest_flow.dart for funding.
+    seed_args=(--seed 'winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used')
+  fi
   docker run -d --name "$id" -p 127.0.0.1::5000 \
     -v "$RUN_DIR/elf:/apps:ro" "$SPECULOS_IMAGE" \
-    --model nanosp --display headless --api-port 5000 /apps/zcash-nanosplus.elf >/dev/null
+    --model nanosp --display headless --api-port 5000 ${seed_args[@]+"${seed_args[@]}"} /apps/zcash-nanosplus.elf >/dev/null
   port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5000/tcp") 0).HostPort}}' "$id")"
   INSTANCE_URL="http://127.0.0.1:$port"
   for ((attempt=0; attempt<60; attempt++)); do
@@ -164,7 +169,30 @@ run_flutter_scenario() {
   if ((code != 0)); then RESULT=1; fi
   stop_containers
 }
-if [[ "$LANE" == smoke ]]; then
+if [[ "$LANE" == voting-tally ]]; then
+  export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$RESOURCE-vote}"
+  for ledger in false true; do
+    stop_containers
+    start_instance device
+    export VIZOR_LEDGER_SPECULOS_UFVK_API_URL="$INSTANCE_URL"
+    export VIZOR_LEDGER_SPECULOS_SIGNING_API_URL="$INSTANCE_URL"
+    echo "Running desktop final tally: ledger=$ledger"
+    E2E_LEDGER_VOTING="$ledger" E2E_FINAL_TALLY=true \
+      E2E_VOTE_WINDOW_SECS="${E2E_VOTE_WINDOW_SECS:-300}" \
+      FLUTTER_DEVICE=macos VIZOR_FORM_FACTOR=desktop \
+      E2E_VOTING_TEST_FILE=integration_test/regtest_voting_test.dart \
+      bash "$ROOT_DIR/scripts/e2e/flutter-macos-regtest-voting.sh" \
+      > "$RUN_DIR/voting-tally-$ledger.log" 2>&1 || {
+        docker logs "$RESOURCE-device" > "$RUN_DIR/voting-tally-$ledger-device.log" 2>&1 || true
+        echo "Desktop final tally failed: $RUN_DIR/voting-tally-$ledger.log" >&2
+        exit 1
+      }
+    cp "$ROOT_DIR/.regtest-voting/logs/final-tally-$ledger.json" "$RUN_DIR/"
+    docker logs "$RESOURCE-device" > "$RUN_DIR/voting-tally-$ledger-device.log" 2>&1 || true
+    echo "Desktop final tally passed: ledger=$ledger"
+  done
+  exit 0
+elif [[ "$LANE" == smoke ]]; then
   FILTER=""
   run_flutter_scenario 'Speculos startup smoke'
 elif [[ "$LANE" == signing-smoke ]]; then
