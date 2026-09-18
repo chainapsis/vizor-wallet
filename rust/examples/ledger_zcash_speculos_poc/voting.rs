@@ -75,7 +75,7 @@ fn build_requests(
         0,
         round_name.into(),
     )?
-    .with_ledger_compatibility();
+    .with_ledger_output_review();
     (0..layout.bundle_count)
         .map(|bundle_index| {
             let prepared = PreparedDelegationBundle {

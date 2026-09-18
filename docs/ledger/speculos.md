@@ -71,9 +71,9 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   recovery and printable ASCII memos; software/Keystone retain SDK defaults.
   This covers SDK setup/request generation and device signing, not snapshot
   discovery, PIR/proving, vote-session orchestration or chain submission.
-- Saved signing contexts are reused unchanged; enabling compatibility does not
+- Saved signing contexts are reused unchanged; enabling output review does not
   repair an old failed PCZT. Account-OVK holders can recover the hotkey output
-  and memo from published effects when Ledger compatibility is enabled.
+  and memo from published effects when Ledger output review is enabled.
 - Speculos validates device-app/APDU behavior, not physical USB/Bluetooth or
   production broadcast. Externally managed mobile endpoints need their own
   forwarding; the Docker runner keeps APIs on host loopback, not the LAN.
