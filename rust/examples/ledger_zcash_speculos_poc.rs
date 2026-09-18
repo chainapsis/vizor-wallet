@@ -1,6 +1,8 @@
 //! Developer harness for exercising Vizor's production Ledger PCZT serializer
 //! and finalizer against a Zcash app running in Speculos.
 
+#[path = "ledger_zcash_speculos_poc/regtest.rs"]
+mod regtest;
 #[path = "ledger_zcash_speculos_poc/voting.rs"]
 mod voting;
 
@@ -79,6 +81,9 @@ fn run() -> Result<(), String> {
     {
         println!("{}", usage());
         return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg.starts_with("regtest-")) {
+        return regtest::run(&args);
     }
     let config = Config::parse(args)?;
     if config.desktop_smoke {
