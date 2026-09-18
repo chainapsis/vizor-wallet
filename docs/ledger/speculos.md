@@ -64,6 +64,16 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   shielding-progress API for one shieldable input; it does not run live discovery.
 - `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
   Zcash 3.9.3 does not establish support; retain the production compatibility guard.
+- Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
+  requests from synthetic eligible Ironwood notes. It verifies the zero-value
+  foreign-hotkey output, then signs the SDK-redacted bytes through the production
+  desktop/mobile signer. Ledger-only SDK compatibility enables account-OVK
+  recovery and printable ASCII memos; software/Keystone retain SDK defaults.
+  This covers SDK setup/request generation and device signing, not snapshot
+  discovery, PIR/proving, vote-session orchestration or chain submission.
+- Saved signing contexts are reused unchanged; enabling compatibility does not
+  repair an old failed PCZT. Account-OVK holders can recover the hotkey output
+  and memo from published effects when Ledger compatibility is enabled.
 - Speculos validates device-app/APDU behavior, not physical USB/Bluetooth or
   production broadcast. Externally managed mobile endpoints need their own
   forwarding; the Docker runner keeps APIs on host loopback, not the LAN.

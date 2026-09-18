@@ -188,6 +188,11 @@ version = "=0.6.2"
 default-features = false
 features = ["zakura"]
 
+[patch.crates-io]
+# Ledger delegation review compatibility; keep the SDK tree type shared with tests.
+zcash_voting = { git = "https://github.com/chainapsis/zcash_voting.git", rev = "8c625940caf0ef0ea3e687fef682f580ca83fc10" }
+vote-commitment-tree = { git = "https://github.com/chainapsis/zcash_voting.git", rev = "8c625940caf0ef0ea3e687fef682f580ca83fc10" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
