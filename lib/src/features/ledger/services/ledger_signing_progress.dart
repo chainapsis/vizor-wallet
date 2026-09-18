@@ -85,8 +85,8 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
       'Please wait while Vizor prepares your transaction.',
     LedgerSigningStage.sending =>
       ledgerHasShortSigningWait(deviceModel)
-          ? 'Keep your Ledger connected. This may take up to 10 seconds.'
-          : 'Keep your Ledger connected. This may take about 30 seconds.',
+          ? 'Your Ledger is preparing to sign. It may seem unresponsive for about 10 seconds. Keep your Ledger connected.'
+          : 'Your Ledger is preparing to sign. It may seem unresponsive for about 30 seconds. Keep your Ledger connected.',
     LedgerSigningStage.reviewing =>
       'Review and approve when prompted on your Ledger.',
     LedgerSigningStage.finishing => 'Keep Vizor open.',

@@ -64,8 +64,8 @@ void registerLedgerWaitGuidanceTests() {
         expect(
           find.text(
             fast
-                ? 'Keep your Ledger connected. This may take up to 10 seconds.'
-                : 'Keep your Ledger connected. This may take about 30 seconds.',
+                ? 'Your Ledger is preparing to sign. It may seem unresponsive for about 10 seconds. Keep your Ledger connected.'
+                : 'Your Ledger is preparing to sign. It may seem unresponsive for about 30 seconds. Keep your Ledger connected.',
           ),
           findsOneWidget,
         );

@@ -44,7 +44,7 @@ void main() {
       ]) {
         expect(
           LedgerSigningStage.sending.messageForDevice(model),
-          contains('up to 10 seconds'),
+          contains('about 10 seconds'),
         );
       }
       for (final model in [
