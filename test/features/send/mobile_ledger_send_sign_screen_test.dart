@@ -266,6 +266,7 @@ void main() {
           creationGate: creation.future,
           onDiscard: () async {
             discards++;
+            return true;
           },
         ),
       );
@@ -362,6 +363,79 @@ void main() {
       expect(find.text('Try again'), findsNothing);
       expect(find.text('Create new transaction'), findsOneWidget);
       expect(signCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'new transaction waits for proposal release before opening send',
+    (tester) async {
+      final release = Completer<bool>();
+      var discards = 0;
+      addTearDown(() {
+        if (!release.isCompleted) release.complete(true);
+      });
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async => throw StateError(_hostRejected),
+          onDiscard: () {
+            discards++;
+            return release.future;
+          },
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new transaction'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(discards, 1);
+      expect(find.text('new send'), findsNothing);
+      expect(find.byType(MobileLedgerSendSignScreen), findsOneWidget);
+      expect(
+        tester
+            .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
+            .onFailureAction,
+        isNull,
+      );
+
+      release.complete(true);
+      await tester.pumpAndSettle();
+      expect(find.text('new send'), findsOneWidget);
+      expect(discards, 1);
+    },
+  );
+
+  testWidgets(
+    'failed proposal release stays on screen and allows another attempt',
+    (tester) async {
+      final results = [false, true];
+      var discards = 0;
+      await tester.pumpWidget(
+        _app(
+          operationService: _FakeOperationService(),
+          signer: (_) async => throw StateError(_hostRejected),
+          onDiscard: () async => results[discards++],
+        ),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new transaction'));
+      await tester.pumpAndSettle();
+
+      expect(discards, 1);
+      expect(find.text('new send'), findsNothing);
+      expect(
+        find.text('Could not finish cancelling. Please try again.'),
+        findsOneWidget,
+      );
+      expect(find.text('Create new transaction'), findsOneWidget);
+
+      await tester.tap(find.text('Create new transaction'));
+      await tester.pumpAndSettle();
+      expect(discards, 2);
+      expect(find.text('new send'), findsOneWidget);
     },
   );
 
@@ -553,7 +627,10 @@ void main() {
           return const [4];
         },
         canceller: () async => cancelCalls++,
-        onDiscard: () async => discardCalls++,
+        onDiscard: () async {
+          discardCalls++;
+          return true;
+        },
       ),
     );
     await tester.tap(find.text('Open signing'));
@@ -657,7 +734,7 @@ Widget _app({
   LedgerOperationCanceller? canceller,
   List<String>? events,
   ValueChanged<LedgerBroadcastArgs>? onResult,
-  Future<void> Function()? onDiscard,
+  Future<bool> Function()? onDiscard,
   Future<void>? creationGate,
   _Route? route,
   Future<SaplingParamsStatus> Function()? paramsLoader,
@@ -724,7 +801,7 @@ Widget _app({
                 events?.add('proofs:$pcztBytes');
                 return [pcztBytes.single + 2];
               },
-          discardProposal: onDiscard ?? () async {},
+          discardProposal: onDiscard ?? () async => true,
         ),
       ),
       GoRoute(path: '/send', builder: (_, _) => const Text('new send')),
@@ -854,3 +931,6 @@ class _Route extends RpcEndpointFailoverNotifier {
 
 const _deviceRejected =
     'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';
+
+const _hostRejected =
+    'ledger_status_6a80: Ledger rejected the PCZT data or key path';
