@@ -51,14 +51,53 @@ Future<String> run(
   ProviderContainer c, {
   Future<String> Function()? sign,
   Future<String> Function()? usb,
+  void Function(LedgerBleDevice)? onBluetoothConnected,
 }) => c
     .read(ledgerConnectionServiceProvider)
     .run(
       accountUuid: 'ledger-1',
       usb: usb ?? () async => 'usb',
       bluetooth: (_) => sign == null ? Future.value('ble') : sign(),
+      onBluetoothConnected: onBluetoothConnected,
     );
 void main() {
+  test(
+    'reports the selected Bluetooth model before signing, including reused rounds',
+    () async {
+      final c = _container(
+        notifier: _FakeAccountNotifier(_ledgerAccount(deviceModel: 'Nano X')),
+        ble: _FakeBleService(),
+      );
+      addTearDown(c.dispose);
+      final scope = LedgerConnectionScope();
+      final events = <String>[];
+      Future<String> sign() => scope.run(
+        () => run(
+          c,
+          onBluetoothConnected: (device) => events.add(device.model),
+          sign: () async {
+            events.add('sign');
+            return 'signed';
+          },
+        ),
+      );
+      final first = sign();
+      await selectAndReconnect(await pending(c));
+      expect(await first, 'signed');
+      expect(await sign(), 'signed');
+      expect(events, ['Flex', 'sign', 'Flex', 'sign']);
+
+      scope.changeConnection();
+      final usb = scope.run(
+        () =>
+            run(c, onBluetoothConnected: (device) => events.add(device.model)),
+      );
+      await (await pending(c)).selectUsb();
+      expect(await usb, 'usb');
+      expect(events, ['Flex', 'sign', 'Flex', 'sign']);
+    },
+  );
+
   for (final platform in [
     TargetPlatform.iOS,
     TargetPlatform.android,

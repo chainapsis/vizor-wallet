@@ -56,6 +56,7 @@ class LedgerConnectionService {
     required String accountUuid,
     required Future<T> Function() usb,
     required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
+    void Function(LedgerBleDevice device)? onBluetoothConnected,
   }) async {
     if (_running) {
       throw const LedgerMobileException(
@@ -69,6 +70,7 @@ class LedgerConnectionService {
         accountUuid: accountUuid,
         usb: usb,
         bluetooth: bluetooth,
+        onBluetoothConnected: onBluetoothConnected,
       );
     } finally {
       _running = false;
@@ -79,10 +81,17 @@ class LedgerConnectionService {
     required String accountUuid,
     required Future<T> Function() usb,
     required Future<T> Function(LedgerMobileBleService mobile) bluetooth,
+    void Function(LedgerBleDevice device)? onBluetoothConnected,
   }) async {
     final check = _ref.read(ledgerDeviceRequestsProvider).capture();
     final account = _account(accountUuid);
     final scope = LedgerConnectionScope.current ?? LedgerConnectionScope();
+    Future<T> runBluetooth(LedgerMobileBleService mobile) {
+      final device = scope.selected?.device;
+      if (device != null) onBluetoothConnected?.call(device);
+      return bluetooth(mobile);
+    }
+
     final session = _ref.read(ledgerPairingRecoverySessionProvider)();
     final requestCheck = check;
     void checkContext() {
@@ -118,7 +127,7 @@ class LedgerConnectionService {
             )
             .ensureReady();
         checkContext();
-        final result = await bluetooth(mobile);
+        final result = await runBluetooth(mobile);
         checkContext();
         return result;
       } catch (_) {
@@ -139,7 +148,7 @@ class LedgerConnectionService {
       final result = selectable
           ? await _runSelection(checkContext, account, scope, runUsb, (mobile) {
               operationStarted = true;
-              return bluetooth(mobile);
+              return runBluetooth(mobile);
             })
           : await _runUsb(checkContext, runUsb);
       checkContext();

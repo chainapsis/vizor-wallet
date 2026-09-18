@@ -247,6 +247,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-processing-nano',
+    description: 'Ledger signing: Nano X preparation time guidance',
+    builder: _buildLedgerSigningProcessingNano,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-checking',
     description: 'Ledger signing: checking device readiness',
     builder: _buildLedgerSigningChecking,
@@ -2136,6 +2142,14 @@ Widget _buildLedgerSigningProcessing(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.awaitingDevice,
       signingStage: LedgerSigningStage.sending,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessingNano(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      deviceModel: 'Ledger Nano X',
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
 

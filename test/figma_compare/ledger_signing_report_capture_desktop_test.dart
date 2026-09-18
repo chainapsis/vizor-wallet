@@ -15,6 +15,7 @@ void main() {
     'checking',
     'opening',
     'processing',
+    'processing-nano',
     'reviewing',
     'finishing',
     'processing-multiple',

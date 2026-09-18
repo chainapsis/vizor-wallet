@@ -176,6 +176,7 @@ Widget buildLedgerSigningPreview({
   LedgerSigningFailurePresentation? failureOverride,
   String mobileTitle = 'Ledger',
   LedgerMobileBleService? bluetoothService,
+  String deviceModel = 'Ledger Flex',
 }) {
   final canLeave =
       phase != LedgerSigningModalPhase.saving &&
@@ -200,7 +201,20 @@ Widget buildLedgerSigningPreview({
         ledgerMobileBleServiceProvider.overrideWithValue(bluetoothService),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
       syncProvider.overrideWith(_LedgerPreviewSync.new),
-      accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
+      accountProvider.overrideWith(
+        () => _LedgerPreviewAccountNotifier(
+          account: _ledgerAccount.copyWith(
+            ledgerDeviceName: deviceModel,
+            ledgerDeviceModel: deviceModel,
+          ),
+        ),
+      ),
+      ledgerSigningProgressProvider.overrideWith(
+        () => _LedgerPreviewProgressController(
+          signingStage,
+          deviceModel: deviceModel,
+        ),
+      ),
       ledgerTargetPlatformProvider.overrideWithValue(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
       ),
@@ -580,8 +594,12 @@ LedgerAppReadinessState _readinessState(
 }
 
 class _LedgerPreviewAccountNotifier extends AccountNotifier {
+  _LedgerPreviewAccountNotifier({this.account = _ledgerAccount});
+  final AccountInfo account;
+
   @override
-  FutureOr<AccountState> build() => _ledgerAccountState;
+  FutureOr<AccountState> build() =>
+      _ledgerAccountState.copyWith(accounts: [account]);
 
   @override
   Future<void> recordLedgerConnection({
@@ -710,12 +728,19 @@ final _ledgerBootstrap = AppBootstrapState(
 );
 
 class _LedgerPreviewProgressController extends LedgerSigningProgressController {
-  _LedgerPreviewProgressController(this.stage);
+  _LedgerPreviewProgressController(
+    this.stage, {
+    this.deviceModel = 'Ledger Flex',
+  });
   final LedgerSigningStage stage;
+  final String? deviceModel;
 
   @override
-  LedgerSigningProgress? build() =>
-      LedgerSigningProgress(_ledgerAccount.uuid, stage);
+  LedgerSigningProgress? build() => LedgerSigningProgress(
+    _ledgerAccount.uuid,
+    stage,
+    deviceModel: deviceModel,
+  );
 }
 
 class _LedgerPreviewSync extends SyncNotifier {
