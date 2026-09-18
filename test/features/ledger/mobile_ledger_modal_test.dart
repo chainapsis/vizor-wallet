@@ -93,6 +93,46 @@ void main() {
     },
   );
 
+  for (final (label, error, retryable) in fixture.pairingExportFailures) {
+    testWidgets('$label export failure offers retry only when retryable', (
+      tester,
+    ) async {
+      final accounts = fixture.FakeAccounts();
+      var exports = 0;
+      final c = fixture.containerFor(
+        fixture.FakeBle(),
+        accounts,
+        platform: TargetPlatform.android,
+        export: () async {
+          exports++;
+          throw StateError(error);
+        },
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            LedgerAccessRecoveryModal(
+              account: fixture.account,
+              pairingRecovery: true,
+              onRetry: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await frames(tester);
+      await tester.tap(find.text('Try again'));
+      await frames(tester);
+      await tester.tap(find.text('Ledger Flex'));
+      await frames(tester);
+      fixture.expectPairingFailure(retryable: retryable);
+      expect(exports, 1);
+      expect(accounts.writes, 0);
+    });
+  }
+
   for (final failure in [
     LedgerMobileFailure.pairingInvalid,
     LedgerMobileFailure.disconnected,

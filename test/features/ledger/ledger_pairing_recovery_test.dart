@@ -646,6 +646,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+  for (final (label, error, retryable) in pairingExportFailures) {
+    testWidgets('$label export failure offers retry only when retryable', (
+      tester,
+    ) async {
+      final ble = FakeBle();
+      final accounts = FakeAccounts();
+      var exports = 0;
+      final c = containerFor(
+        ble,
+        accounts,
+        export: () async {
+          exports++;
+          throw StateError(error);
+        },
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Center(
+                child: LedgerAccessRecoveryModal(
+                  account: account,
+                  pairingRecovery: true,
+                  onRetry: () {},
+                  onClose: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ledger Flex'));
+      await tester.pumpAndSettle();
+      expectPairingFailure(retryable: retryable);
+      expect(exports, 1);
+      expect(accounts.writes, 0);
+    });
+  }
   for (final savedId in ['new', 'old', null, '']) {
     for (final outcome in ['match', 'mismatch', 'save failure']) {
       testWidgets(
@@ -736,6 +780,27 @@ void main() {
       );
     }
   }
+}
+
+const pairingExportFailures = [
+  (
+    '0x6a80',
+    'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+    false,
+  ),
+  ('transport', 'ledger_transport: Ledger disconnected', true),
+];
+
+void expectPairingFailure({required bool retryable}) {
+  expect(find.text('Try again'), retryable ? findsOneWidget : findsNothing);
+  expect(
+    find.text('Choose another Ledger'),
+    retryable ? findsNothing : findsOneWidget,
+  );
+  expect(
+    find.text(kLedgerViewingKeyRequestRejectedMessage),
+    retryable ? findsNothing : findsOneWidget,
+  );
 }
 
 class FakeRpc extends RpcEndpointNotifier {
