@@ -8,6 +8,7 @@ S+ ELF and creates one fresh, headless Speculos instance per scenario.
 - Bash, Docker, Git, curl, jq.
 - Signing smoke: Cargo and a supported desktop host.
 - Flutter E2E: Cargo, `fvm`, base64, gzip; mobile also needs `FLUTTER_DEVICE`.
+- Android: an unlocked emulator and Android SDK `platform-tools` (`adb`) on `PATH`.
 
 ## Run
 
@@ -45,6 +46,9 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 - Both `VIZOR_LEDGER_SPECULOS_UFVK_API_URL` and
   `VIZOR_LEDGER_SPECULOS_SIGNING_API_URL` point to the same dynamic loopback port.
   Existing Flutter runners also accept externally managed endpoints.
+- Mobile requires an exact connected iOS simulator or Android emulator ID.
+  Android uses device-scoped `adb reverse` for each scenario's loopback port;
+  existing mappings are preserved, and the runner removes only its own mapping.
 - The printed artifact directory retains `build.log`, scenario logs,
   `results.tsv` (exit codes), `versions.txt`, source, and ELF. Wallet fixture
   paths appear in scenario logs. The runner removes its containers and volume.
@@ -61,6 +65,6 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 - `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
   Zcash 3.9.3 does not establish support; retain the production compatibility guard.
 - Speculos validates device-app/APDU behavior, not physical USB/Bluetooth or
-  production broadcast. Mobile tests need access to the host endpoints; the
-  runner does not configure port forwarding or expose APIs on the LAN.
+  production broadcast. Externally managed mobile endpoints need their own
+  forwarding; the Docker runner keeps APIs on host loopback, not the LAN.
 - Custom images/ELFs and other host architectures require separate validation.

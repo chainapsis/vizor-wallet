@@ -38,6 +38,22 @@ fi
 for cmd in docker git curl jq; do
   command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
 done
+ANDROID_DEVICE=""
+if [[ "$LANE" == mobile ]]; then
+  TARGET_PLATFORM="$(fvm flutter devices --machine | jq -er --arg id "$FLUTTER_DEVICE" '
+    .[] | select(.id == $id and .emulator == true) | .targetPlatform')" || {
+    echo "FLUTTER_DEVICE must exactly match a connected iOS simulator or Android emulator id" >&2
+    exit 2
+  }
+  case "$TARGET_PLATFORM" in
+    android-*)
+      command -v adb >/dev/null || { echo "Add Android SDK platform-tools (adb) to PATH" >&2; exit 1; }
+      ANDROID_DEVICE="$FLUTTER_DEVICE"
+      ;;
+    ios) ;;
+    *) echo "Unsupported mobile platform: $TARGET_PLATFORM" >&2; exit 2 ;;
+  esac
+fi
 docker info >/dev/null
 
 APP_COMMIT=22dc38537f9a84b31b938e3ca95434595ef378d3
@@ -47,8 +63,13 @@ RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vizor-speculos.XXXXXX")"
 RESOURCE="vizor-speculos-$(basename "$RUN_DIR" | tr '[:upper:]' '[:lower:]')"
 VOLUME=""
 CONTAINERS=()
+REVERSE_PORT=""
 stop_containers() {
   local id
+  if [[ -n "$REVERSE_PORT" ]]; then
+    adb -s "$ANDROID_DEVICE" reverse --remove "tcp:$REVERSE_PORT" || true
+    REVERSE_PORT=""
+  fi
   for id in ${CONTAINERS[@]+"${CONTAINERS[@]}"}; do
     docker rm -f "$id" >/dev/null 2>&1 || true
   done
@@ -97,6 +118,12 @@ start_instance() {
   for ((attempt=0; attempt<60; attempt++)); do
     if curl --max-time 2 -fsS "$INSTANCE_URL/events?currentscreenonly=true" 2>/dev/null |
       jq -e 'any(.events[]?; (.text // "") | contains("app is ready"))' >/dev/null; then
+      if [[ -n "$ANDROID_DEVICE" ]]; then
+        # Keep host-side fixture URLs and app-side URLs identical. Never replace
+        # an existing mapping; cleanup removes only this scenario's mapping.
+        adb -s "$ANDROID_DEVICE" reverse --no-rebind "tcp:$port" "tcp:$port"
+        REVERSE_PORT="$port"
+      fi
       return 0
     fi
     sleep 1
