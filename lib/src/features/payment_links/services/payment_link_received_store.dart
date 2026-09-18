@@ -797,7 +797,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'availability': record.availability.name,
     'archived': record.archived,
     'claimPriorTxids': record.claimPriorTxids,
-    'claimLink': record.claimLink?.toUri().toString(),
+    'claimLink': record.claimLink?.toRecoveryUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
     'claimTxids': record.claimTxids,
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),

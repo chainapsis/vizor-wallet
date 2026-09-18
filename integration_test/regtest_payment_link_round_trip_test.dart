@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
-import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -18,6 +17,8 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gif
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+
+import '../test/support/legacy_payment_link.dart';
 
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
@@ -132,8 +133,10 @@ void main() {
         const ValueKey('payment_link_copy_link_button'),
       );
 
-      final rawLink = await _readPaymentLinkFromClipboard();
-      final link = VizorPaymentLink.parse(rawLink);
+      final rawLink = await payment_link_flow.readPaymentLinkFromClipboard();
+      var link = VizorPaymentLink.parse(rawLink);
+      expect(Uri.parse(rawLink).fragment, startsWith('v3='));
+      expect(link.mnemonic.split(' ').length, 24);
       expect(link.network, _network);
       expect(link.amountZatoshi, _giftAmountZatoshi);
       expect(link.presentation?.artworkId, 'coin');
@@ -165,6 +168,24 @@ void main() {
               .toList()
             ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       final fundingRecovery = senderRecoveries.first;
+      expect(link.hasSameCanonicalPayload(fundingRecovery.link), isTrue);
+      for (final uri in [
+        fundingRecovery.link.toRecoveryUri(),
+        legacyPaymentLinkUri(fundingRecovery.link),
+        fundingRecovery.link.toShareUri(),
+      ]) {
+        final recovered = VizorPaymentLink.parse(uri.toString());
+        expect(recovered.hasSameCanonicalPayload(link), isTrue);
+        await rust_wallet.validateGiftAddress(
+          mnemonic: recovered.mnemonic,
+          network: recovered.network,
+          address: fundingRecovery.link.address,
+        );
+      }
+      link = link.withResolvedMetadata(
+        address: fundingRecovery.link.address,
+        createdAt: fundingRecovery.link.createdAt,
+      );
       final fundingProgress = await operations.inspectCreatedLinkFundings([
         fundingRecovery,
       ]);
@@ -325,20 +346,6 @@ Future<void> _openPaymentLinksFromSettings(WidgetTester tester) async {
         tester.any(find.byKey(const ValueKey('payment_links_desktop_screen'))),
     description: 'payment-link desktop screen to render',
   );
-}
-
-Future<String> _readPaymentLinkFromClipboard() async {
-  final data = await Clipboard.getData(Clipboard.kTextPlain);
-  final rawLink = data?.text?.trim() ?? '';
-  if (rawLink.isEmpty) {
-    fail('The payment link was not copied to the clipboard.');
-  }
-  if (!rawLink.startsWith(
-    'https://${VizorDeepLink.host}${VizorDeepLink.paymentLinkPath}#v1=',
-  )) {
-    fail('The clipboard did not contain a Vizor payment link.');
-  }
-  return rawLink;
 }
 
 Future<void> _tapText(WidgetTester tester, String text) async {

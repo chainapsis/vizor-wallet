@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
+
+part 'compact_payment_link_codec.dart';
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
@@ -196,7 +200,7 @@ class VizorPaymentLink {
 
   /// The address derived from [mnemonic], when it is known locally.
   ///
-  /// Version 2 does not carry this value. A received link gains it when its
+  /// Versions 2 and 3 do not carry this value. A received link gains it when its
   /// temporary claim wallet imports the mnemonic.
   String get address =>
       _address ??
@@ -204,7 +208,7 @@ class VizorPaymentLink {
 
   /// The card creation time, when it is known locally or from the chain.
   ///
-  /// Version 2 does not carry this value. A received link gains it from the
+  /// Versions 2 and 3 do not carry this value. A received link gains it from the
   /// funding transaction's block time after its claim wallet syncs.
   DateTime get createdAt =>
       _createdAt ??
@@ -250,13 +254,44 @@ class VizorPaymentLink {
     return _encodedPayload() == other._encodedPayload();
   }
 
-  Uri toUri() {
-    return Uri(
+  /// The established v2 representation. Prefer the purpose-specific methods
+  /// below for sharing or persistence.
+  Uri toUri() => toRecoveryUri();
+
+  /// Stable local serialization, independent of the selected share writer.
+  /// Resolved address, time, and submission evidence live in the enclosing record.
+  Uri toRecoveryUri() => _uri('$_fragmentPrefix${_encodedPayload()}');
+
+  /// Serialize for sharing. Callers dropping a known address must first verify
+  /// it asynchronously with [rust_wallet.validateGiftAddress].
+  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+
+  /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
+  /// The caller must first verify the original mnemonic against a known address.
+  /// Canonicalization is used only to validate, never to replace the stored secret.
+  Uri? toLegacyWhitespaceShareUri() {
+    final original = mnemonic.trim();
+    final canonical = original.split(RegExp(r'\s+')).join(' ');
+    if (canonical == original) return null;
+    if (knownAddress == null) {
+      throw const FormatException('Gift card address could not be verified.');
+    }
+    // Apply every compact payload check as well, including BIP-39 validation.
+    _uri('v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}');
+    return toRecoveryUri();
+  }
+
+  static Uri _uri(String fragment) {
+    final uri = Uri(
       scheme: VizorDeepLink.scheme,
       host: VizorDeepLink.host,
       path: VizorDeepLink.paymentLinkPath,
-      fragment: '$_fragmentPrefix${_encodedPayload()}',
+      fragment: fragment,
     );
+    if (uri.toString().length > maxEncodedLength) {
+      throw const FormatException('Payment link is too large.');
+    }
+    return uri;
   }
 
   String _encodedPayload() {
@@ -299,6 +334,9 @@ class VizorPaymentLink {
     }
 
     final fragment = uri.fragment;
+    if (fragment.startsWith('v3=')) {
+      return _CompactPaymentLinkCodec.decode(fragment.substring(3));
+    }
     final int expectedVersion;
     final String fragmentPrefix;
     if (fragment.startsWith(_fragmentPrefix)) {

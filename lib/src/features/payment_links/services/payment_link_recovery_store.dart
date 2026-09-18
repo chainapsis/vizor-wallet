@@ -720,7 +720,7 @@ List<PaymentLinkRecoveryRecord> _replaceByAddress(
 Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
   return {
     'usage': record.usage.toJson(),
-    'link': record.link.toUri().toString(),
+    'link': record.link.toRecoveryUri().toString(),
     'address': record.link.address,
     'createdAt': record.link.createdAt.toUtc().toIso8601String(),
     'sourceAccountUuid': record.sourceAccountUuid,

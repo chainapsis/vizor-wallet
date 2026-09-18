@@ -39,6 +39,7 @@ import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
+import '../services/payment_link_sharing.dart';
 import '../widgets/gift_card_usage_status.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_archive_header.dart';
@@ -149,6 +150,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   final GlobalKey _shareQrCardKey = GlobalKey();
   PaymentLinkRecoveryRecord? _shareQrRecord;
+  String? _shareQrData;
+  bool _preparingShareQr = false;
   PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
@@ -285,7 +288,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _redeemState = PaymentLinkRedeemVisualState.paste;
       }
       _page = page;
-      if (page != PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
+      if (page != PaymentLinksLocalPage.shareQr) {
+        _shareQrRecord = null;
+        _shareQrData = null;
+      }
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -318,6 +324,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _amountSupportingTextIsError = false;
       _readyLink = null;
       _shareQrRecord = null;
+      _shareQrData = null;
       _reviewShowsBack = false;
       _readyShowsBack = false;
       _messageEditorRevealed = false;
@@ -1414,10 +1421,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       return;
     }
     setState(() => _copyingLinkAddresses.add(link.address));
+    final epoch = _mobileNavigationEpoch;
     try {
-      await ref
-          .read(paymentLinkClipboardProvider)
-          .copySecret(link.toUri().toString());
+      final uri = await preparePaymentLinkShareUri(link);
+      if (!mounted || epoch != _mobileNavigationEpoch) return;
+      await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
       try {
         await ref
             .read(paymentLinkOperationsProvider)
@@ -1430,7 +1438,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         }
       }
     } catch (_) {
-      if (mounted) _showError('Gift link could not be copied.');
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be copied.');
+      }
     } finally {
       if (mounted) setState(() => _copyingLinkAddresses.remove(link.address));
     }
@@ -2570,8 +2580,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     );
   }
 
-  void _openShareQr(PaymentLinkRecoveryRecord record) {
-    if (_operationInProgress) return;
+  Future<void> _openShareQr(PaymentLinkRecoveryRecord record) async {
+    if (_operationInProgress || _preparingShareQr) return;
+    _preparingShareQr = true;
+    final epoch = _mobileNavigationEpoch;
+    late final String shareData;
+    try {
+      shareData = (await preparePaymentLinkShareUri(record.link)).toString();
+    } catch (_) {
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be shared.');
+      }
+      return;
+    } finally {
+      _preparingShareQr = false;
+    }
+    if (!mounted || epoch != _mobileNavigationEpoch) return;
     if (kAppFormFactor == AppFormFactor.mobile) {
       unawaited(
         showAppMobileSheet<void>(
@@ -2580,7 +2604,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             artwork: PaymentLinkCardArtwork.fromProtocolId(
               record.link.presentation?.artworkId,
             ),
-            link: record.link.toUri().toString(),
+            link: shareData,
             onShare: (png, origin) =>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
@@ -2599,6 +2623,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
     setState(() {
       _shareQrRecord = record;
+      _shareQrData = shareData;
       _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;
@@ -2615,7 +2640,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       artwork: PaymentLinkCardArtwork.fromProtocolId(
         record.link.presentation?.artworkId,
       ),
-      qrData: record.link.toUri().toString(),
+      qrData: _shareQrData!,
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onSaveQr: _operationInProgress || saving
           ? null
