@@ -122,7 +122,7 @@ version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.0.2"
+version = "=5.1.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -180,18 +180,13 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-version = "=5.0.2"
+version = "=5.1.0"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.2"
 default-features = false
 features = ["zakura"]
-
-[patch.crates-io]
-# Ledger delegation output review; keep the SDK tree type shared with tests.
-zcash_voting = { git = "https://github.com/chainapsis/zcash_voting.git", rev = "8271058867d236557b4acf004ade9753894e4064" }
-vote-commitment-tree = { git = "https://github.com/chainapsis/zcash_voting.git", rev = "8271058867d236557b4acf004ade9753894e4064" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
