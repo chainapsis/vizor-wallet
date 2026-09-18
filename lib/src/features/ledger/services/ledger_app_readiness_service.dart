@@ -4,8 +4,8 @@ import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
 import '../ledger_error_codes.dart';
-import '../ledger_error_messages.dart';
 import 'ledger_device_request.dart';
+import 'ledger_failure_guidance.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -90,6 +90,7 @@ class LedgerAppReadinessException implements Exception {
   final LedgerAppReadinessFailure failure;
   final String message;
   final bool canReconnect;
+
   /// The transport or device error this failure was classified from.
   final Object? cause;
 
@@ -279,7 +280,7 @@ class LedgerAppReadinessService {
       LedgerFailureKind.transportLost =>
         'Reconnect and unlock your Ledger, then try again.',
       _ =>
-        ledgerActionableErrorMessage(error) ??
+        ledgerFailureGuidance(error)?.message ??
             'Vizor could not prepare the Ledger Zcash app. Try again.',
     };
     return LedgerAppReadinessException(

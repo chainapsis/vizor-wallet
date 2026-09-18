@@ -34,7 +34,6 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -1385,7 +1384,7 @@ void main() {
       await tester.tap(find.text('Confirm with Ledger'));
       await _flushRealAsync(tester);
 
-      expect(find.text('Ledger signing failed'), findsOneWidget);
+      expect(find.text('Request could not be accepted'), findsOneWidget);
       expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(

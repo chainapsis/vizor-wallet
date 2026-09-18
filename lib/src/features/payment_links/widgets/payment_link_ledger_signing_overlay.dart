@@ -9,8 +9,6 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
-import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -177,8 +175,15 @@ class _PaymentLinkLedgerSigningOverlayState
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
           _terminal = error is LedgerGiftFundingTerminalException;
-          _requestNeedsRebuilding = false;
-          _deviceGuidance = ledgerFailureGuidance(error);
+          _deviceGuidance = ledgerFailureGuidance(
+            error,
+            requestKind: LedgerRequestKind.giftCard,
+          );
+          // Retrying the same request fails the same way on the device.
+          _requestNeedsRebuilding =
+              !_terminal &&
+              !_checkpointed &&
+              _deviceGuidance?.retryable == false;
           _error = _terminal
               ? LedgerGiftFundingTerminalException.message
               : isLedgerLegacyOrchardRecoveryUnsupported(error)
@@ -191,24 +196,14 @@ class _PaymentLinkLedgerSigningOverlayState
     }
   }
 
-  String _ledgerFailureMessage(Object error) {
-    final actionable = ledgerActionableErrorMessage(
-      error,
-      requestKind: LedgerRequestKind.giftCard,
-    );
-    // Retrying the same request fails the same way on the device.
-    _requestNeedsRebuilding =
-        actionable != null && ledgerRequestNeedsRebuilding(error);
-    if (actionable != null) return actionable;
-    return switch (classifyLedgerError(error)) {
-      LedgerFailureKind.userRejected =>
-        'The gift card funding was rejected on your Ledger.',
-      LedgerFailureKind.wrongApp =>
-        'Open the Zcash app on your Ledger, then try again.',
-      _ =>
-        'Ledger signing could not be completed. Check your device and try again.',
-    };
-  }
+  String _ledgerFailureMessage(
+    Object error,
+  ) => switch (LedgerRequestFailure.fromError(error)) {
+    LedgerRequestFailure.declined =>
+      'The gift card funding was rejected on your Ledger.',
+    _ =>
+      'Ledger signing could not be completed. Check your device and try again.',
+  };
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {
     if (!_active) return;

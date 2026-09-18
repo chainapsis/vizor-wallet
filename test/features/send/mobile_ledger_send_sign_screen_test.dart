@@ -18,7 +18,6 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
@@ -353,6 +352,7 @@ void main() {
       await tester.tap(find.text('Open signing'));
       await tester.pumpAndSettle();
 
+      expect(find.text('Request could not be accepted'), findsOneWidget);
       expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(

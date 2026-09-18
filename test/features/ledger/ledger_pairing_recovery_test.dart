@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_access.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_pairing_recovery_service.dart';
@@ -548,7 +549,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text('Couldn’t complete the request'), findsOneWidget);
+    expect(find.text(LedgerRequestFailure.transportLost.title), findsOneWidget);
     expect(find.text('Ledger Flex'), findsNothing);
     expect(accounts.writes, 0);
   });

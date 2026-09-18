@@ -10,8 +10,6 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
-import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
@@ -57,7 +55,6 @@ class _SwapLedgerSigningOverlayState
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
-  bool _requestNeedsRebuilding = false;
   LedgerFailureGuidance? _deviceGuidance;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
@@ -649,32 +646,23 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
-    final lower = error.toString().toLowerCase();
-    final appInstruction = ledgerZcashAppOpenErrorInstruction(
-      ref.read(rpcEndpointProvider).networkName,
-    );
-    _requestNeedsRebuilding = false;
-    if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      return kLedgerLegacyOrchardRecoveryUnavailableMessage;
-    }
-    final actionable = ledgerActionableErrorMessage(
+    _deviceGuidance = ledgerFailureGuidance(
       error,
       requestKind: widget.intent.payMode
           ? LedgerRequestKind.payment
           : LedgerRequestKind.swap,
     );
-    if (actionable != null) {
-      _requestNeedsRebuilding = ledgerRequestNeedsRebuilding(error);
-      return actionable;
+    final lower = error.toString().toLowerCase();
+    final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      ref.read(rpcEndpointProvider).networkName,
+    );
+    if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
+      return kLedgerLegacyOrchardRecoveryUnavailableMessage;
     }
     if (_deviceGuidance != null) return _deviceGuidance!.message;
-    final kind = classifyLedgerError(error);
-    if (kind == LedgerFailureKind.userRejected) {
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The ZEC deposit was rejected on your Ledger.';
-    }
-    if (kind == LedgerFailureKind.wrongApp) {
-      return '$appInstruction Then try again.';
     }
     final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
     if (usb != null) return usb;
@@ -696,7 +684,7 @@ class _SwapLedgerSigningOverlayState
     final postBroadcastRecovery = pendingBroadcastResult != null;
     // Retrying the same request fails the same way on the device.
     final requestNeedsRebuilding =
-        _requestNeedsRebuilding &&
+        _deviceGuidance?.retryable == false &&
         !postBroadcastRecovery &&
         !_operationClaimUnavailable;
     final expiredRecovery =

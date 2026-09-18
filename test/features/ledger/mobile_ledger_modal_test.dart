@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -158,9 +159,9 @@ void main() {
       if (!invalid) {
         expect(
           find.text(
-            failure == LedgerMobileFailure.rejected
-                ? 'Request declined'
-                : 'Couldn’t complete the request',
+            LedgerRequestFailure.fromError(
+              LedgerMobileException(failure, 'diagnostic'),
+            ).title,
           ),
           findsOneWidget,
         );

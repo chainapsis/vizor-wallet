@@ -675,44 +675,47 @@ void main() {
       false,
     ),
   ]) {
-    test('USB readiness failure ${usbError.split(':').first} '
-        '${needsConnection ? 'asks to reconnect' : 'keeps its error'}', () async {
-      final notifier = _FakeAccountNotifier(
-        _ledgerAccount(deviceModel: 'Nano X'),
-      );
-      final ble = _FakeBleService();
-      final container = _container(
-        notifier: notifier,
-        ble: ble,
-        platform: TargetPlatform.windows,
-        usbDevice: _ReadyDevice(error: StateError(usbError)),
-      );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
+    test(
+      'USB readiness failure ${usbError.split(':').first} '
+      '${needsConnection ? 'asks to reconnect' : 'keeps its error'}',
+      () async {
+        final notifier = _FakeAccountNotifier(
+          _ledgerAccount(deviceModel: 'Nano X'),
+        );
+        final ble = _FakeBleService();
+        final container = _container(
+          notifier: notifier,
+          ble: ble,
+          platform: TargetPlatform.windows,
+          usbDevice: _ReadyDevice(error: StateError(usbError)),
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
 
-      final operation = container
-          .read(ledgerConnectionServiceProvider)
-          .run(
-            accountUuid: 'ledger-1',
-            usb: () => throw StateError('operation must not start'),
-            bluetooth: (_) async => fail('must not use Bluetooth'),
-          );
+        final operation = container
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'ledger-1',
+              usb: () => throw StateError('operation must not start'),
+              bluetooth: (_) async => fail('must not use Bluetooth'),
+            );
 
-      await expectLater(
-        operation,
-        throwsA(
-          needsConnection
-              ? isA<LedgerConnectionRequiredException>().having(
-                  (e) => (e.cause! as LedgerAppReadinessException).cause
-                      .toString(),
-                  'cause',
-                  contains(usbError),
-                )
-              : isA<LedgerAppReadinessException>(),
-        ),
-      );
-      expect(ble.connectCalls, 0);
-    });
+        await expectLater(
+          operation,
+          throwsA(
+            needsConnection
+                ? isA<LedgerConnectionRequiredException>().having(
+                    (e) => (e.cause! as LedgerAppReadinessException).cause
+                        .toString(),
+                    'cause',
+                    contains(usbError),
+                  )
+                : isA<LedgerAppReadinessException>(),
+          ),
+        );
+        expect(ble.connectCalls, 0);
+      },
+    );
   }
 
   for (final metadataFailure in [false, true]) {

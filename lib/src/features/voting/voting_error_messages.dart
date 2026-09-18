@@ -1,6 +1,5 @@
 import '../../services/voting/voting_rust_exception.dart';
-import '../ledger/ledger_error_codes.dart';
-import '../ledger/ledger_error_messages.dart';
+import '../ledger/services/ledger_failure_guidance.dart';
 import 'voting_formatters.dart';
 import '../../rust/third_party/zcash_voting/wire.dart';
 
@@ -19,17 +18,17 @@ String ledgerVotingErrorMessage(
   Object error, {
   required String appInstruction,
 }) {
-  return switch (classifyLedgerError(error)) {
-    LedgerFailureKind.userRejected =>
+  return switch (LedgerRequestFailure.fromError(error)) {
+    LedgerRequestFailure.declined =>
       'The vote signature was rejected on your Ledger. Retry to sign again.',
-    LedgerFailureKind.cancelled => kLedgerVotingCancelledMessage,
-    LedgerFailureKind.deviceLocked => 'Unlock your Ledger. $appInstruction',
-    LedgerFailureKind.wrongApp => '$appInstruction Then retry.',
+    LedgerRequestFailure.cancelled => kLedgerVotingCancelledMessage,
+    LedgerRequestFailure.deviceLocked => 'Unlock your Ledger. $appInstruction',
+    LedgerRequestFailure.wrongApp => '$appInstruction Then retry.',
     _ =>
-      ledgerActionableErrorMessage(
+      ledgerFailureGuidance(
             error,
             requestKind: LedgerRequestKind.voting,
-          ) ??
+          )?.message ??
           friendlyVotingErrorMessage(error),
   };
 }

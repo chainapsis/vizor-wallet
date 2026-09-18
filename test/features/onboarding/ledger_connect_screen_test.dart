@@ -13,7 +13,6 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
-import 'package:zcash_wallet/src/features/ledger/ledger_error_messages.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';

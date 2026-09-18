@@ -8,7 +8,6 @@ import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_immediate_migration_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -44,8 +43,10 @@ class _LedgerImmediateMigrationSigningOverlayState
   LedgerImmediateMigrationCancellation? _cancellation;
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
-  bool _requestNeedsRebuilding = false;
   LedgerFailureGuidance? _deviceGuidance;
+
+  // Retrying the same request fails the same way on the device.
+  bool get _requestNeedsRebuilding => _deviceGuidance?.retryable == false;
   bool _cancelled = false;
 
   bool get _canLeave => _phase != LedgerSigningModalPhase.broadcasting;
@@ -132,22 +133,15 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
-    final actionable = ledgerActionableErrorMessage(
+    _deviceGuidance = ledgerFailureGuidance(
       error,
       requestKind: LedgerRequestKind.migration,
     );
-    _requestNeedsRebuilding =
-        actionable != null && ledgerRequestNeedsRebuilding(error);
-    if (actionable != null) return actionable;
     if (_deviceGuidance != null) return _deviceGuidance!.message;
     final message = error.toString().toLowerCase();
-    final kind = classifyLedgerError(error);
-    if (kind == LedgerFailureKind.userRejected) {
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The migration transaction was rejected on your Ledger.';
-    }
-    if (kind == LedgerFailureKind.wrongApp) {
-      return 'Open the Zcash app on your Ledger, then try again.';
     }
     if (isLedgerUsbTransportError(error)) {
       return 'Connect and unlock your Ledger, then open the Zcash app.';
@@ -180,7 +174,6 @@ class _LedgerImmediateMigrationSigningOverlayState
               message: _error ?? 'Ledger migration could not be completed.',
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,
-              // Retrying the same request fails the same way on the device.
               actionLabel: _requestNeedsRebuilding ? null : 'Try again',
             )
           : null,

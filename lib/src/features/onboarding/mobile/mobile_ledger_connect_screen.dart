@@ -12,8 +12,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
@@ -112,17 +110,16 @@ class _MobileLedgerConnectScreenState
   }
 
   String _friendlyError(Object error) {
-    final guidance = ledgerFailureGuidance(error);
-    if (guidance != null) return guidance.message;
-    final kind = classifyLedgerError(error);
-    if (kind == LedgerFailureKind.hostRequestRejected) {
-      return kLedgerViewingKeyRequestRejectedMessage;
-    }
-    final actionable = ledgerActionableErrorMessage(error);
-    if (actionable != null) return actionable;
-    if (kind == LedgerFailureKind.userRejected) {
+    // A declined viewing-key request keeps its own copy even when typed.
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.viewingKey,
+    );
+    if (guidance != null) return guidance.message;
     return 'Vizor could not read this Ledger account. Check the connection and try again.';
   }
 

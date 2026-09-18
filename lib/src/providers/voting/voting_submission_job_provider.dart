@@ -10,7 +10,7 @@ import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
-import '../../features/ledger/ledger_error_messages.dart';
+import '../../features/ledger/services/ledger_failure_guidance.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
 import '../../features/ledger/widgets/ledger_device_app_prompt.dart';
 import '../../features/voting/voting_flow_models.dart';
@@ -917,7 +917,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
               ref.read(rpcEndpointProvider).networkName,
             ),
           ),
-          retryable: !ledgerRequestNeedsRebuilding(error),
+          retryable: LedgerRequestFailure.fromError(error).retryable,
         );
         return;
       }

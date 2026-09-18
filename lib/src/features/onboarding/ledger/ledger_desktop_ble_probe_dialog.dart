@@ -11,8 +11,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../ledger/ledger_capability.dart';
-import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
 
@@ -200,23 +198,22 @@ class _LedgerDesktopBleConnectDialogState
 
   void _handleError(int generation, Object error) {
     if (!mounted || generation != _generation) return;
-    final message =
-        ledgerFailureGuidance(error)?.message ??
-        switch (error) {
-          UnsupportedError() =>
-            'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-          _ => switch (classifyLedgerError(error)) {
-            LedgerFailureKind.userRejected =>
-              'The viewing-key request was rejected on your Ledger.',
-            LedgerFailureKind.hostRequestRejected =>
-              kLedgerViewingKeyRequestRejectedMessage,
-            _ =>
-              ledgerActionableErrorMessage(error) ??
-                  'Vizor could not connect to this Ledger over Bluetooth. Try again.',
-          },
-        };
-    _bluetoothRecovery =
-        ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.viewingKey,
+    );
+    final message = switch (error) {
+      UnsupportedError() =>
+        'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
+      _
+          when LedgerRequestFailure.fromError(error) ==
+              LedgerRequestFailure.declined =>
+        'The viewing-key request was rejected on your Ledger.',
+      _ =>
+        guidance?.message ??
+            'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+    };
+    _bluetoothRecovery = guidance?.bluetoothRecovery ?? false;
     _fail(message);
   }
 

@@ -14,8 +14,6 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../ledger/ledger_capability.dart';
-import '../../../ledger/ledger_error_codes.dart';
-import '../../../ledger/ledger_error_messages.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
 import '../../../ledger/services/ledger_device_selection.dart';
@@ -329,7 +327,6 @@ class _MobileLedgerSendSignScreenState
     );
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
-    final actionable = ledgerActionableErrorMessage(error);
 
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
@@ -359,14 +356,12 @@ class _MobileLedgerSendSignScreenState
         showDeviceAppPrompt: false,
       );
       action = null;
-    } else if (ledgerRequestNeedsRebuilding(error) && actionable != null) {
+    } else if (guidance != null && !guidance.retryable) {
       // Retrying the same request fails the same way on the device.
       presentation = LedgerSigningFailurePresentation(
-        title: ledgerRequestExceedsCapacity(error)
-            ? kLedgerSmallerTransferTitle
-            : 'Ledger signing failed',
+        title: LedgerRequestFailure.requestRejected.title,
         statusLabel: 'New transaction required',
-        message: actionable,
+        message: guidance.message,
         showDeviceAppPrompt: false,
         actionLabel: 'Create new transaction',
       );
@@ -384,18 +379,15 @@ class _MobileLedgerSendSignScreenState
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
-      final message =
-          actionable ??
-          switch (classifyLedgerError(error)) {
-            LedgerFailureKind.userRejected =>
-              'The transaction was rejected on your Ledger.',
-            LedgerFailureKind.transportLost ||
-            LedgerFailureKind.usbPermission =>
-              ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
-                  'Connect and unlock your Ledger. $appInstruction',
-            _ =>
-              'Ledger signing could not be completed. Check your device and try again.',
-          };
+      final message = switch (LedgerRequestFailure.fromError(error)) {
+        LedgerRequestFailure.declined =>
+          'The transaction was rejected on your Ledger.',
+        LedgerRequestFailure.transportLost =>
+          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+              'Connect and unlock your Ledger. $appInstruction',
+        _ =>
+          'Ledger signing could not be completed. Check your device and try again.',
+      };
       presentation = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',

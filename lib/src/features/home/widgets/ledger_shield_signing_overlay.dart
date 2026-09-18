@@ -14,7 +14,6 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/ledger_error_codes.dart';
-import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
@@ -63,7 +62,6 @@ class _LedgerShieldSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   bool _canRetry = false;
-  bool _requestNeedsRebuilding = false;
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
@@ -548,30 +546,26 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
-    final actionable = ledgerActionableErrorMessage(
+    final guidance = ledgerFailureGuidance(
       error,
       requestKind: LedgerRequestKind.shield,
     );
-    _requestNeedsRebuilding =
-        actionable != null && ledgerRequestNeedsRebuilding(error);
+    _deviceGuidance = guidance;
     // Retrying the same request fails the same way on the device.
-    if (_requestNeedsRebuilding) _canRetry = false;
-    final kind = classifyLedgerError(error);
-    if (kind == LedgerFailureKind.hostRequestRejected && _round > 1) {
+    if (guidance?.retryable == false) _canRetry = false;
+    final failure = LedgerRequestFailure.fromError(error);
+    if (failure == LedgerRequestFailure.requestRejected &&
+        classifyLedgerError(error) == LedgerFailureKind.hostRequestRejected &&
+        _round > 1) {
       return 'Vizor built a request that the Zcash app on your Ledger could not accept. This approval was not sent; earlier approvals in this session were already broadcast.';
     }
-    if (actionable != null) return actionable;
-    if (_deviceGuidance != null) return _deviceGuidance!.message;
+    if (guidance != null) return guidance.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
-    if (kind == LedgerFailureKind.userRejected) {
+    if (failure == LedgerRequestFailure.declined) {
       return 'The shield transaction was rejected on your Ledger.';
-    }
-    if (kind == LedgerFailureKind.wrongApp) {
-      return '$appInstruction Then try again.';
     }
     final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
     if (usb != null) return usb;
