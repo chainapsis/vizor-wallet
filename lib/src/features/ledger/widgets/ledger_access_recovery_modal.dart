@@ -276,6 +276,7 @@ class _LedgerAccessRecoveryModalState
     child: AppButton(
       key: ValueKey('ledger_choose_${transport.name}'),
       variant: AppButtonVariant.ghost,
+      borderRadius: BorderRadius.circular(AppRadii.small),
       expand: true,
       constrainContent: true,
       height: 64,
