@@ -44,6 +44,32 @@ const REVIEW_BUSY_STATUS: u16 = 0x6901;
 const REVIEW_BUSY_MAX_ATTEMPTS: usize = 3;
 const REVIEW_BUSY_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
+/// Ledger USB product IDs encode the model in the high byte (MMII).
+/// Match the legacy IDs first, as in @ledgerhq/devices identifyUSBProductId.
+/// Only called after the Ledger VID and signing HID interface are selected.
+fn usb_device_model(product_id: u16) -> Option<&'static str> {
+    let model = match product_id {
+        0x0000 => 0x00,
+        0x0001 => 0x10,
+        0x0004 => 0x40,
+        0x0005 => 0x50,
+        0x0006 => 0x60,
+        0x0007 => 0x70,
+        0x0008 => 0x80,
+        _ => product_id >> 8,
+    };
+    match model {
+        0x00 => Some("blue"),
+        0x10 => Some("nanoS"),
+        0x40 => Some("nanoX"),
+        0x50 => Some("nanoSPlus"),
+        0x60 => Some("stax"),
+        0x70 => Some("flex"),
+        0x80 => Some("nanoGen5"),
+        _ => None,
+    }
+}
+
 #[cfg(debug_assertions)]
 const SPECULOS_UFVK_API_URL: &str = "VIZOR_LEDGER_SPECULOS_UFVK_API_URL";
 #[cfg(debug_assertions)]
@@ -84,6 +110,7 @@ enum TransportPurpose {
 pub(super) struct LedgerTransport {
     backend: Backend,
     operation: OperationContext,
+    device_model: Option<&'static str>,
 }
 
 impl LedgerTransport {
@@ -107,6 +134,7 @@ impl LedgerTransport {
             return Ok(Self {
                 backend: Backend::Speculos(client),
                 operation,
+                device_model: None,
             });
         }
         #[cfg(not(debug_assertions))]
@@ -121,6 +149,7 @@ impl LedgerTransport {
             .ok_or_else(|| {
                 hid_connection_error("No Ledger device found. Connect and unlock your Ledger.")
             })?;
+        let device_model = usb_device_model(device_info.product_id());
         let device = device_info
             .open_device(&hid)
             .map_err(|e| hid_connection_error(&format!("Open Ledger HID device: {e}")))?;
@@ -128,7 +157,12 @@ impl LedgerTransport {
         Ok(Self {
             backend: Backend::Hid(device),
             operation,
+            device_model,
         })
+    }
+
+    pub(super) fn device_model(&self) -> Option<&'static str> {
+        self.device_model
     }
 
     pub(super) fn current_app(&self) -> Result<RunningDeviceApp, String> {
@@ -170,9 +204,9 @@ impl LedgerTransport {
     pub(super) fn send_pczt_with_progress(
         &self,
         commands: &[CommandPackets],
-        progress: &dyn Fn(&str),
+        progress: &dyn Fn(&str, Option<&str>),
     ) -> Result<(), String> {
-        progress("sending");
+        progress("sending", self.device_model);
         for command in commands {
             let total = command.packets.len();
             if total == 0 {
@@ -182,7 +216,7 @@ impl LedgerTransport {
                 // The response to the final bundle packet can wait for user review.
                 // Emit before exchange, not after its approval-bearing response.
                 if command.finishes_pczt && index + 1 == total {
-                    progress("reviewing");
+                    progress("reviewing", self.device_model);
                 }
                 self.exchange(
                     command.instruction,
@@ -812,6 +846,102 @@ fn take_length_prefixed_string(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usb_models_support_interface_variants_and_legacy_ids() {
+        for (legacy, prefix, expected) in [
+            (0x0000, 0x00, "blue"),
+            (0x0001, 0x10, "nanoS"),
+            (0x0004, 0x40, "nanoX"),
+            (0x0005, 0x50, "nanoSPlus"),
+            (0x0006, 0x60, "stax"),
+            (0x0007, 0x70, "flex"),
+            (0x0008, 0x80, "nanoGen5"),
+        ] {
+            assert_eq!(usb_device_model(legacy), Some(expected));
+            for interface in [0x00, 0x01, 0x11, 0x15, 0xff] {
+                // Small legacy IDs take precedence over the Blue prefix.
+                let pid = prefix << 8 | interface;
+                if prefix == 0 && interface == 1 {
+                    continue;
+                }
+                assert_eq!(usb_device_model(pid), Some(expected), "PID {pid:#06x}");
+            }
+        }
+        for unknown in [0x2011, 0x9011, 0xffff] {
+            assert_eq!(usb_device_model(unknown), None);
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn signing_progress_includes_connection_model_before_any_apdu() {
+        use std::{
+            net::TcpListener,
+            sync::{Arc, Mutex},
+            time::{Duration, Instant},
+        };
+
+        for model in [Some("flex"), None] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let server_events = Arc::clone(&events);
+            let server = std::thread::spawn(move || {
+                for _ in 0..2 {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut request = Vec::new();
+                    let mut buffer = [0u8; 512];
+                    while !request.ends_with(b"}") {
+                        let count = stream.read(&mut buffer).unwrap();
+                        assert_ne!(count, 0);
+                        request.extend_from_slice(&buffer[..count]);
+                    }
+                    server_events
+                        .lock()
+                        .unwrap()
+                        .push(("exchange".to_owned(), None));
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"data\":\"9000\"}").unwrap();
+                }
+            });
+            let transport = LedgerTransport {
+                backend: Backend::Speculos(SpeculosClient::new(&url, "TEST_URL").unwrap()),
+                operation: OperationContext {
+                    generation: u64::MAX,
+                    deadline: Instant::now() + Duration::from_secs(5),
+                },
+                device_model: model,
+            };
+            transport
+                .send_pczt_with_progress(
+                    &[CommandPackets {
+                        instruction: 0x56,
+                        packets: vec![vec![1], vec![2]],
+                        finishes_pczt: true,
+                    }],
+                    &|phase, device_model| {
+                        events
+                            .lock()
+                            .unwrap()
+                            .push((phase.to_owned(), device_model.map(str::to_owned)))
+                    },
+                )
+                .unwrap();
+            server.join().unwrap();
+            assert_eq!(
+                *events.lock().unwrap(),
+                vec![
+                    ("sending".to_owned(), model.map(str::to_owned)),
+                    ("exchange".to_owned(), None),
+                    ("reviewing".to_owned(), model.map(str::to_owned)),
+                    ("exchange".to_owned(), None),
+                ]
+            );
+        }
+    }
 
     #[test]
     fn status_words_are_actionable() {

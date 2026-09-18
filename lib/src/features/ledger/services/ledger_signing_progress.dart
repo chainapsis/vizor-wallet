@@ -5,10 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Coarse user-facing stages, independent of device connection/readiness state.
 enum LedgerSigningStage { preparing, sending, reviewing, finishing }
 
+typedef LedgerSigningProgressReporter =
+    void Function(String phase, {String? deviceModel});
+
 class LedgerSigningProgress {
-  const LedgerSigningProgress(this.accountUuid, this.stage);
+  const LedgerSigningProgress(this.accountUuid, this.stage, {this.deviceModel});
   final String accountUuid;
   final LedgerSigningStage stage;
+
+  /// The device selected for this attempt, not persisted account metadata.
+  final String? deviceModel;
 }
 
 class LedgerSigningProgressController extends Notifier<LedgerSigningProgress?> {
@@ -21,20 +27,32 @@ class LedgerSigningProgressController extends Notifier<LedgerSigningProgress?> {
   }
 
   /// Each attempt owns its observer. Late native/USB events cannot update a retry.
-  void Function(String) begin(String accountUuid) {
+  LedgerSigningProgressReporter begin(String accountUuid) {
     final generation = ++_generation;
     state = LedgerSigningProgress(accountUuid, LedgerSigningStage.preparing);
-    return (phase) {
+    return (phase, {deviceModel}) {
       if (generation != _generation) return;
       final stage = switch (phase) {
+        'preparing' => LedgerSigningStage.preparing,
         'sending' => LedgerSigningStage.sending,
         'reviewing' => LedgerSigningStage.reviewing,
         'finishing' => LedgerSigningStage.finishing,
         _ => null,
       };
-      if (stage != null && stage.index > (state?.stage.index ?? -1)) {
-        state = LedgerSigningProgress(accountUuid, stage);
+      final current = state;
+      if (stage == null || current == null) return;
+      final nextStage = stage.index > current.stage.index
+          ? stage
+          : current.stage;
+      final nextModel = deviceModel ?? current.deviceModel;
+      if (nextStage == current.stage && nextModel == current.deviceModel) {
+        return;
       }
+      state = LedgerSigningProgress(
+        accountUuid,
+        nextStage,
+        deviceModel: nextModel,
+      );
     };
   }
 
@@ -60,11 +78,15 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
     LedgerSigningStage.reviewing => 'Check your Ledger',
     LedgerSigningStage.finishing => 'Finishing transaction',
   };
-  String get message => switch (this) {
+  String get message => messageForDevice(null);
+
+  String messageForDevice(String? deviceModel) => switch (this) {
     LedgerSigningStage.preparing =>
       'Please wait while Vizor prepares your transaction.',
     LedgerSigningStage.sending =>
-      'Keep your Ledger connected. This may take a while.',
+      ledgerHasShortSigningWait(deviceModel)
+          ? 'Your Ledger is preparing to sign. It may seem unresponsive for about 10 seconds. Keep your Ledger connected.'
+          : 'Your Ledger is preparing to sign. It may seem unresponsive for about 30 seconds. Keep your Ledger connected.',
     LedgerSigningStage.reviewing =>
       'Review and approve when prompted on your Ledger.',
     LedgerSigningStage.finishing => 'Keep Vizor open.',
@@ -74,4 +96,20 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
     LedgerSigningStage.reviewing => 'Review on device',
     _ => 'Please wait',
   };
+}
+
+/// Accept model identifiers exposed by USB and native Bluetooth discovery.
+/// Unknown and future models use the longer guidance.
+bool ledgerHasShortSigningWait(String? deviceModel) {
+  final model = (deviceModel ?? '')
+      .toLowerCase()
+      .replaceAll(RegExp('[^a-z0-9]'), '')
+      .replaceFirst(RegExp('^ledger'), '');
+  return const {
+    'stax',
+    'flex',
+    'staxflex',
+    'flexstax',
+    'europa',
+  }.contains(model);
 }

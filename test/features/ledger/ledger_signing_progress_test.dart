@@ -3,6 +3,75 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 
 void main() {
+  test('model follows its signing attempt and survives stage-only events', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final controller = container.read(ledgerSigningProgressProvider.notifier);
+    final first = controller.begin('a');
+    first('sending', deviceModel: 'stax');
+    expect(container.read(ledgerSigningProgressProvider)?.deviceModel, 'stax');
+    first('reviewing');
+    expect(container.read(ledgerSigningProgressProvider)?.deviceModel, 'stax');
+
+    final second = controller.begin('b');
+    expect(container.read(ledgerSigningProgressProvider)?.deviceModel, isNull);
+    first('finishing', deviceModel: 'flex');
+    expect(container.read(ledgerSigningProgressProvider)?.deviceModel, isNull);
+    second('preparing', deviceModel: 'Ledger Nano X');
+    second('sending');
+    expect(
+      container.read(ledgerSigningProgressProvider)?.deviceModel,
+      'Ledger Nano X',
+    );
+    controller.cancel();
+    second('finishing', deviceModel: 'flex');
+    expect(
+      container.read(ledgerSigningProgressProvider)?.deviceModel,
+      'Ledger Nano X',
+    );
+  });
+
+  test(
+    'only recognized Stax and Flex models get the short sending guidance',
+    () {
+      for (final model in [
+        'stax',
+        'Ledger Stax',
+        'FLEX',
+        'Ledger Flex / Stax',
+        'Stax/Flex',
+        'europa',
+      ]) {
+        expect(
+          LedgerSigningStage.sending.messageForDevice(model),
+          contains('about 10 seconds'),
+        );
+      }
+      for (final model in [
+        null,
+        '',
+        'nanoX',
+        'Ledger Nano S Plus',
+        'apex',
+        'Ledger Nano Gen5',
+        'My Flex',
+        'future',
+      ]) {
+        expect(
+          LedgerSigningStage.sending.messageForDevice(model),
+          contains('about 30 seconds'),
+        );
+      }
+      for (final stage in [
+        LedgerSigningStage.preparing,
+        LedgerSigningStage.reviewing,
+        LedgerSigningStage.finishing,
+      ]) {
+        expect(stage.messageForDevice('flex'), stage.messageForDevice(null));
+      }
+    },
+  );
+
   test(
     'progress is monotonic within an attempt and resets for the next round',
     () async {
