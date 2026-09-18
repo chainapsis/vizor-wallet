@@ -1853,8 +1853,8 @@ async fn store_and_broadcast_pczts_inner(
 /// A compact signature response that could not be applied.
 #[derive(Debug)]
 pub(crate) enum SpendAuthSignatureError {
-    /// A signature failed verification against its action, so a key other
-    /// than this account's produced it.
+    /// A signature failed verification against its action's `rk`, so a key
+    /// other than this account's produced it.
     Mismatch(String),
     /// The response is malformed, incomplete, or targets the wrong actions.
     Invalid(String),
@@ -1896,15 +1896,33 @@ fn apply_compact_orchard_spend_auth_signatures(
         signer
             .apply_orchard_spend_auth_signature(action_sig)
             .map_err(|e| {
-                SpendAuthSignatureError::Mismatch(format!(
+                let message = format!(
                     "Apply {:?} signature at action {}: {e:?}",
                     action_sig.value_pool(),
                     action_sig.action_index()
-                ))
+                );
+                if is_invalid_external_signature(&e) {
+                    SpendAuthSignatureError::Mismatch(message)
+                } else {
+                    SpendAuthSignatureError::Invalid(message)
+                }
             })?;
     }
 
     Ok(signer.finish())
+}
+
+/// Only a signature that fails verification against the action's `rk` means
+/// another key signed; a malformed action is an invalid response.
+fn is_invalid_external_signature(error: &pczt::roles::signer::Error) -> bool {
+    use orchard::pczt::SignerError::InvalidExternalSignature;
+    use pczt::roles::signer::Error;
+
+    matches!(
+        error,
+        Error::OrchardSign(InvalidExternalSignature)
+            | Error::IronwoodSign(InvalidExternalSignature)
+    )
 }
 
 /// Verifies a compact signature response against the wallet's unredacted,
@@ -3280,6 +3298,46 @@ mod tests {
                 check_orchard_spend_auth_signatures(&deferred_bytes, &[]),
                 Err(SpendAuthSignatureError::Invalid(_))
             ));
+        }
+
+        #[test]
+        fn only_an_invalid_external_signature_reads_as_a_key_mismatch() {
+            let (deferred_bytes, valid, spend_index) = build_deferred_base_and_valid_sig();
+
+            let mut forged_bytes = *valid.signature();
+            forged_bytes[0] ^= 1;
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                forged_bytes,
+            );
+            match check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]) {
+                Err(SpendAuthSignatureError::Mismatch(message)) => {
+                    assert!(message.contains("InvalidExternalSignature"), "{message}");
+                }
+                other => panic!("expected a key mismatch, got {other:?}"),
+            }
+
+            // Corrupt the spent note's nullifier so the Signer's consistency
+            // check fails before any signature is verified.
+            let nullifier = *pczt::Pczt::parse(&deferred_bytes)
+                .unwrap()
+                .orchard()
+                .actions()[spend_index]
+                .spend()
+                .nullifier();
+            let offset = deferred_bytes
+                .windows(nullifier.len())
+                .position(|window| window == nullifier)
+                .expect("serialized PCZT contains the spend nullifier");
+            let mut malformed_bytes = deferred_bytes.clone();
+            malformed_bytes[offset] ^= 1;
+            match check_orchard_spend_auth_signatures(&malformed_bytes, &[valid]) {
+                Err(SpendAuthSignatureError::Invalid(message)) => {
+                    assert!(message.contains("OrchardVerify"), "{message}");
+                }
+                other => panic!("expected an invalid response, got {other:?}"),
+            }
         }
 
         #[test]
