@@ -69,11 +69,15 @@ LedgerFailureGuidance? ledgerFailureGuidance(
       _rebuildMessage(error, requestKind),
       retryable: false,
     ),
-    LedgerRequestFailure.wrongApp ||
+    // Only a running other app is fixed by opening Zcash; install and update
+    // failures need Ledger Live, so the open-app card would contradict them.
+    LedgerRequestFailure.wrongApp => LedgerFailureGuidance(
+      failure.message,
+      showDeviceAppPrompt: true,
+    ),
     LedgerRequestFailure.appNotInstalled ||
     LedgerRequestFailure.appUpdateRequired => LedgerFailureGuidance(
       failure.message,
-      showDeviceAppPrompt: true,
     ),
     LedgerRequestFailure.unexpectedStatus => LedgerFailureGuidance(
       _unexpectedStatusMessage(error),

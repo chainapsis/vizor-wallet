@@ -258,18 +258,37 @@ void main() {
       expect(guidance.retryable, isTrue);
     });
 
-    test('device-app failures show the device-app prompt', () {
+    test('only a wrong running app shows the open-app prompt', () {
       for (final error in [
         'ledger_status_6e00: Ledger device does not support this command class',
         'ledger_status_6d00: The running Ledger app does not support this command',
-        'ledger_status_6807: The Zcash app is not installed on this Ledger',
       ]) {
+        expect(
+          LedgerRequestFailure.fromError(error),
+          LedgerRequestFailure.wrongApp,
+          reason: error,
+        );
         expect(
           ledgerFailureGuidance(error)!.showDeviceAppPrompt,
           isTrue,
           reason: error,
         );
       }
+      const notInstalled =
+          'ledger_status_6807: The Zcash app is not installed on this Ledger';
+      final installGuidance = ledgerFailureGuidance(notInstalled)!;
+      expect(
+        installGuidance.message,
+        LedgerRequestFailure.appNotInstalled.message,
+      );
+      expect(installGuidance.showDeviceAppPrompt, isFalse);
+      final updateGuidance = ledgerFailureGuidance(
+        const LedgerAppReadinessException(
+          LedgerAppReadinessFailure.unsupportedVersion,
+          'Update the Ledger Zcash app to version 3.9.3 or newer.',
+        ),
+      )!;
+      expect(updateGuidance.showDeviceAppPrompt, isFalse);
       expect(
         ledgerFailureGuidance(
           const LedgerAppReadinessException(
