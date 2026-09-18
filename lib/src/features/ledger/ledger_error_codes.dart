@@ -8,7 +8,8 @@ enum LedgerFailureKind {
   /// 0x6985, 0x5501: the user declined on the device.
   userRejected,
 
-  /// 0x5515, 0x6982, 0x5303.
+  /// 0x5515, 0x6982, 0x5303, 0x63c0 (wrong PIN entered). The Zcash app
+  /// aliases 0x6982 to both SecurityStatusNotSatisfied and NothingReceived.
   deviceLocked,
 
   /// 0x5502.
@@ -23,7 +24,8 @@ enum LedgerFailureKind {
   /// 0xb007.
   appWrongState,
 
-  /// 0x6a80, 0x6986: the app refused data Vizor built, not a user decision.
+  /// 0x6a80, 0x6986, 0x6f01, 0x6f02, 0x6b00, 0x6700: the app refused or could
+  /// not parse data Vizor built, not a user decision.
   hostRequestRejected,
 
   /// 0x6e00, 0x6d00: the running app does not know the command, so another
@@ -34,12 +36,15 @@ enum LedgerFailureKind {
   /// check reports this; no device status word means it.
   appUpdateRequired,
 
-  /// 0x5223.
+  /// 0x5223, 0x6f00, 0x6f03, 0x6faa.
   deviceInternalError,
 
   /// Any other status word.
   unknownStatus,
   cancelled,
+
+  /// `ledger_capacity:` limits, or 0x6a84 when the device runs out of memory
+  /// for the request.
   capacityExceeded,
 
   /// The signatures verify against keys other than this account's.
@@ -63,14 +68,23 @@ int? ledgerStatusWord(Object error) {
 LedgerFailureKind ledgerFailureKindForStatusWord(int status) =>
     switch (status) {
       0x6985 || 0x5501 => LedgerFailureKind.userRejected,
-      0x5515 || 0x6982 || 0x5303 => LedgerFailureKind.deviceLocked,
+      0x5515 || 0x6982 || 0x5303 || 0x63c0 => LedgerFailureKind.deviceLocked,
       0x5502 => LedgerFailureKind.pinNotSet,
       0x6807 => LedgerFailureKind.appNotInstalled,
       0x6601 || 0x6901 => LedgerFailureKind.deviceBusy,
       0xb007 => LedgerFailureKind.appWrongState,
-      0x6a80 || 0x6986 => LedgerFailureKind.hostRequestRejected,
+      0x6a80 ||
+      0x6986 ||
+      0x6f01 ||
+      0x6f02 ||
+      0x6b00 ||
+      0x6700 => LedgerFailureKind.hostRequestRejected,
+      0x6a84 => LedgerFailureKind.capacityExceeded,
       0x6e00 || 0x6d00 => LedgerFailureKind.wrongApp,
-      0x5223 => LedgerFailureKind.deviceInternalError,
+      0x5223 ||
+      0x6f00 ||
+      0x6f03 ||
+      0x6faa => LedgerFailureKind.deviceInternalError,
       _ => LedgerFailureKind.unknownStatus,
     };
 

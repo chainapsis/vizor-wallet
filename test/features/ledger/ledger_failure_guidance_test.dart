@@ -171,6 +171,40 @@ void main() {
       );
     });
 
+    test('unparseable requests must be rebuilt, not retried', () {
+      for (final code in ['6f01', '6f02', '6b00', '6700']) {
+        final error = 'ledger_status_$code: Ledger Zcash app could not parse';
+        expect(
+          LedgerRequestFailure.fromError(error),
+          LedgerRequestFailure.requestRejected,
+          reason: code,
+        );
+        final guidance = ledgerFailureGuidance(error)!;
+        expect(guidance.retryable, isFalse, reason: code);
+        expect(guidance.message, kLedgerHostRequestRejectedMessage);
+      }
+    });
+
+    test('running out of device memory asks for a smaller transaction', () {
+      final guidance = ledgerFailureGuidance(
+        'ledger_status_6a84: Ledger ran out of memory for this transaction; try a smaller amount',
+      )!;
+      expect(guidance.retryable, isFalse);
+      expect(guidance.message, contains('try a smaller amount'));
+    });
+
+    test('a wrong PIN asks the user to unlock the Ledger', () {
+      const error = 'ledger_status_63c0: A wrong Ledger PIN was entered';
+      expect(
+        LedgerRequestFailure.fromError(error),
+        LedgerRequestFailure.deviceLocked,
+      );
+      expect(
+        ledgerFailureGuidance(error)!.message,
+        'Unlock your Ledger, then try again.',
+      );
+    });
+
     test('0x6985 stays with the caller as a decline', () {
       const error = 'ledger_status_6985: Ledger request was rejected';
       expect(ledgerFailureGuidance(StateError(error)), isNull);
@@ -279,7 +313,7 @@ void main() {
     });
 
     test('device internal failures request an app restart with their code', () {
-      for (final code in ['6f01', '6f03', '5223']) {
+      for (final code in ['5223', '6f00', '6f03', '6faa', '6400']) {
         final error = 'ledger_status_$code: Ledger Zcash app returned status';
         final guidance = ledgerFailureGuidance(error)!;
         expect(guidance.retryable, isTrue);

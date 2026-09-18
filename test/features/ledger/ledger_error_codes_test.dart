@@ -25,8 +25,17 @@ void main() {
       0x6e00: LedgerFailureKind.wrongApp,
       0x6d00: LedgerFailureKind.wrongApp,
       0x5223: LedgerFailureKind.deviceInternalError,
+      0x6f00: LedgerFailureKind.deviceInternalError,
+      0x6f03: LedgerFailureKind.deviceInternalError,
+      0x6faa: LedgerFailureKind.deviceInternalError,
+      0x63c0: LedgerFailureKind.deviceLocked,
+      0x6f01: LedgerFailureKind.hostRequestRejected,
+      0x6f02: LedgerFailureKind.hostRequestRejected,
+      0x6b00: LedgerFailureKind.hostRequestRejected,
+      0x6700: LedgerFailureKind.hostRequestRejected,
+      0x6a84: LedgerFailureKind.capacityExceeded,
       0x670a: LedgerFailureKind.unknownStatus,
-      0x6f01: LedgerFailureKind.unknownStatus,
+      0x6400: LedgerFailureKind.unknownStatus,
     };
     for (final MapEntry(key: status, value: kind) in table.entries) {
       final error = StateError(_status(status, 'device text'));
