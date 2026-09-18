@@ -9,13 +9,6 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 
 part 'compact_payment_link_codec.dart';
 
-/// Enable after readers and the browser gateway have shipped. Local builds can
-/// opt in without changing how durable recovery records are written.
-const kPaymentLinkCompactSharing = bool.fromEnvironment(
-  'VIZOR_PAYMENT_LINK_COMPACT_SHARING',
-  defaultValue: false,
-);
-
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
   kPaymentLinkRegtestEnabledEnvKey,
@@ -271,9 +264,22 @@ class VizorPaymentLink {
 
   /// Serialize for sharing. Callers dropping a known address must first verify
   /// it asynchronously with [rust_wallet.validateGiftAddress].
-  Uri toShareUri({bool compact = kPaymentLinkCompactSharing}) => compact
-      ? _uri('v3=${_CompactPaymentLinkCodec.encode(this)}')
-      : toRecoveryUri();
+  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+
+  /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
+  /// The caller must first verify the original mnemonic against a known address.
+  /// Canonicalization is used only to validate, never to replace the stored secret.
+  Uri? toLegacyWhitespaceShareUri() {
+    final original = mnemonic.trim();
+    final canonical = original.split(RegExp(r'\s+')).join(' ');
+    if (canonical == original) return null;
+    if (knownAddress == null) {
+      throw const FormatException('Gift card address could not be verified.');
+    }
+    // Apply every compact payload check as well, including BIP-39 validation.
+    _uri('v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}');
+    return toRecoveryUri();
+  }
 
   static Uri _uri(String fragment) {
     final uri = Uri(

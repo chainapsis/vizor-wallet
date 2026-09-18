@@ -10,13 +10,13 @@ abstract final class _CompactPaymentLinkCodec {
   static FormatException get _invalid =>
       const FormatException('Gift link payload is invalid or unsupported.');
 
-  static String encode(VizorPaymentLink link) {
+  static String encode(VizorPaymentLink link, {String? mnemonic}) {
     try {
       final network = link.network.trim();
       _validateRequired(network, link.birthdayHeight, link.amountZatoshi);
       final presentation = link.presentation?.toPayload();
       final entropy = rust_wallet.giftMnemonicToEntropy(
-        mnemonic: link.mnemonic.trim(),
+        mnemonic: mnemonic ?? link.mnemonic.trim(),
       );
       if (!_entropyLengths.contains(entropy.length)) throw _invalid;
       final label = link.label.trim();

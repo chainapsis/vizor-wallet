@@ -135,10 +135,7 @@ void main() {
 
       final rawLink = await payment_link_flow.readPaymentLinkFromClipboard();
       var link = VizorPaymentLink.parse(rawLink);
-      expect(
-        Uri.parse(rawLink).fragment,
-        startsWith(kPaymentLinkCompactSharing ? 'v3=' : 'v2='),
-      );
+      expect(Uri.parse(rawLink).fragment, startsWith('v3='));
       expect(link.mnemonic.split(' ').length, 24);
       expect(link.network, _network);
       expect(link.amountZatoshi, _giftAmountZatoshi);
@@ -175,7 +172,7 @@ void main() {
       for (final uri in [
         fundingRecovery.link.toRecoveryUri(),
         legacyPaymentLinkUri(fundingRecovery.link),
-        fundingRecovery.link.toShareUri(compact: true),
+        fundingRecovery.link.toShareUri(),
       ]) {
         final recovered = VizorPaymentLink.parse(uri.toString());
         expect(recovered.hasSameCanonicalPayload(link), isTrue);

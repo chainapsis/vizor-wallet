@@ -26,6 +26,7 @@ String phrase(int bytes) =>
 
 VizorPaymentLink card({
   int entropyBytes = 32,
+  String? mnemonic,
   String label = 'Payment link',
   PaymentLinkPresentation? presentation,
   BigInt? amount,
@@ -34,7 +35,7 @@ VizorPaymentLink card({
   network: 'main',
   address: 'locally-verified-address',
   amountZatoshi: amount ?? BigInt.from(1000000),
-  mnemonic: phrase(entropyBytes),
+  mnemonic: mnemonic ?? phrase(entropyBytes),
   birthdayHeight: height,
   label: label,
   createdAt: DateTime.utc(2026, 9, 14),
@@ -45,11 +46,11 @@ const decorated = PaymentLinkPresentation(
   message: _message,
   fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
 );
-String wire(VizorPaymentLink card) => card.toShareUri(compact: true).toString();
+String wire(VizorPaymentLink card) => card.toShareUri().toString();
 String withJson(Object? payload) =>
     withJsonBytes(utf8.encode(jsonEncode(payload)));
 String withJsonBytes(List<int> bytes) => card()
-    .toShareUri(compact: true)
+    .toShareUri()
     .replace(fragment: 'v3=${base64UrlEncode(bytes).replaceAll('=', '')}')
     .toString();
 List<Object?> fieldsOf(String link) =>
@@ -67,6 +68,8 @@ void main() {
   setUpAll(() => RustLib.initMock(api: api));
   setUp(() {
     api.failAddress = false;
+    api.failEntropy = false;
+    api.validatedMnemonics.clear();
     api.decodingCalls = 0;
     api.addressValidationGate = null;
   });
@@ -74,7 +77,7 @@ void main() {
   test('matches independently encoded JSON vectors and exact size targets', () {
     for (final entry in {16: _golden12, 32: _golden24}.entries) {
       final source = card(entropyBytes: entry.key, presentation: decorated);
-      final uri = source.toShareUri(compact: true);
+      final uri = source.toShareUri();
       expect(uri.fragment, 'v3=${entry.value}');
       expect(uri.toString().length, entry.key == 32 ? 233 : 205);
       expect(uri.path, '/payment-links/open');
@@ -85,7 +88,7 @@ void main() {
       expect(restored.knownAddress, isNull);
       expect(restored.knownCreatedAt, isNull);
       expect(restored.presentation!.message, _message);
-      expect(restored.toShareUri(compact: true), uri);
+      expect(restored.toShareUri(), uri);
     }
     for (final n in [16, 32]) {
       final extra = n == 32 ? 28 : 0;
@@ -138,7 +141,7 @@ void main() {
       }
       expect(v1.address, source.address);
       expect(v1.createdAt, source.createdAt);
-      expect(source.toShareUri(compact: false), source.toRecoveryUri());
+      expect(source.toShareUri().fragment, startsWith('v3='));
       expect(
         v3.hasSameCanonicalPayload(
           card(presentation: const PaymentLinkPresentation(message: 'Changed')),
@@ -267,13 +270,88 @@ void main() {
     () async {
       final source = card();
       final saved = source.toRecoveryUri();
-      await preparePaymentLinkShareUri(source, compact: true);
+      await preparePaymentLinkShareUri(source);
       api.failAddress = true;
       await expectLater(
-        preparePaymentLinkShareUri(source, compact: true),
+        preparePaymentLinkShareUri(source),
         throwsFormatException,
       );
       expect(source.toRecoveryUri(), saved);
+    },
+  );
+
+  test(
+    'legacy whitespace shares v2 without changing the secret or cache',
+    () async {
+      for (final separator in ['  ', '\t', '\n']) {
+        final original = card(mnemonic: phrase(32).replaceAll(' ', separator));
+        for (final uri in [
+          legacyPaymentLinkUri(original),
+          original.toRecoveryUri(),
+        ]) {
+          final legacy = VizorPaymentLink.parse(uri.toString())
+              .withResolvedMetadata(
+                address: original.address,
+                createdAt: original.createdAt,
+              );
+          final shared = await preparePaymentLinkShareUri(legacy);
+          expect(shared.fragment, startsWith('v2='));
+          expect(shared, original.toRecoveryUri());
+          final restored = VizorPaymentLink.parse(shared.toString());
+          expect(restored.mnemonic, original.mnemonic);
+          expect(restored.hasSameCanonicalPayload(original), isTrue);
+          expect(
+            paymentLinkClaimWalletDirectoryName(restored),
+            paymentLinkClaimWalletDirectoryName(original),
+          );
+          expect(api.validatedMnemonics.last, original.mnemonic);
+          expect(() => legacy.toShareUri(), throwsFormatException);
+        }
+      }
+    },
+  );
+
+  test(
+    'legacy whitespace never bypasses address or payload validation',
+    () async {
+      final legacy = card(mnemonic: phrase(32).replaceAll(' ', '  '));
+      final saved = legacy.toRecoveryUri();
+      api.failAddress = true;
+      await expectLater(
+        preparePaymentLinkShareUri(legacy),
+        throwsFormatException,
+      );
+      api.failAddress = false;
+      final unresolved = VizorPaymentLink.parse(saved.toString());
+      await expectLater(
+        preparePaymentLinkShareUri(unresolved),
+        throwsFormatException,
+      );
+      for (final invalid in [
+        card(mnemonic: 'invalid  phrase'),
+        card(mnemonic: legacy.mnemonic, amount: BigInt.zero),
+        card(mnemonic: legacy.mnemonic, height: 0x100000000),
+        card(mnemonic: legacy.mnemonic, label: 'a' * 20000),
+        card(
+          mnemonic: legacy.mnemonic,
+          presentation: PaymentLinkPresentation(message: 'a' * 129),
+        ),
+      ]) {
+        await expectLater(
+          preparePaymentLinkShareUri(invalid),
+          throwsFormatException,
+        );
+      }
+      api.failEntropy = true;
+      await expectLater(
+        preparePaymentLinkShareUri(legacy),
+        throwsFormatException,
+      );
+      await expectLater(
+        preparePaymentLinkShareUri(card()),
+        throwsFormatException,
+      );
+      expect(legacy.toRecoveryUri(), saved);
     },
   );
 
@@ -332,7 +410,6 @@ void main() {
         }
         expect(tester.takeException(), isNull);
       },
-      skip: !kPaymentLinkCompactSharing,
     );
   }
 
@@ -440,10 +517,7 @@ void main() {
     final pretty = withJsonBytes(
       utf8.encode(const JsonEncoder.withIndent('  ').convert(fields)),
     );
-    expect(
-      VizorPaymentLink.parse(pretty).toShareUri(compact: true),
-      plain.toShareUri(compact: true),
-    );
+    expect(VizorPaymentLink.parse(pretty).toShareUri(), plain.toShareUri());
   });
 
   test('bounds numbers, messages and labels on write', () {
@@ -506,70 +580,67 @@ void main() {
         }
         expect(tester.takeException(), isNull);
       },
-      skip: !kPaymentLinkCompactSharing,
     );
   }
 
   for (final pending in ['validation', 'failed validation', 'clipboard']) {
-    testWidgets(
-      'compact copy handles navigation while awaiting $pending',
-      (tester) async {
-        final record = PaymentLinkRecoveryRecord(
-          link: card(),
-          sourceAccountUuid: 'account-1',
-          claimFeeReserveZatoshi: BigInt.from(10000),
-          state: PaymentLinkRecoveryState.funded,
-          updatedAt: DateTime.utc(2026, 9, 14),
-          fundingTxids: '01' * 32,
-        );
-        final validationGate = Completer<void>();
-        final copyGate = Completer<void>();
-        api.addressValidationGate = validationGate;
-        api.failAddress = pending == 'failed validation';
-        final clipboard = FakePaymentLinkClipboard(copyCompleter: copyGate);
-        final operations = FakePaymentLinkOperations(records: [record]);
-        await pumpPaymentLinksScreen(
-          tester,
-          operations: operations,
-          clipboard: clipboard,
-        );
-        await tester.tap(
-          find.byKey(const ValueKey('payment_link_card_copy_action')),
-        );
+    testWidgets('compact copy handles navigation while awaiting $pending', (
+      tester,
+    ) async {
+      final record = PaymentLinkRecoveryRecord(
+        link: card(),
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: DateTime.utc(2026, 9, 14),
+        fundingTxids: '01' * 32,
+      );
+      final validationGate = Completer<void>();
+      final copyGate = Completer<void>();
+      api.addressValidationGate = validationGate;
+      api.failAddress = pending == 'failed validation';
+      final clipboard = FakePaymentLinkClipboard(copyCompleter: copyGate);
+      final operations = FakePaymentLinkOperations(records: [record]);
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: clipboard,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_card_copy_action')),
+      );
+      await tester.pump();
+      expect(clipboard.copiedSecrets, isEmpty);
+      if (pending == 'clipboard') {
+        validationGate.complete();
         await tester.pump();
-        expect(clipboard.copiedSecrets, isEmpty);
-        if (pending == 'clipboard') {
-          validationGate.complete();
-          await tester.pump();
-          expect(clipboard.copiedSecrets, hasLength(1));
-        }
-        expect(operations.sharedLinks, isEmpty);
+        expect(clipboard.copiedSecrets, hasLength(1));
+      }
+      expect(operations.sharedLinks, isEmpty);
 
-        await tester.tap(
-          find.byKey(const ValueKey('payment_link_create_card_button')),
-        );
-        await tester.pumpAndSettle();
-        final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
-        await tester.enterText(editor, '0.25');
-        if (!validationGate.isCompleted) validationGate.complete();
-        copyGate.complete();
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_card_button')),
+      );
+      await tester.pumpAndSettle();
+      final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await tester.enterText(editor, '0.25');
+      if (!validationGate.isCompleted) validationGate.complete();
+      copyGate.complete();
+      await tester.pumpAndSettle();
 
-        // A successful clipboard write still needs its shared-state update.
-        final copies = pending == 'clipboard' ? 1 : 0;
-        expect(clipboard.copiedSecrets, hasLength(copies));
-        expect(operations.sharedLinks, hasLength(copies));
-        expect(find.byType(AlertDialog), findsNothing);
-        final editable = find.descendant(
-          of: editor,
-          matching: find.byType(EditableText),
-          matchRoot: true,
-        );
-        expect(tester.widget<EditableText>(editable).controller.text, '0.25');
-        expect(tester.takeException(), isNull);
-      },
-      skip: !kPaymentLinkCompactSharing,
-    );
+      // A successful clipboard write still needs its shared-state update.
+      final copies = pending == 'clipboard' ? 1 : 0;
+      expect(clipboard.copiedSecrets, hasLength(copies));
+      expect(operations.sharedLinks, hasLength(copies));
+      expect(find.byType(AlertDialog), findsNothing);
+      final editable = find.descendant(
+        of: editor,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      expect(tester.widget<EditableText>(editable).controller.text, '0.25');
+      expect(tester.takeException(), isNull);
+    });
   }
 
   test('bounded random input never exposes its payload in an error', () {
@@ -597,10 +668,13 @@ void main() {
 // addresses; integration tests exercise these calls through the native bridge.
 class _MnemonicVectors implements RustLibApi {
   bool failAddress = false;
+  bool failEntropy = false;
+  final validatedMnemonics = <String>[];
   int decodingCalls = 0;
   Completer<void>? addressValidationGate;
   @override
   Uint8List crateApiWalletGiftMnemonicToEntropy({required String mnemonic}) {
+    if (failEntropy) throw const FormatException('Conversion failed');
     for (final length in [16, 32]) {
       if (mnemonic == phrase(length)) return Uint8List(length);
     }
@@ -622,6 +696,7 @@ class _MnemonicVectors implements RustLibApi {
     required String network,
     required String address,
   }) async {
+    validatedMnemonics.add(mnemonic);
     await addressValidationGate?.future;
     if (failAddress) throw StateError('Mismatch');
   }

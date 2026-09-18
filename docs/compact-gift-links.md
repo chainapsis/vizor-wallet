@@ -42,8 +42,11 @@ remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
 
 Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
 mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts still
-use 32 bytes, or 24 words. Compact sharing rejects legacy phrases with alternate
-whitespace without changing their recovery records or claim-cache identity.
+use 32 bytes, or 24 words. Legacy cards with alternate mnemonic whitespace
+share as v2 after verifying the original address and validating the canonical
+phrase. Their original secret,
+recovery records, and claim-cache identity remain unchanged. Other conversion or
+address-validation errors fail sharing; they never trigger a v2 fallback.
 Synchronous FFI only converts mnemonic and entropy; address validation remains
 asynchronous and local.
 
@@ -54,7 +57,8 @@ unreleased binary v3 prototype; v1/v2 compatibility is preserved.
 
 ## Compatibility and recovery
 
-`toShareUri()` selects v2 or v3 using the build flag below. `toRecoveryUri()`
+`toShareUri()` always writes v3. The verified sharing helper preserves v2
+only for legacy mnemonic whitespace. `toRecoveryUri()`
 continues writing the established v2 JSON format. `toUri()` remains a v2 alias
 for existing callers. Sender addresses, creation times, status, funding
 transactions, and claim evidence stay in their existing secure records.
@@ -73,7 +77,7 @@ existing legacy-directory preference when submission evidence exists. Intake
 equality continues comparing normalized logical payloads rather than the wire
 version. Different amounts, birthdays, labels, or presentation remain distinct.
 
-Desktop and mobile share the selected format without an older-version copy
+Desktop and mobile share v3 without an older-version copy
 option. Recipients must upgrade to a v3-capable Vizor to claim compact links.
 Existing v1 and v2 links remain readable.
 
@@ -84,25 +88,23 @@ Existing v1 and v2 links remain readable.
 | This implementation | Yes | Yes | Yes |
 
 An older installed app may intercept a new link before a browser fallback can
-help. Testers need this build for v3. Turning off the compact writer restores
-v2 sharing without removing any reader.
+help. Recipients need a v3-capable build for new links. Existing v1/v2 links
+remain readable without migration.
 
 ## Rollout and local testing
 
-`VIZOR_PAYMENT_LINK_COMPACT_SHARING` defaults to `false`. Deploy the gateway
-reader for opaque `#v3=` envelopes first, release wallet readers on supported
-platforms, then enable the writer in release configuration. No online
-recipient capability check is introduced. This PR does not deploy the gateway
-or change production release configuration.
+V3 sharing is enabled by default, with no build flag. The gateway must accept
+opaque `#v3=` envelopes and recipients must have a v3-capable wallet. There is
+no online recipient capability check or automatic downgrade for older apps.
+This PR does not deploy the gateway.
 
-Enable local generation with `--dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`.
-Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart --dart-define=VIZOR_PAYMENT_LINK_COMPACT_SHARING=true`
-to include the desktop copy and QR navigation regression tests.
-The existing regtest lane accepts the corresponding environment variable:
+Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart`
+for codec, persistence, copy, and QR navigation regressions. The existing
+regtest lane exercises default v3 sharing:
 
 ```sh
-VIZOR_PAYMENT_LINK_COMPACT_SHARING=true scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
-VIZOR_PAYMENT_LINK_COMPACT_SHARING=true scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
+scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
+scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 ```
 
 Use the repository's native signing and local secure-storage setup. The
