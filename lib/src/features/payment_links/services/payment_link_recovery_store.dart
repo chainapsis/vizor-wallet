@@ -61,13 +61,12 @@ class PaymentLinkRecoveryRecord {
   final String? fundingTxids;
   final int? preparedExpiryHeight;
 
-  /// The chain height the wallet knew when a software funding broadcast
-  /// started.
+  /// The chain height the wallet knew when a funding broadcast started.
   ///
-  /// It is written before the broadcast boundary is crossed, so a broadcast
-  /// whose result never came back — an FFI or channel failure after the
-  /// transaction reached the network — still leaves a durable trace to
-  /// reconcile. `0` means the height was unknown at submission time.
+  /// Every funding path — software, Keystone and Ledger — writes it before the
+  /// broadcast boundary is crossed, so a broadcast whose result never came
+  /// back still leaves a durable trace, and a draft without it provably never
+  /// reached the network. `0` means the height was unknown at submission time.
   final int? submittedAtHeight;
 
   /// Amount actually reserved for claiming when this card was funded.
@@ -92,6 +91,13 @@ class PaymentLinkRecoveryRecord {
       (fundingTxids?.trim().isEmpty ?? true) &&
       preparedExpiryHeight == null &&
       submittedAtHeight == null;
+
+  /// Funded and not yet shared, or a draft whose broadcast boundary was
+  /// crossed. A draft that never reached it — even one carrying a prepared
+  /// hardware txid — holds nothing and does not block deleting its account.
+  bool get mayHoldUnsharedFunds =>
+      state == PaymentLinkRecoveryState.funded ||
+      (state == PaymentLinkRecoveryState.draft && submittedAtHeight != null);
 
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
@@ -257,21 +263,49 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  /// Records that a software funding broadcast is about to be handed to the
-  /// network, before its transaction id can be known.
+  /// Records that a funding broadcast is about to be handed to the network.
   ///
   /// The software path only learns its transaction id from the broadcast
   /// result, so a failure that loses that result would otherwise leave an inert
   /// draft that recovery cannot tell apart from one that never funded. Writing
   /// the submission height first turns that case into an ambiguous submission
-  /// the reconciler can settle against the link's own wallet.
+  /// the reconciler can settle against the link's own wallet. Hardware drafts
+  /// already carry their prepared txid; the marker is what separates one that
+  /// reached the network from one abandoned before signing.
   ///
   /// Idempotent: an already-recorded height is the earlier, safer one and is
-  /// kept. A draft that already carries a transaction id, or a record past
-  /// `draft`, needs no marker and is returned unchanged.
+  /// kept. A record past `draft` needs no marker and is returned unchanged.
   Future<PaymentLinkRecoveryRecord> markSubmissionStarted({
     required String address,
     required int chainHeight,
+    DateTime? updatedAt,
+  }) async {
+    return (await _markSubmissionStarted(
+      address: address,
+      chainHeight: chainHeight,
+      updatedAt: updatedAt,
+      requireRecord: true,
+    ))!;
+  }
+
+  /// [markSubmissionStarted] for a Ledger outbox broadcast, which may outlive
+  /// a draft the reconciler already removed as expired; Rust settles that
+  /// operation itself. Returns null when [address] has no record.
+  Future<PaymentLinkRecoveryRecord?> markSubmissionStartedIfPresent({
+    required String address,
+    required int chainHeight,
+  }) {
+    return _markSubmissionStarted(
+      address: address,
+      chainHeight: chainHeight,
+      requireRecord: false,
+    );
+  }
+
+  Future<PaymentLinkRecoveryRecord?> _markSubmissionStarted({
+    required String address,
+    required int chainHeight,
+    required bool requireRecord,
     DateTime? updatedAt,
   }) {
     return _runExclusive(() async {
@@ -283,9 +317,11 @@ class PaymentLinkRecoveryStore {
         );
       }
       final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
+      final existing = requireRecord
+          ? _findRequired(records, address)
+          : _findByAddress(records, address);
+      if (existing == null) return null;
       if (existing.state != PaymentLinkRecoveryState.draft) return existing;
-      if (existing.fundingTxids?.trim().isNotEmpty ?? false) return existing;
       if (existing.submittedAtHeight != null) return existing;
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.draft,
@@ -312,6 +348,9 @@ class PaymentLinkRecoveryStore {
   /// No expiry height is recorded, because the software path never sees one.
   /// The reconciler therefore promotes such a draft when its transaction is
   /// mined but never expires it.
+  ///
+  /// A recorded broadcast txid proves the broadcast boundary was crossed, so
+  /// a missing submission marker is filled in with an unknown height.
   Future<PaymentLinkRecoveryRecord> markSubmitted({
     required String address,
     required String fundingTxids,
@@ -338,12 +377,15 @@ class PaymentLinkRecoveryStore {
             'Payment link funding was prepared with a different transaction.',
           );
         }
-        return existing;
+        if (existing.submittedAtHeight != null) return existing;
       }
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
-        fundingTxids: submittedTxids,
+        fundingTxids: (existingTxids?.isNotEmpty ?? false)
+            ? existingTxids
+            : submittedTxids,
+        submittedAtHeight: existing.submittedAtHeight ?? 0,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -458,6 +500,47 @@ class PaymentLinkRecoveryStore {
       await _writeRecords(
         records.where((record) => record.link.address != address).toList(),
       );
+    });
+  }
+
+  /// Removes a prepared hardware draft whose flow ended before its broadcast
+  /// boundary. Checked under the store lock, so a marker written after the
+  /// caller's read keeps the draft.
+  Future<void> removeUnsubmittedPreparedDraft({required String address}) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null) return;
+      if (existing.state != PaymentLinkRecoveryState.draft ||
+          (existing.fundingTxids?.trim().isEmpty ?? true) ||
+          existing.submittedAtHeight != null) {
+        throw StateError(
+          'Only an unsubmitted prepared payment link draft can be removed.',
+        );
+      }
+      await _writeRecords(
+        records.where((record) => record.link.address != address).toList(),
+      );
+    });
+  }
+
+  /// Drops [sourceAccountUuid]'s drafts that never crossed the broadcast
+  /// boundary. Called once the account itself is gone: they can no longer be
+  /// funded, and the reconciler cannot query a deleted account's history.
+  Future<int> removeUnsubmittedDraftsForAccount(String sourceAccountUuid) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final kept = records
+          .where(
+            (record) =>
+                record.sourceAccountUuid != sourceAccountUuid ||
+                record.state != PaymentLinkRecoveryState.draft ||
+                record.mayHoldUnsharedFunds,
+          )
+          .toList();
+      final removed = records.length - kept.length;
+      if (removed > 0) await _writeRecords(kept);
+      return removed;
     });
   }
 
@@ -848,6 +931,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   );
 }
 
+/// Gift Cards that block deleting [sourceAccountUuid]: see
+/// [PaymentLinkRecoveryRecord.mayHoldUnsharedFunds].
 int countUnsharedFundedPaymentLinks(
   Iterable<PaymentLinkRecoveryRecord> records, {
   required String sourceAccountUuid,
@@ -857,13 +942,7 @@ int countUnsharedFundedPaymentLinks(
       .where(
         (record) =>
             record.sourceAccountUuid == sourceAccountUuid &&
-            (record.state == PaymentLinkRecoveryState.funded ||
-                (record.state == PaymentLinkRecoveryState.draft &&
-                    (record.fundingTxids?.trim().isNotEmpty ?? false)) ||
-                // An ambiguous submission has no transaction id to check, and
-                // its broadcast may well have landed. Blocking the delete is
-                // the conservative answer.
-                record.isAmbiguousSubmission),
+            record.mayHoldUnsharedFunds,
       )
       .length;
 }

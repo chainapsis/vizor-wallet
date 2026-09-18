@@ -1030,6 +1030,112 @@ void main() {
     },
   );
 
+  group('Gift Card drafts that never reached the network', () {
+    VizorPaymentLink link(String address) => VizorPaymentLink(
+      network: 'main',
+      address: address,
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 8, 7),
+    );
+
+    Future<void> prepare(
+      PaymentLinkRecoveryStore store,
+      String address,
+      String accountUuid,
+    ) async {
+      await store.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link(address),
+        sourceAccountUuid: accountUuid,
+      );
+      await store.markPrepared(
+        address: address,
+        fundingTxid: 'prepared-$address',
+        expiryHeight: 3_456_829,
+      );
+    }
+
+    test('do not block removal and are dropped with the account', () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-account-removal',
+      );
+      addTearDown(() {
+        if (supportDirectory.existsSync()) {
+          supportDirectory.deleteSync(recursive: true);
+        }
+      });
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDirectory.path;
+            }
+            throw MissingPluginException('Unexpected path provider call.');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      await prepare(recoveryStore, 'u1removedaccountdraft', 'account-2');
+      await prepare(recoveryStore, 'u1keptaccountdraft', 'account-1');
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+      expect(
+        [for (final record in await recoveryStore.load()) record.link.address],
+        ['u1keptaccountdraft'],
+      );
+    });
+
+    test('block removal once a broadcast started', () async {
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      await prepare(recoveryStore, 'u1submitteddraft', 'account-2');
+      await recoveryStore.markSubmissionStarted(
+        address: 'u1submitteddraft',
+        chainHeight: 3_456_800,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).removeAccount('account-2'),
+        throwsA(
+          isA<PaymentLinkUnsharedGiftCardsException>().having(
+            (error) => error.count,
+            'count',
+            1,
+          ),
+        ),
+      );
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+      expect(await recoveryStore.load(), hasLength(1));
+    });
+  });
+
   test('account removal is rejected while it receives a Gift Card', () async {
     final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
     final receivedStore = PaymentLinkReceivedStore(receivedStorage);

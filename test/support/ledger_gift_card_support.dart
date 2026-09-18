@@ -17,6 +17,8 @@ final ledgerGiftLink = VizorPaymentLink(
   createdAt: DateTime.utc(2026, 8, 6),
 );
 
+const ledgerGiftChainHeight = 3000010;
+
 class LedgerGiftHarness {
   LedgerGiftHarness() {
     recovery = PaymentLinkRecoveryStore(storage);
@@ -36,6 +38,7 @@ class LedgerGiftHarness {
         }
       },
       refresh: () async {},
+      currentChainHeight: () => ledgerGiftChainHeight,
     );
   }
   final storage = LedgerGiftStorage();

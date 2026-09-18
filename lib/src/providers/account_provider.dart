@@ -871,6 +871,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           .read(swapActivityStoreProvider)
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
+    // Only after the Rust delete, which also drops this account's Ledger
+    // outbox: a checkpointed draft must never lose its secret while its
+    // signed transaction can still be broadcast.
+    try {
+      await ref
+          .read(paymentLinkRecoveryStoreProvider)
+          .removeUnsubmittedDraftsForAccount(uuid);
+    } catch (e, st) {
+      log('removeAccount: failed to drop Gift Card drafts for $uuid: $e\n$st');
+    }
     try {
       await _storage.deleteVotingHotkeysForAccount(uuid);
     } catch (e, st) {

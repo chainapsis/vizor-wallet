@@ -38,11 +38,23 @@ void main() {
       );
       addTearDown(container.dispose);
       await container.read(walletProvider.future);
-      h.storage.failWrites = true;
       final coordinator = container.read(
         ledgerOperationRecoveryCoordinatorProvider,
       );
-      await coordinator.recover();
+      h.operations.broadcastGate = Completer<void>();
+      final firstRecovery = coordinator.recover();
+      for (var i = 0; i < 20 && h.operations.broadcasts == 0; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      // The boundary marker landed before the network saw the transaction.
+      expect(h.operations.broadcasts, 1);
+      expect(
+        (await h.recovery.load()).single.submittedAtHeight,
+        ledgerGiftChainHeight,
+      );
+      h.storage.failWrites = true;
+      h.operations.broadcastGate!.complete();
+      await firstRecovery;
       expect(h.operations.acks, 0);
       expect(h.operations.broadcasts, 1);
       h.storage.failWrites = false;
@@ -53,6 +65,41 @@ void main() {
         (await h.recovery.load()).single.state,
         PaymentLinkRecoveryState.funded,
       );
+    },
+  );
+
+  test(
+    'startup recovery removes a definitively rejected Gift Card draft',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', draft.link.address),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: draft.link.address,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      h.operations.terminalRejection = true;
+      final sync = _RecoverySyncNotifier();
+      final container = _container(
+        operationService: h.operations,
+        sync: sync,
+        giftFunding: h.service,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(h.operations.broadcasts, 1);
+      expect(h.operations.entry, isNull);
+      expect(h.operations.acks, 0);
+      expect(await h.recovery.load(), isEmpty);
+      expect(sync.refreshCount, 0, reason: 'nothing reached the network');
     },
   );
 
