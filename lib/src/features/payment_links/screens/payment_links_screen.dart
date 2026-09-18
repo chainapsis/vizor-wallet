@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -24,7 +25,9 @@ import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
+import '../models/gift_card_usage.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
@@ -36,6 +39,7 @@ import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
+import '../services/payment_link_sharing.dart';
 import '../widgets/gift_card_usage_status.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_archive_header.dart';
@@ -146,6 +150,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   final GlobalKey _shareQrCardKey = GlobalKey();
   PaymentLinkRecoveryRecord? _shareQrRecord;
+  String? _shareQrData;
+  bool _preparingShareQr = false;
   PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
@@ -282,7 +288,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _redeemState = PaymentLinkRedeemVisualState.paste;
       }
       _page = page;
-      if (page != PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
+      if (page != PaymentLinksLocalPage.shareQr) {
+        _shareQrRecord = null;
+        _shareQrData = null;
+      }
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -315,6 +324,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _amountSupportingTextIsError = false;
       _readyLink = null;
       _shareQrRecord = null;
+      _shareQrData = null;
       _reviewShowsBack = false;
       _readyShowsBack = false;
       _messageEditorRevealed = false;
@@ -1096,6 +1106,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  void _confirmCardCreated({required bool broadcastAccepted}) {
+    if (kAppFormFactor == AppFormFactor.mobile && broadcastAccepted) {
+      unawaited(AppHaptics.sendSuccess());
+    }
+  }
+
   Future<void> _createFundedLink() async {
     if (_operationInProgress) return;
     if (_pendingFundingMetadata != null) {
@@ -1201,6 +1217,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
     } catch (_) {
       if (mounted) _showError('Gift card creation failed. Try again.');
     } finally {
@@ -1248,6 +1265,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: pending.broadcastAccepted);
     } catch (_) {
       if (mounted) {
         _showError(
@@ -1381,6 +1399,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _confirmCardCreated(
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
+    );
     unawaited(_refreshFundingProgress());
     if (result.status == 'broadcasted_storage_failed' ||
         result.status == 'broadcast_unknown') {
@@ -1400,10 +1421,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       return;
     }
     setState(() => _copyingLinkAddresses.add(link.address));
+    final epoch = _mobileNavigationEpoch;
     try {
-      await ref
-          .read(paymentLinkClipboardProvider)
-          .copySecret(link.toUri().toString());
+      final uri = await preparePaymentLinkShareUri(link);
+      if (!mounted || epoch != _mobileNavigationEpoch) return;
+      await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
       try {
         await ref
             .read(paymentLinkOperationsProvider)
@@ -1416,7 +1438,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         }
       }
     } catch (_) {
-      if (mounted) _showError('Gift link could not be copied.');
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be copied.');
+      }
     } finally {
       if (mounted) setState(() => _copyingLinkAddresses.remove(link.address));
     }
@@ -2012,6 +2036,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _page = PaymentLinksLocalPage.home;
         });
         if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+          unawaited(AppHaptics.sendSuccess());
           context.go('/home');
         } else {
           // Pending or partial broadcast is not success. The Received row
@@ -2166,6 +2191,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
+          groupCreatedByUsage: true,
         ),
         activeCardsTab: _activeCardsTab,
         selectedArtwork: _selectedArtwork,
@@ -2346,16 +2372,54 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// The Gift Card grouping both form factors render.
   ///
-  /// Created Cards split into `Creating` / `Pending` by funding readiness and
-  /// received Cards form one list; only the row widgets differ per form
-  /// factor, so the grouping and the tab selection stay here rather than
-  /// being restated in the mobile view.
+  /// Desktop keeps its existing `Creating` / `Pending` funding groups. Mobile
+  /// groups Created Cards by usage as `Pending` / `Unused` / `Used`; the row
+  /// widgets still own their existing detailed status and actions. Received
+  /// Cards keep their existing grouping on both form factors.
   List<PaymentLinkCardsSection> _cardsSections({
     required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
     required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
     List<Widget> emptyReceivedCards = const <Widget>[],
+    bool groupCreatedByUsage = false,
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
+      if (groupCreatedByUsage) {
+        final pendingCards = <Widget>[];
+        final unusedCards = <Widget>[];
+        final usedCards = <Widget>[];
+        for (final record in _visibleRecoveries) {
+          final fundingReady =
+              _fundingProgressByAddress[record.link.address]?.isReady ?? false;
+          final usage = ref
+              .watch(giftCardUsageProvider(record.link.address))
+              .value;
+          final status = usage?.status ?? record.usage.status;
+          final cards = switch ((fundingReady, status)) {
+            (true, GiftCardUsageStatus.unused) => unusedCards,
+            (true, GiftCardUsageStatus.spendDetected) => usedCards,
+            (true, GiftCardUsageStatus.used) => usedCards,
+            _ => pendingCards,
+          };
+          cards.add(recoveryRow(record));
+        }
+        return <PaymentLinkCardsSection>[
+          if (pendingCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkPendingSectionLabel,
+              cards: pendingCards,
+            ),
+          if (unusedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUnusedSectionLabel,
+              cards: unusedCards,
+            ),
+          if (usedCards.isNotEmpty)
+            PaymentLinkCardsSection(
+              label: kPaymentLinkUsedSectionLabel,
+              cards: usedCards,
+            ),
+        ];
+      }
       final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
       for (final record in _visibleRecoveries) {
@@ -2502,6 +2566,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
               address: record.link.address,
               inline: true,
               dateText: _formatCardDate(record.link.createdAt),
+              hideStableLabel: true,
             )
           : null,
     );
@@ -2515,8 +2580,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     );
   }
 
-  void _openShareQr(PaymentLinkRecoveryRecord record) {
-    if (_operationInProgress) return;
+  Future<void> _openShareQr(PaymentLinkRecoveryRecord record) async {
+    if (_operationInProgress || _preparingShareQr) return;
+    _preparingShareQr = true;
+    final epoch = _mobileNavigationEpoch;
+    late final String shareData;
+    try {
+      shareData = (await preparePaymentLinkShareUri(record.link)).toString();
+    } catch (_) {
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be shared.');
+      }
+      return;
+    } finally {
+      _preparingShareQr = false;
+    }
+    if (!mounted || epoch != _mobileNavigationEpoch) return;
     if (kAppFormFactor == AppFormFactor.mobile) {
       unawaited(
         showAppMobileSheet<void>(
@@ -2525,7 +2604,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             artwork: PaymentLinkCardArtwork.fromProtocolId(
               record.link.presentation?.artworkId,
             ),
-            link: record.link.toUri().toString(),
+            link: shareData,
             onShare: (png, origin) =>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
@@ -2544,6 +2623,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
     setState(() {
       _shareQrRecord = record;
+      _shareQrData = shareData;
       _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;
@@ -2560,7 +2640,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       artwork: PaymentLinkCardArtwork.fromProtocolId(
         record.link.presentation?.artworkId,
       ),
-      qrData: record.link.toUri().toString(),
+      qrData: _shareQrData!,
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onSaveQr: _operationInProgress || saving
           ? null

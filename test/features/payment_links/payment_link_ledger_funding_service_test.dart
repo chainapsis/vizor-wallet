@@ -11,10 +11,13 @@ void main() {
     () async {
       final h = LedgerGiftHarness();
       final draft = await h.prepare();
-      h.storage.writeGate = Completer<void>();
+      h.operations.broadcastGate = Completer<void>();
       final submitted = h.submit(draft);
+      await _untilBroadcast(h);
+      // Only the post-broadcast persistence is held back.
+      h.storage.writeGate = Completer<void>();
+      h.operations.broadcastGate!.complete();
       await Future<void>.delayed(Duration.zero);
-      expect(h.operations.broadcasts, 1);
       expect(h.operations.acks, 0);
       var drained = false;
       final drain = h.lifecycle.quiesceAndDrain().then((_) => drained = true);
@@ -37,8 +40,12 @@ void main() {
     () async {
       final h = LedgerGiftHarness();
       final draft = await h.prepare();
+      h.operations.broadcastGate = Completer<void>();
+      final submitted = h.submit(draft);
+      await _untilBroadcast(h);
       h.storage.failWrites = true;
-      await expectLater(h.submit(draft), throwsStateError);
+      h.operations.broadcastGate!.complete();
+      await expectLater(submitted, throwsStateError);
       expect(h.operations.acks, 0);
       expect(h.operations.entry!.state, 'result_pending_ack');
       h.storage.failWrites = false;
@@ -168,4 +175,90 @@ void main() {
     await expectLater(h.submit(draft), throwsStateError);
     expect(h.operations.checkpoints, 0);
   });
+
+  test(
+    'a prepared draft blocks account deletion only once its broadcast starts',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      // Signed on the device but never broadcast: holds nothing.
+      expect(await h.recovery.countUnsharedFundedForAccount('account-1'), 0);
+      h.operations.broadcastGate = Completer<void>();
+      final submitted = h.submit(draft);
+      await _untilBroadcast(h);
+
+      final record = (await h.recovery.load()).single;
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.submittedAtHeight, ledgerGiftChainHeight);
+      expect(await h.recovery.countUnsharedFundedForAccount('account-1'), 1);
+      h.operations.broadcastGate!.complete();
+      await submitted;
+    },
+  );
+
+  test(
+    'a failed broadcast marker keeps the checkpoint without broadcasting',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      h.storage.failWrites = true;
+
+      await expectLater(h.submit(draft), throwsStateError);
+
+      expect(h.operations.broadcasts, 0);
+      expect(h.operations.entry!.state, 'signed_pending_broadcast');
+      expect(h.settlements, [null], reason: 'the input stays reserved');
+      h.storage.failWrites = false;
+      final resumed = await h.service.resume(
+        accountUuid: 'account-1',
+        address: draft.link.address,
+      );
+      expect(resumed.status, 'broadcasted');
+      expect(h.operations.broadcasts, 1);
+    },
+  );
+
+  test(
+    'a result awaiting acknowledgement records the missing marker',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', draft.link.address),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: draft.link.address,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      final entry = h.operations.entry!;
+
+      // Rust attempted the broadcast but returned no usable result.
+      await expectLater(
+        h.service.complete(
+          entry,
+          LedgerSignedOperationBroadcastResult(
+            operationId: entry.operationId,
+            txid: '',
+            status: 'broadcast_unknown',
+            requiresAck: true,
+          ),
+        ),
+        throwsStateError,
+      );
+
+      final record = (await h.recovery.load()).single;
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.submittedAtHeight, ledgerGiftChainHeight);
+      expect(await h.recovery.countUnsharedFundedForAccount('account-1'), 1);
+      expect(h.operations.acks, 0);
+    },
+  );
+}
+
+Future<void> _untilBroadcast(LedgerGiftHarness h) async {
+  for (var i = 0; i < 20 && h.operations.broadcasts == 0; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+  expect(h.operations.broadcasts, 1);
 }

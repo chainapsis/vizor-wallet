@@ -39,8 +39,12 @@ final paymentLinkLedgerFundingServiceProvider =
           );
         },
         refresh: () => ref.read(syncProvider.notifier).refreshAfterSend(),
+        currentChainHeight: () =>
+            ref.read(syncProvider).value?.chainTipHeight ?? 0,
       );
     });
+
+int _unknownChainHeight() => 0;
 
 class LedgerGiftFundingTerminalException implements Exception {
   const LedgerGiftFundingTerminalException();
@@ -63,6 +67,7 @@ class PaymentLinkLedgerFundingService {
     required this.accountExists,
     required this.settleProposal,
     required this.refresh,
+    this.currentChainHeight = _unknownChainHeight,
   });
   final PaymentLinkHardwareSigningService hardware;
   final LedgerSignedOperationService operations;
@@ -72,6 +77,9 @@ class PaymentLinkLedgerFundingService {
   final Future<void> Function(PaymentLinkHardwarePcztDraft, String? status)
   settleProposal;
   final Future<void> Function() refresh;
+
+  /// The in-memory sync tip used to date a submission; `0` when unknown.
+  final int Function() currentChainHeight;
 
   void _requireAccount(String accountUuid) {
     if (!accountExists(accountUuid)) {
@@ -189,28 +197,27 @@ class PaymentLinkLedgerFundingService {
           'The saved Ledger gift card transaction is unavailable.',
         );
       }
-      LedgerSignedOperationBroadcastResult result;
-      try {
-        result = entry.state == 'result_pending_ack'
-            ? LedgerSignedOperationBroadcastResult(
-                operationId: id,
-                txid: entry.txid ?? '',
-                status: entry.status ?? '',
-                message: entry.message,
-                requiresAck: true,
-              )
-            : await operations.broadcast(
-                operationId: id,
-                spendParamsPath: spendParamsPath,
-                outputParamsPath: outputParamsPath,
-              );
-      } catch (error) {
-        if (!isTerminalLedgerSignedOperationError(error)) rethrow;
-        settlementStatus = 'terminal_failure';
-        // Rust has rejected this transaction definitively and removed its outbox
-        // entry. The prepared secret is safe to remove; never offer rebroadcast.
-        await recovery.removeUnbroadcastDraft(address: address);
-        throw const LedgerGiftFundingTerminalException();
+      final LedgerSignedOperationBroadcastResult result;
+      if (entry.state == 'result_pending_ack') {
+        result = LedgerSignedOperationBroadcastResult(
+          operationId: id,
+          txid: entry.txid ?? '',
+          status: entry.status ?? '',
+          message: entry.message,
+          requiresAck: true,
+        );
+      } else {
+        final broadcast = await broadcastCheckpoint(
+          operationId: id,
+          address: address,
+          spendParamsPath: spendParamsPath,
+          outputParamsPath: outputParamsPath,
+        );
+        if (broadcast == null) {
+          settlementStatus = 'terminal_failure';
+          throw const LedgerGiftFundingTerminalException();
+        }
+        result = broadcast;
       }
       settlementStatus = result.status;
       await complete(entry, result);
@@ -232,6 +239,35 @@ class PaymentLinkLedgerFundingService {
       if (draft != null) await settleProposal(draft, settlementStatus);
     }
   });
+
+  /// Broadcasts a checkpointed funding for the signing surface and startup
+  /// recovery alike. Returns null when Rust rejected it definitively.
+  Future<LedgerSignedOperationBroadcastResult?> broadcastCheckpoint({
+    required String operationId,
+    required String address,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    // Past this marker the draft may hold funds and blocks deleting its
+    // account. A failed write aborts before the network sees anything.
+    await recovery.markSubmissionStartedIfPresent(
+      address: address,
+      chainHeight: currentChainHeight(),
+    );
+    try {
+      return await operations.broadcast(
+        operationId: operationId,
+        spendParamsPath: spendParamsPath,
+        outputParamsPath: outputParamsPath,
+      );
+    } catch (error) {
+      if (!isTerminalLedgerSignedOperationError(error)) rethrow;
+      // Rust has rejected this transaction definitively and removed its outbox
+      // entry. The prepared secret is safe to remove; never offer rebroadcast.
+      await recovery.removeUnbroadcastDraft(address: address);
+      return null;
+    }
+  }
 
   Future<void> complete(
     LedgerSignedOperationMetadata operation,
@@ -263,6 +299,14 @@ class PaymentLinkLedgerFundingService {
     } else {
       if (record == null) {
         throw StateError('The gift card recovery draft is missing.');
+      }
+      if (record.state == PaymentLinkRecoveryState.draft) {
+        // Rust attempted this broadcast, so the boundary was crossed even if
+        // the marker was never written.
+        await recovery.markSubmissionStarted(
+          address: address,
+          chainHeight: currentChainHeight(),
+        );
       }
       if (!isPaymentLinkFundingSubmitted(
         status: result.status,

@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -214,8 +213,17 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
   expect(link.network, paymentLinkRegtestNetwork);
   expect(link.presentation?.artworkId, artworkId);
   expect(link.presentation?.message, message);
+  final operations = ProviderScope.containerOf(
+    tester.element(find.byType(ZcashWalletApp)),
+  ).read(paymentLinkOperationsProvider);
+  final recovery = (await operations.loadCreatedLinkRecoveries()).singleWhere(
+    (record) => link.hasSameCanonicalPayload(record.link),
+  );
   await tapPaymentLinkText(tester, 'Return home');
-  return link;
+  return link.withResolvedMetadata(
+    address: recovery.link.address,
+    createdAt: recovery.link.createdAt,
+  );
 }
 
 Future<void> claimPaymentLinkForRegtest(
@@ -223,7 +231,7 @@ Future<void> claimPaymentLinkForRegtest(
   VizorPaymentLink link, {
   bool waitUntilReceiving = true,
 }) async {
-  await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
+  await Clipboard.setData(ClipboardData(text: link.toShareUri().toString()));
   await tapPaymentLinkText(tester, 'Redeem a card');
   await tapPaymentLinkText(tester, 'Paste card link');
   await pumpUntil(
@@ -506,9 +514,9 @@ Future<void> tapPaymentLinkText(WidgetTester tester, String text) async {
 Future<String> readPaymentLinkFromClipboard() async {
   final data = await Clipboard.getData(Clipboard.kTextPlain);
   final rawLink = data?.text?.trim() ?? '';
-  if (!rawLink.startsWith(
-    'https://${VizorDeepLink.host}${VizorDeepLink.paymentLinkPath}#v1=',
-  )) {
+  try {
+    VizorPaymentLink.parse(rawLink);
+  } on FormatException {
     fail('The clipboard did not contain a Vizor payment link.');
   }
   return rawLink;

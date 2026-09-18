@@ -171,15 +171,6 @@ class _MobileMigrationFastReviewState
   Widget build(BuildContext context) {
     final ledgerAccountUuid = _ledgerAccountUuid;
     final ledgerPlan = _ledgerPlan;
-    if (ledgerAccountUuid != null && ledgerPlan != null) {
-      return LedgerImmediateMigrationSigningOverlay(
-        accountUuid: ledgerAccountUuid,
-        plan: ledgerPlan,
-        mobile: true,
-        onCancel: _cancelLedgerMigration,
-        onComplete: (result) => _finishImmediateMigration(ledgerPlan, result),
-      );
-    }
 
     final colors = context.colors;
     final isLedgerAccount =
@@ -256,7 +247,8 @@ class _MobileMigrationFastReviewState
         : ref.watch(ironwoodMigrationImmediatePlanProvider);
     final plan = planAsync.asData?.value;
     final planUnavailable = planAsync.asData != null && plan == null;
-    final canBroadcast = plan != null && !_isBroadcasting;
+    final ledgerSigning = ledgerAccountUuid != null && ledgerPlan != null;
+    final canBroadcast = plan != null && !_isBroadcasting && !ledgerSigning;
     final placeholderText = planUnavailable ? 'Unavailable' : 'Calculating…';
     final migratedText = plan == null
         ? placeholderText
@@ -267,10 +259,10 @@ class _MobileMigrationFastReviewState
     final privacyAmountText = plan == null
         ? '${widget.data.amountText} ZEC'
         : _mobileImmediateMigratedAmountText(plan);
-    final leaveReview = _isBroadcasting
+    final leaveReview = _isBroadcasting || ledgerSigning
         ? null
         : () => context.go('/migration/options');
-    return _MobileIronwoodMigrationBackScope(
+    final review = _MobileIronwoodMigrationBackScope(
       onFallback: leaveReview,
       child: _MobileMigrationReviewScaffold(
         onBack: leaveReview,
@@ -468,6 +460,21 @@ class _MobileMigrationFastReviewState
           ],
         ),
       ),
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        review,
+        if (ledgerAccountUuid != null && ledgerPlan != null)
+          LedgerImmediateMigrationSigningOverlay(
+            accountUuid: ledgerAccountUuid,
+            plan: ledgerPlan,
+            mobile: true,
+            onCancel: _cancelLedgerMigration,
+            onComplete: (result) =>
+                _finishImmediateMigration(ledgerPlan, result),
+          ),
+      ],
     );
   }
 }

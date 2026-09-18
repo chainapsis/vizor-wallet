@@ -130,6 +130,13 @@ class MainActivity : FlutterFragmentActivity() {
             sensitiveClipboardHandler.handle(call, result)
         }
         ledgerMobileHandler = LedgerMobileHandler(this)
+        val pairingChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.zcash.wallet/ledger_mobile/pairing"
+        )
+        ledgerMobileHandler.onPairingInvalid = { connectionId ->
+            pairingChannel.invokeMethod("pairingInvalid", mapOf("connectionId" to connectionId))
+        }
         val signingProgressChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.zcash.wallet/ledger_mobile/signing_progress"

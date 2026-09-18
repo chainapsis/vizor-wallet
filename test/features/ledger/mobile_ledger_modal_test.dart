@@ -1,0 +1,477 @@
+@Tags(['mobile'])
+library;
+
+import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'ledger_pairing_recovery_test.dart' as fixture;
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
+
+Future<void> frames(WidgetTester tester) async {
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 40));
+  }
+}
+
+Widget harness(Widget child, {double scale = 1}) => MaterialApp(
+  home: AppTheme(
+    data: AppThemeData.light,
+    child: Builder(
+      builder: (context) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(scale)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const Scaffold(body: Text('Review send')),
+            child,
+          ],
+        ),
+      ),
+    ),
+  ),
+);
+
+class _PairingEvidenceBle extends fixture.FakeBle
+    implements LedgerPairingEvidenceService {
+  @override
+  final ValueNotifier<bool> pairingInvalidEvidence = ValueNotifier(false);
+}
+
+void main() {
+  testWidgets(
+    'Android late key loss updates the existing recovery sheet only',
+    (tester) async {
+      final ble = _PairingEvidenceBle();
+      final c = fixture.containerFor(
+        ble,
+        fixture.FakeAccounts(),
+        platform: TargetPlatform.android,
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            LedgerAccessRecoveryModal(
+              account: fixture.account,
+              pairingRecovery: true,
+              onRetry: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await frames(tester);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(find.text('Couldn’t complete the request'), findsOneWidget);
+      ble.pairingInvalidEvidence.value = true;
+      await frames(tester);
+      expect(find.text('Pair your Ledger again'), findsOneWidget);
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(
+        find.textContaining('Open Bluetooth settings and remove'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      ble.pairingInvalidEvidence.value = false;
+      ble.pairingInvalidEvidence.value = true;
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final failure in [
+    LedgerMobileFailure.pairingInvalid,
+    LedgerMobileFailure.disconnected,
+    LedgerMobileFailure.pairingRejected,
+    LedgerMobileFailure.rejected,
+    LedgerMobileFailure.locked,
+    LedgerMobileFailure.unavailable,
+  ]) {
+    testWidgets('$failure retains the cause from selection to recovery UI', (
+      tester,
+    ) async {
+      final ble = _FailingPairingBle(failure);
+      final c = fixture.containerFor(
+        ble,
+        fixture.FakeAccounts(
+          initial: fixture.account.copyWith(ledgerDeviceId: fixture.device.id),
+        ),
+        platform: TargetPlatform.iOS,
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            MobileLedgerSigningSurface(
+              canLeave: true,
+              onBack: () {},
+              child: LedgerSigningModal(
+                accountUuid: 'a',
+                phase: LedgerSigningModalPhase.awaitingDevice,
+                failure: null,
+                onCancel: () {},
+                onFailureAction: null,
+              ),
+            ),
+          ),
+        ),
+      );
+      final operation = c
+          .read(ledgerConnectionServiceProvider)
+          .run(
+            accountUuid: 'a',
+            usb: () async => 'usb',
+            bluetooth: (_) async => 'signed',
+          )
+          .then<Object>((value) => value, onError: (Object error) => error);
+      await frames(tester);
+      await tester.tap(find.text('Ledger Flex'));
+      await frames(tester);
+      if (ble.failsAfterConnect) {
+        expect(ble.calls, contains('connect'));
+      }
+      final invalid = failure == LedgerMobileFailure.pairingInvalid;
+      expect(
+        find.text('Pair your Ledger again'),
+        invalid ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(
+        find.textContaining('Open Settings > Bluetooth.'),
+        invalid ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Open settings'), findsNothing);
+      if (!invalid) {
+        expect(
+          find.text(
+            failure == LedgerMobileFailure.rejected
+                ? 'Request declined'
+                : 'Couldn’t complete the request',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsOneWidget);
+        expect(find.text('Couldn’t connect to your Ledger'), findsNothing);
+        await tester.tap(find.text('Try again'));
+        await frames(tester);
+        expect(find.text('Select your Ledger'), findsOneWidget);
+      }
+      c.read(ledgerDeviceSelectionProvider)!.cancel();
+      await operation;
+      await frames(tester);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final replacement in [false, true]) {
+      testWidgets(
+        '$platform selecting device keeps the signer alive (replacement: $replacement)',
+        (tester) async {
+          tester.view.physicalSize = const Size(393, 852);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final ble = fixture.FakeBle();
+          final accounts = fixture.FakeAccounts(
+            initial: fixture.account.copyWith(
+              ledgerDeviceId: replacement ? 'old' : 'new',
+            ),
+          );
+          var exports = 0;
+          final c = fixture.containerFor(
+            ble,
+            accounts,
+            platform: platform,
+            export: () async {
+              exports++;
+              return fixture.exported('expected');
+            },
+          );
+          addTearDown(c.dispose);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: c,
+              child: harness(
+                MobileLedgerSigningSurface(
+                  canLeave: true,
+                  onBack: () {},
+                  child: LedgerSigningModal(
+                    accountUuid: 'a',
+                    phase: LedgerSigningModalPhase.awaitingDevice,
+                    failure: null,
+                    onCancel: () {},
+                    onFailureAction: null,
+                  ),
+                ),
+              ),
+            ),
+          );
+          final signed = Completer<String>();
+          final result = c
+              .read(ledgerConnectionServiceProvider)
+              .run(
+                accountUuid: 'a',
+                usb: () async => 'usb',
+                bluetooth: (_) => signed.future,
+              );
+          await frames(tester);
+          expect(find.byType(AppModalCard), findsNothing);
+          expect(find.byType(MobileModalCard), findsOneWidget);
+          expect(find.text('Review send'), findsOneWidget);
+          expect(find.text('Select your Ledger'), findsOneWidget);
+          expect(find.text('USB'), findsNothing);
+          expect(ble.calls, isNot(contains('connect')));
+          await tester.tap(find.text('Ledger Flex'));
+          await frames(tester);
+          if (replacement) {
+            expect(find.text('Ledger saved'), findsOneWidget);
+            expect(find.byType(MobileModalCard), findsOneWidget);
+            expect(find.text('Review send'), findsOneWidget);
+            expect(find.text('Go back'), findsNothing);
+            expect(find.text('Continue signing'), findsNothing);
+            expect(c.read(ledgerDeviceSelectionProvider)!.completed, false);
+            expect(accounts.writes, 1);
+            final calls = List<String>.of(ble.calls);
+            await frames(tester);
+            expect(ble.calls, calls);
+            await tester.tap(find.text('Find my Ledger'));
+            await frames(tester);
+            expect(find.text('Different from saved connection'), findsNothing);
+            await tester.tap(find.text('Ledger Flex'));
+            await frames(tester);
+          }
+          expect(exports, replacement ? 1 : 0);
+          expect(accounts.writes, replacement ? 1 : 0);
+          expect(c.read(ledgerDeviceSelectionProvider), isNull);
+          expect(ble.calls, isNot(contains('cancel')));
+          signed.complete('signed');
+          expect(await result, 'signed');
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+  for (final saved in [false, true]) {
+    testWidgets(
+      'close settles pending selection before owner removes the sheet (saved: $saved)',
+      (tester) async {
+        final ble = fixture.FakeBle();
+        final c = fixture.containerFor(
+          ble,
+          fixture.FakeAccounts(),
+          platform: TargetPlatform.iOS,
+        );
+        addTearDown(c.dispose);
+        var closes = 0;
+        var signs = 0;
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: harness(
+              MobileLedgerSigningSurface(
+                canLeave: true,
+                onBack: () {},
+                child: LedgerSigningModal(
+                  accountUuid: 'a',
+                  phase: LedgerSigningModalPhase.awaitingDevice,
+                  failure: null,
+                  onCancel: () => closes++,
+                  onFailureAction: null,
+                ),
+              ),
+            ),
+          ),
+        );
+        final result = c
+            .read(ledgerConnectionServiceProvider)
+            .run(
+              accountUuid: 'a',
+              usb: () async => 'usb',
+              bluetooth: (_) async {
+                signs++;
+                return 'signed';
+              },
+            )
+            .then<Object>((value) => value, onError: (Object error) => error);
+        await frames(tester);
+        final request = c.read(ledgerDeviceSelectionProvider)!;
+        if (saved) {
+          await tester.tap(find.text('Ledger Flex'));
+          await frames(tester);
+          expect(find.text('Ledger saved'), findsOneWidget);
+        }
+        await tester.tap(
+          find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == 'Close',
+          ),
+        );
+        await frames(tester);
+        expect(request.completed, isTrue);
+        expect(closes, 1);
+        expect(signs, 0);
+        expect(await result, isNot('signed'));
+        expect(c.read(ledgerDeviceSelectionProvider), isNull);
+      },
+    );
+  }
+  for (final action in ['backdrop', 'drag', 'back']) {
+    for (final canLeave in [true, false]) {
+      testWidgets('$action honors cancellation guard ($canLeave)', (
+        tester,
+      ) async {
+        var calls = 0;
+        await tester.pumpWidget(
+          harness(
+            MobileLedgerSigningSurface(
+              canLeave: canLeave,
+              onBack: () => calls++,
+              child: MobileLedgerSheetContent(
+                title: 'Confirm on your Ledger',
+                onClose: null,
+                children: const [
+                  MobileLedgerMessage('Review and approve on your Ledger.'),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (action == 'backdrop') {
+          await tester.tapAt(const Offset(10, 10));
+          await tester.tapAt(const Offset(10, 10));
+        } else if (action == 'drag') {
+          await tester.drag(
+            find.text('Confirm on your Ledger'),
+            const Offset(0, 100),
+          );
+        } else {
+          await tester.binding.handlePopRoute();
+          await tester.binding.handlePopRoute();
+        }
+        expect(calls, canLeave ? 1 : 0);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+  testWidgets(
+    'failed cancellation re-enables dismissal without allowing duplicate calls',
+    (tester) async {
+      var calls = 0;
+      Widget surface(bool canLeave) => harness(
+        MobileLedgerSigningSurface(
+          canLeave: canLeave,
+          onBack: () => calls++,
+          child: const MobileLedgerSheetContent(
+            title: 'Confirm on your Ledger',
+            onClose: null,
+            children: [MobileLedgerMessage('Waiting for your Ledger.')],
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      await tester.binding.handlePopRoute();
+      expect(calls, 1);
+
+      await tester.pumpWidget(surface(false));
+      await tester.binding.handlePopRoute();
+      expect(calls, 1);
+
+      // Cleanup failed and the owner allows another cancellation attempt.
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      await tester.binding.handlePopRoute();
+      expect(calls, 2);
+
+      // A fast failure may coalesce the busy and recovery updates in one frame.
+      await tester.pumpWidget(surface(true));
+      await tester.binding.handlePopRoute();
+      expect(calls, 3);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'small viewport and large text retain close and scrollable action',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var closes = 0;
+      var retries = 0;
+      await tester.pumpWidget(
+        harness(
+          MobileLedgerSigningSurface(
+            canLeave: true,
+            onBack: () => closes++,
+            child: MobileLedgerSheetContent(
+              title: 'Pair your Ledger again',
+              onClose: () => closes++,
+              children: [
+                const MobileLedgerMessage(
+                  'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device. Then come back and find your Ledger again.',
+                ),
+                MobileLedgerAction(
+                  'Find my Ledger',
+                  onPressed: () => retries++,
+                ),
+              ],
+            ),
+          ),
+          scale: 1.8,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Find my Ledger'));
+      await tester.tap(find.text('Find my Ledger'));
+      expect(retries, 1);
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Close',
+        ),
+      );
+      expect(closes, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+class _FailingPairingBle extends fixture.FakeBle {
+  _FailingPairingBle(this.failure);
+  final LedgerMobileFailure failure;
+  bool get failsAfterConnect =>
+      failure == LedgerMobileFailure.rejected ||
+      failure == LedgerMobileFailure.locked ||
+      failure == LedgerMobileFailure.unavailable;
+
+  @override
+  Future<void> connect(LedgerBleDevice device) async {
+    if (!failsAfterConnect) {
+      throw LedgerMobileException(failure, 'Native connection failure');
+    }
+    await super.connect(device);
+  }
+
+  @override
+  Future<LedgerMobileAppInfo> currentApp() async {
+    if (failsAfterConnect) {
+      throw LedgerMobileException(failure, 'Native app request failure');
+    }
+    return super.currentApp();
+  }
+}

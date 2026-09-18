@@ -170,10 +170,25 @@ class LedgerOperationRecoveryCoordinator {
       if (claim == null) continue;
       LedgerSignedOperationBroadcastResult? result;
       try {
+        final giftAddress = operation.kind == LedgerSignedOperationKind.giftCard
+            ? operation.externalRef
+            : null;
         if (operation.state == 'signed_pending_broadcast') {
-          result = await operationService.broadcast(
-            operationId: operation.operationId,
-          );
+          if (giftAddress != null && giftAddress.isNotEmpty) {
+            // Same boundary marker and definitive-rejection cleanup as the
+            // signing surface.
+            result = await _ref
+                .read(paymentLinkLedgerFundingServiceProvider)
+                .broadcastCheckpoint(
+                  operationId: operation.operationId,
+                  address: giftAddress,
+                );
+            if (result == null) continue;
+          } else {
+            result = await operationService.broadcast(
+              operationId: operation.operationId,
+            );
+          }
           broadcastedAny = true;
         } else if (operation.state == 'result_pending_ack') {
           final txid = operation.txid?.trim() ?? '';

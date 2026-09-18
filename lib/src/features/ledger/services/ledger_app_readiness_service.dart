@@ -90,7 +90,6 @@ class LedgerAppReadinessException implements Exception {
   final LedgerAppReadinessFailure failure;
   final String message;
   final bool canReconnect;
-
   /// The transport or device error this failure was classified from.
   final Object? cause;
 
@@ -255,6 +254,7 @@ class LedgerAppReadinessService {
         LedgerMobileFailure.rejected ||
         LedgerMobileFailure.cancelled => LedgerAppReadinessFailure.rejected,
         LedgerMobileFailure.permissionDenied ||
+        LedgerMobileFailure.locationDisabled ||
         LedgerMobileFailure.bluetoothOff ||
         LedgerMobileFailure.wrongApp ||
         LedgerMobileFailure.unavailable =>

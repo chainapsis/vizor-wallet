@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ledger_bluetooth_access.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 
 const kLedgerPairingInvalidMessage =
@@ -16,6 +18,7 @@ bool ledgerPairingNeedsReset(Object? error) =>
 enum LedgerMobileFailure {
   busy,
   permissionDenied,
+  locationDisabled,
   bluetoothOff,
   pairingRejected,
   pairingInvalid,
@@ -28,7 +31,15 @@ enum LedgerMobileFailure {
 }
 
 class LedgerMobileException implements Exception {
-  const LedgerMobileException(this.failure, this.message);
+  const LedgerMobileException(
+    this.failure,
+    this.message, {
+    this.nativeDomain,
+    this.nativeCode,
+  });
+
+  final String? nativeDomain;
+  final int? nativeCode;
 
   final LedgerMobileFailure failure;
   final String message;
@@ -102,6 +113,12 @@ abstract interface class LedgerMobileBleService {
   Future<void> cancelSigning();
 }
 
+/// Evidence is scoped to one selected connection, including late OS broadcasts.
+/// Consumers retain this listenable rather than following a subsequent attempt.
+abstract interface class LedgerPairingEvidenceService {
+  ValueListenable<bool>? get pairingInvalidEvidence;
+}
+
 /// Optional progress capability; existing test/custom transports remain compatible.
 abstract interface class LedgerProgressBleService {
   Future<List<Uint8List>> exchangeApdusWithProgress(
@@ -113,16 +130,60 @@ abstract interface class LedgerProgressBleService {
 /// Method channel shared by every native Ledger Bluetooth runner.
 const kLedgerMobileMethodChannel = 'com.zcash.wallet/ledger_mobile';
 
-final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((_) {
-  return MethodChannelLedgerMobileBleService();
+final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((ref) {
+  final service = MethodChannelLedgerMobileBleService();
+  ref.onDispose(service._stopPairingEvidence);
+  return service;
 });
 
 class MethodChannelLedgerMobileBleService
-    implements LedgerMobileBleService, LedgerProgressBleService {
+    implements
+        LedgerMobileBleService,
+        LedgerProgressBleService,
+        LedgerPairingEvidenceService,
+        LedgerBluetoothAccess,
+        LedgerBluetoothPairingSettings {
   MethodChannelLedgerMobileBleService({
     Future<void> Function(Duration duration)? reviewBusyDelay,
   }) : _reviewBusyDelay =
            reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
+
+  static const _pairingChannel = MethodChannel(
+    'com.zcash.wallet/ledger_mobile/pairing',
+  );
+  static int _nextConnectionId = 0;
+  static String? _observedConnectionId;
+  static void Function()? _onPairingInvalid;
+  String? _connectionId;
+  ValueNotifier<bool>? _pairingInvalidEvidence;
+
+  @override
+  ValueListenable<bool>? get pairingInvalidEvidence => _pairingInvalidEvidence;
+
+  void _stopPairingEvidence() {
+    if (_observedConnectionId == _connectionId) {
+      _observedConnectionId = null;
+      _onPairingInvalid = null;
+    }
+    _pairingInvalidEvidence = null;
+  }
+
+  void _startPairingEvidence() {
+    _stopPairingEvidence();
+    final evidence = _pairingInvalidEvidence = ValueNotifier(false);
+    _observedConnectionId = _connectionId = '${++_nextConnectionId}';
+    _onPairingInvalid = () {
+      _connectedDeviceId = null;
+      evidence.value = true;
+    };
+    _pairingChannel.setMethodCallHandler((call) async {
+      if (call.method != 'pairingInvalid' || call.arguments is! Map) return;
+      final id = (call.arguments as Map)['connectionId'];
+      if (id is String && id == _observedConnectionId) {
+        _onPairingInvalid?.call();
+      }
+    });
+  }
 
   static const _progressChannel = MethodChannel(
     'com.zcash.wallet/ledger_mobile/signing_progress',
@@ -171,6 +232,7 @@ class MethodChannelLedgerMobileBleService
 
   @override
   Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
+    _stopPairingEvidence();
     final controller = StreamController<Object?>();
     final subscription = _events.receiveBroadcastStream().listen(
       controller.add,
@@ -191,6 +253,23 @@ class MethodChannelLedgerMobileBleService
   }
 
   @override
+  Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async {
+    final value = await _methods.invokeMapMethod<Object?, Object?>(
+      'bluetoothAccessStatus',
+    );
+    return LedgerBluetoothAccessStatus.fromMap(value ?? const {});
+  }
+
+  @override
+  Future<bool> openBluetoothSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothSettings') ?? false;
+
+  @override
+  Future<bool> openBluetoothPairingSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothPairingSettings') ??
+      false;
+
+  @override
   Future<bool> requestPermissions() async {
     try {
       return await _methods.invokeMethod<bool>('requestPermissions') ?? false;
@@ -205,12 +284,22 @@ class MethodChannelLedgerMobileBleService
   @override
   Future<void> connect(LedgerBleDevice device) async {
     final generation = _operationGeneration;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _startPairingEvidence();
+    }
     await _invokeVoid('connect', <String, Object>{
       'deviceId': device.id,
+      'connectionId': ?_connectionId,
       'deviceName': device.name,
       'deviceModel': device.model,
     });
     _checkOperationActive(generation);
+    if (_pairingInvalidEvidence?.value == true) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.pairingInvalid,
+        kLedgerPairingInvalidMessage,
+      );
+    }
     _connectedDeviceId = device.id;
   }
 
@@ -333,6 +422,7 @@ class MethodChannelLedgerMobileBleService
 
   @override
   Future<void> cancelSigning() {
+    _stopPairingEvidence();
     // Invalidate Dart retries before waiting for the native cancellation reply.
     _operationGeneration++;
     // Native cancellation retires the BLE session. Do not advertise its cached
@@ -434,6 +524,7 @@ class MethodChannelLedgerMobileBleService
           _errorFromCode(
             value['code'] as String? ?? 'unavailable',
             value['message'] as String? ?? 'Ledger discovery failed.',
+            details: value['details'],
           ),
         );
       default:
@@ -452,6 +543,7 @@ class MethodChannelLedgerMobileBleService
       error.code == 'pairing_invalid'
           ? kLedgerPairingInvalidMessage
           : error.message ?? 'Ledger mobile connection failed.',
+      details: error.details,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {
       _connectedDeviceId = null;
@@ -459,10 +551,15 @@ class MethodChannelLedgerMobileBleService
     return mapped;
   }
 
-  static LedgerMobileException _errorFromCode(String code, String message) {
+  static LedgerMobileException _errorFromCode(
+    String code,
+    String message, {
+    Object? details,
+  }) {
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
       'permission_denied' => LedgerMobileFailure.permissionDenied,
+      'location_disabled' => LedgerMobileFailure.locationDisabled,
       'bluetooth_off' => LedgerMobileFailure.bluetoothOff,
       'pairing_rejected' => LedgerMobileFailure.pairingRejected,
       'pairing_invalid' => LedgerMobileFailure.pairingInvalid,
@@ -473,7 +570,16 @@ class MethodChannelLedgerMobileBleService
       'cancelled' => LedgerMobileFailure.cancelled,
       _ => LedgerMobileFailure.unavailable,
     };
-    return LedgerMobileException(failure, message);
+    return LedgerMobileException(
+      failure,
+      message,
+      nativeDomain: details is Map && details['nativeDomain'] is String
+          ? details['nativeDomain'] as String
+          : null,
+      nativeCode: details is Map && details['nativeCode'] is int
+          ? details['nativeCode'] as int
+          : null,
+    );
   }
 }
 
@@ -485,6 +591,7 @@ bool ledgerFailureInvalidatesConnection(LedgerMobileFailure failure) =>
       LedgerMobileFailure.unavailable ||
       LedgerMobileFailure.bluetoothOff ||
       LedgerMobileFailure.permissionDenied ||
+      LedgerMobileFailure.locationDisabled ||
       LedgerMobileFailure.pairingInvalid ||
       LedgerMobileFailure.pairingRejected => true,
       _ => false,

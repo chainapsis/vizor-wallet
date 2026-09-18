@@ -99,6 +99,7 @@ void main() {
     const mobile = {
       LedgerMobileFailure.busy: LedgerFailureKind.deviceBusy,
       LedgerMobileFailure.permissionDenied: LedgerFailureKind.transportLost,
+      LedgerMobileFailure.locationDisabled: LedgerFailureKind.transportLost,
       LedgerMobileFailure.bluetoothOff: LedgerFailureKind.transportLost,
       LedgerMobileFailure.pairingRejected: LedgerFailureKind.transportLost,
       LedgerMobileFailure.pairingInvalid: LedgerFailureKind.transportLost,

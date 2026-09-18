@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -35,6 +36,7 @@ import '../../ledger/ledger_capability.dart';
 import '../../ledger/ledger_error_codes.dart';
 import '../../ledger/ledger_error_messages.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -115,6 +117,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   final List<List<int>> _keystoneSignatures = [];
   int _keystoneRound = 0;
   SaplingParamsStatus? _keystoneSaplingParams;
+  LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase? _ledgerPhase;
   LedgerSigningFailurePresentation? _ledgerFailure;
   _LedgerSendRecoveryAction? _ledgerRecoveryAction;
@@ -246,6 +249,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   void _showLedgerSigningModal() {
     if (_ledgerPhase != null) return;
+    _connectionScope = LedgerConnectionScope();
     final generation = ++_ledgerAttemptGeneration;
     setState(() {
       _ledgerPhase = LedgerSigningModalPhase.preparing;
@@ -350,9 +354,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _ledgerRound = index;
           _ledgerPhase = LedgerSigningModalPhase.awaitingDevice;
         });
-        final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-          _reviewArgs.proposalAccountUuid,
-          signerPczts[index],
+        final signedPczt = await _connectionScope.run(
+          () => ref.read(ledgerPcztSignerProvider)(
+            _reviewArgs.proposalAccountUuid,
+            signerPczts![index],
+          ),
         );
         if (!_isCurrentLedgerAttempt(generation)) return;
         _ledgerSignedPczts.add(List<int>.unmodifiable(signedPczt));
@@ -424,6 +430,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _setLedgerPreSignatureFailure(Object error) {
     final raw = error.toString();
     final lower = raw.toLowerCase();
+    final guidance = ledgerFailureGuidance(error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
@@ -471,6 +478,18 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
+    } else if (guidance != null) {
+      failure = LedgerSigningFailurePresentation(
+        title: 'Ledger needs attention',
+        statusLabel: 'Action needed',
+        message: guidance.message,
+        showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+        bluetoothRecovery: guidance.bluetoothRecovery,
+        pairingRecovery: guidance.pairingRecovery,
+        pairingInvalid: guidance.pairingInvalid,
+        actionLabel: 'Try again',
+      );
+      action = _LedgerSendRecoveryAction.retrySigning;
     } else {
       final message =
           actionable ??
@@ -481,13 +500,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
             LedgerFailureKind.usbPermission =>
               ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
                   'Connect and unlock your Ledger. $appInstruction',
-            _ => '$appInstruction Then try again.',
+            _ =>
+              'Ledger signing could not be completed. Check your device and try again.',
           };
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
         message: message,
-        showDeviceAppPrompt: true,
+        showDeviceAppPrompt: false,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;
@@ -1229,6 +1249,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       ? () => unawaited(_dismissLedgerSigningModal())
                       : () {},
                   child: LedgerSigningModal(
+                    connectionScope: _connectionScope,
                     accountUuid: _reviewArgs.proposalAccountUuid,
                     phase: ledgerPhase,
                     failure: _ledgerFailure,

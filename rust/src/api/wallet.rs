@@ -359,6 +359,37 @@ pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAcc
     })
 }
 
+/// Validate and recover original English BIP-39 entropy without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_to_entropy(mnemonic: String) -> Result<Vec<u8>, String> {
+    keys::mnemonic_to_entropy(&mnemonic)
+}
+
+/// Reconstruct an English BIP-39 phrase without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_from_entropy(entropy: Vec<u8>) -> Result<String, String> {
+    keys::mnemonic_from_entropy(entropy)
+}
+
+/// Check locally retained gift metadata before sharing an address-free link.
+/// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
+pub fn validate_gift_address(
+    mnemonic: String,
+    network: String,
+    address: String,
+) -> Result<(), String> {
+    let validate = || {
+        let network = keys::parse_network(&network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let derived = keys::derive_software_address(network, &seed, 0)?;
+        if derived != address.trim() {
+            return Err("Gift address does not match its recovery phrase".to_string());
+        }
+        Ok(())
+    };
+    validate().map_err(|_: String| "Gift address could not be verified".to_string())
+}
+
 /// Discover higher ZIP32 software accounts with transparent history that are
 /// not already present in the wallet DB for this mnemonic.
 pub fn discover_software_wallet_import_accounts(
@@ -1161,6 +1192,57 @@ pub fn get_recent_transparent_receive_addresses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gift_entropy_preserves_wallet_and_rejects_invalid_inputs() {
+        use secrecy::ExposeSecret;
+        for length in [16, 20, 24, 28, 32] {
+            let entropy: Vec<u8> = (0..length).collect();
+            let phrase = gift_mnemonic_from_entropy(entropy.clone()).unwrap();
+            assert_eq!(gift_mnemonic_to_entropy(phrase.clone()).unwrap(), entropy);
+            assert!(gift_mnemonic_to_entropy(phrase.replace(' ', "  ")).is_err());
+            let original = bip0039::Mnemonic::<bip0039::English>::from_entropy(entropy).unwrap();
+            let restored_seed = keys::mnemonic_to_seed(&phrase).unwrap();
+            assert_eq!(
+                restored_seed.expose_secret().as_slice(),
+                original.to_seed("")
+            );
+            for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
+                let address = keys::derive_software_address(network, &restored_seed, 0).unwrap();
+                validate_gift_address(
+                    phrase.clone(),
+                    network_name(network).into(),
+                    address.clone(),
+                )
+                .unwrap();
+                assert!(validate_gift_address(
+                    phrase.clone(),
+                    network_name(network).into(),
+                    format!("{address}x")
+                )
+                .is_err());
+            }
+        }
+        for length in [0, 15, 17, 31, 33, 512] {
+            assert!(gift_mnemonic_from_entropy(vec![0; length]).is_err());
+        }
+        for phrase in [
+            "private-input-invalid".to_string(),
+            "abandon ".repeat(12),
+            "a".repeat(513),
+        ] {
+            let error = gift_mnemonic_to_entropy(phrase.clone()).unwrap_err();
+            assert!(!error.contains(&phrase));
+        }
+        assert_eq!(
+            generate_software_account("main".into())
+                .unwrap()
+                .mnemonic
+                .split_whitespace()
+                .count(),
+            24
+        );
+    }
 
     const BIP39_VECTOR_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";

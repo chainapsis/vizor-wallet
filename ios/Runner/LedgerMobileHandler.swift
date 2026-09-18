@@ -3,8 +3,10 @@ import CoreBluetooth
 import Foundation
 
 #if os(macOS)
+  import AppKit
   import FlutterMacOS
 #else
+  import UIKit
   import Flutter
 #endif
 
@@ -52,8 +54,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   var onSigningProgress: ((String, String) -> Void)?
 
+  private let authorization: () -> CBManagerAuthorization
+  private let permissionTimeout: UInt64
+  private var transportCallbackInstalled = false
   private var transportStorage: BleTransportProtocol?
   private var bluetoothState: CBManagerState = .unknown
+  private var permissionResult: FlutterResult?
+  private var permissionDeadline: Task<Void, Never>?
   private var eventSink: FlutterEventSink?
   private var discoveryRequested = false
   private var discoveryActive = false
@@ -82,14 +89,42 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private var automaticCloseRetryUsed = false
   private var isClosing = false
 
-  init(transport: BleTransportProtocol? = nil, appQueryTimeout: UInt64 = 10_000_000_000) {
+  init(transport: BleTransportProtocol? = nil, appQueryTimeout: UInt64 = 10_000_000_000,
+       authorization: @escaping () -> CBManagerAuthorization = { CBManager.authorization },
+       permissionTimeout: UInt64 = 30_000_000_000) {
+    self.authorization = authorization
+    self.permissionTimeout = permissionTimeout
     self.appQueryTimeout = appQueryTimeout
     transportStorage = transport
     super.init()
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if permissionResult != nil && ["startDiscovery", "connect", "currentApp", "openZcashApp", "exchangeUfvk", "exchangeApdus"].contains(call.method) {
+      result(pendingExchangeError())
+      return
+    }
     switch call.method {
+    case "bluetoothAccessStatus":
+      result(bluetoothAccessStatus())
+    case "openBluetoothPairingSettings":
+      #if os(macOS)
+        result(NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app")))
+      #else
+        // iOS has no public URL for the Bluetooth pairing list.
+        result(false)
+      #endif
+    case "openBluetoothSettings":
+      #if os(macOS)
+        let url = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        result(NSWorkspace.shared.open(url))
+      #else
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url, options: [:]) { opened in result(opened) }
+      #endif
     case "requestPermissions":
       requestPermissions(result)
     case "startDiscovery":
@@ -140,6 +175,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   func close() {
     guard !isClosing else { return }
     isClosing = true
+    finishPermissionRequest(false)
     guard let transport = transportStorage,
       LedgerMobileTransportOwnership.shared.owns(transport: transport, owner: self)
     else { return }
@@ -209,12 +245,10 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func ensureTransport() -> BleTransportProtocol {
-    if let transportStorage {
-      return transportStorage
-    }
-
-    let transport = BleTransport.shared
+    let transport = transportStorage ?? BleTransport.shared
     transportStorage = transport
+    guard !transportCallbackInstalled else { return transport }
+    transportCallbackInstalled = true
     transport.bluetoothStateCallback { [weak self] state in
       DispatchQueue.main.async {
         self?.handleBluetoothState(state)
@@ -247,6 +281,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
   private func handleBluetoothState(_ state: CBManagerState) {
     bluetoothState = state
+    if authorization() != .notDetermined {
+      finishPermissionRequest(authorization() == .allowedAlways)
+    }
     guard discoveryRequested else { return }
 
     switch state {
@@ -277,13 +314,54 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
+  // Authorization is read without creating a central manager (which can prompt).
+  private func bluetoothAccessStatus() -> [String: Any] {
+    let permission: String
+    switch authorization() {
+    case .allowedAlways: permission = "granted"
+    case .notDetermined: permission = "requestable"
+    case .denied: permission = "settings"
+    case .restricted: permission = "restricted"
+    @unknown default: permission = "settings"
+    }
+    var status: [String: Any] = ["permission": permission, "permissionKind": "bluetooth"]
+    #if os(macOS)
+      status["platform"] = "macOS"
+    #endif
+    if bluetoothState == .poweredOn || bluetoothState == .poweredOff {
+      status["bluetoothEnabled"] = bluetoothState == .poweredOn
+    }
+    return status
+  }
+
+  private func finishPermissionRequest(_ granted: Bool) {
+    let result = permissionResult
+    permissionResult = nil
+    permissionDeadline?.cancel()
+    permissionDeadline = nil
+    result?(granted)
+  }
+
   private func requestPermissions(_ result: @escaping FlutterResult) {
-    guard transportForOperation(result) != nil else { return }
-    switch CBManager.authorization {
-    case .allowedAlways, .notDetermined:
-      // CoreBluetooth has no standalone permission request API. The system
-      // prompt is presented when discovery first starts.
+    guard !isClosing, permissionResult == nil,
+      exchangeTask == nil, !transportCallbackPending, !discoveryRequested
+    else {
+      result(pendingExchangeError())
+      return
+    }
+    switch authorization() {
+    case .allowedAlways:
       result(true)
+    case .notDetermined:
+      // Creating the lazy central manager prompts. Complete only once the
+      // authorization decision arrives, not when the prompt is presented.
+      guard transportForOperation(result) != nil else { return }
+      permissionResult = result
+      let timeout = permissionTimeout
+      permissionDeadline = Task { @MainActor [weak self] in
+        do { try await Task.sleep(nanoseconds: timeout) } catch { return }
+        self?.finishPermissionRequest(self?.authorization() == .allowedAlways)
+      }
     case .denied, .restricted:
       result(false)
     @unknown default:
@@ -297,7 +375,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       return
     }
     guard let transport = transportForOperation(result) else { return }
-    switch CBManager.authorization {
+    switch authorization() {
     case .denied, .restricted:
       result(
         flutterError(
@@ -483,9 +561,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     let generation = connectionGeneration
     transport.connect(
       toPeripheralID: device,
-      disconnectedCallback: { [weak self] in
+      disconnectedCallback: { [weak self] error in
         DispatchQueue.main.async {
-          self?.handleDisconnected(generation: generation)
+          self?.handleDisconnected(generation: generation, error: error)
         }
       },
       success: { [self] connected in
@@ -578,13 +656,17 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func handleDisconnected(generation: Int) {
+  private func handleDisconnected(generation: Int, error: Error?) {
     guard generation == connectionGeneration else { return }
     connectedDevice = nil
     if exchangeRecoversFromDisconnect { return }
+    let mapped = error.map { flutterError(for: $0 as? BleTransportError ??
+      BleTransportError.underlying(error: $0 as NSError,
+        fallback: .currentConnectedError(description: "Ledger disconnected"))) }
     cancelExchangeOperation(
-      code: "disconnected",
-      message: "The Ledger disconnected. Reconnect and try again.",
+      code: mapped?.code ?? "disconnected",
+      message: mapped?.message ?? "The Ledger disconnected. Reconnect and try again.",
+      details: mapped?.details,
       cancelPreparation: false
     )
   }
@@ -614,9 +696,9 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
           let reconnectGeneration = connectionGeneration
           let connected = try await transport.connect(
             toPeripheralID: device,
-            disconnectedCallback: { [weak self] in
+            disconnectedCallback: { [weak self] error in
               DispatchQueue.main.async {
-                self?.handleDisconnected(generation: reconnectGeneration)
+                self?.handleDisconnected(generation: reconnectGeneration, error: error)
               }
             }
           )
@@ -806,6 +888,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   private func cancelExchangeOperation(
     code: String,
     message: String,
+    details: Any? = nil,
     cancelPreparation: Bool = true
   ) {
     // App switching may disconnect BLE without cancelling the user's request.
@@ -818,7 +901,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         connectionGeneration += 1
         connectedDevice = nil
         transportCallbackResult = nil
-        pending(flutterError(code: code, message: message))
+        pending(FlutterError(code: code, message: message, details: details))
       }
     }
     guard let pending = exchangeResult else { return }
@@ -829,7 +912,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     queryDeadlineTask?.cancel()
     exchangeTask?.cancel()
     transportStorage?.abortExchange()
-    pending(flutterError(code: code, message: message))
+    pending(FlutterError(code: code, message: message, details: details))
   }
 
   private func finishExchange(generation: Int, value: Any) {
@@ -895,6 +978,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func flutterError(for error: Error) -> FlutterError {
+    let mapped = classifyFlutterError(error)
+    let native = (error as? BleTransportError)?.underlyingError ?? (error as NSError)
+    return FlutterError(code: mapped.code, message: mapped.message,
+                        details: ["nativeDomain": native.domain, "nativeCode": native.code])
+  }
+
+  private func classifyFlutterError(_ error: Error) -> FlutterError {
     if ledgerPairingInformationIsInvalid(error) {
       return flutterError(
         code: "pairing_invalid",
@@ -957,9 +1047,11 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
 
     if let transportError = error as? BleTransportError {
       switch transportError {
+      case .underlying(_, let fallback):
+        return classifyFlutterError(fallback)
       case .bluetoothNotAvailable:
-        if CBManager.authorization == .denied
-          || CBManager.authorization == .restricted
+        if authorization() == .denied
+          || authorization() == .restricted
         {
           return flutterError(
             code: "permission_denied",
@@ -1005,6 +1097,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       "type": "error",
       "code": mapped.code,
       "message": mapped.message ?? "Ledger discovery failed.",
+      "details": mapped.details ?? [:],
     ]
   }
 
@@ -1170,6 +1263,8 @@ struct LedgerMobileAppSwitchCoordinator {
     }
     guard let error = error as? BleTransportError else { return false }
     switch error {
+    case .underlying(_, let fallback):
+      return isTransientTransitionError(fallback)
     case .connectError, .currentConnectedError, .writeError, .readError,
       .listenError, .pendingActionOnDevice, .scanningTimedOut, .scanError:
       return true
@@ -1326,27 +1421,9 @@ extension Array where Element == [UInt8] {
   }
 }
 
-/// BleTransport 1.0.1 flattens CoreBluetooth errors to localized descriptions.
-/// Compare against the OS's own localized description, not an English substring.
+/// Pairing identity comes from CoreBluetooth, never localized message text.
 func ledgerPairingInformationIsInvalid(_ error: Error) -> Bool {
-  let native = error as NSError
-  if native.domain == CBErrorDomain,
+  let native = (error as? BleTransportError)?.underlyingError ?? (error as NSError)
+  return native.domain == CBErrorDomain &&
     native.code == CBError.peerRemovedPairingInformation.rawValue
-  {
-    return true
-  }
-  let expected = NSError(
-    domain: CBErrorDomain,
-    code: CBError.peerRemovedPairingInformation.rawValue
-  ).localizedDescription
-  guard let transportError = error as? BleTransportError else { return false }
-  switch transportError {
-  case .connectError(let description), .currentConnectedError(let description),
-    .writeError(let description), .readError(let description),
-    .listenError(let description), .pairingError(let description),
-    .lowerLevelError(let description):
-    return description == expected
-  default:
-    return false
-  }
 }

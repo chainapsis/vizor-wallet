@@ -113,7 +113,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(clipboard.copiedSecrets, [otherAccountLink.toUri().toString()]);
+    expect(clipboard.copiedSecrets, [otherAccountLink.toShareUri().toString()]);
     expect(
       operations.records.first.updatedAt.isAfter(fundedRecovery.updatedAt),
       isTrue,
@@ -3198,7 +3198,7 @@ void main() {
       find.byType(PaymentLinkQrShareCard),
     );
     expect(shareCard.artwork, PaymentLinkCardArtwork.ruby);
-    expect(shareCard.qrData, incomingLink.toUri().toString());
+    expect(shareCard.qrData, incomingLink.toShareUri().toString());
 
     await tester.tap(find.text('Save QR code'));
     await tester.pump();

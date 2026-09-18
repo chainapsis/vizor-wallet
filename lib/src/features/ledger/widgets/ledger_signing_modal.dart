@@ -1,7 +1,12 @@
-import 'dart:async';
+import '../../../core/layout/app_form_factor.dart';
+import 'mobile/mobile_ledger_signing_content.dart';
 
 import 'package:flutter/widgets.dart';
 
+import 'ledger_access_recovery_modal.dart';
+import '../services/ledger_device_selection.dart';
+import '../services/ledger_mobile_ble_service.dart';
+import '../services/ledger_bluetooth_access.dart';
 import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +38,9 @@ class LedgerSigningFailurePresentation {
     this.actionLabel,
     this.isError = true,
     this.showConnectionPicker = true,
+    this.bluetoothRecovery = false,
+    this.pairingRecovery = false,
+    this.pairingInvalid = false,
   });
 
   final String title;
@@ -42,6 +50,9 @@ class LedgerSigningFailurePresentation {
   final String? actionLabel;
   final bool isError;
   final bool showConnectionPicker;
+  final bool bluetoothRecovery;
+  final bool pairingRecovery;
+  final bool pairingInvalid;
 }
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -52,6 +63,7 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.onFailureAction,
     this.cancelLabel = 'Cancel',
     this.accountUuid,
+    this.connectionScope,
     this.signingStage,
     this.roundFeeNotice,
     this.roundNumber = 1,
@@ -74,6 +86,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final VoidCallback? onFailureAction;
   final String cancelLabel;
   final String? accountUuid;
+  final LedgerConnectionScope? connectionScope;
   final LedgerSigningStage? signingStage;
   final String? roundFeeNotice;
   final int roundNumber;
@@ -91,8 +104,46 @@ class LedgerSigningModal extends ConsumerWidget {
     final appName = ledgerZcashAppName(networkName);
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final account = _ledgerAccount(ref, accountUuid);
+    final selection = ref.watch(ledgerDeviceSelectionProvider);
+    if (selection != null &&
+        selection.accountUuid == accountUuid &&
+        account != null) {
+      return LedgerAccessRecoveryModal(
+        key: ObjectKey(selection),
+        account: account,
+        selectionRequest: selection,
+        onRetry: null,
+        onClose: onCancel,
+      );
+    }
     final failed = phase == LedgerSigningModalPhase.failed;
     final failure = this.failure;
+    final canChangeConnection =
+        failed &&
+        failure!.showConnectionPicker &&
+        onFailureAction != null &&
+        connectionScope != null &&
+        ref.watch(ledgerTargetPlatformProvider) == TargetPlatform.macOS;
+    void changeConnection() {
+      connectionScope!.changeConnection();
+      onFailureAction?.call();
+    }
+
+    if (failed &&
+        (failure!.bluetoothRecovery ||
+            (failure.pairingRecovery && account != null)) &&
+        ref.watch(ledgerMobileBleServiceProvider) is LedgerBluetoothAccess) {
+      return LedgerAccessRecoveryModal(
+        key: ValueKey(accountUuid),
+        account: account,
+        pairingRecovery: failure.pairingRecovery,
+        pairingInvalid: failure.pairingInvalid,
+        retrySelectsDevice: true,
+        onChangeConnection: canChangeConnection ? changeConnection : null,
+        onRetry: onFailureAction,
+        onClose: onCancel,
+      );
+    }
     final error = failed && failure!.isError;
     final progress = ref.watch(ledgerSigningProgressProvider);
     final stage = switch (phase) {
@@ -111,13 +162,6 @@ class LedgerSigningModal extends ConsumerWidget {
     if (roundCount > 1) {
       final progress = 'Transaction $roundNumber of $roundCount';
       if (!failed) statusLabel = progress;
-    }
-    if (phase == LedgerSigningModalPhase.failed &&
-        failure!.showDeviceAppPrompt &&
-        readiness.phase == LedgerAppReadinessPhase.failed) {
-      title = 'Ledger needs attention';
-      statusLabel = 'Action needed';
-      message = readiness.message!;
     }
     if ((phase == LedgerSigningModalPhase.awaitingDevice ||
             phase == LedgerSigningModalPhase.preparing) &&
@@ -141,11 +185,7 @@ class LedgerSigningModal extends ConsumerWidget {
     if (!failed && roundFeeNotice != null) {
       message = '$message ${roundFeeNotice!}';
     }
-    final actionLabel = failed
-        ? failure!.actionLabel
-        : stage == LedgerSigningStage.finishing
-        ? 'Finishing'
-        : 'Waiting';
+    final actionLabel = failed ? failure!.actionLabel : null;
     final showDeviceAppPrompt = switch (phase) {
       LedgerSigningModalPhase.saving ||
       LedgerSigningModalPhase.broadcasting => false,
@@ -154,6 +194,26 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.awaitingDevice => true,
     };
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return MobileLedgerSigningContent(
+        title: !failed && stage == LedgerSigningStage.reviewing
+            ? 'Confirm on your Ledger'
+            : title,
+        message: message,
+        status:
+            !failed && stage == LedgerSigningStage.reviewing && roundCount == 1
+            ? 'Waiting for your approval'
+            : statusLabel,
+        active:
+            stage != LedgerSigningStage.reviewing &&
+            readiness.phase != LedgerAppReadinessPhase.confirmOpening,
+        failed: failed,
+        account: account,
+        onClose: onCancel,
+        actionLabel: actionLabel,
+        onAction: onFailureAction,
+      );
+    }
     return AppModalCard(
       width: 328,
       child: Column(
@@ -162,6 +222,19 @@ class LedgerSigningModal extends ConsumerWidget {
         children: [
           Row(
             children: [
+              if (canChangeConnection) ...[
+                AppButton(
+                  onPressed: changeConnection,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.small,
+                  child: const AppIcon(
+                    AppIcons.chevronBackward,
+                    size: 16,
+                    semanticLabel: 'Change connection',
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               Container(
                 width: 36,
                 height: 36,
@@ -222,7 +295,11 @@ class LedgerSigningModal extends ConsumerWidget {
                   height: 32,
                   child: Center(
                     child: AppIcon(
-                      failed ? AppIcons.warningCircle : AppIcons.loader,
+                      failed
+                          ? AppIcons.warningCircle
+                          : stage == LedgerSigningStage.reviewing
+                          ? AppIcons.ledger
+                          : AppIcons.loader,
                       size: failed ? 24 : 20,
                       color: error
                           ? colors.icon.destructive
@@ -261,13 +338,6 @@ class LedgerSigningModal extends ConsumerWidget {
               ],
             ),
           ),
-          if (failed &&
-              failure!.showConnectionPicker &&
-              account != null &&
-              ledgerSupportsUsb(ref.watch(ledgerTargetPlatformProvider))) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _LedgerFailureConnectionPicker(account: account),
-          ],
           const SizedBox(height: AppSpacing.md),
           if (actionLabel == null && onCancel == null)
             const SizedBox.shrink()
@@ -316,95 +386,5 @@ class LedgerSigningModal extends ConsumerWidget {
       if (account.uuid == uuid && account.isLedger) return account;
     }
     return null;
-  }
-}
-
-class _LedgerFailureConnectionPicker extends ConsumerWidget {
-  const _LedgerFailureConnectionPicker({required this.account});
-
-  final AccountInfo account;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!ledgerSupportsBluetooth(ref.watch(ledgerTargetPlatformProvider))) {
-      return Text(
-        'Connect your Ledger over USB.',
-        key: const ValueKey('ledger_usb_only_connection'),
-        style: AppTypography.bodySmall.copyWith(
-          color: context.colors.text.secondary,
-        ),
-      );
-    }
-    final bluetoothAvailable =
-        account.ledgerDeviceId != null &&
-        ledgerBluetoothTransportCapabilityForModel(
-              model: account.ledgerDeviceModel,
-              platform: ref.watch(ledgerTargetPlatformProvider),
-            ) !=
-            LedgerBluetoothCapability.unsupported;
-    return Container(
-      key: const ValueKey('ledger_failure_connection_picker'),
-      padding: const EdgeInsets.all(AppSpacing.s),
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Try another connection',
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            children: [
-              for (final option in LedgerConnectionPreference.values) ...[
-                if (option != LedgerConnectionPreference.automatic)
-                  const SizedBox(width: AppSpacing.xxs),
-                Expanded(
-                  child: AppButton(
-                    key: ValueKey('ledger_connection_${option.name}'),
-                    onPressed:
-                        option == LedgerConnectionPreference.bluetooth &&
-                            !bluetoothAvailable
-                        ? null
-                        : () => unawaited(
-                            ref
-                                .read(accountProvider.notifier)
-                                .updateLedgerConnectionPreference(
-                                  account.uuid,
-                                  option,
-                                ),
-                          ),
-                    variant: account.ledgerConnectionPreference == option
-                        ? AppButtonVariant.primary
-                        : AppButtonVariant.secondary,
-                    size: AppButtonSize.small,
-                    constrainContent: true,
-                    child: Text(switch (option) {
-                      LedgerConnectionPreference.automatic => 'Auto',
-                      LedgerConnectionPreference.usb => 'USB',
-                      LedgerConnectionPreference.bluetooth => 'Bluetooth',
-                    }),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (!bluetoothAvailable) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'Bluetooth unavailable. Connect your Ledger over USB.',
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 }

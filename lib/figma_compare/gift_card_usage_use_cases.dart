@@ -72,48 +72,58 @@ Widget buildMobileGiftCardUsageCheckingCapture(BuildContext context) =>
     _list(mobile: true, checking: true);
 
 Widget _list({bool mobile = false, bool checking = false}) {
-  final sections = [
-    PaymentLinkCardsSection(
-      label: 'Pending',
-      cards: [
-        for (final address in [
-          'awaiting',
-          'unknown',
-          'unused',
-          'detected',
-          'used',
-          'failed',
-        ])
-          if (mobile)
-            PaymentLinkCardListMobileRow(
-              thumbnail: const FittedBox(child: _card),
-              amountText: '0.25 ZEC',
-              dateText: 'September 14',
-              showLinkActions: true,
-              onCopyLink: _noop,
-              onShowQr: _noop,
-              metadata: GiftCardUsageStatusView(
-                address: address,
-                inline: true,
-                dateText: 'September 14',
-              ),
-            )
-          else
-            PaymentLinkCardListRow(
-              thumbnail: const FittedBox(child: _card),
-              amountText: '0.25 ZEC',
-              dateText: 'September 14',
-              showLinkActions: true,
-              onCopyLink: _noop,
-              onShowQr: _noop,
-              usageStatus: GiftCardUsageStatusView(
-                address: address,
-                inline: true,
-              ),
-            ),
-      ],
-    ),
-  ];
+  Widget row(String address) => mobile
+      ? PaymentLinkCardListMobileRow(
+          thumbnail: const FittedBox(child: _card),
+          amountText: '0.25 ZEC',
+          dateText: 'September 14',
+          showLinkActions: true,
+          onCopyLink: _noop,
+          onShowQr: _noop,
+          metadata: GiftCardUsageStatusView(
+            address: address,
+            inline: true,
+            dateText: 'September 14',
+            hideStableLabel: true,
+          ),
+        )
+      : PaymentLinkCardListRow(
+          thumbnail: const FittedBox(child: _card),
+          amountText: '0.25 ZEC',
+          dateText: 'September 14',
+          showLinkActions: true,
+          onCopyLink: _noop,
+          onShowQr: _noop,
+          usageStatus: GiftCardUsageStatusView(address: address, inline: true),
+        );
+  final sections = mobile
+      ? [
+          PaymentLinkCardsSection(
+            label: 'Pending',
+            cards: ['awaiting', 'unknown'].map(row).toList(),
+          ),
+          PaymentLinkCardsSection(
+            label: 'Unused',
+            cards: ['unused', 'failed'].map(row).toList(),
+          ),
+          PaymentLinkCardsSection(
+            label: 'Used',
+            cards: ['detected', 'used'].map(row).toList(),
+          ),
+        ]
+      : [
+          PaymentLinkCardsSection(
+            label: 'Pending',
+            cards: [
+              'awaiting',
+              'unknown',
+              'unused',
+              'detected',
+              'used',
+              'failed',
+            ].map(row).toList(),
+          ),
+        ];
   return _fixture(
     mobile
         ? PaymentLinkCardsMobileView(

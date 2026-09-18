@@ -1,7 +1,13 @@
 package com.keplr.vizor
 
 import android.Manifest
+import android.bluetooth.BluetoothManager
+import android.location.LocationManager
+import androidx.core.location.LocationManagerCompat
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -11,9 +17,9 @@ import com.ledger.devicemanagement.api.DeviceOperationResult
 import com.ledger.devicemanagement.api.apdu.apdu
 import com.ledger.devicemanagement.api.apdu.chunkApduPayload
 import com.ledger.devicemanagement.api.apdu.uniqueApduPayload
+import com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason
 import com.ledger.devicemanagement.api.command.getappandversion.AppAndVersion
 import com.ledger.devicemanagement.api.command.getappandversion.GetAppAndVersionCommand
-import com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason
 import com.ledger.devicemanagement.api.connection.ConnectedDevice
 import com.ledger.devicemanagement.api.connection.ConnectionResult
 import com.ledger.devicemanagement.api.deviceaction.DeviceActionResult
@@ -48,6 +54,10 @@ class LedgerMobileHandler(
     private val activity: Activity,
     private val dmk: DeviceManagementKitApi = LedgerDmkHolder.get(activity),
 ) : EventChannel.StreamHandler {
+    var onPairingInvalid: ((String) -> Unit)? = null
+    private val keyMissingObserver = LedgerKeyMissingObserver(activity)
+    private var pairingInvalid = false
+
     var onSigningProgress: ((String, String) -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var operation: DeviceRequest? = null
@@ -60,6 +70,7 @@ class LedgerMobileHandler(
     private var connectedDevice: ConnectedDevice? = null
     private var cleanupDevice: ConnectedDevice? = null
     private var cleanupRequestedFor: String? = null
+    private var permissionNeedsSettings = false
     private var permissionResult: MethodChannel.Result? = null
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -67,7 +78,26 @@ class LedgerMobileHandler(
             result.error("cancelled", "Ledger connection was closed.", null)
             return
         }
+        if (permissionResult != null && call.method in setOf("startDiscovery", "connect", "currentApp", "openZcashApp", "exchangeUfvk", "exchangeApdus")) {
+            result.error("busy", "A Ledger permission request is already active.", null)
+            return
+        }
         when (call.method) {
+            "bluetoothAccessStatus" -> result.success(bluetoothAccessStatus())
+            "openBluetoothPairingSettings" -> {
+                result.success(runCatching {
+                    activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                    true
+                }.getOrDefault(false))
+            }
+            "openBluetoothSettings" -> {
+                val opened = runCatching {
+                    activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${activity.packageName}")))
+                    true
+                }.getOrDefault(false)
+                result.success(opened)
+            }
             "requestPermissions" -> requestPermissions(result)
             "startDiscovery" -> startDiscovery(result)
             "stopDiscovery" -> {
@@ -99,6 +129,10 @@ class LedgerMobileHandler(
     fun onRequestPermissionsResult(requestCode: Int, grantResults: IntArray): Boolean {
         if (requestCode != PERMISSION_REQUEST) return false
         val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        permissionNeedsSettings = !granted && grantResults.isNotEmpty() && requiredPermissions().any {
+            ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+        }
         permissionResult?.success(granted)
         permissionResult = null
         return true
@@ -107,6 +141,8 @@ class LedgerMobileHandler(
     fun close() {
         if (closed) return
         closed = true
+        keyMissingObserver.stop()
+        onPairingInvalid = null
         stopDiscovery()
         eventSink = null
         permissionResult?.error("cancelled", "Ledger connection was closed.", null)
@@ -117,7 +153,38 @@ class LedgerMobileHandler(
         scope.cancel()
     }
 
+    private fun bluetoothAccessStatus(): Map<String, Any> {
+        val missing = requiredPermissions().filter {
+            ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
+        }
+        // A denied permission with no rationale is also the initial state and
+        // can result from auto-reset. Do not label it permanently denied.
+        val restricted = missing.any {
+            activity.packageManager.isPermissionRevokedByPolicy(it, activity.packageName)
+        }
+        val status = mutableMapOf<String, Any>(
+            "permission" to if (missing.isEmpty()) "granted" else if (restricted) "restricted" else if (permissionNeedsSettings) "settings" else "requestable",
+            "permissionKind" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "bluetooth" else "location",
+        )
+        if (missing.isEmpty()) {
+            runCatching {
+                activity.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled
+            }.getOrNull()?.let { status["bluetoothEnabled"] = it }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                activity.getSystemService(LocationManager::class.java)?.let {
+                    status["locationEnabled"] = LocationManagerCompat.isLocationEnabled(it)
+                }
+            }
+            permissionNeedsSettings = false
+        }
+        return status
+    }
+
     private fun requestPermissions(result: MethodChannel.Result) {
+        if (sdkJobs[dmk] != null) {
+            result.error("busy", "A Ledger operation is already active.", null)
+            return
+        }
         val missing = requiredPermissions().filter {
             ActivityCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -149,6 +216,8 @@ class LedgerMobileHandler(
             result.error("unavailable", "This Android device does not support Bluetooth LE.", null)
             return
         }
+        keyMissingObserver.stop()
+        pairingInvalid = false
         discoveredDevices.clear()
         discoveryRequested = true
         if (eventSink != null) beginDiscovery()
@@ -192,7 +261,7 @@ class LedgerMobileHandler(
                             "Bluetooth permission is required to find Ledger devices.",
                         )
                         DiscoveryResult.Failure.LocationDisabled -> emitError(
-                            "permission_denied",
+                            "location_disabled",
                             "Location must be enabled for Bluetooth discovery on this Android version.",
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> emitError(
@@ -233,7 +302,7 @@ class LedgerMobileHandler(
             result.error("disconnected", "The selected Ledger is no longer available.", null)
             return
         }
-        launchOperation(result) { request ->
+        launchOperation(result, newConnection = true) { request ->
             val device = discoveredDevices[deviceId] ?: rediscoverDevice(deviceId)
             currentCoroutineContext().ensureActive()
             // A failed cleanup must not be bypassed by a new connection.
@@ -241,6 +310,19 @@ class LedgerMobileHandler(
                 dmk.disconnectDevice(stale)
                 cleanupRequestedFor = stale.uid
                 cleanupDevice = null
+            }
+            val connectionId = call.argument<String>("connectionId")
+            keyMissingObserver.start(device.uid) {
+                if (!pairingInvalid && !closed) {
+                    pairingInvalid = true
+                    connectionId?.let { onPairingInvalid?.invoke(it) }
+                    operation?.takeIf { !it.cleanup && it.pending }?.let { active ->
+                        active.keyMissing = true
+                        active.error("pairing_invalid", PAIRING_INVALID_MESSAGE, null)
+                        active.job.cancel()
+                    }
+                    if (operation == null && connectedDevice != null) disconnect(null)
+                }
             }
             when (val connection = connectAfterCleanup(device)) {
                 is ConnectionResult.Connected -> {
@@ -301,7 +383,7 @@ class LedgerMobileHandler(
                             "permission_denied", "Bluetooth permission is required to connect to Ledger.",
                         )
                         DiscoveryResult.Failure.LocationDisabled -> throw LedgerDiscoveryException(
-                            "permission_denied", "Location must be enabled for Bluetooth discovery on this Android version.",
+                            "location_disabled", "Location must be enabled for Bluetooth discovery on this Android version.",
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> throw LedgerDiscoveryException(
                             "unavailable", "This Android device does not support Bluetooth LE.",
@@ -463,12 +545,17 @@ class LedgerMobileHandler(
     private fun launchOperation(
         result: MethodChannel.Result?,
         cleanup: Boolean = false,
+        newConnection: Boolean = false,
         block: suspend (DeviceRequest) -> Unit,
     ) {
         val sdkJob = sdkJobs[dmk]
         if (!cleanup && (operation != null || (sdkJob != null && sdkJob !== discoveryJob))) {
             result?.error("busy", "A Ledger operation is already active.", null)
             return
+        }
+        if (newConnection) {
+            keyMissingObserver.stop()
+            pairingInvalid = false
         }
         stopDiscovery()
         val scan = discoveryJob
@@ -494,6 +581,9 @@ class LedgerMobileHandler(
                 request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (_: CancellationException) {
                 request.cancelResult()
+                if (request.keyMissing && request.device == null) {
+                    request.device = connectedDevice ?: dmk.getConnectedDevices().singleOrNull()
+                }
                 retireSession(request.device)
                 request.retiredSession = request.device != null && invalidSessions[dmk] == null
             } catch (error: LedgerDiscoveryException) {
@@ -536,6 +626,8 @@ class LedgerMobileHandler(
     }
 
     private fun cancelSigning(result: MethodChannel.Result) {
+        keyMissingObserver.stop()
+        pairingInvalid = false
         operation?.let { if (!it.cleanup) it.cancel() }
         result.success(null)
     }
@@ -547,6 +639,7 @@ class LedgerMobileHandler(
         lateinit var job: Job
         var device: ConnectedDevice? = null
         var retiredSession = false
+        var keyMissing = false
         val pending: Boolean get() = result != null
 
         private fun takeResult(): MethodChannel.Result? = result.also { result = null }
@@ -606,6 +699,10 @@ class LedgerMobileHandler(
     private fun ByteArray.asUnsignedList(): List<Int> = map { it.toInt() and 0xff }
 
     private fun requireConnected(result: MethodChannel.Result): ConnectedDevice? {
+        if (pairingInvalid) {
+            result.error("pairing_invalid", PAIRING_INVALID_MESSAGE, null)
+            return null
+        }
         if (cleanupDevice != null) {
             result.error("disconnected", "Reconnect the Ledger to finish connection cleanup.", null)
             return null
@@ -642,18 +739,15 @@ class LedgerMobileHandler(
 
     private fun operationFailure(result: MethodChannel.Result, reason: DeviceOperationFailureReason) {
         when (reason) {
+            OpenApplicationCommandFailureReason.UserConsentRejected -> result.error(
+                "rejected", "The Ledger request was rejected on the device.", null,
+            )
             DeviceOperationFailureReason.DeviceBusy -> result.error(
                 "busy", "Another Ledger operation is still active.", null,
             )
             DeviceOperationFailureReason.DeviceLocked -> result.error(
                 "locked",
                 "Unlock your Ledger and reopen the Zcash app.",
-                null,
-            )
-            // 0x5501 from the open-app request: the user declined on the device.
-            OpenApplicationCommandFailureReason.UserConsentRejected -> result.error(
-                "rejected",
-                "Opening the Zcash app was rejected on your Ledger.",
                 null,
             )
             DeviceOperationFailureReason.DeviceDisconnected,
@@ -717,6 +811,7 @@ class LedgerMobileHandler(
     )
 
     companion object {
+        private const val PAIRING_INVALID_MESSAGE = "Your Bluetooth pairing is no longer valid. Forget this Ledger in Bluetooth settings, then reconnect."
         // DMK survives Activity recreation. A new handler must also wait for
         // the previous handler's non-cooperative command/cleanup to finish.
         // Accessed only on Main; entries are removed on actual job completion.

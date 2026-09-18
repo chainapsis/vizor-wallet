@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../fakes/fake_gift_link_rust_api.dart';
+
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -14,6 +17,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
@@ -61,9 +65,14 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
 }) async {
+  if (!RustLib.instance.initialized) {
+    RustLib.initMock(api: FakeGiftLinkRustApi());
+    addTearDown(RustLib.dispose);
+  }
   await tester.binding.setSurfaceSize(logicalSize);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final paymentLinkOperations = operations ?? FakePaymentLinkOperations();
@@ -80,6 +89,11 @@ Future<void> pumpPaymentLinksScreen(
         giftCardTrackingServiceProvider.overrideWithValue(
           _IdleGiftCardTracker(),
         ),
+        if (giftCardUsages != null)
+          giftCardUsageProvider.overrideWith(
+            (ref, address) async =>
+                giftCardUsages[address] ?? const GiftCardUsage(),
+          ),
         appBootstrapProvider.overrideWithValue(appBootstrap),
         if (pricingEnabled != null)
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
@@ -343,7 +357,7 @@ final incomingLink = VizorPaymentLink(
   network: 'main',
   address: 'u1paymentlinkaddress',
   amountZatoshi: BigInt.from(445000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 6),
@@ -357,7 +371,7 @@ final secondIncomingLink = VizorPaymentLink(
   network: 'main',
   address: 'u1secondpaymentlinkaddress',
   amountZatoshi: BigInt.from(225000000),
-  mnemonic: List.filled(24, 'legal').join(' '),
+  mnemonic: giftTestMnemonic12,
   birthdayHeight: 3000001,
   label: 'Second payment link',
   createdAt: DateTime.utc(2026, 8, 7),
@@ -389,7 +403,7 @@ final otherAccountLink = VizorPaymentLink(
   network: 'main',
   address: 'u1otheraccountpaymentlinkaddress',
   amountZatoshi: BigInt.from(100000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 5),
@@ -417,7 +431,7 @@ final unknownOriginLink = VizorPaymentLink(
   network: 'main',
   address: 'u1unknownoriginpaymentlinkaddress',
   amountZatoshi: BigInt.from(200000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 4),
@@ -550,7 +564,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
       network: 'main',
       address: 'u1createdpaymentlinkaddress',
       amountZatoshi: amountZatoshi,
-      mnemonic: List.filled(24, 'abandon').join(' '),
+      mnemonic: giftTestMnemonic24,
       birthdayHeight: 3000000,
       label: 'Payment link',
       createdAt: DateTime.utc(2026, 8, 6),

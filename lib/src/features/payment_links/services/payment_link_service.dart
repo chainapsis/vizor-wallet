@@ -24,6 +24,7 @@ import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
+import 'payment_link_sharing.dart';
 import 'payment_link_transaction_matching.dart';
 
 part 'payment_link_claim_receipt.dart';
@@ -637,6 +638,10 @@ class PaymentLinkService implements PaymentLinkOperations {
       createdAt: DateTime.now(),
       presentation: presentation,
     );
+    // Fail before saving or funding a draft if the selected share format cannot
+    // represent it. All funding signers use this same creation path.
+    await preparePaymentLinkShareUri(link);
+    link.toRecoveryUri();
     return link;
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -382,6 +383,50 @@ void main() {
     pendingAccount.completeError(StateError(_deviceRejected));
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'macOS Bluetooth picker preserves pairing guidance from readiness',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const error = LedgerMobileException(
+        LedgerMobileFailure.pairingInvalid,
+        'pairing diagnostic',
+      );
+      await tester.pumpWidget(
+        _harness(
+          connector: (_) => throw StateError('USB must not run'),
+          bluetoothConnector: (_, _) async =>
+              throw const LedgerAppReadinessException(
+                LedgerAppReadinessFailure.disconnected,
+                'wrapper',
+                cause: error,
+              ),
+          importer:
+              ({
+                required name,
+                required account,
+                required birthdayHeight,
+                required profilePictureId,
+              }) async {},
+          bleService: _FakeLedgerBleService(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_connect_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ledger_desktop_ble_retry')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('imports the approved Ledger account over macOS Bluetooth', (
     tester,

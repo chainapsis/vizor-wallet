@@ -41,6 +41,10 @@ const _selectorTop = _cardTop + _cardHeight + AppSpacing.md;
 const _selectorHeight = 80.0;
 const _bottomInset = 12.0;
 const _buttonHeight = 50.0;
+const _cardsFloatingActionsClearance =
+    (_buttonHeight * 2) + AppSpacing.s + _bottomInset + AppSpacing.lg;
+const _cardsFloatingActionsFadeHeight =
+    _cardsFloatingActionsClearance + AppSpacing.lg;
 const _readyStatusTop = 474.0;
 // Tallest measured status block: two lines of body text plus the wait pill.
 const _readyStatusAllowance = 160.0;
@@ -384,6 +388,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   PaymentLinkTabAction(
+                    iconSize: 20,
                     key: const ValueKey('payment_links_mobile_created_tab'),
                     icon: AppIcons.plane,
                     label: kPaymentLinkCreatedTabLabel,
@@ -394,6 +399,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   PaymentLinkTabAction(
+                    iconSize: 20,
                     key: const ValueKey('payment_links_mobile_received_tab'),
                     icon: AppIcons.importWallet,
                     label: kPaymentLinkReceivedTabLabel,
@@ -407,71 +413,369 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.base),
             Expanded(
-              child: hasCards
-                  ? ListView(
-                      key: const ValueKey('payment_links_mobile_cards_list'),
-                      padding: const EdgeInsets.only(bottom: AppSpacing.base),
-                      children: [
-                        for (final (index, section) in sections.indexed)
-                          if (section.cards.isNotEmpty ||
-                              section.header != null) ...[
-                            if (index > 0)
-                              const SizedBox(height: AppSpacing.sm),
-                            section.header ??
-                                Text(
-                                  section.label,
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: context.colors.text.secondary,
-                                  ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: hasCards
+                        ? activeTab == PaymentLinkCardsTab.created
+                              ? _AnimatedPaymentLinkCardsList(
+                                  sections: sections,
+                                )
+                              : _staticPaymentLinkCardsList(sections)
+                        : Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: _cardsFloatingActionsClearance,
+                            ),
+                            child: Center(
+                              child: Text(
+                                emptyLabel ?? kPaymentLinkNoReceivedCardsText,
+                                key: const ValueKey(
+                                  'payment_links_mobile_cards_empty_label',
                                 ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            // Rows sit on the page like the desktop list —
-                            // no surface card around a section.
-                            ...section.cards,
-                          ],
-                      ],
-                    )
-                  : Center(
-                      child: Text(
-                        emptyLabel ?? kPaymentLinkNoReceivedCardsText,
-                        key: const ValueKey(
-                          'payment_links_mobile_cards_empty_label',
-                        ),
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: context.colors.text.secondary,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: context.colors.text.secondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: _cardsFloatingActionsFadeHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              context.colors.background.window.withValues(
+                                alpha: 0,
+                              ),
+                              context.colors.background.window,
+                            ],
+                          ),
                         ),
                       ),
                     ),
-            ),
-            const SizedBox(height: AppSpacing.base),
-            AppButton(
-              key: const ValueKey('payment_links_mobile_redeem_button'),
-              onPressed: onRedeem,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              child: Text(redeemLabel),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            AppButton(
-              key: const ValueKey('payment_links_mobile_create_button'),
-              onPressed: onCreate,
-              size: AppButtonSize.large,
-              height: _buttonHeight,
-              expand: true,
-              leading: const AppIcon(
-                AppIcons.giftCardOutline,
-                size: AppIconSize.medium,
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _bottomInset,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AppButton(
+                          key: const ValueKey(
+                            'payment_links_mobile_redeem_button',
+                          ),
+                          onPressed: onRedeem,
+                          variant: AppButtonVariant.ghost,
+                          size: AppButtonSize.large,
+                          height: _buttonHeight,
+                          expand: true,
+                          child: Text(redeemLabel),
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        AppButton(
+                          key: const ValueKey(
+                            'payment_links_mobile_create_button',
+                          ),
+                          onPressed: onCreate,
+                          size: AppButtonSize.large,
+                          height: _buttonHeight,
+                          expand: true,
+                          leading: const AppIcon(
+                            AppIcons.giftCardOutline,
+                            size: AppIconSize.medium,
+                          ),
+                          child: Text(createLabel),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              child: Text(createLabel),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _staticPaymentLinkCardsList(List<PaymentLinkCardsSection> sections) =>
+      ListView(
+        key: const ValueKey('payment_links_mobile_cards_list'),
+        padding: const EdgeInsets.only(
+          bottom: _cardsFloatingActionsClearance,
+        ),
+        children: [
+          for (final (index, section) in sections.indexed)
+            if (section.cards.isNotEmpty || section.header != null) ...[
+              if (index > 0) const SizedBox(height: AppSpacing.sm),
+              section.header ??
+                  _PaymentLinkCardsSectionHeader(label: section.label),
+              const SizedBox(height: AppSpacing.xxs),
+              // Rows sit on the page like the desktop list — no surface card
+              // around a section.
+              ...section.cards,
+            ],
+        ],
+      );
+}
+
+/// Smoothly collapses a created Card out of its previous usage section and
+/// expands it into the newly observed one. Received Cards use the static list
+/// above because their state machine does not move rows between sections.
+class _AnimatedPaymentLinkCardsList extends StatefulWidget {
+  const _AnimatedPaymentLinkCardsList({required this.sections});
+
+  final List<PaymentLinkCardsSection> sections;
+
+  @override
+  State<_AnimatedPaymentLinkCardsList> createState() =>
+      _AnimatedPaymentLinkCardsListState();
+}
+
+class _AnimatedPaymentLinkCardsListState
+    extends State<_AnimatedPaymentLinkCardsList> {
+  static const _duration = Duration(milliseconds: 280);
+  final _listKey = GlobalKey<AnimatedListState>();
+  late List<_MobileCardsListEntry> _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = _flattenSections(widget.sections);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedPaymentLinkCardsList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _synchronize(_flattenSections(widget.sections));
+  }
+
+  List<_MobileCardsListEntry> _flattenSections(
+    List<PaymentLinkCardsSection> sections,
+  ) {
+    final entries = <_MobileCardsListEntry>[];
+    final visible = sections
+        .where((section) => section.cards.isNotEmpty || section.header != null)
+        .toList();
+    for (final (sectionIndex, section) in visible.indexed) {
+      if (sectionIndex > 0) {
+        entries.add(
+          _MobileCardsListEntry(
+            id: _MobileCardsListEntryId('section-gap', section.label),
+            child: const SizedBox(height: AppSpacing.sm),
+          ),
+        );
+      }
+      entries.add(
+        _MobileCardsListEntry(
+          id: _MobileCardsListEntryId('header', section.label),
+          child:
+              section.header ??
+              _PaymentLinkCardsSectionHeader(label: section.label),
+        ),
+      );
+      entries.add(
+        _MobileCardsListEntry(
+          id: _MobileCardsListEntryId('header-gap', section.label),
+          child: const SizedBox(height: AppSpacing.xxs),
+        ),
+      );
+      for (final (cardIndex, card) in section.cards.indexed) {
+        entries.add(
+          _MobileCardsListEntry(
+            id: _MobileCardsListEntryId(
+              'card',
+              card.key ?? '${section.label}:$cardIndex:${card.runtimeType}',
+            ),
+            child: card,
+          ),
+        );
+      }
+    }
+    return entries;
+  }
+
+  void _synchronize(List<_MobileCardsListEntry> desired) {
+    final list = _listKey.currentState;
+    if (list == null) {
+      _entries = desired;
+      return;
+    }
+    final duration = MediaQuery.maybeDisableAnimationsOf(context) ?? false
+        ? Duration.zero
+        : _duration;
+    final oldIndexes = {
+      for (final (index, entry) in _entries.indexed) entry.id: index,
+    };
+    final newIndexes = {
+      for (final (index, entry) in desired.indexed) entry.id: index,
+    };
+    final retained = _longestCommonEntryIds(_entries, desired);
+
+    for (var index = _entries.length - 1; index >= 0; index--) {
+      final entry = _entries[index];
+      if (retained.contains(entry.id)) continue;
+      final newIndex = newIndexes[entry.id];
+      final offset = newIndex == null
+          ? const Offset(0, -0.08)
+          : newIndex > index
+          ? const Offset(0, 0.12)
+          : const Offset(0, -0.12);
+      final removed = _entries.removeAt(index).withOffset(offset);
+      list.removeItem(
+        index,
+        (context, animation) => _entryTransition(removed, animation),
+        duration: duration,
+      );
+    }
+
+    for (var index = 0; index < desired.length; index++) {
+      final next = desired[index];
+      if (index < _entries.length && _entries[index].id == next.id) {
+        _entries[index] = next;
+        continue;
+      }
+      final oldIndex = oldIndexes[next.id];
+      final offset = oldIndex == null
+          ? const Offset(0, -0.08)
+          : index > oldIndex
+          ? const Offset(0, -0.12)
+          : const Offset(0, 0.12);
+      _entries.insert(index, next.withOffset(offset));
+      list.insertItem(index, duration: duration);
+    }
+  }
+
+  Set<_MobileCardsListEntryId> _longestCommonEntryIds(
+    List<_MobileCardsListEntry> before,
+    List<_MobileCardsListEntry> after,
+  ) {
+    final lengths = List.generate(
+      before.length + 1,
+      (_) => List<int>.filled(after.length + 1, 0),
+    );
+    for (var beforeIndex = before.length - 1; beforeIndex >= 0; beforeIndex--) {
+      for (var afterIndex = after.length - 1; afterIndex >= 0; afterIndex--) {
+        lengths[beforeIndex][afterIndex] =
+            before[beforeIndex].id == after[afterIndex].id
+            ? lengths[beforeIndex + 1][afterIndex + 1] + 1
+            : math.max(
+                lengths[beforeIndex + 1][afterIndex],
+                lengths[beforeIndex][afterIndex + 1],
+              );
+      }
+    }
+    final retained = <_MobileCardsListEntryId>{};
+    var beforeIndex = 0;
+    var afterIndex = 0;
+    while (beforeIndex < before.length && afterIndex < after.length) {
+      if (before[beforeIndex].id == after[afterIndex].id) {
+        retained.add(before[beforeIndex].id);
+        beforeIndex++;
+        afterIndex++;
+      } else if (lengths[beforeIndex + 1][afterIndex] >=
+          lengths[beforeIndex][afterIndex + 1]) {
+        beforeIndex++;
+      } else {
+        afterIndex++;
+      }
+    }
+    return retained;
+  }
+
+  Widget _entryTransition(
+    _MobileCardsListEntry entry,
+    Animation<double> animation,
+  ) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return SizeTransition(
+      sizeFactor: curved,
+      axisAlignment: -1,
+      child: FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: entry.offset,
+            end: Offset.zero,
+          ).animate(curved),
+          child: entry.child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: const ValueKey('payment_links_mobile_cards_list'),
+    child: AnimatedList(
+      key: _listKey,
+      padding: const EdgeInsets.only(bottom: _cardsFloatingActionsClearance),
+      initialItemCount: _entries.length,
+      itemBuilder: (context, index, animation) =>
+          _entryTransition(_entries[index], animation),
+    ),
+  );
+}
+
+class _PaymentLinkCardsSectionHeader extends StatelessWidget {
+  const _PaymentLinkCardsSectionHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.secondary,
+    ),
+  );
+}
+
+@immutable
+class _MobileCardsListEntryId {
+  const _MobileCardsListEntryId(this.kind, this.value);
+
+  final String kind;
+  final Object value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MobileCardsListEntryId &&
+      other.kind == kind &&
+      other.value == value;
+
+  @override
+  int get hashCode => Object.hash(kind, value);
+}
+
+@immutable
+class _MobileCardsListEntry {
+  const _MobileCardsListEntry({
+    required this.id,
+    required this.child,
+    this.offset = Offset.zero,
+  });
+
+  final _MobileCardsListEntryId id;
+  final Widget child;
+  final Offset offset;
+
+  _MobileCardsListEntry withOffset(Offset value) =>
+      _MobileCardsListEntry(id: id, child: child, offset: value);
 }
 
 /// One Gift Card row on the mobile list.
@@ -617,7 +921,7 @@ class _MobileCardLinkAction extends StatelessWidget {
           child: Center(
             child: AppIcon(
               icon,
-              size: AppIconSize.medium,
+              size: 20,
               color: onPressed == null
                   ? colors.icon.disabled
                   : colors.icon.regular,
@@ -1044,7 +1348,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                           ),
                           onPressed: onCopy,
                           size: AppButtonSize.mediumLarge,
-                          leading: const AppIcon(AppIcons.copy),
+                          leading: const AppIcon(AppIcons.copy, size: 20),
                           child: Text(copyLabel),
                         )
                       else

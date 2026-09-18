@@ -116,6 +116,20 @@ void main() {
     );
   });
 
+  for (final entry in <String, WidgetBuilder>{
+    'cards list': buildMobilePaymentLinkHomeCardsUseCase,
+    'share QR': buildMobilePaymentLinkShareQrUseCase,
+  }.entries) {
+    testWidgets('${entry.key} fixture renders without provider errors', (
+      tester,
+    ) async {
+      await _pumpUseCase(tester, entry.value);
+      await tester.pumpAndSettle();
+      expect(find.text('Gift Cards'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('received Gift Card flips to its message', (tester) async {
     await _pumpUseCase(tester, buildMobilePaymentLinkReceivedUseCase);
 

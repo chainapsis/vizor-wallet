@@ -2,7 +2,11 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +63,125 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
+  });
+
+  for (final stage in ['connect', 'readiness', 'sign']) {
+    for (final kind in [
+      LedgerMobileFailure.permissionDenied,
+      LedgerMobileFailure.pairingInvalid,
+      LedgerMobileFailure.bluetoothOff,
+      LedgerMobileFailure.locationDisabled,
+    ]) {
+      testWidgets('$stage $kind shows recovery and clears it on retry', (
+        tester,
+      ) async {
+        final original = LedgerMobileException(
+          kind,
+          'permission denied native diagnostic',
+        );
+        final Object error = switch (stage) {
+          'connect' => LedgerConnectionRequiredException(
+            'connect wrapper',
+            cause: original,
+          ),
+          'readiness' => LedgerConnectionRequiredException(
+            'connect wrapper',
+            cause: LedgerAppReadinessException(
+              LedgerAppReadinessFailure.unavailable,
+              'readiness wrapper',
+              cause: original,
+            ),
+          ),
+          _ => original,
+        };
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel(kLedgerMobileMethodChannel),
+          (call) async => call.method == 'bluetoothAccessStatus'
+              ? {'permission': 'granted'}
+              : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel(kLedgerMobileMethodChannel),
+            null,
+          ),
+        );
+        final accessRecovery = ledgerFailureGuidance(
+          original,
+        )!.bluetoothRecovery;
+        var attempts = 0;
+        await tester.pumpWidget(
+          _app(
+            operationService: _FakeOperationService(),
+            signer: (_) async {
+              attempts++;
+              if (attempts == 1) throw error;
+              return [4];
+            },
+          ),
+        );
+        await tester.tap(find.text('Open signing'));
+        await tester.pumpAndSettle();
+        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+          expect(
+            find.text(
+              ledgerFailureGuidance(original)!.pairingInvalid
+                  ? 'Pair your Ledger again'
+                  : 'Couldn’t connect to your Ledger',
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Find my Ledger'), findsOneWidget);
+          expect(attempts, 1);
+          return;
+        }
+        expect(
+          find.text(
+            accessRecovery
+                ? 'Ready to reconnect'
+                : ledgerFailureGuidance(original)!.message,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('The transaction was rejected on your Ledger.'),
+          findsNothing,
+        );
+        expect(find.text('Open the Zcash app'), findsNothing);
+        await tester.tap(find.text(accessRecovery ? 'Reconnect' : 'Try again'));
+        await tester.pumpAndSettle();
+        expect(attempts, 2);
+        expect(
+          find.text(
+            accessRecovery
+                ? 'Ready to reconnect'
+                : ledgerFailureGuidance(original)!.message,
+          ),
+          findsNothing,
+        );
+      });
+    }
+  }
+
+  testWidgets('unknown signer error does not diagnose a closed Zcash app', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        operationService: _FakeOperationService(),
+        signer: (_) async => throw StateError('unknown diagnostic'),
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Ledger signing could not be completed. Check your device and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Open the Zcash app'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
   });
 
   for (final args in [_args, _texArgs]) {
@@ -150,7 +273,11 @@ void main() {
       await tester.tap(find.text('Open signing'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Close',
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(MobileLedgerSendSignScreen), findsOneWidget);
@@ -187,7 +314,11 @@ void main() {
       final queuedRetry = tester
           .widget<LedgerSigningModal>(find.byType(LedgerSigningModal))
           .onFailureAction!;
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Close',
+        ),
+      );
       await tester.pump();
       queuedRetry();
       await tester.pump();
@@ -259,7 +390,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Keystone'), findsNothing);
-    await tester.tap(find.text('Cancel'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Close',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Open signing'), findsOneWidget);
@@ -422,7 +558,11 @@ void main() {
     );
     await tester.tap(find.text('Open signing'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Close',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Open signing'), findsOneWidget);
@@ -488,7 +628,7 @@ void main() {
     expect(find.text('Processing with Ledger'), findsOneWidget);
     firstProgress('reviewing');
     await tester.pump();
-    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Confirm on your Ledger'), findsOneWidget);
     expect(find.text('Transaction 1 of 2'), findsOneWidget);
 
     first.complete(const [4]);
@@ -502,7 +642,7 @@ void main() {
     expect(find.text('Preparing transaction'), findsOneWidget);
     secondProgress('reviewing');
     await tester.pump();
-    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(find.text('Confirm on your Ledger'), findsOneWidget);
     expect(find.text('Transaction 2 of 2'), findsOneWidget);
 
     second.complete(const [8]);

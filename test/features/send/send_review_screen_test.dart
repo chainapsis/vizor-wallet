@@ -3,6 +3,9 @@
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'dart:io';
 
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
@@ -1178,6 +1181,102 @@ void main() {
           operationService.checkpoints.single.signatures,
           _fakeSignatureBytes,
         );
+      },
+    );
+  }
+
+  for (final failure in [
+    LedgerMobileFailure.permissionDenied,
+    LedgerMobileFailure.pairingInvalid,
+    LedgerMobileFailure.bluetoothOff,
+    LedgerMobileFailure.pairingRejected,
+  ]) {
+    testWidgets(
+      'desktop Ledger preserves Bluetooth $failure and retries signing',
+      (tester) async {
+        final original = LedgerMobileException(
+          failure,
+          'permission denied diagnostic',
+        );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel(kLedgerMobileMethodChannel),
+          (call) async => call.method == 'bluetoothAccessStatus'
+              ? {'permission': 'granted'}
+              : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel(kLedgerMobileMethodChannel),
+            null,
+          ),
+        );
+        final accessRecovery = ledgerFailureGuidance(
+          original,
+        )!.bluetoothRecovery;
+        var attempts = 0;
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            _reviewArgs(addressType: 'unified'),
+            bootstrap: _bootstrap(
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+            ledgerSigner: (_) async {
+              attempts++;
+              if (attempts == 1) {
+                throw LedgerConnectionRequiredException(
+                  'connection failed',
+                  cause: original,
+                );
+              }
+              return _fakeSignatureBytes;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Confirm with Ledger'));
+        await _flushRealAsync(tester);
+        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+          final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
+          expect(
+            find.text(
+              pairingInvalid
+                  ? 'Pair your Ledger again'
+                  : 'Couldn’t complete the request',
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.text('Remove the old pairing'),
+            pairingInvalid ? findsOneWidget : findsNothing,
+          );
+        } else {
+          expect(
+            find.text(
+              accessRecovery
+                  ? 'Ready to reconnect'
+                  : ledgerFailureGuidance(original)!.message,
+            ),
+            findsOneWidget,
+          );
+        }
+        expect(attempts, 1);
+        expect(
+          find.text('The transaction was rejected on your Ledger.'),
+          findsNothing,
+        );
+        expect(find.text('Open the Zcash app'), findsNothing);
+        final retryLabel = failure == LedgerMobileFailure.pairingInvalid
+            ? 'Find my Ledger'
+            : accessRecovery
+            ? 'Reconnect'
+            : 'Try again';
+        await tester.tap(find.text(retryLabel));
+        await _flushRealAsync(tester);
+        expect(attempts, 2);
+        expect(find.text('status-route'), findsOneWidget);
+        expect(rustApi.createPcztCalls, 1);
       },
     );
   }

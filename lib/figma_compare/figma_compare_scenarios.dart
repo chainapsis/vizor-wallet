@@ -1,3 +1,4 @@
+import 'ledger_pairing_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
@@ -33,6 +34,7 @@ import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
+import 'ledger_recovery_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -63,6 +65,175 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-permission',
+    description: 'Ledger onboarding: permission recovery',
+    builder: buildLedgerPickerPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restored',
+    description: 'Ledger recovery: permission restored, manual retry',
+    builder: buildLedgerPermissionRestoredCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location-permission',
+    description: 'Ledger recovery: legacy Android location permission',
+    builder: buildLedgerLocationPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-request',
+    description: 'Ledger recovery: request permission',
+    builder: buildLedgerPermissionRequestCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restricted',
+    description: 'Ledger recovery: restricted permission',
+    builder: buildLedgerPermissionRestrictedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission',
+    description: 'Ledger recovery: permission',
+    builder: buildLedgerPermissionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-mobile-large-text',
+    description: 'Mobile Ledger picker with large text',
+    builder: buildLedgerMobileLargeTextCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-searching',
+    description: 'Ledger discovery in progress',
+    builder: buildLedgerSearchingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-searching-devices',
+    description: 'Ledger discovery with selectable devices',
+    builder: buildLedgerSearchingDevicesCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-device-selection',
+    description: 'Ledger select before Bluetooth interaction',
+    builder: buildLedgerDeviceSelectionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+
+  FigmaCompareScenario(
+    id: 'ledger-saved',
+    description: 'Save another Ledger, then wait for manual rediscovery',
+    builder: buildLedgerDeviceSelectionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-known-device-connecting',
+    description: 'Saved Ledger connection without viewing-key approval',
+    builder: buildLedgerKnownDeviceConnectingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-android-pairing-invalid',
+    description: 'Android confirmed key loss recovery',
+    builder: buildLedgerAndroidInvalidPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-request-declined',
+    description: 'Request declined after selecting the saved Ledger',
+    builder: buildLedgerRequestDeclinedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-request-failed',
+    description: 'General request failure after selecting the saved Ledger',
+    builder: buildLedgerRequestFailedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-pairing-invalid',
+    description: 'Confirmed invalid Bluetooth pairing',
+    builder: buildLedgerInvalidPairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-repairing',
+    description: 'Ledger verified re-pairing',
+    builder: buildLedgerRePairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-pairing',
+    description: 'Ledger recovery: pairing',
+    builder: buildLedgerPairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-bluetooth-off',
+    description: 'Ledger recovery: bluetooth-off',
+    builder: buildLedgerBluetoothOffCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-disconnected',
+    description: 'Ledger recovery: disconnected',
+    builder: buildLedgerDisconnectedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-busy',
+    description: 'Ledger recovery: busy',
+    builder: buildLedgerBusyCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location',
+    description: 'Ledger recovery: location',
+    builder: buildLedgerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-pairing',
+    description: 'Ledger recovery: picker-pairing',
+    builder: buildLedgerPickerPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-location',
+    description: 'Ledger recovery: picker-location',
+    builder: buildLedgerPickerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'ledger-signing-preparing',
     description: 'Ledger signing: preparing',

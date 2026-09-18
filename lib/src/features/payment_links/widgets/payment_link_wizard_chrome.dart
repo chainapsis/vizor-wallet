@@ -546,10 +546,12 @@ class PaymentLinkTabAction extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.iconSize = 16,
     super.key,
   });
 
   final String icon;
+  final double iconSize;
   final String label;
   final bool selected;
   final VoidCallback? onTap;
@@ -575,7 +577,7 @@ class PaymentLinkTabAction extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AppIcon(icon, size: 16, color: color),
+                AppIcon(icon, size: iconSize, color: color),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
                   label,

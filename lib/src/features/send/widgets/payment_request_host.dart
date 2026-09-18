@@ -180,21 +180,23 @@ class PaymentRequestHost extends ConsumerWidget {
       fit: StackFit.passthrough,
       children: [
         child,
-        PaymentRequestSurface.overlay(
-          key: const ValueKey('payment_request_host_surface'),
-          cardKey: ValueKey(flow.prefill.id),
-          request: request,
-          onContinue: review,
-          onEdit: edit,
-          onCancel: () {
-            // A drag-dismiss animation can finish before the host rebuilds
-            // for a newer link. Only the request that began closing may end.
-            if (ref.read(paymentRequestFlowProvider)?.prefill.id ==
-                flow.prefill.id) {
-              notifier.dismiss();
-            }
-          },
-          onRecheck: notifier.recheck,
+        _UnfocusWhenMounted(
+          child: PaymentRequestSurface.overlay(
+            key: const ValueKey('payment_request_host_surface'),
+            cardKey: ValueKey(flow.prefill.id),
+            request: request,
+            onContinue: review,
+            onEdit: edit,
+            onCancel: () {
+              // A drag-dismiss animation can finish before the host rebuilds
+              // for a newer link. Only the request that began closing may end.
+              if (ref.read(paymentRequestFlowProvider)?.prefill.id ==
+                  flow.prefill.id) {
+                notifier.dismiss();
+              }
+            },
+            onRecheck: notifier.recheck,
+          ),
         ),
       ],
     );
@@ -229,4 +231,29 @@ class PaymentRequestHost extends ConsumerWidget {
   void _releaseRetainedSendStatus(WidgetRef ref) {
     ref.read(sendStatusRoutePayloadProvider.notifier).clear();
   }
+}
+
+/// A payment request takes input ownership from the screen underneath it.
+/// Clearing that screen's focus also dismisses any native keyboard accessory
+/// that UIKit renders above Flutter's widget tree.
+class _UnfocusWhenMounted extends StatefulWidget {
+  const _UnfocusWhenMounted({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_UnfocusWhenMounted> createState() => _UnfocusWhenMountedState();
+}
+
+class _UnfocusWhenMountedState extends State<_UnfocusWhenMounted> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusManager.instance.primaryFocus?.unfocus();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

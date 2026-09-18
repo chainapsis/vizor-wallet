@@ -7,9 +7,127 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 void main() {
+  testWidgets('mobile loop exposes one finite artwork cycle to semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    PaymentLinkCardArtwork? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Scaffold(
+            body: Center(
+              child: PaymentLinkCardSelectorRail(
+                loop: true,
+                artworks: PaymentLinkCardArtwork.values,
+                selected: PaymentLinkCardArtwork.crystal,
+                onSelected: (artwork) => selected = artwork,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final list = tester.widget<ListView>(
+      find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+    );
+    expect(list.semanticChildCount, isNull);
+
+    List<String> announcedDesigns() {
+      final labels = <String>[];
+      void visit(SemanticsNode node) {
+        final label = node.getSemanticsData().label;
+        if (label.endsWith('card design')) labels.add(label);
+        node.visitChildren((child) {
+          visit(child);
+          return true;
+        });
+      }
+
+      visit(
+        tester.getSemantics(
+          find.byKey(const ValueKey('payment_link_card_selector_rail')),
+        ),
+      );
+      return labels;
+    }
+
+    for (final drag in [const Offset(-1400, 0), const Offset(1400, 0)]) {
+      expect(
+        announcedDesigns(),
+        PaymentLinkCardArtwork.values
+            .map((artwork) => '${artwork.semanticLabel} card design')
+            .toList(),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+        drag,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    tester.semantics.tap(find.semantics.byLabel('Gift box card design'));
+    await tester.pumpAndSettle();
+    expect(selected, PaymentLinkCardArtwork.gift);
+    semantics.dispose();
+  });
+
+  testWidgets('mobile rail wraps both ends and selects the adjacent copy', (
+    tester,
+  ) async {
+    var selected = PaymentLinkCardArtwork.knight;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Scaffold(
+            body: Center(
+              child: StatefulBuilder(
+                builder: (context, setState) => PaymentLinkCardSelectorRail(
+                  loop: true,
+                  artworks: PaymentLinkCardArtwork.values,
+                  selected: selected,
+                  onSelected: (value) => setState(() => selected = value),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+    final original = scroll.offset;
+    final gift = find.byWidgetPredicate(
+      (w) =>
+          w is PaymentLinkCardSelector &&
+          w.artwork == PaymentLinkCardArtwork.gift,
+    );
+    await tester.tap(gift);
+    await tester.pumpAndSettle();
+    expect(selected, PaymentLinkCardArtwork.gift);
+    final knight = find.byWidgetPredicate(
+      (w) =>
+          w is PaymentLinkCardSelector &&
+          w.artwork == PaymentLinkCardArtwork.knight,
+    );
+    await tester.tap(knight);
+    await tester.pumpAndSettle();
+    expect(selected, PaymentLinkCardArtwork.knight);
+    expect(scroll.offset, closeTo(original, 0.1));
+    await tester.drag(find.byType(ListView), const Offset(1400, 0));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(scroll.position.minScrollExtent));
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in [320.0, 375.0]) {
     testWidgets(
       'scrolled artwork stays out of 16px edge gutters at width $width',

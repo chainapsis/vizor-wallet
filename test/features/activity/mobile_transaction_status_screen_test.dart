@@ -250,6 +250,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Redeeming a card...'), findsOneWidget);
       expect(find.text('Redeeming...'), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byWidgetPredicate(
+            (w) => w is AppIcon && w.name == AppIcons.loader,
+          ),
+          matching: find.byType(RotationTransition),
+        ),
+        findsNothing,
+      );
       expect(find.text('Failed'), findsNothing);
       expect(find.text('Refunded'), findsNothing);
     },

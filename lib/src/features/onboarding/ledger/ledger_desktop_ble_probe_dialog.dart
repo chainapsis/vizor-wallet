@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../ledger/ledger_device_label.dart';
+import '../../ledger/services/ledger_bluetooth_access.dart';
+import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -87,6 +91,7 @@ class _LedgerDesktopBleConnectDialogState
   LedgerBleDevice? _connectedDevice;
   LedgerDeviceAccount? _account;
   String? _error;
+  bool _bluetoothRecovery = false;
   var _generation = 0;
 
   bool get _busy =>
@@ -128,9 +133,10 @@ class _LedgerDesktopBleConnectDialogState
         _connectedDevice = null;
         _account = null;
         _error = null;
+        _bluetoothRecovery = false;
       });
 
-      final granted = await widget.service.requestPermissions();
+      final granted = await prepareLedgerBluetoothDiscovery(widget.service);
       if (!mounted || generation != _generation) return;
       if (!granted) {
         _fail(
@@ -176,6 +182,8 @@ class _LedgerDesktopBleConnectDialogState
     });
     try {
       await _stopDiscovery();
+      await requireLedgerBluetoothAccess(widget.service);
+      if (!mounted || generation != _generation) return;
       await widget.service.connect(device);
       if (!mounted || generation != _generation) return;
       setState(() => _phase = _ProbePhase.readingAccount);
@@ -192,20 +200,23 @@ class _LedgerDesktopBleConnectDialogState
 
   void _handleError(int generation, Object error) {
     if (!mounted || generation != _generation) return;
-    final message = switch (error) {
-      LedgerMobileException(:final message) => message,
-      UnsupportedError() =>
-        'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-      _ => switch (classifyLedgerError(error)) {
-        LedgerFailureKind.userRejected =>
-          'The viewing-key request was rejected on your Ledger.',
-        LedgerFailureKind.hostRequestRejected =>
-          kLedgerViewingKeyRequestRejectedMessage,
-        _ =>
-          ledgerActionableErrorMessage(error) ??
-              'Vizor could not connect to this Ledger over Bluetooth. Try again.',
-      },
-    };
+    final message =
+        ledgerFailureGuidance(error)?.message ??
+        switch (error) {
+          UnsupportedError() =>
+            'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
+          _ => switch (classifyLedgerError(error)) {
+            LedgerFailureKind.userRejected =>
+              'The viewing-key request was rejected on your Ledger.',
+            LedgerFailureKind.hostRequestRejected =>
+              kLedgerViewingKeyRequestRejectedMessage,
+            _ =>
+              ledgerActionableErrorMessage(error) ??
+                  'Vizor could not connect to this Ledger over Bluetooth. Try again.',
+          },
+        };
+    _bluetoothRecovery =
+        ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
     _fail(message);
   }
 
@@ -218,6 +229,56 @@ class _LedgerDesktopBleConnectDialogState
 
   @override
   Widget build(BuildContext context) {
+    final recovery =
+        _phase == _ProbePhase.failed &&
+        _bluetoothRecovery &&
+        widget.service is LedgerBluetoothAccess;
+
+    if (recovery) {
+      return Dialog(
+        key: const ValueKey('ledger_desktop_ble_connect_dialog'),
+        backgroundColor: Colors.transparent,
+        child: AppModalCard(
+          width: 328,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Ledger · Bluetooth',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
+                    ),
+                  ),
+                  AppButton(
+                    key: const ValueKey('ledger_desktop_ble_close'),
+                    onPressed: widget.onClose,
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.small,
+                    child: const AppIcon(
+                      AppIcons.cross,
+                      size: 16,
+                      semanticLabel: 'Close',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              LedgerBluetoothRecovery(
+                service: widget.service,
+                onRetry: () => unawaited(_startDiscovery()),
+                onClose: widget.onClose,
+                retryLabel: 'Find my Ledger',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Dialog(
       key: const ValueKey('ledger_desktop_ble_connect_dialog'),
       backgroundColor: Colors.transparent,
@@ -310,7 +371,7 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.connecting => (
         AppIcons.loader,
-        'Connecting to ${_connectedDevice?.name ?? 'Ledger'}',
+        'Connecting to ${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)}',
         'Approve Bluetooth pairing on the device if prompted.',
       ),
       _ProbePhase.readingAccount => (
@@ -320,7 +381,7 @@ class _LedgerDesktopBleConnectDialogState
       ),
       _ProbePhase.ready => (
         AppIcons.ledger,
-        '${_connectedDevice?.name ?? 'Ledger'} is ready',
+        '${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)} is ready',
         'Zcash ${_account?.appVersion ?? ''} approved account ${_account?.accountIndex ?? ''} over Bluetooth.',
       ),
       _ProbePhase.empty => (
@@ -388,7 +449,8 @@ class _DeviceRow extends StatelessWidget {
       expand: true,
       constrainContent: true,
       leading: const AppIcon(AppIcons.ledger),
-      child: Text('${device.name}  ·  ${device.model}'),
+      growWithContent: true,
+      child: Text(ledgerDeviceLabel(device)),
     );
   }
 }

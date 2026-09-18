@@ -12,6 +12,8 @@ public typealias PeripheralInfoTuple = (peripheral: PeripheralIdentifier, rssi: 
 public typealias PeripheralResponse = ((PeripheralIdentifier)->())
 public typealias PeripheralsWithServicesResponse = (([PeripheralInfoTuple])->())
 public typealias APDUResponse = ((APDU)->())
+/// Physical disconnect cause; nil for ordinary/app-switch disconnects.
+public typealias DisconnectionResponse = ((Error?)->())
 public typealias EmptyResponse = (()->())
 public typealias BleErrorResponse = ((BleTransportError)->())
 public typealias OptionalBleErrorResponse = ((BleTransportError?)->())
@@ -41,15 +43,15 @@ public protocol BleTransportProtocol {
     /// Attempt to connect to a given peripheral.
     ///
     /// - Parameter peripheral: The peripheral to connect to.
-    func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse)
-    @discardableResult func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier
+    func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse)
+    @discardableResult func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier
 
     /// Convenience method to `scan` for peripherals and connecting to the first discovered one.
     /// - Parameters:
     ///   - success: Callback called when the connection is successful.
     ///   - failure: Callback called when the connection failed.
-    func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse)
-    @discardableResult func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier
+    func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse)
+    @discardableResult func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier
 
 
     // MARK: - Messaging

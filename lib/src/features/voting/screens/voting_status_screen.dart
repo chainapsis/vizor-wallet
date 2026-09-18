@@ -1,3 +1,8 @@
+import '../../../core/layout/app_form_factor.dart';
+import '../../ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
+import '../../../providers/account_provider.dart';
+import '../../ledger/services/ledger_device_selection.dart';
+import '../../ledger/widgets/ledger_access_recovery_modal.dart';
 import 'dart:async';
 
 import '../../ledger/services/ledger_signing_progress.dart';
@@ -138,6 +143,7 @@ class VotingStatusView extends ConsumerStatefulWidget {
     this.contentWrapper,
     this.submissionProgressBuilder,
     this.keystoneStatusBuilder,
+    this.ledgerStatusBuilder,
   });
 
   final String roundId;
@@ -147,6 +153,12 @@ class VotingStatusView extends ConsumerStatefulWidget {
   final VotingStatusContentWrapper? contentWrapper;
   final VotingSubmissionProgressBuilder? submissionProgressBuilder;
   final VotingKeystoneStatusBuilder? keystoneStatusBuilder;
+  final Widget Function(
+    BuildContext,
+    VotingSubmissionProgressPresentation,
+    LedgerVotingSigningPanel,
+  )?
+  ledgerStatusBuilder;
 
   @override
   ConsumerState<VotingStatusView> createState() => _VotingStatusViewState();
@@ -496,6 +508,28 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             : null;
         final delegationProgress = authority?.fraction;
         final delegationDetail = authority?.detail;
+        final ledgerBuilder = widget.ledgerStatusBuilder;
+        if (ledgerBuilder != null &&
+            state.isLedgerAccount &&
+            submissionJobInFlight &&
+            phase == VotingSessionPhase.ledgerSigning &&
+            job?.ledgerBundleIndex != null) {
+          usesPlatformScreen = true;
+          return ledgerBuilder(
+            context,
+            _submissionPresentation(
+              progress,
+              warning: state.terminalDelegationNotice,
+            ),
+            LedgerVotingSigningPanel(
+              accountUuid: job!.key?.accountUuid,
+              displayMemo: job.ledgerDisplayMemo ?? '',
+              bundleIndex: job.ledgerBundleIndex!,
+              bundleCount: job.ledgerBundleCount,
+              onCancel: _cancelLedgerSigning,
+            ),
+          );
+        }
         final progressBuilder = widget.submissionProgressBuilder;
         if (progressBuilder != null &&
             phase != VotingSessionPhase.error &&
@@ -1183,6 +1217,24 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
   Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final safeBundleCount = bundleCount > 0 ? bundleCount : bundleIndex + 1;
+    final selection = ref.watch(ledgerDeviceSelectionProvider);
+    if (selection != null && selection.accountUuid == accountUuid) {
+      final account = ref
+          .watch(accountProvider)
+          .value
+          ?.accounts
+          .where((a) => a.uuid == accountUuid)
+          .firstOrNull;
+      if (account != null) {
+        return LedgerAccessRecoveryModal(
+          key: ObjectKey(selection),
+          account: account,
+          selectionRequest: selection,
+          onRetry: null,
+          onClose: onCancel,
+        );
+      }
+    }
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final failed = readiness.phase == LedgerAppReadinessPhase.failed;
     final progress = ref.watch(ledgerSigningProgressProvider);
@@ -1217,6 +1269,42 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
             : stage.message,
       ),
     };
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return MobileLedgerSheetContent(
+        title: statusLabel,
+        onClose: onCancel,
+        children: [
+          MobileLedgerMessage(statusMessage),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Bundle ${bundleIndex + 1} of $safeBundleCount',
+            key: const ValueKey('ledger_voting_bundle_progress'),
+            style: AppTypography.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          const MobileLedgerMessage(
+            'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.',
+          ),
+          if (displayMemo.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            SelectableText(
+              displayMemo,
+              key: const ValueKey('ledger_voting_display_memo'),
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ],
+          if (!failed)
+            MobileLedgerStatus(
+              stage.status,
+              active:
+                  stage != LedgerSigningStage.reviewing &&
+                  readiness.phase != LedgerAppReadinessPhase.confirmOpening,
+            ),
+        ],
+      );
+    }
     return DecoratedBox(
       key: const ValueKey('ledger_voting_signing_panel'),
       decoration: BoxDecoration(

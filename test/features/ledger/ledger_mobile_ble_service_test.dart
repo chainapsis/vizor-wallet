@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
@@ -16,9 +17,128 @@ void main() {
   });
 
   tearDown(() async {
+    debugDefaultTargetPlatformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  test(
+    'Android key loss evidence is attempt scoped and survives failure cleanup',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final ids = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'connect') {
+              ids.add((call.arguments as Map)['connectionId'] as String);
+              throw PlatformException(code: 'disconnected');
+            }
+            return null;
+          });
+      Future<void> emit(String id) async {
+        final done = Completer<void>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              'com.zcash.wallet/ledger_mobile/pairing',
+              const StandardMethodCodec().encodeMethodCall(
+                MethodCall('pairingInvalid', {'connectionId': id}),
+              ),
+              (_) => done.complete(),
+            );
+        await done.future;
+      }
+
+      const device = LedgerBleDevice(
+        id: 'device',
+        name: 'Ledger',
+        model: 'Nano X',
+      );
+      await expectLater(
+        service.connect(device),
+        throwsA(isA<LedgerMobileException>()),
+      );
+      final first = service.pairingInvalidEvidence!;
+      await service.disconnect();
+      await emit('unrelated');
+      expect(first.value, isFalse);
+      await emit(ids.first);
+      expect(first.value, isTrue);
+      await expectLater(
+        service.connect(device),
+        throwsA(isA<LedgerMobileException>()),
+      );
+      final second = service.pairingInvalidEvidence!;
+      await emit(ids.first);
+      expect(second.value, isFalse);
+      await service.cancelSigning();
+      await emit(ids.last);
+      expect(second.value, isFalse);
+      expect(service.pairingInvalidEvidence, isNull);
+    },
+  );
+
+  test(
+    'key loss arriving before connect success prevents cached identity',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method != 'connect') return null;
+            final done = Completer<void>();
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+                .handlePlatformMessage(
+                  'com.zcash.wallet/ledger_mobile/pairing',
+                  const StandardMethodCodec().encodeMethodCall(
+                    MethodCall('pairingInvalid', {
+                      'connectionId': (call.arguments as Map)['connectionId'],
+                    }),
+                  ),
+                  (_) => done.complete(),
+                );
+            await done.future;
+            return null;
+          });
+      await expectLater(
+        service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Nano X'),
+        ),
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (e) => e.failure,
+            'failure',
+            LedgerMobileFailure.pairingInvalid,
+          ),
+        ),
+      );
+      expect(service.connectedDeviceId, isNull);
+      await service.cancelSigning();
+    },
+  );
+
+  test(
+    'location-disabled native failure keeps its own classification',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'location_disabled',
+              message: 'Location must be enabled',
+            );
+          });
+      await expectLater(
+        service.connect(
+          const LedgerBleDevice(id: 'device', name: 'Ledger', model: 'Nano X'),
+        ),
+        throwsA(
+          isA<LedgerMobileException>().having(
+            (error) => error.failure,
+            'failure',
+            LedgerMobileFailure.locationDisabled,
+          ),
+        ),
+      );
+    },
+  );
 
   for (final method in [
     'currentApp',
@@ -166,6 +286,7 @@ void main() {
             throw PlatformException(
               code: 'pairing_invalid',
               message: 'Native description',
+              details: {'nativeDomain': 'CBErrorDomain', 'nativeCode': 14},
             );
           });
       await expectLater(
@@ -174,6 +295,8 @@ void main() {
         ),
         throwsA(
           isA<LedgerMobileException>()
+              .having((e) => e.nativeDomain, 'nativeDomain', 'CBErrorDomain')
+              .having((e) => e.nativeCode, 'nativeCode', 14)
               .having(
                 (e) => e.failure,
                 'failure',
@@ -244,7 +367,9 @@ void main() {
       );
 
       expect(received?.method, 'connect');
-      expect(received?.arguments, {
+      final arguments = Map<Object?, Object?>.from(received!.arguments as Map);
+      expect(arguments.remove('connectionId'), isA<String>());
+      expect(arguments, {
         'deviceId': 'nano-x',
         'deviceName': 'Rowan Ledger',
         'deviceModel': 'Nano X',

@@ -1,8 +1,10 @@
+import '../../ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/ledger_error_codes.dart';
@@ -43,6 +45,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
   bool _requestNeedsRebuilding = false;
+  LedgerFailureGuidance? _deviceGuidance;
   bool _cancelled = false;
 
   bool get _canLeave => _phase != LedgerSigningModalPhase.broadcasting;
@@ -65,13 +68,18 @@ class _LedgerImmediateMigrationSigningOverlayState
     super.dispose();
   }
 
-  Future<void> _run() async {
+  final _connectionScope = LedgerConnectionScope();
+
+  Future<void> _run() => _connectionScope.run(_runInScope);
+
+  Future<void> _runInScope() async {
     final cancellation = LedgerImmediateMigrationCancellation();
     _cancellation = cancellation;
     if (mounted) {
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     try {
@@ -124,6 +132,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
     final actionable = ledgerActionableErrorMessage(
       error,
       requestKind: LedgerRequestKind.migration,
@@ -131,6 +140,7 @@ class _LedgerImmediateMigrationSigningOverlayState
     _requestNeedsRebuilding =
         actionable != null && ledgerRequestNeedsRebuilding(error);
     if (actionable != null) return actionable;
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final message = error.toString().toLowerCase();
     final kind = classifyLedgerError(error);
     if (kind == LedgerFailureKind.userRejected) {
@@ -157,15 +167,20 @@ class _LedgerImmediateMigrationSigningOverlayState
   @override
   Widget build(BuildContext context) {
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: widget.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
+              bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
+              pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
               title: 'Ledger migration failed',
               statusLabel: 'Action needed',
               message: _error ?? 'Ledger migration could not be completed.',
+              showDeviceAppPrompt:
+                  _deviceGuidance?.showDeviceAppPrompt ?? false,
               // Retrying the same request fails the same way on the device.
-              showDeviceAppPrompt: !_requestNeedsRebuilding,
               actionLabel: _requestNeedsRebuilding ? null : 'Try again',
             )
           : null,

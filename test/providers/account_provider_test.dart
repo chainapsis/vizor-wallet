@@ -982,8 +982,9 @@ void main() {
   });
 
   test(
-    'account removal is rejected while it owns an unshared Gift Card',
+    'account removal proceeds while it owns an unshared funded Gift Card',
     () async {
+      _mockAccountRemovalPlatform();
       final recoveryStorage = _AccountTestPaymentLinkRecoveryStorage();
       final recoveryStore = PaymentLinkRecoveryStore(recoveryStorage);
       final link = VizorPaymentLink(
@@ -1014,21 +1015,203 @@ void main() {
 
       await container.read(accountProvider.future);
 
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(container.read(accountProvider).value!.accounts, hasLength(1));
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+    },
+  );
+
+  group('unshared Gift Card recheck after draining', () {
+    Future<ProviderContainer> containerWithFundedCard() async {
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1accountremovalrecheck',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 9, 1),
+      );
+      await recoveryStore.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'account-2',
+      );
+      await recoveryStore.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      return container;
+    }
+
+    test('aborts removal when the count rose after confirmation', () async {
+      final container = await containerWithFundedCard();
+
       await expectLater(
-        container.read(accountProvider.notifier).removeAccount('account-2'),
+        container
+            .read(accountProvider.notifier)
+            .removeAccount('account-2', confirmedUnsharedGiftCardCount: 0),
         throwsA(
-          isA<PaymentLinkUnsharedGiftCardsException>()
-              .having((error) => error.count, 'count', 1)
-              .having(
-                (error) => error.sourceAccountUuid,
-                'sourceAccountUuid',
-                'account-2',
-              ),
+          isA<UnsharedGiftCardsChangedException>()
+              .having((error) => error.confirmedCount, 'confirmedCount', 0)
+              .having((error) => error.count, 'count', 1),
         ),
       );
       expect(container.read(accountProvider).value!.accounts, hasLength(2));
-    },
-  );
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+    });
+
+    test('proceeds when the count is unchanged', () async {
+      _mockAccountRemovalPlatform();
+      final container = await containerWithFundedCard();
+
+      await container
+          .read(accountProvider.notifier)
+          .removeAccount('account-2', confirmedUnsharedGiftCardCount: 1);
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+    });
+
+    test('asks again without a count when the recheck fails', () async {
+      final storage = _AccountTestPaymentLinkRecoveryStorage()
+        ..readError = StateError('recovery store unreadable');
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(
+            PaymentLinkRecoveryStore(storage),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .removeAccount('account-2', confirmedUnsharedGiftCardCount: 0),
+        throwsA(
+          isA<UnsharedGiftCardsChangedException>().having(
+            (error) => error.count,
+            'count',
+            isNull,
+          ),
+        ),
+      );
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+
+      _mockAccountRemovalPlatform();
+      await container
+          .read(accountProvider.notifier)
+          .removeAccount('account-2', confirmedUnsharedGiftCardCount: null);
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+    });
+
+    test('aborts a wallet reset when the count rose', () async {
+      final container = await containerWithFundedCard();
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .resetWallet(confirmedUnsharedGiftCardCount: 0),
+        throwsA(isA<UnsharedGiftCardsChangedException>()),
+      );
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+    });
+  });
+
+  group('Gift Card drafts that never reached the network', () {
+    VizorPaymentLink link(String address) => VizorPaymentLink(
+      network: 'main',
+      address: address,
+      amountZatoshi: BigInt.from(100000),
+      mnemonic: List.filled(24, 'abandon').join(' '),
+      birthdayHeight: 3_456_789,
+      label: 'Payment link',
+      createdAt: DateTime.utc(2026, 8, 7),
+    );
+
+    Future<void> prepare(
+      PaymentLinkRecoveryStore store,
+      String address,
+      String accountUuid,
+    ) async {
+      await store.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link(address),
+        sourceAccountUuid: accountUuid,
+      );
+      await store.markPrepared(
+        address: address,
+        fundingTxid: 'prepared-$address',
+        expiryHeight: 3_456_829,
+      );
+    }
+
+    test('do not block removal and are dropped with the account', () async {
+      _mockAccountRemovalPlatform();
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      await prepare(recoveryStore, 'u1removedaccountdraft', 'account-2');
+      await prepare(recoveryStore, 'u1keptaccountdraft', 'account-1');
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+      expect(
+        [for (final record in await recoveryStore.load()) record.link.address],
+        ['u1keptaccountdraft'],
+      );
+    });
+
+    test('keep a draft past the broadcast boundary on removal', () async {
+      _mockAccountRemovalPlatform();
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      await prepare(recoveryStore, 'u1submitteddraft', 'account-2');
+      await recoveryStore.markSubmissionStarted(
+        address: 'u1submitteddraft',
+        chainHeight: 3_456_800,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container.read(accountProvider.notifier).removeAccount('account-2');
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+      expect(await recoveryStore.load(), hasLength(1));
+    });
+  });
 
   test('account removal is rejected while it receives a Gift Card', () async {
     final receivedStorage = _AccountTestPaymentLinkReceivedStorage();
@@ -1438,12 +1621,16 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking({
 class _AccountTestPaymentLinkRecoveryStorage
     implements PaymentLinkRecoveryStorage {
   String? value;
+  Object? readError;
 
   @override
   Future<void> delete() async => value = null;
 
   @override
-  Future<String?> read() async => value;
+  Future<String?> read() async {
+    if (readError case final error?) throw error;
+    return value;
+  }
 
   @override
   Future<void> write(String nextValue) async => value = nextValue;
@@ -1491,4 +1678,28 @@ class _FailingHomeCacheStore implements VotingHomeCacheStore {
   @override
   Future<void> write(String value) async =>
       throw StateError('disk write failed');
+}
+
+void _mockAccountRemovalPlatform() {
+  FlutterSecureStorage.setMockInitialValues({});
+  final supportDirectory = Directory.systemTemp.createTempSync(
+    'vizor-account-removal',
+  );
+  addTearDown(() {
+    if (supportDirectory.existsSync()) {
+      supportDirectory.deleteSync(recursive: true);
+    }
+  });
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (call) async {
+        if (call.method == 'getApplicationSupportDirectory') {
+          return supportDirectory.path;
+        }
+        throw MissingPluginException('Unexpected path provider call.');
+      });
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+  });
 }

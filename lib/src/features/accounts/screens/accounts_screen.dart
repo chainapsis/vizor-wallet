@@ -89,6 +89,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   String? _editDraftProfilePictureId;
   bool _pfpPickerFromEdit = false;
 
+  /// Account whose post-drain gift card recheck failed; its confirmation
+  /// shows the "couldn't check" warning and skips the recheck next time.
+  String? _unsharedRecheckFailedUuid;
+
   @override
   void initState() {
     super.initState();
@@ -122,6 +126,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       _editDraftName = null;
       _editDraftProfilePictureId = null;
       _pfpPickerFromEdit = false;
+      _unsharedRecheckFailedUuid = null;
     });
   }
 
@@ -169,11 +174,39 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   Future<void> _removeAccount(
     String uuid, {
     required bool isLastAccount,
+    required int? confirmedUnsharedGiftCardCount,
+    AccountRemoveProgressCallback? onProgress,
+  }) async {
+    try {
+      await _removeOrResetAccount(
+        uuid,
+        isLastAccount: isLastAccount,
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        onProgress: onProgress,
+      );
+    } on UnsharedGiftCardsChangedException catch (error) {
+      // The modal stays open; refresh its warning before the user reconfirms.
+      if (error.count == null) {
+        if (mounted) setState(() => _unsharedRecheckFailedUuid = uuid);
+      } else {
+        ref.invalidate(paymentLinkUnsharedFundedCountProvider(uuid));
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _removeOrResetAccount(
+    String uuid, {
+    required bool isLastAccount,
+    required int? confirmedUnsharedGiftCardCount,
     AccountRemoveProgressCallback? onProgress,
   }) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     if (isLastAccount) {
-      await _resetWalletFromAccountRemoval(onProgress);
+      await _resetWalletFromAccountRemoval(
+        onProgress,
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+      );
       return;
     }
 
@@ -202,7 +235,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       () async {
         logPauseComplete();
         final mutationWatch = Stopwatch()..start();
-        await accountNotifier.removeAccount(uuid);
+        await accountNotifier.removeAccount(
+          uuid,
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        );
         log(
           'removeAccountFlow: account mutation complete in '
           '${mutationWatch.elapsedMilliseconds}ms uuid=$uuid',
@@ -232,15 +268,18 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 
   Future<void> _resetWalletFromAccountRemoval(
-    AccountRemoveProgressCallback? onProgress,
-  ) async {
+    AccountRemoveProgressCallback? onProgress, {
+    required int? confirmedUnsharedGiftCardCount,
+  }) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
     await runWithSyncPausedForWalletReset(
       ref,
-      accountNotifier.resetWallet,
+      () => accountNotifier.resetWallet(
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+      ),
       onResetting: () {
         onProgress?.call(AccountRemoveProgress.removingAccount);
       },
@@ -274,11 +313,15 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         ? ref.watch(swapPendingIntentCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
     final modalUnsharedGiftCardCount =
-        modalAccount != null &&
-            !isLastModalAccount &&
-            _activeModal == _AccountModalType.removeAccount
+        modalAccount != null && _activeModal == _AccountModalType.removeAccount
         ? ref.watch(paymentLinkUnsharedFundedCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
+    final modalUnsharedGiftCardCountValue =
+        modalUnsharedGiftCardCount.hasError ||
+            (modalAccount != null &&
+                modalAccount.uuid == _unsharedRecheckFailedUuid)
+        ? null
+        : modalUnsharedGiftCardCount.value;
     // Kept for the last account too: its removal is a full reset, which
     // `resetWallet` refuses over an in-flight claim while unlocked.
     final modalReceivingGiftCardCount =
@@ -375,12 +418,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                         modalReceivingGiftCardCount.isLoading,
                     receivingGiftCardCheckFailed:
                         modalReceivingGiftCardCount.hasError,
-                    unsharedGiftCardCount:
-                        modalUnsharedGiftCardCount.value ?? 0,
-                    checkingUnsharedGiftCards:
-                        modalUnsharedGiftCardCount.isLoading,
-                    unsharedGiftCardCheckFailed:
-                        modalUnsharedGiftCardCount.hasError,
+                    unsharedGiftCardCount: modalUnsharedGiftCardCountValue,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)
@@ -388,6 +426,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     onRemove: (onProgress) => _removeAccount(
                       modalAccount.uuid,
                       isLastAccount: isLastModalAccount,
+                      confirmedUnsharedGiftCardCount:
+                          modalUnsharedGiftCardCountValue,
                       onProgress: onProgress,
                     ),
                   ),

@@ -56,7 +56,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   );
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     resets += 1;
     state = const AsyncData(AccountState());
   }

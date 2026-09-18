@@ -25,7 +25,7 @@ enum BleModuleError: LocalizedError {
 protocol BleModuleDelegate: AnyObject {
     func bluetoothAvailable(_ available: Bool)
     func bluetoothState(_ state: CBManagerState)
-    func disconnected(from peripheral: PeripheralIdentifier)
+    func disconnected(from peripheral: PeripheralIdentifier, error: Error?)
 }
 
 protocol TaskOperation: AnyObject {
@@ -81,14 +81,14 @@ public class BleModule: NSObject {
         })
     }
 
-    private func clearAfterDisconnect(from peripheral: PeripheralIdentifier) {
+    private func clearAfterDisconnect(from peripheral: PeripheralIdentifier, error: Error?) {
         DispatchQueue.main.async {
             self.connectionGeneration += 1
             self.connectedPeripheral?.invalidate()
             self.connectedPeripheral = nil
             self.listeners.removeAll()
             self.operationsQueue.removeAllUpToScanOrConnect {
-                self.delegate.disconnected(from: peripheral)
+                self.delegate.disconnected(from: peripheral, error: error)
             }
         }
     }
@@ -246,11 +246,12 @@ extension BleModule: CBCentralManagerDelegate {
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        /// We ignore `error` because an error thrown here wouldn't mean that `disconnect` failed but rather that we got disconnected unexpectedly (which happens for example every time the device disconnect because of opening/quitting an app on it)
+        // Preserve the cause for pending connection/exchange failures. A normal
+        // app-switch disconnect still has no error and retains its old behavior.
         let peripheralIdentifier = PeripheralIdentifier(uuid: peripheral.identifier, name: peripheral.name)
-        operationsQueue.operationsOfType(Connect.self).first?.didDisconnectPeripheral(error: nil)
+        operationsQueue.operationsOfType(Connect.self).first?.didDisconnectPeripheral(error: error)
         operationsQueue.operationsOfType(Disconnect.self).first?.didDisconnectPeripheral(peripheral: peripheralIdentifier)
-        clearAfterDisconnect(from: peripheralIdentifier)
+        clearAfterDisconnect(from: peripheralIdentifier, error: error)
     }
 
     /**
@@ -258,7 +259,7 @@ extension BleModule: CBCentralManagerDelegate {
      */
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         operationsQueue.operationsOfType(Connect.self).first?.didDisconnectPeripheral(error: error)
-        clearAfterDisconnect(from: PeripheralIdentifier(uuid: peripheral.identifier, name: peripheral.name))
+        clearAfterDisconnect(from: PeripheralIdentifier(uuid: peripheral.identifier, name: peripheral.name), error: error)
     }
 }
 

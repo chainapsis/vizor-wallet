@@ -99,6 +99,7 @@ LedgerFailureKind classifyLedgerError(Object error) {
     return switch (error.failure) {
       LedgerMobileFailure.busy => LedgerFailureKind.deviceBusy,
       LedgerMobileFailure.permissionDenied ||
+      LedgerMobileFailure.locationDisabled ||
       LedgerMobileFailure.bluetoothOff ||
       LedgerMobileFailure.pairingRejected ||
       LedgerMobileFailure.pairingInvalid ||

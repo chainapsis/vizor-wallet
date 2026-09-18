@@ -1,10 +1,13 @@
+import 'package:flutter/services.dart';
 // path_provider and flutter_secure_storage fakes back the wallet DB path used
 // while preparing the shield PCZT.
 // ignore_for_file: depend_on_referenced_packages
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
+
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +53,75 @@ void main() {
       } catch (_) {}
     });
   });
+
+  for (final error in <Object>[
+    const LedgerMobileException(
+      LedgerMobileFailure.pairingInvalid,
+      'pairing diagnostic',
+    ),
+    const LedgerMobileException(
+      LedgerMobileFailure.permissionDenied,
+      'permission denied',
+    ),
+    StateError('unknown signer error'),
+  ]) {
+    testWidgets('shielding displays device recovery for $error', (
+      tester,
+    ) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel(kLedgerMobileMethodChannel),
+        (call) async => call.method == 'bluetoothAccessStatus'
+            ? {'permission': 'granted'}
+            : null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel(kLedgerMobileMethodChannel),
+          null,
+        ),
+      );
+      final accessRecovery =
+          ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+      final operations = _FakeLedgerSignedOperationService();
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async => throw error,
+          onComplete: () {},
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find
+            .text(
+              ledgerFailureGuidance(error)?.pairingRecovery == true
+                  ? 'Try again'
+                  : accessRecovery
+                  ? 'Reconnect'
+                  : 'Try again',
+            )
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(
+        find.text(
+          ledgerFailureGuidance(error)?.pairingInvalid == true
+              ? 'Pair your Ledger again'
+              : ledgerFailureGuidance(error)?.pairingRecovery == true
+              ? 'Couldn’t complete the request'
+              : accessRecovery
+              ? 'Ready to reconnect'
+              : ledgerFailureGuidance(error)?.message ??
+                    'Ledger shielding could not be completed.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Open the Zcash app'), findsNothing);
+      expect(operations.checkpoints, isEmpty);
+      expect(operations.broadcasts, isEmpty);
+    });
+  }
 
   testWidgets('checkpoints Ledger shield signatures before broadcasting', (
     tester,

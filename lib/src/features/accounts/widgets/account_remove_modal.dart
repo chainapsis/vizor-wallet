@@ -7,6 +7,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
+import '../../../providers/account_provider.dart'
+    show UnsharedGiftCardsChangedException;
+import '../../payment_links/services/payment_link_recovery_store.dart';
 import 'account_modal_card.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
@@ -26,8 +29,6 @@ class AccountRemoveModal extends StatefulWidget {
     this.checkingReceivingGiftCards = false,
     this.receivingGiftCardCheckFailed = false,
     this.unsharedGiftCardCount = 0,
-    this.checkingUnsharedGiftCards = false,
-    this.unsharedGiftCardCheckFailed = false,
     required this.onCancel,
     required this.onConfirmPassword,
     required this.onRemove,
@@ -43,9 +44,9 @@ class AccountRemoveModal extends StatefulWidget {
   final int receivingGiftCardCount;
   final bool checkingReceivingGiftCards;
   final bool receivingGiftCardCheckFailed;
-  final int unsharedGiftCardCount;
-  final bool checkingUnsharedGiftCards;
-  final bool unsharedGiftCardCheckFailed;
+
+  /// Null when the unshared gift card check failed or is still running.
+  final int? unsharedGiftCardCount;
   final VoidCallback onCancel;
   final Future<bool> Function(String password) onConfirmPassword;
   final Future<void> Function(AccountRemoveProgressCallback onProgress)
@@ -92,27 +93,13 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (widget.receivingGiftCardCheckFailed) {
       return "Couldn't check this account for incoming gift cards. Try again before removing it.";
     }
-    if (widget.receivingGiftCardCount > 0) {
-      if (widget.receivingGiftCardCount == 1) {
-        return 'This account is receiving a gift card. '
-            'Wait for it to finish before removing this account.';
-      }
-      return 'This account is receiving ${widget.receivingGiftCardCount} gift cards. '
-          'Wait for them to finish before removing this account.';
+    if (widget.receivingGiftCardCount <= 0) return null;
+    if (widget.receivingGiftCardCount == 1) {
+      return 'This account is receiving a gift card. '
+          'Wait for it to finish before removing this account.';
     }
-    if (widget.checkingUnsharedGiftCards) {
-      return 'Checking this account for unshared gift cards before removal.';
-    }
-    if (widget.unsharedGiftCardCheckFailed) {
-      return "Couldn't check this account for unshared gift cards. Try again before removing it.";
-    }
-    if (widget.unsharedGiftCardCount <= 0) return null;
-    final plural = widget.unsharedGiftCardCount == 1 ? 'link' : 'links';
-    final action = widget.unsharedGiftCardCount == 1
-        ? 'Copy it before removing this account.'
-        : 'Copy them before removing this account.';
-    return 'This account has ${widget.unsharedGiftCardCount} unshared gift card $plural. '
-        '$action';
+    return 'This account is receiving ${widget.receivingGiftCardCount} gift cards. '
+        'Wait for them to finish before removing this account.';
   }
 
   @override
@@ -175,6 +162,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
     try {
       await widget.onRemove(_setProgress);
+    } on UnsharedGiftCardsChangedException catch (error) {
+      if (!mounted) return;
+      setState(() => _submitError = error.toString());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -217,6 +207,10 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   Widget build(BuildContext context) {
     final passwordMessage = _passwordMessage;
     final removalBlockMessage = _removalBlockMessage;
+    final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      widget.unsharedGiftCardCount,
+      walletReset: widget.isLastAccount,
+    );
 
     return AccountModalCard(
       child: Column(
@@ -237,7 +231,17 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
           ),
           if (removalBlockMessage != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            _AccountRemoveWarningPanel(message: removalBlockMessage),
+            _AccountRemoveWarningPanel(
+              key: const ValueKey('account_remove_pending_swap_warning'),
+              message: removalBlockMessage,
+            ),
+          ],
+          if (unsharedGiftCardWarning != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _AccountRemoveWarningPanel(
+              key: const ValueKey('account_remove_unshared_gift_card_warning'),
+              message: unsharedGiftCardWarning,
+            ),
           ],
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
@@ -321,7 +325,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 }
 
 class _AccountRemoveWarningPanel extends StatelessWidget {
-  const _AccountRemoveWarningPanel({required this.message});
+  const _AccountRemoveWarningPanel({required this.message, super.key});
 
   final String message;
 
@@ -329,7 +333,6 @@ class _AccountRemoveWarningPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      key: const ValueKey('account_remove_pending_swap_warning'),
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: colors.background.raised,

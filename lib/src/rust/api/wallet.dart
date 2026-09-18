@@ -98,6 +98,30 @@ Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   network: network,
 );
 
+/// Validate and recover original English BIP-39 entropy without deriving keys or doing I/O.
+Uint8List giftMnemonicToEntropy({required String mnemonic}) => RustLib
+    .instance
+    .api
+    .crateApiWalletGiftMnemonicToEntropy(mnemonic: mnemonic);
+
+/// Reconstruct an English BIP-39 phrase without deriving keys or doing I/O.
+String giftMnemonicFromEntropy({required List<int> entropy}) => RustLib
+    .instance
+    .api
+    .crateApiWalletGiftMnemonicFromEntropy(entropy: entropy);
+
+/// Check locally retained gift metadata before sharing an address-free link.
+/// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
+Future<void> validateGiftAddress({
+  required String mnemonic,
+  required String network,
+  required String address,
+}) => RustLib.instance.api.crateApiWalletValidateGiftAddress(
+  mnemonic: mnemonic,
+  network: network,
+  address: address,
+);
+
 /// Discover higher ZIP32 software accounts with transparent history that are
 /// not already present in the wallet DB for this mnemonic.
 Future<SoftwareWalletImportDiscoveryResult>

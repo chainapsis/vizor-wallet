@@ -20,6 +20,8 @@ void runFigmaCompareCaptureTest({
   required Size defaultLogicalSize,
   required double defaultPixelRatio,
   FigmaCompareConfiguration? overrideConfiguration,
+  Future<void> Function(WidgetTester tester)? beforeCapture,
+  TargetPlatform mobilePlatform = TargetPlatform.iOS,
 }) {
   final testName =
       'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
@@ -33,7 +35,7 @@ void runFigmaCompareCaptureTest({
     );
 
     if (expectedFormFactor == AppFormFactor.mobile) {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      debugDefaultTargetPlatformOverride = mobilePlatform;
     }
 
     final configuration =
@@ -101,6 +103,9 @@ void runFigmaCompareCaptureTest({
       state.position.jumpTo(state.position.maxScrollExtent);
       await tester.pump();
     }
+
+    if (beforeCapture != null) await beforeCapture(tester);
+    expect(tester.takeException(), isNull);
 
     if (configuration.outputPath.isEmpty) {
       expect(find.byKey(captureBoundaryKey), findsOneWidget);
