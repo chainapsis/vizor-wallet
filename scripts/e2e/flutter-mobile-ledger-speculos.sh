@@ -104,16 +104,7 @@ run_flutter_scenario() {
     --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64"
 }
 
-run_flutter_scenario "imports with Ledger through Speculos"
-run_flutter_scenario "sends with Ledger through Speculos"
-run_flutter_scenario "blocks recovered Orchard send until the Ledger app is compatible"
-run_flutter_scenario "sends to TEX with two Ledger approvals through Speculos"
-run_flutter_scenario "shields transparent balance with Ledger through Speculos"
-run_flutter_scenario "pays with Ledger through Speculos"
-run_flutter_scenario "swaps with Ledger through Speculos"
-run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
-if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-false}" == "true" ]]; then
-  run_flutter_scenario "signs Orchard to Ironwood crossing through Speculos"
-fi
+source "$ROOT_DIR/scripts/e2e/ledger-speculos-scenarios.sh"
+ledger_speculos_scenarios mobile
 
 echo "Ledger Speculos fixture retained at $FIXTURE_DIR"
