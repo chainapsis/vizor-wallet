@@ -431,7 +431,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  Future<void> _showRemoveSheet(AccountInfo account) async {
+  /// [recheckFailed] reopens the sheet after a failed post-drain recheck: it
+  /// shows the "couldn't check" warning and the next attempt skips the recheck.
+  Future<void> _showRemoveSheet(
+    AccountInfo account, {
+    bool recheckFailed = false,
+  }) async {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final isLastAccount = accounts.length == 1;
     final migrationStatus = ref
@@ -442,12 +447,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         (migrationStatus.activeRunId != null ||
             isIronwoodMigrationInProgressPhase(migrationStatus.phase));
     int? unsharedGiftCardCount;
-    try {
-      unsharedGiftCardCount = await ref.read(
-        paymentLinkUnsharedFundedCountProvider(account.uuid).future,
-      );
-    } catch (e, st) {
-      log('MobileAccounts: unshared gift card count failed: $e\n$st');
+    if (!recheckFailed) {
+      try {
+        unsharedGiftCardCount = await ref.read(
+          paymentLinkUnsharedFundedCountProvider(account.uuid).future,
+        );
+      } catch (e, st) {
+        log('MobileAccounts: unshared gift card count failed: $e\n$st');
+      }
     }
     if (!mounted) return;
     final confirmed = await showAppMobileSheet<bool>(
@@ -469,7 +476,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         .read(accountProvider)
         .value
         ?.activeAccountUuid;
-    var reconfirm = false;
+    UnsharedGiftCardsChangedException? reconfirm;
     try {
       if (isLastAccount) {
         // runWithSyncPausedForWalletReset clears the cached DB path in its
@@ -511,7 +518,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       }
     } on UnsharedGiftCardsChangedException catch (e) {
       log('MobileAccounts: remove needs reconfirmation: ${e.count}');
-      reconfirm = true;
+      reconfirm = e;
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
@@ -525,10 +532,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-    if (reconfirm && mounted) {
+    if (reconfirm != null && mounted) {
       // Show the confirmation again with the fresh count.
       ref.invalidate(paymentLinkUnsharedFundedCountProvider(account.uuid));
-      await _showRemoveSheet(account);
+      await _showRemoveSheet(account, recheckFailed: reconfirm.count == null);
     }
   }
 

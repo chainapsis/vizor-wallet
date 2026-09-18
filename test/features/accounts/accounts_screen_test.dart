@@ -1107,6 +1107,53 @@ void main() {
     expect(accountNotifier.removedUuid, 'account-2');
   });
 
+  testWidgets('remove account asks again when the post-drain recheck fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    accountNotifier.beforeRemove = (confirmed) {
+      accountNotifier.beforeRemove = null;
+      throw UnsharedGiftCardsChangedException(confirmedCount: confirmed!);
+    };
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCounts: const {'account-2': 0},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+    expect(
+      find.text(
+        "Couldn't check for unshared gift card links. Copy any links you "
+        'still need before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, null]);
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
   testWidgets('remove account warns when the unshared check fails', (
     tester,
   ) async {

@@ -1084,6 +1084,42 @@ void main() {
       expect(_rustApi.deletedAccountUuids, ['account-2']);
     });
 
+    test('asks again without a count when the recheck fails', () async {
+      final storage = _AccountTestPaymentLinkRecoveryStorage()
+        ..readError = StateError('recovery store unreadable');
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(
+            PaymentLinkRecoveryStore(storage),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .removeAccount('account-2', confirmedUnsharedGiftCardCount: 0),
+        throwsA(
+          isA<UnsharedGiftCardsChangedException>().having(
+            (error) => error.count,
+            'count',
+            isNull,
+          ),
+        ),
+      );
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+
+      _mockAccountRemovalPlatform();
+      await container
+          .read(accountProvider.notifier)
+          .removeAccount('account-2', confirmedUnsharedGiftCardCount: null);
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+    });
+
     test('aborts a wallet reset when the count rose', () async {
       final container = await containerWithFundedCard();
 
@@ -1585,12 +1621,16 @@ Future<void> _expectAccountDeletionDrainsLiveShareTracking({
 class _AccountTestPaymentLinkRecoveryStorage
     implements PaymentLinkRecoveryStorage {
   String? value;
+  Object? readError;
 
   @override
   Future<void> delete() async => value = null;
 
   @override
-  Future<String?> read() async => value;
+  Future<String?> read() async {
+    if (readError case final error?) throw error;
+    return value;
+  }
 
   @override
   Future<void> write(String nextValue) async => value = nextValue;

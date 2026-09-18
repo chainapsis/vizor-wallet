@@ -677,9 +677,16 @@ void main() {
     });
   }
 
-  for (final isLastAccount in [false, true]) {
-    testWidgets('removal sheet reopens when more gift cards were funded '
-        '(last account: $isLastAccount)', (tester) async {
+  for (final (isLastAccount, recheckFailed) in [
+    (false, false),
+    (true, false),
+    (false, true),
+    (true, true),
+  ]) {
+    testWidgets('removal sheet reopens after the post-drain recheck '
+        '(last account: $isLastAccount, recheck failed: $recheckFailed)', (
+      tester,
+    ) async {
       final accountState = AccountState(
         accounts: [
           _account('a', 'Active'),
@@ -691,6 +698,9 @@ void main() {
       final accountNotifier = _FakeAccountNotifier(accountState);
       accountNotifier.beforeRemove = (confirmed) {
         accountNotifier.beforeRemove = null;
+        if (recheckFailed) {
+          throw UnsharedGiftCardsChangedException(confirmedCount: confirmed!);
+        }
         counts['a'] = 2;
         throw UnsharedGiftCardsChangedException(
           confirmedCount: confirmed!,
@@ -722,10 +732,16 @@ void main() {
       final subject = isLastAccount
           ? 'Resetting Vizor'
           : 'Removing this account';
+      final action = isLastAccount
+          ? 'resetting Vizor'
+          : 'removing this account';
       expect(
         find.text(
-          '2 funded gift card links have not been shared. $subject loses '
-          'them. Copy the links first.',
+          recheckFailed
+              ? "Couldn't check for unshared gift card links. Copy any links "
+                    'you still need before $action.'
+              : '2 funded gift card links have not been shared. $subject '
+                    'loses them. Copy the links first.',
         ),
         findsOneWidget,
       );
@@ -735,7 +751,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, 2]);
+      expect(accountNotifier.confirmedUnsharedGiftCardCounts, [
+        0,
+        if (recheckFailed) null else 2,
+      ]);
       if (isLastAccount) {
         expect(accountNotifier.resetCount, 1);
       } else {

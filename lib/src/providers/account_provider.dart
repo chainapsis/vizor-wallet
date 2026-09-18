@@ -103,19 +103,21 @@ class WalletResetInFlightGiftCardClaimsException implements Exception {
 }
 
 /// Removal was confirmed against [confirmedCount] unshared Gift Cards, but
-/// more became funded while pending work drained; the user must confirm again.
+/// more became funded while pending work drained, or the recheck failed
+/// ([count] is null); the user must confirm again.
 class UnsharedGiftCardsChangedException implements Exception {
   const UnsharedGiftCardsChangedException({
     required this.confirmedCount,
-    required this.count,
+    this.count,
   });
 
   final int confirmedCount;
-  final int count;
+  final int? count;
 
   @override
-  String toString() =>
-      'More gift card links were funded. Review the warning and confirm again.';
+  String toString() => count == null
+      ? "Couldn't recheck gift card links. Review the warning and confirm again."
+      : 'More gift card links were funded. Review the warning and confirm again.';
 }
 
 class WalletResetException implements Exception {
@@ -788,9 +790,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             countUnsharedFundedPaymentLinks(records, sourceAccountUuid: uuid),
       );
     } catch (e, st) {
-      // The user was already warned; a failed recheck must not block removal.
+      // A card may have been funded during the drain; reconfirm without a
+      // count rather than proceed silently.
       log('unshared gift card recheck failed: $e\n$st');
-      return;
+      throw UnsharedGiftCardsChangedException(confirmedCount: confirmedCount);
     }
     if (count > confirmedCount) {
       throw UnsharedGiftCardsChangedException(

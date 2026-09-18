@@ -89,6 +89,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   String? _editDraftProfilePictureId;
   bool _pfpPickerFromEdit = false;
 
+  /// Account whose post-drain gift card recheck failed; its confirmation
+  /// shows the "couldn't check" warning and skips the recheck next time.
+  String? _unsharedRecheckFailedUuid;
+
   @override
   void initState() {
     super.initState();
@@ -122,6 +126,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       _editDraftName = null;
       _editDraftProfilePictureId = null;
       _pfpPickerFromEdit = false;
+      _unsharedRecheckFailedUuid = null;
     });
   }
 
@@ -179,9 +184,13 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
         onProgress: onProgress,
       );
-    } on UnsharedGiftCardsChangedException {
+    } on UnsharedGiftCardsChangedException catch (error) {
       // The modal stays open; refresh its warning before the user reconfirms.
-      ref.invalidate(paymentLinkUnsharedFundedCountProvider(uuid));
+      if (error.count == null) {
+        if (mounted) setState(() => _unsharedRecheckFailedUuid = uuid);
+      } else {
+        ref.invalidate(paymentLinkUnsharedFundedCountProvider(uuid));
+      }
       rethrow;
     }
   }
@@ -307,6 +316,12 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         modalAccount != null && _activeModal == _AccountModalType.removeAccount
         ? ref.watch(paymentLinkUnsharedFundedCountProvider(modalAccount.uuid))
         : const AsyncValue<int>.data(0);
+    final modalUnsharedGiftCardCountValue =
+        modalUnsharedGiftCardCount.hasError ||
+            (modalAccount != null &&
+                modalAccount.uuid == _unsharedRecheckFailedUuid)
+        ? null
+        : modalUnsharedGiftCardCount.value;
     // Kept for the last account too: its removal is a full reset, which
     // `resetWallet` refuses over an in-flight claim while unlocked.
     final modalReceivingGiftCardCount =
@@ -403,9 +418,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                         modalReceivingGiftCardCount.isLoading,
                     receivingGiftCardCheckFailed:
                         modalReceivingGiftCardCount.hasError,
-                    unsharedGiftCardCount: modalUnsharedGiftCardCount.hasError
-                        ? null
-                        : modalUnsharedGiftCardCount.value,
+                    unsharedGiftCardCount: modalUnsharedGiftCardCountValue,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)
@@ -414,9 +427,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                       modalAccount.uuid,
                       isLastAccount: isLastModalAccount,
                       confirmedUnsharedGiftCardCount:
-                          modalUnsharedGiftCardCount.hasError
-                          ? null
-                          : modalUnsharedGiftCardCount.value,
+                          modalUnsharedGiftCardCountValue,
                       onProgress: onProgress,
                     ),
                   ),
