@@ -21,6 +21,7 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.bottomAreaPadding,
     this.aboveTitle,
     this.titleStyle,
+    this.contentGap = AppSpacing.md,
     this.showBackButton = true,
     this.scrollable = true,
     super.key,
@@ -50,6 +51,9 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
 
   /// Overrides the default Headline XL title style for compact step titles.
   final TextStyle? titleStyle;
+
+  /// Space between the heading group and the step content.
+  final double contentGap;
 
   /// The steps nav normally reserves the leading back affordance; terminal
   /// opt-in steps can hide it when there is no valid previous action.
@@ -99,7 +103,7 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
           ),
         ),
       ],
-      const SizedBox(height: AppSpacing.md),
+      SizedBox(height: contentGap),
     ];
     final childPadding = const EdgeInsets.symmetric(horizontal: AppSpacing.xs);
     return Scaffold(

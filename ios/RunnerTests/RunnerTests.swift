@@ -1,4 +1,5 @@
 import Flutter
+import QuartzCore
 import Security
 import UIKit
 import UserNotifications
@@ -6,7 +7,147 @@ import XCTest
 
 @testable import Runner
 
+private final class TextFieldWithoutSecureCanvas: UITextField {
+  override var subviews: [UIView] { [] }
+}
+
 class RunnerTests: XCTestCase {
+  func testScreenshotShieldRetriesOnActivationAndCanDisableBeforeRetry() {
+    let done = expectation(description: "lifecycle")
+    DispatchQueue.main.async {
+      let notifications = NotificationCenter()
+      var activeWindow: UIWindow?
+      let host = CALayer()
+      let canvas = CALayer()
+      let shield = SecureScreenshotShield(
+        windowProvider: { activeWindow },
+        canvasProvider: { field in field.layer.addSublayer(canvas); return canvas },
+        notificationCenter: notifications
+      )
+      var states: [String] = []
+      shield.onStatusChanged = { states.append($0["state"] as! String) }
+      shield.setSensitiveContentVisible(true)
+      XCTAssertEqual(shield.status["state"] as? String, "pending")
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      host.addSublayer(window.layer)
+      activeWindow = window
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertEqual(shield.status["state"] as? String, "applied")
+      XCTAssertTrue(window.layer.superlayer === canvas)
+      XCTAssertEqual(canvas.frame.size, window.bounds.size)
+      shield.setSensitiveContentVisible(false)
+      XCTAssertEqual(shield.status["state"] as? String, "disabled")
+      XCTAssertEqual(shield.status["visible"] as? Bool, false)
+      XCTAssertEqual(states, ["pending", "applied", "disabled"])
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldDoesNotAttachAfterPendingRequestIsDisabled() {
+    let done = expectation(description: "cancel pending")
+    DispatchQueue.main.async {
+      let notifications = NotificationCenter()
+      var resolutions = 0
+      let shield = SecureScreenshotShield(
+        windowProvider: { resolutions += 1; return nil },
+        notificationCenter: notifications
+      )
+      shield.setSensitiveContentVisible(true)
+      shield.setSensitiveContentVisible(false)
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertEqual(resolutions, 1)
+      XCTAssertEqual(shield.status["state"] as? String, "disabled")
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldRestoresOldWindowOnReplacement() {
+    let done = expectation(description: "window replacement")
+    DispatchQueue.main.async {
+      let host = CALayer()
+      let first = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      let second = UIWindow(frame: CGRect(x: 0, y: 0, width: 852, height: 393))
+      host.addSublayer(first.layer)
+      host.addSublayer(second.layer)
+      var active = first
+      let canvas = CALayer()
+      let notifications = NotificationCenter()
+      let shield = SecureScreenshotShield(
+        windowProvider: { active },
+        canvasProvider: { field in field.layer.addSublayer(canvas); return canvas },
+        notificationCenter: notifications
+      )
+      shield.setSensitiveContentVisible(true)
+      active = second
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertTrue(first.layer.superlayer === host)
+      XCTAssertTrue(second.layer.superlayer === canvas)
+      XCTAssertEqual(canvas.frame.size, second.bounds.size)
+      XCTAssertEqual(shield.status["state"] as? String, "applied")
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldRejectsUnknownCanvasWithoutChangingWindow() {
+    let done = expectation(description: "no guessed canvas")
+    DispatchQueue.main.async {
+      let host = CALayer()
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      host.addSublayer(window.layer)
+      let shield = SecureScreenshotShield(
+        windowProvider: { window }, canvasProvider: { _ in nil },
+        notificationCenter: NotificationCenter()
+      )
+      shield.setSensitiveContentVisible(true)
+      XCTAssertTrue(window.layer.superlayer === host)
+      XCTAssertEqual(shield.status["state"] as? String, "failed")
+      XCTAssertEqual(shield.status["reason"] as? String, "secure_canvas_unavailable")
+      let plainField = TextFieldWithoutSecureCanvas()
+      plainField.layer.addSublayer(CALayer())
+      XCTAssertNil(SecureScreenshotShield.secureCanvasLayer(of: plainField))
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldAppliesInlineOnMainThread() {
+    let applied = expectation(description: "secure flag applied inline")
+
+    DispatchQueue.main.async {
+      var didApply = false
+      SecureScreenshotShield.performOnMain {
+        didApply = true
+      }
+
+      XCTAssertTrue(didApply)
+      applied.fulfill()
+    }
+
+    wait(for: [applied], timeout: 1)
+  }
+
+  func testScreenshotShieldRestoresWindowLayerBeforeRegrafting() {
+    let hostLayer = CALayer()
+    let secureLayer = CALayer()
+    let canvasLayer = CALayer()
+    let windowLayer = CALayer()
+    hostLayer.addSublayer(secureLayer)
+    secureLayer.addSublayer(canvasLayer)
+    canvasLayer.addSublayer(windowLayer)
+
+    SecureScreenshotShield.restoreLayerHierarchy(
+      windowLayer: windowLayer,
+      secureLayer: secureLayer
+    )
+
+    XCTAssertTrue(windowLayer.superlayer === hostLayer)
+    XCTAssertNil(secureLayer.superlayer)
+    XCTAssertFalse(canvasLayer.sublayers?.contains(windowLayer) ?? false)
+  }
+
 
   func testIncomingDeeplinkAcceptsOnlySupportedHTTPSRoutes() {
     let bridge = IncomingUriChannelBridge.shared
