@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -13,6 +14,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../../ledger/widgets/ledger_device_app_prompt.dart';
@@ -54,6 +56,7 @@ class LedgerShieldSigningOverlay extends ConsumerStatefulWidget {
 
 class _LedgerShieldSigningOverlayState
     extends ConsumerState<LedgerShieldSigningOverlay> {
+  final LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
@@ -61,6 +64,7 @@ class _LedgerShieldSigningOverlayState
   bool _needsSaplingParams = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
   List<int>? _pcztBytes;
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -202,9 +206,11 @@ class _LedgerShieldSigningOverlayState
 
       final signedPczt =
           _signedPczt ??
-          await ref.read(ledgerPcztSignerProvider)(
-            accountUuid,
-            shieldPczt.pcztBytes,
+          await _connectionScope.run<List<int>>(
+            () => ref.read(ledgerPcztSignerProvider)(
+              accountUuid,
+              shieldPczt.pcztBytes,
+            ),
           );
       if (!mounted || _cancelled) return;
       _requireOriginalContext();
@@ -254,6 +260,7 @@ class _LedgerShieldSigningOverlayState
         _phase = LedgerSigningModalPhase.broadcasting;
         _canRetry = false;
         _error = null;
+        _deviceGuidance = null;
       });
       try {
         await _broadcastCheckpointed();
@@ -273,6 +280,7 @@ class _LedgerShieldSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
       await _prepareAndSign();
       return;
@@ -281,6 +289,7 @@ class _LedgerShieldSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.awaitingDevice;
       _error = null;
+      _deviceGuidance = null;
     });
     try {
       final accountUuid = _accountUuid;
@@ -290,7 +299,9 @@ class _LedgerShieldSigningOverlayState
       }
       final signedPczt =
           _signedPczt ??
-          await ref.read(ledgerPcztSignerProvider)(accountUuid, pcztBytes);
+          await _connectionScope.run<List<int>>(
+            () => ref.read(ledgerPcztSignerProvider)(accountUuid, pcztBytes),
+          );
       if (!mounted || _cancelled) return;
       _requireOriginalContext();
       _signedPczt = signedPczt;
@@ -340,6 +351,7 @@ class _LedgerShieldSigningOverlayState
       _phase = LedgerSigningModalPhase.broadcasting;
       _canRetry = false;
       _error = null;
+      _deviceGuidance = null;
     });
 
     try {
@@ -453,6 +465,7 @@ class _LedgerShieldSigningOverlayState
       _phase = LedgerSigningModalPhase.preparing;
       _canRetry = false;
       _error = null;
+      _deviceGuidance = null;
       _pcztBytes = null;
       _pcztWithProofs = null;
       _signedPczt = null;
@@ -532,6 +545,8 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -578,6 +593,7 @@ class _LedgerShieldSigningOverlayState
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: _accountUuid,
       roundNumber: _round,
       roundCount: _roundCount,
@@ -587,13 +603,18 @@ class _LedgerShieldSigningOverlayState
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
+              bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
+              pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
               isError: !_pausedEarly,
               title: _pausedEarly
                   ? 'Shielding paused'
                   : 'Ledger signing failed',
               statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
-              showDeviceAppPrompt: !_pausedEarly,
+              showDeviceAppPrompt:
+                  !_pausedEarly &&
+                  (_deviceGuidance?.showDeviceAppPrompt ?? false),
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,

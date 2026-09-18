@@ -57,6 +57,49 @@ class LedgerMobileHandlerTest {
     private val saved = DiscoveryDevice("saved-id", "Ledger", LedgerDevice.NanoX, ConnectivityType.Bluetooth(-50))
     private val connected = mock(ConnectedDevice::class.java)
 
+    @Test fun pairingSettingsOpensBluetoothListInsteadOfAppPermissions() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        assertEquals(true, call("openBluetoothPairingSettings").value)
+        assertEquals(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
+        verifyNoInteractions(dmk)
+    }
+
+    @Test fun accessStatusDoesNotPromptOrStartDiscovery() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        val result = call("bluetoothAccessStatus")
+        val status = result.value as Map<*, *>
+        assertEquals("requestable", status["permission"])
+        assertEquals("bluetooth", status["permissionKind"])
+        verifyNoInteractions(dmk)
+    }
+
+    @Test @Config(sdk = [30]) fun legacyAccessRequestsLocationPermission() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        val status = call("bluetoothAccessStatus").value as Map<*, *>
+        assertEquals("location", status["permissionKind"])
+        assertEquals("requestable", status["permission"])
+    }
+
+    @Test fun deniedRequestWithoutRationaleOffersSettingsAndGrantClearsIt() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        handler.close()
+        handler = LedgerMobileHandler(activity, dmk)
+        call("requestPermissions")
+        handler.onRequestPermissionsResult(0x4c45, intArrayOf(PackageManager.PERMISSION_DENIED))
+        assertEquals("settings", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        assertEquals("granted", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+        shadowOf(activity.application).denyPermissions(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        assertEquals("requestable", (call("bluetoothAccessStatus").value as Map<*, *>)["permission"])
+    }
+
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
         handler = LedgerMobileHandler(mock(Activity::class.java), dmk)
@@ -82,6 +125,140 @@ class LedgerMobileHandlerTest {
 
     private fun call(method: String, id: String = saved.uid): Result = Result().also {
         handler.handle(MethodCall(method, mapOf("deviceId" to id)), it)
+    }
+
+    private fun keyMissing(activity: Activity, address: String) {
+        val device = android.bluetooth.BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address)
+        activity.sendBroadcast(android.content.Intent(android.bluetooth.BluetoothDevice.ACTION_KEY_MISSING)
+            .putExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, device))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+    }
+
+    @Test @Config(sdk = [36]) fun keyMissingCancelsOnlySelectedConnectionAndDrainsLateSuccess() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        var pending: Continuation<ConnectionResult>? = null
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult =
+                suspendCoroutine { pending = it }
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        val events = mutableListOf<String>()
+        handler.onPairingInvalid = { events += it }
+        val result = Result()
+        handler.handle(MethodCall("connect", mapOf("deviceId" to target.uid, "connectionId" to "attempt-1")), result)
+        runCurrent()
+        keyMissing(activity, "AA:BB:CC:DD:EE:02")
+        assertEquals(0, result.completions)
+        keyMissing(activity, target.uid)
+        keyMissing(activity, target.uid)
+        assertEquals("pairing_invalid", result.error)
+        assertEquals(listOf("attempt-1"), events)
+        assertEquals("busy", call("currentApp").error)
+        pending!!.resume(ConnectionResult.Connected(connected))
+        runCurrent()
+        assertEquals(1, result.completions)
+        verify(dmk).disconnectDevice(connected)
+        assertEquals("pairing_invalid", call("currentApp").also { runCurrent() }.error)
+        handler.close()
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(1, events.size)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun lateKeyMissingRefinesFailedAttemptButIsDroppedAfterCancellation() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.connectDevice(target)).thenReturn(ConnectionResult.Disconnected(ConnectionResult.Failure.PairingFailed))
+        handler = LedgerMobileHandler(activity, dmk)
+        val events = mutableListOf<String>()
+        handler.onPairingInvalid = { events += it }
+        fun connectAttempt(id: String): Result = Result().also {
+            handler.handle(MethodCall("connect", mapOf("deviceId" to target.uid, "connectionId" to id)), it)
+        }
+        val first = connectAttempt("first")
+        runCurrent()
+        assertEquals("pairing_rejected", first.error)
+        call("disconnect")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        assertEquals(1, first.completions)
+        val second = connectAttempt("second")
+        runCurrent()
+        assertEquals("pairing_rejected", second.error)
+        // Replacement must happen before dispatch: the old receiver must not
+        // cancel this new request while it is still queued on the dispatcher.
+        val third = connectAttempt("third")
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        assertEquals(0, third.completions)
+        runCurrent()
+        assertEquals("pairing_rejected", third.error)
+        call("cancelSigning")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        assertEquals(listOf("first"), events)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun keyMissingDuringAppQueryRetiresSdkSession() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.connectDevice(target)).thenReturn(ConnectionResult.Connected(connected))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun <T> executeCommand(deviceId: String, command: Command<T>): DeviceOperationResult<T> = awaitCancellation()
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        call("connect", target.uid)
+        runCurrent()
+        val query = call("currentApp")
+        runCurrent()
+        keyMissing(activity, target.uid)
+        runCurrent()
+        assertEquals("pairing_invalid", query.error)
+        assertEquals(1, query.completions)
+        verify(dmk).disconnectDevice(connected)
+        activity.finish()
+    }
+
+    @Test @Config(sdk = [36]) fun userCancellationDoesNotEraseKeyLossCleanup() = runTest(dispatcher) {
+        handler.close()
+        runCurrent()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val target = saved.copy(uid = "AA:BB:CC:DD:EE:01")
+        `when`(connected.uid).thenReturn(target.uid)
+        `when`(dmk.startDiscoveringDevices()).thenReturn(flowOf(DiscoveryResult.DevicesDiscovered(listOf(target))))
+        `when`(dmk.getConnectedDevices()).thenReturn(listOf(connected))
+        val sdk = object : DeviceManagementKitApi by dmk {
+            override suspend fun connectDevice(device: DiscoveryDevice): ConnectionResult = awaitCancellation()
+        }
+        handler = LedgerMobileHandler(activity, sdk)
+        val result = call("connect", target.uid)
+        runCurrent()
+        keyMissing(activity, target.uid)
+        call("cancelSigning")
+        runCurrent()
+        assertEquals("pairing_invalid", result.error)
+        assertEquals(1, result.completions)
+        verify(dmk).disconnectDevice(connected)
+        activity.finish()
     }
 
     @Test fun appQueryTimeoutRetiresSessionBeforeRetryCanDispatch() = runTest(dispatcher) {
@@ -246,7 +423,7 @@ class LedgerMobileHandlerTest {
         val cases = listOf(
             DiscoveryResult.Failure.BluetoothDisabled to "bluetooth_off",
             DiscoveryResult.Failure.BluetoothPermissionNotGranted to "permission_denied",
-            DiscoveryResult.Failure.LocationDisabled to "permission_denied",
+            DiscoveryResult.Failure.LocationDisabled to "location_disabled",
             DiscoveryResult.Failure.BluetoothBleNotSupported to "unavailable",
             DiscoveryResult.Failure.Unknown("failure") to "unavailable",
             DiscoveryResult.Ended to "disconnected",
@@ -731,6 +908,26 @@ class LedgerMobileHandlerTest {
         assertEquals(0, queries)
         assertEquals("cancelled", result.error)
         assertEquals(1, result.completions)
+    }
+
+    @Test fun appOpenConsentRejectionKeepsItsTypedFailureAndCanRetry() = runTest(dispatcher) {
+        var queries = 0
+        useReadiness(
+            query = { queries++; DeviceOperationResult.Success(AppAndVersion("Zcash", "3.9.2")) },
+            open = { flowOf(DeviceActionResult.Failure(
+                com.ledger.devicemanagement.api.command.openapp.OpenApplicationCommandFailureReason.UserConsentRejected
+            )) },
+        )
+        val rejected = call("openZcashApp")
+        runCurrent()
+        assertEquals("rejected", rejected.error)
+        assertEquals(1, rejected.completions)
+        assertEquals(0, queries)
+        val retry = call("currentApp")
+        runCurrent()
+        assertNull(retry.error)
+        assertEquals(1, retry.completions)
+        assertEquals(1, queries)
     }
 
     @Test fun readinessErrorsAndEmptyAppActionAlwaysSettleAndReleaseTheSlot() = runTest(dispatcher) {

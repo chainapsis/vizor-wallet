@@ -1,3 +1,5 @@
+import '../src/providers/sync_provider.dart';
+import 'send_use_cases.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
 // ignore_for_file: depend_on_referenced_packages
 
@@ -171,6 +173,9 @@ Widget buildLedgerSigningPreview({
   int roundNumber = 1,
   int roundCount = 1,
   bool mobile = false,
+  LedgerSigningFailurePresentation? failureOverride,
+  String mobileTitle = 'Ledger',
+  LedgerMobileBleService? bluetoothService,
 }) {
   final modal = LedgerSigningModal(
     phase: phase,
@@ -178,7 +183,7 @@ Widget buildLedgerSigningPreview({
         ? signingStage
         : LedgerSigningStage.preparing,
     failure: phase == LedgerSigningModalPhase.failed
-        ? _failurePresentation(failureMode)
+        ? failureOverride ?? _failurePresentation(failureMode)
         : null,
     onCancel: () {},
     onFailureAction: () {},
@@ -188,7 +193,10 @@ Widget buildLedgerSigningPreview({
   );
   return ProviderScope(
     overrides: [
+      if (bluetoothService != null)
+        ledgerMobileBleServiceProvider.overrideWithValue(bluetoothService),
       appBootstrapProvider.overrideWithValue(_ledgerBootstrap),
+      syncProvider.overrideWith(_LedgerPreviewSync.new),
       accountProvider.overrideWith(_LedgerPreviewAccountNotifier.new),
       ledgerTargetPlatformProvider.overrideWithValue(
         mobile ? TargetPlatform.iOS : TargetPlatform.macOS,
@@ -201,10 +209,17 @@ Widget buildLedgerSigningPreview({
         ? SizedBox(
             width: 393,
             height: 852,
-            child: MobileLedgerSigningSurface(
-              onBack: () {},
-              canLeave: phase != LedgerSigningModalPhase.broadcasting,
-              child: modal,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Builder(builder: buildMobileSendReviewDefaultUseCase),
+                MobileLedgerSigningSurface(
+                  title: mobileTitle,
+                  onBack: () {},
+                  canLeave: phase != LedgerSigningModalPhase.broadcasting,
+                  child: modal,
+                ),
+              ],
             ),
           )
         : Center(child: modal),
@@ -496,10 +511,10 @@ LedgerSigningFailurePresentation _failurePresentation(
       ),
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
-        title: 'Ledger disconnected',
-        statusLabel: 'Connection lost',
-        message: 'Reconnect your Ledger to continue.',
-        showDeviceAppPrompt: true,
+        title: 'Ledger needs attention',
+        statusLabel: 'Action needed',
+        message: 'Reconnect your Ledger and open the Zcash app.',
+        showDeviceAppPrompt: false,
         actionLabel: 'Reconnect',
       ),
   };
@@ -532,25 +547,6 @@ LedgerAppReadinessState _readinessState(
 class _LedgerPreviewAccountNotifier extends AccountNotifier {
   @override
   FutureOr<AccountState> build() => _ledgerAccountState;
-
-  @override
-  Future<void> updateLedgerConnectionPreference(
-    String uuid,
-    LedgerConnectionPreference preference,
-  ) async {
-    final previous = state.value ?? _ledgerAccountState;
-    state = AsyncData(
-      previous.copyWith(
-        accounts: [
-          for (final account in previous.accounts)
-            if (account.uuid == uuid)
-              account.copyWith(ledgerConnectionPreference: preference)
-            else
-              account,
-        ],
-      ),
-    );
-  }
 
   @override
   Future<void> recordLedgerConnection({
@@ -653,7 +649,6 @@ const _ledgerAccount = AccountInfo(
   hardwareSignerKind: HardwareSignerKind.ledger,
   birthdayHeight: 2870000,
   zip32AccountIndex: 0,
-  ledgerConnectionPreference: LedgerConnectionPreference.automatic,
   ledgerLastTransport: LedgerConnectionTransport.usb,
   ledgerDeviceId: 'widgetbook-ledger-flex',
   ledgerDeviceName: 'Ledger Flex',
@@ -686,4 +681,9 @@ class _LedgerPreviewProgressController extends LedgerSigningProgressController {
   @override
   LedgerSigningProgress? build() =>
       LedgerSigningProgress(_ledgerAccount.uuid, stage);
+}
+
+class _LedgerPreviewSync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
 }

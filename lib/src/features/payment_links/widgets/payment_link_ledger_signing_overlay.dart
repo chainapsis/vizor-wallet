@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../send/screens/mobile/mobile_send_screen.dart'
@@ -59,6 +61,9 @@ class _PaymentLinkLedgerSigningOverlayState
   bool _checkpointed = false;
   bool _terminal = false;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
+
+  final _connectionScope = LedgerConnectionScope();
 
   bool get _active => mounted && !_cancelled;
   bool get _durableBusy =>
@@ -69,7 +74,8 @@ class _PaymentLinkLedgerSigningOverlayState
   void initState() {
     super.initState();
     _service = ref.read(paymentLinkLedgerFundingServiceProvider);
-    _sign = ref.read(ledgerPcztSignerProvider);
+    final sign = ref.read(ledgerPcztSignerProvider);
+    _sign = (uuid, pczt) => _connectionScope.run(() => sign(uuid, pczt));
     _cancelDevice = ref.read(ledgerOperationCancellerProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_active) _start();
@@ -86,6 +92,7 @@ class _PaymentLinkLedgerSigningOverlayState
         setState(() {
           _phase = LedgerSigningModalPhase.broadcasting;
           _error = null;
+          _deviceGuidance = null;
         });
         final result = await _service.resume(
           accountUuid: widget.sourceAccountUuid,
@@ -100,6 +107,7 @@ class _PaymentLinkLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
       _draft ??= await _service.prepare(
         accountUuid: widget.sourceAccountUuid,
@@ -166,13 +174,15 @@ class _PaymentLinkLedgerSigningOverlayState
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
           _terminal = error is LedgerGiftFundingTerminalException;
+          _deviceGuidance = ledgerFailureGuidance(error);
           _error = _terminal
               ? LedgerGiftFundingTerminalException.message
               : isLedgerLegacyOrchardRecoveryUnsupported(error)
               ? kLedgerLegacyOrchardRecoveryUnavailableMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : 'Ledger signing could not be completed. Check your device and try again.';
+              : _deviceGuidance?.message ??
+                    'Ledger signing could not be completed. Check your device and try again.';
         });
       }
     }
@@ -233,6 +243,7 @@ class _PaymentLinkLedgerSigningOverlayState
         _cancelled = false;
         _cleanup = null;
         _phase = LedgerSigningModalPhase.failed;
+        _deviceGuidance = null;
         _error = 'Could not finish cancelling. Please try again.';
       });
     }
@@ -259,16 +270,29 @@ class _PaymentLinkLedgerSigningOverlayState
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: widget.sourceAccountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
+              pairingRecovery:
+                  !_checkpointed &&
+                  !_terminal &&
+                  (_deviceGuidance?.pairingRecovery ?? false),
+              bluetoothRecovery:
+                  !_checkpointed &&
+                  !_terminal &&
+                  (_deviceGuidance?.bluetoothRecovery ?? false),
               title: unavailable
                   ? 'Ledger app update required'
                   : 'Gift card funding needs attention',
               statusLabel: 'Action needed',
               message: _error!,
-              showDeviceAppPrompt: !_checkpointed && !unavailable,
+              showDeviceAppPrompt:
+                  !_checkpointed &&
+                  !unavailable &&
+                  (_deviceGuidance?.showDeviceAppPrompt ?? false),
               actionLabel: unavailable || _terminal ? null : 'Try again',
             )
           : null,

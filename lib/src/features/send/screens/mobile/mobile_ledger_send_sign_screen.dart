@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../providers/sync_provider.dart';
 
 import 'package:flutter/widgets.dart';
@@ -15,6 +16,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
+import '../../../ledger/services/ledger_device_selection.dart';
 import '../../../ledger/widgets/ledger_device_app_prompt.dart';
 import '../../../ledger/widgets/ledger_signing_modal.dart';
 import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
@@ -100,6 +102,7 @@ class MobileLedgerSendSignScreen extends ConsumerStatefulWidget {
 
 class _MobileLedgerSendSignScreenState
     extends ConsumerState<MobileLedgerSendSignScreen> {
+  final LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   LedgerSigningFailurePresentation? _failure;
   _LedgerSendRecoveryAction? _recoveryAction;
@@ -242,9 +245,11 @@ class _MobileLedgerSendSignScreenState
           _round = index;
           _phase = LedgerSigningModalPhase.awaitingDevice;
         });
-        final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-          widget.args.proposalAccountUuid,
-          redactedPczts[index],
+        final signedPczt = await _connectionScope.run(
+          () => ref.read(ledgerPcztSignerProvider)(
+            widget.args.proposalAccountUuid,
+            redactedPczts![index],
+          ),
         );
         if (!_isCurrent(generation)) return;
         _signedPczts.add(List<int>.unmodifiable(signedPczt));
@@ -316,6 +321,7 @@ class _MobileLedgerSendSignScreenState
 
   void _setPreSignatureFailure(Object error) {
     final lower = error.toString().toLowerCase();
+    final guidance = ledgerFailureGuidance(error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
@@ -350,22 +356,31 @@ class _MobileLedgerSendSignScreenState
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (guidance != null) {
+      presentation = LedgerSigningFailurePresentation(
+        title: 'Ledger needs attention',
+        statusLabel: 'Action needed',
+        message: guidance.message,
+        showDeviceAppPrompt: guidance.showDeviceAppPrompt,
+        bluetoothRecovery: guidance.bluetoothRecovery,
+        pairingRecovery: guidance.pairingRecovery,
+        pairingInvalid: guidance.pairingInvalid,
+        actionLabel: 'Try again',
+      );
+      action = _LedgerSendRecoveryAction.retrySigning;
     } else {
-      final message =
-          lower.contains('rejected') ||
-              lower.contains('denied') ||
-              lower.contains('6985')
+      final message = lower.contains('rejected') || lower.contains('6985')
           ? 'The transaction was rejected on your Ledger.'
           : lower.contains('not found') ||
                 lower.contains('no device') ||
                 lower.contains('hid')
           ? 'Connect and unlock your Ledger. $appInstruction'
-          : '$appInstruction Then try again.';
+          : 'Ledger signing could not be completed. Check your device and try again.';
       presentation = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
         message: message,
-        showDeviceAppPrompt: true,
+        showDeviceAppPrompt: false,
         actionLabel: 'Try again',
       );
       action = _LedgerSendRecoveryAction.retrySigning;

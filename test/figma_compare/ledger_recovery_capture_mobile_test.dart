@@ -1,0 +1,62 @@
+@Tags(['mobile', 'figma-capture'])
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
+import 'package:zcash_wallet/figma_compare/figma_compare_scenarios.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'figma_compare_capture_support.dart';
+import 'ledger_pairing_capture_support.dart';
+
+// Supply an absolute output directory outside the repository.
+void main() {
+  const output = String.fromEnvironment('LEDGER_CAPTURE_DIR');
+  if (output.isEmpty) return;
+  runLedgerSelectionCaptures(mobile: true, output: output);
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final theme in [ThemeMode.light, ThemeMode.dark]) {
+      runFigmaCompareCaptureTest(
+        expectedFormFactor: AppFormFactor.mobile,
+        defaultLogicalSize: const Size(320, 568),
+        defaultPixelRatio: 2,
+        mobilePlatform: platform,
+        overrideConfiguration: FigmaCompareConfiguration(
+          scenarioId: 'ledger-mobile-large-text',
+          themeMode: theme,
+          outputPath:
+              '$output/mobile/${theme.name}/large-text-${platform.name}.png',
+          logicalSize: const Size(320, 568),
+          pixelRatio: 2,
+        ),
+        beforeCapture: (tester) async {
+          tester.view.viewPadding = const FakeViewPadding(top: 48, bottom: 48);
+          tester.view.padding = const FakeViewPadding(top: 48, bottom: 48);
+          addTearDown(tester.view.resetViewPadding);
+          addTearDown(tester.view.resetPadding);
+          await tester.pump();
+          expect(find.text('Select your Ledger'), findsOneWidget);
+        },
+      );
+    }
+  }
+  runLedgerPairingCaptures(mobile: true, output: output);
+  for (final scenario in figmaCompareScenarios.where(
+    (s) => s.mobile && s.id.startsWith('ledger-recovery-'),
+  )) {
+    for (final theme in [ThemeMode.dark, ThemeMode.light]) {
+      runFigmaCompareCaptureTest(
+        expectedFormFactor: AppFormFactor.mobile,
+        defaultLogicalSize: const Size(393, 852),
+        defaultPixelRatio: 2,
+        overrideConfiguration: FigmaCompareConfiguration(
+          scenarioId: scenario.id,
+          themeMode: theme,
+          outputPath: '$output/mobile/${theme.name}/${scenario.id}.png',
+          logicalSize: const Size(393, 852),
+          pixelRatio: 2,
+        ),
+      );
+    }
+  }
+}

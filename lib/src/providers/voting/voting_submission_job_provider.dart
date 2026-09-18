@@ -1,3 +1,4 @@
+import '../../features/ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -863,7 +864,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     VotingSessionNotifier sessionNotifier, {
     required VotingSessionKey key,
     required int generation,
-  }) async {
+  }) => LedgerConnectionScope().run(() async {
     await sessionNotifier.prepareLedgerSigning();
     if (!_isCurrentJob(key: key, generation: generation)) return;
 
@@ -905,7 +906,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       generation: generation,
       signerKind: HardwareSignerKind.ledger,
     );
-  }
+  });
 
   Future<void> _updateKeystoneQr({
     required VotingSessionKey key,

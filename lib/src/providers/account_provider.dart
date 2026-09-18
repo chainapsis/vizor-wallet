@@ -686,34 +686,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
-  Future<void> updateLedgerConnectionPreference(
-    String uuid,
-    LedgerConnectionPreference preference,
-  ) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
-    final prev = state.value ?? const AccountState();
-    final target = prev.accounts.where((account) => account.uuid == uuid);
-    if (target.isEmpty || !target.single.isLedger) {
-      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
-    }
-    AccountInfo updatePreference(AccountInfo account) => account.uuid == uuid
-        ? account.copyWith(ledgerConnectionPreference: preference)
-        : account;
-    final updated = prev.accounts.map(updatePreference).toList(growable: false);
-    await _saveAccounts(updated);
-    if (!ref.mounted) return;
-    // This is a UI-state merge, independent of Linux secret-session policy.
-    // A metadata write must not undo a lock or account switch on any platform.
-    final current = state.value ?? const AccountState();
-    state = AsyncData(
-      current.copyWith(
-        accounts: current.accounts
-            .map(updatePreference)
-            .toList(growable: false),
-      ),
-    );
-    log('updateLedgerConnectionPreference: $uuid → ${preference.name}');
-  });
-
   Future<void> recordLedgerConnection({
     required String uuid,
     required LedgerConnectionTransport transport,

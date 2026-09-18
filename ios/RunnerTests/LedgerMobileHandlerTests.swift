@@ -12,6 +12,56 @@ import XCTest
 
 final class LedgerMobileHandlerTests: XCTestCase {
   @MainActor
+  func testPermissionRequestWaitsForDecisionAndRejectsConcurrentDeviceWork() async {
+    let transport = PendingLedgerTransport()
+    var authorization: CBManagerAuthorization = .notDetermined
+    let handler = LedgerMobileHandler(transport: transport, authorization: { authorization })
+    var results: [Bool] = []
+    handler.handle(FlutterMethodCall(methodName: "requestPermissions", arguments: nil)) {
+      if let result = $0 as? Bool { results.append(result) }
+    }
+    XCTAssertTrue(results.isEmpty)
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      XCTAssertNotNil($0 as? FlutterError)
+    }
+    authorization = .denied
+    transport.stateCallback?(.unauthorized)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(results, [false])
+    handler.close()
+    XCTAssertEqual(results.count, 1)
+  }
+
+  @MainActor
+  func testPermissionDeadlineCompletesUnansweredPrompt() async {
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport,
+      authorization: { .notDetermined }, permissionTimeout: 1_000_000)
+    let finished = expectation(description: "permission deadline")
+    handler.handle(FlutterMethodCall(methodName: "requestPermissions", arguments: nil)) {
+      XCTAssertEqual($0 as? Bool, false)
+      finished.fulfill()
+    }
+    await fulfillment(of: [finished], timeout: 1)
+    handler.close()
+  }
+
+  @MainActor
+  func testAccessStatusDoesNotCreateBluetoothTransport() {
+    let handler = LedgerMobileHandler()
+    var status: [String: Any]?
+    handler.handle(FlutterMethodCall(methodName: "bluetoothAccessStatus", arguments: nil)) {
+      status = $0 as? [String: Any]
+    }
+    XCTAssertEqual(status?["permissionKind"] as? String, "bluetooth")
+    XCTAssertNotNil(status?["permission"])
+    // A read-only query must leave the lazy transport uninitialized.
+    let storage = Mirror(reflecting: handler).children.first { $0.label == "transportStorage" }
+    XCTAssertEqual(Mirror(reflecting: storage!.value).children.count, 0)
+    handler.close()
+  }
+
+  @MainActor
   func testAppQueryTimeoutAbortsTransportAndAllowsFreshConnection() async {
     let transport = PendingLedgerTransport()
     transport.drainsOnAbort = true
@@ -113,7 +163,11 @@ final class LedgerMobileHandlerTests: XCTestCase {
     let invalid = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue)
     XCTAssertTrue(ledgerPairingInformationIsInvalid(invalid))
     XCTAssertTrue(ledgerPairingInformationIsInvalid(
+      BleTransportError.underlying(error: invalid, fallback: .connectError(description: "Connection failed"))))
+    XCTAssertFalse(ledgerPairingInformationIsInvalid(
       BleTransportError.connectError(description: invalid.localizedDescription)))
+    XCTAssertFalse(ledgerPairingInformationIsInvalid(
+      NSError(domain: CBATTErrorDomain, code: invalid.code)))
     XCTAssertFalse(ledgerPairingInformationIsInvalid(
       BleTransportError.pairingError(description: "Rejected")))
     XCTAssertFalse(ledgerPairingInformationIsInvalid(
@@ -150,6 +204,48 @@ final class LedgerMobileHandlerTests: XCTestCase {
     await fulfillment(of: [ready], timeout: 2)
     XCTAssertEqual(completions, 1)
     XCTAssertEqual(transport.connects, 2)
+    handler.close()
+  }
+
+  @MainActor
+  func testPairingCauseWinsOverGenericDisconnectNotification() async {
+    let native = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue)
+    let transport = PendingLedgerTransport()
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let started = expectation(description: "query started")
+    transport.onExchange = { started.fulfill() }
+    let failed = expectation(description: "pairing failure delivered")
+    handler.handle(FlutterMethodCall(methodName: "currentApp", arguments: nil)) {
+      XCTAssertEqual(($0 as? FlutterError)?.code, "pairing_invalid")
+      failed.fulfill()
+    }
+    await fulfillment(of: [started], timeout: 2)
+    transport.failExchangeOnDisconnect(BleTransportError.underlying(error: native,
+      fallback: .currentConnectedError(description: "Ledger disconnected")))
+    await fulfillment(of: [failed], timeout: 2)
+    handler.close()
+  }
+
+  @MainActor
+  func testStructuredPairingFailureReachesFlutterWithNativeIdentity() {
+    let native = NSError(domain: CBErrorDomain,
+                         code: CBError.peerRemovedPairingInformation.rawValue,
+                         userInfo: [NSLocalizedDescriptionKey: "任意の翻訳"])
+    let transport = PendingLedgerTransport()
+    transport.deferConnectCompletion = true
+    let handler = LedgerMobileHandler(transport: transport)
+    var results: [Any?] = []
+    connect(handler) { results.append($0) }
+    transport.failConnect(.underlying(error: native, fallback: .connectError(description: "Generic failure")))
+    XCTAssertEqual(results.count, 1)
+    let failure = results.first! as? FlutterError
+    XCTAssertEqual(failure?.code, "pairing_invalid")
+    let details = failure?.details as? [String: Any]
+    XCTAssertEqual(details?["nativeDomain"] as? String, CBErrorDomain)
+    XCTAssertEqual(details?["nativeCode"] as? Int, native.code)
+    XCTAssertFalse(LedgerMobileAppSwitchCoordinator.isTransientTransitionError(
+      BleTransportError.underlying(error: native, fallback: .connectError(description: "Generic failure"))))
     handler.close()
   }
 
@@ -1037,7 +1133,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   var disconnectFailures = 0
   var onExchange: (() -> Void)?
   private var pending: CheckedContinuation<String, Error>?
-  private var disconnectedCallbacks: [EmptyResponse] = []
+  private var disconnectedCallbacks: [DisconnectionResponse] = []
   private var deferredConnect: (PeripheralIdentifier, PeripheralResponse)?
   private var deferredConnectFailure: BleErrorResponse?
   private var deferredDisconnectCompletion: OptionalBleErrorResponse?
@@ -1058,7 +1154,7 @@ private final class PendingLedgerTransport: BleTransportProtocol {
       onExchange?()
     }
   }
-  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?,
+  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?,
     success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) {
     connects += 1
     isConnected = true
@@ -1077,12 +1173,12 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     deferredConnectFailure = nil
     deferred.1(deferred.0)
   }
-  func failConnect() {
+  func failConnect(_ error: BleTransportError = .connectError(description: "Late failure")) {
     let failure = deferredConnectFailure
     deferredConnect = nil
     deferredConnectFailure = nil
     isConnected = false
-    failure?(BleTransportError.connectError(description: "Late failure"))
+    failure?(error)
   }
   func abortExchange() {
     aborts += 1
@@ -1117,20 +1213,21 @@ private final class PendingLedgerTransport: BleTransportProtocol {
   func stopScanning() {}
   func scan(duration: TimeInterval, callback: @escaping PeripheralsWithServicesResponse,
     stopped: @escaping OptionalBleErrorResponse) { scans += 1 }
-  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier {
+  func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier {
     reconnects += 1
     isConnected = true
     if let disconnectedCallback { disconnectedCallbacks.append(disconnectedCallback) }
     return peripheral
   }
-  func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
-  func create(scanDuration: TimeInterval, disconnectedCallback: EmptyResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
+  func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
+  func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
   func exchange(apdu: APDU, callback: @escaping (Result<String, BleTransportError>) -> Void) { XCTFail("unused") }
   func send(apdu: APDU, success: @escaping EmptyResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
   func send(apdu: APDU) async throws { XCTFail("unused") }
   func disconnect() async throws { disconnect(completion: nil) }
   func bluetoothAvailabilityCallback(completion: @escaping (Bool) -> Void) {}
-  func bluetoothStateCallback(completion: @escaping (CBManagerState) -> Void) {}
+  var stateCallback: ((CBManagerState) -> Void)?
+  func bluetoothStateCallback(completion: @escaping (CBManagerState) -> Void) { stateCallback = completion }
   func bluetoothStateCallback() async -> CBManagerState { .poweredOn }
   func notifyDisconnected(completion: @escaping EmptyResponse) {}
   func getAppAndVersion(success: @escaping (AppInfo) -> Void, failure: @escaping ErrorResponse) { XCTFail("unused") }
@@ -1142,17 +1239,17 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     isConnected = false
   }
 
-  func failExchangeOnDisconnect() {
+  func failExchangeOnDisconnect(_ error: Error = BleTransportError.currentConnectedError(description: "Ledger disconnected")) {
     let continuation = pending
     pending = nil
     isConnected = false
-    continuation?.resume(throwing: BleTransportError.currentConnectedError(description: "Ledger disconnected"))
-    simulateDisconnect()
+    continuation?.resume(throwing: error)
+    simulateDisconnect(error: error)
   }
 
-  func simulateDisconnect(callbackIndex: Int? = nil, markDisconnected: Bool = true) {
+  func simulateDisconnect(callbackIndex: Int? = nil, markDisconnected: Bool = true, error: Error? = nil) {
     if markDisconnected { isConnected = false }
     let index = callbackIndex ?? disconnectedCallbacks.index(before: disconnectedCallbacks.endIndex)
-    disconnectedCallbacks[index]()
+    disconnectedCallbacks[index](error)
   }
 }

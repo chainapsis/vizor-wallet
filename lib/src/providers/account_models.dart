@@ -14,21 +14,6 @@ enum HardwareSignerKind {
   }
 }
 
-enum LedgerConnectionPreference {
-  automatic,
-  usb,
-  bluetooth;
-
-  static LedgerConnectionPreference fromJson(Object? value) {
-    if (value is! String) return LedgerConnectionPreference.automatic;
-    return switch (value.trim().toLowerCase()) {
-      'usb' => LedgerConnectionPreference.usb,
-      'bluetooth' => LedgerConnectionPreference.bluetooth,
-      _ => LedgerConnectionPreference.automatic,
-    };
-  }
-}
-
 enum LedgerConnectionTransport {
   usb,
   bluetooth;
@@ -51,7 +36,6 @@ class AccountInfo {
   final HardwareSignerKind? hardwareSignerKind;
   final int? birthdayHeight;
   final int? zip32AccountIndex;
-  final LedgerConnectionPreference ledgerConnectionPreference;
   final LedgerConnectionTransport? ledgerLastTransport;
   final String? ledgerDeviceId;
   final String? ledgerDeviceName;
@@ -68,7 +52,6 @@ class AccountInfo {
     HardwareSignerKind? hardwareSignerKind,
     this.birthdayHeight,
     this.zip32AccountIndex,
-    this.ledgerConnectionPreference = LedgerConnectionPreference.automatic,
     this.ledgerLastTransport,
     this.ledgerDeviceId,
     this.ledgerDeviceName,
@@ -93,7 +76,6 @@ class AccountInfo {
     HardwareSignerKind? hardwareSignerKind,
     int? birthdayHeight,
     int? zip32AccountIndex,
-    LedgerConnectionPreference? ledgerConnectionPreference,
     LedgerConnectionTransport? ledgerLastTransport,
     String? ledgerDeviceId,
     String? ledgerDeviceName,
@@ -108,8 +90,6 @@ class AccountInfo {
     hardwareSignerKind: hardwareSignerKind ?? this.hardwareSignerKind,
     birthdayHeight: birthdayHeight ?? this.birthdayHeight,
     zip32AccountIndex: zip32AccountIndex ?? this.zip32AccountIndex,
-    ledgerConnectionPreference:
-        ledgerConnectionPreference ?? this.ledgerConnectionPreference,
     ledgerLastTransport: ledgerLastTransport ?? this.ledgerLastTransport,
     ledgerDeviceId: ledgerDeviceId ?? this.ledgerDeviceId,
     ledgerDeviceName: ledgerDeviceName ?? this.ledgerDeviceName,
@@ -128,9 +108,6 @@ class AccountInfo {
     'hardwareSignerKind': hardwareSignerKind?.name,
     'birthdayHeight': birthdayHeight,
     'zip32AccountIndex': zip32AccountIndex,
-    'ledgerConnectionPreference': isLedger
-        ? ledgerConnectionPreference.name
-        : null,
     'ledgerLastTransport': isLedger ? ledgerLastTransport?.name : null,
     'ledgerDeviceId': isLedger ? ledgerDeviceId : null,
     'ledgerDeviceName': isLedger ? ledgerDeviceName : null,
@@ -153,9 +130,6 @@ class AccountInfo {
           : null,
       birthdayHeight: json['birthdayHeight'] as int?,
       zip32AccountIndex: json['zip32AccountIndex'] as int?,
-      ledgerConnectionPreference: LedgerConnectionPreference.fromJson(
-        json['ledgerConnectionPreference'],
-      ),
       ledgerLastTransport: LedgerConnectionTransport.fromJson(
         json['ledgerLastTransport'],
       ),

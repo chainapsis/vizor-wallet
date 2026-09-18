@@ -90,7 +90,6 @@ void main() {
       order: 0,
       isHardware: true,
       hardwareSignerKind: HardwareSignerKind.ledger,
-      ledgerConnectionPreference: LedgerConnectionPreference.bluetooth,
       ledgerLastTransport: LedgerConnectionTransport.bluetooth,
       ledgerDeviceId: 'device-id',
       ledgerDeviceName: 'Rowan Ledger',
@@ -99,17 +98,13 @@ void main() {
 
     final restored = AccountInfo.fromJson(account.toJson());
 
-    expect(
-      restored.ledgerConnectionPreference,
-      LedgerConnectionPreference.bluetooth,
-    );
     expect(restored.ledgerLastTransport, LedgerConnectionTransport.bluetooth);
     expect(restored.ledgerDeviceId, 'device-id');
     expect(restored.ledgerDeviceName, 'Rowan Ledger');
     expect(restored.ledgerDeviceModel, 'Nano X');
   });
 
-  test('legacy Ledger accounts default to automatic connection selection', () {
+  test('legacy Ledger accounts load without a connection preference', () {
     final account = AccountInfo.fromJson({
       'uuid': 'account-1',
       'name': 'Ledger',
@@ -118,10 +113,6 @@ void main() {
       'hardwareSignerKind': 'ledger',
     });
 
-    expect(
-      account.ledgerConnectionPreference,
-      LedgerConnectionPreference.automatic,
-    );
     expect(account.ledgerLastTransport, isNull);
     expect(account.ledgerDeviceId, isNull);
   });

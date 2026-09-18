@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -10,6 +11,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_operation_recovery.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
@@ -47,11 +49,13 @@ class SwapLedgerSigningOverlay extends ConsumerStatefulWidget {
 
 class _SwapLedgerSigningOverlayState
     extends ConsumerState<SwapLedgerSigningOverlay> {
+  final LedgerConnectionScope _connectionScope = LedgerConnectionScope();
   LedgerSigningModalPhase _phase = LedgerSigningModalPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  LedgerFailureGuidance? _deviceGuidance;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<int>? _pcztWithProofs;
@@ -195,9 +199,8 @@ class _SwapLedgerSigningOverlayState
         _pcztWithProofs = pcztWithProofs;
       });
 
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        draft.pcztBytes,
+      final signedPczt = await _connectionScope.run(
+        () => ref.read(ledgerPcztSignerProvider)(accountUuid, draft.pcztBytes),
       );
       if (!mounted || _cancelled) return;
       await _checkpointAndBroadcast(
@@ -227,6 +230,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
       try {
         var pendingResult = _pendingBroadcastResult;
@@ -261,6 +265,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
+        _deviceGuidance = null;
       });
       await _prepareAndSign();
       return;
@@ -269,12 +274,12 @@ class _SwapLedgerSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.awaitingDevice;
       _error = null;
+      _deviceGuidance = null;
     });
     try {
       final accountUuid = widget.intent.accountUuid!;
-      final signedPczt = await ref.read(ledgerPcztSignerProvider)(
-        accountUuid,
-        draft.pcztBytes,
+      final signedPczt = await _connectionScope.run(
+        () => ref.read(ledgerPcztSignerProvider)(accountUuid, draft.pcztBytes),
       );
       if (!mounted || _cancelled) return;
       final operationKind = widget.intent.payMode
@@ -340,6 +345,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.broadcasting;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     late final LedgerSignedOperationBroadcastResult result;
@@ -425,6 +431,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     final draft = _draft;
@@ -456,6 +463,7 @@ class _SwapLedgerSigningOverlayState
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
+        _deviceGuidance = null;
       });
     }
     final draft = _draft;
@@ -545,6 +553,7 @@ class _SwapLedgerSigningOverlayState
     setState(() {
       _phase = LedgerSigningModalPhase.saving;
       _error = null;
+      _deviceGuidance = null;
     });
     _cancelled = true;
     await _cancelLedgerOperationSafely();
@@ -637,6 +646,8 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _deviceGuidance = ledgerFailureGuidance(error);
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -676,10 +687,20 @@ class _SwapLedgerSigningOverlayState
         pendingBroadcastResult?.status ==
             SwapDepositBroadcastStatus.broadcastedStorageFailed;
     final modal = LedgerSigningModal(
+      connectionScope: _connectionScope,
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
+              pairingRecovery:
+                  !postBroadcastRecovery &&
+                  !_operationClaimUnavailable &&
+                  (_deviceGuidance?.pairingRecovery ?? false),
+              bluetoothRecovery:
+                  !postBroadcastRecovery &&
+                  !_operationClaimUnavailable &&
+                  (_deviceGuidance?.bluetoothRecovery ?? false),
               title: postBroadcastRecovery
                   ? expiredRecovery
                         ? 'Transaction expired'
@@ -712,7 +733,8 @@ class _SwapLedgerSigningOverlayState
               showDeviceAppPrompt:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&
-                  !legacyOrchardRecoveryUnavailable,
+                  !legacyOrchardRecoveryUnavailable &&
+                  (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker:
                   !postBroadcastRecovery && !_operationClaimUnavailable,
               actionLabel:

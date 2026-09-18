@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -411,6 +412,7 @@ void main() {
           fixture.accountUuid,
           fixture.pcztBytes,
         );
+        await _chooseUsbForHeadlessSigning(container);
         expect(await approval, isTrue);
         expect(await signed, isNotEmpty);
       }
@@ -454,6 +456,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
     fixture.accountUuid,
     unsigned,
   );
+  await _chooseUsbForHeadlessSigning(container);
   expect(await approval, isTrue);
   final signedBytes = await signed;
   expect(signedBytes, isNotEmpty);
@@ -496,6 +499,7 @@ Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
       fixture.accountUuid,
       pczt,
     );
+    await _chooseUsbForHeadlessSigning(container);
     expect(await approval, isTrue);
     signaturesByBundle[bundleIndex] = requireMatchingLedgerVotingSignature(
       signatures: await signatures,
@@ -1632,7 +1636,6 @@ AppBootstrapState _ledgerBootstrap(
           isHardware: true,
           hardwareSignerKind: HardwareSignerKind.ledger,
           zip32AccountIndex: fixture.accountIndex,
-          ledgerConnectionPreference: LedgerConnectionPreference.usb,
           ledgerLastTransport: LedgerConnectionTransport.usb,
           ledgerDeviceName: 'Speculos Nano S Plus',
           ledgerDeviceModel: 'Nano S Plus',
@@ -1917,6 +1920,10 @@ Future<void> _pumpUntil(
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
     if (condition()) return;
+    final usbChoice = find.byKey(const ValueKey('ledger_choose_usb'));
+    if (usbChoice.evaluate().isNotEmpty) {
+      await tester.tap(usbChoice);
+    }
     await tester.pump(const Duration(milliseconds: 100));
   }
   throw TimeoutException('Timed out waiting for $description.');
@@ -1936,4 +1943,19 @@ class _FakeSyncNotifier extends SyncNotifier {
     displaySpendableBalance: BigInt.from(100000000),
     totalBalance: BigInt.from(100000000),
   );
+}
+
+// Headless canaries have no modal to answer the macOS transport request.
+Future<void> _chooseUsbForHeadlessSigning(ProviderContainer container) async {
+  if (defaultTargetPlatform != TargetPlatform.macOS) return;
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (DateTime.now().isBefore(deadline)) {
+    final request = container.read(ledgerDeviceSelectionProvider);
+    if (request != null) {
+      await request.selectUsb();
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  throw TimeoutException('Timed out waiting for Ledger connection choice.');
 }
