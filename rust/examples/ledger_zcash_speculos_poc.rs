@@ -300,7 +300,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
     }
     let client = SpeculosClient::new(&config.api_url)?;
     let signing_api_url = config.signing_api_url.as_deref().ok_or(
-        "Smoke mode requires --signing-api-url for a fresh Speculos instance using the same seed",
+        "Smoke mode requires --signing-api-url for a Speculos instance using the same seed",
     )?;
     let signing_client = SpeculosClient::new(signing_api_url)?;
     let (export, automated_ufvk_review) =
@@ -398,6 +398,9 @@ fn export_account_from_speculos(
         ufvk_responses.push(continuation);
     }
     let export = ledger_parse_mobile_ufvk_responses(0, network.to_string(), ufvk_responses)?;
+    // Raw APDU mode bypasses the desktop operation cooldown. Wait for the UFVK
+    // status screen here too, so the same instance can accept the next request.
+    thread::sleep(Duration::from_secs(4));
     Ok((export, automated_review))
 }
 
@@ -1026,11 +1029,11 @@ impl Config {
 fn usage() -> String {
     let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
-        "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <fresh-speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
+        "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\
 builds a transparent PCZT for that key, and exercises Vizor plan, transport, and finalize.\n\
-The signing API must be a fresh instance using the same deterministic seed because the\n\
-Zcash app does not accept PCZT initialization in the post-UFVK Speculos session.\n\n\
+The signing API may use the same instance as UFVK export. Both must use the same seed.\n\
+Raw harness exports wait for the device status screen before the next APDU.\n\n\
 For file mode, the wallet database must contain the selected Ledger account imported\n\
 from the same Speculos seed. Start Zcash 3.9.3 or newer with its REST API exposed, then run:\n\
   cargo run --example ledger_zcash_speculos_poc -- <arguments>\n\n\

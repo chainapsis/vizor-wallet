@@ -623,6 +623,9 @@ fn is_terminal_app_transition_error(error: &str) -> bool {
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn get_ufvk(account_index: u32) -> Result<String, String> {
     let operation = lock_operation()?;
+    // UFVK export also leaves the device showing a status screen. A following
+    // signing/readiness APDU must wait just as it does after a signature.
+    let _status_cooldown = SigningStatusCooldownGuard;
     transport::LedgerTransport::connect_ufvk(operation.context())?.ufvk(account_index)
 }
 
