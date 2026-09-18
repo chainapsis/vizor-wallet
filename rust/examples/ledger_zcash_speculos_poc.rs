@@ -29,7 +29,7 @@ use transparent::{
 };
 use url::Url;
 use zcash_address::{ToAddress, ZcashAddress};
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::keys::{transparent::gap_limits::GapLimits, UnifiedFullViewingKey};
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
@@ -208,6 +208,48 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     drop(db);
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|error| format!("Reopen fixture wallet DB: {error}"))?;
+    // This isolated fixture represents a recovered wallet, not a live discovery
+    // run. External index 0 holds the synthetic UTXO; both trailing gaps are
+    // exhausted. complete=2 means both scopes passed the account-level check.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ext_vizor_ledger_initial_discovery (
+            account_uuid BLOB NOT NULL, key_scope INTEGER NOT NULL CHECK(key_scope IN (0,1)),
+            tip_height INTEGER NOT NULL, tip_hash BLOB NOT NULL,
+            next_index INTEGER NOT NULL, unused INTEGER NOT NULL, complete INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(account_uuid,key_scope))",
+    )
+    .map_err(|error| format!("Create fixture Ledger discovery table: {error}"))?;
+    let account_id = uuid::Uuid::parse_str(&account.account_uuid)
+        .map_err(|error| format!("Decode fixture account UUID: {error}"))?;
+    let gaps = GapLimits::default();
+    for (scope, used, gap) in [(0, 1, gaps.external()), (1, 0, gaps.internal())] {
+        conn.execute(
+            "INSERT INTO ext_vizor_ledger_initial_discovery
+                (account_uuid,key_scope,tip_height,tip_hash,next_index,unused,complete)
+             VALUES (?1,?2,?3,?4,?5,?6,2)",
+            rusqlite::params![
+                account_id.as_bytes().as_slice(),
+                scope,
+                u32::from(chain_tip),
+                [0u8; 32].as_slice(), // Synthetic checkpoint; no live chain is queried.
+                used + gap,
+                gap,
+            ],
+        )
+        .map_err(|error| format!("Complete fixture Ledger discovery scope {scope}: {error}"))?;
+    }
+    drop(conn);
+    let shielding = rust_lib_zcash_wallet::api::sync::get_ledger_shielding_progress(
+        db_path.clone(),
+        config.network.clone(),
+        account.account_uuid.clone(),
+    )
+    .map_err(|error| format!("Validate fixture Ledger shielding readiness: {error}"))?;
+    if shielding.input_count != 1 || shielding.below_threshold {
+        return Err("Ledger fixture must have one shieldable transparent input".into());
+    }
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| format!("Reopen prepared fixture wallet DB: {error}"))?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
         .map_err(|error| format!("Checkpoint fixture wallet DB: {error}"))?;
     drop(conn);

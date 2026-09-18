@@ -85,6 +85,13 @@ PCZT signing approval, and finalization on the same instance through the
 production desktop transport. It validates this emulator setup, not immediate
 export-to-sign behavior in the product, the mobile BLE path, or physical hardware.
 
+The synthetic wallet fixture includes its transparent UTXO and completed Ledger
+address-discovery checkpoints for both external and change scopes (`complete=2`).
+These describe a recovered test wallet; no live address discovery is performed.
+Fixture preparation checks the production shielding-progress API for one
+shieldable input before handing the DB to Flutter. This keeps the product's
+recovery gate active and catches fixture drift before an approval-screen timeout.
+
 The existing `flutter-macos-ledger-speculos.sh` and
 `flutter-mobile-ledger-speculos.sh` still support externally managed endpoints.
 Their scenario lists are shared in `ledger-speculos-scenarios.sh`.
