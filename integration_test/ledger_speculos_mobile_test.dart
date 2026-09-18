@@ -21,12 +21,15 @@ import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_device_label.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_access_content.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
@@ -142,6 +145,7 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
     fixture.accountUuid,
     unsigned,
   );
+  await _selectDeviceForHeadlessSigning(container);
   expect(
     await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
     isTrue,
@@ -177,6 +181,7 @@ Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
       fixture.accountUuid,
       pczt,
     );
+    await _selectDeviceForHeadlessSigning(container);
     expect(
       await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
       isTrue,
@@ -2081,9 +2086,50 @@ Future<void> _pumpUntil(
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
     if (condition()) return;
+    // Signing now asks the user to select a device for each operation. Exercise
+    // the real picker instead of relying on the saved connection auto-opening.
+    final picker = find.byType(MobileLedgerAccessContent);
+    final choosing = find.descendant(
+      of: picker,
+      matching: find.text('Select your Ledger'),
+    );
+    if (choosing.evaluate().isNotEmpty) {
+      final device = find
+          .descendant(
+            of: picker,
+            matching: find.text(
+              ledgerDeviceLabel(_SpeculosLedgerMobileBleService.device),
+            ),
+          )
+          .hitTestable();
+      if (device.evaluate().isNotEmpty) await tester.tap(device);
+    }
     await tester.pump(const Duration(milliseconds: 100));
   }
   throw TimeoutException('Timed out waiting for $description.');
+}
+
+// These signer-only scenarios do not mount the picker UI. Complete its request
+// through the same connection/verification path used by the visible picker.
+Future<void> _selectDeviceForHeadlessSigning(
+  ProviderContainer container,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (DateTime.now().isBefore(deadline)) {
+    final request = container.read(ledgerDeviceSelectionProvider);
+    if (request != null) {
+      await request.prepare();
+      final outcome = await request.select(
+        _SpeculosLedgerMobileBleService.device,
+        () {},
+        () {},
+      );
+      expect(outcome, LedgerDeviceSelectionOutcome.selected);
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  throw TimeoutException('Timed out waiting for Ledger device selection.');
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
