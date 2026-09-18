@@ -126,7 +126,7 @@ pub async fn open_pipeline(
     // Ledger needs a recoverable hotkey output and a printable ASCII memo.
     // Keep account-OVK recovery disabled for software and Keystone accounts.
     Ok(Arc::new(if is_ledger {
-        pipeline.with_ledger_compatibility()
+        pipeline.with_ledger_output_review()
     } else {
         pipeline
     }))
