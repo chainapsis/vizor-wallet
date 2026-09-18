@@ -174,9 +174,8 @@ Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
 
   final signaturesByBundle = <int, LedgerVotingSignature>{};
   for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
-    final pczt = await rust_sync.redactPcztForSigner(
-      pcztBytes: fixture.votingBundlePczts[bundleIndex],
-    );
+    // Already redacted by the SDK hardware signing-request path.
+    final pczt = fixture.votingBundlePczts[bundleIndex];
     final signatures = container.read(ledgerVotingPcztSignerProvider)(
       fixture.accountUuid,
       pczt,
