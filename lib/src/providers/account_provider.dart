@@ -102,6 +102,22 @@ class WalletResetInFlightGiftCardClaimsException implements Exception {
   String toString() => kWalletResetInFlightGiftCardClaimsMessage;
 }
 
+/// Removal was confirmed against [confirmedCount] unshared Gift Cards, but
+/// more became funded while pending work drained; the user must confirm again.
+class UnsharedGiftCardsChangedException implements Exception {
+  const UnsharedGiftCardsChangedException({
+    required this.confirmedCount,
+    required this.count,
+  });
+
+  final int confirmedCount;
+  final int count;
+
+  @override
+  String toString() =>
+      'More gift card links were funded. Review the warning and confirm again.';
+}
+
 class WalletResetException implements Exception {
   const WalletResetException({required this.cause, required this.dbDeleted});
 
@@ -740,11 +756,54 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// records or secure storage. Process-local voting state is then cleared
   /// before the wallet delete. Durable voting rows, hotkeys, and other
   /// account-scoped sidecars are cleared after the wallet account is deleted.
-  Future<void> removeAccount(String uuid) => ref
+  ///
+  /// [confirmedUnsharedGiftCardCount] is the unshared Gift Card count the user
+  /// was warned about; null skips the post-drain recheck.
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) => ref
       .read(linuxKeyringCoordinatorProvider)
-      .runMutation(() => _removeAccount(uuid));
+      .runMutation(
+        () => _removeAccount(
+          uuid,
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        ),
+      );
 
-  Future<void> _removeAccount(String uuid) async {
+  /// Refuses when Gift Cards were funded after the user confirmed, e.g. by a
+  /// signed Ledger operation that finished while deletion drained its work.
+  Future<void> _throwIfUnsharedGiftCardsIncreased(
+    Iterable<String> accountUuids,
+    int? confirmedCount,
+  ) async {
+    if (confirmedCount == null) return;
+    final int count;
+    try {
+      final records = await ref.read(paymentLinkRecoveryStoreProvider).load();
+      count = accountUuids.fold(
+        0,
+        (sum, uuid) =>
+            sum +
+            countUnsharedFundedPaymentLinks(records, sourceAccountUuid: uuid),
+      );
+    } catch (e, st) {
+      // The user was already warned; a failed recheck must not block removal.
+      log('unshared gift card recheck failed: $e\n$st');
+      return;
+    }
+    if (count > confirmedCount) {
+      throw UnsharedGiftCardsChangedException(
+        confirmedCount: confirmedCount,
+        count: count,
+      );
+    }
+  }
+
+  Future<void> _removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
     final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
@@ -770,6 +829,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
+      await _throwIfUnsharedGiftCardsIncreased([
+        uuid,
+      ], confirmedUnsharedGiftCardCount);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
       ledgerLifecycle.resume();
@@ -959,11 +1021,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   ///
   /// Once the durable wallet data is gone, the Tor route is returned to Direct
   /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
-  Future<void> resetWallet() => ref
+  ///
+  /// [confirmedUnsharedGiftCardCount] works as in [removeAccount], summed over
+  /// every account.
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) => ref
       .read(linuxKeyringCoordinatorProvider)
-      .runMutation(() => _resetWallet());
+      .runMutation(
+        () => _resetWallet(
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        ),
+      );
 
-  Future<void> _resetWallet() async {
+  Future<void> _resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
@@ -979,6 +1048,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
+      await _throwIfUnsharedGiftCardsIncreased([
+        for (final account in state.value?.accounts ?? const <AccountInfo>[])
+          account.uuid,
+      ], confirmedUnsharedGiftCardCount);
       await _resetWalletWithShareTrackingStopped();
       resetCompleted = true;
       resumeClaimLifecycle = true;

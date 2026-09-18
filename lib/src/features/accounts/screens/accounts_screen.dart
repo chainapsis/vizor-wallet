@@ -169,11 +169,35 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   Future<void> _removeAccount(
     String uuid, {
     required bool isLastAccount,
+    required int? confirmedUnsharedGiftCardCount,
+    AccountRemoveProgressCallback? onProgress,
+  }) async {
+    try {
+      await _removeOrResetAccount(
+        uuid,
+        isLastAccount: isLastAccount,
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        onProgress: onProgress,
+      );
+    } on UnsharedGiftCardsChangedException {
+      // The modal stays open; refresh its warning before the user reconfirms.
+      ref.invalidate(paymentLinkUnsharedFundedCountProvider(uuid));
+      rethrow;
+    }
+  }
+
+  Future<void> _removeOrResetAccount(
+    String uuid, {
+    required bool isLastAccount,
+    required int? confirmedUnsharedGiftCardCount,
     AccountRemoveProgressCallback? onProgress,
   }) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     if (isLastAccount) {
-      await _resetWalletFromAccountRemoval(onProgress);
+      await _resetWalletFromAccountRemoval(
+        onProgress,
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+      );
       return;
     }
 
@@ -202,7 +226,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       () async {
         logPauseComplete();
         final mutationWatch = Stopwatch()..start();
-        await accountNotifier.removeAccount(uuid);
+        await accountNotifier.removeAccount(
+          uuid,
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        );
         log(
           'removeAccountFlow: account mutation complete in '
           '${mutationWatch.elapsedMilliseconds}ms uuid=$uuid',
@@ -232,15 +259,18 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 
   Future<void> _resetWalletFromAccountRemoval(
-    AccountRemoveProgressCallback? onProgress,
-  ) async {
+    AccountRemoveProgressCallback? onProgress, {
+    required int? confirmedUnsharedGiftCardCount,
+  }) async {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
     await runWithSyncPausedForWalletReset(
       ref,
-      accountNotifier.resetWallet,
+      () => accountNotifier.resetWallet(
+        confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+      ),
       onResetting: () {
         onProgress?.call(AccountRemoveProgress.removingAccount);
       },
@@ -383,6 +413,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     onRemove: (onProgress) => _removeAccount(
                       modalAccount.uuid,
                       isLastAccount: isLastModalAccount,
+                      confirmedUnsharedGiftCardCount:
+                          modalUnsharedGiftCardCount.hasError
+                          ? null
+                          : modalUnsharedGiftCardCount.value,
                       onProgress: onProgress,
                     ),
                   ),

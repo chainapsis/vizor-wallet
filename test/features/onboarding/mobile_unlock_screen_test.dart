@@ -273,7 +273,7 @@ class _ResetBlockedAccountNotifier extends AccountNotifier {
   Future<void> restoreAfterUnlock() async {}
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     resets += 1;
     throw const WalletResetInFlightGiftCardClaimsException(count: 1);
   }

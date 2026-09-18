@@ -164,6 +164,10 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   final AccountState initialState;
   final Object? removeError;
+
+  /// Runs before a removal or reset; throwing aborts it.
+  void Function(int? confirmedUnsharedGiftCardCount)? beforeRemove;
+  final List<int?> confirmedUnsharedGiftCardCounts = [];
   var resetCount = 0;
   String? removedUuid;
 
@@ -171,8 +175,13 @@ class _FakeAccountNotifier extends AccountNotifier {
   FutureOr<AccountState> build() => initialState;
 
   @override
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     if (removeError case final error?) throw error;
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     removedUuid = uuid;
     final previous = state.value ?? initialState;
     final remaining = [
@@ -193,7 +202,9 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     resetCount += 1;
     state = const AsyncData(AccountState());
   }
@@ -663,6 +674,73 @@ void main() {
         find.byKey(const ValueKey('mobile_account_remove_confirm')),
       );
       expect(confirm.onPressed, isNotNull);
+    });
+  }
+
+  for (final isLastAccount in [false, true]) {
+    testWidgets('removal sheet reopens when more gift cards were funded '
+        '(last account: $isLastAccount)', (tester) async {
+      final accountState = AccountState(
+        accounts: [
+          _account('a', 'Active'),
+          if (!isLastAccount) _account('b', 'Replacement'),
+        ],
+        activeAccountUuid: 'a',
+      );
+      final counts = {'a': 0};
+      final accountNotifier = _FakeAccountNotifier(accountState);
+      accountNotifier.beforeRemove = (confirmed) {
+        accountNotifier.beforeRemove = null;
+        counts['a'] = 2;
+        throw UnsharedGiftCardsChangedException(
+          confirmedCount: confirmed!,
+          count: 2,
+        );
+      };
+
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          syncNotifier: _FakeWalletMutationSyncNotifier.new,
+          unsharedGiftCardCounts: counts,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      final subject = isLastAccount
+          ? 'Resetting Vizor'
+          : 'Removing this account';
+      expect(
+        find.text(
+          '2 funded gift card links have not been shared. $subject loses '
+          'them. Copy the links first.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, 2]);
+      if (isLastAccount) {
+        expect(accountNotifier.resetCount, 1);
+      } else {
+        expect(accountNotifier.removedUuid, 'a');
+      }
     });
   }
 

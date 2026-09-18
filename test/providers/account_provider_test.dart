@@ -1022,6 +1022,82 @@ void main() {
     },
   );
 
+  group('unshared Gift Card recheck after draining', () {
+    Future<ProviderContainer> containerWithFundedCard() async {
+      final recoveryStore = PaymentLinkRecoveryStore(
+        _AccountTestPaymentLinkRecoveryStorage(),
+      );
+      final link = VizorPaymentLink(
+        network: 'main',
+        address: 'u1accountremovalrecheck',
+        amountZatoshi: BigInt.from(100000),
+        mnemonic: List.filled(24, 'abandon').join(' '),
+        birthdayHeight: 3_456_789,
+        label: 'Payment link',
+        createdAt: DateTime.utc(2026, 9, 1),
+      );
+      await recoveryStore.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'account-2',
+      );
+      await recoveryStore.markFunded(
+        address: link.address,
+        fundingTxids: 'funding-txid',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      return container;
+    }
+
+    test('aborts removal when the count rose after confirmation', () async {
+      final container = await containerWithFundedCard();
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .removeAccount('account-2', confirmedUnsharedGiftCardCount: 0),
+        throwsA(
+          isA<UnsharedGiftCardsChangedException>()
+              .having((error) => error.confirmedCount, 'confirmedCount', 0)
+              .having((error) => error.count, 'count', 1),
+        ),
+      );
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+    });
+
+    test('proceeds when the count is unchanged', () async {
+      _mockAccountRemovalPlatform();
+      final container = await containerWithFundedCard();
+
+      await container
+          .read(accountProvider.notifier)
+          .removeAccount('account-2', confirmedUnsharedGiftCardCount: 1);
+
+      expect(_rustApi.deletedAccountUuids, ['account-2']);
+    });
+
+    test('aborts a wallet reset when the count rose', () async {
+      final container = await containerWithFundedCard();
+
+      await expectLater(
+        container
+            .read(accountProvider.notifier)
+            .resetWallet(confirmedUnsharedGiftCardCount: 0),
+        throwsA(isA<UnsharedGiftCardsChangedException>()),
+      );
+      expect(container.read(accountProvider).value!.accounts, hasLength(2));
+      expect(_rustApi.deletedAccountUuids, isEmpty);
+    });
+  });
+
   group('Gift Card drafts that never reached the network', () {
     VizorPaymentLink link(String address) => VizorPaymentLink(
       network: 'main',

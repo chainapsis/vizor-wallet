@@ -469,6 +469,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         .read(accountProvider)
         .value
         ?.activeAccountUuid;
+    var reconfirm = false;
     try {
       if (isLastAccount) {
         // runWithSyncPausedForWalletReset clears the cached DB path in its
@@ -476,7 +477,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         // stale path) and applies the WalletResetException.dbDeleted resume
         // guard. The escrow drop stays on the success path.
         await runWithSyncPausedForWalletReset(ref, () async {
-          await accountNotifier.resetWallet();
+          await accountNotifier.resetWallet(
+            confirmedUnsharedGiftCardCount: unsharedGiftCardCount,
+          );
           try {
             await ref.read(biometricUnlockProvider.notifier).disable();
           } catch (e, st) {
@@ -490,7 +493,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       } else {
         await runWithSyncPausedForAccountMutation(
           ref,
-          () => accountNotifier.removeAccount(account.uuid),
+          () => accountNotifier.removeAccount(
+            account.uuid,
+            confirmedUnsharedGiftCardCount: unsharedGiftCardCount,
+          ),
           quiesceVotingWork: true,
         );
         final activeAccountAfterRemoval = ref
@@ -503,6 +509,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           await syncNotifier.refreshAfterSend();
         }
       }
+    } on UnsharedGiftCardsChangedException catch (e) {
+      log('MobileAccounts: remove needs reconfirmation: ${e.count}');
+      reconfirm = true;
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
@@ -515,6 +524,11 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+    if (reconfirm && mounted) {
+      // Show the confirmation again with the fresh count.
+      ref.invalidate(paymentLinkUnsharedFundedCountProvider(account.uuid));
+      await _showRemoveSheet(account);
     }
   }
 

@@ -1049,6 +1049,64 @@ void main() {
     expect(accountNotifier.removedUuid, 'account-2');
   });
 
+  testWidgets('remove account asks again when more Gift Cards were funded', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final counts = {'account-2': 0};
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    accountNotifier.beforeRemove = (confirmed) {
+      accountNotifier.beforeRemove = null;
+      counts['account-2'] = 1;
+      throw UnsharedGiftCardsChangedException(
+        confirmedCount: confirmed!,
+        count: 1,
+      );
+    };
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCounts: counts,
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+    expect(
+      find.text(
+        'More gift card links were funded. Review the warning and confirm again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '1 funded gift card link has not been shared. Removing this account '
+        'loses it. Copy the link first.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, 1]);
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
   testWidgets('remove account warns when the unshared check fails', (
     tester,
   ) async {
@@ -1727,6 +1785,10 @@ class _FakeAccountNotifier extends AccountNotifier {
   final List<String>? events;
   final Completer<void>? removeCompleter;
   final Object? resetError;
+
+  /// Runs before a removal; throwing aborts it.
+  void Function(int? confirmedUnsharedGiftCardCount)? beforeRemove;
+  final List<int?> confirmedUnsharedGiftCardCounts = [];
   String? renamedUuid;
   String? renamedName;
   String? updatedProfilePictureUuid;
@@ -1776,8 +1838,13 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     events?.add('remove:$uuid');
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     removedUuid = uuid;
     await removeCompleter?.future;
     final prev = state.value ?? initialState;
@@ -1802,7 +1869,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     events?.add('resetWallet');
     final error = resetError;
     if (error != null) {

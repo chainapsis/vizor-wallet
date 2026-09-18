@@ -7,6 +7,8 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
+import '../../../providers/account_provider.dart'
+    show UnsharedGiftCardsChangedException;
 import '../../payment_links/services/payment_link_recovery_store.dart';
 import 'account_modal_card.dart';
 
@@ -160,6 +162,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
     try {
       await widget.onRemove(_setProgress);
+    } on UnsharedGiftCardsChangedException catch (error) {
+      if (!mounted) return;
+      setState(() => _submitError = error.toString());
     } catch (_) {
       if (!mounted) return;
       setState(() {

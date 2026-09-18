@@ -459,6 +459,62 @@ void main() {
     });
   });
 
+  group('removal warning count', () {
+    PaymentLinkRecoveryReconciler reconcilerWith(
+      PaymentLinkRecoveryStore store,
+      Future<Set<String>> Function(String accountUuid) loadSignedPending,
+    ) => PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(119),
+      loadScannedHeight: () async => BigInt.from(119),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+      loadSignedPendingGiftCardRefs: loadSignedPending,
+    );
+
+    test('includes a draft whose Ledger funding is signed', () async {
+      final fixture = await _preparedFixture();
+      final requested = <String>[];
+      final reconciler = reconcilerWith(fixture.store, (accountUuid) async {
+        requested.add(accountUuid);
+        return {_preparedAddress};
+      });
+
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        0,
+      );
+      expect(
+        await reconciler.countUnsharedForRemovalWarning('source-account'),
+        1,
+      );
+      expect(requested, ['source-account']);
+    });
+
+    test('ignores a prepared draft with no signed operation', () async {
+      final fixture = await _preparedFixture();
+      final reconciler = reconcilerWith(fixture.store, (_) async => {});
+
+      expect(
+        await reconciler.countUnsharedForRemovalWarning('source-account'),
+        0,
+      );
+    });
+
+    test('fails when the Ledger outbox cannot be read', () async {
+      final fixture = await _preparedFixture();
+      final reconciler = reconcilerWith(
+        fixture.store,
+        (_) async => throw StateError('Ledger operations are paused'),
+      );
+
+      await expectLater(
+        reconciler.countUnsharedForRemovalWarning('source-account'),
+        throwsStateError,
+      );
+    });
+  });
+
   test('refreshes the cached unshared count after lifecycle writes', () async {
     final reconciler = _CountingRecoveryReconciler();
     final container = ProviderContainer(
@@ -702,7 +758,7 @@ class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {
   int count = 1;
 
   @override
-  Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
+  Future<int> countUnsharedForRemovalWarning(String sourceAccountUuid) async {
     return count;
   }
 }
