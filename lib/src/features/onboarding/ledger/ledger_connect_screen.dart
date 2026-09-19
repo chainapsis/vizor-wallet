@@ -12,6 +12,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_account_service.dart';
@@ -159,7 +160,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
         _phase = _LedgerConnectPhase.idle;
         _error = error is LedgerAppReadinessException
             ? error.message
-            : _friendlyError('$error');
+            : _friendlyError(error);
       });
     }
   }
@@ -192,17 +193,23 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     return null;
   }
 
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
+  String _friendlyError(Object error) {
+    final lower = '$error'.toLowerCase();
     final networkName = ref.read(rpcEndpointProvider).networkName;
     final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    final failure = LedgerRequestFailure.fromError(error);
+    if (failure == LedgerRequestFailure.declined) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
-    if (lower.contains('locked') || lower.contains('5515')) {
+    if (failure == LedgerRequestFailure.deviceLocked) {
       return 'Unlock your Ledger. $appInstruction';
     }
-    if (lower.contains('not found') || lower.contains('hid')) {
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.viewingKey,
+    );
+    if (guidance != null) return guidance.message;
+    if (failure == LedgerRequestFailure.transportLost) {
       return 'Connect and unlock your Ledger. $appInstruction';
     }
     if (lower.contains('already') || lower.contains('duplicate')) {

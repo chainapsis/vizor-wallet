@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_access.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_pairing_recovery_service.dart';
@@ -220,9 +221,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(ble.calls, containsAllInOrder(['connect', 'ready']));
       expect(
-        find.text(
-          declined ? 'Request declined' : 'Couldn’t complete the request',
-        ),
+        find.text(declined ? 'Request declined' : 'Request failed'),
         findsOneWidget,
       );
       expect(find.text('Ledger Flex'), findsOneWidget);
@@ -548,7 +547,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text('Couldn’t complete the request'), findsOneWidget);
+    expect(find.text(LedgerRequestFailure.transportLost.title), findsOneWidget);
     expect(find.text('Ledger Flex'), findsNothing);
     expect(accounts.writes, 0);
   });
@@ -647,6 +646,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+  for (final (label, error, retryable) in pairingExportFailures) {
+    testWidgets('$label export failure offers retry only when retryable', (
+      tester,
+    ) async {
+      final ble = FakeBle();
+      final accounts = FakeAccounts();
+      var exports = 0;
+      final c = containerFor(
+        ble,
+        accounts,
+        export: () async {
+          exports++;
+          throw StateError(error);
+        },
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: Center(
+                child: LedgerAccessRecoveryModal(
+                  account: account,
+                  pairingRecovery: true,
+                  onRetry: () {},
+                  onClose: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ledger Flex'));
+      await tester.pumpAndSettle();
+      expectPairingFailure(retryable: retryable);
+      expect(exports, 1);
+      expect(accounts.writes, 0);
+    });
+  }
   for (final savedId in ['new', 'old', null, '']) {
     for (final outcome in ['match', 'mismatch', 'save failure']) {
       testWidgets(
@@ -737,6 +780,27 @@ void main() {
       );
     }
   }
+}
+
+const pairingExportFailures = [
+  (
+    '0x6a80',
+    'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+    false,
+  ),
+  ('transport', 'ledger_transport: Ledger disconnected', true),
+];
+
+void expectPairingFailure({required bool retryable}) {
+  expect(find.text('Try again'), retryable ? findsOneWidget : findsNothing);
+  expect(
+    find.text('Choose another Ledger'),
+    retryable ? findsNothing : findsOneWidget,
+  );
+  expect(
+    find.text(kLedgerViewingKeyRequestRejectedMessage),
+    retryable ? findsNothing : findsOneWidget,
+  );
 }
 
 class FakeRpc extends RpcEndpointNotifier {

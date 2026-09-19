@@ -646,8 +646,12 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
-    if (_deviceGuidance != null) return _deviceGuidance!.message;
+    _deviceGuidance = ledgerFailureGuidance(
+      error,
+      requestKind: widget.intent.payMode
+          ? LedgerRequestKind.payment
+          : LedgerRequestKind.swap,
+    );
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -655,14 +659,15 @@ class _SwapLedgerSigningOverlayState
     if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
       return kLedgerLegacyOrchardRecoveryUnavailableMessage;
     }
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    if (_deviceGuidance != null) return _deviceGuidance!.message;
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The ZEC deposit was rejected on your Ledger.';
     }
-    if (lower.contains('no ledger') || lower.contains('hid')) {
-      return 'Connect and unlock your Ledger. $appInstruction';
-    }
+    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    if (usb != null) return usb;
     if (lower.contains('sapling')) {
-      return 'This Ledger preview does not support Sapling inputs or outputs.';
+      return kLedgerSaplingRecipientMessage;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return 'The ZEC deposit could not be broadcast.';
@@ -677,6 +682,11 @@ class _SwapLedgerSigningOverlayState
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
+    // Retrying the same request fails the same way on the device.
+    final requestNeedsRebuilding =
+        _deviceGuidance?.retryable == false &&
+        !postBroadcastRecovery &&
+        !_operationClaimUnavailable;
     final expiredRecovery =
         pendingBroadcastResult != null &&
         classifyLedgerDepositBroadcastResult(pendingBroadcastResult) ==
@@ -738,7 +748,9 @@ class _SwapLedgerSigningOverlayState
               showConnectionPicker:
                   !postBroadcastRecovery && !_operationClaimUnavailable,
               actionLabel:
-                  legacyOrchardRecoveryUnavailable || _operationClaimUnavailable
+                  legacyOrchardRecoveryUnavailable ||
+                      _operationClaimUnavailable ||
+                      requestNeedsRebuilding
                   ? null
                   : postBroadcastRecovery
                   ? expiredRecovery
@@ -752,7 +764,8 @@ class _SwapLedgerSigningOverlayState
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
               !_operationClaimUnavailable &&
-              !legacyOrchardRecoveryUnavailable
+              !legacyOrchardRecoveryUnavailable &&
+              !requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
     );

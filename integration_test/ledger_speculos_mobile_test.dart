@@ -500,7 +500,7 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
               }) async => fixture.pcztBytes,
           redactPczt: rust_sync.redactPcztForSigner,
           addProofs: rust_sync.addProofsToPczt,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
       GoRoute(
@@ -616,7 +616,7 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
           addProofs:
               ({required pcztBytes, spendParamsPath, outputParamsPath}) async =>
                   pcztBytes,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
     ],
@@ -713,7 +713,7 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
               },
           redactPczt: rust_sync.redactPcztForSigner,
           addProofs: rust_sync.addProofsToPczt,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
       GoRoute(

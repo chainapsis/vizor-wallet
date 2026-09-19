@@ -4264,6 +4264,73 @@ void main() {
     },
   );
 
+  for (final (error, message, retryable) in const [
+    (
+      'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized',
+      'The vote signature was rejected on your Ledger. Retry to sign again.',
+      true,
+    ),
+    (
+      'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+      'Your Ledger couldn’t accept this vote request. Your vote was not signed.',
+      false,
+    ),
+    (
+      'ledger_capacity: voting PCZT exceeds the Ledger action limit',
+      'This vote is too large for your Ledger to sign.',
+      false,
+    ),
+  ]) {
+    testWidgets(
+      'Ledger voting failure ${error.split(':').first} hides its code',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1512, 982));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final recovery = _MutableVotingRecoveryApi()..state = _recoveryState();
+        final container = _statusContainer(
+          accountOverride: _LedgerAccountNotifier.new,
+          activeAccountUuid: () async => 'ledger-1',
+          accountIsHardware: true,
+          hardwareAccountUuids: const {'ledger-1'},
+          recoveryApi: recovery,
+          rust: _VotingStatusRustApi(recovery),
+          hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+          overrides: [
+            ledgerVotingPcztSignerProvider.overrideWithValue(
+              (_, _) async => throw StateError(error),
+            ),
+            ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+          ],
+        );
+        addTearDown(container.dispose);
+        const key = VotingSessionKey(
+          roundId: _roundId,
+          accountUuid: 'ledger-1',
+        );
+        container.read(votingDraftProvider(key).notifier).setChoice(1, 0);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: _statusHarness(),
+          ),
+        );
+        await _pumpUntilFound(tester, find.text(message), attempts: 100);
+
+        expect(find.text(message), findsOneWidget);
+        expect(find.textContaining('ledger_'), findsNothing);
+        final job = container.read(votingSubmissionJobProvider(key));
+        expect(job.status, VotingSubmissionJobStatus.error);
+        expect(job.retryable, retryable);
+        expect(find.text('Retry'), retryable ? findsOneWidget : findsNothing);
+        expect(
+          find.byKey(const ValueKey('voting_status_clear_submission_error')),
+          findsOneWidget,
+        );
+      },
+    );
+  }
+
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
     tester,
   ) async {
