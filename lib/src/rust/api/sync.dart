@@ -67,19 +67,23 @@ bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
-/// concurrently with each other and with the main wallet.
+/// concurrently with each other and with the main wallet. `source_db_path` may
+/// supply public, chain-checked Ironwood roots from the main wallet; unavailable
+/// or stale cache data falls back to the server.
 Future<void> runPaymentLinkClaimSync({
   required String claimId,
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
   required bool allowResubmit,
+  String? sourceDbPath,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
   claimId: claimId,
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   allowResubmit: allowResubmit,
+  sourceDbPath: sourceDbPath,
 );
 
 /// Cancels only the isolated scan associated with `claim_id`.

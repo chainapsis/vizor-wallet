@@ -4,6 +4,35 @@ A claim's transaction lifecycle and a card's availability are separate. Opening
 or checking a link does not reserve its funds. Competition is settled by the
 chain, not by the order of taps in Vizor.
 
+Pasting or scanning a valid link immediately shows its advertised card and
+message. The user can tap Claim while the temporary wallet is still preparing.
+The button then shows `Preparing...` and continues once the spendable balance
+is verified; pasting alone never submits a transaction. Closing the preview or
+changing accounts cancels that pending intent. Funding that still needs
+confirmations, invalid links, and verification failures remain explicit stops.
+For multiple accounts, the destination picker opens during preparation. The
+user can select an account and confirm immediately; confirmation awaits the
+existing check before binding the selected destination and submitting. A failed
+check closes the picker into the existing error or waiting state, without
+switching accounts or submitting. Closing the picker before confirmation only
+cancels the selection; it leaves the card preview checking in the background.
+
+Cards with birthdays at or after Ironwood activation only download Ironwood
+subtree roots. Older cards retain the legacy pool path. Preparation can seed
+its tree with completed roots from the main wallet's SQLite snapshot after
+matching the snapshot block hash against the server and checking overlapping
+roots. A complete cache at the current tip needs no root RPC; a partial or
+older cache fetches the missing suffix. If the main wallet path or compatible
+cache data is unavailable, preparation falls back to the server. This copies
+public roots, not accounts or notes.
+The compact scan still includes all pool metadata required by the current
+backend scanner. Root timing logs report cache reuse and elapsed milliseconds.
+
+The preview also keeps the shared ZEC price loader active. Starting a claim
+uses an already completed live quote from the last three minutes, or the
+card's enclosed fiat value if no such quote is available. Pricing never delays
+submission, and late quotes do not change the saved claim value.
+
 - Empty history or balance is not proof of a failed broadcast or an external
   claim. Saved bearer links remain in secure storage.
 - A server rejection is distinct from an unknown response, but neither proves

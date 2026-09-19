@@ -1189,6 +1189,7 @@ abstract class RustLibApi extends BaseApi {
     required String lightwalletdUrl,
     required String network,
     required bool allowResubmit,
+    String? sourceDbPath,
   });
 
   Future<ScanResult> crateApiSyncScanBlocks({
@@ -8770,6 +8771,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required bool allowResubmit,
+    String? sourceDbPath,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8780,6 +8782,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_String(network, serializer);
           sse_encode_bool(allowResubmit, serializer);
+          sse_encode_opt_String(sourceDbPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8792,7 +8795,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncRunPaymentLinkClaimSyncConstMeta,
-        argValues: [claimId, dbPath, lightwalletdUrl, network, allowResubmit],
+        argValues: [
+          claimId,
+          dbPath,
+          lightwalletdUrl,
+          network,
+          allowResubmit,
+          sourceDbPath,
+        ],
         apiImpl: this,
       ),
     );
@@ -8807,6 +8817,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "lightwalletdUrl",
           "network",
           "allowResubmit",
+          "sourceDbPath",
         ],
       );
 

@@ -20,6 +20,7 @@ import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -136,6 +137,74 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   int _mobileNavigationEpoch = 0;
   bool _softwareFundingInProgress = false;
   bool _claimSubmissionInProgress = false;
+  bool _preparingReceivedClaim = false;
+  Completer<void>? _receivedPreparation;
+  int _claimSelectionEpoch = 0;
+  ({int epoch, VizorPaymentLink link, String accountUuid})? _pendingClaim;
+
+  bool get _canRequestClaim =>
+      _pendingClaim == null &&
+      !_choosingClaimAccount &&
+      (!_operationInProgress || _preparingReceivedClaim);
+
+  void _requestClaim() {
+    if (!_canRequestClaim) return;
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        (ref.read(accountProvider).value?.accounts.length ?? 0) > 1) {
+      unawaited(_confirmMobileClaim());
+      return;
+    }
+    if (_preparingReceivedClaim) {
+      final link = _receivedLink;
+      final account = ref.read(accountProvider).value?.activeAccountUuid;
+      if (link == null || account == null) return;
+      setState(
+        () => _pendingClaim = (
+          epoch: _mobileNavigationEpoch,
+          link: link,
+          accountUuid: account,
+        ),
+      );
+      return;
+    }
+    _continueClaim();
+  }
+
+  void _continueClaim() {
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      unawaited(_confirmMobileClaim());
+    } else {
+      _claimReceivedLink();
+    }
+  }
+
+  // Run after the preparation caller releases its busy state, so its finally
+  // cannot clear a submission's busy state or allow a second submission.
+  void _finishClaimPreparation() {
+    final preparation = _receivedPreparation;
+    _receivedPreparation = null;
+    if (preparation != null && !preparation.isCompleted) {
+      preparation.complete();
+    }
+    if (!mounted) return;
+    final intent = _pendingClaim;
+    setState(() {
+      _operationInProgress = false;
+      _preparingReceivedClaim = false;
+      _pendingClaim = null;
+    });
+    if (intent == null ||
+        intent.epoch != _mobileNavigationEpoch ||
+        _page != PaymentLinksLocalPage.received ||
+        _receivedLink?.hasSameCanonicalPayload(intent.link) != true ||
+        ref.read(accountProvider).value?.activeAccountUuid !=
+            intent.accountUuid ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        _receivedClaimSession?.canClaim != true) {
+      return;
+    }
+    _continueClaim();
+  }
 
   bool _isCurrentNavigation(int epoch) =>
       kAppFormFactor != AppFormFactor.mobile || epoch == _mobileNavigationEpoch;
@@ -226,6 +295,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   void dispose() {
     _fundingQuoteDebounce?.cancel();
     _fundingProgressTimer?.cancel();
+    final preparation = _receivedPreparation;
+    if (preparation != null && !preparation.isCompleted) {
+      preparation.complete();
+    }
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
       unawaited(
@@ -266,6 +339,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
     if (page != _page) {
       _mobileNavigationEpoch++;
+      _pendingClaim = null;
       if (kAppFormFactor == AppFormFactor.mobile &&
           _page == PaymentLinksLocalPage.redeem) {
         _redeemState = PaymentLinkRedeemVisualState.paste;
@@ -308,6 +382,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   void _startCreate() {
     if (_operationInProgress || _pendingFundingMetadata != null) return;
     _mobileNavigationEpoch++;
+    _pendingClaim = null;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration++;
     _maxFundingQuoteGeneration++;
@@ -876,6 +951,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   void _handleActiveAccountChanged(String? previous, String? current) {
+    if (previous != current) _claimSelectionEpoch++;
     if (current != null) _handleClaimDestinationAccountChanged(current);
     // Keep the original review and loading label during mobile funding.
     // An unsaved result must also retain its review so saving can be retried.
@@ -932,6 +1008,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   /// without saying so, so the session is released and the redeem entry is
   /// reopened for the account now in front of the user.
   void _handleClaimDestinationAccountChanged(String current) {
+    if (_pendingClaim != null && _pendingClaim!.accountUuid != current) {
+      setState(() => _pendingClaim = null);
+    }
     final session = _receivedClaimSession;
     if (session == null || session.destinationAccountUuid == current) return;
     final link = _receivedLink;
@@ -1472,7 +1551,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         setState(() => _redeemState = PaymentLinkRedeemVisualState.invalid);
       }
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _finishClaimPreparation();
     }
   }
 
@@ -1545,7 +1624,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     try {
       await _prepareDecodedPaymentLink(link);
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _finishClaimPreparation();
     }
   }
 
@@ -1553,24 +1632,39 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    final timer = Stopwatch()..start();
     final epoch = _mobileNavigationEpoch;
     final previousSession = _receivedClaimSession;
+    _receivedPreparation ??= Completer<void>();
+    setState(() {
+      _preparingReceivedClaim = true;
+      _receivedLink = link;
+      _receivedClaimSession = null;
+      _receivedShowsBack = false;
+      _outcomeLink = null;
+      _redeemState = PaymentLinkRedeemVisualState.paste;
+      _page = PaymentLinksLocalPage.received;
+    });
+    bool isCurrentPreview() =>
+        mounted &&
+        epoch == _mobileNavigationEpoch &&
+        _page == PaymentLinksLocalPage.received &&
+        identical(_receivedLink, link);
     if (previousSession != null &&
         paymentLinkClaimWalletDirectoryName(previousSession.link) !=
             paymentLinkClaimWalletDirectoryName(link)) {
       await ref
           .read(paymentLinkOperationsProvider)
           .discardClaimSession(previousSession);
-      if (!mounted || !_isCurrentNavigation(epoch)) return;
-      _receivedClaimSession = null;
+      if (!isCurrentPreview()) return;
     }
     try {
       final session = await ref
           .read(paymentLinkOperationsProvider)
           .prepareClaim(link, allowLongSync: allowLongSync);
-      if (!mounted || !_isCurrentNavigation(epoch)) {
-        // The element is defunct here, so its ref may already throw; the
-        // captured operations still delete the temporary claim wallet.
+      if (!isCurrentPreview()) {
+        // Preparation can finish after the preview closes or the screen is
+        // disposed. The captured operations can still release its wallet.
         if (_shouldKeepCard(session)) {
           await _paymentLinkOperations.retainPendingClaim(session);
         } else {
@@ -1606,7 +1700,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
       if (!session.canClaim) {
         await _releaseUnavailableClaim(session);
-        if (!mounted || !_isCurrentNavigation(epoch)) return;
+        if (!isCurrentPreview()) return;
         setState(() {
           _receivedClaimSession = null;
           _longSyncLink = null;
@@ -1625,11 +1719,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _redeemState = PaymentLinkRedeemVisualState.paste;
         _page = PaymentLinksLocalPage.received;
       });
-      log('PaymentLinkClaim: preview ready');
+      log(
+        'PaymentLinkClaim: preview ready elapsed_ms=${timer.elapsedMilliseconds}',
+      );
     } on PaymentLinkLongSyncConfirmationRequired {
       log('PaymentLinkClaim: waiting for long sync confirmation');
-      if (!mounted || !_isCurrentNavigation(epoch)) return;
+      if (!mounted || !isCurrentPreview()) return;
       setState(() {
+        _page = PaymentLinksLocalPage.redeem;
         _redeemState = PaymentLinkRedeemVisualState.paste;
         if (kAppFormFactor == AppFormFactor.desktop) {
           _longSyncLink = link;
@@ -1644,7 +1741,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
     } on PaymentLinkClaimInFlightException catch (error) {
       log('PaymentLinkClaim: ignored duplicate in-flight link');
-      if (!mounted || !_isCurrentNavigation(epoch)) return;
+      if (!isCurrentPreview()) return;
       setState(() {
         _activeCardsTab = PaymentLinkCardsTab.received;
         _longSyncLink = null;
@@ -1658,10 +1755,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         'PaymentLinkClaim: rejected link for another network '
         'link=${error.linkNetwork} wallet=${error.walletNetwork}',
       );
-      if (!mounted || !_isCurrentNavigation(epoch)) return;
+      if (!isCurrentPreview()) return;
       // A different network is a permanent property of the link, so there is
       // nothing to retry: clear the retry affordance and name the reason.
       setState(() {
+        _page = PaymentLinksLocalPage.redeem;
         _longSyncLink = null;
         _retryLink = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
@@ -1672,8 +1770,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         'PaymentLinkClaim: preparation rejected '
         'category=${_paymentLinkFormatFailureCategory(error)}',
       );
-      if (mounted && _isCurrentNavigation(epoch)) {
+      if (isCurrentPreview()) {
         setState(() {
+          _page = PaymentLinksLocalPage.redeem;
           _longSyncLink = null;
           _retryLink = null;
           _redeemState = PaymentLinkRedeemVisualState.invalid;
@@ -1681,8 +1780,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
     } catch (error) {
       log('PaymentLinkClaim: preparation failed type=${error.runtimeType}');
-      if (mounted && _isCurrentNavigation(epoch)) {
+      if (isCurrentPreview()) {
         setState(() {
+          _page = PaymentLinksLocalPage.redeem;
           _longSyncLink = null;
           _retryLink = link;
           _redeemState = PaymentLinkRedeemVisualState.paste;
@@ -1766,6 +1866,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   void _abandonReceivedPreview({bool goHome = false}) {
     if (_mobileNavigationLocked) return;
     _mobileNavigationEpoch++;
+    _pendingClaim = null;
     final session = _receivedClaimSession;
     setState(() {
       _receivedClaimSession = null;
@@ -1812,7 +1913,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     try {
       await _prepareDecodedPaymentLink(link, allowLongSync: true);
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _finishClaimPreparation();
     }
   }
 
@@ -1857,14 +1958,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   Future<void> _confirmMobileClaim() async {
     final link = _receivedLink;
-    if (link == null || _operationInProgress || _choosingClaimAccount) return;
+    if (link == null ||
+        (_operationInProgress && !_preparingReceivedClaim) ||
+        _choosingClaimAccount) {
+      return;
+    }
     final session = _receivedClaimSession;
-    // Reconcile a failed submission before offering a different destination.
-    if (session == null) {
+    // A failed submission still needs reconciliation before another attempt.
+    if (session == null && !_preparingReceivedClaim) {
       await _checkPaymentLink(link);
       return;
     }
-    if (!session.canClaim) return;
+    if (session != null && !session.canClaim) return;
     final accountState = ref.read(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     if (accountState == null || activeAccountUuid == null) return;
@@ -1873,19 +1978,58 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       return;
     }
 
-    _choosingClaimAccount = true;
+    final navigationEpoch = _mobileNavigationEpoch;
+    var selectionEpoch = _claimSelectionEpoch;
+    final preparation = _receivedPreparation?.future;
+    String? confirmedAccountUuid;
+    var cardVerified = false;
+    bool isCurrentSelection() =>
+        mounted &&
+        navigationEpoch == _mobileNavigationEpoch &&
+        selectionEpoch == _claimSelectionEpoch &&
+        !ref.read(appSecurityProvider).requiresUnlock &&
+        _page == PaymentLinksLocalPage.received &&
+        _receivedLink?.hasSameCanonicalPayload(link) == true;
+    setState(() => _choosingClaimAccount = true);
     try {
       final confirmed = await showPaymentLinkClaimAccountSheet(
         context: context,
         amountZatoshi: link.amountZatoshi,
         accounts: accountState.accounts,
         activeAccountUuid: activeAccountUuid,
-        onConfirm: (uuid) => _prepareMobileClaimDestination(link, uuid),
+        onConfirm: (uuid) async {
+          // Selection is local. Only confirmation waits for the existing scan,
+          // including its caller's busy-state cleanup, before binding the recipient.
+          await preparation;
+          if (!isCurrentSelection() ||
+              (!cardVerified && _receivedClaimSession?.canClaim != true)) {
+            return false;
+          }
+          cardVerified = true;
+          try {
+            await _prepareMobileClaimDestination(_receivedLink!, uuid);
+          } finally {
+            selectionEpoch = _claimSelectionEpoch;
+          }
+          confirmedAccountUuid = uuid;
+          return true;
+        },
       );
-      if (!mounted || !confirmed || _receivedLink != link) return;
+      if (!mounted ||
+          !confirmed ||
+          navigationEpoch != _mobileNavigationEpoch ||
+          _page != PaymentLinksLocalPage.received ||
+          _receivedLink?.hasSameCanonicalPayload(link) != true ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          ref.read(accountProvider).value?.activeAccountUuid !=
+              confirmedAccountUuid ||
+          _receivedClaimSession?.destinationAccountUuid !=
+              confirmedAccountUuid) {
+        return;
+      }
       _claimReceivedLink();
     } finally {
-      _choosingClaimAccount = false;
+      if (mounted) setState(() => _choosingClaimAccount = false);
     }
   }
 
@@ -2122,6 +2266,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       GiftCardTrackingScope(child: _buildContent(context));
 
   Widget _buildContent(BuildContext context) {
+    ref.listen<bool>(
+      appSecurityProvider.select((state) => state.requiresUnlock),
+      (_, locked) {
+        if (locked) _claimSelectionEpoch++;
+        if (locked && _pendingClaim != null) {
+          setState(() => _pendingClaim = null);
+        }
+      },
+    );
     ref.listen<String?>(
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
@@ -2144,13 +2297,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
     final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
     final amount = parseZecAmount(_amountController.text);
-    // Keep the price subscription through amount edits and Review so clearing
-    // the input does not restart the lookup or flash its loading state.
+    // Keep pricing alive through funding edits and the received-card preview.
+    // Claim uses a completed result without waiting for this background lookup.
     final marketData =
         pricingEnabled &&
             (_page == PaymentLinksLocalPage.amount ||
                 _page == PaymentLinksLocalPage.message ||
-                _page == PaymentLinksLocalPage.review)
+                _page == PaymentLinksLocalPage.review ||
+                _page == PaymentLinksLocalPage.received)
         ? ref.watch(zecHomeMarketDataStateProvider)
         : null;
 
@@ -2222,6 +2376,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         receivedFiatText: _savedCardFiatText(_receivedLink),
         receivedShowsBack: _receivedShowsBack,
         receivedClaimSession: _receivedClaimSession,
+        receivedClaimLabel: _receivedClaimLabel,
         linkWaitLabel: _estimatedLinkWaitLabel,
         claimWaitLabel: _estimatedClaimWaitLabel,
         availableSoonRemainingConfirmations:
@@ -2250,7 +2405,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             setState(() => _receivedShowsBack = !_receivedShowsBack),
         onAbandonReceivedPreview: _abandonReceivedPreview,
         onReceivedHome: () => _abandonReceivedPreview(goHome: true),
-        onClaimReceivedLink: _confirmMobileClaim,
+        onClaimReceivedLink: _canRequestClaim ? _requestClaim : null,
       );
     }
 
@@ -3022,12 +3177,26 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       card: card,
       decoration: const PaymentLinkConfetti(),
       onBack: _abandonReceivedPreview,
-      onClaim: _operationInProgress ? null : _claimReceivedLink,
+      onClaim: _canRequestClaim ? _requestClaim : null,
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the gift card',
+      claimLabel: _receivedClaimLabel,
     );
+  }
+
+  String get _receivedClaimLabel {
+    if (_claimSubmissionInProgress) return 'Claiming...';
+    if (_pendingClaim != null) return 'Preparing...';
+    if (_operationInProgress && !_preparingReceivedClaim) {
+      return kPaymentLinkCheckingLabel;
+    }
+    if (!_preparingReceivedClaim && _receivedClaimSession == null) {
+      return 'Try again';
+    }
+    return kAppFormFactor == AppFormFactor.mobile
+        ? 'Claim the gift'
+        : 'Claim the gift card';
   }
 
   String _formatCardDate(DateTime date) {

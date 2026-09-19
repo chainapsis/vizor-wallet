@@ -70,6 +70,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.receivedFiatText,
     required this.receivedShowsBack,
     required this.receivedClaimSession,
+    required this.receivedClaimLabel,
     required this.linkWaitLabel,
     required this.claimWaitLabel,
     required this.availableSoonRemainingConfirmations,
@@ -151,6 +152,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final String? receivedFiatText;
   final bool receivedShowsBack;
   final PaymentLinkClaimSession? receivedClaimSession;
+  final String receivedClaimLabel;
 
   final String Function(PaymentLinkFundingProgress progress) linkWaitLabel;
   final String Function(PaymentLinkClaimSession session) claimWaitLabel;
@@ -176,7 +178,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final VoidCallback onToggleReceivedBack;
   final VoidCallback onAbandonReceivedPreview;
   final VoidCallback onReceivedHome;
-  final VoidCallback onClaimReceivedLink;
+  final VoidCallback? onClaimReceivedLink;
 
   @override
   Widget build(BuildContext context) =>
@@ -502,12 +504,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onClose: onAbandonReceivedPreview,
       decoration: const PaymentLinkConfetti(),
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
-      onClaim: operationInProgress ? null : onClaimReceivedLink,
-      claimLabel: operationInProgress
-          ? 'Claiming...'
-          : receivedClaimSession == null
-          ? 'Try again'
-          : 'Claim the gift',
+      onClaim: onClaimReceivedLink,
+      claimLabel: receivedClaimLabel,
     );
   }
 }

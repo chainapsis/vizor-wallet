@@ -192,7 +192,7 @@ void main() {
     await openFromSettings(tester, operations: operations);
     await tap(tester, 'payment_links_mobile_redeem_button');
     await tester.tap(find.text('Paste card link'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await back(tester);
     expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
     gate.complete();
@@ -390,7 +390,8 @@ void main() {
       await tester.pump();
       clipboard.gate.complete();
       await tester.pump();
-      expect(keyed('payment_link_mobile_redeem_checking'), findsOneWidget);
+      expect(keyed('payment_link_mobile_received_view'), findsOneWidget);
+      expect(find.text('Claim the gift'), findsOneWidget);
       gate.complete();
       await tester.pumpAndSettle();
       expect(find.text('Claim the gift'), findsOneWidget);
