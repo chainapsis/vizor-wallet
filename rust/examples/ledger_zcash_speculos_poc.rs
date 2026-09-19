@@ -29,7 +29,7 @@ use transparent::{
 };
 use url::Url;
 use zcash_address::{ToAddress, ZcashAddress};
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::keys::{transparent::gap_limits::GapLimits, UnifiedFullViewingKey};
 use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder, BundlePadding, PcztResult},
     fees::zip317,
@@ -54,6 +54,9 @@ use zcash_client_sqlite::{util::SystemClock, wallet::commitment_tree, WalletDb};
 const DEFAULT_API_URL: &str = "http://127.0.0.1:5000";
 const APDU_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const API_TIMEOUT: Duration = Duration::from_secs(3);
+// The harness can sign immediately after export, without the product's page
+// transitions. Let Speculos finish its UFVK status screen before the next APDU.
+const SPECULOS_UFVK_STATUS_WAIT: Duration = Duration::from_secs(4);
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
 const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
@@ -107,6 +110,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         .transpose()?
         .unwrap_or(false);
     let export = export_result.map_err(|error| format!("Desktop UFVK export failed: {error}"))?;
+    thread::sleep(SPECULOS_UFVK_STATUS_WAIT);
 
     let temp_dir =
         tempfile::tempdir().map_err(|error| format!("Create desktop smoke directory: {error}"))?;
@@ -204,6 +208,48 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     drop(db);
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|error| format!("Reopen fixture wallet DB: {error}"))?;
+    // This isolated fixture represents a recovered wallet, not a live discovery
+    // run. External index 0 holds the synthetic UTXO; both trailing gaps are
+    // exhausted. complete=2 means both scopes passed the account-level check.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ext_vizor_ledger_initial_discovery (
+            account_uuid BLOB NOT NULL, key_scope INTEGER NOT NULL CHECK(key_scope IN (0,1)),
+            tip_height INTEGER NOT NULL, tip_hash BLOB NOT NULL,
+            next_index INTEGER NOT NULL, unused INTEGER NOT NULL, complete INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(account_uuid,key_scope))",
+    )
+    .map_err(|error| format!("Create fixture Ledger discovery table: {error}"))?;
+    let account_id = uuid::Uuid::parse_str(&account.account_uuid)
+        .map_err(|error| format!("Decode fixture account UUID: {error}"))?;
+    let gaps = GapLimits::default();
+    for (scope, used, gap) in [(0, 1, gaps.external()), (1, 0, gaps.internal())] {
+        conn.execute(
+            "INSERT INTO ext_vizor_ledger_initial_discovery
+                (account_uuid,key_scope,tip_height,tip_hash,next_index,unused,complete)
+             VALUES (?1,?2,?3,?4,?5,?6,2)",
+            rusqlite::params![
+                account_id.as_bytes().as_slice(),
+                scope,
+                u32::from(chain_tip),
+                [0u8; 32].as_slice(), // Synthetic checkpoint; no live chain is queried.
+                used + gap,
+                gap,
+            ],
+        )
+        .map_err(|error| format!("Complete fixture Ledger discovery scope {scope}: {error}"))?;
+    }
+    drop(conn);
+    let shielding = rust_lib_zcash_wallet::api::sync::get_ledger_shielding_progress(
+        db_path.clone(),
+        config.network.clone(),
+        account.account_uuid.clone(),
+    )
+    .map_err(|error| format!("Validate fixture Ledger shielding readiness: {error}"))?;
+    if shielding.input_count != 1 || shielding.below_threshold {
+        return Err("Ledger fixture must have one shieldable transparent input".into());
+    }
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| format!("Reopen prepared fixture wallet DB: {error}"))?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
         .map_err(|error| format!("Checkpoint fixture wallet DB: {error}"))?;
     drop(conn);
@@ -300,7 +346,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
     }
     let client = SpeculosClient::new(&config.api_url)?;
     let signing_api_url = config.signing_api_url.as_deref().ok_or(
-        "Smoke mode requires --signing-api-url for a fresh Speculos instance using the same seed",
+        "Smoke mode requires --signing-api-url for a Speculos instance using the same seed",
     )?;
     let signing_client = SpeculosClient::new(signing_api_url)?;
     let (export, automated_ufvk_review) =
@@ -398,6 +444,7 @@ fn export_account_from_speculos(
         ufvk_responses.push(continuation);
     }
     let export = ledger_parse_mobile_ufvk_responses(0, network.to_string(), ufvk_responses)?;
+    thread::sleep(SPECULOS_UFVK_STATUS_WAIT);
     Ok((export, automated_review))
 }
 
@@ -1026,11 +1073,11 @@ impl Config {
 fn usage() -> String {
     let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
-        "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <fresh-speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
+        "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\
 builds a transparent PCZT for that key, and exercises Vizor plan, transport, and finalize.\n\
-The signing API must be a fresh instance using the same deterministic seed because the\n\
-Zcash app does not accept PCZT initialization in the post-UFVK Speculos session.\n\n\
+The signing API may use the same instance as UFVK export. Both must use the same seed.\n\
+Raw harness exports wait for the device status screen before the next APDU.\n\n\
 For file mode, the wallet database must contain the selected Ledger account imported\n\
 from the same Speculos seed. Start Zcash 3.9.3 or newer with its REST API exposed, then run:\n\
   cargo run --example ledger_zcash_speculos_poc -- <arguments>\n\n\
