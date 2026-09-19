@@ -1,10 +1,63 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_secure_store.dart';
 
 const kPaymentLinkClaimWalletDirectoryPrefix = 'payment_link_claim_';
+
+/// Overrides where wallet DB, Tor data, and other wallet-support files are
+/// stored (#145: running a portable install off a USB/NVMe drive). Desktop
+/// only. Set once at startup by [configureWalletDataDirectoryOverride] from
+/// a `--wallet-data-dir` CLI argument -- forwarded to Dart's `main()` by the
+/// generated Linux and Windows runners -- or the `VIZOR_WALLET_DATA_DIR`
+/// environment variable, which also covers macOS, where argv is not
+/// forwarded to Dart by this app's runner.
+String? _walletDataDirectoryOverride;
+
+const _walletDataDirArgPrefix = '--wallet-data-dir';
+const _walletDataDirEnvVar = 'VIZOR_WALLET_DATA_DIR';
+
+/// Call once from `main()`, before any wallet path is resolved. A no-op on
+/// mobile, where there is no meaningful CLI/environment invocation to read.
+void configureWalletDataDirectoryOverride(List<String> args) {
+  if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+
+  for (var i = 0; i < args.length; i++) {
+    final arg = args[i];
+    if (arg.startsWith('$_walletDataDirArgPrefix=')) {
+      _setWalletDataDirectoryOverride(
+        arg.substring(_walletDataDirArgPrefix.length + 1),
+      );
+      return;
+    }
+    if (arg == _walletDataDirArgPrefix && i + 1 < args.length) {
+      _setWalletDataDirectoryOverride(args[i + 1]);
+      return;
+    }
+  }
+
+  final fromEnv = Platform.environment[_walletDataDirEnvVar];
+  if (fromEnv != null) {
+    _setWalletDataDirectoryOverride(fromEnv);
+  }
+}
+
+void _setWalletDataDirectoryOverride(String path) {
+  final trimmed = path.trim();
+  if (trimmed.isEmpty) return;
+  _walletDataDirectoryOverride = trimmed;
+}
+
+@visibleForTesting
+String? get walletDataDirectoryOverrideForTesting =>
+    _walletDataDirectoryOverride;
+
+@visibleForTesting
+void resetWalletDataDirectoryOverrideForTesting() {
+  _walletDataDirectoryOverride = null;
+}
 
 /// Claim-wallet directories are named
 /// `payment_link_claim_<network>_<sha256>`. The hash cannot be reversed, so the
@@ -25,7 +78,10 @@ RegExp _paymentLinkClaimWalletDirectoryPatternFor(String network) => RegExp(
 );
 
 Future<Directory> getWalletSupportDirectory() async {
-  final dir = await getApplicationSupportDirectory();
+  final overridePath = _walletDataDirectoryOverride;
+  final dir = overridePath == null
+      ? await getApplicationSupportDirectory()
+      : Directory(overridePath);
   await dir.create(recursive: true);
   return dir;
 }
