@@ -4205,14 +4205,15 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_memo_text_area')))
           .height,
-      // The Figma 222 plus the second line the memo error slot holds.
-      239,
+      222,
     );
     expect(
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_memo_field')))
           .height,
-      148,
+      // The Figma 148 less the line the memo error slot took, so the sheet
+      // keeps its height. This area scrolls.
+      131,
     );
     final memoFieldRect = tester.getRect(
       find.byKey(const ValueKey('mobile_send_memo_field')),

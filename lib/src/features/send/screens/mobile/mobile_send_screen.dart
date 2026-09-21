@@ -4129,8 +4129,7 @@ class _MemoSheetState extends State<_MemoSheet> {
         children: [
           SizedBox(
             key: const ValueKey('mobile_send_memo_text_area'),
-            // The Figma height plus the second line the memo error needs.
-            height: 222 + _kMobileSendRecipientLineHeight,
+            height: 222,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
               child: Column(
@@ -4293,7 +4292,9 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
     final focused = widget.focusNode.hasFocus;
 
     return Container(
-      height: 148,
+      // The memo error slot below holds two lines, and the sheet keeps its
+      // height: the second line comes from here. This area scrolls.
+      height: 148 - _kMobileSendRecipientLineHeight,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),
