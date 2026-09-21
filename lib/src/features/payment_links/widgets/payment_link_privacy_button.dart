@@ -23,6 +23,7 @@ class PaymentLinkPrivacyButton extends ConsumerWidget {
       message: label,
       excludeFromSemantics: true,
       child: Semantics(
+        button: true,
         label: label,
         child: SizedBox.square(
           dimension: size,

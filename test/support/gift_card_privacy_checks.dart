@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
@@ -23,6 +24,24 @@ class _Privacy extends PrivacyModeNotifier {
 
   @override
   Future<void> set(bool enabled) async => state = enabled;
+}
+
+Future<void> _expectPrivacyButtonSemantics(
+  WidgetTester tester,
+  String label,
+) async {
+  final handle = tester.ensureSemantics();
+  try {
+    await tester.pump();
+    final node = tester.getSemantics(
+      find.byKey(const ValueKey('payment_link_privacy_button')),
+    );
+    expect(node.label, label);
+    expect(node.flagsCollection.isButton, isTrue);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+  } finally {
+    handle.dispose();
+  }
 }
 
 void registerGiftCardPrivacyChecks({required bool mobile}) {
@@ -91,7 +110,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
               )
               .map((r) => r.amountText);
     expect(amounts(), everyElement('****** ZEC'));
-    expect(find.bySemanticsLabel('Turn off privacy mode'), findsOneWidget);
+    await _expectPrivacyButtonSemantics(tester, 'Turn off privacy mode');
     if (!mobile) {
       final title = find.text('Gift Cards');
       final titleRow = find
@@ -138,7 +157,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     expect(amounts(), everyElement(isNot(contains('*'))));
     expect(privacy.isEnabled, isFalse);
     expect(haptics, mobile ? ['HapticFeedbackType.mediumImpact'] : isEmpty);
-    expect(find.bySemanticsLabel('Turn on privacy mode'), findsOneWidget);
+    await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
     await tester.tap(find.byKey(const ValueKey('payment_link_privacy_button')));
     await tester.tap(find.text('Received').first);
     await tester.pumpAndSettle();
@@ -147,7 +166,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     await tester.pumpAndSettle();
     expect(amounts(), everyElement(isNot(contains('*'))));
     expect(privacy.isEnabled, isFalse);
-    expect(find.bySemanticsLabel('Turn on privacy mode'), findsOneWidget);
+    await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
   });
 
   testWidgets('privacy keeps gift creation and claim amounts visible', (
