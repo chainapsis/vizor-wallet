@@ -58,6 +58,9 @@ const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
     "ledger_legacy_orchard_recovery_unsupported: The current Ledger Zcash app cannot sign a transaction that spends legacy Orchard funds into Ironwood.";
+/// Leads errors where the device's signatures verify against keys other than
+/// this account's, so the UI can ask for the Ledger that holds the account.
+const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAppInfo {
@@ -339,7 +342,7 @@ pub fn finalize_pczt_signing(
 ) -> Result<Vec<SpendAuthSignature>, String> {
     let (commands, requests) = build_signing_plan(pczt_bytes, false)?;
     let (_, shielded) = decode_signing_responses(&commands, &requests, responses)?;
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &shielded)?;
+    preflight_device_signatures(pczt_bytes, &shielded)?;
     Ok(shielded)
 }
 
@@ -613,7 +616,12 @@ fn is_dashboard_app(name: &str) -> bool {
 }
 
 fn is_terminal_app_transition_error(error: &str) -> bool {
-    error.contains("locked")
+    matches!(
+        apdu::ledger_status_word(error),
+        Some(
+            0x5515 | 0x6982 | 0x5303 | 0x5502 | 0x6807 | 0x5501 | 0x6985 | 0x6a80 | 0x6e00 | 0x6d00
+        )
+    ) || error.contains("locked")
         || error.contains("PIN is not set")
         || error.contains("not installed")
         || error.contains("rejected")
@@ -690,7 +698,7 @@ pub fn sign_pczt_with_progress(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &signatures)?;
+    preflight_device_signatures(pczt_bytes, &signatures)?;
     Ok(signatures)
 }
 
@@ -802,6 +810,38 @@ pub fn sign_pczt_full_with_progress(
     Err(unsupported_platform())
 }
 
+fn signature_mismatch(message: String) -> String {
+    format!("{SIGNATURE_MISMATCH_PREFIX}{message}")
+}
+
+/// Whether applying a transparent signature failed because the signature did
+/// not verify, rather than because the PCZT input was malformed or incomplete.
+fn is_transparent_signature_verification_failure(error: &pczt::roles::signer::Error) -> bool {
+    matches!(
+        error,
+        pczt::roles::signer::Error::TransparentSign(
+            transparent::pczt::SignerError::InvalidExternalSignature
+        )
+    )
+}
+
+fn preflight_device_signatures(
+    pczt_bytes: &[u8],
+    signatures: &[SpendAuthSignature],
+) -> Result<(), String> {
+    crate::wallet::sync::check_orchard_spend_auth_signatures(pczt_bytes, signatures)
+        .map_err(device_signature_error)
+}
+
+fn device_signature_error(error: crate::wallet::sync::SpendAuthSignatureError) -> String {
+    match error {
+        crate::wallet::sync::SpendAuthSignatureError::Mismatch(message) => {
+            signature_mismatch(message)
+        }
+        crate::wallet::sync::SpendAuthSignatureError::Invalid(message) => message,
+    }
+}
+
 fn apply_signatures(
     pczt_bytes: &[u8],
     parsed: &parse::ParsedPczt,
@@ -816,7 +856,7 @@ fn apply_signatures(
         ));
     }
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, shielded_signatures)?;
+    preflight_device_signatures(pczt_bytes, shielded_signatures)?;
 
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Ledger signatures: {e:?}"))?;
@@ -869,18 +909,27 @@ fn apply_signatures(
 
         signer
             .append_transparent_signature(input_index, signature)
-            .map_err(|e| format!("Validate Ledger transparent signature {input_index}: {e:?}"))?;
+            .map_err(|e| {
+                let message = format!("Validate Ledger transparent signature {input_index}: {e:?}");
+                // Only a signature that fails verification means the device
+                // signed with another key; the rest are PCZT construction bugs.
+                if is_transparent_signature_verification_failure(&e) {
+                    signature_mismatch(message)
+                } else {
+                    message
+                }
+            })?;
     }
 
     for signature in shielded_signatures {
         signer
             .apply_orchard_spend_auth_signature(signature)
             .map_err(|e| {
-                format!(
+                signature_mismatch(format!(
                     "Apply Ledger {:?} signature at action {}: {e:?}",
                     signature.value_pool(),
                     signature.action_index()
-                )
+                ))
             })?;
     }
 
@@ -937,7 +986,7 @@ fn signing_status_cooldown_remaining(ready_at: Option<Instant>, now: Instant) ->
 
 fn classify_operation_state(cancelled: bool, timed_out: bool) -> Result<(), String> {
     if cancelled {
-        Err("Ledger operation was cancelled. Retry when ready.".into())
+        Err("ledger_cancelled: Ledger operation was cancelled. Retry when ready.".into())
     } else if timed_out {
         Err(
             "Ledger operation timed out waiting for the device. Reopen the Zcash app and retry."
@@ -974,6 +1023,44 @@ mod tests {
     };
 
     #[test]
+    fn only_failed_signature_verification_reads_as_a_signature_mismatch() {
+        use crate::wallet::sync::SpendAuthSignatureError;
+
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Mismatch(
+                "Apply Orchard signature at action 0: InvalidSpendAuthSignature".into()
+            )),
+            "ledger_signature_mismatch: Apply Orchard signature at action 0: InvalidSpendAuthSignature"
+        );
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Invalid(
+                "Missing 1 required compact spend-authorization signature(s)".into()
+            )),
+            "Missing 1 required compact spend-authorization signature(s)"
+        );
+    }
+
+    #[test]
+    fn only_an_unverifiable_transparent_signature_reads_as_a_signature_mismatch() {
+        use pczt::roles::signer::Error;
+
+        assert!(is_transparent_signature_verification_failure(
+            &Error::TransparentSign(transparent::pczt::SignerError::InvalidExternalSignature)
+        ));
+        for other in [
+            Error::InvalidIndex,
+            Error::TransparentSign(transparent::pczt::SignerError::MissingPreimage),
+            Error::TransparentSign(transparent::pczt::SignerError::UnsupportedPubkey),
+            Error::TransparentSign(transparent::pczt::SignerError::WrongSpendingKey),
+        ] {
+            assert!(
+                !is_transparent_signature_verification_failure(&other),
+                "{other:?}"
+            );
+        }
+    }
+
+    #[test]
     fn cancellation_targets_only_the_active_operation_generation() {
         let state = OperationState::new();
         let first = state.begin();
@@ -1003,7 +1090,7 @@ mod tests {
         assert_eq!(classify_operation_state(false, false), Ok(()));
         assert!(classify_operation_state(true, false)
             .unwrap_err()
-            .contains("cancelled"));
+            .starts_with("ledger_cancelled: "));
         assert!(classify_operation_state(false, true)
             .unwrap_err()
             .contains("timed out"));
@@ -1062,6 +1149,16 @@ mod tests {
         assert!(is_terminal_app_transition_error(
             "Ledger request was rejected on the device"
         ));
+        for status in [0x5515, 0x5502, 0x6807, 0x5501, 0x6985, 0x6a80, 0x6d00] {
+            assert!(is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
+        for status in [0x6601, 0x6901, 0xb007] {
+            assert!(!is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
     }
 
     #[derive(Clone, Copy, Debug)]

@@ -399,6 +399,49 @@ void main() {
     expect(ble.stopCalls, greaterThanOrEqualTo(1));
   });
 
+  testWidgets('status 0x6a80 does not read as a device rejection', (
+    tester,
+  ) async {
+    final ble = _FakeBleService();
+    var connectorCalls = 0;
+
+    await tester.pumpWidget(
+      _ledgerHarness(
+        ble: ble,
+        connector: (_) async {
+          connectorCalls++;
+          throw StateError(
+            'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ble.emit(
+      const LedgerDevicesDiscovered([
+        LedgerBleDevice(id: 'nano-x', name: 'Rowan Ledger', model: 'Nano X'),
+      ]),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Ledger Nano X · Rowan Ledger'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    expect(connectorCalls, 1);
+    expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
+    expect(find.textContaining('rejected on your Ledger'), findsNothing);
+  });
+
   for (final failure in [
     LedgerMobileFailure.pairingInvalid,
     LedgerMobileFailure.permissionDenied,

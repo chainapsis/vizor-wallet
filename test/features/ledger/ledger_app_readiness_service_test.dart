@@ -190,7 +190,7 @@ void main() {
             version: '3.9.3',
           ),
         ],
-        openErrors: [StateError('request rejected 6985'), null],
+        openErrors: [StateError(_deviceRejected), null],
       );
       final service = LedgerAppReadinessService(
         device: device,
@@ -414,3 +414,6 @@ class _ControlledDevice implements LedgerAppReadinessDevice {
   @override
   Future<LedgerDeviceAppSnapshot> requestOpenZcashApp() => open();
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

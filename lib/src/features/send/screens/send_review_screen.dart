@@ -458,11 +458,20 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',
         statusLabel: 'Unsupported transaction',
-        message:
-            'This Ledger preview does not support Sapling inputs or outputs.',
+        message: kLedgerSaplingRecipientMessage,
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (guidance != null && !guidance.retryable) {
+      // Retrying the same request fails the same way on the device.
+      failure = LedgerSigningFailurePresentation(
+        title: LedgerRequestFailure.fromError(error).title,
+        statusLabel: 'New transaction required',
+        message: guidance.message,
+        showDeviceAppPrompt: false,
+        actionLabel: 'Create new transaction',
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',
@@ -476,13 +485,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
-      final message = lower.contains('rejected') || lower.contains('6985')
-          ? 'The transaction was rejected on your Ledger.'
-          : lower.contains('not found') ||
-                lower.contains('no device') ||
-                lower.contains('hid')
-          ? 'Connect and unlock your Ledger. $appInstruction'
-          : 'Ledger signing could not be completed. Check your device and try again.';
+      final message = switch (LedgerRequestFailure.fromError(error)) {
+        LedgerRequestFailure.declined =>
+          'The transaction was rejected on your Ledger.',
+        LedgerRequestFailure.transportLost =>
+          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+              'Connect and unlock your Ledger. $appInstruction',
+        _ =>
+          'Ledger signing could not be completed. Check your device and try again.',
+      };
       failure = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
