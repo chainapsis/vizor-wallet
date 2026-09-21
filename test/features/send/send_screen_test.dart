@@ -90,7 +90,7 @@ void main() {
           isLedger,
         );
         expect(
-          find.text("Your Ledger can't sign this memo yet"),
+          find.text("Ledger can't sign non-English text yet"),
           isLedger ? findsOneWidget : findsNothing,
         );
         expect(_fieldText(tester, 'send_memo_field'), memo);

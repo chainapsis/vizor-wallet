@@ -38,6 +38,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_memo_policy.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -848,6 +849,77 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets('memo error fits its slot at phone width', (tester) async {
+    // The default test viewport is wider than a phone, which is how a memo
+    // error that overflows its slot went unnoticed. Pin the narrow case.
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.views.first
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1.0;
+    addTearDown(() {
+      binding.platformDispatcher.views.first
+        ..physicalSize = const Size(520, 1100)
+        ..devicePixelRatio = 1.0;
+    });
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send/review',
+        accountState: AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+        initialReviewDraft: const MobileSendReviewDraftArgs(
+          sendFlowId: 'flow-1',
+          recipient: _shieldedAddress,
+          addressType: 'unified',
+          amountText: '1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The send review screen has a button-label overflow of its own at
+    // phone width, unrelated to the memo slot: a Keystone account, which
+    // never reaches this guard, overflows further on the same screen.
+    // Drain it so this test fails only on its own subject, and keep it an
+    // overflow so an unrelated failure still surfaces.
+    final pending = tester.takeException();
+    if (pending != null) {
+      expect(pending.toString(), contains('overflowed'));
+    }
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      '\uc548\ub155\ud558\uc138\uc694',
+    );
+    await tester.pumpAndSettle();
+
+    final error = find.text(ledgerMemoUnsupportedError);
+    expect(error, findsOneWidget);
+    final slot = tester.getSize(error);
+    final painter = TextPainter(
+      text: TextSpan(
+        text: ledgerMemoUnsupportedError,
+        style: tester.widget<Text>(error).style,
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: slot.width);
+    expect(
+      painter.height,
+      lessThanOrEqualTo(slot.height),
+      reason: 'the memo error is clipped by its slot at phone width',
+    );
+  });
+
   for (final signer in [
     HardwareSignerKind.ledger,
     HardwareSignerKind.keystone,
@@ -898,9 +970,7 @@ void main() {
           blocked,
         );
         expect(
-          find.text(
-            "Your Ledger can't sign this memo yet",
-          ),
+          find.text("Ledger can't sign non-English text yet"),
           blocked ? findsOneWidget : findsNothing,
         );
         await tester.enterText(
@@ -957,9 +1027,7 @@ void main() {
         isNull,
       );
       expect(
-        find.text(
-          "Your Ledger can't sign this memo yet",
-        ),
+        find.text("Ledger can't sign non-English text yet"),
         findsOneWidget,
       );
       expect(_proposeCalls, 0);
@@ -4137,7 +4205,8 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_send_memo_text_area')))
           .height,
-      222,
+      // The Figma 222 plus the second line the memo error slot holds.
+      239,
     );
     expect(
       tester

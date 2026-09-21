@@ -183,7 +183,7 @@ void main() {
         isA<PaymentRequestPrecheckFailed>().having(
           (r) => r.message,
           'message',
-          "Your Ledger can't sign this memo yet",
+          "Ledger can't sign non-English text yet",
         ),
       );
     }

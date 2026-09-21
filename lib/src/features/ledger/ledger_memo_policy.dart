@@ -6,10 +6,12 @@
 ///
 /// Worded as a current limitation rather than a rule: it goes away once the
 /// device app is fixed upstream.
-const ledgerMemoUnsupportedError = "Your Ledger can't sign this memo yet";
+const ledgerMemoUnsupportedError = "Ledger can't sign non-English text yet";
 
-/// Shown where only a few words fit, next to an explicit edit affordance.
-const ledgerMemoUnsupportedCta = 'Edit memo to continue';
+/// Shown where only a few words fit — a phone-width primary button leaves
+/// about 323 logical pixels for its label — next to an explicit edit
+/// affordance that says what to do.
+const ledgerMemoUnsupportedCta = 'Memo not supported';
 
 bool _isPrintableAscii(int codeUnit) => codeUnit >= 0x20 && codeUnit <= 0x7e;
 

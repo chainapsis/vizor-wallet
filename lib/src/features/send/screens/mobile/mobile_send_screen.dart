@@ -367,6 +367,10 @@ class MobileSendReviewScreen extends StatelessWidget {
 }
 
 const _kMobileSendRecipientLineHeight = 17.0;
+
+/// The memo error is the one message here that does not fit on a line at
+/// phone width, so its slot holds two.
+const _kMobileSendMemoErrorHeight = _kMobileSendRecipientLineHeight * 2;
 const _kMobileSendAddressActionHeight = 36.0;
 const _kMobileSendAddressActionSlotWidth = 96.0;
 const _kMobileSendAddressPasteWidth = 76.0;
@@ -4125,7 +4129,8 @@ class _MemoSheetState extends State<_MemoSheet> {
         children: [
           SizedBox(
             key: const ValueKey('mobile_send_memo_text_area'),
-            height: 222,
+            // The Figma height plus the second line the memo error needs.
+            height: 222 + _kMobileSendRecipientLineHeight,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
               child: Column(
@@ -4159,12 +4164,15 @@ class _MemoSheetState extends State<_MemoSheet> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   SizedBox(
-                    height: _kMobileSendRecipientLineHeight,
+                    height: _kMobileSendMemoErrorHeight,
                     child: Align(
-                      alignment: Alignment.centerLeft,
+                      // Top, so a one-line message keeps the position it had
+                      // before this slot grew.
+                      alignment: Alignment.topLeft,
                       child: error != null
                           ? Text(
                               error,
+                              maxLines: 2,
                               style: labelStyle.copyWith(
                                 color: colors.text.destructive,
                               ),

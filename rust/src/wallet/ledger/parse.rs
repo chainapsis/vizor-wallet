@@ -587,7 +587,7 @@ fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
 /// Keep this string identical to `ledgerMemoUnsupportedError` in
 /// `lib/src/features/ledger/ledger_memo_policy.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
-const LEDGER_MEMO_UNSUPPORTED: &str = "Your Ledger can't sign this memo yet";
+const LEDGER_MEMO_UNSUPPORTED: &str = "Ledger can't sign non-English text yet";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. The pinned app version does not survive that path, so we refuse the

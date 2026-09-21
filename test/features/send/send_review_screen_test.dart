@@ -136,7 +136,7 @@ void main() {
     expect(find.byType(LedgerSigningModal), findsNothing);
     expect(
       find.text(
-        "Your Ledger can't sign this memo yet",
+        "Ledger can't sign non-English text yet",
       ),
       findsOneWidget,
     );
