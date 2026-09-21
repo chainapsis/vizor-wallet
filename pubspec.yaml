@@ -49,7 +49,7 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 7224aa38c18459159acde0ae2f22685fbe46ceb4
+      ref: fe622da81de673d81fd98750de3e991c40d6d2ca
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
@@ -67,6 +67,10 @@ dependencies:
   # Platform share sheet for the receive screen's share action.
   share_plus: ^12.0.1
   shared_preferences: ^2.5.3
+  # Native save dialog for the desktop "Save QR image" action. The macOS app
+  # is sandboxed, so a resolved Downloads path would land inside the app
+  # container — only an NSSavePanel result is a folder the user can reach.
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -111,6 +115,7 @@ flutter:
 
   assets:
     - assets/illustrations/
+    - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/
     - assets/swap/tokens/

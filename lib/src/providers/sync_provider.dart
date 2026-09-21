@@ -9,6 +9,7 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
+import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
@@ -179,6 +180,18 @@ class SyncState {
 
   bool get isUsingCompletedSpendableSnapshot =>
       displaySpendableFreshness == SpendableBalanceFreshness.lastCompletedSync;
+
+  /// Whether this state's spendable balance may end a check as "not enough".
+  ///
+  /// Read on an *account-scoped* state ([scopedToAccount]): the wallet-wide
+  /// sync fields survive [withoutAccountScopedData], so a state carrying no
+  /// balance for the account still reports `isSyncedToTip` with a zero
+  /// spendable. [hasBalanceData] is what separates "scanned to the tip and
+  /// this is the balance" from "scanned to the tip and this account's balance
+  /// was never fetched" — without it the predicate fails open on a zero, which
+  /// is the VZR-42 shape (a shortfall announced against a balance nobody read).
+  bool get hasSettledSpendableBalance =>
+      hasBalanceData && isSyncedToTip && !isUsingCompletedSpendableSnapshot;
 
   static bool shouldPreserveCompletedSpendable(SyncState? previous) {
     if (previous?.isUsingCompletedSpendableSnapshot ?? false) return true;
@@ -771,14 +784,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;
   bool _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+  bool _balanceRefreshQueuedRequireAuthoritativeBalance = false;
   Future<void>? _balanceRefreshChain;
 
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
     unawaited(ref.read(chainUpgradeStatusProvider.future));
+    final shutdown = ref.read(appShutdownSignalProvider);
+    shutdown.addListener(_stopForAppExit);
+    ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
+        if (shutdown.isShuttingDown) return;
         _isInForeground = true;
         unawaited(_refreshBalanceAfterResume());
         _checkAndSync();
@@ -1008,9 +1026,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _startPolling();
   }
 
+  bool get _isShuttingDown =>
+      ref.read(appShutdownSignalProvider).isShuttingDown;
+
+  /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
+  /// sends. Generation changes also reject preflight completions already queued.
+  void _stopForAppExit() {
+    ++_syncGen;
+    ++_sensitiveStateEpoch;
+    ++_progressEventVersion;
+    ++_balanceReadVersion;
+    _syncStartDeferred = false;
+    _deferredSyncLatestTipHeight = null;
+    _isSyncing = false;
+    _stopPolling();
+    rust_sync.cancelFullSync();
+    _syncSub?.cancel();
+    _syncSub = null;
+    _stopMempoolObserver();
+  }
+
   /// Fire-and-forget: sets up FRB stream and returns immediately.
   /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
   void startSync({int? latestTipHeight}) {
+    if (_isShuttingDown) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping foreground sync start');
       return;
@@ -1464,6 +1503,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Recovery path for cases like unlock-after-sign-out where a previous
   /// sync has already been cancelled, but Rust is still unwinding.
   Future<void> startSyncAnyway() async {
+    if (_isShuttingDown) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping forced foreground sync start');
       return;
@@ -1641,8 +1681,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     if (_requiresUnlock) return;
 
-    if (pause.hadActiveSync) {
-      log('SyncNotifier: resuming sync after wallet DB mutation');
+    if (pause.hadActiveSync || pause.hadMempoolObserver) {
+      log('SyncNotifier: resuming sync and mempool observation after pause');
       startSync();
     }
     if (pause.hadPolling || pause.hadActiveSync) {
@@ -1669,6 +1709,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _balanceRefreshQueued = false;
     _balanceRefreshQueuedReleaseSnapshot = false;
     _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+    _balanceRefreshQueuedRequireAuthoritativeBalance = false;
     _lastKnownByAccount.clear();
     state = AsyncData(SyncState());
 
@@ -1784,6 +1825,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
+    if (_isShuttingDown) return;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
@@ -1800,6 +1842,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
+    if (_isShuttingDown) return;
     final gen = _syncGen;
     final epoch = _sensitiveStateEpoch;
     final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
@@ -1889,6 +1932,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// by the MEMPOOL_RUNNING atomic, so a double-call just logs
   /// and returns an error; we catch and ignore it.
   void _startMempoolObserver(String dbPath, RpcEndpointConfig endpoint) {
+    if (_isShuttingDown) return;
     if (rust_sync.isMempoolObserverRunning()) {
       // Already up — happens if startSync fires while a previous
       // observer is still winding down. The Rust side will
@@ -2331,6 +2375,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> refreshAfterSend() =>
       _requestBalanceRefresh(releaseSnapshotOnAuthoritativeBalance: true);
 
+  /// Reconcile released inputs before a cancelled send can be retried.
+  /// An outgoing account's locked snapshot must not be restored on switch-back.
+  /// Never publish that account's balance over a different active account.
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    _lastKnownByAccount.remove(accountUuid);
+    if (_requiresUnlock || _getActiveAccountUuid() != accountUuid) return;
+    try {
+      await _requestBalanceRefresh(
+        releaseSnapshotOnAuthoritativeBalance: true,
+        requireAuthoritativeBalance: true,
+      );
+    } finally {
+      // A switch during the read may have cached the outgoing locked state.
+      _lastKnownByAccount.remove(accountUuid);
+    }
+  }
+
   /// Reconciles the account selected by a switch or active-account removal.
   ///
   /// If its balance summary is temporarily unavailable, discard only the
@@ -2343,6 +2404,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
 
   Future<void> _refreshBalanceAfterResume() async {
+    if (_isShuttingDown) return;
     try {
       await _requestBalanceRefresh();
     } catch (e, st) {
@@ -2358,12 +2420,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _requestBalanceRefresh({
     bool releaseSnapshotOnAuthoritativeBalance = false,
     bool clearRestoredSnapshotIfUnavailable = false,
+    bool requireAuthoritativeBalance = false,
   }) {
     if (releaseSnapshotOnAuthoritativeBalance) {
       _balanceRefreshQueuedReleaseSnapshot = true;
     }
     if (clearRestoredSnapshotIfUnavailable) {
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = true;
+    }
+    if (requireAuthoritativeBalance) {
+      _balanceRefreshQueuedRequireAuthoritativeBalance = true;
     }
     if (_balanceRefreshInFlight) {
       _balanceRefreshQueued = true;
@@ -2381,6 +2447,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _runCoalescedBalanceRefresh() async {
     Object? terminalError;
     StackTrace? terminalStackTrace;
+    var requireAuthoritativeBalance = false;
     try {
       do {
         _balanceRefreshQueued = false;
@@ -2389,11 +2456,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         final clearRestoredSnapshotIfUnavailable =
             _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable;
         _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+        // Keep this requirement for the whole chain: an ordinary trailing
+        // refresh must not turn an unavailable cancellation balance into success.
+        requireAuthoritativeBalance =
+            requireAuthoritativeBalance ||
+            _balanceRefreshQueuedRequireAuthoritativeBalance;
+        _balanceRefreshQueuedRequireAuthoritativeBalance = false;
         try {
           await _refreshBalance(
-            releaseSnapshotOnAuthoritativeBalance: releaseSnapshot,
+            releaseSnapshotOnAuthoritativeBalance:
+                releaseSnapshot || requireAuthoritativeBalance,
             clearRestoredSnapshotIfUnavailable:
                 clearRestoredSnapshotIfUnavailable,
+            requireAuthoritativeBalance: requireAuthoritativeBalance,
           );
           // A successful trailing pass satisfies every caller sharing this
           // chain, even if an earlier pass failed.
@@ -2416,6 +2491,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _balanceRefreshQueued = false;
       _balanceRefreshQueuedReleaseSnapshot = false;
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
+      _balanceRefreshQueuedRequireAuthoritativeBalance = false;
       _balanceRefreshChain = null;
     }
   }
@@ -2560,6 +2636,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> _refreshBalance({
     bool releaseSnapshotOnAuthoritativeBalance = false,
     bool clearRestoredSnapshotIfUnavailable = false,
+    bool requireAuthoritativeBalance = false,
   }) async {
     if (_requiresUnlock) {
       state = AsyncData(SyncState());
@@ -2681,7 +2758,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     if (balanceReadVersion != _balanceReadVersion) {
       log('SyncNotifier: discarding superseded balance refresh');
+      if (requireAuthoritativeBalance) {
+        _balanceRefreshQueued = true;
+        _balanceRefreshQueuedReleaseSnapshot = true;
+      }
       return;
+    }
+    if (requireAuthoritativeBalance && !hasAuthoritativeBalance) {
+      throw StateError('Balance unavailable after releasing send proposal');
     }
     // Commit against the latest state so a slow balance/history refresh
     // cannot roll sync progress or completion metadata back to the snapshot
@@ -2953,4 +3037,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
+);
+
+/// [SyncState.hasSettledSpendableBalance] for [accountUuid], from an unscoped
+/// state.
+///
+/// The single spelling of "this balance is an answer" for everything that has
+/// to decide whether a shortfall is real. Scoping first is not optional: an
+/// unscoped read answers with another account's balance, or with the
+/// wallet-wide sync fields of a state that has no balance at all.
+bool spendableIsSettledForAccount(SyncState? sync, String? accountUuid) =>
+    sync != null &&
+    sync.scopedToAccount(accountUuid).hasSettledSpendableBalance;
+
+/// [spendableIsSettledForAccount] for the active account, read live.
+bool activeAccountSpendableIsSettled(Ref ref) => spendableIsSettledForAccount(
+  ref.read(syncProvider).value,
+  ref.read(accountProvider).value?.activeAccountUuid,
 );

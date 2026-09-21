@@ -13,6 +13,7 @@ import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
+import 'core/storage/secure_storage_diagnostics.dart';
 import 'providers/account_models.dart';
 import 'rust/api/sync.dart' as rust_sync;
 import 'rust/api/wallet.dart' as rust_wallet;
@@ -218,6 +219,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
   try {
     log('bootstrap: loading startup snapshot');
+    await SecureStorageDiagnostics.instance.bootstrap(
+      StorageBootstrapStage.started,
+    );
     await ensureIosSecureStoreAccessibilityMigrated();
     await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
@@ -257,7 +261,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    final databaseExists = rust_wallet.walletExists(dbPath: dbPath);
+    if (databaseExists) {
       try {
         log('bootstrap: ensuring wallet DB migrations before startup snapshot');
         await rust_wallet.ensureWalletDbMigrated(
@@ -266,6 +271,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         );
       } catch (e) {
         log('bootstrap: wallet DB migration preflight failed: $e');
+        await SecureStorageDiagnostics.instance.bootstrap(
+          StorageBootstrapStage.blocked,
+        );
         return AppBootstrapState.blocked(
           failureKind: AppBootstrapFailureKind.walletDbMigrationFailed,
           failureMessage: _walletDbMigrationFailureMessage(e),
@@ -277,17 +285,45 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       for (final account in storedAccounts) account.uuid: account,
     };
     final storedActiveUuid = await storage.readString(_activeAccountKey);
+    await SecureStorageDiagnostics.instance.bootstrap(
+      StorageBootstrapStage.metadata,
+      passwordConfigured: isPasswordConfigured,
+      databaseExists: databaseExists,
+      storedAccountCount: storedAccounts.length,
+    );
 
     var rustAccounts = <AccountInfo>[];
     final rustAddressesByUuid = <String, String>{};
     if (rust_wallet.walletExists(dbPath: dbPath)) {
       try {
+        final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
+          storedAccounts,
+        );
+        if (legacyHardwareAccounts.isNotEmpty) {
+          try {
+            await rust_wallet.backfillLegacyHardwareAccounts(
+              dbPath: dbPath,
+              network: network,
+              accounts: legacyHardwareAccounts,
+            );
+          } catch (e) {
+            log('bootstrap: failed to backfill legacy hardware accounts: $e');
+          }
+        }
         final listed = await rust_wallet.listAccounts(
           dbPath: dbPath,
           network: network,
         );
         rustAccounts = listed.indexed.map((entry) {
           final (index, account) = entry;
+          final hardwareSignerKind = HardwareSignerKind.fromJson(
+            account.hardwareSignerKind,
+          );
+          if (account.isHardware != (hardwareSignerKind != null)) {
+            throw StateError(
+              'Rust account ${account.uuid} returned inconsistent hardware signer metadata.',
+            );
+          }
           rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
           return mergeBootstrappedAccountInfo(
@@ -296,6 +332,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               name: account.name,
               order: index,
               isHardware: account.isHardware,
+              hardwareSignerKind: hardwareSignerKind,
+              birthdayHeight: account.birthdayHeight,
+              zip32AccountIndex: account.zip32AccountIndex,
               isSeedAnchor: account.isSeedAnchor,
             ),
             storedAccount: stored,
@@ -332,6 +371,11 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         : !isUnlocked
         ? '/unlock'
         : '/home';
+    await SecureStorageDiagnostics.instance.bootstrap(
+      StorageBootstrapStage.ready,
+      passwordConfigured: isPasswordConfigured,
+      storedAccountCount: accounts.length,
+    );
 
     log(
       'bootstrap: hasWallet=$hasWallet, passwordConfigured=$isPasswordConfigured, '
@@ -360,6 +404,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
     );
   } on SecureStorageUnavailableException catch (e) {
+    await SecureStorageDiagnostics.instance.bootstrap(
+      StorageBootstrapStage.blocked,
+    );
     log('bootstrap: secure storage unavailable: $e');
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.secureStorageUnavailable,
@@ -368,12 +415,28 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     );
   } catch (e) {
     log('bootstrap: failed, blocking startup: $e');
+    await SecureStorageDiagnostics.instance.bootstrap(
+      StorageBootstrapStage.blocked,
+    );
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.startupFailure,
       failureMessage: 'Vizor could not load its startup state.',
     );
   }
 }
+
+@visibleForTesting
+List<rust_wallet.LegacyHardwareAccount> legacyHardwareAccountsForBackfill(
+  Iterable<AccountInfo> accounts,
+) => accounts
+    .where((account) => account.isHardware)
+    .map(
+      (account) => rust_wallet.LegacyHardwareAccount(
+        accountUuid: account.uuid,
+        hardwareSignerKind: account.hardwareSignerKind!.name,
+      ),
+    )
+    .toList(growable: false);
 
 String _walletDbMigrationFailureMessage(Object error) {
   final message = error.toString().toLowerCase();
@@ -424,13 +487,19 @@ AccountInfo mergeBootstrappedAccountInfo({
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
     order: storedAccount?.order ?? order,
-    // Rust can recover Keystone accounts when older stored metadata lost this bit.
-    isHardware: (storedAccount?.isHardware ?? false) || rustAccount.isHardware,
+    isHardware: rustAccount.isHardware,
+    hardwareSignerKind: rustAccount.hardwareSignerKind,
+    birthdayHeight: rustAccount.birthdayHeight,
+    zip32AccountIndex: rustAccount.zip32AccountIndex,
     isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId: normalizeProfilePictureId(
       storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
     ),
     walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
+    ledgerLastTransport: storedAccount?.ledgerLastTransport,
+    ledgerDeviceId: storedAccount?.ledgerDeviceId,
+    ledgerDeviceName: storedAccount?.ledgerDeviceName,
+    ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
   );
 }
 

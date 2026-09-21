@@ -13,6 +13,7 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -42,8 +43,12 @@ class WalletLinkDesktopScreen extends ConsumerStatefulWidget {
       _WalletLinkDesktopScreenState();
 }
 
+// The pairing QR is live: a phone's camera is reading it while the session
+// runs, and a payment-request card would scrim it mid-transfer. The screen is
+// the session, so the hold lasts as long as the screen.
 class _WalletLinkDesktopScreenState
-    extends ConsumerState<WalletLinkDesktopScreen> {
+    extends ConsumerState<WalletLinkDesktopScreen>
+    with PaymentUriBusySurfaceHoldMixin {
   final _passwordController = TextEditingController();
   bool _accessConfirmed = false;
   bool _isSubmittingPassword = false;

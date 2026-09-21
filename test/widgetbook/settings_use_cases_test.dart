@@ -47,6 +47,8 @@ void main() {
     _expectNoCrash(errors);
     // "Settings" appears in the sidebar nav and as the page header.
     expect(find.text('Settings'), findsWidgets);
+    expect(find.text('My gift cards'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
   });
 
   testWidgets('settings endpoint use case renders the endpoint header', (

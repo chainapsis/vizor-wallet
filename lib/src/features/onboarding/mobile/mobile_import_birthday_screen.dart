@@ -295,6 +295,10 @@ class _MobileImportBirthdayScreenState
       });
       try {
         await onHeightConfirmed(height);
+        if (!mounted) return;
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+        });
       } catch (e, st) {
         log('MobileImportBirthday: height confirm failed: $e\n$st');
         if (!mounted) return;

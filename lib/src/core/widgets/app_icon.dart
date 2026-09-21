@@ -55,8 +55,11 @@ abstract final class AppIcons {
   static const eyeClosed = 'eye_closed';
   static const expand = 'expand';
   static const faceId = 'face_id';
+  static const touchId = 'touch_id';
   static const filter = 'filter';
   static const github = 'github';
+  static const giftCard = 'gift_card';
+  static const giftCardOutline = 'gift_card_outline';
   static const globe = 'globe';
   static const help = 'help';
   static const history = 'history';
@@ -65,6 +68,8 @@ abstract final class AppIcons {
   static const key = 'key';
   static const keystone = 'keystone';
   static const keystoneScan = 'keystone_scan';
+  static const ledger = 'ledger';
+  static const ledgerBrand = 'ledger_brand';
   static const link = 'link';
   static const loader = 'loader';
   static const lock = 'lock';

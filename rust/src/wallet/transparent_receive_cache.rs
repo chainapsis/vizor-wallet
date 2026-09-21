@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::wallet::{keys, network::WalletNetwork};
 
 pub(crate) const RECEIVE_CACHE_SIDECAR_SUFFIX: &str = ".receive.redb";
+// Keep v3 completions: existing accounts opt into recovery by re-importing.
 const CACHE_VERSION: u32 = 3;
 const CACHE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("transparent_receive");
 const TRANSPARENT_UTXO_REQUERY_LOOKBACK: u64 = 100;
+const INTERNAL_UTXO_REFRESH_INTERVAL: u64 = 20;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 const REDB_CACHE_SIZE_BYTES: usize = 256 * 1024;
@@ -30,6 +32,20 @@ struct CacheRecord {
     utxo_sweep_next_offset: usize,
     #[serde(default)]
     utxo_checked_heights: Vec<CachedUtxoCheck>,
+    // Encoded addresses avoid collisions between external and internal child indices.
+    #[serde(default)]
+    non_external_checked_heights: BTreeMap<String, u64>,
+    #[serde(default)]
+    last_external_sweep_at: Option<u64>,
+    #[serde(default)]
+    internal_sweep_next_offset: usize,
+    #[serde(default)]
+    last_internal_sweep_at: Option<u64>,
+    // Old Ledger builds invalidated via a SQLite epoch. Retire those completions
+    // once, including a rewind that committed before its sidecar was refreshed.
+    // Main's v3 records lack this field and keep their valid completion heights.
+    #[serde(default, rename = "rewind_epoch", skip_serializing)]
+    legacy_rewind_epoch: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -162,6 +178,7 @@ pub(crate) fn mark_account_dirty(db_path: &str, account_uuid: &str) -> Result<()
             };
             let mut record: CacheRecord = serde_json::from_str(&encoded_record)
                 .map_err(|e| format!("transparent receive cache decode: {e}"))?;
+            retire_legacy_completion(&mut record);
             record.dirty = true;
             let encoded = serde_json::to_string(&record)
                 .map_err(|e| format!("transparent receive cache encode: {e}"))?;
@@ -327,9 +344,143 @@ pub(crate) fn mark_utxo_refresh_batch_complete(
         .collect();
     if let Some(next_sweep_offset) = next_sweep_offset {
         record.utxo_sweep_next_offset = next_sweep_offset;
+        record.last_external_sweep_at = Some(now_seconds());
     }
 
     write_record(db_path, account_uuid, &record)
+}
+
+/// Internal/change receivers have their own completion map. A v3 record without
+/// this optional field deliberately treats them as unchecked; external progress
+/// is retained. Completion is written only after wallet outputs are committed.
+pub(crate) fn plan_non_external_utxo_refresh(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    addresses: &[String],
+    birthday: u64,
+    safety: u64,
+    internal_addresses: &HashSet<String>,
+    tip: u64,
+) -> Result<Vec<(Vec<String>, u64)>, String> {
+    let existing = read_compatible_record(db_path, network, account_uuid)?;
+    let mut record = existing
+        .clone()
+        .unwrap_or_else(|| empty_record(network, None));
+    let known: HashSet<_> = addresses.iter().collect();
+    record
+        .non_external_checked_heights
+        .retain(|address, _| known.contains(address));
+    // Planning never advances completion. Avoid a disk commit when nothing changed.
+    if existing.as_ref() != Some(&record) {
+        write_record(db_path, account_uuid, &record)?;
+    }
+    // Completion stores tip + 1. Use the oldest checked internal address to
+    // refresh the checked group together; new discoveries cannot postpone it.
+    let internal_due = addresses
+        .iter()
+        .filter(|address| internal_addresses.contains(*address))
+        .filter_map(|address| record.non_external_checked_heights.get(address))
+        .min()
+        .is_some_and(|height| {
+            tip.saturating_add(1).saturating_sub(*height) >= INTERNAL_UTXO_REFRESH_INTERVAL
+        });
+    let mut unchecked = Vec::new();
+    let mut checked = Vec::new();
+    for address in addresses {
+        match record.non_external_checked_heights.get(address) {
+            None => unchecked.push(address.clone()),
+            Some(_) if !internal_addresses.contains(address) || internal_due => {
+                checked.push(address.clone());
+            }
+            Some(_) => {}
+        }
+    }
+    unchecked.sort();
+    checked.sort();
+    // Match main's multi-address request shape, separating only genesis discovery
+    // from incremental refresh so a new address does not rewind its neighbors.
+    Ok([unchecked, checked]
+        .into_iter()
+        .filter(|group| !group.is_empty())
+        .map(|group| {
+            let start = group
+                .iter()
+                .map(|address| {
+                    record
+                        .non_external_checked_heights
+                        .get(address)
+                        .map(|height| {
+                            height
+                                .saturating_sub(TRANSPARENT_UTXO_REQUERY_LOOKBACK)
+                                .max(birthday.min(safety))
+                        })
+                        .unwrap_or(0)
+                })
+                .min()
+                .unwrap_or(0);
+            (group, start)
+        })
+        .collect())
+}
+
+pub(crate) fn mark_non_external_utxo_refresh_complete(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    addresses: &[String],
+    next_start_height: u64,
+) -> Result<(), String> {
+    mark_non_external_utxo_refresh_complete_with_sweep(
+        db_path,
+        network,
+        account_uuid,
+        addresses,
+        next_start_height,
+        None,
+    )
+}
+
+pub(crate) fn mark_non_external_utxo_refresh_complete_with_sweep(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    addresses: &[String],
+    next_start_height: u64,
+    next_sweep_offset: Option<usize>,
+) -> Result<(), String> {
+    let Some(mut record) = read_compatible_record(db_path, network, account_uuid)? else {
+        return Ok(());
+    };
+    for address in addresses {
+        record
+            .non_external_checked_heights
+            .insert(address.clone(), next_start_height);
+    }
+    if let Some(offset) = next_sweep_offset {
+        record.internal_sweep_next_offset = offset;
+        record.last_internal_sweep_at = Some(now_seconds());
+    }
+    write_record(db_path, account_uuid, &record)
+}
+
+/// Invalidate before truncating SQLite. A crash between the two writes can only
+/// cause extra queries, never let a rewound wallet skip previously checked data.
+/// Reset all completions rather than clamping to the rewind height: a reorg can
+/// resurrect an older output whose *spend*, not receipt, was in the removed fork.
+pub(crate) fn invalidate_utxo_checks(db_path: &str) -> Result<(), String> {
+    for uuid in keys::list_account_uuids_from_db(db_path)? {
+        if let Some(mut record) = read_record(db_path, &uuid)? {
+            record.utxo_checked_heights.clear();
+            record.non_external_checked_heights.clear();
+            record.utxo_sweep_next_offset = 0;
+            record.last_external_sweep_at = None;
+            record.internal_sweep_next_offset = 0;
+            record.last_internal_sweep_at = None;
+            write_record(db_path, &uuid, &record)?;
+        }
+    }
+    Ok(())
 }
 
 fn write_clean_addresses(
@@ -340,31 +491,13 @@ fn write_clean_addresses(
     scanned_height: Option<u64>,
 ) -> Result<(), String> {
     let full_external_addresses = all_external_addresses(addresses);
-    let external_addresses = projected_external_addresses(addresses);
-    let existing = read_compatible_record(db_path, network, account_uuid)?;
-    let (utxo_sweep_next_offset, utxo_checked_heights) = existing
-        .as_ref()
-        .map(|record| {
-            (
-                record.utxo_sweep_next_offset,
-                preserved_utxo_checked_heights(record, &full_external_addresses),
-            )
-        })
-        .unwrap_or_default();
-
-    write_record(
-        db_path,
-        account_uuid,
-        &CacheRecord {
-            version: CACHE_VERSION,
-            network: network_cache_key(network).to_string(),
-            dirty: false,
-            refreshed_scanned_height: scanned_height,
-            external_addresses,
-            utxo_sweep_next_offset,
-            utxo_checked_heights,
-        },
-    )
+    let mut record = read_compatible_record(db_path, network, account_uuid)?
+        .unwrap_or_else(|| empty_record(network, scanned_height));
+    record.utxo_checked_heights = preserved_utxo_checked_heights(&record, &full_external_addresses);
+    record.external_addresses = projected_external_addresses(addresses);
+    record.dirty = false;
+    record.refreshed_scanned_height = scanned_height;
+    write_record(db_path, account_uuid, &record)
 }
 
 fn all_external_addresses(
@@ -439,35 +572,48 @@ fn external_utxo_refresh_batches(
         .iter()
         .map(|entry| (entry.child_index, entry.next_start_height))
         .collect::<BTreeMap<_, _>>();
-    let mut batches = Vec::new();
-    if let Some(batch) = refresh_batch(
+    let mut batches = split_refresh_batches(
         recent,
         &checked_heights,
         account_birthday_height,
         safety_start_height,
         None,
-    ) {
-        batches.push(batch);
-    }
-
+    );
     if !old.is_empty() && sweep_limit > 0 {
         let offset = utxo_sweep_next_offset % old.len();
         let take = sweep_limit.min(old.len());
         let selected = (0..take)
             .map(|i| old[(offset + i) % old.len()].clone())
             .collect::<Vec<_>>();
-        let next_offset = (offset + take) % old.len();
-        if let Some(batch) = refresh_batch(
+        batches.extend(split_refresh_batches(
             selected,
             &checked_heights,
             account_birthday_height,
             safety_start_height,
-            Some(next_offset),
-        ) {
-            batches.push(batch);
-        }
+            Some((offset + take) % old.len()),
+        ));
     }
 
+    batches
+}
+
+fn split_refresh_batches(
+    addresses: Vec<CachedExternalAddress>,
+    checked: &BTreeMap<u32, u64>,
+    birthday: u64,
+    safety: u64,
+    next_sweep_offset: Option<usize>,
+) -> Vec<TransparentUtxoRefreshBatch> {
+    let (unchecked, checked_addresses): (Vec<_>, Vec<_>) = addresses
+        .into_iter()
+        .partition(|address| !checked.contains_key(&address.child_index));
+    let mut batches = [unchecked, checked_addresses]
+        .into_iter()
+        .filter_map(|addresses| refresh_batch(addresses, checked, birthday, safety, None))
+        .collect::<Vec<_>>();
+    if let Some(last) = batches.last_mut() {
+        last.next_sweep_offset = next_sweep_offset;
+    }
     batches
 }
 
@@ -494,10 +640,10 @@ fn refresh_batch(
                         .saturating_sub(TRANSPARENT_UTXO_REQUERY_LOOKBACK)
                         .max(initial_start_height)
                 })
-                .unwrap_or(initial_start_height)
+                .unwrap_or(0)
         })
         .min()
-        .unwrap_or(initial_start_height);
+        .unwrap_or(0);
     Some(TransparentUtxoRefreshBatch {
         addresses: addresses
             .iter()
@@ -543,6 +689,11 @@ fn empty_record(network: WalletNetwork, scanned_height: Option<u64>) -> CacheRec
         external_addresses: Vec::new(),
         utxo_sweep_next_offset: 0,
         utxo_checked_heights: Vec::new(),
+        non_external_checked_heights: BTreeMap::new(),
+        last_external_sweep_at: None,
+        internal_sweep_next_offset: 0,
+        last_internal_sweep_at: None,
+        legacy_rewind_epoch: None,
     }
 }
 
@@ -593,15 +744,27 @@ fn network_cache_key(network: WalletNetwork) -> &'static str {
     }
 }
 
+fn retire_legacy_completion(record: &mut CacheRecord) {
+    if record.legacy_rewind_epoch.take().is_some() {
+        record.utxo_checked_heights.clear();
+        record.non_external_checked_heights.clear();
+        record.utxo_sweep_next_offset = 0;
+        record.internal_sweep_next_offset = 0;
+        record.last_external_sweep_at = None;
+        record.last_internal_sweep_at = None;
+    }
+}
+
 fn read_compatible_record(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<Option<CacheRecord>, String> {
-    let Some(record) = read_record(db_path, account_uuid)? else {
+    let Some(mut record) = read_record(db_path, account_uuid)? else {
         return Ok(None);
     };
     if record.version == CACHE_VERSION && record.network == network_cache_key(network) {
+        retire_legacy_completion(&mut record);
         Ok(Some(record))
     } else {
         Ok(None)
@@ -687,6 +850,241 @@ mod tests {
         let table = read_txn.open_table(CACHE_TABLE).unwrap();
         let value = table.get(account_uuid).unwrap().unwrap();
         serde_json::from_str(value.value()).unwrap()
+    }
+
+    fn test_addresses(count: u32) -> Vec<keys::ExternalTransparentAddress> {
+        (0..count)
+            .map(|child_index| keys::ExternalTransparentAddress {
+                child_index,
+                address: format!("t1child{child_index}"),
+                has_received: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn initial_lookup_and_new_children_start_at_genesis_then_refresh_incrementally() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let addresses = test_addresses(2);
+        let plan = plan_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &addresses,
+            500,
+            500,
+            20,
+            20,
+        )
+        .unwrap();
+        assert_eq!(plan[0].start_height, 0);
+        // Simulate cancellation: planning alone never completes the initial lookup.
+        let retry = plan_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &addresses,
+            500,
+            500,
+            20,
+            20,
+        )
+        .unwrap();
+        assert_eq!(plan, retry);
+        mark_utxo_refresh_batch_complete(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &plan[0].child_indices,
+            1001,
+            None,
+        )
+        .unwrap();
+        let grown = test_addresses(3);
+        write_clean_addresses(path, WalletNetwork::Main, "a", &grown, Some(1000)).unwrap();
+        let plan =
+            plan_external_utxo_refresh(path, WalletNetwork::Main, "a", &grown, 500, 500, 20, 20)
+                .unwrap();
+        assert_eq!(plan.len(), 2);
+        assert_eq!(
+            (plan[0].child_indices.clone(), plan[0].start_height),
+            (vec![2], 0)
+        );
+        assert_eq!(
+            (plan[1].child_indices.clone(), plan[1].start_height),
+            (vec![1, 0], 901)
+        );
+    }
+
+    #[test]
+    fn legacy_v3_external_progress_survives_and_internal_progress_is_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        // Exact legacy shape: no optional internal completion field.
+        let record: CacheRecord = serde_json::from_value(serde_json::json!({
+            "version": 3, "network": "main", "dirty": false,
+            "refreshed_scanned_height": 1000,
+            "external_addresses": [{"child_index": 0, "address": "t1child0", "has_received": false}],
+            "utxo_sweep_next_offset": 0,
+            "utxo_checked_heights": [{"child_index": 0, "next_start_height": 1001}]
+        })).unwrap();
+        write_record(path, "a", &record).unwrap();
+        let external = test_addresses(1);
+        let plan =
+            plan_external_utxo_refresh(path, WalletNetwork::Main, "a", &external, 500, 500, 20, 20)
+                .unwrap();
+        assert_eq!(plan[0].start_height, 901);
+        let internal = vec!["t1internal0".to_string()];
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &internal,
+            500,
+            500,
+            &internal.iter().cloned().collect(),
+            1000,
+        )
+        .unwrap();
+        assert_eq!(plan[0].1, 0);
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &internal, 1001)
+            .unwrap();
+        write_clean_addresses(path, WalletNetwork::Main, "a", &external, Some(1000)).unwrap();
+        assert_eq!(
+            plan_non_external_utxo_refresh(
+                path,
+                WalletNetwork::Main,
+                "a",
+                &internal,
+                500,
+                500,
+                &internal.iter().cloned().collect(),
+                1020
+            )
+            .unwrap()[0]
+                .1,
+            901
+        );
+        let mut grown = internal.clone();
+        grown.push("t1internal1".to_string());
+        let plan = plan_non_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &grown,
+            500,
+            500,
+            &internal.iter().cloned().collect(),
+            1000,
+        )
+        .unwrap();
+        assert_eq!(plan, vec![(vec![grown[1].clone()], 0)]);
+        delete_account(path, "a").unwrap();
+        assert_eq!(
+            plan_external_utxo_refresh(path, WalletNetwork::Main, "a", &external, 500, 500, 20, 20)
+                .unwrap()[0]
+                .start_height,
+            0
+        );
+    }
+
+    #[test]
+    fn internal_interval_groups_addresses_and_retries_without_advancing_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let addresses: Vec<_> = (0..200).map(|i| format!("internal{i:03}")).collect();
+        let internal = addresses.iter().cloned().collect();
+        let plan = |tip| {
+            plan_non_external_utxo_refresh(
+                path,
+                WalletNetwork::Main,
+                "a",
+                &addresses,
+                500,
+                500,
+                &internal,
+                tip,
+            )
+            .unwrap()
+        };
+        assert_eq!(plan(1000), vec![(addresses.clone(), 0)]);
+        assert_eq!(plan(1000), vec![(addresses.clone(), 0)]);
+        // Successful empty responses also complete discovery.
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &addresses, 1001)
+            .unwrap();
+        assert!(plan(1000).is_empty());
+        let request_count: usize = (1001..=1020).map(|tip| plan(tip).len()).sum();
+        assert_eq!(request_count, 1);
+        let due = vec![(addresses.clone(), 901)];
+        assert_eq!(plan(1020), due);
+        assert_eq!(
+            plan(1020),
+            due,
+            "planning/cancellation does not advance completion"
+        );
+        // An older cache can contain differently aged entries. The unfinished
+        // portion keeps the group due, even after partial completion.
+        mark_non_external_utxo_refresh_complete(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &addresses[..100],
+            1021,
+        )
+        .unwrap();
+        assert_eq!(plan(1020), due);
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &addresses, 1021)
+            .unwrap();
+        assert!(plan(1039).is_empty());
+        assert_eq!(plan(1040), vec![(addresses, 921)]);
+    }
+
+    #[test]
+    fn internal_new_discovery_does_not_postpone_refresh_or_throttle_other_scopes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let old = "internal0".to_string();
+        let new = "internal1".to_string();
+        let other = "ephemeral".to_string();
+        let internal = [old.clone(), new.clone()].into_iter().collect();
+        let plan = |addresses: &[String], tip| {
+            plan_non_external_utxo_refresh(
+                path,
+                WalletNetwork::Main,
+                "a",
+                addresses,
+                950,
+                950,
+                &internal,
+                tip,
+            )
+            .unwrap()
+        };
+        let initial = vec![old.clone(), other.clone()];
+        assert_eq!(plan(&initial, 1000).len(), 1);
+        mark_non_external_utxo_refresh_complete(path, WalletNetwork::Main, "a", &initial, 1001)
+            .unwrap();
+        assert_eq!(plan(&initial, 1000), vec![(vec![other.clone()], 950)]);
+        let grown = vec![old.clone(), new.clone(), other.clone()];
+        assert_eq!(
+            plan(&grown, 1005),
+            vec![(vec![new.clone()], 0), (vec![other.clone()], 950)]
+        );
+        mark_non_external_utxo_refresh_complete(
+            path,
+            WalletNetwork::Main,
+            "a",
+            &[new.clone(), other.clone()],
+            1006,
+        )
+        .unwrap();
+        assert_eq!(plan(&grown, 1019), vec![(vec![other.clone()], 950)]);
+        assert_eq!(plan(&grown, 1020), vec![(vec![other, old, new], 950)]);
     }
 
     #[test]
@@ -953,7 +1351,7 @@ mod tests {
         assert_eq!(batches.len(), 2);
         assert_eq!(batches[0].child_indices.first().copied(), Some(44));
         assert_eq!(batches[0].child_indices.last().copied(), Some(25));
-        assert_eq!(batches[0].start_height, 100);
+        assert_eq!(batches[0].start_height, 0);
         assert_eq!(batches[1].child_indices.first().copied(), Some(24));
         assert_eq!(batches[1].child_indices.last().copied(), Some(5));
         assert_eq!(batches[1].next_sweep_offset, Some(20));
@@ -979,9 +1377,13 @@ mod tests {
             20,
         )
         .unwrap();
-        assert_eq!(batches[1].child_indices.first().copied(), Some(4));
-        assert_eq!(batches[1].child_indices.last().copied(), Some(10));
-        assert!(batches[1].child_indices.contains(&24));
+        assert_eq!(batches[1].child_indices, vec![4, 3, 2, 1, 0]);
+        assert_eq!(batches[1].start_height, 0);
+        assert_eq!(batches[1].next_sweep_offset, None);
+        assert_eq!(batches[2].child_indices.first().copied(), Some(24));
+        assert_eq!(batches[2].child_indices.last().copied(), Some(10));
+        assert_eq!(batches[2].start_height, 101);
+        assert_eq!(batches[2].next_sweep_offset, Some(15));
     }
 
     #[test]
@@ -1086,6 +1488,256 @@ mod tests {
     }
 
     #[test]
+    fn legacy_epoch_completions_are_retired_once_without_invalidating_main_v3() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let uuid = "ledger";
+        let external = test_addresses(2);
+        plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 20).unwrap();
+        mark_utxo_refresh_batch_complete(path, network, uuid, &[0, 1], 1001, Some(0)).unwrap();
+        // Simulate the previous v3 schema after SQLite may already have rewound.
+        let mut json = serde_json::to_value(read_cached_record(path, uuid)).unwrap();
+        json["rewind_epoch"] = serde_json::json!(0);
+        let db = open_existing_db(&sidecar_path(path)).unwrap();
+        let txn = db.begin_write().unwrap();
+        txn.open_table(CACHE_TABLE)
+            .unwrap()
+            .insert(uuid, json.to_string().as_str())
+            .unwrap();
+        txn.commit().unwrap();
+        drop(db);
+        mark_account_dirty(path, uuid).unwrap();
+        let batches =
+            plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 20).unwrap();
+        assert!(batches.iter().all(|b| b.start_height == 0));
+        assert_eq!(ledger_sweep_due(path, network, uuid).unwrap(), (true, true));
+        mark_utxo_refresh_batch_complete(path, network, uuid, &[0, 1], 901, None).unwrap();
+        let batches =
+            plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 20).unwrap();
+        assert!(batches.iter().all(|b| b.start_height == 801));
+        assert!(read_cached_record(path, uuid).legacy_rewind_epoch.is_none());
+    }
+
+    #[test]
+    fn internal_cache_is_bounded_persistent_and_independent_of_external() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let addresses = (0..1000)
+            .map(|i| (i, format!("internal-{i}")))
+            .collect::<Vec<_>>();
+        write_record(path, "account", &empty_record(WalletNetwork::Main, None)).unwrap();
+        let mut seen = HashSet::new();
+        for round in 0..50 {
+            let batches =
+                plan_internal_utxo_refresh(path, WalletNetwork::Main, "account", &addresses, 5, 20)
+                    .unwrap();
+            assert_eq!(batches.iter().map(|b| b.addresses.len()).sum::<usize>(), 25);
+            assert!(batches.len() <= 4);
+            for b in batches {
+                if round == 0 {
+                    assert_eq!(b.start_height, 0);
+                }
+                seen.extend(b.child_indices.iter().copied());
+                mark_non_external_utxo_refresh_complete_with_sweep(
+                    path,
+                    WalletNetwork::Main,
+                    "account",
+                    &b.addresses,
+                    1000,
+                    b.next_sweep_offset,
+                )
+                .unwrap();
+            }
+        }
+        assert_eq!(seen.len(), 1000);
+        // Ordinary receive-cache regeneration must preserve internal progress.
+        let external = vec![keys::ExternalTransparentAddress {
+            child_index: 0,
+            address: "external-0".into(),
+            has_received: false,
+        }];
+        write_clean_addresses(path, WalletNetwork::Main, "account", &external, Some(900)).unwrap();
+        let batches =
+            plan_internal_utxo_refresh(path, WalletNetwork::Main, "account", &addresses, 5, 20)
+                .unwrap();
+        assert!(batches.iter().all(|b| b.start_height == 900));
+        let external_batches = plan_external_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "account",
+            &external,
+            0,
+            0,
+            20,
+            20,
+        )
+        .unwrap();
+        assert_eq!(external_batches[0].start_height, 0);
+        // An uncommitted/failed batch must be retried with the same plan.
+        assert_eq!(
+            batches,
+            plan_internal_utxo_refresh(path, WalletNetwork::Main, "account", &addresses, 5, 20)
+                .unwrap()
+        );
+        delete_account(path, "account").unwrap();
+        assert!(plan_internal_utxo_refresh(
+            path,
+            WalletNetwork::Main,
+            "account",
+            &addresses,
+            5,
+            20
+        )
+        .unwrap()
+        .iter()
+        .all(|b| b.start_height == 0));
+    }
+
+    #[test]
+    fn ledger_internal_rotation_reuses_address_completion_and_preserves_main_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let uuid = "ledger";
+        let internal = (0..60)
+            .map(|i| (i, format!("internal{i}")))
+            .collect::<Vec<_>>();
+        let external = test_addresses(60);
+        plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 20).unwrap();
+        let batches = plan_internal_utxo_refresh(path, network, uuid, &internal, 5, 20).unwrap();
+        assert_eq!(batches.iter().map(|b| b.addresses.len()).sum::<usize>(), 25);
+        assert!(batches.iter().all(|b| b.start_height == 0));
+        let first_sweep = batches.last().unwrap().addresses.clone();
+        for batch in batches {
+            mark_non_external_utxo_refresh_complete_with_sweep(
+                path,
+                network,
+                uuid,
+                &batch.addresses,
+                1001,
+                batch.next_sweep_offset,
+            )
+            .unwrap();
+        }
+        let known = internal
+            .iter()
+            .map(|(_, address)| address.clone())
+            .collect::<Vec<_>>();
+        let internal_set = known.iter().cloned().collect();
+        plan_non_external_utxo_refresh(path, network, uuid, &known, 0, 0, &internal_set, 1000)
+            .unwrap();
+        let recent = plan_internal_utxo_refresh(path, network, uuid, &internal, 5, 0).unwrap();
+        assert_eq!(recent.iter().map(|b| b.addresses.len()).sum::<usize>(), 5);
+        assert!(recent.iter().all(|b| b.start_height == 901));
+        let next = plan_internal_utxo_refresh(path, network, uuid, &internal, 5, 20).unwrap();
+        assert!(next
+            .last()
+            .unwrap()
+            .addresses
+            .iter()
+            .all(|a| !first_sweep.contains(a)));
+        // External index 59 and internal index 59 cannot share completion.
+        let external_plan =
+            plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 0).unwrap();
+        assert!(external_plan.iter().all(|b| b.start_height == 0));
+        write_clean_addresses(path, network, uuid, &external, Some(1000)).unwrap();
+        let record = read_cached_record(path, uuid);
+        assert_eq!(record.internal_sweep_next_offset, 20);
+        assert!(record.last_internal_sweep_at.is_some());
+        assert_eq!(record.non_external_checked_heights.len(), 25);
+    }
+
+    #[test]
+    fn ledger_sweep_cooldown_only_advances_after_successful_sweep() {
+        assert!(sweep_due(None, 1000));
+        assert!(!sweep_due(Some(1000), 1599));
+        assert!(sweep_due(Some(1000), 1600));
+        assert!(sweep_due(Some(1000), 999));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let uuid = "ledger";
+        let external = test_addresses(60);
+        let internal = (0..60)
+            .map(|i| (i, format!("internal{i}")))
+            .collect::<Vec<_>>();
+        let batches =
+            plan_external_utxo_refresh(path, network, uuid, &external, 0, 0, 10, 20).unwrap();
+        assert_eq!(ledger_sweep_due(path, network, uuid).unwrap(), (true, true));
+        // Finishing recent work must not postpone a failed older-address sweep.
+        mark_utxo_refresh_batch_complete(
+            path,
+            network,
+            uuid,
+            &batches[0].child_indices,
+            1001,
+            None,
+        )
+        .unwrap();
+        assert_eq!(ledger_sweep_due(path, network, uuid).unwrap(), (true, true));
+        let sweep = batches.last().unwrap();
+        mark_utxo_refresh_batch_complete(
+            path,
+            network,
+            uuid,
+            &sweep.child_indices,
+            1001,
+            sweep.next_sweep_offset,
+        )
+        .unwrap();
+        assert_eq!(
+            ledger_sweep_due(path, network, uuid).unwrap(),
+            (false, true)
+        );
+        let batches = plan_internal_utxo_refresh(path, network, uuid, &internal, 5, 20).unwrap();
+        let sweep = batches.last().unwrap();
+        mark_non_external_utxo_refresh_complete_with_sweep(
+            path,
+            network,
+            uuid,
+            &sweep.addresses,
+            1001,
+            sweep.next_sweep_offset,
+        )
+        .unwrap();
+        assert_eq!(
+            ledger_sweep_due(path, network, uuid).unwrap(),
+            (false, false)
+        );
+    }
+
+    #[test]
+    fn ledger_new_internal_candidates_do_not_rewind_checked_recent_addresses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let uuid = "ledger";
+        plan_external_utxo_refresh(path, network, uuid, &[], 0, 0, 10, 20).unwrap();
+        mark_non_external_utxo_refresh_complete(path, network, uuid, &["internal0".into()], 1001)
+            .unwrap();
+        let batches = plan_internal_utxo_refresh(
+            path,
+            network,
+            uuid,
+            &[(0, "internal0".into()), (1, "internal1".into())],
+            5,
+            0,
+        )
+        .unwrap();
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].addresses, vec!["internal1"]);
+        assert_eq!(batches[0].start_height, 0);
+        assert_eq!(batches[1].addresses, vec!["internal0"]);
+        assert_eq!(batches[1].start_height, 901);
+    }
+
+    #[test]
     fn dirty_cache_is_not_returned() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -1140,4 +1792,70 @@ mod tests {
             None
         );
     }
+}
+
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn sweep_due(last: Option<u64>, now: u64) -> bool {
+    last.is_none_or(|last| now < last || now.saturating_sub(last) >= 600)
+}
+
+pub(crate) fn ledger_sweep_due(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<(bool, bool), String> {
+    let record = read_compatible_record(db_path, network, account_uuid)?;
+    let now = now_seconds();
+    Ok((
+        sweep_due(record.as_ref().and_then(|r| r.last_external_sweep_at), now),
+        sweep_due(record.as_ref().and_then(|r| r.last_internal_sweep_at), now),
+    ))
+}
+
+/// Ledger uses the common address-keyed completion map with a bounded rotation.
+pub(crate) fn plan_internal_utxo_refresh(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    addresses: &[(u32, String)],
+    recent_limit: usize,
+    sweep_limit: usize,
+) -> Result<Vec<TransparentUtxoRefreshBatch>, String> {
+    let record = read_compatible_record(db_path, network, account_uuid)?
+        .unwrap_or_else(|| empty_record(network, None));
+    let checked = addresses
+        .iter()
+        .filter_map(|(index, address)| {
+            record
+                .non_external_checked_heights
+                .get(address)
+                .map(|height| CachedUtxoCheck {
+                    child_index: *index,
+                    next_start_height: *height,
+                })
+        })
+        .collect::<Vec<_>>();
+    let addresses = addresses
+        .iter()
+        .map(|(index, address)| CachedExternalAddress {
+            child_index: *index,
+            address: address.clone(),
+            has_received: false,
+        })
+        .collect::<Vec<_>>();
+    Ok(external_utxo_refresh_batches(
+        &addresses,
+        &checked,
+        record.internal_sweep_next_offset,
+        0,
+        0,
+        recent_limit,
+        sweep_limit,
+    ))
 }

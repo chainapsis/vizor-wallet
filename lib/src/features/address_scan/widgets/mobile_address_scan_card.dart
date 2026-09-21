@@ -367,10 +367,11 @@ class MobileAddressScanCardContent extends StatelessWidget {
   static double modalCameraHeight(BuildContext context) {
     final media = MediaQuery.of(context);
     // Figma `QR Scan` (4484:61584) on the 393x852 mobile artboard places the
-    // modal at y=126 and h=694, with a 32px bottom gap. The scanner overlays
+    // modal at y=126. Keep that top edge as the card's bottom clearance
+    // changes with platform insets or the keyboard. The scanner overlays
     // the lower edge of the top nav by 1px, hence the correction below.
     final targetTop = media.viewPadding.top + kMobileTopNavHeight - 1;
-    final reserved = targetTop + AppSpacing.base;
+    final reserved = targetTop + MobileModalCard.bottomGapFor(context);
     return (media.size.height - reserved).clamp(420.0, double.infinity);
   }
 

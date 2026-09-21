@@ -97,6 +97,12 @@ case "$BUILD_MODE" in
     ;;
 esac
 
+# ledger-transport-hid uses the static hidraw backend, which links libudev.
+if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists libudev; then
+  echo "Missing libudev development files. Install libudev-dev and pkg-config (Debian/Ubuntu), or your distribution equivalents." >&2
+  exit 1
+fi
+
 FVM_BIN="${FVM_BIN:-fvm}"
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
 

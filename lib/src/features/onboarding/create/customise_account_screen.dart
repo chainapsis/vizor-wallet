@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/account_name_policy.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,6 +17,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
+import '../ledger/ledger_connect_screen.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -31,13 +33,24 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.onFinish,
     this.random,
     super.key,
-  });
+  }) : ledgerPresentation = false,
+       ledgerBackTarget = null;
 
-  final CustomiseAccountArgs args;
+  const CustomiseAccountScreen.ledger({
+    required this.onFinish,
+    required this.ledgerBackTarget,
+    this.random,
+    super.key,
+  }) : args = null,
+       ledgerPresentation = true;
+
+  final CustomiseAccountArgs? args;
 
   /// Optional preview/test seam. Production routes leave this null and use the
   /// account + password transaction owned by this screen.
   final CustomiseAccountFinishCallback? onFinish;
+  final bool ledgerPresentation;
+  final OnboardingBackTarget? ledgerBackTarget;
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
@@ -111,8 +124,12 @@ class _CustomiseAccountScreenState
     }
   }
 
-  Future<void> _finishSetup() async {
-    final args = widget.args;
+  Future<void> _finishSetup() => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(_finishSetupWithOwnership);
+
+  Future<void> _finishSetupWithOwnership() async {
+    final args = widget.args!;
     final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;
 
@@ -188,11 +205,14 @@ class _CustomiseAccountScreenState
   }
 
   OnboardingBackTarget? get _backTarget {
-    final args = widget.args;
+    final args = widget.args!;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
         label: 'Set Password',
         routePath: switch (args.flow) {
+          SetPasswordFlow.importLedger => throw StateError(
+            'Desktop Ledger uses its dedicated setup routes.',
+          ),
           SetPasswordFlow.create => OnboardingStep.setPassword.routePath,
           SetPasswordFlow.importWallet => '/import/set-password',
           SetPasswordFlow.importKeystone =>
@@ -206,6 +226,9 @@ class _CustomiseAccountScreenState
     }
     return OnboardingBackTarget.route(
       label: switch (args.flow) {
+        SetPasswordFlow.importLedger => throw StateError(
+          'Desktop Ledger uses its dedicated setup routes.',
+        ),
         SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
         SetPasswordFlow.importWallet =>
           ImportOnboardingStep.walletBirthdayHeight.label,
@@ -238,7 +261,19 @@ class _CustomiseAccountScreenState
           )
         : null;
 
-    final pane = switch (widget.args.flow) {
+    if (widget.ledgerPresentation) {
+      return LedgerOnboardingShell(
+        activeStep: LedgerOnboardingStep.customiseAccount,
+        backTarget: _isSubmitting ? null : widget.ledgerBackTarget,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      );
+    }
+
+    final pane = switch (widget.args!.flow) {
+      SetPasswordFlow.importLedger => throw StateError(
+        'Desktop Ledger uses its dedicated setup routes.',
+      ),
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: _isSubmitting ? null : _backTarget,
         overlay: profilePictureOverlay,

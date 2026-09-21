@@ -12,9 +12,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "payment_uri_handoff.h"
 #include "single_instance.h"
 #include "utils.h"
 #include "velopack_update.h"
@@ -73,6 +75,27 @@ using MethodResult =
     flutter::MethodResult<flutter::EncodableValue>;
 using MethodResultPtr = std::unique_ptr<MethodResult>;
 using SharedMethodResult = std::shared_ptr<MethodResultPtr>;
+
+// Restores and foregrounds the primary window. Shared by the single-instance
+// activation message and the forwarded-payment-URI WM_COPYDATA handler so both
+// present the window identically, including the taskbar-flash fallback for when
+// Windows refuses the foreground change.
+void PresentPrimaryWindow(HWND hwnd) {
+  if (::IsIconic(hwnd)) {
+    ::ShowWindow(hwnd, SW_RESTORE);
+  } else {
+    ::ShowWindow(hwnd, SW_SHOW);
+  }
+  ::BringWindowToTop(hwnd);
+  if (::SetForegroundWindow(hwnd) == 0) {
+    FLASHWINFO flash_info = {};
+    flash_info.cbSize = sizeof(flash_info);
+    flash_info.hwnd = hwnd;
+    flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
+    flash_info.uCount = 3;
+    ::FlashWindowEx(&flash_info);
+  }
+}
 
 void CompleteVerificationError(SharedMethodResult result,
                                const std::string& code,
@@ -298,6 +321,7 @@ void CompleteVerification(SharedMethodResult result,
 void VerifyDeviceOwner(
     HWND window,
     std::wstring reason,
+    std::weak_ptr<int> lifetime,
     MethodResultPtr result) {
   if (window == nullptr) {
     result->Error("unavailable", "Windows device authentication is unavailable.");
@@ -341,8 +365,13 @@ void VerifyDeviceOwner(
 
   auto shared_result = std::make_shared<MethodResultPtr>(std::move(result));
   auto completed = wrl::Callback<VerificationCompletedHandler>(
-      [shared_result, window](VerificationOperation* completed_operation,
+      [shared_result, window, lifetime](VerificationOperation* completed_operation,
                               AsyncStatus status) -> HRESULT {
+        // The messenger safely drops replies after engine shutdown, but a late
+        // completion must not open a password prompt for a destroyed HWND.
+        if (lifetime.expired()) {
+          return S_OK;
+        }
         if (status == Completed) {
           VerificationResult verification_result =
               credentials_ui::UserConsentVerificationResult_Canceled;
@@ -379,13 +408,22 @@ void VerifyDeviceOwner(
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project,
-                             UINT activation_message)
-    : project_(project), activation_message_(activation_message) {}
+FlutterWindow::FlutterWindow(
+    const flutter::DartProject& project, UINT activation_message,
+    std::vector<std::string> initial_payment_uris)
+    : project_(project),
+      pending_payment_uris_(std::move(initial_payment_uris)),
+      activation_message_(activation_message) {}
 
-FlutterWindow::~FlutterWindow() {}
+FlutterWindow::~FlutterWindow() {
+  // WM_QUIT (including window_manager.destroy) need not send WM_DESTROY.
+  // Run derived cleanup while all channel members still exist.
+  Destroy();
+}
 
 bool FlutterWindow::OnCreate() {
+  destroying_ = false;
+  auth_lifetime_ = std::make_shared<int>(0);
   if (!Win32Window::OnCreate()) {
     return false;
   }
@@ -430,15 +468,37 @@ bool FlutterWindow::OnCreate() {
           return;
         }
         VerifyDeviceOwner(GetHandle(), StringArg(call.arguments(), "reason"),
+                          auth_lifetime_,
                           std::move(result));
       });
   velopack_update_channel_ =
       CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
+  payment_uri_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/payment_uri",
+          &flutter::StandardMethodCodec::GetInstance());
+  payment_uri_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        if (call.method_name() == "takePendingUris") {
+          result->Success(TakePendingPaymentUris());
+          return;
+        }
+        if (call.method_name() == "ready") {
+          payment_uri_dart_ready_ = true;
+          FlushPendingPaymentUris();
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    if (!destroying_) {
+      this->Show();
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -450,12 +510,25 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
-  if (flutter_controller_) {
-    camera_permission_channel_.reset();
-    device_owner_auth_channel_.reset();
-    velopack_update_channel_.reset();
-    flutter_controller_ = nullptr;
+  if (destroying_) {
+    return;
   }
+  destroying_ = true;
+  auth_lifetime_.reset();
+  payment_uri_dart_ready_ = false;
+
+  // Detach first: controller destruction pumps native messages after its view
+  // has gone away. Keep the messenger alive until handlers are unregistered.
+  auto controller = std::move(flutter_controller_);
+  for (auto* channel : {&camera_permission_channel_, &device_owner_auth_channel_,
+                        &velopack_update_channel_, &payment_uri_channel_}) {
+    if (*channel) {
+      (*channel)->SetMethodCallHandler(nullptr);
+      channel->reset();
+    }
+  }
+  pending_payment_uris_.clear();
+  controller.reset();
 
   Win32Window::OnDestroy();
 }
@@ -464,22 +537,32 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Lifecycle messages must reach the owner even if a plugin would consume
+  // them. During teardown, neither activation nor a forwarded URI may reopen
+  // the window or invoke Dart through a dying messenger.
+  if (message == WM_DESTROY || message == WM_NCDESTROY) {
+    return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  }
+  if (destroying_) {
+    if ((activation_message_ != 0 && message == activation_message_) ||
+        message == WM_COPYDATA || message == WM_CLOSE) {
+      return 0;
+    }
+    return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  }
   if (activation_message_ != 0 && message == activation_message_) {
-    if (::IsIconic(hwnd)) {
-      ::ShowWindow(hwnd, SW_RESTORE);
-    } else {
-      ::ShowWindow(hwnd, SW_SHOW);
-    }
-    ::BringWindowToTop(hwnd);
-    if (::SetForegroundWindow(hwnd) == 0) {
-      FLASHWINFO flash_info = {};
-      flash_info.cbSize = sizeof(flash_info);
-      flash_info.hwnd = hwnd;
-      flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
-      flash_info.uCount = 3;
-      ::FlashWindowEx(&flash_info);
-    }
+    PresentPrimaryWindow(hwnd);
     return kSingleInstanceActivationAcknowledged;
+  }
+
+  if (message == WM_COPYDATA) {
+    std::string payment_uri;
+    if (TryReadPaymentUriCopyData(lparam, &payment_uri)) {
+      pending_payment_uris_.push_back(std::move(payment_uri));
+      PresentPrimaryWindow(hwnd);
+      FlushPendingPaymentUris();
+      return TRUE;
+    }
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.
@@ -494,9 +577,32 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 
   switch (message) {
     case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
+      if (flutter_controller_) {
+        flutter_controller_->engine()->ReloadSystemFonts();
+      }
       break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+flutter::EncodableValue FlutterWindow::TakePendingPaymentUris() {
+  flutter::EncodableList uris;
+  uris.reserve(pending_payment_uris_.size());
+  for (const auto& uri : pending_payment_uris_) {
+    uris.emplace_back(uri);
+  }
+  pending_payment_uris_.clear();
+  return flutter::EncodableValue(uris);
+}
+
+void FlutterWindow::FlushPendingPaymentUris() {
+  if (!payment_uri_dart_ready_ || !payment_uri_channel_ ||
+      pending_payment_uris_.empty()) {
+    return;
+  }
+
+  payment_uri_channel_->InvokeMethod(
+      "onUris", std::make_unique<flutter::EncodableValue>(
+                    TakePendingPaymentUris()));
 }

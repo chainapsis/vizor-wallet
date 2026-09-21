@@ -8,6 +8,9 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/linux_secret_operation_guard.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
@@ -150,6 +153,47 @@ void main() {
     );
   });
 
+  testWidgets('Linux does not reveal a delayed secret after lock and unlock', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async => tester.binding.setSurfaceSize(null));
+    final privacyController = SensitivePrivacyOverlayController(
+      initiallySafe: true,
+    );
+    addTearDown(privacyController.dispose);
+    final secret = Completer<SoftwareWalletSecret?>();
+    final store = AppSecureStore.testing(
+      storage: const FlutterSecureStorage(),
+      enforceSessionGeneration: true,
+    )..setSessionPassword('Correct123!');
+    final accountNotifier = _FakeAccountNotifier(pendingSecret: secret);
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacyController,
+        accountNotifier: () => accountNotifier,
+        secureStore: store,
+      ),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText), 'Correct123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pump();
+    expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
+    store.clearSessionPassword();
+    store.setSessionPassword('Correct123!');
+    secret.complete(const SoftwareWalletSecret(mnemonic: _mnemonic));
+    await tester.pump();
+
+    expect(find.text('abandon'), findsNothing);
+    expect(
+      find.text('The wallet session changed. Enter your password again.'),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Confirm password'), findsOneWidget);
+  });
+
   testWidgets('describes removal of the requested account accurately', (
     tester,
   ) async {
@@ -189,6 +233,7 @@ void main() {
 Widget _harness({
   required SensitivePrivacyOverlayController privacyController,
   required AccountNotifier Function() accountNotifier,
+  AppSecureStore? secureStore,
 }) {
   final router = GoRouter(
     initialLocation: '/settings/secret-passphrase',
@@ -209,6 +254,8 @@ Widget _harness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (secureStore != null)
+        linuxSecretOperationStoreProvider.overrideWithValue(secureStore),
       accountProvider.overrideWith(accountNotifier),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
@@ -234,7 +281,12 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier({this.bip39Passphrase = _bip39Passphrase});
+  _FakeAccountNotifier({
+    this.bip39Passphrase = _bip39Passphrase,
+    this.pendingSecret,
+  });
+
+  final Completer<SoftwareWalletSecret?>? pendingSecret;
 
   final String bip39Passphrase;
   final requestedMnemonicUuids = <String>[];
@@ -247,6 +299,7 @@ class _FakeAccountNotifier extends AccountNotifier {
     String uuid,
   ) async {
     requestedMnemonicUuids.add(uuid);
+    if (pendingSecret != null) return pendingSecret!.future;
     return SoftwareWalletSecret(
       mnemonic: _mnemonic,
       bip39Passphrase: bip39Passphrase,

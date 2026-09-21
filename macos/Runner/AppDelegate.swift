@@ -359,6 +359,10 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  // Ordering out the last window during an app-exit callback must not cause a
+  // second native termination request before Dart's cleanup reply arrives.
+  var isPreparingDesktopExit = false
+
   @IBOutlet private weak var checkForUpdatesMenuItem: NSMenuItem!
 
   /// Keeps App Nap from throttling the process while every window is hidden
@@ -399,8 +403,12 @@ class AppDelegate: FlutterAppDelegate {
 #endif
   }
 
+  override func application(_ application: NSApplication, open urls: [URL]) {
+    PaymentUriChannel.handle(urls: urls)
+  }
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    return true
+    return !isPreparingDesktopExit
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

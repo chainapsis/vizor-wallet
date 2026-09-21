@@ -1,0 +1,578 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_recovery.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/wallet_provider.dart';
+
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import '../../support/ledger_gift_card_support.dart';
+
+void main() {
+  test(
+    'startup recovery funds a saved Ledger Gift Card and retains checkpoint on storage failure',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', draft.link.address),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: draft.link.address,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      final container = _container(
+        operationService: h.operations,
+        sync: _RecoverySyncNotifier(),
+        giftFunding: h.service,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      h.operations.broadcastGate = Completer<void>();
+      final firstRecovery = coordinator.recover();
+      for (var i = 0; i < 20 && h.operations.broadcasts == 0; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      // The boundary marker landed before the network saw the transaction.
+      expect(h.operations.broadcasts, 1);
+      expect(
+        (await h.recovery.load()).single.submittedAtHeight,
+        ledgerGiftChainHeight,
+      );
+      h.storage.failWrites = true;
+      h.operations.broadcastGate!.complete();
+      await firstRecovery;
+      expect(h.operations.acks, 0);
+      expect(h.operations.broadcasts, 1);
+      h.storage.failWrites = false;
+      await coordinator.recover();
+      expect(h.operations.acks, 1);
+      expect(h.operations.broadcasts, 1);
+      expect(
+        (await h.recovery.load()).single.state,
+        PaymentLinkRecoveryState.funded,
+      );
+    },
+  );
+
+  test(
+    'startup recovery removes a definitively rejected Gift Card draft',
+    () async {
+      final h = LedgerGiftHarness();
+      final draft = await h.prepare();
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', draft.link.address),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: draft.link.address,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      h.operations.terminalRejection = true;
+      final sync = _RecoverySyncNotifier();
+      final container = _container(
+        operationService: h.operations,
+        sync: sync,
+        giftFunding: h.service,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(h.operations.broadcasts, 1);
+      expect(h.operations.entry, isNull);
+      expect(h.operations.acks, 0);
+      expect(await h.recovery.load(), isEmpty);
+      expect(sync.refreshCount, 0, reason: 'nothing reached the network');
+    },
+  );
+
+  test(
+    'destructive drain includes deposit persistence and acknowledgement',
+    () async {
+      final service = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.swapDeposit,
+          externalRef: 'intent-1',
+        ),
+      ]);
+      final writing = Completer<void>();
+      final gate = Completer<void>();
+      final container = _container(
+        operationService: service,
+        sync: _RecoverySyncNotifier(),
+        depositRecovery: ({required operation, required result}) async {
+          writing.complete();
+          await gate.future;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      final recovery = coordinator.recover();
+      await writing.future;
+      final lifecycle = container.read(ledgerOperationLifecycleProvider);
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      final duplicate = coordinator.recover();
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      expect(service.acknowledged, isEmpty);
+      gate.complete();
+      await Future.wait([recovery, duplicate, drain]);
+      expect(service.acknowledged, ['operation-1']);
+      expect(service.broadcasts, ['operation-1']);
+      await coordinator.recover();
+      expect(service.broadcasts, ['operation-1']);
+      lifecycle.resume();
+    },
+  );
+
+  test('standalone recovery matches the persisted transaction prefix', () {
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'partial_broadcast',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-1'],
+      ),
+      isTrue,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'broadcasted_storage_failed',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-1'],
+      ),
+      isFalse,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'broadcasted_storage_failed',
+        resultTxids: 'txid-1,txid-2',
+        walletTxids: const ['txid-2', 'txid-1'],
+      ),
+      isTrue,
+    );
+    expect(
+      ledgerStandaloneResultIsRecovered(
+        status: 'expired',
+        resultTxids: '',
+        walletTxids: const [],
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'recovery broadcasts a pending send without device interaction',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(kind: LedgerSignedOperationKind.send),
+      ]);
+      final sync = _RecoverySyncNotifier();
+      final recoveredDeposits = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: sync,
+        recoveredDeposits: recoveredDeposits,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.broadcasts, ['operation-1']);
+      expect(operationService.acknowledged, isEmpty);
+      expect(recoveredDeposits, isEmpty);
+      expect(sync.refreshCount, 1);
+    },
+  );
+
+  test(
+    'recovery checkpoints a saved swap result before acknowledging',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.swapDeposit,
+          state: 'result_pending_ack',
+          externalRef: 'intent-1',
+          txid: 'txid-1',
+          status: 'broadcasted',
+        ),
+      ]);
+      final recoveredDeposits = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        recoveredDeposits: recoveredDeposits,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.broadcasts, isEmpty);
+      expect(recoveredDeposits, ['intent-1:txid-1']);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
+  for (final kind in [
+    LedgerSignedOperationKind.swapDeposit,
+    LedgerSignedOperationKind.payDeposit,
+  ]) {
+    test(
+      'recovery acknowledges expired ${kind.wireName} without persistence',
+      () async {
+        final operationService = _FakeLedgerSignedOperationService([
+          _operation(
+            kind: kind,
+            state: 'result_pending_ack',
+            externalRef: 'intent-1',
+            txid: 'computed-txid',
+            status: 'expired',
+          ),
+        ]);
+        final recoveredDeposits = <String>[];
+        final container = _container(
+          operationService: operationService,
+          sync: _RecoverySyncNotifier(),
+          recoveredDeposits: recoveredDeposits,
+        );
+        addTearDown(container.dispose);
+        await container.read(walletProvider.future);
+
+        await container
+            .read(ledgerOperationRecoveryCoordinatorProvider)
+            .recover();
+
+        expect(operationService.broadcasts, isEmpty);
+        expect(recoveredDeposits, isEmpty);
+        expect(operationService.acknowledged, ['operation-1']);
+      },
+    );
+  }
+
+  test(
+    'recovery leaves an overlay-owned expired result until its claim releases',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.payDeposit,
+          state: 'result_pending_ack',
+          externalRef: 'intent-1',
+          txid: 'computed-txid',
+          status: 'expired',
+        ),
+      ]);
+      final recoveredDeposits = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        recoveredDeposits: recoveredDeposits,
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      final claim = container
+          .read(ledgerOperationClaimRegistryProvider)
+          .tryClaim('operation-1');
+      expect(claim, isNotNull);
+
+      final coordinator = container.read(
+        ledgerOperationRecoveryCoordinatorProvider,
+      );
+      await coordinator.recover();
+
+      expect(recoveredDeposits, isEmpty);
+      expect(operationService.acknowledged, isEmpty);
+
+      claim!.release();
+      await coordinator.recover();
+
+      expect(recoveredDeposits, isEmpty);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
+  test('recovery keeps swap result when activity checkpoint fails', () async {
+    final operationService = _FakeLedgerSignedOperationService([
+      _operation(
+        kind: LedgerSignedOperationKind.payDeposit,
+        state: 'result_pending_ack',
+        externalRef: 'intent-1',
+        txid: 'txid-1',
+        status: 'broadcasted',
+      ),
+    ]);
+    final container = _container(
+      operationService: operationService,
+      sync: _RecoverySyncNotifier(),
+      depositRecovery: ({required operation, required result}) async {
+        throw StateError('activity storage unavailable');
+      },
+    );
+    addTearDown(container.dispose);
+    await container.read(walletProvider.future);
+
+    await container.read(ledgerOperationRecoveryCoordinatorProvider).recover();
+
+    expect(operationService.acknowledged, isEmpty);
+  });
+
+  test(
+    'recovery acknowledges an uncertain send after wallet sync owns its tx',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.send,
+          state: 'result_pending_ack',
+          txid: 'txid-1',
+          status: 'broadcast_unknown',
+        ),
+      ]);
+      final reconciled = <String>[];
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        standaloneRecovery: ({required operation, required result}) async {
+          reconciled.add('${operation.operationId}:${result.txid}');
+          return true;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(reconciled, ['operation-1:txid-1']);
+      expect(operationService.acknowledged, ['operation-1']);
+    },
+  );
+
+  test(
+    'recovery retains an uncertain shield until sync finds its tx',
+    () async {
+      final operationService = _FakeLedgerSignedOperationService([
+        _operation(
+          kind: LedgerSignedOperationKind.shield,
+          state: 'result_pending_ack',
+          txid: 'txid-1',
+          status: 'broadcasted_storage_failed',
+        ),
+      ]);
+      final container = _container(
+        operationService: operationService,
+        sync: _RecoverySyncNotifier(),
+        standaloneRecovery: ({required operation, required result}) async {
+          return false;
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+
+      await container
+          .read(ledgerOperationRecoveryCoordinatorProvider)
+          .recover();
+
+      expect(operationService.acknowledged, isEmpty);
+    },
+  );
+
+  test('recovery queues a trailing pass when sync changes in flight', () async {
+    final operationService = _FakeLedgerSignedOperationService([
+      _operation(
+        kind: LedgerSignedOperationKind.send,
+        state: 'result_pending_ack',
+        txid: 'txid-1',
+        status: 'broadcast_unknown',
+      ),
+    ]);
+    final firstProbe = Completer<void>();
+    var probeCount = 0;
+    final container = _container(
+      operationService: operationService,
+      sync: _RecoverySyncNotifier(),
+      standaloneRecovery: ({required operation, required result}) async {
+        probeCount++;
+        if (probeCount == 1) {
+          await firstProbe.future;
+          return false;
+        }
+        return true;
+      },
+    );
+    addTearDown(container.dispose);
+    await container.read(walletProvider.future);
+    final coordinator = container.read(
+      ledgerOperationRecoveryCoordinatorProvider,
+    );
+
+    final firstRecovery = coordinator.recover();
+    await Future<void>.delayed(Duration.zero);
+    final syncTriggeredRecovery = coordinator.recover();
+    firstProbe.complete();
+    await Future.wait([firstRecovery, syncTriggeredRecovery]);
+
+    expect(probeCount, 2);
+    expect(operationService.acknowledged, ['operation-1']);
+  });
+}
+
+ProviderContainer _container({
+  required LedgerSignedOperationService operationService,
+  required _RecoverySyncNotifier sync,
+  List<String>? recoveredDeposits,
+  PaymentLinkLedgerFundingService? giftFunding,
+  LedgerDepositRecovery? depositRecovery,
+  LedgerStandaloneResultRecovery? standaloneRecovery,
+}) {
+  return ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+      ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
+      syncProvider.overrideWith(() => sync),
+      ledgerDepositRecoveryProvider.overrideWithValue(
+        depositRecovery ??
+            ({required operation, required result}) async {
+              recoveredDeposits?.add('${operation.externalRef}:${result.txid}');
+            },
+      ),
+      if (giftFunding != null)
+        paymentLinkLedgerFundingServiceProvider.overrideWithValue(giftFunding),
+      if (standaloneRecovery != null)
+        ledgerStandaloneResultRecoveryProvider.overrideWithValue(
+          standaloneRecovery,
+        ),
+    ],
+  );
+}
+
+AppBootstrapState _bootstrap() {
+  return AppBootstrapState(
+    initialLocation: '/home',
+    initialAccountState: AccountState(
+      accounts: const [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Ledger',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1ledger',
+    ),
+    initialSyncSnapshot: AppSyncSnapshot.empty,
+    network: 'main',
+    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: true,
+    isUnlocked: true,
+    passwordRotationRecoveryFailed: false,
+  );
+}
+
+LedgerSignedOperationMetadata _operation({
+  required LedgerSignedOperationKind kind,
+  String state = 'signed_pending_broadcast',
+  String? externalRef,
+  String? txid,
+  String? status,
+}) {
+  return LedgerSignedOperationMetadata(
+    operationId: 'operation-1',
+    accountUuid: 'account-1',
+    kind: kind,
+    externalRef: externalRef,
+    state: state,
+    txid: txid,
+    status: status,
+  );
+}
+
+class _FakeLedgerSignedOperationService
+    implements LedgerSignedOperationService {
+  _FakeLedgerSignedOperationService(this.operations);
+
+  final List<LedgerSignedOperationMetadata> operations;
+  final broadcasts = <String>[];
+  final acknowledged = <String>[];
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => operations;
+
+  @override
+  Future<LedgerSignedOperationBroadcastResult> broadcast({
+    required String operationId,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    broadcasts.add(operationId);
+    final operation = operations.singleWhere(
+      (candidate) => candidate.operationId == operationId,
+    );
+    return LedgerSignedOperationBroadcastResult(
+      operationId: operationId,
+      txid: operation.txid ?? 'txid-1',
+      status: operation.status ?? 'broadcasted',
+      requiresAck:
+          operation.kind == LedgerSignedOperationKind.swapDeposit ||
+          operation.kind == LedgerSignedOperationKind.payDeposit,
+    );
+  }
+
+  @override
+  Future<void> acknowledge(String operationId) async {
+    acknowledged.add(operationId);
+  }
+
+  @override
+  Future<void> checkpoint({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? externalRef,
+  }) => throw UnimplementedError();
+}
+
+class _RecoverySyncNotifier extends SyncNotifier {
+  int refreshCount = 0;
+
+  @override
+  Future<SyncState> build() async =>
+      SyncState(accountUuid: 'account-1', hasAccountScopedData: true);
+
+  @override
+  Future<void> refreshAfterSend() async {
+    refreshCount++;
+  }
+}

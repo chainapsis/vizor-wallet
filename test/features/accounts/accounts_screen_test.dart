@@ -19,6 +19,8 @@ import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -456,6 +458,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('viewing key route hardware-account'), findsOneWidget);
+  });
+
+  testWidgets('Ledger account uses a Ledger-specific hardware badge', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'ledger-account',
+          name: 'Ledger Vault',
+          order: 0,
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          birthdayHeight: 2600000,
+          zip32AccountIndex: 12,
+          ledgerLastTransport: LedgerConnectionTransport.bluetooth,
+          ledgerDeviceId: 'nano-x-id',
+          ledgerDeviceName: 'Rowan Ledger',
+          ledgerDeviceModel: 'Nano X',
+        ),
+      ],
+      activeAccountUuid: 'ledger-account',
+      activeAddress: 'u1ledgeraddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_ledger')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const ValueKey('hardware_signer_badge_keystone')),
+      findsNothing,
+    );
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -965,6 +1011,292 @@ void main() {
     );
   });
 
+  testWidgets('remove account warns about unshared Gift Cards but proceeds', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCounts: const {'account-2': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.text(
+        '1 funded gift card link has not been shared. Removing this account '
+        'loses it. Copy the link first.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
+  testWidgets('remove account asks again when more Gift Cards were funded', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final counts = {'account-2': 0};
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    accountNotifier.beforeRemove = (confirmed) {
+      accountNotifier.beforeRemove = null;
+      counts['account-2'] = 1;
+      throw UnsharedGiftCardsChangedException(
+        confirmedCount: confirmed!,
+        count: 1,
+      );
+    };
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCounts: counts,
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+    expect(
+      find.text(
+        'More gift card links were funded. Review the warning and confirm again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '1 funded gift card link has not been shared. Removing this account '
+        'loses it. Copy the link first.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, 1]);
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
+  testWidgets('remove account asks again when the post-drain recheck fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    accountNotifier.beforeRemove = (confirmed) {
+      accountNotifier.beforeRemove = null;
+      throw UnsharedGiftCardsChangedException(confirmedCount: confirmed!);
+    };
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCounts: const {'account-2': 0},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+    expect(
+      find.text(
+        "Couldn't check for unshared gift card links. Copy any links you "
+        'still need before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.confirmedUnsharedGiftCardCounts, [0, null]);
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
+  testWidgets('remove account warns when the unshared check fails', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        unsharedGiftCardCheckFailures: const {'account-2'},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.text(
+        "Couldn't check for unshared gift card links. Copy any links you "
+        'still need before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
+  testWidgets(
+    'remove account has no Gift Card warning without unshared cards',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      await tester.pumpWidget(
+        _accountsHarness(
+          accountNotifier: () =>
+              _FakeAccountNotifier(_bootstrap.initialAccountState),
+          unsharedGiftCardCounts: const {'account-1': 2},
+        ),
+      );
+      await tester.pump();
+
+      await _openRemoveAccountModal(tester, 'account-2');
+
+      expect(
+        find.byKey(const ValueKey('account_remove_unshared_gift_card_warning')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('remove account is blocked while it receives a Gift Card', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receivingGiftCardCounts: const {'account-2': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.text(
+        'This account is receiving a gift card. Wait for it to finish before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+  });
+
+  testWidgets('resetting via the last account is blocked while it receives a '
+      'Gift Card', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const singleAccountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary Vault',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    final accountNotifier = _FakeAccountNotifier(singleAccountState);
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receivingGiftCardCounts: const {'account-1': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-1');
+
+    expect(
+      find.text(
+        'This account is receiving a gift card. Wait for it to finish before removing this account.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(EditableText), _validDeletePassword);
+    await tester.pump();
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.resetWalletCalled, isFalse);
+  });
+
   testWidgets('remove account requires the current password before deleting', (
     tester,
   ) async {
@@ -1173,6 +1505,7 @@ void main() {
       _accountsHarness(
         accountNotifier: () => accountNotifier,
         syncNotifier: () => syncNotifier,
+        unsharedGiftCardCounts: const {'account-1': 2},
       ),
     );
     await tester.pump();
@@ -1184,6 +1517,13 @@ void main() {
     await tester.tap(find.text('Remove account'));
     await tester.pumpAndSettle();
 
+    expect(
+      find.text(
+        '2 funded gift card links have not been shared. Resetting Vizor '
+        'loses them. Copy the links first.',
+      ),
+      findsOneWidget,
+    );
     expect(
       find.textContaining(
         'Removing this account will completely reset the Vizor app.',
@@ -1197,6 +1537,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('This cannot be undone.'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Unshared gift card links will also be permanently lost.',
+      ),
+      findsOneWidget,
+    );
 
     await _submitRemovePassword(tester, buttonLabel: 'Reset Vizor');
     await tester.pumpAndSettle();
@@ -1299,6 +1645,9 @@ Widget _accountsHarness({
   AppSecurityNotifier Function()? securityNotifier,
   ReceiveAddressService Function(Ref ref)? receiveAddressService,
   Map<String, int> pendingSwapCounts = const {},
+  Map<String, int> receivingGiftCardCounts = const {},
+  Map<String, int> unsharedGiftCardCounts = const {},
+  Set<String> unsharedGiftCardCheckFailures = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -1348,6 +1697,18 @@ Widget _accountsHarness({
         accountProvider.overrideWith(accountNotifier),
       swapPendingIntentCountProvider.overrideWith((ref, accountUuid) async {
         return pendingSwapCounts[accountUuid] ?? 0;
+      }),
+      paymentLinkReceivingCountProvider.overrideWith((ref, accountUuid) async {
+        return receivingGiftCardCounts[accountUuid] ?? 0;
+      }),
+      paymentLinkUnsharedFundedCountProvider.overrideWith((
+        ref,
+        accountUuid,
+      ) async {
+        if (unsharedGiftCardCheckFailures.contains(accountUuid)) {
+          throw StateError('unshared gift card check failed');
+        }
+        return unsharedGiftCardCounts[accountUuid] ?? 0;
       }),
       appSecurityProvider.overrideWith(
         securityNotifier ?? _FakeAppSecurityNotifier.new,
@@ -1470,6 +1831,10 @@ class _FakeAccountNotifier extends AccountNotifier {
   final List<String>? events;
   final Completer<void>? removeCompleter;
   final Object? resetError;
+
+  /// Runs before a removal; throwing aborts it.
+  void Function(int? confirmedUnsharedGiftCardCount)? beforeRemove;
+  final List<int?> confirmedUnsharedGiftCardCounts = [];
   String? renamedUuid;
   String? renamedName;
   String? updatedProfilePictureUuid;
@@ -1519,8 +1884,13 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     events?.add('remove:$uuid');
+    confirmedUnsharedGiftCardCounts.add(confirmedUnsharedGiftCardCount);
+    beforeRemove?.call(confirmedUnsharedGiftCardCount);
     removedUuid = uuid;
     await removeCompleter?.future;
     final prev = state.value ?? initialState;
@@ -1545,7 +1915,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     events?.add('resetWallet');
     final error = resetError;
     if (error != null) {

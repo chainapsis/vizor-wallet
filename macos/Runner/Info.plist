@@ -10,6 +10,19 @@
 	<string>$(MACOS_APP_ICON_FILE)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).zcash</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>zcash</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -26,6 +39,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vizor uses the camera to scan Keystone QR codes.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Vizor uses Bluetooth to connect to your Ledger hardware wallet.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

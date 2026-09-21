@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,13 +8,18 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/biometric_icon.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../payment_links/providers/payment_link_intake_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/device_owner_auth_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
@@ -213,7 +218,42 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
         if (!mounted) return;
-        context.go('/home');
+        // Claim the payment-URI prefill (parked while locked) only now, after
+        // the post-unlock work has succeeded. Claiming earlier would drop the
+        // payment if any of the awaits above threw or this screen unmounted —
+        // the prefill would already be cleared with no way to recover it —
+        // and the drain policy inside the claim reads state those awaits
+        // settle.
+        // Claim first, then pick the destination, then present. Both link
+        // kinds can be waiting at once, and they do not compete: the Gift Card
+        // owns the route, the ZIP-321 card is a route-agnostic overlay that
+        // lands on top of whichever destination that picks.
+        final claimed = claimParkedPaymentUriAfterUnlock(ref);
+        final hasPendingPaymentLink =
+            ref.read(paymentLinkIntakeProvider).pendingLink != null;
+        context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
+        final pendingPrefill = claimed.prefill;
+        final notice = claimed.notice;
+        if (pendingPrefill != null) {
+          // The link becomes a card over the wallet the user just unlocked,
+          // not a jump into the composer.
+          ref
+              .read(paymentRequestFlowProvider.notifier)
+              .present(pendingPrefill, source: PaymentRequestSource.link);
+        } else if (notice != null) {
+          // The link outlived its park window while the user was finding their
+          // passcode, or the wallet it landed on cannot open it. Landing with
+          // no card and no word is the one silent loss of something the user
+          // deliberately asked for. The toast is asked for before this screen
+          // is torn down; `showAppToast` renders it on the app-level host,
+          // which outlives the navigation.
+          showAppToast(
+            context,
+            notice,
+            duration: const Duration(seconds: 4),
+            iconName: AppIcons.warning,
+          );
+        }
       });
     } catch (e, st) {
       log('MobileUnlockScreen._submit: ERROR: $e\n$st');
@@ -277,6 +317,15 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
             ? kWalletResetDeviceAuthRequiredMessage
             : kWalletResetDeviceAuthFailedMessage;
+      });
+      return;
+    } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
+      // Not a failed wipe: nothing was deleted, and the user only has to wait.
+      log('MobileUnlockScreen._resetWallet held for claim: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = kWalletResetInFlightGiftCardClaimsMessage;
       });
       return;
     } catch (e, st) {
@@ -381,16 +430,13 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                             }
                             return PasscodeBiometricButton(
                               label: biometric.availability.kind.signInLabel,
-                              icon:
-                                  biometric.availability.kind ==
-                                      BiometricKind.face
-                                  ? const Center(
-                                      child: AppIcon(
-                                        AppIcons.faceId,
-                                        size: 13.5,
-                                      ),
-                                    )
-                                  : const Icon(Icons.fingerprint, size: 16),
+                              icon: Center(
+                                child: BiometricIcon(
+                                  kind: biometric.availability.kind,
+                                  size: 13.5,
+                                  fingerprintSize: 16,
+                                ),
+                              ),
                               onPressed: _submitting
                                   ? null
                                   : () => unawaited(_tryBiometricUnlock()),

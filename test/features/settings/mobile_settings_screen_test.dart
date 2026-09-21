@@ -1,11 +1,14 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -19,6 +22,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_art.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
@@ -44,7 +48,7 @@ const _accountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-const _hardwareAccountState = AccountState(
+const _keystoneAccountState = AccountState(
   accounts: [
     AccountInfo(
       uuid: 'account-1',
@@ -52,6 +56,21 @@ const _hardwareAccountState = AccountState(
       order: 0,
       profilePictureId: kDefaultProfilePictureId,
       isHardware: true,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1settingsaddress',
+);
+
+const _ledgerAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Ledger',
+      order: 0,
+      profilePictureId: kDefaultProfilePictureId,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.ledger,
     ),
   ],
   activeAccountUuid: 'account-1',
@@ -134,7 +153,38 @@ Widget _app({
   AppThemeData? themeData,
   bool withTabBar = false,
   double textScale = 1,
+  GoRouter? router,
 }) {
+  Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
+    data: themeData ?? AppThemeData.dark,
+    child: MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
+  );
+  final app = router == null
+      ? MaterialApp(
+          builder: themedBuilder,
+          home: withTabBar
+              ? AppMobileShell(
+                  body: const MobileSettingsScreen(),
+                  tabBar: AppMobileTabBar(
+                    items: const [
+                      AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
+                      AppMobileTabItem(
+                        iconName: AppIcons.cog,
+                        label: 'Settings',
+                      ),
+                    ],
+                    currentIndex: 1,
+                    onSelect: (_) {},
+                  ),
+                )
+              : const MobileSettingsScreen(),
+        )
+      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
@@ -157,29 +207,72 @@ Widget _app({
           () => _FakeBiometricNotifier(biometric),
         ),
     ],
-    child: MaterialApp(
-      builder: (context, child) => AppTheme(
-        data: themeData ?? AppThemeData.dark,
-        child: MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(textScale)),
-          child: child!,
+    child: app,
+  );
+}
+
+Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
+  // Mirrors the production mobile tree: /settings and /home are branches of
+  // an indexed-stack shell, and /payment-links is pushed over it. Sheets go
+  // to the root navigator, so a flat router would not reproduce them.
+  final router = GoRouter(
+    initialLocation: '/settings',
+    routes: [
+      StatefulShellRoute.indexedStack(
+        pageBuilder: (_, state, navigationShell) =>
+            NoTransitionPage(key: state.pageKey, child: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                pageBuilder: (_, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const MobileSettingsScreen(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                pageBuilder: (_, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const Text('home route'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, state) => Text(
+          state.extra is PaymentLinkCardsSnapshot
+              ? 'payment links route with cards'
+              : 'payment links route',
         ),
       ),
-      home: withTabBar
-          ? AppMobileShell(
-              body: const MobileSettingsScreen(),
-              tabBar: AppMobileTabBar(
-                items: const [
-                  AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
-                  AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
-                ],
-                currentIndex: 1,
-                onSelect: (_) {},
-              ),
-            )
-          : const MobileSettingsScreen(),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
+      syncKeepAwakeProvider.overrideWith(_FakeSyncKeepAwakeNotifier.new),
+      paymentLinkCardsLoaderProvider.overrideWithValue(
+        cardsLoader ??
+            () async =>
+                const PaymentLinkCardsSnapshot(created: [], received: []),
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (context, child) =>
+          AppTheme(data: AppThemeData.dark, child: child!),
     ),
   );
 }
@@ -202,6 +295,17 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets('Settings always opens coinholder voting', (tester) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pumpAndSettle();
+    final row = find.byKey(
+      const ValueKey('mobile_settings_coinholder_voting_row'),
+    );
+    expect(row, findsOneWidget);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('voting route'), findsOneWidget);
+  });
   setUp(() {
     // Phone-sized surface so the lazily-built list renders every group.
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -278,8 +382,10 @@ void main() {
               tester.getTopLeft(footer).dy -
                   tester
                       .getBottomLeft(
+                        // The privacy card is the last card above the
+                        // footer.
                         find.ancestor(
-                          of: find.text('Theme'),
+                          of: find.text('Privacy'),
                           matching: find.byType(MobileSurfaceCard),
                         ),
                       )
@@ -368,6 +474,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     await tester.tap(row);
     await tester.pumpAndSettle();
 
@@ -503,6 +611,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     expect(find.text('Connecting…'), findsOneWidget);
     expect(
       tester
@@ -539,6 +649,8 @@ void main() {
 
     final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
     await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
     // Nothing to escape from here: the route is already on its way to direct.
     expect(tester.widget<GestureDetector>(row).onTap, isNull);
     await tester.tap(row);
@@ -574,6 +686,8 @@ void main() {
     );
     expect(find.text('Try again'), findsOneWidget);
 
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
     await tester.tap(retry);
     await tester.pumpAndSettle();
 
@@ -609,6 +723,8 @@ void main() {
     expect(description, isNot(contains('Requests stay blocked')));
     expect(find.text('Try direct connection'), findsOneWidget);
 
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
     await tester.tap(retry);
     await tester.pumpAndSettle();
 
@@ -739,6 +855,12 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Account'), findsOneWidget);
     expect(find.text('System'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_settings_gift_cards_row')),
+      findsOneWidget,
+    );
+    expect(find.text('My gift cards'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
     expect(find.text('John'), findsOneWidget);
     expect(find.text('Knight'), findsOneWidget);
     final pfpRow = find.byKey(const ValueKey('mobile_settings_pfp_row'));
@@ -788,6 +910,104 @@ void main() {
     );
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('CipherScan'), findsOneWidget);
+  });
+
+  testWidgets('settings groups run Personal, Account, System, Privacy', (
+    tester,
+  ) async {
+    // Tall viewport so every group is laid out and comparable at once.
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+
+    // The System group is located by its first row because "System" is
+    // also a theme value.
+    expect(top('Personal'), lessThan(top('Account')));
+    expect(top('Account'), lessThan(top('Endpoint')));
+    expect(top('Endpoint'), lessThan(top('Privacy')));
+
+    // Personal owns the gift cards and address book entries.
+    expect(find.text('Address book'), findsOneWidget);
+    expect(find.text('Contacts'), findsNothing);
+    expect(top('My gift cards'), lessThan(top('Address book')));
+    expect(top('Address book'), lessThan(top('Account')));
+
+    // Mobile keeps its own pieces and never offers to link to itself.
+    expect(find.text('Syncing'), findsOneWidget);
+    expect(find.textContaining('Link Vizor'), findsNothing);
+  });
+
+  testWidgets('Gift Cards settings row opens the feature', (tester) async {
+    await tester.pumpWidget(_routedApp());
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links route with cards'), findsOneWidget);
+  });
+
+  testWidgets('Gift Cards does not navigate after leaving settings', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(_routedApp(cardsLoader: () => cards.future));
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
+    final router = GoRouter.of(tester.element(row));
+    await tester.tap(row);
+    await tester.pump();
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
+  });
+
+  testWidgets('Gift Cards drops a slow open once a sheet takes over', (
+    tester,
+  ) async {
+    final cards = Completer<PaymentLinkCardsSnapshot>();
+    await tester.pumpWidget(_routedApp(cardsLoader: () => cards.future));
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_gift_cards_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.ensureVisible(row);
+    await tester.pump();
+    await tester.tap(row);
+    await tester.pump();
+
+    // The screen stays interactive while the cards load, and the sheet goes
+    // to the root navigator over the shell, not to this branch.
+    await tester.ensureVisible(find.text('Theme'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Theme'));
+    await tester.pumpAndSettle();
+    expect(find.text('System (Auto)'), findsOneWidget);
+
+    cards.complete(const PaymentLinkCardsSnapshot(created: [], received: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('System (Auto)'), findsOneWidget);
+    expect(find.textContaining('payment links route'), findsNothing);
   });
 
   testWidgets('theme row opens the sheet and applies the selection', (
@@ -935,7 +1155,7 @@ void main() {
     await tester.pump();
 
     for (final label in [
-      'Contacts',
+      'Address book',
       'Secret Passphrase',
       'Viewing Key',
       'Keep screen awake',
@@ -949,32 +1169,65 @@ void main() {
     }
   });
 
-  testWidgets('hardware accounts disable the secret passphrase row', (
+  testWidgets('mnemonic account keeps the enabled secret passphrase route', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    final router = GoRouter(
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const MobileSettingsScreen()),
+        GoRoute(
+          path: '/settings/seed-phrase',
+          builder: (_, _) => const Text('seed phrase route'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_app(router: router));
     await tester.pump();
 
-    final rowFinder = find.byKey(const ValueKey('mobile_settings_seed_row'));
-    final row = tester.widget<MobileListRow>(rowFinder);
-    final label = tester.widget<Text>(find.text('Secret Passphrase'));
-    final chevron = _chevronIn(
-      tester,
-      const ValueKey('mobile_settings_seed_row'),
+    final row = tester.widget<MobileListRow>(
+      find.byKey(const ValueKey('mobile_settings_seed_row')),
     );
+    expect(find.text('Secret Passphrase'), findsOneWidget);
+    expect(find.text('Account Details'), findsNothing);
+    expect(row.enabled, isTrue);
+    expect(row.onTap, isNotNull);
 
-    expect(row.enabled, isFalse);
-    expect(row.onTap, isNull);
-    expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
-    expect(chevron.color, AppThemeData.dark.colors.icon.disabled);
+    await tester.tap(find.byKey(const ValueKey('mobile_settings_seed_row')));
+    await tester.pumpAndSettle();
+    expect(find.text('seed phrase route'), findsOneWidget);
   });
+
+  for (final (signerName, accountState) in const [
+    ('Keystone', _keystoneAccountState),
+    ('Ledger', _ledgerAccountState),
+  ]) {
+    testWidgets('$signerName account disables secret passphrase', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_app(accountState: accountState));
+      await tester.pump();
+
+      final row = tester.widget<MobileListRow>(
+        find.byKey(const ValueKey('mobile_settings_seed_row')),
+      );
+      expect(find.text('Account Details'), findsNothing);
+      expect(find.text('Secret Passphrase'), findsOneWidget);
+      expect(row.enabled, isFalse);
+      expect(row.onTap, isNull);
+      expect(
+        tester.widget<Text>(find.text('Secret Passphrase')).style?.color,
+        AppThemeData.dark.colors.text.disabled,
+      );
+    });
+  }
 
   testWidgets('hardware accounts still allow the viewing key row', (
     tester,
   ) async {
     // Unlike the secret passphrase, a UFVK export never grants spend
     // authority, so hardware accounts keep this row enabled.
-    await tester.pumpWidget(_app(accountState: _hardwareAccountState));
+    await tester.pumpWidget(_app(accountState: _keystoneAccountState));
     await tester.pump();
 
     final rowFinder = find.byKey(
@@ -1091,6 +1344,48 @@ void main() {
 
     expect(biometricNotifier.disableCount, 0);
     expect(find.text('Turn off fingerprint unlock?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_biometric_row')),
+        matching: find.text('On'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Touch ID settings and disable sheet use Apple naming', (
+    tester,
+  ) async {
+    final biometricNotifier = _FakeBiometricNotifier(
+      const BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.touchId,
+        ),
+        enabled: true,
+      ),
+    );
+
+    await tester.pumpWidget(_app(biometricNotifier: () => biometricNotifier));
+    await tester.pump();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_settings_biometric_row')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Turn off Touch ID unlock?'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(biometricNotifier.disableCount, 0);
+    expect(find.text('Turn off Touch ID unlock?'), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_settings_biometric_row')),

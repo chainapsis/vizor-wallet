@@ -1,0 +1,20 @@
+[
+  {
+    "address": "5693E0C8361A44A15821425F9669A53F0907A966",
+    "pub_key": {
+      "type": "tendermint/PubKeyEd25519",
+      "value": "VJg0s+G64PFsheM2wJSWgiQDl/hKf5E4BPUuQ3plrNU="
+    },
+    "voting_power": "10",
+    "proposer_priority": "-9"
+  },
+  {
+    "address": "790FF0695AE68B467537CC6E382B47256DCBAE1D",
+    "pub_key": {
+      "type": "tendermint/PubKeyEd25519",
+      "value": "zbTJRH5VRd6dXlo6tfG2apKXqxgdlZpCXQ9AH6Ffabk="
+    },
+    "voting_power": "10",
+    "proposer_priority": "9"
+  }
+]

@@ -1,9 +1,10 @@
 /// Canonical display formatting for Zcash addresses.
 ///
 /// Single source of truth for the send review/status screens, the received
-/// receipt, and the verify-address modal. The redesign removed the old
-/// per-screen address chunking rules; new surfaces must format through
-/// [truncatedAddress] / [addressVerifyGrid].
+/// receipt, and the verify-address modal. Truncated one-line forms go
+/// through [truncatedAddress]. The full-address viewer renders the raw
+/// string in Geist Mono and wraps naturally — [addressVerifyGrid] remains
+/// for any caller that still needs the legacy 5-character grouping.
 library;
 
 /// Head/tail lengths for the single-line truncated form.

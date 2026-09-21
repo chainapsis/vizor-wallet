@@ -27,6 +27,9 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
 import '../../../migration/models/ironwood_migration_phases.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
+import '../../../payment_links/services/payment_link_received_store.dart';
+import '../../../payment_links/services/payment_link_recovery_reconciler.dart';
+import '../../../payment_links/services/payment_link_recovery_store.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
@@ -428,7 +431,12 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
   }
 
-  Future<void> _showRemoveSheet(AccountInfo account) async {
+  /// [recheckFailed] reopens the sheet after a failed post-drain recheck: it
+  /// shows the "couldn't check" warning and the next attempt skips the recheck.
+  Future<void> _showRemoveSheet(
+    AccountInfo account, {
+    bool recheckFailed = false,
+  }) async {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final isLastAccount = accounts.length == 1;
     final migrationStatus = ref
@@ -438,12 +446,24 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         migrationStatus != null &&
         (migrationStatus.activeRunId != null ||
             isIronwoodMigrationInProgressPhase(migrationStatus.phase));
+    int? unsharedGiftCardCount;
+    if (!recheckFailed) {
+      try {
+        unsharedGiftCardCount = await ref.read(
+          paymentLinkUnsharedFundedCountProvider(account.uuid).future,
+        );
+      } catch (e, st) {
+        log('MobileAccounts: unshared gift card count failed: $e\n$st');
+      }
+    }
+    if (!mounted) return;
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
       builder: (_) => _RemoveAccountSheet(
         account: account,
         isLastAccount: isLastAccount,
         hasActiveMigration: hasActiveMigration,
+        unsharedGiftCardCount: unsharedGiftCardCount,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -456,6 +476,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         .read(accountProvider)
         .value
         ?.activeAccountUuid;
+    UnsharedGiftCardsChangedException? reconfirm;
     try {
       if (isLastAccount) {
         // runWithSyncPausedForWalletReset clears the cached DB path in its
@@ -463,7 +484,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         // stale path) and applies the WalletResetException.dbDeleted resume
         // guard. The escrow drop stays on the success path.
         await runWithSyncPausedForWalletReset(ref, () async {
-          await accountNotifier.resetWallet();
+          await accountNotifier.resetWallet(
+            confirmedUnsharedGiftCardCount: unsharedGiftCardCount,
+          );
           try {
             await ref.read(biometricUnlockProvider.notifier).disable();
           } catch (e, st) {
@@ -477,7 +500,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       } else {
         await runWithSyncPausedForAccountMutation(
           ref,
-          () => accountNotifier.removeAccount(account.uuid),
+          () => accountNotifier.removeAccount(
+            account.uuid,
+            confirmedUnsharedGiftCardCount: unsharedGiftCardCount,
+          ),
           quiesceVotingWork: true,
         );
         final activeAccountAfterRemoval = ref
@@ -490,19 +516,26 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           await syncNotifier.refreshAfterSend();
         }
       }
+    } on UnsharedGiftCardsChangedException catch (e) {
+      log('MobileAccounts: remove needs reconfirmation: ${e.count}');
+      reconfirm = e;
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
-        showAppToast(
-          context,
-          isLastAccount
-              ? "Couldn't reset Vizor"
-              : "Couldn't remove the account",
-          iconName: AppIcons.cross,
-        );
+        showAppToast(context, switch (e) {
+          PaymentLinkInFlightClaimsException() => e.toString(),
+          WalletResetInFlightGiftCardClaimsException() => e.toString(),
+          _ when isLastAccount => "Couldn't reset Vizor",
+          _ => "Couldn't remove the account",
+        }, iconName: AppIcons.cross);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+    if (reconfirm != null && mounted) {
+      // Show the confirmation again with the fresh count.
+      ref.invalidate(paymentLinkUnsharedFundedCountProvider(account.uuid));
+      await _showRemoveSheet(account, recheckFailed: reconfirm.count == null);
     }
   }
 
@@ -584,7 +617,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
         size: AppProfilePictureSize.navLarge,
-        isHardware: account.isHardware,
+        hardwareSignerKind: account.hardwareSignerKind,
         badgeRingColor: colors.background.ground,
         badgeBorderWidth: 3,
         badgeRight: -5,
@@ -702,11 +735,15 @@ class _RemoveAccountSheet extends StatelessWidget {
     required this.account,
     required this.isLastAccount,
     required this.hasActiveMigration,
+    required this.unsharedGiftCardCount,
   });
 
   final AccountInfo account;
   final bool isLastAccount;
   final bool hasActiveMigration;
+
+  /// Null when the unshared gift card check failed.
+  final int? unsharedGiftCardCount;
 
   static const _titleStyle = TextStyle(
     fontFamily: 'Geist',
@@ -755,13 +792,17 @@ class _RemoveAccountSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      unsharedGiftCardCount,
+      walletReset: isLastAccount,
+    );
     return MobileModalScaffold(
       title: 'Remove account',
       onClose: () => Navigator.of(context).pop(false),
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
         size: AppProfilePictureSize.large,
-        isHardware: account.isHardware,
+        hardwareSignerKind: account.hardwareSignerKind,
       ),
       titleStyle: _titleStyle.copyWith(color: colors.text.accent),
       child: Column(
@@ -772,6 +813,14 @@ class _RemoveAccountSheet extends StatelessWidget {
             _description,
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
+          if (unsharedGiftCardWarning != null) ...[
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              unsharedGiftCardWarning,
+              key: const ValueKey('mobile_account_remove_unshared_gift_cards'),
+              style: _bodyStyle.copyWith(color: colors.text.warning),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('mobile_account_remove_confirm'),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -487,6 +488,9 @@ class _MobilePollCardContent extends ConsumerWidget {
     final eligibility = state == _PollCardState.active
         ? ref.watch(votingPollEligibilityProvider(round.roundId))
         : null;
+    final alreadyUsed =
+        state == _PollCardState.active &&
+        ref.watch(votingParticipationUnavailableProvider(round.roundId));
     final ineligible =
         eligibility != null &&
         !eligibility.isLoading &&
@@ -496,9 +500,11 @@ class _MobilePollCardContent extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (ineligible) ...[
+        if (ineligible || alreadyUsed) ...[
           Text(
-            'Not eligible for this round',
+            alreadyUsed
+                ? 'Already used for this round'
+                : 'Not eligible for this round',
             key: ValueKey('voting_poll_ineligible_${round.roundId}'),
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.destructive,
@@ -555,7 +561,9 @@ class _MobilePollCardContent extends ConsumerWidget {
               variant: _actionButtonVariant(state),
               size: AppButtonSize.mediumLarge,
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(ineligible ? 'View' : _actionLabel(state)),
+              child: Text(
+                ineligible || alreadyUsed ? 'View' : _actionLabel(state),
+              ),
             ),
           ],
         ),

@@ -8,7 +8,13 @@ import '../app_button.dart';
 /// context-agnostic — it describes what the fee is, not a send-specific
 /// moment — so it is shared by the send review composer and the transaction
 /// status detail cards.
-Future<void> showMobileTxFeeInfoSheet(BuildContext context) {
+Future<void> showMobileTxFeeInfoSheet(
+  BuildContext context, {
+  String title = 'Tx fee',
+  String description =
+      'The network fee is set by the Zcash protocol (ZIP 317) '
+      'based on the transaction size. Vizor adds no extra fee.',
+}) {
   return showAppMobileSheet<void>(
     context: context,
     builder: (sheetContext) {
@@ -25,15 +31,14 @@ Future<void> showMobileTxFeeInfoSheet(BuildContext context) {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Tx fee',
+              title,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'The network fee is set by the Zcash protocol (ZIP 317) '
-              'based on the transaction size. Vizor adds no extra fee.',
+              description,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.primary,
               ),

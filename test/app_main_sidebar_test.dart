@@ -85,6 +85,10 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_pay_button')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
@@ -93,6 +97,7 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Swap'), findsOneWidget);
     expect(find.text('Pay'), findsOneWidget);
+    expect(find.text('Gift Cards'), findsNothing);
     expect(find.text('Vote'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
@@ -469,6 +474,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(entry.label), findsOneWidget);
     }
+  });
+
+  testWidgets('sidebar treats Gift Cards as part of Settings', (tester) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_syncedSyncState, initialLocation: '/payment-links'),
+    );
+    await tester.pump();
+
+    final settings = _sidebarItemWithLabel(tester, 'Settings');
+    expect(settings.active, isTrue);
+    expect(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+      findsNothing,
+    );
   });
 
   testWidgets('sidebar accounts popover shows boundaries and click cursors', (
@@ -1257,6 +1276,13 @@ Widget _sidebarHarness(
         builder: (_, _) => const AppDesktopShell(
           sidebar: AppMainSidebar(),
           pane: AppDesktopPane(child: Text('pay')),
+        ),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('payment links')),
         ),
       ),
       GoRoute(

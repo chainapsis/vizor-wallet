@@ -23,7 +23,8 @@ class KeystoneSigningRequest {
   /// Governance action index within the selected shielded protocol bundle.
   final int actionIndex;
 
-  /// Human-readable memo shown to the signer.
+  /// Human-readable memo recovered from the persisted transaction, retaining
+  /// the round name used at setup even if the caller supplies a new name.
   final String displayMemo;
 
   /// Total eligible round weight after bundle quantization.

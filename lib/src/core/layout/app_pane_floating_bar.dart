@@ -18,6 +18,7 @@ class AppPaneFloatingBar extends StatefulWidget {
     required this.bar,
     required this.builder,
     this.visible = true,
+    this.fadeVisible = true,
     this.overlayWidth,
     super.key,
   });
@@ -38,6 +39,11 @@ class AppPaneFloatingBar extends StatefulWidget {
   final Widget Function(BuildContext context, double bottomReserve) builder;
 
   final bool visible;
+
+  /// Whether content below the floating actions should be obscured by the
+  /// bottom fade. Screens with an external scroll controller can turn this
+  /// off once the scroll position reaches the end.
+  final bool fadeVisible;
 
   /// Width of the gradient band + bar. Null spans the full pane width;
   /// a value centers the overlay in a fixed-width column (the settings
@@ -88,15 +94,21 @@ class _AppPaneFloatingBarState extends State<AppPaneFloatingBar> {
         // gradient band).
         Positioned.fill(
           child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    context.colors.macosUtility.windowTransparent,
-                    context.colors.macosUtility.window,
-                  ],
+            child: AnimatedOpacity(
+              key: const ValueKey('app_pane_floating_bar_fade'),
+              opacity: widget.fadeVisible ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      context.colors.macosUtility.windowTransparent,
+                      context.colors.macosUtility.window,
+                    ],
+                  ),
                 ),
               ),
             ),

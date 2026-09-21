@@ -2,6 +2,7 @@
 // path resolution and Sapling params status checks.
 // ignore_for_file: depend_on_referenced_packages
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -68,6 +70,8 @@ void main() {
     expect(find.text('Send in progress...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
     expect(find.text('Tx ID'), findsNothing);
+    // An in-flight send must stay blocked for arriving payment URIs.
+    expect(_sendStatusTerminal(tester), isFalse);
 
     await _flushBroadcast(tester);
 
@@ -83,6 +87,22 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
     expect(rustApi.macosExecuteCalls, Platform.isMacOS ? 1 : 0);
     expect(rustApi.mnemonicExecuteCalls, Platform.isMacOS ? 0 : 1);
+    expect(_sendStatusTerminal(tester), isTrue);
+  });
+
+  testWidgets('a whitespace-only memo keeps its Message row on the receipt', (
+    tester,
+  ) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs(memo: '   ')));
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
+    expect(find.text('Whitespace only'), findsOneWidget);
   });
 
   testWidgets('donation status keeps every sidebar section inactive', (
@@ -195,6 +215,8 @@ void main() {
     expect(find.text(truncatedTxid(_txid)), findsOneWidget);
     expect(find.textContaining("didn't reach the network"), findsOneWidget);
     expect(rustApi.discardCalls, isEmpty);
+    // A pending broadcast still renders as in progress, so it is not terminal.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('failed broadcast shows the failed layout with the reason', (
@@ -221,7 +243,177 @@ void main() {
           .where((icon) => icon.name == AppIcons.uturnUp),
       hasLength(1),
     );
+    expect(_sendStatusTerminal(tester), isTrue);
   });
+
+  testWidgets(
+    'failed outcome releases an unconsumed proposal before going terminal',
+    (tester) async {
+      // The software send's missing-mnemonic branch: the broadcast fails and
+      // Rust still owns the proposal. It is `!Platform.isMacOS`-only in
+      // `runSendBroadcast`, so the outcome is injected rather than provoked.
+      final discardGate = Completer<void>();
+      rustApi.discardGate = discardGate;
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(),
+          broadcastRunner:
+              ({
+                required ref,
+                required args,
+                keystone,
+                ledger,
+                required confirmSaplingParamsDownload,
+                shouldAbort,
+              }) async => const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.failed,
+                proposalConsumed: false,
+                error: 'Mnemonic not found for the proposal account.',
+              ),
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      // The receipt already reads as failed, but the proposal — and with it
+      // the input lock a parked `zcash:` request would propose against — is
+      // still held, so the drain must not be told the send is safe to leave.
+      expect(find.text('Send failed'), findsOneWidget);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(_sendStatusTerminal(tester), isFalse);
+
+      discardGate.complete();
+      await _flushBroadcast(tester);
+
+      expect(_sendStatusTerminal(tester), isTrue);
+      // Leaving the receipt must not release the proposal a second time.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('home-route'), findsOneWidget);
+      expect(rustApi.discardCalls, hasLength(1));
+    },
+  );
+
+  testWidgets('leaving a failed receipt mid-release delays the drain until the '
+      'proposal is free', (tester) async {
+    final discardGate = Completer<void>();
+    rustApi.discardGate = discardGate;
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        broadcastRunner:
+            ({
+              required ref,
+              required args,
+              keystone,
+              ledger,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) async => const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.failed,
+              proposalConsumed: false,
+              error: 'Mnemonic not found for the proposal account.',
+            ),
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(_sendStatusTerminal(tester), isFalse);
+
+    final published = <bool>[];
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    ).listen<bool>(
+      sendStatusTerminalProvider,
+      (_, next) => published.add(next),
+    );
+
+    // Back is allowed on a failed receipt; the user leaves while Rust is
+    // still releasing the proposal.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('home-route'), findsOneWidget);
+    expect(
+      published,
+      isEmpty,
+      reason:
+          'publishing terminal here would drain a parked request against '
+          'inputs the dead send still locks',
+    );
+
+    discardGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(published, [true, false]);
+    expect(rustApi.discardCalls, hasLength(1));
+  });
+
+  testWidgets(
+    'a release Rust never confirms keeps the failed receipt non-terminal',
+    (tester) async {
+      rustApi.discardFailuresRemaining = 3;
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(),
+          broadcastRunner:
+              ({
+                required ref,
+                required args,
+                keystone,
+                ledger,
+                required confirmSaplingParamsDownload,
+                shouldAbort,
+              }) async => const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.failed,
+                proposalConsumed: false,
+                error: 'Mnemonic not found for the proposal account.',
+              ),
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+      // The retries back off 100 ms, then 200 ms.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+
+      expect(find.text('Send failed'), findsOneWidget);
+      expect(rustApi.discardCalls, hasLength(3));
+      expect(
+        _sendStatusTerminal(tester),
+        isFalse,
+        reason:
+            'the inputs are still held until expiry; the drain must keep a '
+            'parked request waiting rather than pre-check against them',
+      );
+
+      final published = <bool>[];
+      ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp)),
+        listen: false,
+      ).listen<bool>(
+        sendStatusTerminalProvider,
+        (_, next) => published.add(next),
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('home-route'), findsOneWidget);
+      expect(published, isEmpty);
+
+      // One more try after the grace, then the edge is published regardless.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      expect(rustApi.discardCalls, hasLength(4));
+      expect(published, [true, false]);
+    },
+  );
 
   testWidgets('blocked pop routes home instead of popping', (tester) async {
     rustApi.executeResult = _executeResult(status: 'broadcasted');
@@ -232,10 +424,14 @@ void main() {
     await _flushBroadcast(tester);
     await tester.pumpAndSettle();
 
+    expect(_sendStatusTerminal(tester), isTrue);
+
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     expect(find.text('home-route'), findsOneWidget);
+    // Leaving the receipt releases the flag again.
+    expect(_sendStatusTerminal(tester), isFalse);
   });
 
   testWidgets('Keystone broadcast extracts the PCZT pair and succeeds', (
@@ -440,6 +636,123 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets('Ledger broadcast uses the durable signed operation', (
+    tester,
+  ) async {
+    final args = _reviewArgs();
+    final operationService = _FakeLedgerSignedOperationService();
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Scan your Keystone QR Code'), findsNothing);
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(operationService.broadcasts, ['send:test-account:test-send-flow']);
+    expect(rustApi.storeCalls, isEmpty);
+  });
+
+  testWidgets('Ledger TEX success shows the dependent transaction txid', (
+    tester,
+  ) async {
+    final args = _reviewArgs(address: _texAddress, addressType: 'tex');
+    final operationService = _FakeLedgerSignedOperationService()
+      ..broadcastTxid = '$_txid,$_secondTxid';
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text(truncatedTxid(_secondTxid)), findsOneWidget);
+    expect(find.text(truncatedTxid(_txid)), findsNothing);
+  });
+
+  testWidgets('Ledger TEX partial status keeps the first transaction visible', (
+    tester,
+  ) async {
+    final args = _reviewArgs(address: _texAddress, addressType: 'tex');
+    final operationService = _FakeLedgerSignedOperationService()
+      ..broadcastTxid = '$_txid,$_secondTxid'
+      ..broadcastStatus = 'partial_broadcast'
+      ..broadcastMessage =
+          'Transaction 2 of 2 was rejected after transaction 1 was accepted';
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        args,
+        ledger: LedgerBroadcastArgs(
+          reviewArgs: args,
+          operationId: 'send:test-account:test-send-flow',
+        ),
+        isHardware: true,
+        ledgerOperationService: operationService,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text(truncatedTxid(_txid)), findsOneWidget);
+    expect(find.text(truncatedTxid(_secondTxid)), findsNothing);
+    expect(find.textContaining('Transaction 2 of 2'), findsOneWidget);
+  });
+
+  for (final status in ['broadcast_unknown', 'broadcasted_storage_failed']) {
+    testWidgets('Ledger $status retains the input lock without re-signing', (
+      tester,
+    ) async {
+      final args = _reviewArgs();
+      final operationService = _FakeLedgerSignedOperationService()
+        ..broadcastStatus = status
+        ..broadcastMessage = 'broadcast outcome requires reconciliation';
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          args,
+          ledger: LedgerBroadcastArgs(
+            reviewArgs: args,
+            operationId: 'send:test-account:test-send-flow',
+          ),
+          isHardware: true,
+          ledgerOperationService: operationService,
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      expect(operationService.broadcasts, ['send:test-account:test-send-flow']);
+      expect(rustApi.storeCalls, isEmpty);
+      expect(rustApi.discardCalls, isEmpty);
+      expect(rustApi.retainCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(find.text('Confirm with Ledger'), findsNothing);
+    });
+  }
+
   testWidgets(
     'Keystone params rejection releases the retained input lock before broadcast',
     (tester) async {
@@ -497,6 +810,8 @@ void main() {
         proposalId: BigInt.one,
         sendFlowId: 'test-send-flow',
         logContext: 'SendStatusTest',
+        syncNotifier: _FakeSyncNotifier(),
+        accountUuid: 'test-account',
       ),
     );
 
@@ -643,7 +958,7 @@ void main() {
     expect(find.text('Send failed'), findsOneWidget);
     expect(
       find.text(
-        'Keystone signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.',
+        'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.',
       ),
       findsOneWidget,
     );
@@ -675,6 +990,16 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 /// params status) resolve — they cannot complete inside the FakeAsync test
 /// zone on their own. Bounded pumps afterwards because the in-progress
 /// loader animation repeats forever (pumpAndSettle would hang).
+/// The "safe to leave this receipt" flag the payment-URI drain reads. Taken
+/// from the MaterialApp element so it stays readable after the status screen
+/// itself is gone.
+bool _sendStatusTerminal(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+    listen: false,
+  ).read(sendStatusTerminalProvider);
+}
+
 Future<void> _flushBroadcast(WidgetTester tester) async {
   // Several rounds because the chain interleaves real-IO awaits with
   // fake-zone microtasks that only run during pump.
@@ -722,7 +1047,10 @@ ExecuteProposalResult _executeResult({
 Widget _harness(
   SendReviewArgs args, {
   KeystoneBroadcastArgs? keystone,
+  LedgerBroadcastArgs? ledger,
   bool isHardware = false,
+  SendStatusBroadcastRunner? broadcastRunner,
+  LedgerSignedOperationService? ledgerOperationService,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -731,7 +1059,12 @@ Widget _harness(
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
         path: '/send/status',
-        builder: (_, _) => SendStatusScreen(args: args, keystone: keystone),
+        builder: (_, _) => SendStatusScreen(
+          args: args,
+          keystone: keystone,
+          ledger: ledger,
+          broadcastRunner: broadcastRunner,
+        ),
       ),
     ],
   );
@@ -749,12 +1082,55 @@ Widget _harness(
       accountProvider.overrideWith(_FakeAccountNotifier.new),
       appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      ledgerSignedOperationServiceProvider.overrideWithValue(
+        ledgerOperationService ?? _FakeLedgerSignedOperationService(),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+class _FakeLedgerSignedOperationService
+    implements LedgerSignedOperationService {
+  final broadcasts = <String>[];
+  String broadcastStatus = 'broadcasted';
+  String? broadcastMessage;
+  String broadcastTxid = _txid;
+
+  @override
+  Future<void> checkpoint({
+    required String operationId,
+    required String accountUuid,
+    required LedgerSignedOperationKind kind,
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? externalRef,
+  }) async {}
+
+  @override
+  Future<List<LedgerSignedOperationMetadata>> list() async => const [];
+
+  @override
+  Future<LedgerSignedOperationBroadcastResult> broadcast({
+    required String operationId,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    broadcasts.add(operationId);
+    return LedgerSignedOperationBroadcastResult(
+      operationId: operationId,
+      txid: broadcastTxid,
+      status: broadcastStatus,
+      message: broadcastMessage,
+      requiresAck: false,
+    );
+  }
+
+  @override
+  Future<void> acknowledge(String operationId) async {}
 }
 
 AppBootstrapState _bootstrap(bool isHardware) {
@@ -866,6 +1242,9 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {}
 
   @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
+
+  @override
   Future<void> restartSync() async {}
 }
 
@@ -879,6 +1258,10 @@ class _RustApiFake implements RustLibApi {
   Object? executeError;
   StoreAndBroadcastPcztsResult? storeResult;
   int discardFailuresRemaining = 0;
+
+  /// Holds `discardProposal` open so a test can read the terminal flag while
+  /// the release is still in flight.
+  Completer<void>? discardGate;
   int macosExecuteCalls = 0;
   int mnemonicExecuteCalls = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
@@ -893,6 +1276,7 @@ class _RustApiFake implements RustLibApi {
     executeError = null;
     storeResult = null;
     discardFailuresRemaining = 0;
+    discardGate = null;
     macosExecuteCalls = 0;
     mnemonicExecuteCalls = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
@@ -911,6 +1295,8 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     discardCalls.add((proposalId, sendFlowId));
+    final gate = discardGate;
+    if (gate != null) await gate.future;
     if (discardFailuresRemaining > 0) {
       discardFailuresRemaining--;
       throw Exception('transient wallet DB unlock failure');

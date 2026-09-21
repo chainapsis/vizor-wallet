@@ -7,6 +7,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
+import '../../../providers/account_provider.dart'
+    show UnsharedGiftCardsChangedException;
+import '../../payment_links/services/payment_link_recovery_store.dart';
 import 'account_modal_card.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
@@ -22,6 +25,10 @@ class AccountRemoveModal extends StatefulWidget {
     required this.pendingSwapCount,
     required this.checkingPendingSwaps,
     required this.pendingSwapCheckFailed,
+    this.receivingGiftCardCount = 0,
+    this.checkingReceivingGiftCards = false,
+    this.receivingGiftCardCheckFailed = false,
+    this.unsharedGiftCardCount = 0,
     required this.onCancel,
     required this.onConfirmPassword,
     required this.onRemove,
@@ -34,6 +41,12 @@ class AccountRemoveModal extends StatefulWidget {
   final int pendingSwapCount;
   final bool checkingPendingSwaps;
   final bool pendingSwapCheckFailed;
+  final int receivingGiftCardCount;
+  final bool checkingReceivingGiftCards;
+  final bool receivingGiftCardCheckFailed;
+
+  /// Null when the unshared gift card check failed or is still running.
+  final int? unsharedGiftCardCount;
   final VoidCallback onCancel;
   final Future<bool> Function(String password) onConfirmPassword;
   final Future<void> Function(AccountRemoveProgressCallback onProgress)
@@ -54,7 +67,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   bool get _canSubmit =>
       !_isSubmitting &&
-      _swapRemovalBlockMessage == null &&
+      _removalBlockMessage == null &&
       isWalletPasswordValid(_passwordController.text);
 
   String? get _passwordMessage {
@@ -62,17 +75,31 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     return validateWalletPassword(_passwordController.text);
   }
 
-  String? get _swapRemovalBlockMessage {
+  String? get _removalBlockMessage {
     if (widget.checkingPendingSwaps) {
       return 'Checking this account for active swaps before removal.';
     }
     if (widget.pendingSwapCheckFailed) {
       return "Couldn't check this account for active swaps. Try again before removing it.";
     }
-    if (widget.pendingSwapCount <= 0) return null;
-    final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
-    return 'This account has ${widget.pendingSwapCount} active $plural. '
-        'Complete or remove them from swap activity before removing this account.';
+    if (widget.pendingSwapCount > 0) {
+      final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
+      return 'This account has ${widget.pendingSwapCount} active $plural. '
+          'Complete or remove them from swap activity before removing this account.';
+    }
+    if (widget.checkingReceivingGiftCards) {
+      return 'Checking this account for incoming gift cards before removal.';
+    }
+    if (widget.receivingGiftCardCheckFailed) {
+      return "Couldn't check this account for incoming gift cards. Try again before removing it.";
+    }
+    if (widget.receivingGiftCardCount <= 0) return null;
+    if (widget.receivingGiftCardCount == 1) {
+      return 'This account is receiving a gift card. '
+          'Wait for it to finish before removing this account.';
+    }
+    return 'This account is receiving ${widget.receivingGiftCardCount} gift cards. '
+        'Wait for them to finish before removing this account.';
   }
 
   @override
@@ -84,7 +111,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
-    if (_swapRemovalBlockMessage != null) return;
+    if (_removalBlockMessage != null) return;
     final passwordError = validateRequiredWalletPassword(
       _passwordController.text,
     );
@@ -135,6 +162,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
     try {
       await widget.onRemove(_setProgress);
+    } on UnsharedGiftCardsChangedException catch (error) {
+      if (!mounted) return;
+      setState(() => _submitError = error.toString());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -176,7 +206,11 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   @override
   Widget build(BuildContext context) {
     final passwordMessage = _passwordMessage;
-    final swapRemovalBlockMessage = _swapRemovalBlockMessage;
+    final removalBlockMessage = _removalBlockMessage;
+    final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      widget.unsharedGiftCardCount,
+      walletReset: widget.isLastAccount,
+    );
 
     return AccountModalCard(
       child: Column(
@@ -195,9 +229,19 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               color: context.colors.text.accent,
             ),
           ),
-          if (swapRemovalBlockMessage != null) ...[
+          if (removalBlockMessage != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            _AccountRemoveWarningPanel(message: swapRemovalBlockMessage),
+            _AccountRemoveWarningPanel(
+              key: const ValueKey('account_remove_pending_swap_warning'),
+              message: removalBlockMessage,
+            ),
+          ],
+          if (unsharedGiftCardWarning != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _AccountRemoveWarningPanel(
+              key: const ValueKey('account_remove_unshared_gift_card_warning'),
+              message: unsharedGiftCardWarning,
+            ),
           ],
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
@@ -210,7 +254,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               inputHorizontalPadding: AppSpacing.s,
               controller: _passwordController,
               autofocus: true,
-              enabled: !_isSubmitting && swapRemovalBlockMessage == null,
+              enabled: !_isSubmitting && removalBlockMessage == null,
               tone: passwordMessage == null
                   ? AppTextFieldTone.neutral
                   : AppTextFieldTone.destructive,
@@ -257,6 +301,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       return 'Removing this account will completely reset the Vizor app. '
           'This means deleting all accounts and requiring you to import '
           'accounts again.\n'
+          'Unshared gift card links will also be permanently lost.\n'
           'This cannot be undone.';
     }
     return "Are you sure you want to remove this account? "
@@ -280,7 +325,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 }
 
 class _AccountRemoveWarningPanel extends StatelessWidget {
-  const _AccountRemoveWarningPanel({required this.message});
+  const _AccountRemoveWarningPanel({required this.message, super.key});
 
   final String message;
 
@@ -288,7 +333,6 @@ class _AccountRemoveWarningPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      key: const ValueKey('account_remove_pending_swap_warning'),
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: colors.background.raised,

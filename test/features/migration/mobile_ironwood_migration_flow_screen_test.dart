@@ -37,6 +37,8 @@ import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_f
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -186,9 +188,15 @@ class _FailingBindCredentialStore
 }
 
 class _HardwareAccountNotifier extends AccountNotifier {
+  _HardwareAccountNotifier([this.signerKind]);
+
+  final HardwareSignerKind? signerKind;
+
   @override
-  Future<AccountState> build() async =>
-      _bootstrap(hardware: true).initialAccountState;
+  Future<AccountState> build() async => _bootstrap(
+    hardware: true,
+    hardwareSignerKind: signerKind,
+  ).initialAccountState;
 }
 
 class _ManageTestMigrationCoordinator extends IronwoodMigrationCoordinator {
@@ -711,7 +719,10 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
   );
 }
 
-AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  bool hardware = false,
+  HardwareSignerKind? hardwareSignerKind,
+}) => AppBootstrapState(
   initialLocation: '/migration/private/status',
   initialAccountState: AccountState(
     accounts: [
@@ -721,6 +732,7 @@ AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
         order: 0,
         profilePictureId: kDefaultProfilePictureId,
         isHardware: hardware,
+        hardwareSignerKind: hardware ? hardwareSignerKind : null,
       ),
     ],
     activeAccountUuid: 'account-1',
@@ -839,6 +851,7 @@ Widget _productionApp({
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
   Future<IronwoodHomeMigrationCtaState> Function()? ctaLoader,
   bool hardware = false,
+  HardwareSignerKind? hardwareSignerKind,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
@@ -992,8 +1005,13 @@ Widget _productionApp({
   return ProviderScope(
     overrides: [
       ...extraOverrides,
-      appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
-      if (hardware) accountProvider.overrideWith(_HardwareAccountNotifier.new),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(hardware: hardware, hardwareSignerKind: hardwareSignerKind),
+      ),
+      if (hardware)
+        accountProvider.overrideWith(
+          () => _HardwareAccountNotifier(hardwareSignerKind),
+        ),
       syncProvider.overrideWith(
         () =>
             syncNotifier ??
@@ -1261,6 +1279,113 @@ IronwoodMigrationService _migrationService({
     scheduleBackgroundMigration: () async => true,
   );
 }
+
+// Preserved with the quarantined signer so a future capability enablement can
+// restore the end-to-end widget test without rebuilding its Ledger fixture.
+// ignore: unused_element
+LedgerImmediateMigrationService _ledgerImmediateMigrationService({
+  required Future<List<LedgerVotingSignature>> signature,
+}) {
+  return LedgerImmediateMigrationService(
+    prepare: ({required accountUuid, required approvedPlan}) async {
+      return rust_sync.KeystoneMigrationSigningRequest(
+        requestId: 'ledger-immediate-request',
+        messages: [
+          rust_sync.KeystoneMigrationMessage(
+            id: 'ledger-immediate-message',
+            redactedPczt: Uint8List.fromList([1, 2, 3]),
+            expectedSignatureCount: 1,
+          ),
+        ],
+        signingBatchLimit: 1,
+      );
+    },
+    signPczt: (_, _) => signature,
+    loadProofStatus: ({required requestId}) async {
+      return const rust_sync.KeystoneMigrationProofStatus(
+        readyCount: 1,
+        totalCount: 1,
+        isReady: true,
+        isFailed: false,
+      );
+    },
+    complete:
+        ({
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+        }) async => _migrationResult(),
+    discard: ({required accountUuid, required requestId}) async {},
+  );
+}
+
+// ignore: unused_element
+const _ledgerMigrationSignature = <int>[
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+];
 
 rust_sync.KeystoneMigrationSigningRequest _keystoneDenominationRequest() {
   return rust_sync.KeystoneMigrationSigningRequest(
@@ -1959,6 +2084,7 @@ void main() {
         initialLocation: '/migration/options',
         migrationService: _migrationService(),
         hardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
       ),
     );
     await tester.pumpAndSettle();
@@ -1986,6 +2112,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(
+      find.widgetWithText(AppButton, 'Consider another option'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Consider choosing a Private Migration option.'),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
@@ -4696,7 +4830,7 @@ void main() {
         ),
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
-        isHardware: true,
+        isKeystone: true,
       )?.count,
       1,
     );
@@ -4769,7 +4903,7 @@ void main() {
         status,
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
-        isHardware: true,
+        isKeystone: true,
       )!;
       expect(attention.count, 40);
       return mobileIronwoodMigrationAttentionFingerprint(
@@ -5161,7 +5295,7 @@ void main() {
       status,
       currentHeight: 3_000_000,
       broadcastHeight: 3_000_000,
-      isHardware: true,
+      isKeystone: true,
     )!;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
       accountUuid: 'account-1',
@@ -8563,6 +8697,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('home route'), findsOneWidget);
+  });
+
+  testWidgets('Ledger cannot enter the mobile migration flow', (tester) async {
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        hardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        migrationService: _migrationService(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ledger_immediate_migration_signing')),
+      findsNothing,
+    );
   });
 
   testWidgets('immediate migration keeps the broadcast result message', (

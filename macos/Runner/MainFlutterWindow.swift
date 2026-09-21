@@ -43,6 +43,33 @@ private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
   }
 }
 
+/// Exit-only hiding needs to be synchronous and must suppress AppKit's
+/// last-window auto-quit until Flutter has replied to its termination request.
+final class DesktopExitChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/desktop_exit",
+      binaryMessenger: messenger
+    )
+    self.channel = channel
+    channel.setMethodCallHandler { [weak window] call, result in
+      guard call.method == "hideForExit" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let window, let delegate = NSApp.delegate as? AppDelegate else {
+        result(FlutterError(code: "missing_window", message: "The main window is unavailable.", details: nil))
+        return
+      }
+      delegate.isPreparingDesktopExit = true
+      window.orderOut(nil)
+      result(nil)
+    }
+  }
+}
+
 final class WindowAppearanceChannel {
   private static var shared: WindowAppearanceChannel?
 
@@ -948,12 +975,104 @@ final class DeviceOwnerAuthChannel {
   }
 }
 
+final class PaymentUriChannel {
+  private static var channel: FlutterMethodChannel?
+  private static var pendingURLs: [String] = []
+  private static var dartReady = false
+  /// Bound on links buffered before Dart installs its handler, matching the
+  /// iOS bridge.
+  private static let maxPendingURLs = 16
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        let urls = pendingURLs
+        pendingURLs.removeAll()
+        result(urls)
+      case "ready":
+        dartReady = true
+        flushPendingURLs()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  static func handle(urls: [URL]) {
+    let urlStrings = urls.compactMap { url -> String? in
+      guard url.scheme?.lowercased() == "zcash" else {
+        return nil
+      }
+      return url.absoluteString
+    }
+    guard !urlStrings.isEmpty else {
+      return
+    }
+    // The same two guards the iOS bridge applies. Dedupe is scoped to the
+    // not-yet-delivered buffer, so re-opening a link Dart already took still
+    // arrives; it only stops one delivery from queueing a link that is
+    // already waiting, which macOS can cause by handing the same URL to
+    // `application(_:open:)` twice -- and which then makes the "keep only the
+    // latest link" notice churn on a duplicate of the link it is showing.
+    for uri in urlStrings {
+      guard
+        pendingURLs.count < maxPendingURLs,
+        !pendingURLs.contains(uri)
+      else {
+        continue
+      }
+      pendingURLs.append(uri)
+    }
+    flushPendingURLs()
+    presentMainWindow()
+  }
+
+  private static func presentMainWindow() {
+    NSApp.activate(ignoringOtherApps: true)
+    guard let window = mainWindowForPaymentUri() else {
+      return
+    }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    window.makeKeyAndOrderFront(nil)
+  }
+
+  private static func mainWindowForPaymentUri() -> NSWindow? {
+    return NSApp.mainWindow as? MainFlutterWindow
+      ?? NSApp.keyWindow as? MainFlutterWindow
+      ?? NSApp.windows.compactMap { $0 as? MainFlutterWindow }.first
+      ?? NSApp.mainWindow
+      ?? NSApp.keyWindow
+  }
+
+  private static func flushPendingURLs() {
+    guard dartReady, let channel, !pendingURLs.isEmpty else {
+      return
+    }
+    let urls = pendingURLs
+    pendingURLs.removeAll()
+    channel.invokeMethod("onUris", arguments: urls)
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
   private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+  private var ledgerBleHandler: LedgerMobileHandler?
+  private var ledgerBleMethodChannel: FlutterMethodChannel?
+  private var ledgerBleDiscoveryChannel: FlutterEventChannel?
 
   deinit {
+    ledgerBleHandler?.close()
     for observer in vizorWindowToolbarObservers {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -969,6 +1088,10 @@ class MainFlutterWindow: NSWindow {
     installVizorWindowToolbarObservers()
     applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
+    DesktopExitChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     WindowAppearanceChannel.register(
       window: self,
       visualEffectView: desktopWindowViewController.visualEffectView,
@@ -993,9 +1116,44 @@ class MainFlutterWindow: NSWindow {
     NativeUpdatePrivacyChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
+    PaymentUriChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    registerLedgerBleChannels(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func registerLedgerBleChannels(messenger: FlutterBinaryMessenger) {
+    ledgerBleHandler?.close()
+    let handler = LedgerMobileHandler()
+    ledgerBleHandler = handler
+
+    let methodChannel = FlutterMethodChannel(
+      name: LedgerMobileHandler.methodChannelName,
+      binaryMessenger: messenger
+    )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    handler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
+    methodChannel.setMethodCallHandler { call, result in
+      handler.handle(call, result: result)
+    }
+    ledgerBleMethodChannel = methodChannel
+
+    let discoveryChannel = FlutterEventChannel(
+      name: LedgerMobileHandler.eventChannelName,
+      binaryMessenger: messenger
+    )
+    discoveryChannel.setStreamHandler(handler)
+    ledgerBleDiscoveryChannel = discoveryChannel
   }
 
   override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {

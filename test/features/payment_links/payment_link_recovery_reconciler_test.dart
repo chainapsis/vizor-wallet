@@ -1,0 +1,764 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+void main() {
+  test('retains a prepared Gift Card before its transaction expires', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(119),
+      loadScannedHeight: () async => BigInt.from(119),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, 120);
+    // Never handed to the network, so it does not block account deletion.
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
+  });
+
+  test(
+    'removes a prepared Gift Card once its absent transaction expires',
+    () async {
+      final fixture = await _preparedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(120),
+        loadScannedHeight: () async => BigInt.from(120),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      expect(await reconciler.load(), isEmpty);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        0,
+      );
+    },
+  );
+
+  test(
+    'promotes a software draft whose markFunded never landed once it is mined',
+    () async {
+      final fixture = await _submittedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(200),
+        loadTransactionsByAccount: (_) async => {
+          'source-account': [_transaction(txid: _preparedTxid)],
+        },
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.funded);
+      expect(record.fundingTxids, _preparedTxid);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test('promotes a multi-transaction software draft only once every id is '
+      'mined', () async {
+    final fixture = await _submittedFixture(
+      fundingTxids: '$_preparedTxid,$_secondTxid',
+    );
+    PaymentLinkRecoveryReconciler reconciler(List<String> mined) =>
+        PaymentLinkRecoveryReconciler(
+          fixture.store,
+          loadCurrentHeight: () async => BigInt.from(200),
+          loadScannedHeight: () async => BigInt.from(200),
+          loadTransactionsByAccount: (_) async => {
+            'source-account': [
+              for (final txid in mined) _transaction(txid: txid),
+            ],
+          },
+          loadLinkFundingHistory: (_) async => const [],
+        );
+
+    var record = (await reconciler([_preparedTxid]).load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+
+    record = (await reconciler([_preparedTxid, _secondTxid]).load()).single;
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, '$_preparedTxid,$_secondTxid');
+  });
+
+  test(
+    'retains a software draft with no expiry height while its tx is unseen',
+    () async {
+      final fixture = await _submittedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(100000),
+        loadScannedHeight: () async => BigInt.from(100000),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.fundingTxids, _preparedTxid);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test('removes a software draft whose transaction expired unmined', () async {
+    final fixture = await _submittedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    expect(await reconciler.load(), isEmpty);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
+  });
+
+  test('promotes a recorded transaction even at its expiry height', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(120),
+      loadScannedHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [_transaction(txid: _preparedTxid)],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, isNull);
+  });
+
+  test('retains prepared metadata when chain lookup is unavailable', () async {
+    final fixture = await _preparedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () => throw StateError('offline'),
+      loadScannedHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(record.preparedExpiryHeight, 120);
+  });
+
+  test(
+    'retains an expired prepared Gift Card until wallet scan catches up',
+    () async {
+      final fixture = await _preparedFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(125),
+        loadScannedHeight: () async => BigInt.from(119),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.fundingTxids, _preparedTxid);
+      expect(record.preparedExpiryHeight, 120);
+    },
+  );
+
+  test('removes unshared funding when every transaction expires', () async {
+    final fixture = await _fundedFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.zero,
+      loadScannedHeight: () async => BigInt.zero,
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    expect(await reconciler.load(), isEmpty);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
+  });
+
+  test(
+    'retains unshared funding while any transaction may hold funds',
+    () async {
+      final fixture = await _fundedFixture(
+        fundingTxids: '$_preparedTxid,$_secondTxid',
+      );
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.zero,
+        loadScannedHeight: () async => BigInt.zero,
+        loadTransactionsByAccount: (_) async => {
+          'source-account': [
+            _transaction(txid: _preparedTxid, expiredUnmined: true),
+            _transaction(txid: _secondTxid),
+          ],
+        },
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      expect(await reconciler.load(), hasLength(1));
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test('never removes a shared funding recovery', () async {
+    final fixture = await _fundedFixture();
+    await fixture.store.markShared(address: _preparedAddress);
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.zero,
+      loadScannedHeight: () async => BigInt.zero,
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _preparedTxid, expiredUnmined: true),
+        ],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    final record = (await reconciler.load()).single;
+    expect(record.state, PaymentLinkRecoveryState.shared);
+  });
+
+  test(
+    'drops a draft that never started its broadcast once it is stale',
+    () async {
+      final fixture = await _inertFixture(
+        updatedAt: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+      );
+      final reconciler = _reconciler(fixture.store);
+
+      expect(await reconciler.load(), isEmpty);
+    },
+  );
+
+  test('keeps a draft that may still be proposing in this process', () async {
+    final fixture = await _inertFixture(updatedAt: DateTime.now().toUtc());
+    final reconciler = _reconciler(fixture.store);
+
+    final record = (await reconciler.load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+  });
+
+  test('funds an ambiguous submission its Gift Card wallet can see', () async {
+    final fixture = await _ambiguousFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => [
+        // The promised funding: amount plus the claim fee reserve.
+        _transaction(
+          txid: _preparedTxid,
+          txKind: 'received',
+          accountBalanceDelta: 110000,
+        ),
+      ],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.funded);
+    expect(record.fundingTxids, _preparedTxid);
+    expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
+  });
+
+  test('an unrelated receive does not fund an ambiguous submission', () async {
+    final fixture = await _ambiguousFixture();
+    final reconciler = PaymentLinkRecoveryReconciler(
+      fixture.store,
+      loadCurrentHeight: () async => BigInt.from(120),
+      loadScannedHeight: () async => BigInt.from(120),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => [
+        _transaction(
+          txid: _secondTxid,
+          txKind: 'received',
+          accountBalanceDelta: 5000,
+        ),
+      ],
+    );
+
+    final record = (await reconciler.load()).single;
+
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, isNull);
+  });
+
+  test(
+    'retains an ambiguous submission until it can no longer be mined',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(159),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test(
+    'retains an ambiguous submission without consulting source scan height',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () => throw StateError('must not be queried'),
+        loadScannedHeight: () => throw StateError('must not be queried'),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    },
+  );
+
+  test(
+    'keeps an ambiguous submission when its wallet cannot be read',
+    () async {
+      final fixture = await _ambiguousFixture();
+      final reconciler = PaymentLinkRecoveryReconciler(
+        fixture.store,
+        loadCurrentHeight: () async => BigInt.from(200),
+        loadScannedHeight: () async => BigInt.from(200),
+        loadTransactionsByAccount: (_) async => const {'source-account': []},
+        loadLinkFundingHistory: (_) => throw StateError('claim sync failed'),
+      );
+
+      final record = (await reconciler.load()).single;
+
+      expect(record.state, PaymentLinkRecoveryState.draft);
+      expect(record.isAmbiguousSubmission, isTrue);
+    },
+  );
+
+  group('abandoned prepared drafts', () {
+    final stale = DateTime.now().toUtc().subtract(const Duration(hours: 1));
+
+    test('drops one whose funding flow ended before its broadcast', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+
+      expect(await _abandonmentReconciler(fixture.store).load(), isEmpty);
+    });
+
+    test('never drops one that has a Ledger outbox operation', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+      final reconciler = _abandonmentReconciler(
+        fixture.store,
+        ledgerOperationRefs: {_preparedAddress},
+      );
+
+      expect((await reconciler.load()).single.fundingTxids, _preparedTxid);
+    });
+
+    test('never drops one whose funding flow is still open', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+      final reconciler = _abandonmentReconciler(
+        fixture.store,
+        openSurfaces: {_preparedAddress},
+        ledgerLookupError: StateError('must not be queried'),
+      );
+
+      expect((await reconciler.load()).single.fundingTxids, _preparedTxid);
+    });
+
+    test('keeps one whose broadcast started', () async {
+      final fixture = await _preparedFixture(
+        updatedAt: stale,
+        submittedAtHeight: 100,
+      );
+      final reconciler = _abandonmentReconciler(fixture.store);
+
+      expect((await reconciler.load()).single.submittedAtHeight, 100);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    });
+
+    test('keeps a legacy draft whose broadcast was never marked', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+      final legacy = jsonDecode(fixture.storage.value!) as Map<String, dynamic>
+        ..remove('submissionMarkersRecorded');
+      fixture.storage.value = jsonEncode(legacy);
+      final reconciler = _abandonmentReconciler(fixture.store);
+
+      expect((await reconciler.load()).single.submittedAtHeight, 0);
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        1,
+      );
+    });
+
+    test('keeps one while the Ledger outbox cannot be read', () async {
+      final fixture = await _preparedFixture(updatedAt: stale);
+      final reconciler = _abandonmentReconciler(
+        fixture.store,
+        ledgerLookupError: StateError('Ledger operations are paused'),
+      );
+
+      expect(await reconciler.load(), hasLength(1));
+    });
+  });
+
+  group('removal warning count', () {
+    PaymentLinkRecoveryReconciler reconcilerWith(
+      PaymentLinkRecoveryStore store,
+      Future<Set<String>> Function(String accountUuid) loadSignedPending,
+    ) => PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(119),
+      loadScannedHeight: () async => BigInt.from(119),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+      loadSignedPendingGiftCardRefs: loadSignedPending,
+    );
+
+    test('includes a draft whose Ledger funding is signed', () async {
+      final fixture = await _preparedFixture();
+      final requested = <String>[];
+      final reconciler = reconcilerWith(fixture.store, (accountUuid) async {
+        requested.add(accountUuid);
+        return {_preparedAddress};
+      });
+
+      expect(
+        await reconciler.countUnsharedFundedForAccount('source-account'),
+        0,
+      );
+      expect(
+        await reconciler.countUnsharedForRemovalWarning('source-account'),
+        1,
+      );
+      expect(requested, ['source-account']);
+    });
+
+    test('ignores a prepared draft with no signed operation', () async {
+      final fixture = await _preparedFixture();
+      final reconciler = reconcilerWith(fixture.store, (_) async => {});
+
+      expect(
+        await reconciler.countUnsharedForRemovalWarning('source-account'),
+        0,
+      );
+    });
+
+    test('fails when the Ledger outbox cannot be read', () async {
+      final fixture = await _preparedFixture();
+      final reconciler = reconcilerWith(
+        fixture.store,
+        (_) async => throw StateError('Ledger operations are paused'),
+      );
+
+      await expectLater(
+        reconciler.countUnsharedForRemovalWarning('source-account'),
+        throwsStateError,
+      );
+    });
+  });
+
+  test('refreshes the cached unshared count after lifecycle writes', () async {
+    final reconciler = _CountingRecoveryReconciler();
+    final container = ProviderContainer(
+      overrides: [
+        paymentLinkRecoveryReconcilerProvider.overrideWithValue(reconciler),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      await container.read(
+        paymentLinkUnsharedFundedCountProvider('source-account').future,
+      ),
+      1,
+    );
+
+    reconciler.count = 0;
+    container.read(paymentLinkLifecycleRevisionProvider.notifier).bump();
+
+    expect(
+      await container.read(
+        paymentLinkUnsharedFundedCountProvider('source-account').future,
+      ),
+      0,
+    );
+  });
+}
+
+const _preparedTxid =
+    '9909fe99c789029bf118c88bd9ee33ed35965fd0f3154dd1a8ec6daa4974c7e3';
+const _secondTxid =
+    '7fe86d43f8a80849899092537e237931551574bd8e0938219d114ac0d06d1151';
+const _preparedAddress = 'u1preparedgiftcardaddress';
+
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_preparedFixture({DateTime? updatedAt, int? submittedAtHeight}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    claimFeeReserveZatoshi: BigInt.from(10000),
+    link: link,
+    sourceAccountUuid: 'source-account',
+  );
+  await store.markPrepared(
+    address: link.address,
+    fundingTxid: _preparedTxid,
+    expiryHeight: 120,
+    updatedAt: updatedAt,
+  );
+  if (submittedAtHeight != null) {
+    await store.markSubmissionStarted(
+      address: link.address,
+      chainHeight: submittedAtHeight,
+      updatedAt: updatedAt,
+    );
+  }
+  return (store: store, storage: storage);
+}
+
+/// A software funding whose broadcast landed but whose `markFunded` promotion
+/// never did: the draft carries its transaction id and no expiry height.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_submittedFixture({String fundingTxids = _preparedTxid}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    claimFeeReserveZatoshi: BigInt.from(10000),
+    link: link,
+    sourceAccountUuid: 'source-account',
+  );
+  await store.markSubmitted(address: link.address, fundingTxids: fundingTxids);
+  return (store: store, storage: storage);
+}
+
+/// A software funding whose broadcast started and whose result never came
+/// back: the draft carries a submission height and no transaction id.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_ambiguousFixture() async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    claimFeeReserveZatoshi: BigInt.from(10000),
+    link: link,
+    sourceAccountUuid: 'source-account',
+  );
+  await store.markSubmissionStarted(address: link.address, chainHeight: 100);
+  return (store: store, storage: storage);
+}
+
+/// A draft saved before the app died mid-propose: no transaction id and no
+/// submission marker.
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_inertFixture({required DateTime updatedAt}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    claimFeeReserveZatoshi: BigInt.from(10000),
+    link: link,
+    sourceAccountUuid: 'source-account',
+    updatedAt: updatedAt,
+  );
+  return (store: store, storage: storage);
+}
+
+PaymentLinkRecoveryReconciler _reconciler(PaymentLinkRecoveryStore store) =>
+    PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => const {'source-account': []},
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+/// Before the prepared transaction's expiry height, so only the abandonment
+/// rule can remove a draft.
+PaymentLinkRecoveryReconciler _abandonmentReconciler(
+  PaymentLinkRecoveryStore store, {
+  Set<String> ledgerOperationRefs = const {},
+  Set<String> openSurfaces = const {},
+  Object? ledgerLookupError,
+}) => PaymentLinkRecoveryReconciler(
+  store,
+  loadCurrentHeight: () async => BigInt.from(119),
+  loadScannedHeight: () async => BigInt.from(119),
+  loadTransactionsByAccount: (_) async => const {'source-account': []},
+  loadLinkFundingHistory: (_) async => const [],
+  loadLedgerOperationRefs: () async {
+    if (ledgerLookupError != null) throw ledgerLookupError;
+    return ledgerOperationRefs;
+  },
+  isFundingSurfaceOpen: openSurfaces.contains,
+);
+
+Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
+_fundedFixture({String fundingTxids = _preparedTxid}) async {
+  final storage = _MemoryStorage();
+  final store = PaymentLinkRecoveryStore(storage);
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: _preparedAddress,
+    amountZatoshi: BigInt.from(100000),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 100,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 9, 1),
+  );
+  await store.saveDraft(
+    claimFeeReserveZatoshi: BigInt.from(10000),
+    link: link,
+    sourceAccountUuid: 'source-account',
+  );
+  await store.markFunded(address: _preparedAddress, fundingTxids: fundingTxids);
+  return (store: store, storage: storage);
+}
+
+rust_sync.TransactionInfo _transaction({
+  required String txid,
+  bool expiredUnmined = false,
+  String txKind = 'sent',
+  int accountBalanceDelta = -110000,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txid,
+    minedHeight: expiredUnmined ? BigInt.zero : BigInt.from(119),
+    expiredUnmined: expiredUnmined,
+    accountBalanceDelta: accountBalanceDelta,
+    fee: BigInt.from(10000),
+    blockTime: BigInt.zero,
+    isTransparent: false,
+    txKind: txKind,
+    displayAmount: BigInt.from(-110000),
+    displayPool: 'shielded',
+    createdTime: BigInt.zero,
+  );
+}
+
+class _MemoryStorage implements PaymentLinkRecoveryStorage {
+  String? value;
+
+  @override
+  Future<void> delete() async => value = null;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String nextValue) async => value = nextValue;
+}
+
+class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {
+  _CountingRecoveryReconciler()
+    : super(
+        PaymentLinkRecoveryStore(_MemoryStorage()),
+        loadCurrentHeight: () async => BigInt.zero,
+        loadScannedHeight: () async => BigInt.zero,
+        loadTransactionsByAccount: (_) async => const {},
+        loadLinkFundingHistory: (_) async => const [],
+      );
+
+  int count = 1;
+
+  @override
+  Future<int> countUnsharedForRemovalWarning(String sourceAccountUuid) async {
+    return count;
+  }
+}

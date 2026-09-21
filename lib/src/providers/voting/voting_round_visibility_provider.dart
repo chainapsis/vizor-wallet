@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Install-local preference for showing authenticated test voting rounds.
-const votingShowTestRoundsStorageKey = 'vizor_voting_show_test_rounds';
+import '../../services/voting/voting_storage_keys.dart';
+
+export '../../services/voting/voting_storage_keys.dart'
+    show votingShowTestRoundsStorageKey;
 
 /// Title prefix that marks authenticated rounds as hideable test polls.
 const votingHiddenTestRoundTitlePrefix = '[TEST]';
@@ -51,7 +55,9 @@ final votingRoundVisibilityStoreProvider = Provider<VotingRoundVisibilityStore>(
 /// Loads and updates the test round visibility preference.
 class ShowTestVotingRoundsNotifier extends AsyncNotifier<bool> {
   @override
-  Future<bool> build() async {
+  Future<bool> build() => _load();
+
+  Future<bool> _load() async {
     try {
       return await ref
           .watch(votingRoundVisibilityStoreProvider)

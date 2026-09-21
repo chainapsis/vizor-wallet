@@ -1,5 +1,7 @@
 #include "velopack_uninstall.h"
 
+#include "payment_uri_protocol.h"
+
 #include <windows.h>
 
 #include <knownfolders.h>
@@ -213,13 +215,22 @@ void DeleteUserData() {
 }
 
 void BeforeUninstallHook(void* user_data, const char* app_version) {
+  UnregisterZcashProtocolHandler();
   DeleteUserData();
+}
+
+void RegisterProtocolHook(void* user_data, const char* app_version) {
+  RegisterZcashProtocolHandler();
 }
 
 }  // namespace
 
 void RunVelopackHooks() {
   vpkc_app_set_auto_apply_on_startup(false);
+  vpkc_app_set_hook_after_install(RegisterProtocolHook);
+  vpkc_app_set_hook_after_update(RegisterProtocolHook);
   vpkc_app_set_hook_before_uninstall(BeforeUninstallHook);
+  vpkc_app_set_hook_first_run(RegisterProtocolHook);
+  vpkc_app_set_hook_restarted(RegisterProtocolHook);
   vpkc_app_run(nullptr);
 }

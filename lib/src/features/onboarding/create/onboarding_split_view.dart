@@ -142,7 +142,7 @@ class OnboardingSplitViewShell extends ConsumerWidget {
     ).animate(entrance);
 
     return AppDesktopShell(
-      sidebarWidth: 256,
+      sidebarWidth: kAppDesktopSidebarWidth,
       background: _OnboardingWindowBackground(activeStep: activeStep),
       sidebar: SlideTransition(
         position: sidebarOffset,

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
@@ -19,12 +20,17 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
+import '../../support/leading_decimal_input.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +48,73 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
+  for (final bootstrap in [
+    _bootstrap,
+    _hardwareBootstrap,
+    _ledgerHardwareBootstrap,
+  ]) {
+    testWidgets('memos the device cannot display are blocked only for '
+        '${bootstrap.initialAccountState.activeAccount!.name}', (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_sendHarness(bootstrap: bootstrap));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_add_memo_card')));
+      await tester.pumpAndSettle();
+      final isLedger =
+          bootstrap.initialAccountState.activeAccount!.hardwareSignerKind ==
+          HardwareSignerKind.ledger;
+      for (final memo in [
+        'first\nsecond',
+        'first\rsecond',
+        'first\r\nsecond',
+        'first\tsecond',
+        '안녕하세요',
+        'gg 🎉',
+        'café',
+      ]) {
+        await tester.enterText(_editableIn('send_memo_field'), memo);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+                  .widget<AppButton>(
+                    find.byKey(const ValueKey('send_review_button')),
+                  )
+                  .onPressed ==
+              null,
+          isLedger,
+        );
+        expect(
+          find.text("Ledger can't sign non-English text yet"),
+          isLedger ? findsOneWidget : findsNothing,
+        );
+        expect(_fieldText(tester, 'send_memo_field'), memo);
+      }
+      // Whitespace the send trims away never reaches the device, and a literal
+      // backslash-n is ordinary printable text.
+      for (final allowed in ['trailing\n', r'first\nsecond']) {
+        await tester.enterText(_editableIn('send_memo_field'), allowed);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('send_review_button')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(rustApi.proposeSendCalls, 1);
+    });
+  }
+
   testWidgets('starts Orchard proving-key warmup when send loads', (
     tester,
   ) async {
@@ -55,6 +128,121 @@ void main() {
     expect(find.byType(SendScreen), findsOneWidget);
   });
 
+  testWidgets(
+    'released spendable balance clears the visible amount error and permits retry',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.zero,
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      await tester.pumpWidget(_sendHarness(syncNotifier: syncNotifier));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsOneWidget);
+
+      syncNotifier.restoreSpendable(BigInt.from(500000000));
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(_fieldText(tester, 'send_amount_field'), '1');
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(rustApi.proposeSendCalls, 1);
+      expect(rustApi.lastProposeAmountZatoshi, BigInt.from(100000000));
+    },
+  );
+
+  testWidgets(
+    'Max is requoted when proposal release restores spendable balance',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.from(500000000),
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      await tester.pumpWidget(_sendHarness(syncNotifier: syncNotifier));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use Max'));
+      await tester.pumpAndSettle();
+      final initialQuotes = rustApi.estimateSendMaxCalls;
+      expect(initialQuotes, greaterThan(0));
+
+      syncNotifier.restoreSpendable(BigInt.from(600000000));
+      await tester.pumpAndSettle();
+      expect(rustApi.estimateSendMaxCalls, greaterThan(initialQuotes));
+      expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
+      expect(find.text('Max amount unavailable'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'review Back releases its lock and restores the same amount for another review',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.from(500000000),
+        displaySpendableBalance: null,
+        ironwoodBalance: BigInt.zero,
+        displaySpendableFreshness: SpendableBalanceFreshness.authoritative,
+        transparentBalance: BigInt.zero,
+      );
+      syncNotifier.balanceAfterRelease = BigInt.from(500000000);
+      await tester.pumpWidget(
+        _sendHarness(
+          syncNotifier: syncNotifier,
+          realReview: true,
+          addressBookRepository: _FakeAddressBookRepository([]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+
+      syncNotifier.restoreSpendable(BigInt.zero);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppBackLink),
+          matching: find.text('Send'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SendScreen), findsOneWidget);
+      expect(_fieldText(tester, 'send_amount_field'), '1');
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      expect(rustApi.discardCalls, 1);
+
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review send'), findsOneWidget);
+      expect(rustApi.proposeSendCalls, 2);
+      expect(rustApi.lastProposeAmountZatoshi, BigInt.from(100000000));
+    },
+  );
+
   testWidgets('keeps rendering if Orchard warmup cannot start', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -67,6 +255,36 @@ void main() {
 
     expect(find.byType(SendScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(find.byKey(const ValueKey('send_amount_mode_toggle')));
+        await tester.pumpAndSettle();
+      }
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('send_amount_field')),
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('send_review_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+    }
   });
 
   testWidgets('amount input preserves a middle selection while editing', (
@@ -150,6 +368,78 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('send_review_button')), findsOneWidget);
+  });
+
+  testWidgets('preserves ZIP-321 memo whitespace when proposing send', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
+  });
+
+  testWidgets('keeps ZIP-321 memo whitespace when the memo field is focused', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    const rawMemo = '  Donation note  ';
+    await tester.pumpWidget(
+      _sendHarness(
+        prefill: const SendPrefillArgs(
+          id: 'zip321-whitespace-focus',
+          source: 'zcash-uri',
+          address: _shieldedAddress,
+          amountText: '1.25',
+          memoText: rawMemo,
+          preserveMemoText: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    // Clicking into the memo field moves the caret, which notifies the
+    // controller without changing a single character. That must not count as
+    // the user editing the memo away from the link's exact text.
+    await tester.tap(find.byKey(const ValueKey('send_memo_field')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(rawMemo), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeMemo, rawMemo);
   });
 
   testWidgets('contacts label fills the send address from zcash contacts', (
@@ -940,6 +1230,62 @@ void main() {
     expect(rustApi.proposeSendCalls, 0);
   });
 
+  testWidgets('an address for another network says so, and blocks review', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _otherNetworkAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.lastValidateNetwork,
+      kZcashDefaultNetworkName,
+      reason: 'validation has to be asked about the network we actually pay on',
+    );
+    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(
+      find.text('Invalid address'),
+      findsNothing,
+      reason: 'the address is well-formed, so "invalid" would misdirect',
+    );
+
+    await tester.enterText(_editableIn('send_amount_field'), '0.5');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      rustApi.proposeSendCalls,
+      0,
+      reason: 'review stays gated exactly as for any unusable address',
+    );
+  });
+
+  testWidgets('a malformed address keeps the plain invalid copy', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(_sendHarness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      _editableIn('send_address_field'),
+      _malformedAddress,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid address'), findsOneWidget);
+    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+  });
+
   testWidgets('fee-specific balance error copy is preserved', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -1145,6 +1491,31 @@ void main() {
     expect(rustApi.proposeSendCalls, 1);
   });
 
+  testWidgets('Ledger TEX sends can proceed to proposal', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        bootstrap: _ledgerHardwareBootstrap,
+        spendableBalance: BigInt.from(2000000000),
+        prefill: const SendPrefillArgs(
+          id: 'ledger-tex',
+          source: 'ZIP-321',
+          address: _texAddress,
+          amountText: '0.5',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('send_cta_warning')), findsNothing);
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+    expect(rustApi.proposeSendCalls, 1);
+  });
+
   testWidgets('hardware TEX address remains available before amount', (
     tester,
   ) async {
@@ -1196,6 +1567,106 @@ void main() {
       contains('6 for funds received from others'),
     );
   });
+
+  // The desktop mirror of mobile_send_screen_test's request-framing group.
+  // `_activePaymentRequest` decides whether the review screen says "Requested
+  // by <label>", and the label is attacker-controlled: it must not survive
+  // being pointed at a recipient the request never named.
+  group('payment-request framing on the desktop composer', () {
+    Future<SendReviewArgs?> pumpAndReview(
+      WidgetTester tester, {
+      required SendPrefillArgs prefill,
+      Future<void> Function(WidgetTester tester)? edit,
+    }) async {
+      await _setDesktopViewport(tester);
+      SendReviewArgs? captured;
+
+      await tester.pumpWidget(
+        _sendHarness(prefill: prefill, onReviewArgs: (args) => captured = args),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      if (edit != null) {
+        await edit(tester);
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      return captured;
+    }
+
+    const request = SendPrefillArgs(
+      id: 'payment-uri-framing',
+      source: kPaymentUriPrefillSource,
+      address: _shieldedAddress,
+      amountText: '1.25',
+      label: 'Acme coffee',
+    );
+
+    testWidgets('an accepted request reaches review as a request', (
+      tester,
+    ) async {
+      final args = await pumpAndReview(tester, prefill: request);
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(args.requestedAmountZatoshi, BigInt.from(125000000));
+      expect(args.amountZatoshi, BigInt.from(125000000));
+    });
+
+    testWidgets('the framing survives editing the amount', (tester) async {
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(_editableIn('send_amount_field'), '0.5');
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.isPaymentRequest, isTrue);
+      expect(args.requestedBy, 'Acme coffee');
+      expect(
+        args.requestedAmountZatoshi,
+        BigInt.from(125000000),
+        reason: 'the review states what was asked for beside what is sent',
+      );
+      expect(args.amountZatoshi, BigInt.from(50000000));
+    });
+
+    testWidgets('retyping the recipient drops the framing', (tester) async {
+      // Otherwise the review says "Requested by Acme coffee" over an address
+      // that merchant never named — an attacker-controlled label attached to
+      // an unrelated recipient.
+      final args = await pumpAndReview(
+        tester,
+        prefill: request,
+        edit: (tester) async {
+          await tester.enterText(
+            _editableIn('send_address_field'),
+            _otherShieldedAddress,
+          );
+        },
+      );
+
+      expect(args, isNotNull);
+      expect(args!.address, _otherShieldedAddress);
+      expect(args.isPaymentRequest, isFalse);
+      expect(args.requestedBy, isNull);
+      expect(args.requestedAmountZatoshi, isNull);
+    });
+  });
 }
 
 const _figmaModalSurfaceShadows = [
@@ -1246,6 +1717,8 @@ Widget _sendHarness({
       const IronwoodHomeMigrationCtaState.hidden(),
   _FakeSyncNotifier? syncNotifier,
   void Function()? warmProvingKey,
+  void Function(SendReviewArgs?)? onReviewArgs,
+  bool realReview = false,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1254,13 +1727,26 @@ Widget _sendHarness({
         path: '/send',
         builder: (_, _) => SendScreen(prefill: prefill),
       ),
-      GoRoute(path: '/send/review', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) {
+          onReviewArgs?.call(state.extra as SendReviewArgs?);
+          if (realReview) {
+            return SendReviewScreen(args: state.extra! as SendReviewArgs);
+          }
+          return const SizedBox.shrink();
+        },
+      ),
     ],
   );
 
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (realReview)
+        ownAccountAddressesProvider.overrideWith((ref) async => {}),
+      if (realReview)
+        zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
       sendProvingKeyWarmupProvider.overrideWithValue(warmProvingKey ?? () {}),
       ironwoodHomeMigrationCtaProvider.overrideWithValue(
@@ -1422,7 +1908,48 @@ final _hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final _ledgerHardwareBootstrap = AppBootstrapState(
+  initialLocation: '/send',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1activeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: kZcashDefaultNetworkName,
+  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 class _FakeSyncNotifier extends SyncNotifier {
+  BigInt? balanceAfterRelease;
+  void restoreSpendable(BigInt balance) {
+    state = AsyncData(
+      state.requireValue.copyWith(
+        spendableBalance: balance,
+        displaySpendableBalance: balance,
+      ),
+    );
+  }
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {
+    final balance = balanceAfterRelease;
+    if (balance != null && ref.mounted) restoreSpendable(balance);
+  }
+
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.displaySpendableBalance,
@@ -1475,7 +2002,18 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
 }
 
 class _RustApiFake implements RustLibApi {
+  int discardCalls = 0;
+
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    discardCalls++;
+  }
+
   int proposeSendCalls = 0;
+  String? lastValidateNetwork;
   int estimateSendMaxCalls = 0;
   String? lastProposeToAddress;
   String? lastProposeMemo;
@@ -1484,6 +2022,8 @@ class _RustApiFake implements RustLibApi {
   String? lastEstimateSendMaxMemo;
 
   void reset() {
+    discardCalls = 0;
+    lastValidateNetwork = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
     lastProposeToAddress = null;
@@ -1496,17 +2036,42 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<AddressValidationResult> crateApiSyncValidateAddress({
     required String address,
+    required String network,
   }) async {
+    lastValidateNetwork = network;
+    if (address == _otherNetworkAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'unified',
+        wrongNetwork: true,
+      );
+    }
+    if (address == _malformedAddress) {
+      return const AddressValidationResult(
+        isValid: false,
+        addressType: 'invalid',
+        wrongNetwork: false,
+      );
+    }
     if (address == _texAddress) {
-      return const AddressValidationResult(isValid: true, addressType: 'tex');
+      return const AddressValidationResult(
+        isValid: true,
+        addressType: 'tex',
+        wrongNetwork: false,
+      );
     }
     if (address == _transparentAddress) {
       return const AddressValidationResult(
         isValid: true,
         addressType: 'transparent',
+        wrongNetwork: false,
       );
     }
-    return const AddressValidationResult(isValid: true, addressType: 'unified');
+    return const AddressValidationResult(
+      isValid: true,
+      addressType: 'unified',
+      wrongNetwork: false,
+    );
   }
 
   @override
@@ -1566,5 +2131,16 @@ class _RustApiFake implements RustLibApi {
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
+
+/// A second address the fake validates as an ordinary unified recipient, so a
+/// test can retype the recipient away from the one a request named.
+const _otherShieldedAddress =
+    'u1othershieldedaddress00000000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+
+/// A real address that this build cannot pay because it belongs to another
+/// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
+const _otherNetworkAddress =
+    'utest1testnetshieldedaddress0000000000000000000000000000000000000000000';
+const _malformedAddress = 'not-an-address';

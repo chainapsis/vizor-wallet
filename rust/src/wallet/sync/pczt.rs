@@ -320,6 +320,22 @@ pub(crate) fn txid_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<TxId, Str
     ))
 }
 
+/// Returns the expiry height committed to by an IO-finalized PCZT.
+pub(crate) fn expiry_height_from_io_finalized_pczt(pczt_bytes: &[u8]) -> Result<u32, String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+    if pczt.global().inputs_modifiable()
+        || pczt.global().outputs_modifiable()
+        || pczt.global().shielded_modifiable()
+    {
+        return Err("PCZT IO is not finalized".to_string());
+    }
+
+    let effects = pczt
+        .into_effects()
+        .map_err(|e| format!("Extract PCZT effects: {e:?}"))?;
+    Ok(u32::from(effects.expiry_height()))
+}
+
 fn legacy_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
 }
@@ -333,8 +349,70 @@ fn ironwood_orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
 /// Returns immediately. A proof requested before warm-up completes blocks on
 /// the transaction builder's shared cache, so this is a latency optimization
 /// rather than a correctness requirement.
+///
+/// This also arms the key's prepared commitment tables once it exists (see
+/// [`start_ironwood_prepared_commitment_warmup`]).
 pub fn start_orchard_proving_key_warmup() {
     zcash_client_backend::start_orchard_proving_key_warmup(ironwood_orchard_circuit_version());
+    start_ironwood_prepared_commitment_warmup();
+}
+
+/// Arms the Ironwood proving key's prepared commitment tables once warm-up
+/// has produced the key.
+///
+/// `ProvingKey::prepare_proving` builds the fixed-base tables that the
+/// prover's polynomial commitments evaluate through. Key generation does not
+/// build them, so without this every send takes the unprepared path.
+///
+/// Runs on its own thread: reaching the key means blocking on the builder's
+/// shared cache until warm-up finishes, while the FRB entry point must stay
+/// non-blocking. Starts at most once per process, and a failed spawn leaves
+/// the flag clear so a later send retries — losing preparation costs latency,
+/// never correctness.
+///
+/// halo2 routes through the tables only on pools of at most eight effective
+/// threads (ten for Orchard's `k = 11` SRS on AArch64 macOS), falling back to
+/// the planned multiexp past that. So this pays off on phones and is neutral
+/// on wide desktop pools, where the tables are retained but unread.
+///
+/// Only the Ironwood key is armed; `FixedPostNu6_2` is the legacy branch and
+/// does not justify a second set of tables.
+fn start_ironwood_prepared_commitment_warmup() {
+    use std::sync::atomic::AtomicBool;
+
+    static STARTED: AtomicBool = AtomicBool::new(false);
+
+    start_ironwood_prepared_commitment_warmup_with(&STARTED, |task| {
+        std::thread::Builder::new()
+            .name("orchard-prepared-commitment-warmup".to_string())
+            .spawn(task)
+            .map(|_| ())
+    });
+}
+
+fn start_ironwood_prepared_commitment_warmup_with(
+    started: &std::sync::atomic::AtomicBool,
+    spawn: impl FnOnce(fn()) -> std::io::Result<()>,
+) {
+    use std::sync::atomic::Ordering;
+
+    if started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    if let Err(error) = spawn(prepare_ironwood_commitments) {
+        started.store(false, Ordering::Release);
+        log::warn!("orchard: could not start prepared commitment warm-up: {error}");
+    }
+}
+
+fn prepare_ironwood_commitments() {
+    // Blocks until key warm-up has populated the shared cache.
+    let armed = ironwood_orchard_proving_key().prepare_proving();
+    log::info!("orchard: prepared commitment tables armed={armed}");
 }
 
 /// The Orchard circuit version implied by a PCZT's `consensus_branch_id`.
@@ -439,6 +517,7 @@ pub async fn create_pczt_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -492,16 +571,12 @@ pub async fn create_pczt_from_proposal(
             BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))?;
-        let pczt_bytes = pczt
+        let pczt_bytes = super::proposal_locks::bind_pczt(pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize PCZT: {e:?}"))?;
 
-        // From this point the PCZT may leave the process and later be
-        // broadcast. Persist the conservative restart policy before releasing
-        // the wallet write lock, closing both the cancel/re-lock race and the
-        // crash window before a follow-up retain FFI call. The in-memory
-        // capability remains, so ordinary cancellation can still unlock it.
-        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
+        // Approval waits belong to this process. Only a durable checkpoint or
+        // the pre-broadcast boundary promotes the reservation to restart-safe.
         Ok(pczt_bytes)
     });
 
@@ -554,6 +629,7 @@ pub async fn create_tex_pczts_from_proposal(
     }
     let live_expiry_height = match super::send::live_send_expiry_height(
         lightwalletd_url,
+        network,
         zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
     )
     .await
@@ -677,7 +753,7 @@ pub async fn create_tex_pczts_from_proposal(
             ],
         )
         .map_err(|e| format!("Build TEX ephemeral BIP 44 derivation: {e:?}"))?;
-        let first_bytes = first_pczt
+        let first_bytes = super::proposal_locks::bind_pczt(first_pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize TEX PCZT step 1: {e:?}"))?;
         let first_signer_bytes = prepare_tex_pczt_for_keystone(
@@ -729,12 +805,11 @@ pub async fn create_tex_pczts_from_proposal(
         {
             return Err("TEX PCZT step 2 does not spend the exact step 1 output".to_string());
         }
-        let second_bytes = second_pczt
+        let second_bytes = super::proposal_locks::bind_pczt(second_pczt, current_lock.owner)
             .serialize()
             .map_err(|e| format!("Serialize TEX PCZT step 2: {e:?}"))?;
         let second_signer_bytes = prepare_tex_pczt_for_keystone(&second_bytes, network, None)?;
 
-        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
         Ok(TexPcztPair {
             pczts: vec![first_bytes, second_bytes],
             signer_pczts: vec![first_signer_bytes, second_signer_bytes],
@@ -925,7 +1000,10 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
     }
 
     let mut redactor = Redactor::new(pczt)
-        .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
+        .redact_global_with(|mut r| {
+            r.redact_proprietary("zcash_client_backend:proposal_info");
+            r.redact_proprietary(super::proposal_locks::OWNER_KEY);
+        })
         .redact_orchard_with(|mut r| {
             redact_bundle(&mut r, for_batch);
         });
@@ -1272,6 +1350,18 @@ fn release_pczt_proposal_after_failure<T>(
     }
 }
 
+fn release_signed_pczt_operation_after_failure<T>(
+    proposal: Option<(u64, &str)>,
+    error: String,
+) -> Result<T, String> {
+    match proposal {
+        Some((proposal_id, send_flow_id)) => {
+            release_pczt_proposal_after_failure(proposal_id, send_flow_id, error)
+        }
+        None => Err(error),
+    }
+}
+
 fn prepare_signed_pczts(
     proofs: &[Vec<u8>],
     signatures: &[Vec<u8>],
@@ -1370,6 +1460,15 @@ enum PcztSignatures<'a> {
     Compact(&'a [Vec<pczt::roles::signer::SpendAuthSignature>]),
 }
 
+pub(crate) fn validate_signed_pczts(
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<(), String> {
+    prepare_signed_pczts(proofs, signatures, spend_params_path, output_params_path).map(|_| ())
+}
+
 /// Legacy full-PCZT completion for transparent-input transactions. It
 /// validates every signed PCZT, broadcasts it in dependency order, and then
 /// atomically persists only the accepted-or-ambiguous prefix. Definite
@@ -1440,10 +1539,6 @@ async fn store_and_broadcast_pczts_for_proposal(
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<StoreAndBroadcastPcztsResult, String> {
-    use zcash_client_backend::data_api::wallet::{
-        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
-    };
-
     let proposal_lock = match stored_proposal_lock(proposal_id, send_flow_id) {
         Ok(lock) => lock,
         Err(error) => {
@@ -1458,6 +1553,55 @@ async fn store_and_broadcast_pczts_for_proposal(
         );
     }
 
+    store_and_broadcast_pczts_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        proofs,
+        signatures,
+        spend_params_path,
+        output_params_path,
+        Some((proposal_id, send_flow_id)),
+    )
+    .await
+}
+
+pub(crate) async fn store_and_broadcast_signed_pczts(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proofs: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    store_and_broadcast_pczts_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        proofs,
+        PcztSignatures::Full(signatures),
+        spend_params_path,
+        output_params_path,
+        None,
+    )
+    .await
+}
+
+async fn store_and_broadcast_pczts_inner(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    proofs: &[Vec<u8>],
+    signatures: PcztSignatures<'_>,
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+    proposal: Option<(u64, &str)>,
+) -> Result<StoreAndBroadcastPcztsResult, String> {
+    use zcash_client_backend::data_api::wallet::{
+        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+    };
+
     // This performs all correlation, dependency, signature, proof, and
     // finalization checks before either the DB or the network is touched.
     let prepared = match signatures {
@@ -1471,7 +1615,7 @@ async fn store_and_broadcast_pczts_for_proposal(
     let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+            return release_signed_pczt_operation_after_failure(proposal, error);
         }
     };
     let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
@@ -1483,25 +1627,29 @@ async fn store_and_broadcast_pczts_for_proposal(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Resolve a live tip before touching either the DB or the network. An
+    // Resolve a recent tip before touching either the DB or the network. An
     // already-expired set is terminal and must not be persisted as pending.
     let mut expiry_client =
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
             Ok(client) => client,
             Err(error) => {
-                return release_pczt_proposal_after_failure(
-                    proposal_id,
-                    send_flow_id,
+                return release_signed_pczt_operation_after_failure(
+                    proposal,
                     format!("Failed to open the broadcast route: {error}"),
                 );
             }
         };
-    let latest = match crate::wallet::sync_engine::get_latest_block(&mut expiry_client).await {
+    let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut expiry_client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    {
         Ok(latest) => latest,
         Err(error) => {
-            return release_pczt_proposal_after_failure(
-                proposal_id,
-                send_flow_id,
+            return release_signed_pczt_operation_after_failure(
+                proposal,
                 format!("Failed to read the chain tip before broadcast: {error}"),
             );
         }
@@ -1520,11 +1668,16 @@ async fn store_and_broadcast_pczts_for_proposal(
             total_count,
             message: Some(error.clone()),
         };
-        return match finish_stored_proposal(proposal_id, send_flow_id, true) {
-            Ok(()) => Ok(result),
-            Err(cleanup_error) => Err(format!(
-                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
-            )),
+        return match proposal {
+            Some((proposal_id, send_flow_id)) => {
+                match finish_stored_proposal(proposal_id, send_flow_id, true) {
+                    Ok(()) => Ok(result),
+                    Err(cleanup_error) => Err(format!(
+                        "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                    )),
+                }
+            }
+            None => Ok(result),
         };
     }
     let mut first_client = Some(expiry_client);
@@ -1546,15 +1699,16 @@ async fn store_and_broadcast_pczts_for_proposal(
                         PcztBroadcastStep::Continue => unreachable!(),
                         PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
                         PcztBroadcastStep::Fail(error) => {
-                            return release_pczt_proposal_after_failure(
-                                proposal_id,
-                                send_flow_id,
-                                error,
-                            );
+                            return release_signed_pczt_operation_after_failure(proposal, error);
                         }
                     }
                 }
             };
+            if index == 0 {
+                if let Some((proposal_id, send_flow_id)) = proposal {
+                    super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
+                }
+            }
             let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
                 &mut client,
                 &item.extracted.raw_tx,
@@ -1571,7 +1725,7 @@ async fn store_and_broadcast_pczts_for_proposal(
                 PcztBroadcastStep::Continue => {}
                 PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
                 PcztBroadcastStep::Fail(error) => {
-                    return release_pczt_proposal_after_failure(proposal_id, send_flow_id, error);
+                    return release_signed_pczt_operation_after_failure(proposal, error);
                 }
             }
         }
@@ -1646,8 +1800,10 @@ async fn store_and_broadcast_pczts_for_proposal(
     );
 
     if let Err(storage_error) = store_result {
-        let retain_error = retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id)
-            .err()
+        let retain_error = proposal
+            .and_then(|(proposal_id, send_flow_id)| {
+                retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id).err()
+            })
             .map(|error| format!(" Proposal input-lock retention also failed: {error}."))
             .unwrap_or_default();
         let network_message = broadcast_plan
@@ -1672,8 +1828,12 @@ async fn store_and_broadcast_pczts_for_proposal(
 
     // The persisted network-touched prefix now owns recovery, so the original
     // proposal input lock is no longer needed.
-    if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
-        log::warn!("keystone: transactions stored but proposal lock bookkeeping failed: {error}");
+    if let Some((proposal_id, send_flow_id)) = proposal {
+        if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+            log::warn!(
+                "keystone: transactions stored but proposal lock bookkeeping failed: {error}"
+            );
+        }
     }
 
     let message = broadcast_plan.message.map(|message| {
@@ -1690,6 +1850,25 @@ async fn store_and_broadcast_pczts_for_proposal(
     })
 }
 
+/// A compact signature response that could not be applied.
+#[derive(Debug)]
+pub(crate) enum SpendAuthSignatureError {
+    /// A signature failed verification against its action's `rk`, so a key
+    /// other than this account's produced it.
+    Mismatch(String),
+    /// The response is malformed, incomplete, or targets the wrong actions.
+    Invalid(String),
+}
+
+impl From<SpendAuthSignatureError> for String {
+    fn from(error: SpendAuthSignatureError) -> Self {
+        match error {
+            SpendAuthSignatureError::Mismatch(message)
+            | SpendAuthSignatureError::Invalid(message) => message,
+        }
+    }
+}
+
 /// Applies externally-produced Orchard-protocol spend-authorization
 /// signatures to a parsed PCZT.
 ///
@@ -1700,31 +1879,50 @@ async fn store_and_broadcast_pczts_for_proposal(
 fn apply_compact_orchard_spend_auth_signatures(
     pczt: pczt::Pczt,
     sigs: &[pczt::roles::signer::SpendAuthSignature],
-) -> Result<pczt::Pczt, String> {
+) -> Result<pczt::Pczt, SpendAuthSignatureError> {
     use pczt::roles::signer::Signer;
 
-    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
+    let mut signer = Signer::new(pczt)
+        .map_err(|e| SpendAuthSignatureError::Invalid(format!("Create PCZT signer: {e:?}")))?;
     let mut seen_sigs = std::collections::HashSet::new();
     for action_sig in sigs {
         if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
-            return Err(format!(
+            return Err(SpendAuthSignatureError::Invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         signer
             .apply_orchard_spend_auth_signature(action_sig)
             .map_err(|e| {
-                format!(
+                let message = format!(
                     "Apply {:?} signature at action {}: {e:?}",
                     action_sig.value_pool(),
                     action_sig.action_index()
-                )
+                );
+                if is_invalid_external_signature(&e) {
+                    SpendAuthSignatureError::Mismatch(message)
+                } else {
+                    SpendAuthSignatureError::Invalid(message)
+                }
             })?;
     }
 
     Ok(signer.finish())
+}
+
+/// Only a signature that fails verification against the action's `rk` means
+/// another key signed; a malformed action is an invalid response.
+fn is_invalid_external_signature(error: &pczt::roles::signer::Error) -> bool {
+    use orchard::pczt::SignerError::InvalidExternalSignature;
+    use pczt::roles::signer::Error;
+
+    matches!(
+        error,
+        Error::OrchardSign(InvalidExternalSignature)
+            | Error::IronwoodSign(InvalidExternalSignature)
+    )
 }
 
 /// Verifies a compact signature response against the wallet's unredacted,
@@ -1749,8 +1947,18 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     base_pczt_bytes: &[u8],
     sigs: &[pczt::roles::signer::SpendAuthSignature],
 ) -> Result<(), String> {
+    check_orchard_spend_auth_signatures(base_pczt_bytes, sigs).map_err(String::from)
+}
+
+/// [`preflight_orchard_spend_auth_signatures`] that keeps a key mismatch
+/// distinguishable from a malformed response.
+pub(crate) fn check_orchard_spend_auth_signatures(
+    base_pczt_bytes: &[u8],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<(), SpendAuthSignatureError> {
+    let invalid = SpendAuthSignatureError::Invalid;
     let pczt = pczt::Pczt::parse(base_pczt_bytes)
-        .map_err(|e| format!("Parse base PCZT for signature preflight: {e:?}"))?;
+        .map_err(|e| invalid(format!("Parse base PCZT for signature preflight: {e:?}")))?;
 
     let required = unsigned_orchard_action_locations(&pczt);
 
@@ -1758,26 +1966,26 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     for action_sig in sigs {
         let location = (action_sig.value_pool(), action_sig.action_index());
         if !provided.insert(location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         if !required.contains(&location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Unexpected compact signature for pool {:?} action {}; the action is absent or already authorized",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
     }
 
     if provided.len() != required.len() {
-        return Err(format!(
+        return Err(invalid(format!(
             "Missing {} required compact spend-authorization signature(s)",
             required.len() - provided.len()
-        ));
+        )));
     }
 
     apply_compact_orchard_spend_auth_signatures(pczt, sigs).map(|_| ())
@@ -2005,9 +2213,13 @@ pub async fn extract_and_broadcast_pczt(
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
-    let latest = crate::wallet::sync_engine::get_latest_block(&mut client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let latest = crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+        &mut client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     if let Some(error) =
         pczt_broadcast_expiry_error(&txid, u32::from(tx.expiry_height()), latest.height)
     {
@@ -2505,12 +2717,36 @@ mod tests {
     }
 
     #[test]
-    fn pczt_and_warmup_share_the_transaction_builder_proving_key() {
-        start_orchard_proving_key_warmup();
-        start_orchard_proving_key_warmup();
+    fn prepared_commitment_warmup_is_single_flight_over_the_builder_key() {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Barrier,
+        };
+
+        const CALLERS: usize = 8;
+        let started = AtomicBool::new(false);
+        let spawn_calls = AtomicUsize::new(0);
+        let barrier = Barrier::new(CALLERS);
+        std::thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                scope.spawn(|| {
+                    barrier.wait();
+                    start_ironwood_prepared_commitment_warmup_with(&started, |task| {
+                        spawn_calls.fetch_add(1, Ordering::Relaxed);
+                        task();
+                        Ok(())
+                    });
+                });
+            }
+        });
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            panic!("prepared commitment warm-up scheduled more than once")
+        });
+        assert_eq!(spawn_calls.load(Ordering::Relaxed), 1);
 
         let builder_key = cached_orchard_proving_key(ironwood_orchard_circuit_version());
         assert!(std::ptr::eq(ironwood_orchard_proving_key(), builder_key));
+        assert!(builder_key.prepare_proving());
 
         let legacy_builder_key =
             cached_orchard_proving_key(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2);
@@ -2518,6 +2754,20 @@ mod tests {
             legacy_orchard_proving_key(),
             legacy_builder_key
         ));
+    }
+
+    #[test]
+    fn prepared_commitment_warmup_retries_after_spawn_failure() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let started = AtomicBool::new(false);
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| {
+            Err(std::io::Error::other("simulated spawn failure"))
+        });
+        assert!(!started.load(Ordering::Acquire));
+
+        start_ironwood_prepared_commitment_warmup_with(&started, |_| Ok(()));
+        assert!(started.load(Ordering::Acquire));
     }
 
     #[test]
@@ -2574,11 +2824,14 @@ mod tests {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.
         use super::super::{
-            apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
-            extract_compact_sigs_from_signed_pczt, extract_transaction_from_pczt,
-            ironwood_orchard_proving_key, preflight_orchard_spend_auth_signatures,
-            prepare_compact_signed_pczts, prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
-            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt,
+            apply_sigs_and_extract, check_orchard_spend_auth_signatures,
+            ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
+            expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
+            extract_transaction_from_pczt, ironwood_orchard_proving_key,
+            preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
+            prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
+            set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
+            SpendAuthSignatureError,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -2866,6 +3119,8 @@ mod tests {
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
             let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
                 .expect("IO-finalized PCZT effects should have a stable txid");
+            let pre_signature_expiry = expiry_height_from_io_finalized_pczt(&base_bytes)
+                .expect("IO-finalized PCZT effects should have a stable expiry height");
 
             let pk = ironwood_orchard_proving_key();
             let proofs = Prover::new(pczt::Pczt::parse(&base_bytes).unwrap())
@@ -2882,6 +3137,10 @@ mod tests {
             let extracted = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
 
             assert_eq!(pre_signature_txid, extracted.txid);
+            assert_eq!(
+                pre_signature_expiry,
+                u32::from(extracted.tx.expiry_height())
+            );
         }
 
         #[test]
@@ -2946,8 +3205,18 @@ mod tests {
                 .unwrap();
 
             ensure_tex_pczt_dependency(&[first.clone(), unsigned.clone()]).unwrap();
-            let reversed = ensure_tex_pczt_dependency(&[unsigned.clone(), first]).unwrap_err();
+            let reversed =
+                ensure_tex_pczt_dependency(&[unsigned.clone(), first.clone()]).unwrap_err();
             assert!(reversed.contains("does not spend the exact round 1 transaction"));
+
+            let validation_error = validate_signed_pczts(
+                &[unsigned.clone(), first.clone()],
+                &[unsigned.clone(), first],
+                None,
+                None,
+            )
+            .unwrap_err();
+            assert!(validation_error.contains("does not spend the exact round 1 transaction"));
 
             let error = match extract_transaction_from_pczt(&unsigned, &unsigned, None, None) {
                 Ok(_) => panic!("transparent input must be signed"),
@@ -3014,6 +3283,61 @@ mod tests {
             let invalid = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[invalid])
                 .expect_err("an invalid signature must fail cryptographic verification");
             assert!(invalid.contains("Apply Orchard signature"));
+
+            // Only a failed verification reads as a key mismatch.
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                invalid_bytes,
+            );
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]),
+                Err(SpendAuthSignatureError::Mismatch(_))
+            ));
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[]),
+                Err(SpendAuthSignatureError::Invalid(_))
+            ));
+        }
+
+        #[test]
+        fn only_an_invalid_external_signature_reads_as_a_key_mismatch() {
+            let (deferred_bytes, valid, spend_index) = build_deferred_base_and_valid_sig();
+
+            let mut forged_bytes = *valid.signature();
+            forged_bytes[0] ^= 1;
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                forged_bytes,
+            );
+            match check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]) {
+                Err(SpendAuthSignatureError::Mismatch(message)) => {
+                    assert!(message.contains("InvalidExternalSignature"), "{message}");
+                }
+                other => panic!("expected a key mismatch, got {other:?}"),
+            }
+
+            // Corrupt the spent note's nullifier so the Signer's consistency
+            // check fails before any signature is verified.
+            let nullifier = *pczt::Pczt::parse(&deferred_bytes)
+                .unwrap()
+                .orchard()
+                .actions()[spend_index]
+                .spend()
+                .nullifier();
+            let offset = deferred_bytes
+                .windows(nullifier.len())
+                .position(|window| window == nullifier)
+                .expect("serialized PCZT contains the spend nullifier");
+            let mut malformed_bytes = deferred_bytes.clone();
+            malformed_bytes[offset] ^= 1;
+            match check_orchard_spend_auth_signatures(&malformed_bytes, &[valid]) {
+                Err(SpendAuthSignatureError::Invalid(message)) => {
+                    assert!(message.contains("OrchardVerify"), "{message}");
+                }
+                other => panic!("expected an invalid response, got {other:?}"),
+            }
         }
 
         #[test]

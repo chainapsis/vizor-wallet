@@ -11,7 +11,14 @@ VOTE_HOME="$STATE_DIR/vote-home"
 SHIM_DIR="$STATE_DIR/shims"
 
 VOTE_SDK_URL="https://github.com/valargroup/vote-sdk.git"
-VOTE_SDK_REV="6a10c073baae3c2003ada402d7c5c513ee6b90ce"
+# vote-sdk v1.6.0 includes delegate-and-cast-vote-batch, required by the
+# wallet's zcash_voting 5.0.0. The previous 990fb1c3 pin lacked this route
+# and returned HTTP 404 for combined delegation and vote submissions.
+# Its voting-circuits 0.12.0 verifier is compatible with the wallet's 0.12.1:
+# 0.12.1 adds prepared proving without changing proofs or verifying keys.
+# Both resolve vote-commitment-tree 0.6.1 and voting-crypto-deps 0.2.3.
+# When updating either side, check both API and circuit compatibility.
+VOTE_SDK_REV="36f5d828fc5be42d9a80baa38d1145c5541b229e"
 PIR_URL="https://github.com/valargroup/vote-nullifier-pir.git"
 PIR_REV="20356d14f61a825ef28726f38270c37d604cc268"
 VOTE_SDK_DIR="$DEPS_DIR/vote-sdk-$VOTE_SDK_REV"
@@ -21,6 +28,7 @@ ACTIVATION_HEIGHT=500
 LWD_PORT="${E2E_IRONWOOD_LIGHTWALLETD_PORT:-19067}"
 PIR_PORT="${E2E_PIR_PORT:-13000}"
 VOTE_PORT="${E2E_VOTE_PORT:-1317}"
+VOTE_RPC_PORT="${E2E_VOTE_RPC_PORT:-26657}"
 GATEWAY_PORT="${E2E_VOTING_GATEWAY_PORT:-18080}"
 SLOW_HELPER_DELAY="${E2E_SLOW_HELPER_DELAY:-2.0}"
 SLOW_HELPER_MODE="${E2E_SLOW_HELPER_MODE:-0}"
@@ -166,6 +174,7 @@ PATH="$VOTE_SDK_DIR:$PATH" SVOTED_HOME="$VOTE_HOME" \
   SVOTE_ADMIN_DISABLE=true SVOTE_HELPER_EXPOSE_QUEUE_STATUS=true \
   bash "$VOTE_SDK_DIR/scripts/init.sh" >"$LOG_DIR/vote-init.log" 2>&1
 "$VOTE_SDK_DIR/svoted" start --home "$VOTE_HOME" \
+  --rpc.laddr "tcp://127.0.0.1:$VOTE_RPC_PORT" \
   --api.address "tcp://127.0.0.1:$VOTE_PORT" \
   >"$LOG_DIR/vote-server.log" 2>&1 &
 pids+=("$!")
@@ -177,16 +186,19 @@ cat >"$SHIM_DIR/grpcurl" <<EOF
 exec "$REAL_GRPCURL" -plaintext -import-path "$ROOT_DIR/protos" -proto service.proto "\$@"
 EOF
 chmod +x "$SHIM_DIR/grpcurl"
+create_voting_round() {
 PATH="$SHIM_DIR:$VOTE_SDK_DIR:$PATH" \
   VM_PRIVKEYS="$VOTE_MANAGER_PRIVATE_KEY" \
   SVOTE_HOME="$VOTE_HOME" SVOTE_PALLAS_PK_PATH="$VOTE_HOME/pallas.pk" \
   SVOTE_API_URL="http://127.0.0.1:$VOTE_PORT" \
   ZASHI_LIGHTWALLETD="127.0.0.1:$LWD_PORT" \
   ZASHI_PIR_URL="http://127.0.0.1:$PIR_PORT" \
-  ZASHI_SNAPSHOT_HEIGHT="$SNAPSHOT_HEIGHT" ZASHI_VOTE_WINDOW_SECS=7200 \
+  ZASHI_SNAPSHOT_HEIGHT="$SNAPSHOT_HEIGHT" ZASHI_VOTE_WINDOW_SECS="${E2E_VOTE_WINDOW_SECS:-7200}" \
   cargo test --manifest-path "$VOTE_SDK_DIR/e2e-tests/Cargo.toml" \
   --test create_round_for_zashi create_round_for_zashi -- --ignored --nocapture \
-  >"$LOG_DIR/create-round.log" 2>&1
+  >"$LOG_DIR/$1" 2>&1
+}
+create_voting_round create-round.log
 
 ROUND_JSON="$(curl -fsS "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/rounds/active")"
 read -r ROUND_ID EA_PK < <(python3 -c '
@@ -238,10 +250,42 @@ EOF
   --config "$CONFIG_DIR/dynamic-voting-config.json" \
   --static-config "$CONFIG_DIR/static-voting-config.json"
 
-python3 "$ROOT_DIR/scripts/e2e/voting-regtest-gateway.py" \
+# A second real round is created up front but authenticated only on publication.
+# Keep its ID from its transaction, since /rounds/active returns the FIRST round.
+NEXT_ROUND_ID=""
+if [[ "${E2E_VOTING_DISCOVERY_TRANSITION:-0}" == "1" ]]; then
+  cp "$CONFIG_DIR/dynamic-voting-config.json" "$CONFIG_DIR/initial.json"
+  create_voting_round create-next-round.log
+  NEXT_ROUND_ID="$(sed -n 's/^\[create-round\] round_id: //p' "$LOG_DIR/create-next-round.log")"
+  [[ "$NEXT_ROUND_ID" =~ ^[0-9a-f]{64}$ && "$NEXT_ROUND_ID" != "$ROUND_ID" ]]
+  NEXT_EA_PK="$(curl -fsS "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/round/$NEXT_ROUND_ID" | jq -r '.round.ea_pk')"
+  "$VOTE_SDK_DIR/voting-config" sign --round-id "$NEXT_ROUND_ID" --ea-pk "$NEXT_EA_PK" \
+    --signer-id vizor-regtest-e2e --privkey-file "$CONFIG_DIR/signing.seed" \
+    --pir-depth 19 --tier0-layers 12 --tier1-layers 7 --poly-len 4096 \
+    --merge "$CONFIG_DIR/dynamic-voting-config.json"
+  "$VOTE_SDK_DIR/voting-config" verify \
+    --config "$CONFIG_DIR/dynamic-voting-config.json" \
+    --static-config "$CONFIG_DIR/static-voting-config.json"
+  mv "$CONFIG_DIR/dynamic-voting-config.json" "$CONFIG_DIR/new-round.json"
+  cp "$CONFIG_DIR/initial.json" "$CONFIG_DIR/dynamic-voting-config.json"
+  # A label update changes the backend's canonical revision, without new rights.
+  jq '.vote_servers[0].label = "updated regtest helper"' \
+    "$CONFIG_DIR/initial.json" > "$CONFIG_DIR/same-round.json"
+fi
+
+gateway_args=(--screenshot-dir "$LOG_DIR/screenshots")
+if [[ "${E2E_VOTING_DISCOVERY_TRANSITION:-0}" == "1" ]]; then
+  gateway_args+=(--discovery-transition)
+fi
+if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
+  gateway_args+=(--simulator "$FLUTTER_DEVICE" --enable-zcash-mining)
+fi
+IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" IRONWOOD_LIGHTWALLETD_PORT="$LWD_PORT" \
+python3 "$ROOT_DIR/scripts/e2e/voting-regtest-gateway.py" "${gateway_args[@]}" \
   --port "$GATEWAY_PORT" --config-dir "$CONFIG_DIR" \
   --pir-target "http://127.0.0.1:$PIR_PORT" \
   --vote-target "http://127.0.0.1:$VOTE_PORT" \
+  --rpc-target "http://127.0.0.1:$VOTE_RPC_PORT" \
   --slow-helper-delay "$SLOW_HELPER_DELAY" \
   >"$LOG_DIR/gateway.log" 2>&1 &
 pids+=("$!")
@@ -249,6 +293,29 @@ wait_http "http://127.0.0.1:$GATEWAY_PORT/health" "voting gateway"
 
 STATIC_SHA="$(shasum -a 256 "$CONFIG_DIR/static-voting-config.json" | awk '{print $1}')"
 STATIC_URL="https://config.vizor-vote.invalid/static-voting-config.json?checksum=sha256:$STATIC_SHA"
+
+# Anchor belongs to this freshly initialized local chain, not a public RPC.
+COMMIT_JSON="$(curl -fsS "http://127.0.0.1:$VOTE_RPC_PORT/commit")"
+CHAIN_ID="$(jq -r '.result.signed_header.header.chain_id' <<<"$COMMIT_JSON")"
+VALIDATOR_HASH="$(jq -r '.result.signed_header.header.validators_hash' <<<"$COMMIT_JSON")"
+
+if [[ "${E2E_LEDGER_VOTING:-false}" == true ]]; then
+  signer_port_file="$LOG_DIR/ledger-signer.port"
+  rm -f "$signer_port_file"
+  python3 "$ROOT_DIR/scripts/e2e/ledger-regtest-signer.py" \
+    --helper "$VIZOR_LEDGER_REGTEST_HELPER" \
+    --speculos-url "$VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" \
+    --account "$VIZOR_LEDGER_REGTEST_ACCOUNT" --port-file "$signer_port_file" \
+    > "$LOG_DIR/ledger-signer.log" 2>&1 &
+  signer_pid=$!
+  pids+=("$signer_pid")
+  for ((attempt=0; attempt<50; attempt++)); do
+    [[ -s "$signer_port_file" ]] && break
+    kill -0 "$signer_pid" || { cat "$LOG_DIR/ledger-signer.log" >&2; exit 1; }
+    sleep 0.1
+  done
+  export VIZOR_LEDGER_REGTEST_SIGNER_URL="http://127.0.0.1:$(cat "$signer_port_file")"
+fi
 
 echo "running real-proof Flutter voting E2E for round $ROUND_ID"
 cd "$ROOT_DIR"
@@ -258,18 +325,53 @@ flutter_test_command=(
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
   flutter_test_command+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
-"${flutter_test_command[@]}" \
+voting_defines=( \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+  --dart-define=ZCASH_E2E_LEDGER_VOTING="${E2E_LEDGER_VOTING:-false}" \
+  --dart-define=VIZOR_LEDGER_REGTEST_SIGNER_URL="${VIZOR_LEDGER_REGTEST_SIGNER_URL:-}" \
+  --dart-define=ZCASH_E2E_FINAL_TALLY="${E2E_FINAL_TALLY:-false}" \
+  --dart-define=VIZOR_LEDGER_SPECULOS_API_URL="${VIZOR_LEDGER_SPECULOS_SIGNING_API_URL:-}" \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="http://127.0.0.1:$LWD_PORT" \
   --dart-define=ZCASH_E2E_VOTING_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
   --dart-define=ZCASH_E2E_VOTING_STATIC_CONFIG_URL="$STATIC_URL" \
   --dart-define=ZCASH_E2E_VOTE_ROUND_ID="$ROUND_ID" \
+  --dart-define=ZCASH_E2E_VOTE_NEXT_ROUND_ID="$NEXT_ROUND_ID" \
+  --dart-define=ZCASH_E2E_VOTE_CHAIN_ID="$CHAIN_ID" \
+  --dart-define=ZCASH_E2E_VOTE_VALIDATOR_HASH="$VALIDATOR_HASH" \
+  --dart-define=ZCASH_E2E_VOTING_KEEP_APP_STATE="${E2E_VOTING_REINSTALL:-0}" \
   --dart-define=ZCASH_E2E_REUSE_MIGRATED_WALLET=true \
   --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
   --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+)
+"${flutter_test_command[@]}" "${voting_defines[@]}"
+
+if [[ "${E2E_VOTING_REINSTALL:-0}" == "1" ]]; then
+  [[ "$VIZOR_FORM_FACTOR" == "mobile" && "$FLUTTER_DEVICE" != "macos" ]] || exit 1
+  require_cmd xcrun
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$ROOT_DIR/build/ios/iphonesimulator/Runner.app/Info.plist")"
+  # Flutter 3.41's integration runner already uninstalls in its finally block.
+  # Explicitly uninstall only when the runner leaves the app installed.
+  if APP_CONTAINER="$(xcrun simctl get_app_container "$FLUTTER_DEVICE" "$BUNDLE_ID" data 2>/dev/null)"; then
+    [[ -d "$APP_CONTAINER" ]] || exit 1
+    xcrun simctl terminate "$FLUTTER_DEVICE" "$BUNDLE_ID" >/dev/null 2>&1 || true
+    xcrun simctl uninstall "$FLUTTER_DEVICE" "$BUNDLE_ID"
+    echo "host uninstalled $BUNDLE_ID"
+  else
+    echo "Flutter integration runner already uninstalled $BUNDLE_ID"
+  fi
+  if xcrun simctl get_app_container "$FLUTTER_DEVICE" "$BUNDLE_ID" data >/dev/null 2>&1; then
+    echo "uninstall did not remove the application" >&2
+    exit 1
+  fi
+  echo "reinstalling and restoring the same wallet against round $ROUND_ID"
+  fvm flutter test integration_test/regtest_mobile_voting_reinstall_test.dart \
+    -d "$FLUTTER_DEVICE" --dart-define=VIZOR_FORM_FACTOR=mobile "${voting_defines[@]}"
+fi
 
 METRICS="$(curl -fsS "http://127.0.0.1:$GATEWAY_PORT/metrics")"
+jq -e '.discovery_successes > 0 and .config_requests > 0 and .round_list_requests > 0' \
+  <<<"$METRICS" >/dev/null || { echo "discovery was not exercised: $METRICS" >&2; exit 1; }
 if [[ "$SLOW_HELPER_MODE" == "1" ]]; then
   jq -e '.slow_share_requests > 0 and .slow_share_max_inflight > 1' \
     <<<"$METRICS" >/dev/null || {
@@ -281,3 +383,9 @@ jq -e '.tree.next_index > 0' < <(curl -fsS \
   "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/commitment-tree/$ROUND_ID/latest") \
   >/dev/null
 echo "voting E2E passed; round=$ROUND_ID snapshot=$SNAPSHOT_HEIGHT metrics=$METRICS"
+
+if [[ "${E2E_FINAL_TALLY:-false}" == true ]]; then
+  python3 "$ROOT_DIR/scripts/e2e/assert-voting-final-tally.py" \
+    --api-url "http://127.0.0.1:$VOTE_PORT" --round-id "$ROUND_ID" \
+    --output "$LOG_DIR/final-tally-${E2E_LEDGER_VOTING:-false}.json"
+fi

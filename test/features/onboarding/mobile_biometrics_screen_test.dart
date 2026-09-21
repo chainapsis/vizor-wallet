@@ -1,7 +1,10 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,9 +22,11 @@ class _FakeBiometricUnlock extends BiometricUnlock {
 
   BiometricAvailability avail;
   String? escrow;
+  Completer<BiometricAvailability>? probe;
 
   @override
-  Future<BiometricAvailability> availability() async => avail;
+  Future<BiometricAvailability> availability() async =>
+      probe == null ? avail : await probe!.future;
 
   @override
   Future<void> enable(String passcode) async => escrow = passcode;
@@ -155,6 +160,45 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
     await tester.pumpAndSettle();
+    expect(find.text('home stub'), findsOneWidget);
+  });
+
+  testWidgets('Touch ID uses Apple copy and artwork after the probe', (
+    tester,
+  ) async {
+    final biometric = _FakeBiometricUnlock(
+      avail: const BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: BiometricKind.touchId,
+      ),
+    )..probe = Completer<BiometricAvailability>();
+    await tester.pumpWidget(_app(biometric));
+    await tester.pump();
+
+    expect(find.textContaining('Face ID'), findsNothing);
+    expect(find.text('Enable biometrics'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_biometrics_enable')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    biometric.probe!.complete(biometric.avail);
+    await tester.pumpAndSettle();
+    expect(find.text('Unlock your wallet\nwith Touch ID'), findsOneWidget);
+    expect(find.text('Enable Touch ID'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((w) => w is AppIcon && w.name == AppIcons.touchId),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.fingerprint), findsNothing);
+    await tester.tap(find.text('Enable Touch ID'));
+    await tester.pumpAndSettle();
+    expect(biometric.escrow, '123456');
     expect(find.text('home stub'), findsOneWidget);
   });
 

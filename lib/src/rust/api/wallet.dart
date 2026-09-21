@@ -9,10 +9,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
-Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
-    RustLib.instance.api.crateApiWalletGetLatestBlockHeight(
-      lightwalletdUrl: lightwalletdUrl,
-    );
+Future<BigInt> getLatestBlockHeight({
+  required String lightwalletdUrl,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletGetLatestBlockHeight(
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+);
 
 /// Get the lightwalletd chain name ("main" or "test") for endpoint validation.
 Future<String> getLightwalletdChainName({required String lightwalletdUrl}) =>
@@ -84,6 +87,39 @@ Future<AccountCreationResult> addAccount({
   mnemonic: mnemonic,
   bip39Passphrase: bip39Passphrase,
   birthdayHeight: birthdayHeight,
+);
+
+/// Generate a software account mnemonic and shielded address without touching
+/// the wallet DB. Used for an external one-time recipient controlled by a
+/// fresh seed, such as payment-link funding.
+Future<GeneratedSoftwareAccount> generateSoftwareAccount({
+  required String network,
+}) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(
+  network: network,
+);
+
+/// Validate and recover original English BIP-39 entropy without deriving keys or doing I/O.
+Uint8List giftMnemonicToEntropy({required String mnemonic}) => RustLib
+    .instance
+    .api
+    .crateApiWalletGiftMnemonicToEntropy(mnemonic: mnemonic);
+
+/// Reconstruct an English BIP-39 phrase without deriving keys or doing I/O.
+String giftMnemonicFromEntropy({required List<int> entropy}) => RustLib
+    .instance
+    .api
+    .crateApiWalletGiftMnemonicFromEntropy(entropy: entropy);
+
+/// Check locally retained gift metadata before sharing an address-free link.
+/// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
+Future<void> validateGiftAddress({
+  required String mnemonic,
+  required String network,
+  required String address,
+}) => RustLib.instance.api.crateApiWalletValidateGiftAddress(
+  mnemonic: mnemonic,
+  network: network,
+  address: address,
 );
 
 /// Discover higher ZIP32 software accounts with transparent history that are
@@ -203,6 +239,7 @@ Future<AccountCreationResult> importHardwareAccount({
   required List<int> seedFingerprint,
   required int zip32Index,
   BigInt? birthdayHeight,
+  required String hardwareSignerKind,
 }) => RustLib.instance.api.crateApiWalletImportHardwareAccount(
   dbPath: dbPath,
   network: network,
@@ -211,6 +248,19 @@ Future<AccountCreationResult> importHardwareAccount({
   seedFingerprint: seedFingerprint,
   zip32Index: zip32Index,
   birthdayHeight: birthdayHeight,
+  hardwareSignerKind: hardwareSignerKind,
+);
+
+/// Backfill stored hardware accounts that predate authoritative Rust signer
+/// metadata.
+Future<int> backfillLegacyHardwareAccounts({
+  required String dbPath,
+  required String network,
+  required List<LegacyHardwareAccount> accounts,
+}) => RustLib.instance.api.crateApiWalletBackfillLegacyHardwareAccounts(
+  dbPath: dbPath,
+  network: network,
+  accounts: accounts,
 );
 
 /// List all accounts in the wallet database.
@@ -376,15 +426,21 @@ class AccountInfo {
   final String uuid;
   final String name;
   final String unifiedAddress;
+  final int birthdayHeight;
+  final int? zip32AccountIndex;
   final bool isSeedAnchor;
   final bool isHardware;
+  final String? hardwareSignerKind;
 
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
+    required this.birthdayHeight,
+    this.zip32AccountIndex,
     required this.isSeedAnchor,
     required this.isHardware,
+    this.hardwareSignerKind,
   });
 
   @override
@@ -392,8 +448,11 @@ class AccountInfo {
       uuid.hashCode ^
       name.hashCode ^
       unifiedAddress.hashCode ^
+      birthdayHeight.hashCode ^
+      zip32AccountIndex.hashCode ^
       isSeedAnchor.hashCode ^
-      isHardware.hashCode;
+      isHardware.hashCode ^
+      hardwareSignerKind.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -403,8 +462,11 @@ class AccountInfo {
           uuid == other.uuid &&
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
+          birthdayHeight == other.birthdayHeight &&
+          zip32AccountIndex == other.zip32AccountIndex &&
           isSeedAnchor == other.isSeedAnchor &&
-          isHardware == other.isHardware;
+          isHardware == other.isHardware &&
+          hardwareSignerKind == other.hardwareSignerKind;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -498,6 +560,50 @@ class ChainUpgradeStatus {
           nu63ActivationHeight == other.nu63ActivationHeight &&
           ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
           endpointMatchesNetwork == other.endpointMatchesNetwork;
+}
+
+/// A generated software account that has not been imported into the wallet DB.
+class GeneratedSoftwareAccount {
+  final String mnemonic;
+  final String unifiedAddress;
+
+  const GeneratedSoftwareAccount({
+    required this.mnemonic,
+    required this.unifiedAddress,
+  });
+
+  @override
+  int get hashCode => mnemonic.hashCode ^ unifiedAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GeneratedSoftwareAccount &&
+          runtimeType == other.runtimeType &&
+          mnemonic == other.mnemonic &&
+          unifiedAddress == other.unifiedAddress;
+}
+
+/// Stored hardware signer metadata used to migrate pre-key_source accounts.
+class LegacyHardwareAccount {
+  final String accountUuid;
+  final String hardwareSignerKind;
+
+  const LegacyHardwareAccount({
+    required this.accountUuid,
+    required this.hardwareSignerKind,
+  });
+
+  @override
+  int get hashCode => accountUuid.hashCode ^ hardwareSignerKind.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LegacyHardwareAccount &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          hardwareSignerKind == other.hardwareSignerKind;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

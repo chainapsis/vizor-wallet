@@ -234,11 +234,25 @@ void main() {
       final sub = container.listen(zecHomeMarketDataProvider, (_, _) {});
 
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isTrue);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read()?.usdPrice, 33.45);
       expect(container.read(zecHomeUsdUnitPriceProvider), 33.45);
       expect(container.read(zecPriceChange24hPctProvider), -0.26);
       expect(source.fetchCount, 1);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isFalse);
+    });
+
+    test('first price failure ends loading with no invented value', () async {
+      final source = _CompleterSource();
+      final container = makeContainer(swapEnabled: true, source: source);
+      final sub = container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+      expect(sub.read().isLoading, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      source.completer.complete(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(sub.read().isLoading, isFalse);
+      expect(sub.read().displayData, isNull);
     });
 
     test('shows a fresh cache before replacing it with network data', () async {
@@ -372,10 +386,12 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isTrue);
 
       source.completer.complete(null);
       await Future<void>.delayed(Duration.zero);
       expect(sub.read(), isNull);
+      expect(container.read(zecHomeMarketDataStateProvider).isLoading, isFalse);
     });
 
     test('removes the last value after its one-hour TTL expires', () async {

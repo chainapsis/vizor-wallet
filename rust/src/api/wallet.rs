@@ -30,6 +30,12 @@ pub struct AccountCreationResult {
     pub unified_address: String,
 }
 
+/// A generated software account that has not been imported into the wallet DB.
+pub struct GeneratedSoftwareAccount {
+    pub mnemonic: String,
+    pub unified_address: String,
+}
+
 /// Result of software mnemonic import with ZIP32 account discovery.
 pub struct SoftwareWalletImportWithDiscoveryResult {
     pub accounts: Vec<SoftwareWalletImportAccount>,
@@ -62,8 +68,17 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub birthday_height: u32,
+    pub zip32_account_index: Option<u32>,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    pub hardware_signer_kind: Option<String>,
+}
+
+/// Stored hardware signer metadata used to migrate pre-key_source accounts.
+pub struct LegacyHardwareAccount {
+    pub account_uuid: String,
+    pub hardware_signer_kind: String,
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -144,16 +159,21 @@ fn nu6_3_activation_height(network: WalletNetwork) -> Option<u64> {
 }
 
 /// Get the latest block height from lightwalletd.
-pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> {
+pub fn get_latest_block_height(lightwalletd_url: String, network: String) -> Result<u64, String> {
     catch(|| {
+        let network = keys::parse_network(&network)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
-            let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
-                .await
-                .map_err(|e| e.to_string())?;
+            let tip = crate::wallet::sync_engine::get_latest_block_recorded(
+                &mut client,
+                &lightwalletd_url,
+                network,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
             Ok(tip.height)
         })
@@ -198,9 +218,13 @@ pub fn get_chain_upgrade_status(
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
-            let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
-                .await
-                .map_err(|e| e.to_string())?;
+            let tip = crate::wallet::sync_engine::get_latest_block_recorded(
+                &mut client,
+                &lightwalletd_url,
+                network,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             let info = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
                 client.get_lightd_info(Empty {}),
@@ -316,6 +340,54 @@ pub fn add_account(
             unified_address,
         })
     })
+}
+
+/// Generate a software account mnemonic and shielded address without touching
+/// the wallet DB. Used for an external one-time recipient controlled by a
+/// fresh seed, such as payment-link funding.
+pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAccount, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let unified_address = keys::derive_software_address(network, &seed, 0)?;
+
+        Ok(GeneratedSoftwareAccount {
+            mnemonic,
+            unified_address,
+        })
+    })
+}
+
+/// Validate and recover original English BIP-39 entropy without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_to_entropy(mnemonic: String) -> Result<Vec<u8>, String> {
+    keys::mnemonic_to_entropy(&mnemonic)
+}
+
+/// Reconstruct an English BIP-39 phrase without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_from_entropy(entropy: Vec<u8>) -> Result<String, String> {
+    keys::mnemonic_from_entropy(entropy)
+}
+
+/// Check locally retained gift metadata before sharing an address-free link.
+/// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
+pub fn validate_gift_address(
+    mnemonic: String,
+    network: String,
+    address: String,
+) -> Result<(), String> {
+    let validate = || {
+        let network = keys::parse_network(&network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let derived = keys::derive_software_address(network, &seed, 0)?;
+        if derived != address.trim() {
+            return Err("Gift address does not match its recovery phrase".to_string());
+        }
+        Ok(())
+    };
+    validate().map_err(|_: String| "Gift address could not be verified".to_string())
 }
 
 /// Discover higher ZIP32 software accounts with transparent history that are
@@ -701,7 +773,13 @@ async fn discover_used_software_accounts(
             return Vec::new();
         }
     };
-    let tip = match crate::wallet::sync_engine::get_latest_block(&mut client).await {
+    let tip = match crate::wallet::sync_engine::get_latest_block_recorded(
+        &mut client,
+        lightwalletd_url,
+        network,
+    )
+    .await
+    {
         Ok(tip) => tip.height,
         Err(e) => {
             log::warn!("software account discovery: could not get chain tip: {e}");
@@ -860,9 +938,11 @@ pub fn import_hardware_account(
     seed_fingerprint: Vec<u8>,
     zip32_index: u32,
     birthday_height: Option<u64>,
+    hardware_signer_kind: String,
 ) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let hardware_signer_kind = keys::HardwareSignerKind::parse(&hardware_signer_kind)?;
         let (account_uuid, unified_address) = keys::import_hardware_account(
             &db_path,
             network,
@@ -871,11 +951,32 @@ pub fn import_hardware_account(
             &seed_fingerprint,
             zip32_index,
             birthday_height,
+            hardware_signer_kind,
         )?;
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
         })
+    })
+}
+
+/// Backfill stored hardware accounts that predate authoritative Rust signer
+/// metadata.
+pub fn backfill_legacy_hardware_accounts(
+    db_path: String,
+    network: String,
+    accounts: Vec<LegacyHardwareAccount>,
+) -> Result<u32, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let accounts = accounts
+            .into_iter()
+            .map(|account| {
+                keys::HardwareSignerKind::parse(&account.hardware_signer_kind)
+                    .map(|kind| (account.account_uuid, kind))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        keys::backfill_legacy_hardware_accounts(&db_path, network, &accounts)
     })
 }
 
@@ -890,8 +991,11 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 uuid: a.uuid,
                 name: a.name,
                 unified_address: a.unified_address,
+                birthday_height: a.birthday_height,
+                zip32_account_index: a.zip32_account_index,
                 is_seed_anchor: a.is_seed_anchor,
                 is_hardware: a.is_hardware,
+                hardware_signer_kind: a.hardware_signer_kind.map(|kind| kind.as_str().to_string()),
             })
             .collect())
     })
@@ -1089,12 +1193,72 @@ pub fn get_recent_transparent_receive_addresses(
 mod tests {
     use super::*;
 
+    #[test]
+    fn gift_entropy_preserves_wallet_and_rejects_invalid_inputs() {
+        use secrecy::ExposeSecret;
+        for length in [16, 20, 24, 28, 32] {
+            let entropy: Vec<u8> = (0..length).collect();
+            let phrase = gift_mnemonic_from_entropy(entropy.clone()).unwrap();
+            assert_eq!(gift_mnemonic_to_entropy(phrase.clone()).unwrap(), entropy);
+            assert!(gift_mnemonic_to_entropy(phrase.replace(' ', "  ")).is_err());
+            let original = bip0039::Mnemonic::<bip0039::English>::from_entropy(entropy).unwrap();
+            let restored_seed = keys::mnemonic_to_seed(&phrase).unwrap();
+            assert_eq!(
+                restored_seed.expose_secret().as_slice(),
+                original.to_seed("")
+            );
+            for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
+                let address = keys::derive_software_address(network, &restored_seed, 0).unwrap();
+                validate_gift_address(
+                    phrase.clone(),
+                    network_name(network).into(),
+                    address.clone(),
+                )
+                .unwrap();
+                assert!(validate_gift_address(
+                    phrase.clone(),
+                    network_name(network).into(),
+                    format!("{address}x")
+                )
+                .is_err());
+            }
+        }
+        for length in [0, 15, 17, 31, 33, 512] {
+            assert!(gift_mnemonic_from_entropy(vec![0; length]).is_err());
+        }
+        for phrase in [
+            "private-input-invalid".to_string(),
+            "abandon ".repeat(12),
+            "a".repeat(513),
+        ] {
+            let error = gift_mnemonic_to_entropy(phrase.clone()).unwrap_err();
+            assert!(!error.contains(&phrase));
+        }
+        assert_eq!(
+            generate_software_account("main".into())
+                .unwrap()
+                .mnemonic
+                .split_whitespace()
+                .count(),
+            24
+        );
+    }
+
     const BIP39_VECTOR_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     const BIP39_VECTOR_PASSPHRASE: &str = "TREZOR";
     const BIP39_VECTOR_MAINNET_UA: &str =
         "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
+
+    #[test]
+    fn generates_valid_software_account_without_creating_a_database() {
+        let account = generate_software_account("main".to_string()).unwrap();
+
+        assert_eq!(account.mnemonic.split_whitespace().count(), 24);
+        assert!(validate_mnemonic(account.mnemonic.clone()));
+        assert!(account.unified_address.starts_with("u1"));
+    }
 
     #[test]
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {

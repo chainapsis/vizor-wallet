@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show Icon, Icons, Scaffold;
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +18,7 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/biometric_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
@@ -460,6 +461,9 @@ class _MobileSeedPhraseScreenState
       backgroundColor: colors.background.window,
       body: AppToastHost(
         child: SensitivePrivacyOverlay(
+          // Protect only in the reveal stage. The passcode gate shows no words,
+          // so blanking its screenshot and app-switcher snapshot is needless
+          // friction. Matches the `_onScreenshot` guard.
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
           controller: _privacyController,
@@ -541,9 +545,13 @@ class _MobileSeedPhraseScreenState
             child: Center(
               child: PasscodeBiometricButton(
                 label: biometric.availability.kind.signInLabel,
-                icon: biometric.availability.kind == BiometricKind.face
-                    ? const Center(child: AppIcon(AppIcons.faceId, size: 13.5))
-                    : const Icon(Icons.fingerprint, size: 16),
+                icon: Center(
+                  child: BiometricIcon(
+                    kind: biometric.availability.kind,
+                    size: 13.5,
+                    fingerprintSize: 16,
+                  ),
+                ),
                 onPressed: () => unawaited(_tryBiometricGate()),
               ),
             ),
@@ -885,9 +893,22 @@ class _BirthdayRow extends StatelessWidget {
 }
 
 /// Screenshot warning — Figma `If they try to screenshot` (4494:92098).
-class MobileSeedScreenshotWarningSheet extends StatelessWidget {
+class MobileSeedScreenshotWarningSheet extends StatefulWidget {
   const MobileSeedScreenshotWarningSheet({super.key});
 
+  @override
+  State<MobileSeedScreenshotWarningSheet> createState() =>
+      _MobileSeedScreenshotWarningSheetState();
+}
+
+class _MobileSeedScreenshotWarningSheetState
+    extends State<MobileSeedScreenshotWarningSheet> {
+  late final AppLifecycleListener _lifecycleListener;
+  Timer? _inactiveGraceTimer;
+  var _canDismissOnInactive = false;
+  var _dismissed = false;
+
+  static const _inactiveDismissGracePeriod = Duration(milliseconds: 500);
   static const _iconSize = 30.0;
   static const _titleMaxWidth = 253.0;
   static const _textHeightBehavior = TextHeightBehavior(
@@ -907,12 +928,47 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
   static const _buttonLabelStyle = AppTypography.labelLarge;
 
   @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onInactive: _dismissAfterGracePeriod,
+      onHide: _dismiss,
+      onPause: _dismiss,
+    );
+    _inactiveGraceTimer = Timer(_inactiveDismissGracePeriod, () {
+      if (mounted) _canDismissOnInactive = true;
+    });
+  }
+
+  void _dismissAfterGracePeriod() {
+    if (!_canDismissOnInactive) return;
+    _dismiss();
+  }
+
+  void _dismiss() {
+    if (_dismissed || !mounted) return;
+    // A Widgetbook snapshot renders this sheet inline, without a popup route.
+    // Lifecycle events must never pop the surrounding preview navigator.
+    final route = ModalRoute.of(context);
+    if (route is! PopupRoute || !route.isCurrent) return;
+    _dismissed = true;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    _inactiveGraceTimer?.cancel();
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('mobile_seed_screenshot_sheet'),
       title: '',
-      onClose: () => Navigator.of(context).pop(),
+      onClose: _dismiss,
       showTitle: false,
       showClose: false,
       bottomPadding: AppSpacing.base,
@@ -981,7 +1037,7 @@ class MobileSeedScreenshotWarningSheet extends StatelessWidget {
             key: const ValueKey('mobile_seed_screenshot_ack'),
             expand: true,
             height: AppButtonSizing.largeHeight,
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _dismiss,
             child: const Text('I understand', style: _buttonLabelStyle),
           ),
         ],

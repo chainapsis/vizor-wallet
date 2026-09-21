@@ -1,4 +1,5 @@
 import Flutter
+import QuartzCore
 import Security
 import UIKit
 import UserNotifications
@@ -6,7 +7,277 @@ import XCTest
 
 @testable import Runner
 
+private final class TextFieldWithoutSecureCanvas: UITextField {
+  override var subviews: [UIView] { [] }
+}
+
 class RunnerTests: XCTestCase {
+  func testScreenshotShieldRetriesOnActivationAndCanDisableBeforeRetry() {
+    let done = expectation(description: "lifecycle")
+    DispatchQueue.main.async {
+      let notifications = NotificationCenter()
+      var activeWindow: UIWindow?
+      let host = CALayer()
+      let canvas = CALayer()
+      let shield = SecureScreenshotShield(
+        windowProvider: { activeWindow },
+        canvasProvider: { field in field.layer.addSublayer(canvas); return canvas },
+        notificationCenter: notifications
+      )
+      var states: [String] = []
+      shield.onStatusChanged = { states.append($0["state"] as! String) }
+      shield.setSensitiveContentVisible(true)
+      XCTAssertEqual(shield.status["state"] as? String, "pending")
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      host.addSublayer(window.layer)
+      activeWindow = window
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertEqual(shield.status["state"] as? String, "applied")
+      XCTAssertTrue(window.layer.superlayer === canvas)
+      XCTAssertEqual(canvas.frame.size, window.bounds.size)
+      shield.setSensitiveContentVisible(false)
+      XCTAssertEqual(shield.status["state"] as? String, "disabled")
+      XCTAssertEqual(shield.status["visible"] as? Bool, false)
+      XCTAssertEqual(states, ["pending", "applied", "disabled"])
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldDoesNotAttachAfterPendingRequestIsDisabled() {
+    let done = expectation(description: "cancel pending")
+    DispatchQueue.main.async {
+      let notifications = NotificationCenter()
+      var resolutions = 0
+      let shield = SecureScreenshotShield(
+        windowProvider: { resolutions += 1; return nil },
+        notificationCenter: notifications
+      )
+      shield.setSensitiveContentVisible(true)
+      shield.setSensitiveContentVisible(false)
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertEqual(resolutions, 1)
+      XCTAssertEqual(shield.status["state"] as? String, "disabled")
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldRestoresOldWindowOnReplacement() {
+    let done = expectation(description: "window replacement")
+    DispatchQueue.main.async {
+      let host = CALayer()
+      let first = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      let second = UIWindow(frame: CGRect(x: 0, y: 0, width: 852, height: 393))
+      host.addSublayer(first.layer)
+      host.addSublayer(second.layer)
+      var active = first
+      let canvas = CALayer()
+      let notifications = NotificationCenter()
+      let shield = SecureScreenshotShield(
+        windowProvider: { active },
+        canvasProvider: { field in field.layer.addSublayer(canvas); return canvas },
+        notificationCenter: notifications
+      )
+      shield.setSensitiveContentVisible(true)
+      active = second
+      notifications.post(name: UIScene.didActivateNotification, object: nil)
+      XCTAssertTrue(first.layer.superlayer === host)
+      XCTAssertTrue(second.layer.superlayer === canvas)
+      XCTAssertEqual(canvas.frame.size, second.bounds.size)
+      XCTAssertEqual(shield.status["state"] as? String, "applied")
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldRejectsUnknownCanvasWithoutChangingWindow() {
+    let done = expectation(description: "no guessed canvas")
+    DispatchQueue.main.async {
+      let host = CALayer()
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      host.addSublayer(window.layer)
+      let shield = SecureScreenshotShield(
+        windowProvider: { window }, canvasProvider: { _ in nil },
+        notificationCenter: NotificationCenter()
+      )
+      shield.setSensitiveContentVisible(true)
+      XCTAssertTrue(window.layer.superlayer === host)
+      XCTAssertEqual(shield.status["state"] as? String, "failed")
+      XCTAssertEqual(shield.status["reason"] as? String, "secure_canvas_unavailable")
+      let plainField = TextFieldWithoutSecureCanvas()
+      plainField.layer.addSublayer(CALayer())
+      XCTAssertNil(SecureScreenshotShield.secureCanvasLayer(of: plainField))
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 2)
+  }
+
+  func testScreenshotShieldAppliesInlineOnMainThread() {
+    let applied = expectation(description: "secure flag applied inline")
+
+    DispatchQueue.main.async {
+      var didApply = false
+      SecureScreenshotShield.performOnMain {
+        didApply = true
+      }
+
+      XCTAssertTrue(didApply)
+      applied.fulfill()
+    }
+
+    wait(for: [applied], timeout: 1)
+  }
+
+  func testScreenshotShieldRestoresWindowLayerBeforeRegrafting() {
+    let hostLayer = CALayer()
+    let secureLayer = CALayer()
+    let canvasLayer = CALayer()
+    let windowLayer = CALayer()
+    hostLayer.addSublayer(secureLayer)
+    secureLayer.addSublayer(canvasLayer)
+    canvasLayer.addSublayer(windowLayer)
+
+    SecureScreenshotShield.restoreLayerHierarchy(
+      windowLayer: windowLayer,
+      secureLayer: secureLayer
+    )
+
+    XCTAssertTrue(windowLayer.superlayer === hostLayer)
+    XCTAssertNil(secureLayer.superlayer)
+    XCTAssertFalse(canvasLayer.sublayers?.contains(windowLayer) ?? false)
+  }
+
+
+  func testIncomingDeeplinkAcceptsOnlySupportedHTTPSRoutes() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string: "https://\(host)/payment-links/open#v1=test"
+        )!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(
+          string: "https://\(host)/payment-links/other#v1=test"
+        )!
+      )
+    )
+    XCTAssertTrue(bridge.handles(URL(string: "https://\(host)/")!))
+    XCTAssertFalse(
+      bridge.handles(URL(string: "https://\(host)/?source=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://example.com/payment-links/open#v1=test")!
+      )
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(
+          string: "https://user@\(host)/"
+        )!
+      )
+    )
+  }
+
+  func testIncomingDeeplinkAcceptsZcashPaymentUris() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    let address =
+      "u1qwerty0000000000000000000000000000000000000000000000000000000000"
+
+    // A ZIP-321 request is an opaque `zcash:` URL: no authority component, so
+    // the host checks that gate the HTTPS routes cannot apply to it.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "zcash:\(address)?amount=1")!)
+    )
+    XCTAssertTrue(
+      bridge.handles(
+        URL(
+          string: "zcash:\(address)?amount=1.5&memo=aGk#gift"
+        )!
+      )
+    )
+    // Schemes are case-insensitive per RFC 3986, and iOS hands back whatever
+    // casing the sender used.
+    XCTAssertTrue(
+      bridge.handles(URL(string: "ZCASH:\(address)?amount=1")!)
+    )
+
+    XCTAssertFalse(
+      bridge.handles(URL(string: "vizor://payment-link?p=test")!)
+    )
+    XCTAssertFalse(
+      bridge.handles(
+        URL(string: "https://\(host)/gift-cards/redeem#v1=test")!
+      )
+    )
+  }
+
+  func testIncomingDeeplinkForwardsOversizeLinksForDartToReject() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    // Drain whatever an earlier case queued: this bridge is a singleton.
+    _ = bridge.takePending()
+
+    // Dart rejects a payment link over 16 KB with a message the user can
+    // read, so a link past that limit has to reach it. The native guard is
+    // only a memory ceiling.
+    let oversizeForDart = "https://\(host)/payment-links/open#v1=" +
+      String(repeating: "a", count: 32 * 1024)
+    XCTAssertTrue(
+      bridge.handle(userActivity: browsingActivity(oversizeForDart))
+    )
+    XCTAssertEqual(bridge.takePending(), [oversizeForDart])
+
+    // Past the memory ceiling it is still dropped, so a pathological link
+    // cannot sit in the queue.
+    let pathological = "https://\(host)/payment-links/open#v1=" +
+      String(repeating: "a", count: 128 * 1024)
+    XCTAssertTrue(
+      bridge.handle(userActivity: browsingActivity(pathological))
+    )
+    XCTAssertEqual(bridge.takePending(), [])
+  }
+
+  func testIncomingDeeplinkQueueDedupesAndCaps() {
+    let bridge = IncomingUriChannelBridge.shared
+    let host = IncomingUriChannelBridge.deeplinkHost
+    _ = bridge.takePending()
+
+    let link = "https://\(host)/payment-links/open#v1=duplicate"
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    // Deduped only while undelivered; the re-tap after delivery arrives.
+    XCTAssertEqual(bridge.takePending(), [link])
+    XCTAssertTrue(bridge.handle(userActivity: browsingActivity(link)))
+    XCTAssertEqual(bridge.takePending(), [link])
+
+    for index in 0..<20 {
+      XCTAssertTrue(
+        bridge.handle(
+          userActivity: browsingActivity(
+            "https://\(host)/payment-links/open#v1=cap\(index)"
+          )
+        )
+      )
+    }
+    XCTAssertEqual(bridge.takePending().count, 16)
+  }
+
+  private func browsingActivity(_ url: String) -> NSUserActivity {
+    let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = URL(string: url)
+    return activity
+  }
 
   func testMigrationNotificationAuthorizationStatusIsFailClosed() {
     XCTAssertEqual(

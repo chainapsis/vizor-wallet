@@ -1,7 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages
 
-import 'dart:typed_data';
-
+import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,7 +20,6 @@ import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/features/voting/voting_flow_models.dart';
 import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
-import '../src/features/voting/widgets/voting_share_status_card.dart';
 import '../src/providers/voting/voting_config_provider.dart';
 import '../src/providers/voting/voting_config_source_provider.dart';
 import '../src/providers/voting/voting_poll_eligibility_provider.dart';
@@ -30,23 +28,8 @@ import '../src/providers/voting/voting_rounds_provider.dart';
 import '../src/providers/voting/voting_state.dart';
 import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/rust/third_party/zcash_voting/config.dart';
-import '../src/rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
-
-Widget buildVotingShareStatusUseCase(BuildContext context) {
-  return _buildVotingShareStatusUseCase(
-    context,
-    records: _previewVotingShareRecords,
-  );
-}
-
-Widget buildVotingShareStatusCompleteUseCase(BuildContext context) {
-  return _buildVotingShareStatusUseCase(
-    context,
-    records: _previewVotingShareCompleteRecords,
-  );
-}
 
 Widget buildDesktopVotingVotedUseCase(BuildContext context) {
   return AppDesktopShell(
@@ -76,7 +59,6 @@ Widget buildDesktopVotingVotedUseCase(BuildContext context) {
               votedAt: DateTime(2026, 8, 24),
               proposals: const [_previewSnackProposal],
               choicesByProposalId: const {1: 1},
-              shareDelegations: _previewVotingShareRecords,
               shareStatusNow: _previewVotingShareNow,
             ),
           ),
@@ -86,31 +68,12 @@ Widget buildDesktopVotingVotedUseCase(BuildContext context) {
   );
 }
 
-Widget _buildVotingShareStatusUseCase(
-  BuildContext context, {
-  required List<rust_wire.ShareDelegationRecordView> records,
-}) {
-  return ColoredBox(
-    color: context.colors.background.ground,
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: VotingShareStatusCard(
-            records: records,
-            now: _previewVotingShareNow,
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
 Widget buildMobileVotingPollsUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [
+      votingParticipationUnavailableProvider.overrideWith(
+        (ref, roundId) => false,
+      ),
       votingPollEligibilityProvider.overrideWith(
         (ref, roundId) async => VotingPollEligibility.eligible,
       ),
@@ -131,6 +94,7 @@ Widget buildMobileVotingPollsUseCase(BuildContext context) {
 Widget buildMobileVotingPollsEligibilityUseCase(
   BuildContext context, {
   Future<VotingPollEligibility> Function(String)? loadEligibility,
+  bool previouslyUsed = false,
 }) {
   return _mobileVotingFullPagePreview(
     context,
@@ -145,6 +109,9 @@ Widget buildMobileVotingPollsEligibilityUseCase(
         ),
         showTestVotingRoundsProvider.overrideWith(
           _PreviewShowTestVotingRoundsNotifier.new,
+        ),
+        votingParticipationUnavailableProvider.overrideWith(
+          (ref, roundId) => previouslyUsed && roundId == 'nu7-ineligible',
         ),
         votingPollEligibilityProvider.overrideWith(
           (ref, roundId) async => loadEligibility != null
@@ -172,6 +139,9 @@ Widget _buildMobileVotingConfigPreview(
 }) {
   return ProviderScope(
     overrides: [
+      votingParticipationUnavailableProvider.overrideWith(
+        (ref, roundId) => false,
+      ),
       votingPollEligibilityProvider.overrideWith(
         (ref, roundId) async => VotingPollEligibility.eligible,
       ),
@@ -199,16 +169,14 @@ Widget _buildMobileVotingConfigPreview(
 }
 
 Widget buildMobileVotingVotedUseCase(BuildContext context) {
-  return _buildMobileVotingVotedUseCase(_previewVotingShareRecords);
+  return _buildMobileVotingVotedUseCase();
 }
 
 Widget buildMobileVotingVotedCompleteUseCase(BuildContext context) {
-  return _buildMobileVotingVotedUseCase(_previewVotingShareCompleteRecords);
+  return _buildMobileVotingVotedUseCase();
 }
 
-Widget _buildMobileVotingVotedUseCase(
-  List<rust_wire.ShareDelegationRecordView> records,
-) {
+Widget _buildMobileVotingVotedUseCase() {
   return MobileVotingScaffold(
     title: 'Voted',
     child: VotingVotedPollContent(
@@ -224,7 +192,6 @@ Widget _buildMobileVotingVotedUseCase(
       votedAt: DateTime(2026, 8, 24),
       proposals: const [_previewSnackProposal],
       choicesByProposalId: const {1: 1},
-      shareDelegations: records,
       shareStatusNow: _previewVotingShareNow,
     ),
   );
@@ -267,6 +234,7 @@ Widget _buildMobileVotingActiveUseCase(
   BuildContext context, {
   required bool eligible,
   bool eligibilityUnknown = false,
+  bool previouslyUsed = false,
   String? votingEligibilityMessage,
 }) {
   return _mobileVotingFullPagePreview(
@@ -275,6 +243,8 @@ Widget _buildMobileVotingActiveUseCase(
       title: 'Coinholder voting',
       child: VotingActivePollContent(
         showDesktopToolbar: false,
+        participationUnavailable: previouslyUsed,
+        onParticipationRetry: _previewNoop,
         roundId: 'preview-nsm',
         title: '[TEST] Very Serious Snack Governance 3',
         snapshotHeight: 3543600,
@@ -292,7 +262,8 @@ Widget _buildMobileVotingActiveUseCase(
         votingEligibilityConfirmed: eligible,
         answersEditable: eligible,
         votingEligibilityMessage: votingEligibilityMessage,
-        votingEligibilityErrorMessage: eligible || eligibilityUnknown
+        votingEligibilityErrorMessage:
+            eligible || eligibilityUnknown || previouslyUsed
             ? null
             : 'This account did not have enough eligible '
                   'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
@@ -436,8 +407,10 @@ Widget buildMobileVotingSubmissionDelegatingUseCase(BuildContext context) {
   return _mobileVotingFullPagePreview(
     context,
     const MobileVotingSubmissionProgressScreen(
-      activeStep: VotingSubmissionProgressStep.delegating,
+      activeStep: VotingSubmissionProgressStep.provingAuthority,
       activeStepProgress: 0.25,
+      // The delegation proof carries no count until a bundle finishes, so the
+      // row is a label and a ring. This previews that state.
     ),
   );
 }
@@ -448,6 +421,7 @@ Widget buildMobileVotingSubmissionCastingUseCase(BuildContext context) {
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.castingVotes,
       activeStepProgress: 0.6,
+      activeStepDetail: 'Casting votes',
     ),
   );
 }
@@ -458,6 +432,7 @@ Widget buildMobileVotingSubmissionCastingCompactUseCase(BuildContext context) {
     const MobileVotingSubmissionProgressScreen(
       activeStep: VotingSubmissionProgressStep.castingVotes,
       activeStepProgress: 0.6,
+      activeStepDetail: 'Casting votes',
     ),
     size: const Size(375, 667),
     safeArea: const EdgeInsets.only(top: 47, bottom: 34),
@@ -560,47 +535,6 @@ const _previewVotingKeystoneUr =
     'ur:zcash-sign-batch/1-1/lpadaxcsfwdmfwfwhdcxhdcxfwcxhdcxhdcxfwcx';
 
 final _previewVotingShareNow = DateTime.utc(2026, 8, 23, 12);
-
-final _previewVotingShareRecords = [
-  for (var index = 0; index < 16; index++)
-    _previewVotingShare(index, confirmed: index < 5),
-];
-
-final _previewVotingShareCompleteRecords = [
-  for (var index = 0; index < 16; index++)
-    _previewVotingShare(index, confirmed: true),
-];
-
-rust_wire.ShareDelegationRecordView _previewVotingShare(
-  int shareIndex, {
-  bool confirmed = false,
-}) {
-  final delayMinutes = shareIndex == 0 ? 0 : (3102 * shareIndex) ~/ 15;
-  final scheduled = _previewVotingShareNow.add(Duration(minutes: delayMinutes));
-  final createdAt = BigInt.from(
-    _previewVotingShareNow.millisecondsSinceEpoch ~/
-        Duration.millisecondsPerSecond,
-  );
-  final epoch = BigInt.from(
-    scheduled.millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
-  );
-  return rust_wire.ShareDelegationRecordView(
-    roundId: 'preview-round',
-    bundleIndex: 0,
-    proposalId: 1,
-    shareIndex: shareIndex,
-    sentToUrls: confirmed
-        ? const ['https://helper-a.example', 'https://helper-b.example']
-        : const [],
-    ambiguousUrls: const [],
-    targetCount: 2,
-    nullifier: Uint8List.fromList(List.filled(32, shareIndex)),
-    phase: confirmed ? 'confirmed' : 'submitted_share',
-    confirmed: confirmed,
-    submitAt: shareIndex == 0 ? BigInt.zero : epoch,
-    createdAt: createdAt,
-  );
-}
 
 class _VotingPreviewSidebar extends StatelessWidget {
   const _VotingPreviewSidebar();
@@ -903,3 +837,12 @@ const _previewSnackResultProposal = VotingProposalView(
     ),
   ],
 );
+
+Widget buildMobileVotingPreviouslyUsedListUseCase(BuildContext context) =>
+    buildMobileVotingPollsEligibilityUseCase(context, previouslyUsed: true);
+Widget buildMobileVotingPreviouslyUsedDetailUseCase(BuildContext context) =>
+    _buildMobileVotingActiveUseCase(
+      context,
+      eligible: false,
+      previouslyUsed: true,
+    );

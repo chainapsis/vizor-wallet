@@ -1,0 +1,1116 @@
+// ignore_for_file: depend_on_referenced_packages
+// Widgetbook is dev-only. Every fixture in this file is isolated from wallet
+// storage, payment-link operations, network access, and Rust state.
+
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
+import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
+import '../src/features/payment_links/models/gift_card_usage.dart';
+import '../src/features/payment_links/models/vizor_payment_link.dart';
+import '../src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import '../src/features/payment_links/widgets/gift_card_usage_status.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
+import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.dart';
+import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
+import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import '../src/features/payment_links/widgets/payment_link_confetti.dart';
+import '../src/features/payment_links/widgets/payment_link_copy.dart';
+import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
+import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
+import '../src/providers/account_provider.dart';
+
+const _mobilePreviewSize = Size(393, 773);
+const _mobileDeviceSize = Size(393, 852);
+const _mobileStatusBarHeight = 55.0;
+const _cardWidth = 361.0;
+const _cardHeight = 225.625;
+const _fixtureAmount = '4.45';
+const _fixtureFee = '0.04 ZEC';
+const _fixtureTotal = '4.49 ZEC';
+const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
+const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
+const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
+
+const _amountFormatters = [
+  CommaToDotInputFormatter(),
+  DecimalAmountInputFormatter(maxFractionDigits: 8),
+];
+
+Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _PaymentLinkHomeFixture());
+}
+
+Widget buildMobilePaymentLinkHomeCardsUseCase(BuildContext context) {
+  return _withPaymentLinkCardsProviders(
+    const _MobilePaymentLinkFrame(
+      child: _PaymentLinkCardsFixture(),
+    ),
+  );
+}
+
+Widget _withPaymentLinkCardsProviders(Widget child) {
+  return ProviderScope(
+    overrides: [
+      giftCardTrackingStateProvider.overrideWith(
+        _PaymentLinkCardsTrackingState.new,
+      ),
+      giftCardUsageProvider.overrideWith((ref, address) async {
+        return switch (address) {
+          'confirming' || 'confirming-2' => const GiftCardUsage(
+            reason: GiftCardUsageReason.awaitingConfirmation,
+          ),
+          'unverified' || 'unverified-2' => const GiftCardUsage(),
+          'detected' || 'detected-2' => const GiftCardUsage(
+            status: GiftCardUsageStatus.spendDetected,
+          ),
+          'used' || 'used-2' => const GiftCardUsage(
+            status: GiftCardUsageStatus.used,
+            cleaned: true,
+          ),
+          _ => const GiftCardUsage(status: GiftCardUsageStatus.unused),
+        };
+      }),
+    ],
+    child: child,
+  );
+}
+
+class _PaymentLinkCardsTrackingState extends GiftCardTrackingStateNotifier {
+  @override
+  GiftCardTrackingState build() =>
+      const GiftCardTrackingState(failedAddresses: {'failed'});
+}
+
+Widget buildMobilePaymentLinkShareQrUseCase(BuildContext context) {
+  return _withPaymentLinkCardsProviders(
+    _MobilePaymentLinkFrame(
+      child: MobileModalOverlay(
+        background: const _PaymentLinkCardsFixture(),
+        child: _shareSheet(PaymentLinkCardArtwork.ruby, onClose: _noop),
+      ),
+    ),
+  );
+}
+
+Widget _shareSheet(
+  PaymentLinkCardArtwork artwork, {
+  required VoidCallback onClose,
+}) {
+  final link = VizorPaymentLink(
+    network: 'main',
+    address: 'u1previewgiftcardaddress',
+    amountZatoshi: BigInt.from(445000000),
+    mnemonic: List.filled(24, 'abandon').join(' '),
+    birthdayHeight: 3000000,
+    label: 'Payment link',
+    createdAt: DateTime.utc(2026, 8, 6),
+    presentation: PaymentLinkPresentation(
+      artworkId: artwork.protocolId,
+      message: 'A Gift Card for you!',
+    ),
+  );
+  return PaymentLinkShareSheet(
+    artwork: artwork,
+    link: link.toUri().toString(),
+    onShare: (_, _) async {},
+    onShareError: _noop,
+    onCopyLink: () async {},
+    onClose: onClose,
+  );
+}
+
+Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
+  return _MobilePaymentLinkFrame(
+    child: PaymentLinkAmountMobileView(
+      card: const PaymentLinkGiftCard(
+        artwork: _fixtureArtwork,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+      ),
+      cardSelector: _artworkSelector(_fixtureArtwork),
+      onBack: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkAmountFilledUseCase(BuildContext context) {
+  return _MobilePaymentLinkFrame(
+    child: PaymentLinkAmountMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: _fixtureArtwork,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        maxAmountText: '142.23',
+        onUseMax: _noop,
+        showMaxButton: true,
+        showCaret: false,
+        supportingLoading: true,
+      ),
+      cardSelector: _artworkSelector(_fixtureArtwork),
+      onBack: _noop,
+      onContinue: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkAmountFocusedUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _FocusedAmountFixture());
+}
+
+Widget buildMobilePaymentLinkMessageEmptyUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkMessageMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: _fixtureArtwork,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        showBack: true,
+      ),
+      onBack: _noop,
+      onSkip: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkMessageFilledUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkMessageMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: _fixtureArtwork,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        showBack: true,
+        message: _fixtureMessage,
+        onDeleteMessage: _noop,
+      ),
+      onBack: _noop,
+      onContinue: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkMessageFocusedUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _FocusedMessageFixture());
+}
+
+Widget buildMobilePaymentLinkReviewUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReviewMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      onBack: _noop,
+      cardAmountText: '$_fixtureAmount ZEC',
+      cardFeeText: _fixtureFee,
+      totalAmountText: _fixtureTotal,
+      onContinue: _noop,
+      onFeeHelp: _noop,
+    ),
+  );
+}
+
+/// Reproduces the fee label wrapping with the fee help icon visible.
+Widget buildMobilePaymentLinkReviewWrappedFeeUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReviewMobileView(
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.gift,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: '0.001',
+        showCaret: false,
+      ),
+      onBack: _noop,
+      cardAmountText: '0.001 ZEC',
+      cardFeeText: '0.0002 ZEC',
+      totalAmountText: '0.0012 ZEC',
+      onContinue: _noop,
+      onFeeHelp: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReviewLargeTextUseCase(BuildContext context) {
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+    child: buildMobilePaymentLinkReviewWrappedFeeUseCase(context),
+  );
+}
+
+Widget buildMobilePaymentLinkReadyCelebratingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.ready,
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      onHome: _noop,
+      onCopy: _noop,
+      decoration: PaymentLinkConfetti(),
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReadyUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _MobileReadyFixture());
+}
+
+Widget buildMobilePaymentLinkRedeemPasteUseCase(BuildContext context) {
+  return _MobilePaymentLinkFrame(
+    child: Builder(
+      builder: (context) => PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.paste,
+        onBack: _noop,
+        onPaste: _noop,
+        onScan: () => showAppMobileSheet<void>(
+          context: context,
+          builder: (context) => _mobileGiftScanPreview(
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkScanUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay();
+
+Widget buildMobilePaymentLinkScanInvalidUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay(error: "This isn't a gift card QR code.");
+
+Widget buildMobilePaymentLinkScanDeniedUseCase(BuildContext context) =>
+    _mobileGiftScanOverlay(status: AddressQrCameraStatus.denied);
+
+Widget _mobileGiftScanOverlay({
+  AddressQrCameraStatus status = AddressQrCameraStatus.active,
+  String? error,
+}) => _MobilePaymentLinkFrame(
+  child: MobileModalOverlay(
+    background: const PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.paste,
+      onBack: _noop,
+      onPaste: _noop,
+      onScan: _noop,
+    ),
+    child: _mobileGiftScanPreview(status: status, error: error),
+  ),
+);
+
+Widget _mobileGiftScanPreview({
+  AddressQrCameraStatus status = AddressQrCameraStatus.active,
+  String? error,
+  VoidCallback onClose = _noop,
+}) => MobileAddressScanCardContent(
+  status: status,
+  cameraView: const ColoredBox(color: Color(0xFF343A3D)),
+  caption: 'Scan the gift card QR code',
+  permissionTitle: 'Scan gift card QR',
+  error: error,
+  onClose: onClose,
+  onTorch: _noop,
+  onRetry: _noop,
+);
+
+Widget buildMobilePaymentLinkRedeemLongSyncWarningUseCase(
+  BuildContext context,
+) {
+  return const _MobilePaymentLinkFrame(
+    child: MobileModalOverlay(
+      background: PaymentLinkRedeemMobileView(
+        state: PaymentLinkRedeemMobileState.paste,
+        onBack: _noop,
+        onPaste: _noop,
+      ),
+      child: PaymentLinkLongSyncWarningSheet(onConfirm: _noop, onCancel: _noop),
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemLoadingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.loading,
+      onBack: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkRedeemInvalidUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkRedeemMobileView(
+      state: PaymentLinkRedeemMobileState.invalid,
+      onBack: _noop,
+      onPaste: _noop,
+      onClearClipboard: _noop,
+      onScan: _noop,
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(child: _MobileReceivedFixture());
+}
+
+Widget buildMobilePaymentLinkClaimAccountUseCase(BuildContext context) =>
+    _buildClaimAccountPreview(3);
+
+Widget buildMobilePaymentLinkClaimManyAccountsUseCase(BuildContext context) =>
+    _buildClaimAccountPreview(12);
+
+Widget _buildClaimAccountPreview(int accountCount) {
+  return _MobilePaymentLinkFrame(
+    child: MobileModalOverlay(
+      background: const _MobileReceivedFixture(),
+      child: PaymentLinkClaimAccountSheet(
+        amountZatoshi: BigInt.from(445000000),
+        accounts: [
+          for (var i = 0; i < accountCount; i++)
+            AccountInfo(
+              uuid: 'claim-preview-$i',
+              name: switch (i) {
+                0 => 'Primary Vault',
+                1 => 'Savings',
+                2 => 'Keystone',
+                _ => 'Account ${i + 1}',
+              },
+              order: i,
+              isHardware: i == 2,
+            ),
+        ],
+        activeAccountUuid: 'claim-preview-0',
+        onConfirm: (_) async {},
+        onConfirmed: _noop,
+        onClose: _noop,
+      ),
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.soon,
+      card: PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.knightMagic,
+        cardWidth: _cardWidth,
+        cardHeight: _cardHeight,
+        amountText: _fixtureAmount,
+        supportingText: r'$142.23',
+        showCaret: false,
+      ),
+      cardTop: kPaymentLinkMobileReceivedCardTop,
+      onHome: _noop,
+      waitingHeading: 'Your Gift Card\nis almost ready!',
+      waitingDescription:
+          '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
+      waitingIcon: AppIcons.time,
+      waitingStatusLabel: 'Wait 5:00 to claim',
+    ),
+  );
+}
+
+Widget buildMobilePaymentLinkInteractiveUseCase(BuildContext context) {
+  return const _MobilePaymentLinkFrame(
+    child: _MobilePaymentLinkInteractivePreview(),
+  );
+}
+
+Widget _artworkSelector(PaymentLinkCardArtwork selected) {
+  return PaymentLinkCardSelectorRail(
+    loop: true,
+    artworks: PaymentLinkCardArtwork.values,
+    selected: selected,
+    width: _mobilePreviewSize.width,
+    itemWidth: 80,
+    itemHeight: 60,
+    artworkWidth: 76,
+    artworkHeight: 56,
+    edgeMaskInset: AppSpacing.sm,
+    edgeFadeFraction: 0.3,
+    inactiveOpacity: 1,
+    onSelected: _ignoreArtwork,
+  );
+}
+
+class _PaymentLinkHomeFixture extends StatelessWidget {
+  const _PaymentLinkHomeFixture();
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinksHomeMobileView(
+      illustration: Image.asset(
+        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
+      ),
+      onBack: _noop,
+      onShowHelp: () => showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => PaymentLinkHowItWorksMobileSheet(
+          onClose: () => Navigator.of(sheetContext).pop(),
+        ),
+      ),
+      onCreate: _noop,
+      onRedeem: _noop,
+    );
+  }
+}
+
+/// The mobile Gift Card list with one card in each row state.
+///
+/// Deterministic: artwork, amounts, and dates are literals, and the tab
+/// selection is local state — nothing here reads payment-link storage, the
+/// wallet, or the network.
+class _PaymentLinkCardsFixture extends StatefulWidget {
+  const _PaymentLinkCardsFixture();
+
+  @override
+  State<_PaymentLinkCardsFixture> createState() =>
+      _PaymentLinkCardsFixtureState();
+}
+
+class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
+  var _activeTab = PaymentLinkCardsTab.created;
+
+  Widget _createdCard({
+    required String address,
+    required PaymentLinkCardArtwork artwork,
+    required String amount,
+    required String date,
+  }) => PaymentLinkCardListMobileRow(
+    thumbnail: _PaymentLinkThumbnail(artwork),
+    amountText: amount,
+    dateText: date,
+    showLinkActions: true,
+    onCopyLink: _noop,
+    onShowQr: () => _showQr(artwork),
+    metadata: GiftCardUsageStatusView(
+      address: address,
+      inline: true,
+      dateText: date,
+      hideStableLabel: true,
+    ),
+  );
+
+  void _showQr(PaymentLinkCardArtwork artwork) {
+    showAppMobileSheet<void>(
+      context: context,
+      builder: (sheetContext) =>
+          _shareSheet(artwork, onClose: () => Navigator.of(sheetContext).pop()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkCardsMobileView(
+      activeTab: _activeTab,
+      onTabSelected: (tab) => setState(() => _activeTab = tab),
+      sections: _activeTab == PaymentLinkCardsTab.created
+          ? [
+              PaymentLinkCardsSection(
+                label: kPaymentLinkPendingSectionLabel,
+                cards: [
+                  _createdCard(
+                    address: 'confirming',
+                    artwork: PaymentLinkCardArtwork.chestLava,
+                    amount: '0.25 ZEC',
+                    date: 'July 2',
+                  ),
+                  _createdCard(
+                    address: 'unverified',
+                    artwork: PaymentLinkCardArtwork.dragon,
+                    amount: '1.10 ZEC',
+                    date: 'July 18',
+                  ),
+                  _createdCard(
+                    address: 'confirming-2',
+                    artwork: PaymentLinkCardArtwork.gandalf,
+                    amount: '0.80 ZEC',
+                    date: 'July 16',
+                  ),
+                  _createdCard(
+                    address: 'unverified-2',
+                    artwork: PaymentLinkCardArtwork.coin,
+                    amount: '3.20 ZEC',
+                    date: 'July 12',
+                  ),
+                ],
+              ),
+              PaymentLinkCardsSection(
+                label: kPaymentLinkUnusedSectionLabel,
+                cards: [
+                  _createdCard(
+                    address: 'unused',
+                    artwork: PaymentLinkCardArtwork.ruby,
+                    amount: '4.45 ZEC',
+                    date: 'August 7',
+                  ),
+                  _createdCard(
+                    address: 'failed',
+                    artwork: PaymentLinkCardArtwork.diamond,
+                    amount: '2.50 ZEC',
+                    date: 'August 2',
+                  ),
+                  _createdCard(
+                    address: 'unused-2',
+                    artwork: PaymentLinkCardArtwork.crystal,
+                    amount: '0.50 ZEC',
+                    date: 'July 30',
+                  ),
+                  _createdCard(
+                    address: 'unused-3',
+                    artwork: PaymentLinkCardArtwork.chestCave,
+                    amount: '6.00 ZEC',
+                    date: 'July 25',
+                  ),
+                ],
+              ),
+              PaymentLinkCardsSection(
+                label: kPaymentLinkUsedSectionLabel,
+                cards: [
+                  _createdCard(
+                    address: 'detected',
+                    artwork: PaymentLinkCardArtwork.knightMagic,
+                    amount: '0.75 ZEC',
+                    date: 'August 1',
+                  ),
+                  _createdCard(
+                    address: 'used',
+                    artwork: PaymentLinkCardArtwork.gift,
+                    amount: '1.00 ZEC',
+                    date: 'July 28',
+                  ),
+                  _createdCard(
+                    address: 'detected-2',
+                    artwork: PaymentLinkCardArtwork.knight,
+                    amount: '2.25 ZEC',
+                    date: 'July 24',
+                  ),
+                  _createdCard(
+                    address: 'used-2',
+                    artwork: PaymentLinkCardArtwork.chestLava,
+                    amount: '5.00 ZEC',
+                    date: 'July 20',
+                  ),
+                ],
+              ),
+            ]
+          : const [
+              PaymentLinkCardsSection(
+                label: kPaymentLinkReceivedTabLabel,
+                cards: [
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.gift,
+                    ),
+                    amountText: '1.00 ZEC',
+                    dateText: 'August 9',
+                    statusText: 'Claim',
+                    onAction: _noop,
+                  ),
+                  PaymentLinkCardListMobileRow(
+                    thumbnail: _PaymentLinkThumbnail(
+                      PaymentLinkCardArtwork.ruby,
+                    ),
+                    amountText: '0.75 ZEC',
+                    dateText: 'August 4',
+                    statusText: 'Receiving...',
+                    showLoader: true,
+                  ),
+                ],
+              ),
+            ],
+      onBack: _noop,
+      onCreate: _noop,
+      onRedeem: _noop,
+    );
+  }
+}
+
+class _PaymentLinkThumbnail extends StatelessWidget {
+  const _PaymentLinkThumbnail(this.artwork);
+
+  final PaymentLinkCardArtwork artwork;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      artwork.assetPath,
+      fit: BoxFit.cover,
+      excludeFromSemantics: true,
+    );
+  }
+}
+
+class _MobileReadyFixture extends StatefulWidget {
+  const _MobileReadyFixture();
+
+  @override
+  State<_MobileReadyFixture> createState() => _MobileReadyFixtureState();
+}
+
+class _MobileReadyFixtureState extends State<_MobileReadyFixture> {
+  var _showBack = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkReadyMobileView(
+      state: PaymentLinkReadyMobileState.ready,
+      card: PaymentLinkCardFlip(
+        showBack: _showBack,
+        front: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        back: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          showBack: true,
+          message: _fixtureMessage,
+        ),
+      ),
+      onHome: _noop,
+      onCopy: _noop,
+      onCardTap: () => setState(() => _showBack = !_showBack),
+      decoration: const PaymentLinkConfetti(),
+    );
+  }
+}
+
+class _MobileReceivedFixture extends StatefulWidget {
+  const _MobileReceivedFixture();
+
+  @override
+  State<_MobileReceivedFixture> createState() => _MobileReceivedFixtureState();
+}
+
+class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
+  var _showBack = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkReceivedMobileView(
+      card: PaymentLinkCardFlip(
+        showBack: _showBack,
+        front: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        back: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          showBack: true,
+          message: _fixtureMessage,
+        ),
+      ),
+      hasMessage: true,
+      onClose: _noop,
+      onClaim: _noop,
+      decoration: const PaymentLinkConfetti(),
+      onRevealMessage: () => setState(() => _showBack = !_showBack),
+    );
+  }
+}
+
+class _FocusedAmountFixture extends StatefulWidget {
+  const _FocusedAmountFixture();
+
+  @override
+  State<_FocusedAmountFixture> createState() => _FocusedAmountFixtureState();
+}
+
+class _FocusedAmountFixtureState extends State<_FocusedAmountFixture> {
+  final _controller = TextEditingController(text: _fixtureAmount);
+  final _focusNode = FocusNode(debugLabel: 'MobilePaymentLinkAmountFixture');
+  var _renderVisualFocusFallback = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_focusNode.canRequestFocus) {
+        _focusNode.requestFocus();
+      } else {
+        setState(() => _renderVisualFocusFallback = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkAmountMobileView(
+      card: _renderVisualFocusFallback
+          ? const PaymentLinkGiftCard(
+              key: ValueKey('mobile_payment_link_amount_focus_fallback'),
+              artwork: _fixtureArtwork,
+              cardWidth: _cardWidth,
+              cardHeight: _cardHeight,
+              amountText: _fixtureAmount,
+              maxAmountText: '142.23',
+              onUseMax: _noop,
+              showMaxButton: true,
+              supportingLoading: true,
+            )
+          : PaymentLinkGiftCard(
+              artwork: _fixtureArtwork,
+              cardWidth: _cardWidth,
+              cardHeight: _cardHeight,
+              amountController: _controller,
+              amountFocusNode: _focusNode,
+              amountEditorKey: const ValueKey(
+                'mobile_payment_link_focused_amount_editor',
+              ),
+              amountInputFormatters: _amountFormatters,
+              supportingLoading: true,
+              semanticLabel: 'Gift card amount input',
+            ),
+      cardSelector: _artworkSelector(_fixtureArtwork),
+      onBack: _noop,
+    );
+  }
+}
+
+class _FocusedMessageFixture extends StatefulWidget {
+  const _FocusedMessageFixture();
+
+  @override
+  State<_FocusedMessageFixture> createState() => _FocusedMessageFixtureState();
+}
+
+class _FocusedMessageFixtureState extends State<_FocusedMessageFixture> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode(debugLabel: 'MobilePaymentLinkMessageFixture');
+  var _renderVisualFocusFallback = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_focusNode.canRequestFocus) {
+        _focusNode.requestFocus();
+      } else {
+        setState(() => _renderVisualFocusFallback = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PaymentLinkMessageMobileView(
+      card: _renderVisualFocusFallback
+          ? const PaymentLinkGiftCard(
+              key: ValueKey('mobile_payment_link_message_focus_fallback'),
+              artwork: _fixtureArtwork,
+              cardWidth: _cardWidth,
+              cardHeight: _cardHeight,
+              showBack: true,
+              emptyMessageLabel: '',
+            )
+          : PaymentLinkGiftCard(
+              artwork: _fixtureArtwork,
+              cardWidth: _cardWidth,
+              cardHeight: _cardHeight,
+              showBack: true,
+              messageController: _controller,
+              messageFocusNode: _focusNode,
+              messageEditorKey: const ValueKey(
+                'mobile_payment_link_focused_message_editor',
+              ),
+              semanticLabel: 'Gift card message input',
+            ),
+      onBack: _noop,
+      onSkip: _noop,
+    );
+  }
+}
+
+class _MobilePaymentLinkFrame extends StatelessWidget {
+  const _MobilePaymentLinkFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showDeviceInsets =
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight >= _mobileDeviceSize.height;
+        final frameSize = showDeviceInsets
+            ? _mobileDeviceSize
+            : _mobilePreviewSize;
+        return Center(
+          child: SizedBox.fromSize(
+            size: frameSize,
+            child: ColoredBox(
+              color: context.colors.background.window,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: showDeviceInsets ? _mobileStatusBarHeight : 0,
+                  ),
+                  child: SizedBox.fromSize(
+                    key: const ValueKey('mobile_payment_link_preview_frame'),
+                    size: _mobilePreviewSize,
+                    child: MediaQuery(
+                      data: MediaQuery.of(
+                        context,
+                      ).copyWith(size: _mobilePreviewSize),
+                      child: ColoredBox(
+                        color: context.colors.background.window,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+enum _MobilePaymentLinkStep { amount, message, review }
+
+class _MobilePaymentLinkInteractivePreview extends StatefulWidget {
+  const _MobilePaymentLinkInteractivePreview();
+
+  @override
+  State<_MobilePaymentLinkInteractivePreview> createState() =>
+      _MobilePaymentLinkInteractivePreviewState();
+}
+
+class _MobilePaymentLinkInteractivePreviewState
+    extends State<_MobilePaymentLinkInteractivePreview> {
+  static const _usdPerZec = 272.0;
+
+  final _amountController = TextEditingController();
+  final _amountFocusNode = FocusNode();
+  final _messageController = TextEditingController();
+  final _messageFocusNode = FocusNode();
+  Timer? _priceTimer;
+  var _priceLoading = true;
+  var _step = _MobilePaymentLinkStep.amount;
+  var _artwork = _fixtureArtwork;
+
+  bool get _hasPositiveAmount {
+    final raw = _amountController.text;
+    final value = double.tryParse(raw.startsWith('.') ? '0$raw' : raw);
+    return value != null && value > 0;
+  }
+
+  bool get _messageFitsPayload =>
+      PaymentLinkPresentation.isMessageWithinUtf8ByteLimit(
+        _messageController.text,
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _priceTimer = Timer(kMobilePaymentLinkPreviewFiatDelay, () {
+      if (mounted) setState(() => _priceLoading = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _priceTimer?.cancel();
+    _amountController.dispose();
+    _amountFocusNode.dispose();
+    _messageController.dispose();
+    _messageFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _showStep(_MobilePaymentLinkStep step) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _step = step);
+    if (step == _MobilePaymentLinkStep.message) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _step == _MobilePaymentLinkStep.message) {
+          _messageFocusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  void _clearMessage() {
+    _messageController.clear();
+    setState(() {});
+  }
+
+  String? get _fiatText {
+    final value = _amountController.text;
+    final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
+    if (amount == null || amount < 0) return null;
+    if (amount == 0) return r'$0.00';
+    return _priceLoading ? null : _formatUsd(amount * _usdPerZec);
+  }
+
+  void _handleAmountChanged(String _) {
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (_step) {
+      _MobilePaymentLinkStep.amount => PaymentLinkAmountMobileView(
+        card: PaymentLinkGiftCard(
+          artwork: _artwork,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountController: _amountController,
+          amountFocusNode: _amountFocusNode,
+          amountEditorKey: const ValueKey(
+            'mobile_payment_link_interactive_amount_editor',
+          ),
+          amountInputFormatters: _amountFormatters,
+          onAmountChanged: _handleAmountChanged,
+          supportingText: _fiatText,
+          supportingLoading: _hasPositiveAmount && _priceLoading,
+          maxAmountText: '142.23',
+          onUseMax: () {
+            _amountController.text = _fixtureAmount;
+            _handleAmountChanged(_fixtureAmount);
+          },
+          showMaxButton: true,
+          semanticLabel: 'Gift card amount input',
+        ),
+        cardSelector: PaymentLinkCardSelectorRail(
+          loop: true,
+          artworks: PaymentLinkCardArtwork.values,
+          selected: _artwork,
+          width: _mobilePreviewSize.width,
+          itemWidth: 80,
+          itemHeight: 60,
+          artworkWidth: 76,
+          artworkHeight: 56,
+          edgeMaskInset: AppSpacing.sm,
+          edgeFadeFraction: 0.3,
+          inactiveOpacity: 1,
+          onSelected: (artwork) => setState(() => _artwork = artwork),
+        ),
+        onBack: _noop,
+        onContinue: _hasPositiveAmount
+            ? () => _showStep(_MobilePaymentLinkStep.message)
+            : null,
+      ),
+      _MobilePaymentLinkStep.message => PaymentLinkMessageMobileView(
+        card: PaymentLinkGiftCard(
+          artwork: _artwork,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          showBack: true,
+          messageController: _messageController,
+          messageFocusNode: _messageFocusNode,
+          messageEditorKey: const ValueKey(
+            'mobile_payment_link_interactive_message_editor',
+          ),
+          messageInputFormatters: [
+            LengthLimitingTextInputFormatter(
+              PaymentLinkPresentation.maxMessageCharacters,
+            ),
+          ],
+          onMessageChanged: (_) => setState(() {}),
+          onDeleteMessage: _messageController.text.isEmpty
+              ? null
+              : _clearMessage,
+          semanticLabel: 'Gift card message input',
+        ),
+        onBack: () => _showStep(_MobilePaymentLinkStep.amount),
+        onSkip: () => _showStep(_MobilePaymentLinkStep.review),
+        onContinue: _messageFitsPayload && _messageController.text.isNotEmpty
+            ? () => _showStep(_MobilePaymentLinkStep.review)
+            : null,
+        errorText: _messageFitsPayload
+            ? null
+            : 'This message is too large. Try using fewer complex emoji.',
+      ),
+      _MobilePaymentLinkStep.review => PaymentLinkReviewMobileView(
+        card: PaymentLinkGiftCard(
+          artwork: _artwork,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _amountController.text,
+          supportingText: _fiatText,
+          supportingLoading: _hasPositiveAmount && _priceLoading,
+          showCaret: false,
+        ),
+        onBack: () => _showStep(_MobilePaymentLinkStep.message),
+        cardAmountText: '${_amountController.text} ZEC',
+        cardFeeText: _fixtureFee,
+        totalAmountText: '${(_parsedAmount + 0.04).toStringAsFixed(2)} ZEC',
+        onFeeHelp: _noop,
+      ),
+    };
+  }
+
+  double get _parsedAmount {
+    final raw = _amountController.text;
+    return double.tryParse(raw.startsWith('.') ? '0$raw' : raw) ?? 0;
+  }
+
+  static String _formatUsd(double value) {
+    final parts = value.toStringAsFixed(2).split('.');
+    final whole = parts.first.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+$)'),
+      (match) => '${match[1]},',
+    );
+    return '\$$whole.${parts.last}';
+  }
+}
+
+void _noop() {}
+void _ignoreArtwork(PaymentLinkCardArtwork _) {}

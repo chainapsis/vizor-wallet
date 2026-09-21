@@ -49,6 +49,8 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -66,6 +68,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
+
+import '../../support/leading_decimal_input.dart';
 
 part 'support/swap_screen_test_fakes.dart';
 
@@ -124,6 +128,34 @@ void main() {
     final parts = splitSwapSummaryAmountText(r'999K $SHIT', _testShitAsset);
     expect(parts.amount, '999K');
     expect(parts.symbol, r'$SHIT');
+  });
+
+  testWidgets('amount input displays a leading zero and keeps the cursor', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _FakeSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var mode = 0; mode < 2; mode++) {
+      if (mode == 1) {
+        await tester.tap(
+          find.byKey(const ValueKey('swap_fiat_value_mode_icon')),
+        );
+        await tester.pumpAndSettle();
+      }
+      for (final key in ['swap_amount_field', 'swap_receive_amount_field']) {
+        await expectLeadingDecimalInput(tester, find.byKey(ValueKey(key)));
+      }
+    }
   });
 
   testWidgets('review summary fits a long pay amount via FittedBox', (
@@ -4358,6 +4390,66 @@ void main() {
     expect(swapProvider.requests.single.slippageBps, 125);
   });
 
+  testWidgets(
+    'custom slippage normalizes leading decimals without relaxing limits',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final sessionStore = _FakeSwapPersistenceStore();
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _FakeSwapProvider(),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('swap_slippage_update_button')),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      final controller = tester.widget<TextField>(field).controller!;
+      for (final invalid in ['0.555', '1234']) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(controller.text, '0.5');
+      }
+      await tester.enterText(field, '5.01');
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('swap_slippage_update_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(field, ',5');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_slippage_update_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(sessionStore.savedPreferences?.slippageBps, 50);
+    },
+  );
+
   testWidgets('custom slippage outside range disables update', (tester) async {
     await _setDesktopViewport(tester);
     final sessionStore = _FakeSwapPersistenceStore();
@@ -8475,7 +8567,7 @@ void main() {
         depositSender: depositSender,
         sessionStore: sessionStore,
         failoverChainNameGetter: (url) async => 'main',
-        failoverHeightGetter: (url) async =>
+        failoverHeightGetter: (url, _) async =>
             url == fallback.normalizedLightwalletdUrl
             ? BigInt.from(100)
             : BigInt.from(100),
@@ -8682,7 +8774,7 @@ void main() {
   });
 
   testWidgets(
-    'hardware ZEC swaps open Keystone signing without a deposit tap',
+    'Keystone ZEC swaps open Keystone signing without a deposit tap',
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _FakeSwapProvider();
@@ -8766,6 +8858,174 @@ void main() {
     },
   );
 
+  testWidgets('Ledger ZEC swaps sign directly and broadcast the PCZT pair', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final hardwareSigningService = _FakeSwapHardwareSigningService();
+    final ledgerOperationService = _FakeLedgerSignedOperationService();
+    final sessionStore = _FakeSwapPersistenceStore();
+    final signingRequests = <List<int>>[];
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _ledgerHardwareBootstrap,
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        hardwareSigningService: hardwareSigningService,
+        ledgerOperationService: ledgerOperationService,
+        sessionStore: sessionStore,
+        ledgerSigner: (pcztBytes) async {
+          signingRequests.add([...pcztBytes]);
+          return const [10, 11, 12];
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+
+    for (
+      var i = 0;
+      i < 30 && ledgerOperationService.acknowledged.isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
+    expect(
+      sessionStore.saveSnapshots,
+      contains(
+        predicate<List<SwapIntent>>(
+          (snapshot) =>
+              snapshot.length == 1 &&
+              snapshot.single.id == 't1live-deposit' &&
+              snapshot.single.depositTxHash == null,
+        ),
+      ),
+    );
+    expect(signingRequests, [
+      const [1, 2, 3],
+    ]);
+    expect(hardwareSigningService.broadcasts, isEmpty);
+    expect(ledgerOperationService.checkpoints, hasLength(1));
+    expect(ledgerOperationService.checkpoints.single.proofs, const [7, 8, 9]);
+    expect(ledgerOperationService.checkpoints.single.signatures, const [
+      10,
+      11,
+      12,
+    ]);
+    expect(ledgerOperationService.broadcasts, [
+      'swap_deposit:account-1:t1live-deposit',
+    ]);
+    expect(ledgerOperationService.acknowledged, [
+      'swap_deposit:account-1:t1live-deposit',
+    ]);
+    expect(
+      find.byKey(const ValueKey('swap_keystone_signing_overlay_surface')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Ledger signing cancel keeps the provider intent for recovery', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final hardwareSigningService = _FakeSwapHardwareSigningService();
+    final sessionStore = _FakeSwapPersistenceStore();
+    final signingCompleter = Completer<List<int>>();
+    var cancelCalls = 0;
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _ledgerHardwareBootstrap,
+        swapProvider: _FakeSwapProvider(),
+        depositSender: _FakeSwapDepositSender(),
+        hardwareSigningService: hardwareSigningService,
+        sessionStore: sessionStore,
+        ledgerSigner: (_) => signingCompleter.future,
+        ledgerCanceller: () async {
+          cancelCalls++;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+
+    for (
+      var i = 0;
+      i < 30 &&
+          find
+              .byKey(const ValueKey('swap_ledger_signing_overlay_surface'))
+              .evaluate()
+              .isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(sessionStore.savedIntents, hasLength(1));
+    expect(sessionStore.savedIntents.single.id, 't1live-deposit');
+    expect(sessionStore.savedIntents.single.depositTxHash, isNull);
+
+    await tester.tap(find.text('Back to activity'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(cancelCalls, 1);
+    expect(sessionStore.savedIntents, hasLength(1));
+    expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
+    expect(
+      find.byKey(const ValueKey('swap_ledger_signing_overlay_surface')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_page')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
     'hardware ZEC signing keeps the modal preparing until proofs are ready',
     (tester) async {
@@ -8840,6 +9100,96 @@ void main() {
     },
   );
 
+  testWidgets(
+    'hardware Pay cancel returns to an empty composer and requires a fresh quote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final provider = _FakeSwapProvider();
+      final signing = _FakeSwapHardwareSigningService();
+      final router = GoRouter(
+        initialLocation: '/pay',
+        routes: [_payRoute(), _swapActivityRoute()],
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          router,
+          bootstrap: _hardwareBootstrap,
+          swapProvider: provider,
+          hardwareSigningService: signing,
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      const recipient = '0x52908400098527886e0f7030069857d2e4169ee7';
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pay_confirm_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('swap_keystone_signing_overlay_surface'),
+          ),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/pay');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PayScreen)),
+      );
+      final restored = container.read(swapStateProvider);
+      expect(restored.payMode, isTrue);
+      expect(restored.quoteMode, SwapQuoteMode.exactOutput);
+      expect(restored.receiveAmountText, isEmpty);
+      expect(restored.destinationText, isEmpty);
+      expect(restored.reviewQuote, isNull);
+      expect(restored.pendingHardwareSigningIntent, isNull);
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+        isEmpty,
+      );
+      final requests = provider.requests.length;
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '25',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_amount_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        recipient,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_select_recipient_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(provider.requests, hasLength(requests + 1));
+      expect(provider.requests.last.mode, SwapQuoteMode.exactOutput);
+      expect(provider.requests.last.amount, 25);
+    },
+  );
+
   testWidgets('hardware ZEC auto signing cancel drops the pending intent', (
     tester,
   ) async {
@@ -8905,6 +9255,39 @@ void main() {
     expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     expect(find.text('Deposit ZEC'), findsNothing);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('swap_amount_field')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text,
+      '',
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final restored = container.read(swapStateProvider);
+    expect(restored.destinationText, isEmpty);
+    expect(restored.reviewQuote, isNull);
+    expect(restored.pendingHardwareSigningIntent, isNull);
+    final requestsBeforeRetry = swapProvider.requests.length;
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.003',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    expect(swapProvider.requests, hasLength(requestsBeforeRetry + 1));
+    expect(container.read(swapStateProvider).reviewQuote, isNotNull);
   });
 
   testWidgets(
@@ -9151,7 +9534,7 @@ void main() {
           hardwareSigningService: hardwareSigningService,
           sessionStore: sessionStore,
           failoverChainNameGetter: (_) async => 'main',
-          failoverHeightGetter: (_) async => BigInt.from(100),
+          failoverHeightGetter: (_, _) async => BigInt.from(100),
         ),
       );
       await tester.pumpAndSettle();
@@ -9383,6 +9766,9 @@ Widget _routerHarness(
   List<rust_sync.TransactionInfo> recentTransactions = const [],
   PayDepositTransactionLoader? payDepositTransactionLoader,
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
+  Future<List<int>> Function(List<int> pcztBytes)? ledgerSigner,
+  LedgerOperationCanceller? ledgerCanceller,
+  LedgerSignedOperationService? ledgerOperationService,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -9439,6 +9825,15 @@ Widget _routerHarness(
       swapHardwareSigningServiceProvider.overrideWithValue(
         hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
+      if (ledgerSigner != null)
+        ledgerPcztSignerProvider.overrideWithValue(
+          (_, pcztBytes) => ledgerSigner(pcztBytes),
+        ),
+      if (ledgerCanceller != null)
+        ledgerOperationCancellerProvider.overrideWithValue(ledgerCanceller),
+      ledgerSignedOperationServiceProvider.overrideWithValue(
+        ledgerOperationService ?? _FakeLedgerSignedOperationService(),
+      ),
       swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
@@ -9461,7 +9856,7 @@ Widget _routerHarness(
         failoverChainNameGetter ?? (_) async => 'inert-no-failover',
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        failoverHeightGetter ?? (_) async => BigInt.zero,
+        failoverHeightGetter ?? (_, _) async => BigInt.zero,
       ),
     ],
     child: MaterialApp.router(
@@ -10175,6 +10570,31 @@ final _hardwareBootstrap = AppBootstrapState(
         name: 'Keystone',
         order: 0,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1swapaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerHardwareBootstrap = AppBootstrapState(
+  initialLocation: '/swap',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
       ),
     ],
     activeAccountUuid: 'account-1',

@@ -42,11 +42,31 @@ void main() {
       checkRpcEndpointHealth(
         endpoint: defaultRpcEndpointConfig('main'),
         getChainName: (_) async => 'test',
-        getLatestBlockHeight: (_) async => BigInt.from(10),
+        getLatestBlockHeight: (_, _) async => BigInt.from(10),
       ),
       throwsA(isA<FormatException>()),
     );
   });
+
+  test(
+    'checkRpcEndpointHealth scopes the height read to the network',
+    () async {
+      final endpoint = defaultRpcEndpointConfig('main');
+      String? requestedNetwork;
+
+      final health = await checkRpcEndpointHealth(
+        endpoint: endpoint,
+        getChainName: (_) async => 'main',
+        getLatestBlockHeight: (_, network) async {
+          requestedNetwork = network;
+          return BigInt.from(10);
+        },
+      );
+
+      expect(requestedNetwork, 'main');
+      expect(health.height, BigInt.from(10));
+    },
+  );
 
   test('runWithEndpointFallback switches to a healthy fallback', () async {
     final primary = defaultRpcEndpointConfig('main');
@@ -574,7 +594,7 @@ void main() {
           }
           return 'main';
         },
-        getLatestBlockHeight: (_) async => BigInt.from(10),
+        getLatestBlockHeight: (_, _) async => BigInt.from(10),
       );
       addTearDown(harness.container.dispose);
 
@@ -629,7 +649,7 @@ void main() {
           }
           return 'main';
         },
-        getLatestBlockHeight: (url) async =>
+        getLatestBlockHeight: (url, _) async =>
             heightByUrl[url] ?? (throw Exception('no height $url')),
       );
       addTearDown(harness.container.dispose);
@@ -687,7 +707,7 @@ void main() {
           }
           return 'main';
         },
-        getLatestBlockHeight: (url) async =>
+        getLatestBlockHeight: (url, _) async =>
             heightByUrl[url] ?? (throw Exception('no height $url')),
       );
       addTearDown(harness.container.dispose);
@@ -740,7 +760,8 @@ ProviderContainer _container({
             chainNameByUrl[url] ?? (throw Exception('no chain $url')),
       ),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-        (url) async => heightByUrl[url] ?? (throw Exception('no height $url')),
+        (url, _) async =>
+            heightByUrl[url] ?? (throw Exception('no height $url')),
       ),
     ],
   );

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
@@ -39,46 +40,51 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
       '${presentation.urParts.first.hashCode}',
     );
 
-    return MobileKeystonePcztSigningFlow(
-      key: flowKey,
-      title: 'Sign vote with Keystone',
-      failedTitle: 'Voting signature failed',
-      description:
-          'Scan the voting request with Keystone, approve it, then scan the signed result with this device.',
-      keyPrefix: 'mobile_voting_keystone',
-      logTag: 'MobileKeystoneVoting',
-      readingSignatureLabel: 'Reading voting signature...',
-      finalizingSignatureLabel: 'Checking voting signature...',
-      scanCaption: 'Scan the signed voting QR shown on Keystone',
-      expectedSignedUrType: 'zcash-batch-sig-result',
-      unexpectedUrMessage:
-          'Open the signed voting QR on Keystone, then scan again.',
-      recoverSignedCallbackErrorInScanner: true,
-      signingContextLabel: contextLabel,
-      requestDetails: presentation.batchMemos.isEmpty
-          ? null
-          : _MobileVotingMemoPager(memos: presentation.batchMemos),
-      requestAuxiliaryActionLabel: presentation.canSkipRemainingBundles
-          ? 'Skip unsigned bundles'
-          : null,
-      onRequestAuxiliaryAction: presentation.canSkipRemainingBundles
-          ? presentation.onSkipRemainingBundles
-          : null,
-      showCancelAction: false,
-      allowQrContentScrolling: true,
-      preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
-        urParts: presentation.urParts,
-        pcztWithProofs: Future<List<int>>.value(const []),
+    // Above the keyed flow on purpose: the key changes per bundle, so a hold
+    // taken inside the flow would fall back to zero between bundles.
+    return PaymentUriBusySurfaceHold(
+      child: MobileKeystonePcztSigningFlow(
+        key: flowKey,
+        title: 'Sign vote with Keystone',
+        failedTitle: 'Voting signature failed',
+        description:
+            'Scan the voting request with Keystone, approve it, then scan the signed result with this device.',
+        keyPrefix: 'mobile_voting_keystone',
+        logTag: 'MobileKeystoneVoting',
+        readingSignatureLabel: 'Reading voting signature...',
+        finalizingSignatureLabel: 'Checking voting signature...',
+        scanCaption: 'Scan the signed voting QR shown on Keystone',
+        expectedSignedUrType: 'zcash-batch-sig-result',
+        unexpectedUrMessage:
+            'Open the signed voting QR on Keystone, then scan again.',
+        recoverSignedCallbackErrorInScanner: true,
+        signingContextLabel: contextLabel,
+        requestDetails: presentation.batchMemos.isEmpty
+            ? null
+            : _MobileVotingMemoPager(memos: presentation.batchMemos),
+        requestAuxiliaryActionLabel: presentation.canSkipRemainingBundles
+            ? 'Skip unsigned bundles'
+            : null,
+        onRequestAuxiliaryAction: presentation.canSkipRemainingBundles
+            ? presentation.onSkipRemainingBundles
+            : null,
+        showCancelAction: false,
+        allowQrContentScrolling: true,
+        preparePczt: (_, _) async => MobileKeystonePcztSigningPayload(
+          urParts: presentation.urParts,
+          pcztWithProofs: Future<List<int>>.value(const []),
+        ),
+        signedPcztDecoder: (responseCbor) async =>
+            Uint8List.fromList(responseCbor),
+        onSigned: (_, _, _, responseCbor) =>
+            presentation.onSigned(responseCbor),
+        friendlyError: (error) =>
+            presentation.scanError ?? _friendlyVotingScanError(error),
+        scannerBuilder: scannerBuilder,
+        forceScannerActiveForTesting: forceScannerActiveForTesting,
+        startInScannerForTesting: startInScannerForTesting,
+        onCancel: () => context.go('/voting'),
       ),
-      signedPcztDecoder: (responseCbor) async =>
-          Uint8List.fromList(responseCbor),
-      onSigned: (_, _, _, responseCbor) => presentation.onSigned(responseCbor),
-      friendlyError: (error) =>
-          presentation.scanError ?? _friendlyVotingScanError(error),
-      scannerBuilder: scannerBuilder,
-      forceScannerActiveForTesting: forceScannerActiveForTesting,
-      startInScannerForTesting: startInScannerForTesting,
-      onCancel: () => context.go('/voting'),
     );
   }
 }
@@ -89,6 +95,19 @@ String _friendlyVotingScanError(Object error) {
       .replaceFirst(RegExp(r'^(Bad state|StateError):\s*'), '')
       .trim();
 }
+
+/// Lines of the memo shown before its final line. The leading text is the same
+/// boilerplate on every bundle, so clamping it keeps the box compact even when
+/// a round name is long enough to wrap many times.
+const int _memoLeadMaxLines = 3;
+
+/// Lines reserved for the memo's final line, which holds the per-bundle amount.
+///
+/// `display_memo()` bounds that line at "Amount: " plus 13 whole and 8
+/// fractional digits, which needs at most three lines on the narrowest
+/// supported viewport. The fourth is headroom, and it still bounds the box if a
+/// memo ever arrives without a trailing amount line.
+const int _memoFinalLineMaxLines = 4;
 
 class _MobileVotingMemoPager extends StatefulWidget {
   const _MobileVotingMemoPager({required this.memos});
@@ -112,6 +131,12 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
     final index = _index.clamp(0, memos.length - 1);
     final memo = memos[index];
     final colors = context.colors;
+    final memoText = memo.displayMemo.trim();
+    final lastBreak = memoText.lastIndexOf('\n');
+    final leadLines = lastBreak < 0 ? '' : memoText.substring(0, lastBreak);
+    final finalLine = lastBreak < 0
+        ? memoText
+        : memoText.substring(lastBreak + 1);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
@@ -147,9 +172,27 @@ class _MobileVotingMemoPagerState extends State<_MobileVotingMemoPager> {
                       ),
                     ),
                     const SizedBox(height: 2),
+                    // The memo's final line carries the per-bundle amount, the
+                    // only part that differs between bundles and the reason
+                    // this pager exists. Clamping the whole memo hid it: the
+                    // leading sentence alone fills two lines, and a maxLines
+                    // cut landing on the "\n" draws no ellipsis, so the amount
+                    // vanished without a hint. Clamp only the leading lines,
+                    // which are identical on every bundle, so a long round
+                    // name cannot push the amount out or overflow the column.
+                    if (leadLines.isNotEmpty)
+                      Text(
+                        leadLines,
+                        maxLines: _memoLeadMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
                     Text(
-                      memo.displayMemo,
-                      maxLines: 2,
+                      finalLine,
+                      maxLines: _memoFinalLineMaxLines,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodySmall.copyWith(

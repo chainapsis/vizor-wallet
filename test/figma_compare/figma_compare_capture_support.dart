@@ -19,10 +19,13 @@ void runFigmaCompareCaptureTest({
   required AppFormFactor expectedFormFactor,
   required Size defaultLogicalSize,
   required double defaultPixelRatio,
+  FigmaCompareConfiguration? overrideConfiguration,
+  Future<void> Function(WidgetTester tester)? beforeCapture,
+  TargetPlatform mobilePlatform = TargetPlatform.iOS,
 }) {
-  testWidgets('captures the configured Figma comparison scenario', (
-    tester,
-  ) async {
+  final testName =
+      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
+  testWidgets(testName, (tester) async {
     expect(
       kAppFormFactor,
       expectedFormFactor,
@@ -32,16 +35,18 @@ void runFigmaCompareCaptureTest({
     );
 
     if (expectedFormFactor == AppFormFactor.mobile) {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      debugDefaultTargetPlatformOverride = mobilePlatform;
     }
 
-    final configuration = FigmaCompareConfiguration.fromEnvironment(
-      defaultLogicalSize: defaultLogicalSize,
-      defaultPixelRatio: defaultPixelRatio,
-      defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
-          ? 'mobile-home-default'
-          : 'pay-recipient',
-    );
+    final configuration =
+        overrideConfiguration ??
+        FigmaCompareConfiguration.fromEnvironment(
+          defaultLogicalSize: defaultLogicalSize,
+          defaultPixelRatio: defaultPixelRatio,
+          defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
+              ? 'mobile-home-default'
+              : 'pay-recipient',
+        );
     final scenario = configuration.resolveScenario(expectedFormFactor);
     if (scenario.allowFocus) {
       EditableText.debugDeterministicCursor = true;
@@ -98,6 +103,9 @@ void runFigmaCompareCaptureTest({
       state.position.jumpTo(state.position.maxScrollExtent);
       await tester.pump();
     }
+
+    if (beforeCapture != null) await beforeCapture(tester);
+    expect(tester.takeException(), isNull);
 
     if (configuration.outputPath.isEmpty) {
       expect(find.byKey(captureBoundaryKey), findsOneWidget);

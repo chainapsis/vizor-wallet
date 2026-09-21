@@ -19,6 +19,7 @@ import '../../layout/mobile/mobile_top_nav.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
 import '../app_icon.dart';
+import '../biometric_icon.dart';
 
 class SyncKeepAwakePrivacyLockHost extends ConsumerStatefulWidget {
   const SyncKeepAwakePrivacyLockHost({
@@ -141,6 +142,9 @@ class _SyncKeepAwakePrivacyLockHostState
       return;
     }
 
+    // The privacy overlay does not replace the underlying route. Dismiss its
+    // input connection and native keyboard controls before covering the content.
+    FocusManager.instance.primaryFocus?.unfocus();
     ref.read(syncKeepAwakePrivacyLockProvider.notifier).lock();
   }
 
@@ -560,11 +564,7 @@ class _SyncKeepAwakeUnlockIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!biometric.usable) return const AppIcon(AppIcons.unlock);
 
-    return switch (biometric.availability.kind) {
-      BiometricKind.face => const AppIcon(AppIcons.faceId),
-      BiometricKind.fingerprint => const Icon(Icons.fingerprint),
-      BiometricKind.none => const AppIcon(AppIcons.unlock),
-    };
+    return BiometricIcon(kind: biometric.availability.kind);
   }
 }
 

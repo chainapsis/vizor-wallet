@@ -15,6 +15,7 @@ import '../../../providers/router_refresh_provider.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
 import '../create/account_persona_generator.dart';
+import '../ledger/ledger_setup_args.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -24,22 +25,30 @@ import 'mobile_onboarding_scaffold.dart';
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
 
-/// Mobile account personalisation shared by create, import, and Keystone.
+/// Mobile account personalisation shared by create, import, Keystone, and Ledger.
 /// The original create design is captured by Figma light/dark default frames
 /// 6125:117635 / 6132:117807 and keyboard/error frames 6125:117233 /
 /// 6132:117773.
 class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
   const MobileCustomiseAccountScreen({
-    required this.args,
+    this.args,
     this.onFinish,
+    this.progress,
+    this.onBack,
     this.random,
     super.key,
-  });
+  }) : assert(
+         args != null || (onFinish != null && progress != null),
+         'Custom setup args or an alternate completion presentation is required.',
+       );
 
-  final CustomiseAccountArgs args;
+  final CustomiseAccountArgs? args;
 
-  /// Preview/test seam. Production routes own account and password mutation.
+  /// Alternate completion seam used by previews, tests, and hardware flows.
   final MobileCustomiseAccountFinishCallback? onFinish;
+
+  final double? progress;
+  final VoidCallback? onBack;
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
@@ -173,7 +182,7 @@ class _MobileCustomiseAccountScreenState
   }
 
   Future<void> _finishSetup() async {
-    final args = widget.args;
+    final args = widget.args!;
     final router = GoRouter.of(context);
     Future<void> createAccount() => runCustomisedAccountMutation(
       ref,
@@ -232,15 +241,19 @@ class _MobileCustomiseAccountScreenState
   @override
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
-      progress: switch (widget.args.flow) {
-        SetPasswordFlow.create => mobileCreateProgress(8),
-        SetPasswordFlow.importWallet => mobileImportProgress(5),
-        SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
-        SetPasswordFlow.importWalletLink => throw StateError(
-          'Wallet Link does not use account customisation.',
-        ),
-      },
-      showBackButton: false,
+      progress:
+          widget.progress ??
+          switch (widget.args!.flow) {
+            SetPasswordFlow.create => mobileCreateProgress(8),
+            SetPasswordFlow.importWallet => mobileImportProgress(5),
+            SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
+            SetPasswordFlow.importLedger => kMobileLedgerCustomiseProgress,
+            SetPasswordFlow.importWalletLink => throw StateError(
+              'Wallet Link does not use account customisation.',
+            ),
+          },
+      onBack: _isSubmitting ? null : widget.onBack,
+      showBackButton: widget.onBack != null,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
@@ -274,7 +287,29 @@ class _MobileCustomiseAccountScreenState
         ],
       ),
     );
-    return PopScope<void>(canPop: false, child: content);
+    return PopScope<void>(
+      canPop: widget.onBack != null && !_isSubmitting,
+      child: content,
+    );
+  }
+}
+
+class MobileLedgerCustomiseAccountScreen extends ConsumerWidget {
+  const MobileLedgerCustomiseAccountScreen({required this.args, super.key});
+
+  final LedgerCustomiseAccountArgs args;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MobileCustomiseAccountScreen(
+      args: CustomiseAccountArgs(
+        setupArgs: SetPasswordScreenArgs.importLedger(
+          account: args.account,
+          birthdayHeight: args.birthdayHeight,
+        ),
+        pendingPassword: args.pendingPassword,
+      ),
+    );
   }
 }
 
