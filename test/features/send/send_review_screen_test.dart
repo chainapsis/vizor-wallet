@@ -1272,9 +1272,7 @@ void main() {
           final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
           expect(
             find.text(
-              pairingInvalid
-                  ? 'Pair your Ledger again'
-                  : 'Couldn’t complete the request',
+              pairingInvalid ? 'Pair your Ledger again' : 'Request failed',
             ),
             findsOneWidget,
           );
@@ -1330,7 +1328,7 @@ void main() {
           ledgerSigner: (pcztBytes) async {
             signingRequests.add([...pcztBytes]);
             if (signingRequests.length == 1) {
-              throw StateError('Ledger rejected the test PCZT');
+              throw StateError(_deviceRejected);
             }
             return _fakeSignatureBytes;
           },
@@ -1388,6 +1386,44 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Try again'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Ledger status 0x6a80 asks for a new transaction without blaming the user',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(
+              'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Request not accepted'), findsOneWidget);
+      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(find.textContaining('rejected on your Ledger'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+        findsNothing,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Create new transaction'), findsOneWidget);
+      expect(signerCalls, 1);
     },
   );
 
@@ -1474,7 +1510,7 @@ void main() {
         ledgerSigner: (_) async {
           signerCalls++;
           if (signerCalls == 2) {
-            throw StateError('Ledger request rejected on device');
+            throw StateError(_deviceRejected);
           }
           return [9, 1];
         },
@@ -1633,7 +1669,7 @@ void main() {
         ),
         ledgerSigner: (_) async {
           signerCalls++;
-          throw StateError('6985 rejected');
+          throw StateError(_deviceRejected);
         },
         ledgerCanceller: () => cancellation.future,
       ),
@@ -3145,3 +3181,6 @@ class _FallbackRoute extends RpcEndpointFailoverNotifier {
     fallbackCandidates: const [],
   );
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

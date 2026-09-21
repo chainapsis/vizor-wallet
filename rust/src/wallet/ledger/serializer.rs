@@ -275,7 +275,7 @@ fn compact_size(value: usize) -> Result<Vec<u8>, String> {
 fn ensure_count(label: &str, count: usize, maximum: usize) -> Result<(), String> {
     if count > maximum {
         Err(format!(
-            "Ledger supports at most {maximum} {label}; found {count}"
+            "ledger_capacity: Ledger supports at most {maximum} {label}; found {count}"
         ))
     } else {
         Ok(())
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(
             serialize(maximum + 1).unwrap_err(),
             format!(
-                "Ledger supports at most {maximum} {label}; found {}",
+                "ledger_capacity: Ledger supports at most {maximum} {label}; found {}",
                 maximum + 1
             )
         );

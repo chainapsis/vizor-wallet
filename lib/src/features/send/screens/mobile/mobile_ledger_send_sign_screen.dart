@@ -94,7 +94,7 @@ class MobileLedgerSendSignScreen extends ConsumerStatefulWidget {
   final MobileLedgerSendProofAdder? addProofs;
 
   @visibleForTesting
-  final Future<void> Function()? discardProposal;
+  final Future<bool> Function()? discardProposal;
 
   @override
   ConsumerState<MobileLedgerSendSignScreen> createState() =>
@@ -115,7 +115,8 @@ class _MobileLedgerSendSignScreenState
   var _round = 0;
   var _attemptGeneration = 0;
   var _ownershipTransferred = false;
-  var _discardScheduled = false;
+  Future<bool>? _discardFuture;
+  var _releasing = false;
   var _cancelled = false;
   late final SyncNotifier? _syncNotifier;
   late final String _operationId;
@@ -142,7 +143,7 @@ class _MobileLedgerSendSignScreenState
         _signingComplete && !_ownershipTransferred;
     if (!_ownershipTransferred && !hasUncheckpointedSignature) {
       if (!_cancelled) unawaited(_cancelOperationSafely());
-      _scheduleDiscard('MobileLedgerSendSign(dispose)');
+      unawaited(_releaseProposal('MobileLedgerSendSign(dispose)'));
     }
     super.dispose();
   }
@@ -354,11 +355,20 @@ class _MobileLedgerSendSignScreenState
       presentation = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',
         statusLabel: 'Unsupported transaction',
-        message:
-            'This Ledger preview does not support Sapling inputs or outputs.',
+        message: kLedgerSaplingRecipientMessage,
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (guidance != null && !guidance.retryable) {
+      // Retrying the same request fails the same way on the device.
+      presentation = LedgerSigningFailurePresentation(
+        title: LedgerRequestFailure.fromError(error).title,
+        statusLabel: 'New transaction required',
+        message: guidance.message,
+        showDeviceAppPrompt: false,
+        actionLabel: 'Create new transaction',
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       presentation = LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',
@@ -372,13 +382,15 @@ class _MobileLedgerSendSignScreenState
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
-      final message = lower.contains('rejected') || lower.contains('6985')
-          ? 'The transaction was rejected on your Ledger.'
-          : lower.contains('not found') ||
-                lower.contains('no device') ||
-                lower.contains('hid')
-          ? 'Connect and unlock your Ledger. $appInstruction'
-          : 'Ledger signing could not be completed. Check your device and try again.';
+      final message = switch (LedgerRequestFailure.fromError(error)) {
+        LedgerRequestFailure.declined =>
+          'The transaction was rejected on your Ledger.',
+        LedgerRequestFailure.transportLost =>
+          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+              'Connect and unlock your Ledger. $appInstruction',
+        _ =>
+          'Ledger signing could not be completed. Check your device and try again.',
+      };
       presentation = LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
@@ -469,17 +481,42 @@ class _MobileLedgerSendSignScreenState
         });
         unawaited(_checkpoint(generation));
       case _LedgerSendRecoveryAction.createNewTransaction:
-        _attemptGeneration++;
-        _scheduleDiscard('MobileLedgerSendSign(expired)');
-        ref.read(sendStatusRoutePayloadProvider.notifier).clear();
-        context.go('/send');
+        unawaited(_createNewTransaction());
       case null:
         return;
     }
   }
 
+  // The replacement send must not read balances while this proposal's inputs
+  // are still locked, so release and refresh finish before navigating.
+  Future<void> _createNewTransaction() async {
+    if (_releasing) return;
+    _attemptGeneration++;
+    setState(() => _releasing = true);
+    final released = await _releaseProposal('MobileLedgerSendSign(expired)');
+    if (!mounted) return;
+    if (released) {
+      ref.read(sendStatusRoutePayloadProvider.notifier).clear();
+      context.go('/send');
+      return;
+    }
+    final failure = _failure;
+    setState(() {
+      _releasing = false;
+      if (failure != null) {
+        _failure = LedgerSigningFailurePresentation(
+          title: failure.title,
+          statusLabel: failure.statusLabel,
+          message: 'Could not finish cancelling. Please try again.',
+          showDeviceAppPrompt: false,
+          actionLabel: failure.actionLabel,
+        );
+      }
+    });
+  }
+
   Future<void> _cancelAndPop() async {
-    if (_signingComplete || _cancelled) return;
+    if (_signingComplete || _cancelled || _releasing) return;
     setState(() => _cancelled = true);
     _attemptGeneration++;
     await _cancelOperationSafely();
@@ -506,35 +543,35 @@ class _MobileLedgerSendSignScreenState
     }
   }
 
-  void _scheduleDiscard(String logContext) {
-    if (_discardScheduled) return;
-    _discardScheduled = true;
+  Future<bool> _releaseProposal(String logContext) {
     final creation = _basePcztsFuture;
     final discard = widget.discardProposal;
     final args = widget.args;
-    unawaited(() async {
-      try {
-        await creation;
-      } catch (_) {
-        // A failed creator still needs idempotent proposal cleanup.
-      }
-      if (discard != null) {
-        await discard();
-        return;
-      }
-      await discardSendProposal(
-        proposalId: args.proposalId,
-        sendFlowId: args.sendFlowId,
-        logContext: logContext,
-        syncNotifier: _syncNotifier!,
-        accountUuid: args.proposalAccountUuid,
-      );
-    }());
+    final syncNotifier = _syncNotifier;
+    return _discardFuture ??=
+        () async {
+          try {
+            await creation;
+          } catch (_) {
+            // A failed creator still needs idempotent proposal cleanup.
+          }
+          if (discard != null) return discard();
+          return discardSendProposal(
+            proposalId: args.proposalId,
+            sendFlowId: args.sendFlowId,
+            logContext: logContext,
+            syncNotifier: syncNotifier!,
+            accountUuid: args.proposalAccountUuid,
+          );
+        }().then((released) {
+          if (!released) _discardFuture = null;
+          return released;
+        });
   }
 
   @override
   Widget build(BuildContext context) {
-    final canLeave = !_signingComplete && !_cancelled;
+    final canLeave = !_signingComplete && !_cancelled && !_releasing;
     return MobileLedgerSigningSurface(
       key: const ValueKey('mobile_ledger_signing_surface'),
       title: 'Confirm transaction',
@@ -549,6 +586,7 @@ class _MobileLedgerSendSignScreenState
         onCancel: canLeave ? () => unawaited(_cancelAndPop()) : null,
         onFailureAction:
             !_cancelled &&
+                !_releasing &&
                 _phase == LedgerSigningModalPhase.failed &&
                 _recoveryAction != null
             ? _handleFailureAction

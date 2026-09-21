@@ -19,11 +19,19 @@ use super::{
     OperationContext,
 };
 
+/// Leads USB HID failures, so callers treat them as a lost connection
+/// without reading free-form text.
+const TRANSPORT_PREFIX: &str = "ledger_transport: ";
+
+fn hid_transport_error(message: String) -> String {
+    format!("{TRANSPORT_PREFIX}{message}")
+}
+
 fn hid_connection_error(message: &str) -> String {
     if cfg!(target_os = "linux") {
         format!("ledger_linux_usb_access: {message} Check the Ledger udev rules and reconnect the device.")
     } else {
-        message.to_string()
+        hid_transport_error(message.to_string())
     }
 }
 
@@ -140,7 +148,8 @@ impl LedgerTransport {
         #[cfg(not(debug_assertions))]
         let _ = purpose;
 
-        let hid = HidApi::new().map_err(|e| format!("Initialize Ledger HID: {e}"))?;
+        let hid = HidApi::new()
+            .map_err(|e| hid_transport_error(format!("Initialize Ledger HID: {e}")))?;
         let device_info = hid
             .device_list()
             .find(|device| {
@@ -361,7 +370,7 @@ impl LedgerTransport {
             };
             let written = device
                 .write(&packet)
-                .map_err(|e| format!("Write Ledger HID packet: {e}"))?;
+                .map_err(|e| hid_transport_error(format!("Write Ledger HID packet: {e}")))?;
             if written != packet.len() {
                 return Err(
                     "Ledger HID request was only partially written; reconnect and retry".into(),
@@ -394,7 +403,7 @@ impl LedgerTransport {
             };
             let read = device
                 .read_timeout(&mut packet, poll_millis)
-                .map_err(|e| format!("Read Ledger HID packet: {e}"))?;
+                .map_err(|e| hid_transport_error(format!("Read Ledger HID packet: {e}")))?;
             if read == 0 {
                 continue;
             }
@@ -841,6 +850,20 @@ fn take_length_prefixed_string(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hid_failures_carry_a_stable_prefix() {
+        assert_eq!(
+            hid_transport_error("Read Ledger HID packet: device disconnected".into()),
+            "ledger_transport: Read Ledger HID packet: device disconnected"
+        );
+        let missing = hid_connection_error("No Ledger device found.");
+        if cfg!(target_os = "linux") {
+            assert!(missing.starts_with("ledger_linux_usb_access: No Ledger device found."));
+        } else {
+            assert_eq!(missing, "ledger_transport: No Ledger device found.");
+        }
+    }
 
     #[test]
     fn usb_models_support_interface_variants_and_legacy_ids() {

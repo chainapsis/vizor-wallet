@@ -10,13 +10,16 @@ import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
 import '../../features/voting/voting_error_messages.dart';
+import '../../features/ledger/services/ledger_failure_guidance.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
+import '../../features/ledger/widgets/ledger_device_app_prompt.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../account_provider.dart';
+import '../rpc_endpoint_provider.dart';
 import 'voting_session_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -52,6 +55,7 @@ class VotingSubmissionJobState {
     this.status = VotingSubmissionJobStatus.idle,
     this.generation = 0,
     this.errorMessage,
+    this.retryable = true,
     this.softwareAccountRequired = false,
     this.keystoneUrParts = const [],
     this.keystoneBatchMemos = const [],
@@ -70,6 +74,9 @@ class VotingSubmissionJobState {
   final VotingSubmissionJobStatus status;
   final int generation;
   final String? errorMessage;
+
+  /// False when retrying would resend a request the signer already refused.
+  final bool retryable;
   final bool softwareAccountRequired;
   final List<String> keystoneUrParts;
   final List<VotingKeystoneBatchMemo> keystoneBatchMemos;
@@ -97,6 +104,7 @@ class VotingSubmissionJobState {
     int? generation,
     String? errorMessage,
     bool clearErrorMessage = false,
+    bool? retryable,
     bool? softwareAccountRequired,
     List<String>? keystoneUrParts,
     List<VotingKeystoneBatchMemo>? keystoneBatchMemos,
@@ -121,6 +129,7 @@ class VotingSubmissionJobState {
       errorMessage: clearErrorMessage
           ? null
           : errorMessage ?? this.errorMessage,
+      retryable: retryable ?? this.retryable,
       softwareAccountRequired:
           softwareAccountRequired ?? this.softwareAccountRequired,
       keystoneUrParts: keystoneUrParts ?? this.keystoneUrParts,
@@ -349,7 +358,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       key: key,
       status: VotingSubmissionJobStatus.error,
       generation: generation,
-      errorMessage: 'Ledger voting approval was cancelled.',
+      errorMessage: kLedgerVotingCancelledMessage,
     );
     try {
       await ref.read(ledgerOperationCancellerProvider)();
@@ -891,10 +900,27 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         clearErrorMessage: true,
       );
 
-      final signatures = await ref.read(ledgerVotingPcztSignerProvider)(
-        key.accountUuid,
-        request.redactedPcztBytes,
-      );
+      final List<LedgerVotingSignature> signatures;
+      try {
+        signatures = await ref.read(ledgerVotingPcztSignerProvider)(
+          key.accountUuid,
+          request.redactedPcztBytes,
+        );
+      } catch (error) {
+        if (!_isCurrentJob(key: key, generation: generation)) return;
+        _failJob(
+          key: key,
+          generation: generation,
+          message: ledgerVotingErrorMessage(
+            error,
+            appInstruction: ledgerZcashAppOpenErrorInstruction(
+              ref.read(rpcEndpointProvider).networkName,
+            ),
+          ),
+          retryable: LedgerRequestFailure.fromError(error).retryable,
+        );
+        return;
+      }
       if (!_isCurrentJob(key: key, generation: generation)) return;
       await sessionNotifier.handleLedgerSignatures(signatures);
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1228,6 +1254,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required VotingSessionKey key,
     required int generation,
     required String message,
+    bool retryable = true,
     bool softwareAccountRequired = false,
   }) {
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -1238,6 +1265,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     state = state.copyWith(
       status: VotingSubmissionJobStatus.error,
       errorMessage: message,
+      retryable: retryable,
       softwareAccountRequired: softwareAccountRequired,
       keystoneUrParts: const [],
       keystoneBatchMemos: const [],
