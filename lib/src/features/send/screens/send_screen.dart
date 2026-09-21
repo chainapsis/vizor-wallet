@@ -652,11 +652,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   int get _memoLength => utf8.encode(_memoController.text).length;
 
   String? get _memoError {
+    final memo = _effectiveMemo;
     if (widget.activeHardwareSignerKind == HardwareSignerKind.ledger) {
-      final error = ledgerMemoError(_memoController.text);
+      final error = ledgerMemoError(memo);
       if (error != null) return error;
     }
-    final memo = _effectiveMemo;
     if (utf8.encode(memo).length > 512) return 'Message is too long';
     if (memo.isNotEmpty && !_isShieldedAddress) {
       return 'Message is only available for shielded addresses';

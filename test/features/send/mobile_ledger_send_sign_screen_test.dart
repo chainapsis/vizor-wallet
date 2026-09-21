@@ -97,7 +97,7 @@ void main() {
       expect(events, isNot(contains('create')));
       expect(
         find.text(
-          'Ledger memos can only use English letters, numbers, and symbols',
+          "Your Ledger can't sign this memo yet",
         ),
         findsOneWidget,
       );

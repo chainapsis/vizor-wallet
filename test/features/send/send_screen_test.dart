@@ -73,7 +73,6 @@ void main() {
         'first\nsecond',
         'first\rsecond',
         'first\r\nsecond',
-        'trailing\n',
         'first\tsecond',
         '안녕하세요',
         'gg 🎉',
@@ -91,21 +90,25 @@ void main() {
           isLedger,
         );
         expect(
-          find.text(
-            'Ledger memos can only use English letters, numbers, and symbols',
-          ),
+          find.text("Your Ledger can't sign this memo yet"),
           isLedger ? findsOneWidget : findsNothing,
         );
         expect(_fieldText(tester, 'send_memo_field'), memo);
       }
-      await tester.enterText(_editableIn('send_memo_field'), r'first\nsecond');
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<AppButton>(find.byKey(const ValueKey('send_review_button')))
-            .onPressed,
-        isNotNull,
-      );
+      // Whitespace the send trims away never reaches the device, and a literal
+      // backslash-n is ordinary printable text.
+      for (final allowed in ['trailing\n', r'first\nsecond']) {
+        await tester.enterText(_editableIn('send_memo_field'), allowed);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AppButton>(
+                find.byKey(const ValueKey('send_review_button')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      }
       await tester.tap(find.byKey(const ValueKey('send_review_button')));
       await tester.pumpAndSettle();
       expect(rustApi.proposeSendCalls, 1);

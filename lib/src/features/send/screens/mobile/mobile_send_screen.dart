@@ -1052,7 +1052,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       HardwareSignerKind.ledger;
 
   String? get _ledgerMemoError =>
-      _isLedgerAccount ? ledgerMemoError(_memo) : null;
+      _isLedgerAccount ? ledgerMemoError(_effectiveMemo) : null;
 
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
@@ -1506,7 +1506,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       (!_isMaxMode || _hasCurrentMaxQuote);
 
   String get _amountCtaLabel {
-    if (_ledgerMemoError != null) return _ledgerMemoError!;
+    if (_ledgerMemoError != null) return ledgerMemoUnsupportedCta;
     if (_isResolvingMax) return 'Calculating max amount';
     if (_amountReady) return 'Finish & review';
 
@@ -4101,8 +4101,10 @@ class _MemoSheetState extends State<_MemoSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
+    // Saving from this sheet always drops surrounding whitespace, so judge
+    // the same text the send will carry.
     final memoError = widget.isLedger
-        ? ledgerMemoError(_controller.text)
+        ? ledgerMemoError(_controller.text.trim())
         : null;
     final error = memoError ?? (overLimit ? 'Message is too long' : null);
     final labelStyle = AppTypography.labelLarge.copyWith(

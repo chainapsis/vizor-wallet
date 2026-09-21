@@ -3,12 +3,20 @@
 /// app version does not survive. Keep this in step with the same check in
 /// `rust/src/wallet/ledger/parse.rs`, which is the gate that actually blocks
 /// signing — this one exists so the user finds out while they can still edit.
-const ledgerMemoCharsetError =
-    'Ledger memos can only use English letters, numbers, and symbols';
+///
+/// Worded as a current limitation rather than a rule: it goes away once the
+/// device app is fixed upstream.
+const ledgerMemoUnsupportedError = "Your Ledger can't sign this memo yet";
+
+/// Shown where only a few words fit, next to an explicit edit affordance.
+const ledgerMemoUnsupportedCta = 'Edit memo to continue';
 
 bool _isPrintableAscii(int codeUnit) => codeUnit >= 0x20 && codeUnit <= 0x7e;
 
+/// Pass the memo the transaction will actually pay, not the raw field text:
+/// a memo that is trimmed away, or dropped because the recipient is
+/// transparent, never reaches the device.
 String? ledgerMemoError(String? memo) =>
     memo != null && !memo.codeUnits.every(_isPrintableAscii)
-    ? ledgerMemoCharsetError
+    ? ledgerMemoUnsupportedError
     : null;

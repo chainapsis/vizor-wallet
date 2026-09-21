@@ -579,16 +579,15 @@ fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
         };
     };
     if memo_reaches_ledger_hash_path(&memo) {
-        return Err(LEDGER_MEMO_CHARSET_UNSUPPORTED.into());
+        return Err(LEDGER_MEMO_UNSUPPORTED.into());
     }
     Ok(())
 }
 
-/// Keep this string identical to `ledgerMemoCharsetError` in
+/// Keep this string identical to `ledgerMemoUnsupportedError` in
 /// `lib/src/features/ledger/ledger_memo_policy.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
-const LEDGER_MEMO_CHARSET_UNSUPPORTED: &str =
-    "Ledger memos can only use English letters, numbers, and symbols";
+const LEDGER_MEMO_UNSUPPORTED: &str = "Your Ledger can't sign this memo yet";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. The pinned app version does not survive that path, so we refuse the
@@ -764,10 +763,10 @@ mod tests {
                     let pczt = memo_pczt(version, memo, value, true);
                     assert!(super::super::build_pczt_full_signing_plan(&pczt)
                         .unwrap_err()
-                        .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
+                        .contains(LEDGER_MEMO_UNSUPPORTED));
                     assert!(super::super::build_pczt_signing_plan(&pczt)
                         .unwrap_err()
-                        .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
+                        .contains(LEDGER_MEMO_UNSUPPORTED));
                 }
             }
         }
@@ -784,7 +783,7 @@ mod tests {
         let pczt = crate::wallet::sync::redact_pczt_for_signer(&pczt).unwrap();
         assert!(parse_pczt(&pczt)
             .unwrap_err()
-            .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
+            .contains(LEDGER_MEMO_UNSUPPORTED));
     }
 
     #[test]

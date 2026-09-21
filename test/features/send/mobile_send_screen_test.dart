@@ -899,7 +899,7 @@ void main() {
         );
         expect(
           find.text(
-            'Ledger memos can only use English letters, numbers, and symbols',
+            "Your Ledger can't sign this memo yet",
           ),
           blocked ? findsOneWidget : findsNothing,
         );
@@ -958,7 +958,7 @@ void main() {
       );
       expect(
         find.text(
-          'Ledger memos can only use English letters, numbers, and symbols',
+          "Your Ledger can't sign this memo yet",
         ),
         findsOneWidget,
       );
