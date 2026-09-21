@@ -13,7 +13,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         ledgerPcztSupportValidatorProvider.overrideWithValue(
-          (_) async => throw StateError(ledgerMemoNewlineError),
+          (_) async => throw StateError(ledgerMemoCharsetError),
         ),
         ledgerPcztTransportSignerProvider.overrideWithValue((_, _) async {
           transportCalls++;

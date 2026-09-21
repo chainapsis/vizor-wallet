@@ -96,7 +96,9 @@ void main() {
       expect(signingCalls, 0);
       expect(events, isNot(contains('create')));
       expect(
-        find.text('Ledger memos cannot contain line breaks.'),
+        find.text(
+          'Ledger memos can only use English letters, numbers, and symbols',
+        ),
         findsOneWidget,
       );
     },

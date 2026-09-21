@@ -578,10 +578,43 @@ fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
             Err("Could not verify the memo before Ledger signing".into())
         };
     };
-    if memo[0] <= 0xf4 && memo.iter().any(|byte| matches!(byte, b'\n' | b'\r')) {
-        return Err("Ledger memos cannot contain line breaks.".into());
+    if memo_reaches_ledger_hash_path(&memo) {
+        return Err(LEDGER_MEMO_CHARSET_UNSUPPORTED.into());
     }
     Ok(())
+}
+
+/// Keep this string identical to `ledgerMemoCharsetError` in
+/// `lib/src/features/ledger/ledger_memo_policy.dart`: the Dart failure guidance
+/// recognises this error by matching on it.
+const LEDGER_MEMO_CHARSET_UNSUPPORTED: &str =
+    "Ledger memos can only use English letters, numbers, and symbols";
+
+/// Whether the Ledger Zcash app would render `memo` as a hash rather than as
+/// text. The pinned app version does not survive that path, so we refuse the
+/// transaction here instead of sending it. Mirrors `memo_display` and
+/// `is_displayable_memo_text` in the device app.
+///
+/// The device also falls back to hashing once a transaction's retained memo
+/// text passes its budget, which takes three maximum-length memos. Our
+/// proposals carry at most one memo-bearing output, so that case is not
+/// modelled here.
+fn memo_reaches_ledger_hash_path(memo: &[u8; 512]) -> bool {
+    // ZIP-302 "no memo": 0xF6 followed by zeros. The device shows no field.
+    if memo[0] == 0xf6 && memo[1..].iter().all(|byte| *byte == 0) {
+        return false;
+    }
+    let Some(len) = memo.iter().rposition(|byte| *byte != 0).map(|i| i + 1) else {
+        return false;
+    };
+    // Any other lead byte above the text range is hashed without inspection.
+    if memo[0] > 0xf4 {
+        return true;
+    }
+    match std::str::from_utf8(&memo[..len]) {
+        Ok(text) => !text.bytes().all(|byte| (0x20..=0x7e).contains(&byte)),
+        Err(_) => true,
+    }
 }
 
 fn map_transparent_error(error: TransparentError<String>) -> String {
@@ -706,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn newline_memos_are_rejected_before_ledger_commands_are_built() {
+    fn memos_the_device_would_hash_are_rejected_before_ledger_commands_are_built() {
         for version in [
             BundleVersion::orchard_v2(),
             BundleVersion::orchard_v3(),
@@ -717,36 +750,45 @@ mod tests {
                 b"first\rsecond",
                 b"first\r\nsecond",
                 b"\n",
+                b"first\tsecond",
+                "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
+                "gg \u{1F389}".as_bytes(),
+                b"caf\xc3\xa9",
+                // A non-text lead byte the device hashes without inspecting.
+                b"\xffabc",
+                // Valid text tag, but not valid UTF-8 after it.
+                b"a\xff",
+                b"nul\0inside",
             ] {
                 for value in [0, 90_000] {
                     let pczt = memo_pczt(version, memo, value, true);
                     assert!(super::super::build_pczt_full_signing_plan(&pczt)
                         .unwrap_err()
-                        .contains("Ledger memos cannot contain line breaks."));
+                        .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
                     assert!(super::super::build_pczt_signing_plan(&pczt)
                         .unwrap_err()
-                        .contains("Ledger memos cannot contain line breaks."));
+                        .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
                 }
             }
         }
     }
 
     #[test]
-    fn newline_check_uses_ciphertext_even_without_an_ock() {
+    fn memo_check_uses_ciphertext_even_without_an_ock() {
         let pczt = memo_pczt(
             BundleVersion::ironwood_v3(),
-            b"first\nsecond",
+            "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
             90_000,
             false,
         );
         let pczt = crate::wallet::sync::redact_pczt_for_signer(&pczt).unwrap();
         assert!(parse_pczt(&pczt)
             .unwrap_err()
-            .contains("Ledger memos cannot contain line breaks."));
+            .contains(LEDGER_MEMO_CHARSET_UNSUPPORTED));
     }
 
     #[test]
-    fn ordinary_memos_and_non_text_memos_still_build_signing_plans() {
+    fn printable_ascii_memos_still_build_signing_plans() {
         for version in [
             BundleVersion::orchard_v2(),
             BundleVersion::orchard_v3(),
@@ -756,8 +798,11 @@ mod tests {
                 b"".as_slice(),
                 b"single line",
                 br"literal\n",
+                // ZIP-302 "no memo": the device shows no field at all.
                 b"\xf6",
-                b"\xff\n",
+                b" leading and trailing ",
+                br#"~!@#$%^&*()_+-=[]{};':\",.<>/?`|"#,
+                &[b'x'; 512],
             ] {
                 let pczt = memo_pczt(version, memo, 90_000, true);
                 assert!(super::super::build_pczt_full_signing_plan(&pczt).is_ok());

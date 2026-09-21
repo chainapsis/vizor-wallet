@@ -135,7 +135,9 @@ void main() {
     expect(rustApi.createPcztCalls, 0);
     expect(find.byType(LedgerSigningModal), findsNothing);
     expect(
-      find.text('Ledger memos cannot contain line breaks.'),
+      find.text(
+        'Ledger memos can only use English letters, numbers, and symbols',
+      ),
       findsOneWidget,
     );
   });

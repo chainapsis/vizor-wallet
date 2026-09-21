@@ -163,34 +163,39 @@ Future<PaymentRequestPrecheckResult> run(
 }
 
 void main() {
-  test(
-    'Ledger payment requests reject line breaks before creating a proposal',
-    () async {
-      final api = FakeSendApi()..isLedger = true;
-      for (final memo in ['first\nsecond', 'first\rsecond', '\n']) {
-        final result = await run(
-          api,
-          request: prefill(memoText: memo, preserveMemoText: true),
-        );
-        expect(
-          result,
-          isA<PaymentRequestPrecheckFailed>().having(
-            (r) => r.message,
-            'message',
-            'Ledger memos cannot contain line breaks.',
-          ),
-        );
-      }
-      expect(api.proposeCalls, 0);
-      api.isLedger = false;
+  test('Ledger payment requests reject undisplayable memos before creating a '
+      'proposal', () async {
+    final api = FakeSendApi()..isLedger = true;
+    for (final memo in [
+      'first\nsecond',
+      'first\rsecond',
+      '\n',
+      'first\tsecond',
+      '안녕하세요',
+      'gg 🎉',
+    ]) {
       final result = await run(
         api,
-        request: prefill(memoText: 'first\nsecond', preserveMemoText: true),
+        request: prefill(memoText: memo, preserveMemoText: true),
       );
-      expect(result, isA<PaymentRequestPrecheckReady>());
-      expect(api.lastProposedMemo, 'first\nsecond');
-    },
-  );
+      expect(
+        result,
+        isA<PaymentRequestPrecheckFailed>().having(
+          (r) => r.message,
+          'message',
+          'Ledger memos can only use English letters, numbers, and symbols',
+        ),
+      );
+    }
+    expect(api.proposeCalls, 0);
+    api.isLedger = false;
+    final result = await run(
+      api,
+      request: prefill(memoText: 'first\nsecond', preserveMemoText: true),
+    );
+    expect(result, isA<PaymentRequestPrecheckReady>());
+    expect(api.lastProposedMemo, 'first\nsecond');
+  });
   test('a payable request proposes and hands back a live proposal', () async {
     final api = FakeSendApi();
     final result = await run(api);

@@ -23,8 +23,8 @@ class LedgerFailureGuidance {
 }
 
 LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
-  if (error.toString().contains(ledgerMemoNewlineError)) {
-    return const LedgerFailureGuidance(ledgerMemoNewlineError);
+  if (error.toString().contains(ledgerMemoCharsetError)) {
+    return const LedgerFailureGuidance(ledgerMemoCharsetError);
   }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null ? null : ledgerFailureGuidance(error.cause!)) ??

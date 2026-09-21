@@ -53,64 +53,63 @@ void main() {
     _hardwareBootstrap,
     _ledgerHardwareBootstrap,
   ]) {
-    testWidgets(
-      'memo line breaks are blocked only for ${bootstrap.initialAccountState.activeAccount!.name}',
-      (tester) async {
-        await _setDesktopViewport(tester);
-        await tester.pumpWidget(_sendHarness(bootstrap: bootstrap));
-        await tester.pumpAndSettle();
-        await tester.enterText(
-          _editableIn('send_address_field'),
-          _shieldedAddress,
-        );
-        await tester.enterText(_editableIn('send_amount_field'), '1');
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('send_add_memo_card')));
-        await tester.pumpAndSettle();
-        final isLedger =
-            bootstrap.initialAccountState.activeAccount!.hardwareSignerKind ==
-            HardwareSignerKind.ledger;
-        for (final memo in [
-          'first\nsecond',
-          'first\rsecond',
-          'first\r\nsecond',
-          'trailing\n',
-        ]) {
-          await tester.enterText(_editableIn('send_memo_field'), memo);
-          await tester.pumpAndSettle();
-          expect(
-            tester
-                    .widget<AppButton>(
-                      find.byKey(const ValueKey('send_review_button')),
-                    )
-                    .onPressed ==
-                null,
-            isLedger,
-          );
-          expect(
-            find.text('Ledger memos cannot contain line breaks.'),
-            isLedger ? findsOneWidget : findsNothing,
-          );
-          expect(_fieldText(tester, 'send_memo_field'), memo);
-        }
-        await tester.enterText(
-          _editableIn('send_memo_field'),
-          r'first\nsecond',
-        );
+    testWidgets('memos the device cannot display are blocked only for '
+        '${bootstrap.initialAccountState.activeAccount!.name}', (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_sendHarness(bootstrap: bootstrap));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.enterText(_editableIn('send_amount_field'), '1');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_add_memo_card')));
+      await tester.pumpAndSettle();
+      final isLedger =
+          bootstrap.initialAccountState.activeAccount!.hardwareSignerKind ==
+          HardwareSignerKind.ledger;
+      for (final memo in [
+        'first\nsecond',
+        'first\rsecond',
+        'first\r\nsecond',
+        'trailing\n',
+        'first\tsecond',
+        '안녕하세요',
+        'gg 🎉',
+        'café',
+      ]) {
+        await tester.enterText(_editableIn('send_memo_field'), memo);
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<AppButton>(
-                find.byKey(const ValueKey('send_review_button')),
-              )
-              .onPressed,
-          isNotNull,
+                  .widget<AppButton>(
+                    find.byKey(const ValueKey('send_review_button')),
+                  )
+                  .onPressed ==
+              null,
+          isLedger,
         );
-        await tester.tap(find.byKey(const ValueKey('send_review_button')));
-        await tester.pumpAndSettle();
-        expect(rustApi.proposeSendCalls, 1);
-      },
-    );
+        expect(
+          find.text(
+            'Ledger memos can only use English letters, numbers, and symbols',
+          ),
+          isLedger ? findsOneWidget : findsNothing,
+        );
+        expect(_fieldText(tester, 'send_memo_field'), memo);
+      }
+      await tester.enterText(_editableIn('send_memo_field'), r'first\nsecond');
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppButton>(find.byKey(const ValueKey('send_review_button')))
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(rustApi.proposeSendCalls, 1);
+    });
   }
 
   testWidgets('starts Orchard proving-key warmup when send loads', (

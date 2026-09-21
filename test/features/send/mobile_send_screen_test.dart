@@ -898,7 +898,9 @@ void main() {
           blocked,
         );
         expect(
-          find.text('Ledger memos cannot contain line breaks.'),
+          find.text(
+            'Ledger memos can only use English letters, numbers, and symbols',
+          ),
           blocked ? findsOneWidget : findsNothing,
         );
         await tester.enterText(
@@ -955,7 +957,9 @@ void main() {
         isNull,
       );
       expect(
-        find.text('Ledger memos cannot contain line breaks.'),
+        find.text(
+          'Ledger memos can only use English letters, numbers, and symbols',
+        ),
         findsOneWidget,
       );
       expect(_proposeCalls, 0);
