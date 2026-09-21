@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import '../../support/gift_card_privacy_checks.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,7 @@ import '../../support/payment_links_screen_support.dart';
 import '../../support/leading_decimal_input.dart';
 
 void main() {
+  registerGiftCardPrivacyChecks(mobile: true);
   final haptics = <String>[];
   const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
   setUp(() {

@@ -353,6 +353,22 @@ void main() {
           find.text(r'$142.23'),
           settings.$1 && !settings.$2 ? findsOneWidget : findsNothing,
         );
+        if (settings.$2) {
+          final card = find.byType(PaymentLinkGiftCard);
+          expect(tester.widget<PaymentLinkGiftCard>(card).amountText, '******');
+          expect(
+            find.descendant(of: card, matching: find.text('ZEC')),
+            findsOneWidget,
+          );
+          expect(find.text('0.001'), findsNothing);
+          const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
+          if (captureDir.isNotEmpty) {
+            await expectLater(
+              card,
+              matchesGoldenFile('$captureDir/mobile-private-detail.png'),
+            );
+          }
+        }
         if (!settings.$2) {
           expect(find.text('0.00035 ZEC'), findsOneWidget);
           await tester.tap(find.text('0.00035 ZEC'));

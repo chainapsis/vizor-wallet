@@ -620,6 +620,7 @@ class _MobileTransactionStatusScreenState
                                 amountText: hideAmountIfPrivacyMode(
                                   formatZecAmount(giftCard.amountZatoshi),
                                   privacyModeEnabled: privacyModeEnabled,
+                                  denomination: '',
                                 ),
                                 supportingText:
                                     ref.watch(swapFeatureEnabledProvider) &&

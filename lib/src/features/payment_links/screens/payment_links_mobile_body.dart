@@ -7,6 +7,7 @@
 /// file is left with the state machine plus one render tree instead of two.
 library;
 
+import '../widgets/payment_link_privacy_button.dart';
 import '../widgets/payment_link_ledger_signing_overlay.dart';
 
 import 'package:flutter/material.dart';
@@ -233,6 +234,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
 
   Widget _buildCardsList(BuildContext context) {
     return PaymentLinkCardsMobileView(
+      headerAction: const PaymentLinkPrivacyButton(),
       sections: cardsSections(),
       emptyLabel: activeCardsTab == PaymentLinkCardsTab.created
           ? kPaymentLinkNoCreatedCardsText

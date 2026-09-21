@@ -346,6 +346,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
     this.onTabSelected,
     this.emptyLabel,
     this.screenTitle = 'Gift Cards',
+    this.headerAction,
     this.createLabel = kPaymentLinkCreateCardLabel,
     this.redeemLabel = kPaymentLinkRedeemCardLabel,
     super.key,
@@ -361,6 +362,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
   /// Shown centered when the selected tab has no rows.
   final String? emptyLabel;
   final String screenTitle;
+  final Widget? headerAction;
   final String createLabel;
   final String redeemLabel;
 
@@ -371,6 +373,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
     );
     return _MobilePaymentLinkFrame(
       title: screenTitle,
+      trailing: headerAction,
       onBack: onBack,
       body: Padding(
         padding: const EdgeInsets.only(
@@ -511,9 +514,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
   Widget _staticPaymentLinkCardsList(List<PaymentLinkCardsSection> sections) =>
       ListView(
         key: const ValueKey('payment_links_mobile_cards_list'),
-        padding: const EdgeInsets.only(
-          bottom: _cardsFloatingActionsClearance,
-        ),
+        padding: const EdgeInsets.only(bottom: _cardsFloatingActionsClearance),
         children: [
           for (final (index, section) in sections.indexed)
             if (section.cards.isNotEmpty || section.header != null) ...[
@@ -1935,11 +1936,13 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
     required this.onBack,
     required this.body,
     this.minStageHeight,
+    this.trailing,
   });
 
   final String title;
   final VoidCallback onBack;
   final Widget body;
+  final Widget? trailing;
 
   /// Height below which the fixed-offset stage stops fitting. Frames that pass
   /// it scroll instead of letting their controls overlap.
@@ -1967,6 +1970,7 @@ class _MobilePaymentLinkFrame extends StatelessWidget {
                 height: _navHeight,
                 child: MobileTopNav.back(
                   title: title,
+                  trailing: trailing,
                   onBack: onBack,
                   height: _navHeight,
                 ),

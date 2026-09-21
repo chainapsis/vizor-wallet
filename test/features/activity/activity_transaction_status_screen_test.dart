@@ -28,6 +28,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txidHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -43,6 +44,9 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  if (const String.fromEnvironment('GIFT_CARD_CAPTURE_DIR').isNotEmpty) {
+    setUpAll(loadFigmaCompareFonts);
+  }
   testWidgets('pending claim transaction ID opens the broadcast hash', (
     tester,
   ) async {
@@ -142,6 +146,53 @@ void main() {
       expect(find.text('Refunded'), findsNothing);
     },
   );
+
+  testWidgets('private gift card amount has one currency suffix', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privacyEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent'),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: null,
+          fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+        ),
+      ),
+    );
+    final card = find.byType(GiftCardActivityDetailView);
+    expect(
+      tester.widget<GiftCardActivityDetailView>(card).amountText,
+      '******',
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('ZEC')),
+      findsOneWidget,
+    );
+    expect(find.text('0.001'), findsNothing);
+    expect(find.text(r'$142.23'), findsNothing);
+    const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
+    if (captureDir.isNotEmpty) {
+      await tester.runAsync(() async {
+        for (final element in find.byType(Image).evaluate()) {
+          await precacheImage((element.widget as Image).image, element);
+        }
+      });
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        card,
+        matchesGoldenFile('$captureDir/desktop-private-detail.png'),
+      );
+    }
+  });
 
   testWidgets('renders created Gift Card activity metadata', (tester) async {
     await _pumpScreen(

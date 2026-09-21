@@ -185,52 +185,65 @@ void main() {
     },
   );
 
-  testWidgets(
-    'grouped mobile status hides stable labels but keeps tracking feedback',
-    (tester) async {
-      final container = ProviderContainer(
-        overrides: [
-          giftCardUsageProvider('card').overrideWith(
-            (ref) async => const GiftCardUsage(
-              status: GiftCardUsageStatus.unused,
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            home: AppTheme(
-              data: AppThemeData.dark,
-              child: const Scaffold(
-                body: GiftCardUsageStatusView(
-                  address: 'card',
-                  inline: true,
-                  dateText: 'September 14',
-                  hideStableLabel: true,
+  for (final mobile in [false, true]) {
+    for (final status in [
+      GiftCardUsageStatus.unused,
+      GiftCardUsageStatus.spendDetected,
+      GiftCardUsageStatus.used,
+    ]) {
+      testWidgets(
+        'grouped status hides $status and preserves feedback (mobile: $mobile)',
+        (tester) async {
+          final container = ProviderContainer(
+            overrides: [
+              giftCardUsageProvider(
+                'card',
+              ).overrideWith((ref) async => GiftCardUsage(status: status)),
+            ],
+          );
+          addTearDown(container.dispose);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                home: AppTheme(
+                  data: AppThemeData.dark,
+                  child: Scaffold(
+                    body: GiftCardUsageStatusView(
+                      address: 'card',
+                      inline: true,
+                      dateText: mobile ? 'September 14' : null,
+                      hideStableLabel: true,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text('September 14'),
+            mobile ? findsOneWidget : findsNothing,
+          );
+          expect(find.text('Unused'), findsNothing);
+          expect(find.text('Used'), findsNothing);
+          expect(find.text('Use detected'), findsNothing);
+          expect(find.text(' · '), findsNothing);
+
+          final notifier = container.read(
+            giftCardTrackingStateProvider.notifier,
+          );
+          notifier.update(true, false);
+          await tester.pump();
+          expect(find.text('Checking…'), findsOneWidget);
+
+          notifier.update(false, false, {'card'});
+          await tester.pump();
+          expect(find.text('Update failed'), findsOneWidget);
+        },
       );
-      await tester.pumpAndSettle();
-      expect(find.text('September 14'), findsOneWidget);
-      expect(find.text('Unused'), findsNothing);
-      expect(find.text(' · '), findsNothing);
-
-      final notifier = container.read(giftCardTrackingStateProvider.notifier);
-      notifier.update(true, false);
-      await tester.pump();
-      expect(find.text('Checking…'), findsOneWidget);
-
-      notifier.update(false, false, {'card'});
-      await tester.pump();
-      expect(find.text('Update failed'), findsOneWidget);
-    },
-  );
+    }
+  }
 
   for (final (width, scale) in [
     (288.0, 1.0),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'dart:io';
 
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -65,6 +66,7 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  PrivacyModeNotifier? privacyNotifier,
   Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
@@ -84,6 +86,8 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (privacyNotifier != null)
+          privacyModeProvider.overrideWith(() => privacyNotifier),
         // These tests exercise funding and navigation with fake operations.
         // Observer behavior has its own controlled service and widget tests.
         giftCardTrackingServiceProvider.overrideWithValue(

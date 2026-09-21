@@ -517,6 +517,7 @@ class _ActivityTransactionStatusScreenState
     final amountText = hideAmountIfPrivacyMode(
       formatZecAmount(giftCard.amountZatoshi),
       privacyModeEnabled: privacyModeEnabled,
+      denomination: '',
     );
     return GiftCardActivityDetailView(
       kind: giftCard.kind,
