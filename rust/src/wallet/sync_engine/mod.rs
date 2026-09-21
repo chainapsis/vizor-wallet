@@ -2414,6 +2414,10 @@ pub async fn run_sync_inner(
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
+        // A queued FRB start may clear the per-run cancel flag after exit began.
+        if crate::wallet::sync::proposal_locks::is_shutting_down() {
+            return Ok(());
+        }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
             log::warn!(
@@ -2426,7 +2430,8 @@ pub async fn run_sync_inner(
             );
             for _ in 0..delay_secs {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if cancel.load(Ordering::Relaxed)
+                if crate::wallet::sync::proposal_locks::is_shutting_down()
+                    || cancel.load(Ordering::Relaxed)
                     || desired_mode.load(Ordering::SeqCst) != running_mode
                 {
                     log::warn!(
@@ -2778,6 +2783,9 @@ async fn run_sync_impl(
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
+    if crate::wallet::sync::proposal_locks::is_shutting_down() {
+        return Ok(());
+    }
     let active_account_uuid = current_active_sync_account(active_account_target);
     let mut migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
@@ -2805,8 +2813,11 @@ async fn run_sync_impl(
     .map_err(SyncError::db)?;
 
     // Declared before the channel open so a stopped session leaves the Tor wait.
-    let should_exit =
-        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
+    let should_exit = || {
+        crate::wallet::sync::proposal_locks::is_shutting_down()
+            || cancel.load(Ordering::Relaxed)
+            || desired_mode.load(Ordering::SeqCst) != running_mode
+    };
 
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
     let mut client = open_lwd_channel_with_cancel(lightwalletd_url, should_exit).await?;
@@ -2905,7 +2916,7 @@ async fn run_sync_impl(
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(SyncError::db)?;
 
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+    if should_exit() {
         log::info!(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
             elapsed(),
@@ -3937,7 +3948,7 @@ async fn run_sync_impl(
             }
         }
 
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after scan", elapsed());
             return Ok(());
         }
@@ -3985,7 +3996,7 @@ async fn run_sync_impl(
         // log and skip the pass rather than falling back to the
         // stale height (the whole point of the refresh is to avoid
         // rebroadcasting against a stale expiry window).
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
                 elapsed(),
@@ -4120,7 +4131,7 @@ async fn run_sync_impl(
                 );
             }
         }
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after post-batch pass", elapsed());
             return Ok(());
         }

@@ -167,6 +167,10 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     EnableFullDpiSupportIfAvailable(window);
     that->window_handle_ = window;
   } else if (Win32Window* that = GetThisFromHandle(window)) {
+    if (message == WM_NCDESTROY) {
+      // No later message may dispatch through this object's address.
+      SetWindowLongPtr(window, GWLP_USERDATA, 0);
+    }
     return that->MessageHandler(window, message, wparam, lparam);
   }
 
@@ -218,10 +222,17 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
   }
 
-  return DefWindowProc(window_handle_, message, wparam, lparam);
+  // WM_DESTROY clears window_handle_ before WM_NCDESTROY is delivered.
+  return DefWindowProc(hwnd, message, wparam, lparam);
 }
 
 void Win32Window::Destroy() {
+  if (destroying_) {
+    return;
+  }
+  destroying_ = true;
+  // Do not resize/focus a child HWND while its Flutter view is being destroyed.
+  child_content_ = nullptr;
   OnDestroy();
 
   if (window_handle_) {
@@ -231,6 +242,7 @@ void Win32Window::Destroy() {
   if (g_active_window_count == 0) {
     WindowClassRegistrar::GetInstance()->UnregisterWindowClass();
   }
+  destroying_ = false;
 }
 
 Win32Window* Win32Window::GetThisFromHandle(HWND const window) noexcept {
