@@ -109,6 +109,289 @@ void main() {
     },
   );
 
+  for (final scan in [false, true]) {
+    testWidgets(
+      'mobile shows the ${scan ? 'scanned' : 'pasted'} card before checking finishes',
+      (tester) async {
+        final gate = Completer<void>();
+        final source = _PendingCardPrice();
+        final operations = FakePaymentLinkOperations(
+          prepareClaimGates: {1: gate},
+        );
+        await pumpPaymentLinksScreen(
+          tester,
+          logicalSize: const Size(390, 844),
+          operations: operations,
+          clipboard: FakePaymentLinkClipboard(
+            text: incomingLink.toUri().toString(),
+          ),
+          scanner: (context, {required networkName}) async => incomingLink,
+          marketDataSource: source,
+          pricingEnabled: true,
+        );
+        await tester.tap(find.text('Redeem a card'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          scan
+              ? find.byKey(const ValueKey('payment_link_mobile_scan_button'))
+              : find.text('Paste card link'),
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('payment_link_mobile_received_view')),
+          findsOneWidget,
+        );
+        expect(find.byType(PaymentLinkGiftCard), findsWidgets);
+        expect(find.text('Claim the gift'), findsOneWidget);
+        final claim = find.byKey(
+          const ValueKey('payment_link_mobile_claim_button'),
+        );
+        expect(tester.widget<AppButton>(claim).onPressed, isNotNull);
+        expect(source.fetchCount, 1);
+        expect(operations.claimedSessions, isEmpty);
+        expect(operations.receivedRecords, isEmpty);
+
+        gate.complete();
+        await tester.pumpAndSettle();
+        expect(source.result.isCompleted, isFalse);
+        expect(tester.widget<AppButton>(claim).onPressed, isNotNull);
+        expect(find.text('Claim the gift'), findsOneWidget);
+        source.result.complete(const ZecMarketData(usdPrice: 200));
+        await tester.pump();
+      },
+    );
+  }
+
+  for (final outcome in [
+    'ready',
+    'closed',
+    'error',
+    'confirmations',
+    'account',
+  ]) {
+    testWidgets(
+      'early Claim continues only for a current ready card: $outcome',
+      (tester) async {
+        final gate = Completer<void>();
+        final claim = Completer<PaymentLinkClaimResult>();
+        final accounts = SwitchablePaymentLinkAccountNotifier();
+        final operations = FakePaymentLinkOperations(
+          prepareClaimGates: {1: gate},
+          claimCompleter: claim,
+          prepareClaimFailures: outcome == 'error' ? 1 : 0,
+          waitingForFundingConfirmations: outcome == 'confirmations',
+          readClaimDestination: outcome == 'account'
+              ? () => accounts.current
+              : null,
+        );
+        await pumpPaymentLinksScreen(
+          tester,
+          logicalSize: const Size(390, 844),
+          operations: operations,
+          accountNotifier: outcome == 'account' ? accounts : null,
+          clipboard: FakePaymentLinkClipboard(
+            text: incomingLink.toUri().toString(),
+          ),
+        );
+        await tester.tap(find.text('Redeem a card'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paste card link'));
+        await tester.pumpAndSettle();
+        expect(operations.claimedSessions, isEmpty);
+        await tester.tap(find.text('Claim the gift'));
+        await tester.pumpAndSettle();
+        if (outcome == 'account') {
+          await tester.tap(find.text('Claim gift'));
+          await tester.pump();
+        }
+        expect(find.text('Preparing...'), findsOneWidget);
+        final button = find.byKey(
+          const ValueKey('payment_link_mobile_claim_button'),
+        );
+        expect(tester.widget<AppButton>(button).onPressed, isNull);
+        expect(operations.claimedSessions, isEmpty);
+        if (outcome == 'closed') {
+          await tester.tap(find.bySemanticsLabel('Close'));
+          await tester.pumpAndSettle();
+        }
+        if (outcome == 'account') {
+          await accounts.switchAccount('account-2');
+          await tester.pump();
+          await accounts.switchAccount('account-1');
+          await tester.pump();
+        }
+        gate.complete();
+        await tester.pumpAndSettle();
+        if (outcome == 'ready') {
+          expect(operations.claimedSessions, hasLength(1));
+          expect(find.text('Claiming...'), findsOneWidget);
+        } else {
+          expect(operations.claimedSessions, isEmpty);
+        }
+        claim.complete(broadcastedClaimResult);
+        await _pumpClaimFrames(tester);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final outcome in ['ready', 'error', 'empty', 'confirmations']) {
+    testWidgets(
+      'account selection and confirmation overlap checking: $outcome',
+      (tester) async {
+        final gate = Completer<void>();
+        final claim = Completer<PaymentLinkClaimResult>();
+        final accounts = SwitchablePaymentLinkAccountNotifier();
+        final operations = FakePaymentLinkOperations(
+          prepareClaimGates: {1: gate},
+          claimCompleter: claim,
+          prepareClaimFailures: outcome == 'error' ? 1 : 0,
+          claimable: outcome != 'empty',
+          waitingForFundingConfirmations: outcome == 'confirmations',
+          readClaimDestination: () => accounts.current,
+        );
+        await pumpPaymentLinksScreen(
+          tester,
+          logicalSize: const Size(390, 844),
+          operations: operations,
+          accountNotifier: accounts,
+          clipboard: FakePaymentLinkClipboard(
+            text: incomingLink.toUri().toString(),
+          ),
+        );
+        await tester.tap(find.text('Redeem a card'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paste card link'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Claim the gift'));
+        await tester.pumpAndSettle();
+        expect(find.text('Choose receiving account'), findsOneWidget);
+        expect(gate.isCompleted, isFalse);
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_claim_account_account-2')),
+        );
+        await tester.pump();
+        final confirm = find.byKey(
+          const ValueKey('payment_link_claim_account_confirm'),
+        );
+        expect(tester.widget<AppButton>(confirm).onPressed, isNotNull);
+        await tester.tap(confirm);
+        await tester.pump();
+        expect(find.text('Preparing...'), findsOneWidget);
+        expect(tester.widget<AppButton>(confirm).onPressed, isNull);
+        expect(operations.preparedLinks, hasLength(1));
+        expect(operations.claimedSessions, isEmpty);
+        expect(accounts.switchedAccounts, isEmpty);
+        gate.complete();
+        await tester.pumpAndSettle();
+        expect(find.text('Choose receiving account'), findsNothing);
+        if (outcome == 'ready') {
+          expect(
+            operations.claimedSessions.single.destinationAccountUuid,
+            'account-2',
+          );
+          expect(
+            operations.claimedSessions.single.destinationAddress,
+            'u1account-2address',
+          );
+          expect(find.text('Claiming...'), findsOneWidget);
+        } else {
+          expect(operations.claimedSessions, isEmpty);
+          expect(accounts.switchedAccounts, isEmpty);
+        }
+        claim.complete(broadcastedClaimResult);
+        await _pumpClaimFrames(tester);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final finishBeforeConfirm in [false, true]) {
+    testWidgets(
+      'early account picker ${finishBeforeConfirm ? 'survives completed checking' : 'can be cancelled before checking finishes'}',
+      (tester) async {
+        final gate = Completer<void>();
+        final accounts = SwitchablePaymentLinkAccountNotifier();
+        final operations = FakePaymentLinkOperations(
+          prepareClaimGates: {1: gate},
+          readClaimDestination: () => accounts.current,
+        );
+        await pumpPaymentLinksScreen(
+          tester,
+          logicalSize: const Size(390, 844),
+          operations: operations,
+          accountNotifier: accounts,
+          clipboard: FakePaymentLinkClipboard(
+            text: incomingLink.toUri().toString(),
+          ),
+        );
+        await tester.tap(find.text('Redeem a card'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paste card link'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Claim the gift'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_claim_account_account-2')),
+        );
+        if (finishBeforeConfirm) {
+          gate.complete();
+          await tester.pumpAndSettle();
+          expect(find.text('Choose receiving account'), findsOneWidget);
+          expect(operations.claimedSessions, isEmpty);
+          await tester.tap(find.text('Claim gift'));
+        } else {
+          await tester.tap(find.bySemanticsLabel('Close').last);
+          await tester.pumpAndSettle();
+          gate.complete();
+        }
+        await tester.pumpAndSettle();
+        if (finishBeforeConfirm) {
+          expect(
+            operations.claimedSessions.single.destinationAccountUuid,
+            'account-2',
+          );
+        } else {
+          expect(operations.claimedSessions, isEmpty);
+          expect(accounts.switchedAccounts, isEmpty);
+          expect(find.text('Claim the gift'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('closing a checking card discards its late preparation', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final operations = FakePaymentLinkOperations(prepareClaimGates: {1: gate});
+    await pumpPaymentLinksScreen(
+      tester,
+      logicalSize: const Size(390, 844),
+      operations: operations,
+      clipboard: FakePaymentLinkClipboard(
+        text: incomingLink.toUri().toString(),
+      ),
+    );
+    await tester.tap(find.text('Redeem a card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pumpAndSettle();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_mobile_received_view')),
+      findsNothing,
+    );
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(operations.receivedRecords, isEmpty);
+    expect(operations.claimedSessions, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {

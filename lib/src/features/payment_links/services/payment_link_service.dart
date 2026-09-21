@@ -42,9 +42,6 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
-// Optional display pricing must not inherit transport retries or Tor bootstrap
-// waits. After this deadline the claim proceeds with the enclosed fiat value.
-const _paymentLinkClaimPriceTimeout = Duration(seconds: 1);
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
@@ -1225,6 +1222,9 @@ class PaymentLinkService implements PaymentLinkOperations {
   Future<PaymentLinkClaimResult> _claimPreparedLink(
     PaymentLinkClaimSession session,
   ) async {
+    // Freeze the available preview price before the first await. Submission
+    // never waits for pricing or changes its saved value after a late response.
+    final claimFiatSnapshot = _availableClaimFiatSnapshot(session.link);
     // Checking a Gift Card is a read-only preview. Persist it only after the
     // user explicitly starts a claim, before any broadcast can occur, so an
     // interrupted submission remains recoverable without making previews look
@@ -1235,21 +1235,6 @@ class PaymentLinkService implements PaymentLinkOperations {
       accountUuid: session.accountUuid,
       claimTxids: '',
     );
-    PaymentLinkFiatSnapshot? claimFiatSnapshot;
-    if (_ref.read(swapFeatureEnabledProvider)) {
-      try {
-        final marketData = await _ref
-            .read(zecMarketDataSourceProvider)
-            .fetchMarketData()
-            .timeout(_paymentLinkClaimPriceTimeout);
-        claimFiatSnapshot = PaymentLinkFiatSnapshot.capture(
-          amountZatoshi: session.link.amountZatoshi,
-          zecUsdUnitPrice: marketData?.usdPrice,
-        );
-      } catch (_) {
-        // Price lookup is best-effort; retain the card's enclosed fiat value.
-      }
-    }
     final startedRecord = await _receivedStore.markClaimStarted(
       address: session.link.address,
       destinationAccountUuid: session.destinationAccountUuid,
@@ -1309,6 +1294,24 @@ class PaymentLinkService implements PaymentLinkOperations {
       }
       rethrow;
     }
+  }
+
+  PaymentLinkFiatSnapshot? _availableClaimFiatSnapshot(VizorPaymentLink link) {
+    if (!_ref.read(swapFeatureEnabledProvider) ||
+        !_ref.exists(zecHomeMarketDataStateProvider)) {
+      return null;
+    }
+    final marketData = _ref.read(zecHomeMarketDataStateProvider);
+    final fetchedAt = marketData.fetchedAt;
+    if (fetchedAt == null) return null;
+    final age = _ref.read(zecMarketDataNowProvider)().difference(fetchedAt);
+    // Match the shared loader's normal refresh cadence. Older display-cache
+    // values and unavailable prices leave the card's enclosed fiat value intact.
+    if (age.isNegative || age >= zecMarketDataRefreshInterval) return null;
+    return PaymentLinkFiatSnapshot.capture(
+      amountZatoshi: link.amountZatoshi,
+      zecUsdUnitPrice: marketData.liveData?.usdPrice,
+    );
   }
 
   Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
