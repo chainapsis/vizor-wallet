@@ -66,7 +66,8 @@ The repository pins Flutter with FVM. Install the following before building:
 - Flutter dependencies for your target platform
 - A current stable Rust toolchain with Cargo and `rustfmt`
 - Platform tooling as needed: Xcode and CocoaPods for Apple platforms, Android
-  Studio/SDK for Android, Visual Studio with desktop C++ tools for Windows, or
+  Studio/SDK for Android, Visual Studio with desktop C++ tools for Windows
+  (include the ARM64 C++ tools when building natively on Windows ARM64), or
   the Flutter Linux desktop prerequisites for Linux
 - Docker Desktop or another Docker installation with Compose for regtest work
 
@@ -79,6 +80,66 @@ fvm flutter pub get
 
 The Flutter version is declared in `.fvmrc`. Always use `fvm flutter` and
 `fvm dart`; do not use an unpinned `flutter` or `dart` executable.
+
+### Windows release architecture
+
+Windows packaging defaults to **x64**, including on ARM64 machines. Existing
+x64 installer names, update channels, package IDs, and signing policies stay
+unchanged. To package ARM64, explicitly select it on a Windows machine with
+the pinned Flutter SDK's ARM64 Dart runtime and the ARM64 MSVC tools:
+
+```powershell
+# Direct packaging (x64 is the default):
+powershell.exe -NoProfile -File scripts/package-windows-velopack.ps1 -Network mainnet
+
+# ARM64 packaging:
+powershell.exe -NoProfile -File scripts/package-windows-velopack.ps1 -Network mainnet -Arch arm64
+
+# For the Fastlane release lane, with the usual release/signing environment:
+$env:VIZOR_WINDOWS_ARCH = "arm64"
+bundle exec fastlane windows release
+Remove-Item Env:VIZOR_WINDOWS_ARCH
+```
+
+Packaging checks `fvm dart scripts/windows-build-arch.dart` before building.
+The requested architecture must match that Dart SDK's ABI: an ARM64 OS running
+an x64 Dart SDK still builds x64. Select the matching SDK or packaging option
+if the check fails; this option does not enable cross-compilation. ARM64 uses
+separate `win-arm64-mainnet` / `win-arm64-testnet` update channels. Windows update checks select the native host architecture, preserving the network.
+On an ARM64 PC, an x64 installation switches to a newer ARM64 release after it
+has received this updater implementation. Equal-version moves and downgrades
+remain disabled. If host detection fails, the installed channel is retained.
+
+Packaging regression checks (no actual Windows build or signing required):
+
+```powershell
+ruby scripts/test_windows_release.rb
+powershell.exe -NoProfile -File scripts/test-windows-packaging.ps1
+```
+
+The PowerShell checks also run with `pwsh` on macOS/Linux using mocked tools.
+
+The updater validates the signed feed's selected package identity, SHA-256,
+manifest channel/RID and app/engine/Rust PE architecture. Package inspection
+uses Windows' built-in PowerShell and .NET ZIP/XML readers in a hidden worker
+process; the validator is embedded in the executable, not loaded from an
+adjacent script. If PowerShell is unavailable or blocked, the update is rejected.
+No wallet data is read or modified. Cached downloads are reused only after a
+fresh signed-feed check, so a pending update is not restored offline after
+restarting the app. Full packages are validated before updater extraction and
+again before application.
+
+```sh
+clang++ -std=c++17 test/native/windows_update_policy_test.cpp -o /tmp/vizor-update-policy
+/tmp/vizor-update-policy
+pwsh -NoProfile -File scripts/test-windows-update-package.ps1
+```
+
+These tests cover policy and package validation, not Windows installation or
+x64-to-ARM64 process restart. Verify that transition on an ARM64 Windows host
+with a newer signed release before deployment.
+
+### Running the app
 
 Start the desktop app with:
 

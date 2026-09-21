@@ -516,7 +516,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
-      return rust_wallet.discoverSoftwareWalletImportAccounts(
+      return await rust_wallet.discoverSoftwareWalletImportAccounts(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         birthdayHeight: birthdayHeight != null
@@ -546,7 +546,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
-      return rust_wallet.previewSoftwareAccountTransparentBalance(
+      return await rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         network: network,

@@ -1721,7 +1721,7 @@ class IronwoodMigrationService {
         }
         try {
           _checkLinuxSecretOperation(secretGeneration, context);
-          return startSoftwareMigration(
+          return await startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,

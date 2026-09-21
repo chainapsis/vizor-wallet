@@ -1,6 +1,7 @@
 /// This is copied from Cargokit (which is the official way to use it currently)
 /// Details: https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
 
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
@@ -45,6 +46,10 @@ class Target {
     Target(
       rust: 'x86_64-pc-windows-msvc',
       flutter: 'windows-x64',
+    ),
+    Target(
+      rust: 'aarch64-pc-windows-msvc',
+      flutter: 'windows-arm64',
     ),
     Target(
       rust: 'x86_64-unknown-linux-gnu',
@@ -116,10 +121,17 @@ class Target {
         return [Target.forRustTriple('x86_64-unknown-linux-gnu')!];
       }
     }
+    if (Platform.isWindows) {
+      // Default to the host ISA so precompile-binaries does not try to
+      // cross-link ARM64 on an x64 MSVC install (or vice versa). Pass
+      // --target explicitly to precompile the other Windows architecture.
+      final rust = Abi.current() == Abi.windowsArm64
+          ? 'aarch64-pc-windows-msvc'
+          : 'x86_64-pc-windows-msvc';
+      return [Target.forRustTriple(rust)!];
+    }
     return all.where((target) {
-      if (Platform.isWindows) {
-        return target.rust.contains('-windows-');
-      } else if (Platform.isMacOS) {
+      if (Platform.isMacOS) {
         return target.darwinPlatform != null;
       }
       return false;

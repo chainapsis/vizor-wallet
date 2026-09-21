@@ -441,7 +441,7 @@ class PaymentLinkRecoveryReconciler {
           );
         }
       }
-      return changed ? _store.load() : records;
+      return changed ? await _store.load() : records;
     } catch (error) {
       // Retain the bearer secret and retry on the next foreground refresh when
       // chain height or wallet history is temporarily unavailable.

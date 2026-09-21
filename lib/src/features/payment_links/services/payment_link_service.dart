@@ -1759,7 +1759,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         network: network,
         accountUuid: destinationAccountUuid,
       );
-      return _loadClaimDestinationPool(
+      return await _loadClaimDestinationPool(
         dbPath: tempWallet.dbPath,
         network: network,
         accountUuid: claimAccount.single.uuid,

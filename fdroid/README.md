@@ -42,6 +42,13 @@ mobile release and maps the reported base version code to those three builds.
 
 ## Local unsigned build
 
+Flutter upgrades must update both `.fvmrc` and
+`scripts/release-config/flutter-sdk.json`. The latter records the exact
+Flutter version and full framework Git commit used by the F-Droid checkout.
+The metadata generator rejects mismatched versions or a mutable Git ref.
+Verify the revision against the installed FVM SDK, then run
+`python3 scripts/test_fdroid_tools.py` before generating release metadata.
+
 Use the final version code for the ABI that will be selected by a build block:
 
 ```bash
@@ -51,8 +58,8 @@ scripts/build-android-fdroid.sh \
   --expected-version-code 352999
 ```
 
-The script deliberately builds all three ABIs in one invocation, matching the
-Direct Release build shape. It removes Android signing variables from its
+The script builds the requested ABI through the same shared entry point used
+by Direct Release. It removes Android signing variables from its
 environment, enables the explicit unsigned-release Gradle path, and sets the
 opt-in `VIZOR_RUST_TOOLCHAIN` override through
 `scripts/run-with-android-reproducible-rust.sh`. Its version comes from the

@@ -705,7 +705,7 @@ class _AnimatedPaymentLinkCardsListState
     );
     return SizeTransition(
       sizeFactor: curved,
-      axisAlignment: -1,
+      alignment: AlignmentDirectional.topStart,
       child: FadeTransition(
         opacity: curved,
         child: SlideTransition(
