@@ -675,8 +675,16 @@ or the first broadcast attempt. Wallet-owned PCZTs carry the reservation owner;
 strip that metadata from device signer views. Ledger checkpoint insertion and
 reservation transfer must commit in the same SQLite transaction. Keystone marks
 retention before the first network submission, including TEX's first round.
-Normal app exit closes the proposal gate, drains accepted DB creators, and
-releases only unsubmitted reservations; backgrounding does not end the session.
+Normal app exit closes the proposal gate, requests sync cancellation, and hides
+its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+acquire the wallet write lock and drain accepted DB creators, then releases only
+unsubmitted reservations without waiting on SQLite contention. Once the budget
+expires, it starts no further cleanup; unfinished work is left for startup
+recovery. It does not interrupt an active DB operation. Dart bounds its cleanup
+wait at 300ms. On macOS, the exit-only `desktop_exit` channel orders the window
+out synchronously and suppresses last-window auto-quit while Dart is preparing
+its exit reply; ordinary window visibility still uses `window_manager`.
+Backgrounding or hiding a window by itself does not end the session.
 Before the first balance read after restart, the DB migration gate recovers
 abandoned process-scoped reservations without network access. Legacy retained,
 signed, and ambiguous-broadcast reservations keep their expiry-based recovery.

@@ -32,8 +32,12 @@ const TABLE: &str = "vizor_send_proposal_locks";
 pub(crate) const OWNER_KEY: &str = "vizor:send-lock-owner-v1";
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn is_shutting_down() -> bool {
+    SHUTTING_DOWN.load(Ordering::Acquire)
+}
+
 pub(crate) fn require_active_session() -> Result<(), String> {
-    if SHUTTING_DOWN.load(Ordering::Acquire) {
+    if is_shutting_down() {
         Err("Wallet is shutting down; signing request was cancelled".into())
     } else {
         Ok(())
@@ -166,7 +170,15 @@ pub(crate) fn persist(
 }
 
 pub(crate) fn remove(db_path: &str, owner: LockOwner) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    remove_with_timeout(db_path, owner, READ_DB_BUSY_TIMEOUT)
+}
+
+pub(super) fn remove_with_timeout(
+    db_path: &str,
+    owner: LockOwner,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, timeout)?;
     ensure_schema(&conn)?;
     conn.execute(
         &format!("DELETE FROM {TABLE} WHERE owner = ?1"),
@@ -236,8 +248,17 @@ pub(crate) fn release_operation(conn: &Connection, operation_id: &str) -> Result
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn is_durable(db_path: &str, owner: LockOwner) -> Result<bool, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    is_durable_with_timeout(db_path, owner, READ_DB_BUSY_TIMEOUT)
+}
+
+pub(super) fn is_durable_with_timeout(
+    db_path: &str,
+    owner: LockOwner,
+    timeout: std::time::Duration,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, timeout)?;
     ensure_schema(&conn)?;
     conn.query_row(
         &format!(
@@ -556,17 +577,20 @@ mod tests {
         // parallel Rust suite instead of adding a production reset escape hatch.
         const CHILD: &str = "VIZOR_RESERVATION_SHUTDOWN_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
-            let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "wallet::sync::proposal_locks::tests::shutdown_drains_creators_and_keeps_durable_reservations", "--nocapture"])
-                .env(CHILD, "1").output().unwrap();
-            assert!(
-                result.status.success(),
-                "{}\n{}",
-                String::from_utf8_lossy(&result.stdout),
-                String::from_utf8_lossy(&result.stderr)
-            );
+            for mode in ["drain", "timeout"] {
+                let result = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "wallet::sync::proposal_locks::tests::shutdown_drains_creators_and_keeps_durable_reservations", "--nocapture"])
+                    .env(CHILD, mode).output().unwrap();
+                assert!(
+                    result.status.success(),
+                    "{mode}: {}\n{}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
             return;
         }
+        let timeout = std::env::var(CHILD).unwrap() == "timeout";
         use super::super::{StoredProposalLock, PROPOSAL_STORE};
         use transparent::{
             address::TransparentAddress,
@@ -652,14 +676,46 @@ mod tests {
             });
         });
         entered_rx.recv().unwrap();
-        let shutdown = std::thread::spawn(super::super::shutdown_signing_reservations);
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let shutdown = std::thread::spawn(move || {
+            finished_tx
+                .send(super::super::shutdown_signing_reservations())
+                .unwrap();
+        });
         while require_active_session().is_ok() {
             std::thread::yield_now();
         }
+        if timeout {
+            // The creator still owns the write lock and has not registered any
+            // proposal. Exit must defer, not mistake that empty store for idle.
+            let result = finished_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            assert!(result.unwrap_err().contains("deferred"));
+        }
         continue_tx.send(()).unwrap();
         creator.join().unwrap();
-        shutdown.join().unwrap().unwrap();
-        let conn = Connection::open(path).unwrap();
+        shutdown.join().unwrap();
+        if !timeout {
+            finished_rx.recv().unwrap().unwrap();
+        }
+        let conn = Connection::open(&path).unwrap();
+        if timeout {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {TABLE}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                count, 3,
+                "late creator reservations must survive timed-out exit"
+            );
+            // A fresh process sees a different session id. Exercise exactly its
+            // offline recovery path; durable owners must still survive.
+            conn.execute(&format!("UPDATE {TABLE} SET session_id = zeroblob(16)"), [])
+                .unwrap();
+            recover_before_balance(&path, WalletNetwork::Test).unwrap();
+        }
         let rows: i64 = conn
             .query_row(&format!("SELECT COUNT(*) FROM {TABLE}"), [], |row| {
                 row.get(0)
@@ -672,6 +728,57 @@ mod tests {
         assert!(super::super::stored_proposal_lock(2, "flow-2").is_err());
         assert!(checkpoint_owner(&conn, LockOwner::new([1; 32]), "late-signature").is_err());
         super::super::shutdown_signing_reservations().unwrap();
+
+        // A queued FRB sync can clear its ordinary cancel flag after exit.
+        // The process-lifetime gate must still reject it before touching a DB.
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(crate::wallet::sync_engine::run_sync_inner(
+                "must-not-open.db",
+                "http://127.0.0.1:1",
+                WalletNetwork::Test,
+                std::sync::Arc::new(AtomicBool::new(false)),
+                1,
+                &std::sync::atomic::AtomicU8::new(1),
+                None,
+                true,
+                |_| panic!("a queued sync must not run during shutdown"),
+            ))
+            .unwrap();
+
+        // An external SQLite writer must not introduce the ordinary 2s/10s
+        // busy waits after the process-local write lock has been acquired.
+        let owner = LockOwner::new([4; 32]);
+        seed_reservation(&path, owner);
+        {
+            let mut store = PROPOSAL_STORE.lock().unwrap();
+            let mut lock = store.locks.get(&2).unwrap().clone();
+            lock.owner = owner;
+            lock.send_flow_id = "flow-4".into();
+            store.locks.insert(4, lock);
+        }
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let blocked_cleanup = std::thread::spawn(move || {
+            result_tx
+                .send(super::super::shutdown_signing_reservations())
+                .unwrap();
+        });
+        let result = result_rx.recv_timeout(std::time::Duration::from_secs(1));
+        conn.execute_batch("ROLLBACK").unwrap();
+        blocked_cleanup.join().unwrap();
+        assert!(
+            result.unwrap().is_err(),
+            "busy SQLite cleanup must defer immediately"
+        );
+        let count: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {TABLE} WHERE owner = ?1"),
+                params![owner.as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "failed cleanup must preserve its recovery record");
     }
 
     #[test]

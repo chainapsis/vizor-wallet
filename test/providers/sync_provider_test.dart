@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/lifecycle/app_shutdown_signal.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
@@ -10,6 +11,30 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test(
+    'exit gate rejects normal and forced sync starts before Rust dispatch',
+    () async {
+      final shutdown = AppShutdownSignal()..begin();
+      final container = ProviderContainer(
+        overrides: [
+          appShutdownSignalProvider.overrideWithValue(shutdown),
+          syncProvider.overrideWith(
+            () => _LifecycleTestSyncNotifier(
+              () async => throw StateError('must not resolve a DB during exit'),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(shutdown.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      final notifier = container.read(syncProvider.notifier);
+      notifier.startSync();
+      await notifier.startSyncAnyway();
+      expect(container.read(syncProvider).value!.isSyncing, isFalse);
+    },
+  );
   test('a busy network only aborts a restart that changes the route', () {
     // Switching to Tor with a direct channel still up would leak.
     expect(

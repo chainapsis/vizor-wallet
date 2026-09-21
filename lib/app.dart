@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
+import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -287,6 +288,11 @@ Future<void> runZcashWalletApp() async {
     SigningShutdownHost(
       desktop: isDesktopLayoutPlatform,
       coordinator: SigningShutdownCoordinator(
+        onExitStarted: () {
+          appShutdownSignal.begin();
+          rust_sync.cancelFullSync();
+          rust_sync.stopMempoolObserver();
+        },
         releaseReservations: rust_sync.shutdownSigningReservations,
         onError: (error, _) =>
             log('Shutdown reservation cleanup deferred: $error'),

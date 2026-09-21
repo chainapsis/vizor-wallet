@@ -1,4 +1,5 @@
 import 'app_form_factor.dart';
+import '../lifecycle/app_shutdown_signal.dart';
 
 /// Whether process-owned work may continue in the current app lifecycle.
 ///
@@ -9,6 +10,8 @@ import 'app_form_factor.dart';
 bool canRunAppProcessWork({
   required bool isInForeground,
   AppFormFactor formFactor = kAppFormFactor,
+  AppShutdownSignal? shutdownSignal,
 }) {
-  return isInForeground || formFactor == AppFormFactor.desktop;
+  return !(shutdownSignal ?? appShutdownSignal).isShuttingDown &&
+      (isInForeground || formFactor == AppFormFactor.desktop);
 }
