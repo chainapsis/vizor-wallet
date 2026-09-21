@@ -1,21 +1,18 @@
 import 'dart:async';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'dart:io';
 
-import 'package:zcash_wallet/src/rust/frb_generated.dart';
-import '../fakes/fake_gift_link_rust_api.dart';
-
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
@@ -24,19 +21,20 @@ import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_trac
 import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_export.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
-
+import '../fakes/fake_gift_link_rust_api.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
 

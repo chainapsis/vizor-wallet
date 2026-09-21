@@ -12,9 +12,9 @@ import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_profile_picture.dart';
 import '../src/core/widgets/comma_to_dot_input_formatter.dart';
 import '../src/core/widgets/decimal_amount_input_formatter.dart';
-import '../src/core/widgets/app_profile_picture.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
@@ -381,7 +381,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(
         sections: const [
           PaymentLinkCardsSection(
-            label: 'Creating',
+            label: kPaymentLinkPendingSectionLabel,
             cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
@@ -393,7 +393,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
             ],
           ),
           PaymentLinkCardsSection(
-            label: 'Pending',
+            label: kPaymentLinkUnusedSectionLabel,
             cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
@@ -411,6 +411,11 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 onCopyLink: _noop,
                 onShowQr: _noop,
               ),
+            ],
+          ),
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUsedSectionLabel,
+            cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(
                   PaymentLinkCardArtwork.chestLava,

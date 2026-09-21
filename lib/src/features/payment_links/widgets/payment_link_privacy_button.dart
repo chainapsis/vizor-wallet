@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -25,7 +28,12 @@ class PaymentLinkPrivacyButton extends ConsumerWidget {
           dimension: size,
           child: AppButton(
             key: const ValueKey('payment_link_privacy_button'),
-            onPressed: () => ref.read(privacyModeProvider.notifier).toggle(),
+            onPressed: () {
+              if (kAppFormFactor == AppFormFactor.mobile) {
+                unawaited(AppHaptics.privacyToggle());
+              }
+              unawaited(ref.read(privacyModeProvider.notifier).toggle());
+            },
             variant: AppButtonVariant.ghost,
             height: size,
             minWidth: size,

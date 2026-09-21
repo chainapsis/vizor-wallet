@@ -1313,6 +1313,8 @@ class _PaymentLinkCardsDesktopViewState
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  if (widget.headerAction != null)
+                    const SizedBox(width: 32 + AppSpacing.xs),
                   Flexible(
                     child: Text(
                       widget.title,

@@ -175,7 +175,7 @@ void main() {
       tester,
       sections: const [
         PaymentLinkCardsSection(
-          label: kPaymentLinkCreatingSectionLabel,
+          label: kPaymentLinkPendingSectionLabel,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: SizedBox(),

@@ -229,6 +229,24 @@ void main() {
           expect(find.text('Used'), findsNothing);
           expect(find.text('Use detected'), findsNothing);
           expect(find.text(' · '), findsNothing);
+          final semantics = tester.ensureSemantics();
+          final labels = <String>[];
+          try {
+            await tester.pump();
+            void collect(SemanticsNode node) {
+              labels.add(node.label);
+              node.visitChildren((child) {
+                collect(child);
+                return true;
+              });
+            }
+
+            collect(tester.getSemantics(find.byType(Scaffold)));
+          } finally {
+            semantics.dispose();
+          }
+          expect(labels.any((label) => label.contains('Card use:')), isFalse);
+          expect(labels.any((label) => label.contains('September 14')), mobile);
 
           final notifier = container.read(
             giftCardTrackingStateProvider.notifier,

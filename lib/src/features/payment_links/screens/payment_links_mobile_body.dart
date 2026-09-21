@@ -7,11 +7,8 @@
 /// file is left with the state machine plus one render tree instead of two.
 library;
 
-import '../widgets/payment_link_privacy_button.dart';
-import '../widgets/payment_link_ledger_signing_overlay.dart';
-
-import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
@@ -29,6 +26,8 @@ import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
+import '../widgets/payment_link_ledger_signing_overlay.dart';
+import '../widgets/payment_link_privacy_button.dart';
 import 'payment_links_local_page.dart';
 
 class PaymentLinksMobileBody extends StatelessWidget {

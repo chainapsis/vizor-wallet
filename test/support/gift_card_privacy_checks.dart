@@ -1,18 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 
-import 'payment_links_screen_support.dart';
 import '../figma_compare/figma_compare_font_loader.dart';
+import 'payment_links_screen_support.dart';
 
 class _Privacy extends PrivacyModeNotifier {
   bool get isEnabled => state;
@@ -91,6 +92,33 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
               .map((r) => r.amountText);
     expect(amounts(), everyElement('****** ZEC'));
     expect(find.bySemanticsLabel('Turn off privacy mode'), findsOneWidget);
+    if (!mobile) {
+      final title = find.text('Gift Cards');
+      final titleRow = find
+          .ancestor(of: title, matching: find.byType(Row))
+          .first;
+      expect(
+        tester.getCenter(title).dx,
+        closeTo(tester.getCenter(titleRow).dx, 0.01),
+      );
+    }
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
     const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
     if (captureDir.isNotEmpty) {
       await tester.runAsync(() async {
@@ -109,6 +137,7 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     await tester.pumpAndSettle();
     expect(amounts(), everyElement(isNot(contains('*'))));
     expect(privacy.isEnabled, isFalse);
+    expect(haptics, mobile ? ['HapticFeedbackType.mediumImpact'] : isEmpty);
     expect(find.bySemanticsLabel('Turn on privacy mode'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('payment_link_privacy_button')));
     await tester.tap(find.text('Received').first);

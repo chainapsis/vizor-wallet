@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
@@ -116,13 +118,10 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         color: context.colors.text.secondary,
       );
       if (visibleLabel == null) {
-        return Semantics(
-          label: date == null ? description : '$date. $description',
-          excludeSemantics: true,
-          child: date == null
-              ? const SizedBox.shrink()
-              : Text(date, style: style),
-        );
+        // The section heading already announces the usage state.
+        return date == null
+            ? const SizedBox.shrink()
+            : Text(date, style: style);
       }
       final status = AppTooltip(
         message: description,
