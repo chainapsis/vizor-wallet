@@ -508,11 +508,6 @@ impl SpeculosClient {
             signing_url.ok_or_else(missing_config)?,
             SPECULOS_SIGNING_API_URL,
         )?;
-        if ufvk.address == signing.address {
-            return Err(format!(
-                "Speculos UFVK and signing endpoints must be different fresh instances; configure distinct ports in {SPECULOS_UFVK_API_URL} and {SPECULOS_SIGNING_API_URL}"
-            ));
-        }
 
         Ok(Some(match purpose {
             TransportPurpose::Device | TransportPurpose::Ufvk => ufvk,
@@ -1161,7 +1156,7 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[test]
-    fn speculos_config_routes_readiness_and_ufvk_separately_from_signing() {
+    fn speculos_config_accepts_shared_or_separate_endpoints() {
         let ufvk_url = "http://127.0.0.1:5004";
         let signing_url = "http://127.0.0.1:5005";
         let device = SpeculosClient::from_config(
@@ -1196,13 +1191,11 @@ mod tests {
                 .unwrap_err()
                 .contains("requires both")
         );
-        assert!(SpeculosClient::from_config(
-            TransportPurpose::Signing,
-            Some(ufvk_url),
-            Some(ufvk_url),
-        )
-        .unwrap_err()
-        .contains("must be different"));
+        let shared =
+            SpeculosClient::from_config(TransportPurpose::Signing, Some(ufvk_url), Some(ufvk_url))
+                .unwrap()
+                .unwrap();
+        assert_eq!(shared.address, ufvk.address);
     }
 
     #[cfg(debug_assertions)]

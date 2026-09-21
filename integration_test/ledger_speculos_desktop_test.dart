@@ -142,6 +142,9 @@ void main() {
         timeout: const Duration(minutes: 2),
       );
       expect(await importApproval, isTrue);
+      // The harness advances onboarding faster than a person. Let the shared
+      // Speculos instance finish its UFVK status screen before the send flow.
+      await Future<void>.delayed(const Duration(seconds: 4));
 
       await tester.tap(find.text('Enter the block height'));
       await tester.pump();

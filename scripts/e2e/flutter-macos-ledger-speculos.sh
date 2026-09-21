@@ -22,11 +22,7 @@ require_cmd gzip
 require_cmd jq
 
 if [[ -z "$UFVK_API_URL" || -z "$SIGNING_API_URL" ]]; then
-  echo "set distinct VIZOR_LEDGER_SPECULOS_UFVK_API_URL and VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" >&2
-  exit 1
-fi
-if [[ "$UFVK_API_URL" == "$SIGNING_API_URL" ]]; then
-  echo "Ledger UFVK and signing E2E endpoints must be different fresh Speculos instances" >&2
+  echo "set VIZOR_LEDGER_SPECULOS_UFVK_API_URL and VIZOR_LEDGER_SPECULOS_SIGNING_API_URL" >&2
   exit 1
 fi
 
@@ -99,15 +95,7 @@ run_flutter_scenario() {
 # Keep each wallet journey isolated so a failure identifies the exact product
 # flow. The final scenario separately proves that two signatures can run in one
 # native app lifecycle after the Ledger status-screen cooldown.
-run_flutter_scenario "imports and sends with Ledger through Speculos"
-run_flutter_scenario "sends to TEX with two Ledger approvals through Speculos"
-run_flutter_scenario "shields transparent balance with Ledger through Speculos"
-run_flutter_scenario "pays with Ledger through Speculos"
-run_flutter_scenario "swaps with Ledger through Speculos"
-run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
-if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-false}" == "true" ]]; then
-  run_flutter_scenario "signs Orchard to Ironwood crossing through Speculos"
-fi
-run_flutter_scenario "signs sequential Ledger operations in one app lifecycle"
+source "$ROOT_DIR/scripts/e2e/ledger-speculos-scenarios.sh"
+ledger_speculos_scenarios desktop
 
 echo "Ledger Speculos fixture retained at $FIXTURE_DIR"
