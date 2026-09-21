@@ -8,23 +8,24 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
-import '../../../core/formatting/zec_amount.dart';
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
+import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/gift_card_usage.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/gift_card_tracking_provider.dart';
@@ -34,17 +35,21 @@ import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
-import '../services/payment_link_qr_image_saver.dart';
 import '../services/payment_link_qr_export.dart';
+import '../services/payment_link_qr_image_saver.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
 import '../services/payment_link_sharing.dart';
 import '../widgets/gift_card_usage_status.dart';
-import '../widgets/payment_link_claim_outcome_view.dart';
+import '../widgets/mobile/payment_link_claim_account_sheet.dart';
+import '../widgets/mobile/payment_link_mobile_views.dart';
+import '../widgets/mobile/payment_link_scan_sheet.dart';
+import '../widgets/mobile/payment_link_share_sheet.dart';
 import '../widgets/payment_link_archive_header.dart';
 import '../widgets/payment_link_card_flip.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
+import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
@@ -52,10 +57,7 @@ import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
 import '../widgets/payment_link_ledger_signing_overlay.dart';
 import '../widgets/payment_link_long_sync_warning.dart';
-import '../widgets/mobile/payment_link_mobile_views.dart';
-import '../widgets/mobile/payment_link_claim_account_sheet.dart';
-import '../widgets/mobile/payment_link_share_sheet.dart';
-import '../widgets/mobile/payment_link_scan_sheet.dart';
+import '../widgets/payment_link_privacy_button.dart';
 import 'payment_links_local_page.dart';
 import 'payment_links_mobile_body.dart';
 
@@ -2191,7 +2193,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         cardsSections: () => _cardsSections(
           recoveryRow: _buildMobileRecoveryRow,
           receivedRow: _buildMobileReceivedRow,
-          groupCreatedByUsage: true,
         ),
         activeCardsTab: _activeCardsTab,
         selectedArtwork: _selectedArtwork,
@@ -2346,6 +2347,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   Widget _buildCardsList() {
     return PaymentLinkCardsDesktopView(
+      headerAction: const PaymentLinkPrivacyButton(),
       sections: _cardsSections(
         recoveryRow: _buildRecoveryRow,
         receivedRow: _buildReceivedRow,
@@ -2372,71 +2374,47 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// The Gift Card grouping both form factors render.
   ///
-  /// Desktop keeps its existing `Creating` / `Pending` funding groups. Mobile
-  /// groups Created Cards by usage as `Pending` / `Unused` / `Used`; the row
-  /// widgets still own their existing detailed status and actions. Received
-  /// Cards keep their existing grouping on both form factors.
+  /// Created cards share Pending / Unused / Used groups on both form factors.
+  /// Rows retain their detailed status and actions; received grouping is separate.
   List<PaymentLinkCardsSection> _cardsSections({
     required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
     required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
     List<Widget> emptyReceivedCards = const <Widget>[],
-    bool groupCreatedByUsage = false,
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
-      if (groupCreatedByUsage) {
-        final pendingCards = <Widget>[];
-        final unusedCards = <Widget>[];
-        final usedCards = <Widget>[];
-        for (final record in _visibleRecoveries) {
-          final fundingReady =
-              _fundingProgressByAddress[record.link.address]?.isReady ?? false;
-          final usage = ref
-              .watch(giftCardUsageProvider(record.link.address))
-              .value;
-          final status = usage?.status ?? record.usage.status;
-          final cards = switch ((fundingReady, status)) {
-            (true, GiftCardUsageStatus.unused) => unusedCards,
-            (true, GiftCardUsageStatus.spendDetected) => usedCards,
-            (true, GiftCardUsageStatus.used) => usedCards,
-            _ => pendingCards,
-          };
-          cards.add(recoveryRow(record));
-        }
-        return <PaymentLinkCardsSection>[
-          if (pendingCards.isNotEmpty)
-            PaymentLinkCardsSection(
-              label: kPaymentLinkPendingSectionLabel,
-              cards: pendingCards,
-            ),
-          if (unusedCards.isNotEmpty)
-            PaymentLinkCardsSection(
-              label: kPaymentLinkUnusedSectionLabel,
-              cards: unusedCards,
-            ),
-          if (usedCards.isNotEmpty)
-            PaymentLinkCardsSection(
-              label: kPaymentLinkUsedSectionLabel,
-              cards: usedCards,
-            ),
-        ];
-      }
-      final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
+      final unusedCards = <Widget>[];
+      final usedCards = <Widget>[];
       for (final record in _visibleRecoveries) {
         final fundingReady =
             _fundingProgressByAddress[record.link.address]?.isReady ?? false;
-        (fundingReady ? pendingCards : creatingCards).add(recoveryRow(record));
+        final usage = ref
+            .watch(giftCardUsageProvider(record.link.address))
+            .value;
+        final status = usage?.status ?? record.usage.status;
+        final cards = switch ((fundingReady, status)) {
+          (true, GiftCardUsageStatus.unused) => unusedCards,
+          (true, GiftCardUsageStatus.spendDetected) => usedCards,
+          (true, GiftCardUsageStatus.used) => usedCards,
+          _ => pendingCards,
+        };
+        cards.add(recoveryRow(record));
       }
       return <PaymentLinkCardsSection>[
-        if (creatingCards.isNotEmpty)
-          PaymentLinkCardsSection(
-            label: kPaymentLinkCreatingSectionLabel,
-            cards: creatingCards,
-          ),
         if (pendingCards.isNotEmpty)
           PaymentLinkCardsSection(
             label: kPaymentLinkPendingSectionLabel,
             cards: pendingCards,
+          ),
+        if (unusedCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUnusedSectionLabel,
+            cards: unusedCards,
+          ),
+        if (usedCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUsedSectionLabel,
+            cards: usedCards,
           ),
       ];
     }
@@ -2532,7 +2510,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.link.createdAt),
       statusText: state.canUseLink ? null : state.statusText,
       onAction: null,
@@ -2541,7 +2522,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
       usageStatus: state.canUseLink
-          ? GiftCardUsageStatusView(address: record.link.address, inline: true)
+          ? GiftCardUsageStatusView(
+              address: record.link.address,
+              inline: true,
+              hideStableLabel: true,
+            )
           : null,
     );
   }
@@ -2554,7 +2539,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListMobileRow(
       key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.link.createdAt),
       statusText: state.canUseLink ? null : state.statusText,
       showLinkActions: state.canUseLink,
@@ -2723,7 +2711,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId),
-      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
       actionLabel:
@@ -2756,7 +2747,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListMobileRow(
       key: ValueKey('payment_link_mobile_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId),
-      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
       actionLabel:
@@ -2972,9 +2966,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   String? _savedCardFiatText(VizorPaymentLink? link) {
     final snapshot = link?.presentation?.fiatSnapshot;
-    if (snapshot == null ||
-        !ref.watch(swapFeatureEnabledProvider) ||
-        ref.watch(privacyModeProvider)) {
+    if (snapshot == null || !ref.watch(swapFeatureEnabledProvider)) {
       return null;
     }
     return swapFormatCompactFiatValue(snapshot.amount);

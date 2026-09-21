@@ -1215,6 +1215,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     this.onTabSelected,
     this.backLabel = 'Home',
     this.title = 'Gift Cards',
+    this.headerAction,
     super.key,
   });
 
@@ -1226,6 +1227,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
   final String backLabel;
   final String title;
+  final Widget? headerAction;
 
   @override
   State<PaymentLinkCardsDesktopView> createState() =>
@@ -1308,12 +1310,25 @@ class _PaymentLinkCardsDesktopViewState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                widget.title,
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineLarge.copyWith(
-                  color: context.colors.text.accent,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (widget.headerAction != null)
+                    const SizedBox(width: 32 + AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                    ),
+                  ),
+                  if (widget.headerAction != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    widget.headerAction!,
+                  ],
+                ],
               ),
               const SizedBox(height: AppSpacing.s),
               Semantics(

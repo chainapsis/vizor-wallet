@@ -6,10 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/config/swap_feature_config.dart';
-import '../../../swap/models/swap_fiat_value_formatting.dart';
-import '../../../payment_links/widgets/payment_link_copy.dart';
+import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -25,18 +23,20 @@ import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
-import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../payment_links/services/payment_link_transaction_matching.dart';
 import '../../../payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
+import '../../../payment_links/widgets/payment_link_copy.dart';
 import '../../../payment_links/widgets/payment_link_gift_card.dart';
-import '../../../payment_links/services/payment_link_transaction_matching.dart';
 import '../../../send/widgets/send_recipient_resolver.dart';
 import '../../../send/widgets/send_review_layout.dart'
     show SendReviewContactRecipient;
+import '../../../swap/models/swap_fiat_value_formatting.dart';
 import '../../activity_row_mapper.dart'
     show formatActivityTimestamp, giftCardActivityTitle;
 import '../../gift_card_activity_index.dart';
@@ -620,6 +620,7 @@ class _MobileTransactionStatusScreenState
                                 amountText: hideAmountIfPrivacyMode(
                                   formatZecAmount(giftCard.amountZatoshi),
                                   privacyModeEnabled: privacyModeEnabled,
+                                  denomination: '',
                                 ),
                                 supportingText:
                                     ref.watch(swapFeatureEnabledProvider) &&

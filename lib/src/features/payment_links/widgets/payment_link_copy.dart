@@ -15,7 +15,6 @@ const kPaymentLinkHowItWorksSubtitle = 'A great way to celebrate anything.';
 const kPaymentLinkEmptyTitle = 'No Gift Cards yet';
 const kPaymentLinkCreatedTabLabel = 'Created';
 const kPaymentLinkReceivedTabLabel = 'Received';
-const kPaymentLinkCreatingSectionLabel = 'Creating';
 const kPaymentLinkPendingSectionLabel = 'Pending';
 const kPaymentLinkUnusedSectionLabel = 'Unused';
 const kPaymentLinkUsedSectionLabel = 'Used';

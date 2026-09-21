@@ -1,33 +1,34 @@
-import 'package:flutter/services.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
-import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txidHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -43,6 +44,9 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  if (const String.fromEnvironment('GIFT_CARD_CAPTURE_DIR').isNotEmpty) {
+    setUpAll(loadFigmaCompareFonts);
+  }
   testWidgets('pending claim transaction ID opens the broadcast hash', (
     tester,
   ) async {
@@ -142,6 +146,53 @@ void main() {
       expect(find.text('Refunded'), findsNothing);
     },
   );
+
+  testWidgets('private gift card amount has one currency suffix', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privacyEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent'),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: null,
+          fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+        ),
+      ),
+    );
+    final card = find.byType(GiftCardActivityDetailView);
+    expect(
+      tester.widget<GiftCardActivityDetailView>(card).amountText,
+      '******',
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('ZEC')),
+      findsOneWidget,
+    );
+    expect(find.text('0.001'), findsNothing);
+    expect(find.text(r'$142.23'), findsNothing);
+    const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
+    if (captureDir.isNotEmpty) {
+      await tester.runAsync(() async {
+        for (final element in find.byType(Image).evaluate()) {
+          await precacheImage((element.widget as Image).image, element);
+        }
+      });
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        card,
+        matchesGoldenFile('$captureDir/desktop-private-detail.png'),
+      );
+    }
+  });
 
   testWidgets('renders created Gift Card activity metadata', (tester) async {
     await _pumpScreen(
