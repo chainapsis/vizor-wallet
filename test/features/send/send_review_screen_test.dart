@@ -110,6 +110,38 @@ void main() {
     });
   }
 
+  testWidgets('Ledger review with a newline cannot request signing', (
+    tester,
+  ) async {
+    var signingCalls = 0;
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified', memo: 'first\nsecond'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+        ),
+        ledgerSigner: (_) async {
+          signingCalls++;
+          return [9, 1];
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm with Ledger'));
+    await tester.pumpAndSettle();
+    expect(signingCalls, 0);
+    expect(rustApi.createPcztCalls, 0);
+    expect(find.byType(LedgerSigningModal), findsNothing);
+    expect(
+      find.text(
+        "Ledger can't sign non-English text yet",
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a whitespace-only memo keeps its Message row, with a '
       'placeholder', (tester) async {
     // An edited ZIP-321 request can carry a memo made only of whitespace, and

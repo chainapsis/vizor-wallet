@@ -38,6 +38,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../ledger/ledger_memo_policy.dart';
 import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
@@ -366,6 +367,10 @@ class MobileSendReviewScreen extends StatelessWidget {
 }
 
 const _kMobileSendRecipientLineHeight = 17.0;
+
+/// The memo error is the one message here that does not fit on a line at
+/// phone width, so its slot holds two.
+const _kMobileSendMemoErrorHeight = _kMobileSendRecipientLineHeight * 2;
 const _kMobileSendAddressActionHeight = 36.0;
 const _kMobileSendAddressActionSlotWidth = 96.0;
 const _kMobileSendAddressPasteWidth = 76.0;
@@ -598,9 +603,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
     if (initialMemo != null) {
-      final memo = widget.preserveInitialMemoWhitespace
-          ? initialMemo
-          : initialMemo.trim();
+      final memo = initialMemo;
       if (memo.isNotEmpty) {
         _memo = memo;
         _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
@@ -1048,6 +1051,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         SpendableBalanceFreshness.lastCompletedSync;
   }
 
+  bool get _isLedgerAccount =>
+      ref.read(accountProvider).value?.activeAccount?.hardwareSignerKind ==
+      HardwareSignerKind.ledger;
+
+  String? get _ledgerMemoError =>
+      _isLedgerAccount ? ledgerMemoError(_effectiveMemo) : null;
+
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
@@ -1490,6 +1500,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   bool get _amountReady =>
+      _ledgerMemoError == null &&
       !_isResolvingMax &&
       _hasValidAddress &&
       !_amountJumpPendingAddressCheck &&
@@ -1499,6 +1510,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       (!_isMaxMode || _hasCurrentMaxQuote);
 
   String get _amountCtaLabel {
+    if (_ledgerMemoError != null) return ledgerMemoUnsupportedCta;
     if (_isResolvingMax) return 'Calculating max amount';
     if (_amountReady) return 'Finish & review';
 
@@ -1722,7 +1734,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     // keyboard (Figma `Review Add Memo`, 4638:74505).
     final next = await showAppMobileSheet<String>(
       context: context,
-      builder: (_) => _MemoSheet(initial: _memo),
+      builder: (_) => _MemoSheet(initial: _memo, isLedger: _isLedgerAccount),
     );
     if (next == null || !mounted) return;
     setState(() {
@@ -1815,6 +1827,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _confirmAndSendHeld() async {
+    if (_ledgerMemoError != null) {
+      showAppToast(context, _ledgerMemoError!, iconName: AppIcons.warning);
+      return;
+    }
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     if (!_hasCurrentReviewFeeQuote) {
       unawaited(_refreshReviewQuote());
@@ -2763,19 +2779,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             AppSpacing.sm,
             AppSpacing.s,
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const ValueKey('mobile_send_review_button'),
-              expand: true,
-              constrainContent: true,
-              onPressed: _amountReady ? _continueToReview : null,
-              child: Text(
-                _amountCtaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_ledgerMemoError != null)
+                AppButton(
+                  key: const ValueKey('mobile_send_edit_invalid_memo'),
+                  variant: AppButtonVariant.ghost,
+                  onPressed: () => unawaited(_editMemo()),
+                  child: const Text('Edit memo'),
+                ),
+              AppButton(
+                key: const ValueKey('mobile_send_review_button'),
+                expand: true,
+                constrainContent: true,
+                onPressed: _amountReady ? _continueToReview : null,
+                child: Text(
+                  _amountCtaLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ],
@@ -3235,6 +3260,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         : () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),
                   ),
+                  if (_ledgerMemoError != null) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    Text(
+                      _ledgerMemoError!,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.destructive,
+                      ),
+                    ),
+                  ],
                   if (_reviewFeeNotice != null) ...[
                     const SizedBox(height: AppSpacing.s),
                     Text(
@@ -3261,7 +3295,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   key: const ValueKey('mobile_send_confirm'),
                   expand: true,
                   onPressed:
-                      _isConfirmingSend ||
+                      _ledgerMemoError != null ||
+                          _isConfirmingSend ||
                           (_pendingCancellation == null &&
                               (_isResolvingMax ||
                                   (_isMaxMode && !_hasCurrentMaxQuote) ||
@@ -4028,9 +4063,10 @@ class _ReviewListRow extends StatelessWidget {
 /// Memo entry sheet — Figma `Review Add Memo` (4484:62917). Pops the
 /// new memo text; popping an empty string clears it.
 class _MemoSheet extends StatefulWidget {
-  const _MemoSheet({required this.initial});
+  const _MemoSheet({required this.initial, required this.isLedger});
 
   final String initial;
+  final bool isLedger;
 
   @override
   State<_MemoSheet> createState() => _MemoSheetState();
@@ -4069,12 +4105,18 @@ class _MemoSheetState extends State<_MemoSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
+    // Saving from this sheet always drops surrounding whitespace, so judge
+    // the same text the send will carry.
+    final memoError = widget.isLedger
+        ? ledgerMemoError(_controller.text.trim())
+        : null;
+    final error = memoError ?? (overLimit ? 'Message is too long' : null);
     final labelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
       fontWeight: FontWeight.w400,
     );
     final primaryIsClear = _showClearMemo;
-    final primaryDisabled = overLimit && !primaryIsClear;
+    final primaryDisabled = error != null && !primaryIsClear;
 
     return MobileModalScaffold(
       title: 'Add Memo',
@@ -4121,12 +4163,15 @@ class _MemoSheetState extends State<_MemoSheet> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   SizedBox(
-                    height: _kMobileSendRecipientLineHeight,
+                    height: _kMobileSendMemoErrorHeight,
                     child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: overLimit
+                      // Top, so a one-line message keeps the position it had
+                      // before this slot grew.
+                      alignment: Alignment.topLeft,
+                      child: error != null
                           ? Text(
-                              'Message is too long',
+                              error,
+                              maxLines: 2,
                               style: labelStyle.copyWith(
                                 color: colors.text.destructive,
                               ),
@@ -4247,7 +4292,9 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
     final focused = widget.focusNode.hasFocus;
 
     return Container(
-      height: 148,
+      // The memo error slot below holds two lines, and the sheet keeps its
+      // height: the second line comes from here. This area scrolls.
+      height: 148 - _kMobileSendRecipientLineHeight,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),

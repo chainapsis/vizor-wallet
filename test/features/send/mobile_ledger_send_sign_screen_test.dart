@@ -64,6 +64,46 @@ void main() {
       ..devicePixelRatio = 1;
   });
 
+  testWidgets(
+    'direct Ledger signing route rejects a newline before preparation',
+    (tester) async {
+      var signingCalls = 0;
+      final events = <String>[];
+      await tester.pumpWidget(
+        _app(
+          args: SendReviewArgs(
+            proposalId: BigInt.one,
+            sendFlowId: 'flow-newline',
+            proposalAccountUuid: 'account-1',
+            address: 'u1recipient',
+            addressType: 'unified',
+            amountZatoshi: BigInt.from(100000),
+            feeZatoshi: BigInt.from(10000),
+            needsSaplingParams: false,
+            memo: 'first\nsecond',
+          ),
+          operationService: _FakeOperationService(),
+          events: events,
+          signer: (_) async {
+            signingCalls++;
+            return [2];
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open signing'));
+      await tester.pumpAndSettle();
+      expect(signingCalls, 0);
+      expect(events, isNot(contains('create')));
+      expect(
+        find.text(
+          "Ledger can't sign non-English text yet",
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   for (final stage in ['connect', 'readiness', 'sign']) {
     for (final kind in [
       LedgerMobileFailure.permissionDenied,

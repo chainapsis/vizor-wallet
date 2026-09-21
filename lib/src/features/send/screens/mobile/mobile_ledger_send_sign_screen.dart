@@ -14,6 +14,7 @@ import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../ledger/ledger_capability.dart';
+import '../../../ledger/ledger_memo_policy.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
 import '../../../ledger/services/ledger_device_selection.dart';
@@ -168,6 +169,8 @@ class _MobileLedgerSendSignScreenState
 
   Future<void> _prepareAndSign(int generation) async {
     try {
+      final memoError = ledgerMemoError(widget.args.memo);
+      if (memoError != null) throw StateError(memoError);
       final dbPath = await (widget.loadWalletDbPath ?? getWalletDbPath)();
       if (!_isCurrent(generation)) return;
       var saplingParams =

@@ -7,6 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
 zcash_script = "0.4.3"
@@ -122,7 +123,7 @@ version = "=0.1.0-rc5"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.0.2"
+version = "=5.1.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -169,10 +170,6 @@ hex = "0.4"
 # Integration tests inject/inspect scan_queue rows directly to exercise the
 # VZR-89 rescue path. Keep this version aligned with the [dependencies] entry.
 rusqlite = "0.37"
-# Used only by the sigs-only byte-identity test to recover the spendable note
-# from a freshly built Orchard bundle (matches pczt's own end-to-end test).
-# Already in the dependency graph via zcash_client_backend.
-zcash_note_encryption = "0.4"
 # The scripted PIR probe transport builds the same typed failure the real
 # transport attaches, and pauses time so the probe deadline is exercised
 # without waiting on it. Both are already in the graph.
@@ -180,7 +177,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-version = "=5.0.2"
+version = "=5.1.0"
 features = ["test-fixtures"]
 
 [dev-dependencies.vote-commitment-tree]

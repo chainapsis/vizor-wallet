@@ -1,6 +1,11 @@
 //! Developer harness for exercising Vizor's production Ledger PCZT serializer
 //! and finalizer against a Zcash app running in Speculos.
 
+#[path = "ledger_zcash_speculos_poc/regtest.rs"]
+mod regtest;
+#[path = "ledger_zcash_speculos_poc/voting.rs"]
+mod voting;
+
 use std::{
     env, fs,
     io::{Read, Write},
@@ -76,6 +81,9 @@ fn run() -> Result<(), String> {
     {
         println!("{}", usage());
         return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg.starts_with("regtest-")) {
+        return regtest::run(&args);
     }
     let config = Config::parse(args)?;
     if config.desktop_smoke {
@@ -262,13 +270,14 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .map_err(|error| format!("Write {}: {error}", tex_step_1_path.display()))?;
     fs::write(&tex_step_2_path, &tex_pczts.step_2)
         .map_err(|error| format!("Write {}: {error}", tex_step_2_path.display()))?;
-    let voting_bundle_1 = ironwood_voting_smoke_pczt(&export.ufvk, &export.seed_fingerprint, 1)?;
-    let voting_bundle_2 = ironwood_voting_smoke_pczt(&export.ufvk, &export.seed_fingerprint, 2)?;
+    let voting_requests = voting::signing_requests(&export.ufvk, &export.seed_fingerprint)?;
+    let voting_bundle_1 = &voting_requests[0];
+    let voting_bundle_2 = &voting_requests[1];
     let voting_bundle_1_path = pczt_path.with_extension("voting-bundle-1.pczt");
     let voting_bundle_2_path = pczt_path.with_extension("voting-bundle-2.pczt");
-    fs::write(&voting_bundle_1_path, &voting_bundle_1.bytes)
+    fs::write(&voting_bundle_1_path, &voting_bundle_1.redacted_pczt_bytes)
         .map_err(|error| format!("Write {}: {error}", voting_bundle_1_path.display()))?;
-    fs::write(&voting_bundle_2_path, &voting_bundle_2.bytes)
+    fs::write(&voting_bundle_2_path, &voting_bundle_2.redacted_pczt_bytes)
         .map_err(|error| format!("Write {}: {error}", voting_bundle_2_path.display()))?;
     let orchard_spend = post_ironwood_orchard_spend_pczt(&export.ufvk, &export.seed_fingerprint)?;
     let orchard_to_ironwood_path = pczt_path.with_extension("orchard-to-ironwood-v6.pczt");
@@ -539,11 +548,6 @@ struct TexSmokePczts {
     tex_address: String,
 }
 
-struct VotingSmokePczt {
-    bytes: Vec<u8>,
-    action_index: usize,
-}
-
 /// Builds the post-NU6.3 Ledger Orchard-spend canary: the V6
 /// Orchard-V2-to-Ironwood transaction used by an ordinary Send.
 ///
@@ -661,109 +665,6 @@ fn finalize_orchard_spend_fixture<P: Parameters>(
         .finish()
         .serialize()
         .map_err(|error| format!("Serialize {label} fixture PCZT: {error:?}"))
-}
-
-fn ironwood_voting_smoke_pczt(
-    ufvk: &str,
-    seed_fingerprint: &[u8],
-    bundle_tag: u8,
-) -> Result<VotingSmokePczt, String> {
-    use orchard::{
-        keys::Scope,
-        note::{NoteVersion, RandomSeed, Rho},
-        tree::{MerkleHashOrchard, MerklePath},
-        value::NoteValue,
-        Note,
-    };
-
-    let ufvk = UnifiedFullViewingKey::decode(&WalletNetwork::Main, ufvk)
-        .map_err(|error| format!("Decode Speculos UFVK for voting fixture: {error}"))?;
-    let fvk = ufvk
-        .orchard()
-        .cloned()
-        .ok_or("Speculos UFVK has no Orchard full viewing key")?;
-    let recipient = fvk.address_at(0u32, Scope::Internal);
-    let rho = Rho::from_bytes(&[bundle_tag; 32])
-        .into_option()
-        .ok_or("Build voting fixture rho")?;
-    let rseed = (0u8..=255)
-        .find_map(|byte| RandomSeed::from_bytes([byte; 32], &rho).into_option())
-        .ok_or("Build voting fixture random seed")?;
-    let note = Note::from_parts(
-        recipient,
-        NoteValue::from_raw(1_000_000),
-        rho,
-        rseed,
-        NoteVersion::V3,
-    )
-    .into_option()
-    .ok_or("Build voting fixture Ironwood note")?;
-    let zero = MerkleHashOrchard::from_bytes(&[0; 32])
-        .into_option()
-        .ok_or("Build voting fixture empty Merkle node")?;
-    let merkle_path = MerklePath::from_parts(0, [zero; 32]);
-    let anchor = merkle_path.root(note.commitment().into());
-
-    let mut builder = Builder::new(
-        WalletNetwork::Main,
-        BlockHeight::from_u32(4_000_000),
-        BuildConfig::Standard {
-            sapling_anchor: None,
-            orchard_anchor: None,
-            ironwood_anchor: Some(anchor.into()),
-            orchard_padding: BundlePadding::DEFAULT,
-            ironwood_padding: BundlePadding::DEFAULT,
-        },
-    );
-    builder
-        .add_ironwood_spend::<zip317::FeeRule>(fvk, note, merkle_path)
-        .map_err(|error| format!("Add voting fixture Ironwood spend: {error:?}"))?;
-    builder
-        .add_ironwood_output::<zip317::FeeRule>(
-            None,
-            recipient,
-            Zatoshis::const_from_u64(990_000),
-            MemoBytes::empty(),
-        )
-        .map_err(|error| format!("Add voting fixture Ironwood output: {error:?}"))?;
-    let PcztResult {
-        pczt_parts,
-        ironwood_meta,
-        ..
-    } = builder
-        .build_for_pczt(OsRng, &zip317::FeeRule::standard())
-        .map_err(|error| format!("Build voting fixture PCZT: {error}"))?;
-    let spend_index = ironwood_meta
-        .spend_action_index(0)
-        .ok_or("Voting fixture has no Ironwood spend action")?;
-    let fingerprint: [u8; 32] = seed_fingerprint
-        .try_into()
-        .map_err(|_| "Speculos Ledger fingerprint must be 32 bytes")?;
-    let derivation = orchard::pczt::Zip32Derivation::parse(
-        fingerprint,
-        vec![0x8000_0020, 0x8000_0085, 0x8000_0000],
-    )
-    .map_err(|error| format!("Build voting fixture ZIP-32 derivation: {error:?}"))?;
-    let pczt = IoFinalizer::new(
-        Creator::build_from_parts(pczt_parts).ok_or("Create voting fixture PCZT")?,
-    )
-    .finalize_io()
-    .map_err(|error| format!("Finalize voting fixture PCZT IO: {error:?}"))?;
-    let bytes = Updater::new(pczt)
-        .update_ironwood_with(|mut bundle| {
-            bundle.update_action_with(spend_index, |mut action| {
-                action.set_spend_zip32_derivation(derivation);
-                Ok(())
-            })
-        })
-        .map_err(|error| format!("Attach voting fixture derivation: {error:?}"))?
-        .finish()
-        .serialize()
-        .map_err(|error| format!("Serialize voting fixture PCZT: {error:?}"))?;
-    Ok(VotingSmokePczt {
-        bytes,
-        action_index: spend_index,
-    })
 }
 
 fn transparent_smoke_pczt(

@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/ledger/ledger_memo_policy.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -7,6 +8,27 @@ import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 
 void main() {
+  test('newline memo validation prevents transport', () async {
+    var transportCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        ledgerPcztSupportValidatorProvider.overrideWithValue(
+          (_) async => throw StateError(ledgerMemoUnsupportedError),
+        ),
+        ledgerPcztTransportSignerProvider.overrideWithValue((_, _) async {
+          transportCalls++;
+          return const [9];
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    await expectLater(
+      container.read(ledgerPcztSignerProvider)('account-1', const [1]),
+      throwsA(isA<StateError>()),
+    );
+    expect(transportCalls, 0);
+  });
+
   test('cancelled support validation never opens a transport', () async {
     final validation = Completer<void>();
     var signed = false;
