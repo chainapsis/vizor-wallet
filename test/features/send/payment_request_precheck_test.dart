@@ -50,6 +50,7 @@ class FakeSendApi {
   void Function()? whileValidating;
 
   var validateCalls = 0;
+  bool isLedger = false;
   var proposeCalls = 0;
   String? lastValidatedNetwork;
   final discarded = <BigInt>[];
@@ -117,6 +118,7 @@ class FakeSendApi {
   }
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    isLedgerAccount: (_) => isLedger,
     spendableIsAuthoritativeNow: () => spendableIsAuthoritativeNow,
     spendableBalanceNow: () => spendableBalanceNow ?? BigInt.zero,
     validateAddress: validateAddress,
@@ -161,6 +163,34 @@ Future<PaymentRequestPrecheckResult> run(
 }
 
 void main() {
+  test(
+    'Ledger payment requests reject line breaks before creating a proposal',
+    () async {
+      final api = FakeSendApi()..isLedger = true;
+      for (final memo in ['first\nsecond', 'first\rsecond', '\n']) {
+        final result = await run(
+          api,
+          request: prefill(memoText: memo, preserveMemoText: true),
+        );
+        expect(
+          result,
+          isA<PaymentRequestPrecheckFailed>().having(
+            (r) => r.message,
+            'message',
+            'Ledger memos cannot contain line breaks.',
+          ),
+        );
+      }
+      expect(api.proposeCalls, 0);
+      api.isLedger = false;
+      final result = await run(
+        api,
+        request: prefill(memoText: 'first\nsecond', preserveMemoText: true),
+      );
+      expect(result, isA<PaymentRequestPrecheckReady>());
+      expect(api.lastProposedMemo, 'first\nsecond');
+    },
+  );
   test('a payable request proposes and hands back a live proposal', () async {
     final api = FakeSendApi();
     final result = await run(api);

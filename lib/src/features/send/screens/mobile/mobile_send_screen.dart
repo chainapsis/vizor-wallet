@@ -38,6 +38,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../ledger/ledger_memo_policy.dart';
 import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
@@ -598,9 +599,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
     if (initialMemo != null) {
-      final memo = widget.preserveInitialMemoWhitespace
-          ? initialMemo
-          : initialMemo.trim();
+      final memo = initialMemo;
       if (memo.isNotEmpty) {
         _memo = memo;
         _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
@@ -1048,6 +1047,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         SpendableBalanceFreshness.lastCompletedSync;
   }
 
+  bool get _isLedgerAccount =>
+      ref.read(accountProvider).value?.activeAccount?.hardwareSignerKind ==
+      HardwareSignerKind.ledger;
+
+  String? get _ledgerMemoError =>
+      _isLedgerAccount ? ledgerMemoError(_memo) : null;
+
   String? get _activeAccountUuid =>
       ref.read(accountProvider).value?.activeAccountUuid;
 
@@ -1490,6 +1496,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   bool get _amountReady =>
+      _ledgerMemoError == null &&
       !_isResolvingMax &&
       _hasValidAddress &&
       !_amountJumpPendingAddressCheck &&
@@ -1499,6 +1506,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       (!_isMaxMode || _hasCurrentMaxQuote);
 
   String get _amountCtaLabel {
+    if (_ledgerMemoError != null) return _ledgerMemoError!;
     if (_isResolvingMax) return 'Calculating max amount';
     if (_amountReady) return 'Finish & review';
 
@@ -1722,7 +1730,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     // keyboard (Figma `Review Add Memo`, 4638:74505).
     final next = await showAppMobileSheet<String>(
       context: context,
-      builder: (_) => _MemoSheet(initial: _memo),
+      builder: (_) => _MemoSheet(initial: _memo, isLedger: _isLedgerAccount),
     );
     if (next == null || !mounted) return;
     setState(() {
@@ -1815,6 +1823,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _confirmAndSendHeld() async {
+    if (_ledgerMemoError != null) {
+      showAppToast(context, _ledgerMemoError!, iconName: AppIcons.warning);
+      return;
+    }
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     if (!_hasCurrentReviewFeeQuote) {
       unawaited(_refreshReviewQuote());
@@ -2763,19 +2775,28 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             AppSpacing.sm,
             AppSpacing.s,
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const ValueKey('mobile_send_review_button'),
-              expand: true,
-              constrainContent: true,
-              onPressed: _amountReady ? _continueToReview : null,
-              child: Text(
-                _amountCtaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_ledgerMemoError != null)
+                AppButton(
+                  key: const ValueKey('mobile_send_edit_invalid_memo'),
+                  variant: AppButtonVariant.ghost,
+                  onPressed: () => unawaited(_editMemo()),
+                  child: const Text('Edit memo'),
+                ),
+              AppButton(
+                key: const ValueKey('mobile_send_review_button'),
+                expand: true,
+                constrainContent: true,
+                onPressed: _amountReady ? _continueToReview : null,
+                child: Text(
+                  _amountCtaLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ],
@@ -3235,6 +3256,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         : () => unawaited(_editMemo()),
                     onFeeInfoTap: () => unawaited(_showFeeInfo()),
                   ),
+                  if (_ledgerMemoError != null) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    Text(
+                      _ledgerMemoError!,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: context.colors.text.destructive,
+                      ),
+                    ),
+                  ],
                   if (_reviewFeeNotice != null) ...[
                     const SizedBox(height: AppSpacing.s),
                     Text(
@@ -3261,7 +3291,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   key: const ValueKey('mobile_send_confirm'),
                   expand: true,
                   onPressed:
-                      _isConfirmingSend ||
+                      _ledgerMemoError != null ||
+                          _isConfirmingSend ||
                           (_pendingCancellation == null &&
                               (_isResolvingMax ||
                                   (_isMaxMode && !_hasCurrentMaxQuote) ||
@@ -4028,9 +4059,10 @@ class _ReviewListRow extends StatelessWidget {
 /// Memo entry sheet — Figma `Review Add Memo` (4484:62917). Pops the
 /// new memo text; popping an empty string clears it.
 class _MemoSheet extends StatefulWidget {
-  const _MemoSheet({required this.initial});
+  const _MemoSheet({required this.initial, required this.isLedger});
 
   final String initial;
+  final bool isLedger;
 
   @override
   State<_MemoSheet> createState() => _MemoSheetState();
@@ -4069,12 +4101,16 @@ class _MemoSheetState extends State<_MemoSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
+    final memoError = widget.isLedger
+        ? ledgerMemoError(_controller.text)
+        : null;
+    final error = memoError ?? (overLimit ? 'Message is too long' : null);
     final labelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
       fontWeight: FontWeight.w400,
     );
     final primaryIsClear = _showClearMemo;
-    final primaryDisabled = overLimit && !primaryIsClear;
+    final primaryDisabled = error != null && !primaryIsClear;
 
     return MobileModalScaffold(
       title: 'Add Memo',
@@ -4124,9 +4160,9 @@ class _MemoSheetState extends State<_MemoSheet> {
                     height: _kMobileSendRecipientLineHeight,
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: overLimit
+                      child: error != null
                           ? Text(
-                              'Message is too long',
+                              error,
                               style: labelStyle.copyWith(
                                 color: colors.text.destructive,
                               ),

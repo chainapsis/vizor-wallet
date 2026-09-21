@@ -1,6 +1,7 @@
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_mobile_ble_service.dart';
+import '../ledger_memo_policy.dart';
 
 /// Device guidance travels with the caught error, never with a previous
 /// attempt's global readiness state. Unknown transaction errors stay with the
@@ -22,6 +23,9 @@ class LedgerFailureGuidance {
 }
 
 LedgerFailureGuidance? ledgerFailureGuidance(Object error) {
+  if (error.toString().contains(ledgerMemoNewlineError)) {
+    return const LedgerFailureGuidance(ledgerMemoNewlineError);
+  }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null ? null : ledgerFailureGuidance(error.cause!)) ??
         LedgerFailureGuidance(error.message);

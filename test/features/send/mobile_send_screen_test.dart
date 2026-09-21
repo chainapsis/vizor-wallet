@@ -848,6 +848,179 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  for (final signer in [
+    HardwareSignerKind.ledger,
+    HardwareSignerKind.keystone,
+  ]) {
+    testWidgets(
+      '${signer.name} memo editor validates line breaks before returning to review',
+      (tester) async {
+        await tester.pumpWidget(
+          _sendFlowRouterApp(
+            initialLocation: '/send/review',
+            accountState: AccountState(
+              accounts: [
+                AccountInfo(
+                  uuid: 'account-1',
+                  name: signer.name,
+                  order: 0,
+                  isHardware: true,
+                  hardwareSignerKind: signer,
+                ),
+              ],
+              activeAccountUuid: 'account-1',
+              activeAddress: 'u1activeaddress',
+            ),
+            initialReviewDraft: const MobileSendReviewDraftArgs(
+              sendFlowId: 'flow-1',
+              recipient: _shieldedAddress,
+              addressType: 'unified',
+              amountText: '1',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_send_memo_editable')),
+          'first\nsecond',
+        );
+        await tester.pumpAndSettle();
+        final blocked = signer == HardwareSignerKind.ledger;
+        expect(
+          tester
+                  .widget<AppButton>(
+                    find.byKey(const ValueKey('mobile_send_memo_save')),
+                  )
+                  .onPressed ==
+              null,
+          blocked,
+        );
+        expect(
+          find.text('Ledger memos cannot contain line breaks.'),
+          blocked ? findsOneWidget : findsNothing,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_send_memo_editable')),
+          'first second',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('mobile_send_memo_save')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('mobile_send_memo_editable')),
+          findsNothing,
+        );
+        expect(find.text('first second'), findsOneWidget);
+      },
+    );
+  }
+
+  testWidgets(
+    'Ledger review reached with a newline disables confirmation until edited',
+    (tester) async {
+      await tester.pumpWidget(
+        _sendFlowRouterApp(
+          initialLocation: '/send/review',
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'account-1',
+                name: 'Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+            activeAddress: 'u1activeaddress',
+          ),
+          initialReviewDraft: const MobileSendReviewDraftArgs(
+            sendFlowId: 'flow-1',
+            recipient: _shieldedAddress,
+            addressType: 'unified',
+            amountText: '1',
+            memo: 'first\nsecond',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_send_confirm')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        find.text('Ledger memos cannot contain line breaks.'),
+        findsOneWidget,
+      );
+      expect(_proposeCalls, 0);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_memo_row')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_send_memo_editable')),
+        'first second',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_memo_save')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_send_confirm')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets('Ledger prefilled newline can be corrected before review', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sendFlowRouterApp(
+        initialLocation: '/send',
+        initialRecipient: _shieldedAddress,
+        initialAmount: '1',
+        initialMemo: 'first\nsecond',
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'account-1',
+              name: 'Ledger',
+              order: 0,
+              isHardware: true,
+              hardwareSignerKind: HardwareSignerKind.ledger,
+            ),
+          ],
+          activeAccountUuid: 'account-1',
+          activeAddress: 'u1activeaddress',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final review = find.byKey(const ValueKey('mobile_send_review_button'));
+    expect(tester.widget<AppButton>(review).onPressed, isNull);
+    expect(_proposeCalls, 0);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_edit_invalid_memo')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_send_memo_editable')),
+      'first second',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_memo_save')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(review).onPressed, isNotNull);
+  });
+
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,
   ) async {

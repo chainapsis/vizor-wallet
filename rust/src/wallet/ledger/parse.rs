@@ -4,11 +4,17 @@
 use std::collections::BTreeMap;
 
 use ff::PrimeField;
-use orchard::{bundle::BundleVersion, note::NoteVersion, ValuePool};
+use orchard::{
+    bundle::BundleVersion,
+    note::{NoteVersion, Rho},
+    note_encryption::{IronwoodDomain, OrchardDomain},
+    Note, ValuePool,
+};
 use pczt::{
     roles::verifier::{OrchardError, TransparentError, Verifier},
     Pczt,
 };
+use zcash_note_encryption::{try_output_recovery_with_pkd_esk, Domain};
 use zcash_primitives::transaction::components::orchard::bundle_version_for_branch;
 use zcash_protocol::consensus::BranchId;
 use zcash_script::script::Evaluable;
@@ -478,6 +484,7 @@ fn convert_shielded_action(
 ) -> Result<ShieldedAction, String> {
     let spend = action.spend();
     let output = action.output();
+    validate_output_memo(action)?;
     let spend_value = spend
         .value()
         .map(|value| value.inner())
@@ -536,6 +543,47 @@ fn convert_shielded_action(
     })
 }
 
+fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
+    let output = action.output();
+    let note = Note::from_parts(
+        output
+            .recipient()
+            .ok_or("Shielded output is missing its recipient")?,
+        output
+            .value()
+            .ok_or("Shielded output is missing its value")?,
+        Rho::from_nf_old(*action.spend().nullifier()),
+        output.rseed().ok_or("Shielded output is missing rseed")?,
+        *output.note_version(),
+    )
+    .into_option()
+    .ok_or("Shielded output note is invalid")?;
+    let pk_d = OrchardDomain::get_pk_d(&note);
+    let esk = OrchardDomain::derive_esk(&note).ok_or("Shielded output is missing esk")?;
+    let recovered = if *output.note_version() == NoteVersion::V3 {
+        try_output_recovery_with_pkd_esk(
+            &IronwoodDomain::for_pczt_action(action),
+            pk_d,
+            esk,
+            action,
+        )
+    } else {
+        try_output_recovery_with_pkd_esk(&OrchardDomain::for_pczt_action(action), pk_d, esk, action)
+    };
+    let Some((_, _, memo)) = recovered else {
+        // Restricted zero-value outputs can have deliberately random ciphertext.
+        return if note.value().inner() == 0 {
+            Ok(())
+        } else {
+            Err("Could not verify the memo before Ledger signing".into())
+        };
+    };
+    if memo[0] <= 0xf4 && memo.iter().any(|byte| matches!(byte, b'\n' | b'\r')) {
+        return Err("Ledger memos cannot contain line breaks.".into());
+    }
+    Ok(())
+}
+
 fn map_transparent_error(error: TransparentError<String>) -> String {
     match error {
         TransparentError::Custom(message) => message,
@@ -553,6 +601,169 @@ fn map_orchard_error(pool: &str, error: OrchardError<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
+        use orchard::{
+            builder::{Builder, BundleType},
+            keys::{FullViewingKey, Scope, SpendingKey},
+            note::RandomSeed,
+            tree::{MerkleHashOrchard, MerklePath},
+            value::NoteValue,
+        };
+        use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer};
+        use voting_crypto_deps::rand::rngs::OsRng;
+        use zcash_primitives::transaction::{builder::PcztParts, TxVersion};
+        use zcash_protocol::consensus::{BlockHeight, MainNetwork};
+
+        let fvk = FullViewingKey::from(&SpendingKey::from_bytes([0x43; 32]).unwrap());
+        let rho = Rho::from_bytes(&[1; 32]).into_option().unwrap();
+        let rseed = (0u8..=255)
+            .find_map(|byte| RandomSeed::from_bytes([byte; 32], &rho).into_option())
+            .unwrap();
+        let note = Note::from_parts(
+            fvk.address_at(0u32, Scope::External),
+            NoteValue::from_raw(100_000),
+            rho,
+            rseed,
+            version.note_version(),
+        )
+        .into_option()
+        .unwrap();
+        let ironwood = version.value_pool() == ValuePool::Ironwood;
+        let branch = if version != BundleVersion::orchard_v2() {
+            BranchId::Nu6_3
+        } else {
+            BranchId::Nu6_2
+        };
+        let path =
+            MerklePath::from_parts(0, [MerkleHashOrchard::from_bytes(&[0; 32]).unwrap(); 32]);
+        let mut builder = Builder::new(
+            BundleType::UNPADDED,
+            version,
+            version.default_flags(),
+            path.root(note.commitment().into()),
+        )
+        .unwrap();
+        builder.add_spend(fvk.clone(), note, path).unwrap();
+        let mut memo_bytes = [0; 512];
+        memo_bytes[..memo.len()].copy_from_slice(memo);
+        if version.default_flags().cross_address_enabled() {
+            builder
+                .add_output(
+                    with_ovk.then(|| fvk.to_ovk(Scope::External)),
+                    fvk.address_at(1u32, Scope::External),
+                    NoteValue::from_raw(value),
+                    memo_bytes,
+                )
+                .unwrap();
+        } else {
+            builder
+                .add_change_output(
+                    fvk.clone(),
+                    with_ovk.then(|| fvk.to_ovk(Scope::External)),
+                    fvk.address_at(1u32, Scope::External),
+                    NoteValue::from_raw(value),
+                    memo_bytes,
+                )
+                .unwrap();
+        }
+        let (mut bundle, metadata) = builder.build_for_pczt(&mut OsRng).unwrap();
+        let derivation = orchard::pczt::Zip32Derivation::parse(
+            [0x22; 32],
+            vec![0x8000_0020, 0x8000_0085, 0x8000_0000],
+        )
+        .unwrap();
+        bundle
+            .update_with(|mut bundle| {
+                bundle.update_action_with(metadata.spend_action_index(0).unwrap(), |mut action| {
+                    action.set_spend_zip32_derivation(derivation);
+                    Ok(())
+                })
+            })
+            .unwrap();
+        let (orchard, ironwood) = if ironwood {
+            (None, Some(bundle))
+        } else {
+            (Some(bundle), None)
+        };
+        let pczt = Creator::build_from_parts(PcztParts {
+            params: MainNetwork,
+            version: TxVersion::suggested_for_branch(branch),
+            consensus_branch_id: branch,
+            lock_time: 0,
+            expiry_height: BlockHeight::from_u32(0),
+            transparent: None,
+            sapling: None,
+            orchard,
+            ironwood,
+        })
+        .unwrap();
+        IoFinalizer::new(pczt)
+            .finalize_io()
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn newline_memos_are_rejected_before_ledger_commands_are_built() {
+        for version in [
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::ironwood_v3(),
+        ] {
+            for memo in [
+                b"first\nsecond".as_slice(),
+                b"first\rsecond",
+                b"first\r\nsecond",
+                b"\n",
+            ] {
+                for value in [0, 90_000] {
+                    let pczt = memo_pczt(version, memo, value, true);
+                    assert!(super::super::build_pczt_full_signing_plan(&pczt)
+                        .unwrap_err()
+                        .contains("Ledger memos cannot contain line breaks."));
+                    assert!(super::super::build_pczt_signing_plan(&pczt)
+                        .unwrap_err()
+                        .contains("Ledger memos cannot contain line breaks."));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn newline_check_uses_ciphertext_even_without_an_ock() {
+        let pczt = memo_pczt(
+            BundleVersion::ironwood_v3(),
+            b"first\nsecond",
+            90_000,
+            false,
+        );
+        let pczt = crate::wallet::sync::redact_pczt_for_signer(&pczt).unwrap();
+        assert!(parse_pczt(&pczt)
+            .unwrap_err()
+            .contains("Ledger memos cannot contain line breaks."));
+    }
+
+    #[test]
+    fn ordinary_memos_and_non_text_memos_still_build_signing_plans() {
+        for version in [
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::ironwood_v3(),
+        ] {
+            for memo in [
+                b"".as_slice(),
+                b"single line",
+                br"literal\n",
+                b"\xf6",
+                b"\xff\n",
+            ] {
+                let pczt = memo_pczt(version, memo, 90_000, true);
+                assert!(super::super::build_pczt_full_signing_plan(&pczt).is_ok());
+            }
+        }
+    }
 
     fn derivation() -> transparent::pczt::Bip32Derivation {
         transparent::pczt::Bip32Derivation::parse(

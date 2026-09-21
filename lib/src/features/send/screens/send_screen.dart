@@ -36,6 +36,7 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../ledger/ledger_memo_policy.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
@@ -651,6 +652,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   int get _memoLength => utf8.encode(_memoController.text).length;
 
   String? get _memoError {
+    if (widget.activeHardwareSignerKind == HardwareSignerKind.ledger) {
+      final error = ledgerMemoError(_memoController.text);
+      if (error != null) return error;
+    }
     final memo = _effectiveMemo;
     if (utf8.encode(memo).length > 512) return 'Message is too long';
     if (memo.isNotEmpty && !_isShieldedAddress) {
