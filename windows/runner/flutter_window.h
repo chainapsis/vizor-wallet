@@ -44,6 +44,12 @@ class FlutterWindow : public Win32Window {
   std::vector<std::string> pending_payment_uris_;
   bool payment_uri_dart_ready_ = false;
 
+  // Set before releasing any engine-owned resources. Native destruction can
+  // synchronously reenter MessageHandler while the controller is half torn down.
+  bool destroying_ = false;
+  // WinRT completions may outlive the channel that started authentication.
+  std::shared_ptr<int> auth_lifetime_;
+
   // Registered Windows message used by a secondary process to restore this
   // primary window. The message name is scoped to the storage prefix.
   UINT activation_message_ = 0;
