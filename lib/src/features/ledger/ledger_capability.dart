@@ -6,32 +6,35 @@ import '../../core/config/network_config.dart';
 
 /// What Vizor may ask a connected Ledger Zcash app to do, by app version.
 ///
-/// | Version  | Signing | Memo text beyond printable ASCII |
-/// |----------|---------|----------------------------------|
-/// | < 3.9.3  | refused | —                                |
-/// | 3.9.3    | yes     | no                               |
-/// | >= 3.9.4 | yes     | yes                              |
+/// | Version  | Signing | Memo shown as a hash |
+/// |----------|---------|----------------------|
+/// | < 3.9.3  | refused | —                    |
+/// | 3.9.3    | yes     | refused              |
+/// | >= 3.9.4 | yes     | yes                  |
+///
+/// The app shows a memo as text only when every byte is printable ASCII, and
+/// as a hash otherwise.
 ///
 /// Versions below 3.9.3 are refused outright: Ledger Live cannot install them,
 /// so reaching one means a locally built app rather than a user Vizor supports.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
 
-/// Before this version the app took a fatal code path for any memo it could not
-/// render as printable ASCII, so Vizor refuses to send one to an older app.
-const kLedgerMemoTextAppVersion = '3.9.4';
+/// Before this version the app crashed while hashing a memo for display, so
+/// Vizor refuses to send such a memo to an older app.
+const kLedgerMemoHashAppVersion = '3.9.4';
 
 /// Shown when signing is refused because the connected app predates
-/// [kLedgerMemoTextAppVersion]. Keep this identical to
-/// `LEDGER_MEMO_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is the
-/// error Rust returns and `ledgerFailureGuidance` matches on.
-const ledgerMemoUnsupportedError =
+/// [kLedgerMemoHashAppVersion]. Keep this identical to
+/// `LEDGER_MEMO_HASH_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is
+/// the error Rust returns and `ledgerFailureGuidance` matches on.
+const ledgerMemoHashUnsupportedError =
     'Update the Ledger Zcash app to sign non-English memos';
 
-/// Whether `appVersion` can render memo text the device would otherwise hash.
-/// Callers pass this into the Rust signing entry points, which hold the memo
-/// bytes; an unparseable version fails closed.
-bool ledgerSupportsMemoText(String? appVersion) =>
-    appVersion != null && _atLeast(appVersion, kLedgerMemoTextAppVersion);
+/// Whether the app at `appVersion` can show a memo as a hash. Callers pass this
+/// into the Rust signing entry points, which hold the memo bytes; an unknown
+/// version fails closed.
+bool ledgerSupportsMemoHash(String? appVersion) =>
+    appVersion != null && _atLeast(appVersion, kLedgerMemoHashAppVersion);
 
 const kLedgerLegacyOrchardRecoveryErrorCode =
     'ledger_legacy_orchard_recovery_unsupported';

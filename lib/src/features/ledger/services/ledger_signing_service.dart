@@ -90,8 +90,8 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
 
 /// Only valid inside a transport callback: [LedgerConnectionService] runs app
 /// readiness before invoking one, which is what publishes the version.
-bool _memoTextSupported(Ref ref) =>
-    ledgerSupportsMemoText(ref.read(ledgerAppReadinessStateProvider).version);
+bool _memoHashSupported(Ref ref) =>
+    ledgerSupportsMemoHash(ref.read(ledgerAppReadinessStateProvider).version);
 
 final ledgerPcztSupportValidatorProvider = Provider<LedgerPcztSupportValidator>(
   (_) =>
@@ -132,7 +132,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
-            memoTextSupported: _memoTextSupported(ref),
+            memoHashSupported: _memoHashSupported(ref),
           )).signedPczt!,
           bluetooth: (mobile) async {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
@@ -144,7 +144,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       accountUuid: accountUuid,
                       pcztBytes: pcztBytes,
                       network: networkName,
-                      memoTextSupported: _memoTextSupported(ref),
+                      memoHashSupported: _memoHashSupported(ref),
                     );
                 check();
                 final responses = await _exchangeWithProgress(
@@ -214,7 +214,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
-            memoTextSupported: _memoTextSupported(ref),
+            memoHashSupported: _memoHashSupported(ref),
           )).signatures,
           bluetooth: (mobile) => ref
               .read(ledgerMobileSigningStatusGateProvider)
@@ -227,7 +227,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
                   accountUuid: accountUuid,
                   pcztBytes: pcztBytes,
                   networkName: networkName,
-                  memoTextSupported: _memoTextSupported(ref),
+                  memoHashSupported: _memoHashSupported(ref),
                 ),
               ),
         );
@@ -257,7 +257,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String networkName,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) async {
   check();
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
@@ -265,7 +265,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
-    memoTextSupported: memoTextSupported,
+    memoHashSupported: memoHashSupported,
   );
   check();
   final responses = await _exchangeWithProgress(
@@ -307,7 +307,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
   required LedgerSigningProgressReporter progress,
 }) async {
   rust_ledger.LedgerSigningEvent? result;
@@ -317,7 +317,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     pcztBytes: pcztBytes,
     network: network,
     compact: compact,
-    memoTextSupported: memoTextSupported,
+    memoHashSupported: memoHashSupported,
   )) {
     if (event.error case final error?) {
       throw StateError(error);

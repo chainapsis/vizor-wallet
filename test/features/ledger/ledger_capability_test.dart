@@ -72,13 +72,13 @@ void main() {
     );
   });
 
-  test('memo text beyond printable ASCII starts at app 3.9.4', () {
+  test('memo hashes are supported from app 3.9.4', () {
     for (final version in ['3.9.4', '3.9.10', '3.10.0', '4.0.0']) {
-      expect(ledgerSupportsMemoText(version), isTrue, reason: version);
+      expect(ledgerSupportsMemoHash(version), isTrue, reason: version);
     }
     // 3.9.3 still signs, but resets the device on a hashed memo.
     for (final version in ['3.9.3', '3.9.2', 'unknown', '', null]) {
-      expect(ledgerSupportsMemoText(version), isFalse, reason: '$version');
+      expect(ledgerSupportsMemoHash(version), isFalse, reason: '$version');
     }
   });
 

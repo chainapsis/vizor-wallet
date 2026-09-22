@@ -70,20 +70,20 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
 );
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
-/// `memo_text_supported` comes from the connected app's version; see
-/// `ledgerMemoTextCapability` in `lib/src/features/ledger/ledger_capability.dart`.
+/// `memo_hash_supported` comes from the connected app's version; see
+/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
 Future<LedgerPcztApduPlan> ledgerBuildPcztSigningApduPlan({
   required String dbPath,
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoTextSupported: memoTextSupported,
+  memoHashSupported: memoHashSupported,
 );
 
 /// Build the transport-neutral full PCZT signing exchange.
@@ -92,13 +92,13 @@ Future<LedgerPcztApduPlan> ledgerBuildPcztFullSigningApduPlan({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztFullSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoTextSupported: memoTextSupported,
+  memoHashSupported: memoHashSupported,
 );
 
 /// Validate raw compact-signing responses and return shielded signatures.
@@ -138,13 +138,13 @@ Future<List<LedgerActionSig>> ledgerSignPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPczt(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoTextSupported: memoTextSupported,
+  memoHashSupported: memoHashSupported,
 );
 
 /// Stream a PCZT into Ledger, validate every returned transparent and
@@ -154,13 +154,13 @@ Future<Uint8List> ledgerSignPcztFull({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPcztFull(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoTextSupported: memoTextSupported,
+  memoHashSupported: memoHashSupported,
 );
 
 /// Durably checkpoint a Ledger-signed PCZT pair before any broadcast attempt.
@@ -252,14 +252,14 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
-  required bool memoTextSupported,
+  required bool memoHashSupported,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignWithProgress(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
   compact: compact,
-  memoTextSupported: memoTextSupported,
+  memoHashSupported: memoHashSupported,
 );
 
 /// Public account material approved by the user on the Ledger device.

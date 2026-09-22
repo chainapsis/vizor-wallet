@@ -144,19 +144,19 @@ pub fn ledger_parse_mobile_ufvk_responses(
 }
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
-/// `memo_text_supported` comes from the connected app's version; see
-/// `ledgerSupportsMemoText` in `lib/src/features/ledger/ledger_capability.dart`.
+/// `memo_hash_supported` comes from the connected app's version; see
+/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
 pub fn ledger_build_pczt_signing_apdu_plan(
     db_path: String,
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
-        commands: ledger::build_pczt_signing_plan(&pczt_bytes, memo_text_supported)?
+        commands: ledger::build_pczt_signing_plan(&pczt_bytes, memo_hash_supported)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -169,12 +169,12 @@ pub fn ledger_build_pczt_full_signing_apdu_plan(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
-        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes, memo_text_supported)?
+        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes, memo_hash_supported)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -232,11 +232,11 @@ pub fn ledger_sign_pczt(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<LedgerActionSig>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    to_action_sigs(ledger::sign_pczt(&pczt_bytes, memo_text_supported)?)
+    to_action_sigs(ledger::sign_pczt(&pczt_bytes, memo_hash_supported)?)
 }
 
 fn to_action_sigs(
@@ -267,11 +267,11 @@ pub fn ledger_sign_pczt_full(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<u8>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    ledger::sign_pczt_full(&pczt_bytes, memo_text_supported).map_err(|error| {
+    ledger::sign_pczt_full(&pczt_bytes, memo_hash_supported).map_err(|error| {
         log::error!(
             "ledger: PCZT signing failed ({} bytes): {error}",
             pczt_bytes.len()
@@ -473,7 +473,7 @@ pub fn ledger_sign_with_progress(
     pczt_bytes: Vec<u8>,
     network: String,
     compact: bool,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
     sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
 ) {
     let progress = |phase: &str, device_model: Option<&str>| {
@@ -494,7 +494,7 @@ pub fn ledger_sign_with_progress(
                 to_action_sigs(ledger::sign_pczt_with_progress(
                     &pczt_bytes,
                     &progress,
-                    memo_text_supported,
+                    memo_hash_supported,
                 )?)?,
             )
         } else {
@@ -502,7 +502,7 @@ pub fn ledger_sign_with_progress(
                 Some(ledger::sign_pczt_full_with_progress(
                     &pczt_bytes,
                     &progress,
-                    memo_text_supported,
+                    memo_hash_supported,
                 )?),
                 vec![],
             )

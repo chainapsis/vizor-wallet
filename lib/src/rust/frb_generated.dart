@@ -826,7 +826,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   });
 
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztSigningApduPlan({
@@ -834,7 +834,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   });
 
   Future<LedgerUfvkApduPlan> crateApiLedgerLedgerBuildUfvkApduPlan({
@@ -913,7 +913,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   });
 
   Future<Uint8List> crateApiLedgerLedgerSignPcztFull({
@@ -921,7 +921,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   });
 
   Stream<LedgerSigningEvent> crateApiLedgerLedgerSignWithProgress({
@@ -930,7 +930,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   });
 
   Future<void> crateApiLedgerLedgerValidateSupportedPczt({
@@ -6404,7 +6404,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6414,7 +6414,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoTextSupported, serializer);
+          sse_encode_bool(memoHashSupported, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6427,7 +6427,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztFullSigningApduPlanConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoTextSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
         apiImpl: this,
       ),
     );
@@ -6442,7 +6442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoTextSupported",
+          "memoHashSupported",
         ],
       );
 
@@ -6452,7 +6452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6462,7 +6462,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoTextSupported, serializer);
+          sse_encode_bool(memoHashSupported, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6475,7 +6475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztSigningApduPlanConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoTextSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
         apiImpl: this,
       ),
     );
@@ -6489,7 +6489,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoTextSupported",
+          "memoHashSupported",
         ],
       );
 
@@ -6983,7 +6983,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6993,7 +6993,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoTextSupported, serializer);
+          sse_encode_bool(memoHashSupported, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7006,7 +7006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerSignPcztConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoTextSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
         apiImpl: this,
       ),
     );
@@ -7020,7 +7020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoTextSupported",
+          "memoHashSupported",
         ],
       );
 
@@ -7030,7 +7030,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -7040,7 +7040,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoTextSupported, serializer);
+          sse_encode_bool(memoHashSupported, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7053,7 +7053,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerSignPcztFullConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoTextSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
         apiImpl: this,
       ),
     );
@@ -7067,7 +7067,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoTextSupported",
+          "memoHashSupported",
         ],
       );
 
@@ -7078,7 +7078,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     final sink = RustStreamSink<LedgerSigningEvent>();
     unawaited(
@@ -7091,7 +7091,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
             sse_encode_String(network, serializer);
             sse_encode_bool(compact, serializer);
-            sse_encode_bool(memoTextSupported, serializer);
+            sse_encode_bool(memoHashSupported, serializer);
             sse_encode_StreamSink_ledger_signing_event_Sse(sink, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
@@ -7111,7 +7111,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pcztBytes,
             network,
             compact,
-            memoTextSupported,
+            memoHashSupported,
             sink,
           ],
           apiImpl: this,
@@ -7130,7 +7130,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "pcztBytes",
           "network",
           "compact",
-          "memoTextSupported",
+          "memoHashSupported",
           "sink",
         ],
       );

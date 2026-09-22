@@ -75,7 +75,7 @@ void main() {
   for (final compact in [false, true]) {
     for (final (version, supported) in [('3.9.3', false), ('3.9.4', true)]) {
       test('USB ${compact ? "action" : "full"} signer tells Rust whether '
-          'app $version renders memo text', () async {
+          'app $version can show a memo hash', () async {
         final c = ProviderContainer(
           overrides: [
             appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -91,13 +91,13 @@ void main() {
           ],
         );
         addTearDown(c.dispose);
-        api.memoTextSupported = null;
+        api.memoHashSupported = null;
         if (compact) {
           await c.read(ledgerActionPcztSignerProvider)('account', [1]);
         } else {
           await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
         }
-        expect(api.memoTextSupported, supported);
+        expect(api.memoHashSupported, supported);
       });
     }
   }
@@ -140,7 +140,7 @@ class _UsbConnection extends LedgerConnectionService {
 class _Api extends RustLibApi {
   String? model;
   bool? compact;
-  bool? memoTextSupported;
+  bool? memoHashSupported;
 
   @override
   Stream<LedgerSigningEvent> crateApiLedgerLedgerSignWithProgress({
@@ -149,10 +149,10 @@ class _Api extends RustLibApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoTextSupported,
+    required bool memoHashSupported,
   }) {
     this.compact = compact;
-    this.memoTextSupported = memoTextSupported;
+    this.memoHashSupported = memoHashSupported;
     return Stream.fromIterable([
       LedgerSigningEvent(
         phase: 'sending',

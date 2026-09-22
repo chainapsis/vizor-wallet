@@ -48,8 +48,8 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   Object error, {
   LedgerRequestKind requestKind = LedgerRequestKind.send,
 }) {
-  if (error.toString().contains(ledgerMemoUnsupportedError)) {
-    return const LedgerFailureGuidance(ledgerMemoUnsupportedError);
+  if (error.toString().contains(ledgerMemoHashUnsupportedError)) {
+    return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
   }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null

@@ -298,17 +298,17 @@ fn validate_fingerprint(
 /// Builds the complete ordered APDU exchange for compact shielded signing.
 pub(crate) fn build_pczt_signing_plan(
     pczt_bytes: &[u8],
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, false, memo_text_supported).map(|(commands, _)| commands)
+    build_signing_plan(pczt_bytes, false, memo_hash_supported).map(|(commands, _)| commands)
 }
 
 /// Builds the complete ordered APDU exchange for a fully signed PCZT.
 pub(crate) fn build_pczt_full_signing_plan(
     pczt_bytes: &[u8],
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, true, memo_text_supported).map(|(commands, _)| commands)
+    build_signing_plan(pczt_bytes, true, memo_hash_supported).map(|(commands, _)| commands)
 }
 
 /// Blocks the known Ledger Zcash app 3.9.2 Orchard-to-Ironwood signing defect
@@ -366,7 +366,7 @@ pub fn finalize_pczt_full_signing(
 fn build_signing_plan(
     pczt_bytes: &[u8],
     include_transparent: bool,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<(Vec<ApduCommand>, Vec<SignatureRequest>), String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !include_transparent && !parsed.transparent_inputs.is_empty() {
@@ -376,7 +376,7 @@ fn build_signing_plan(
         );
     }
 
-    let serialized = serialize_pczt(&parsed, memo_text_supported)?;
+    let serialized = serialize_pczt(&parsed, memo_hash_supported)?;
     let mut commands = Vec::new();
     for command in serialized {
         let total = command.packets.len();
@@ -649,16 +649,16 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt(
     pczt_bytes: &[u8],
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<SpendAuthSignature>, String> {
-    sign_pczt_with_progress(pczt_bytes, &|_, _| {}, memo_text_supported)
+    sign_pczt_with_progress(pczt_bytes, &|_, _| {}, memo_hash_supported)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
@@ -667,7 +667,7 @@ pub fn sign_pczt_with_progress(
                 .into(),
         );
     }
-    let commands = serialize_pczt(&parsed, memo_text_supported)?;
+    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
 
     let mut requests = Vec::new();
     if let Some(bundle) = &parsed.orchard_bundle {
@@ -716,7 +716,7 @@ pub fn sign_pczt_with_progress(
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt(
     _pczt_bytes: &[u8],
-    _memo_text_supported: bool,
+    _memo_hash_supported: bool,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -725,7 +725,7 @@ pub fn sign_pczt(
 pub fn sign_pczt_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_text_supported: bool,
+    _memo_hash_supported: bool,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -734,18 +734,18 @@ pub fn sign_pczt_with_progress(
 /// transparent and Orchard-family signature it requires, verifies those
 /// signatures through the PCZT Signer role, and returns the signed PCZT.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn sign_pczt_full(pczt_bytes: &[u8], memo_text_supported: bool) -> Result<Vec<u8>, String> {
-    sign_pczt_full_with_progress(pczt_bytes, &|_, _| {}, memo_text_supported)
+pub fn sign_pczt_full(pczt_bytes: &[u8], memo_hash_supported: bool) -> Result<Vec<u8>, String> {
+    sign_pczt_full_with_progress(pczt_bytes, &|_, _| {}, memo_hash_supported)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
-    let commands = serialize_pczt(&parsed, memo_text_supported)?;
+    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
 
     let transparent_requests = 0..parsed.transparent_inputs.len();
     let mut shielded_requests = Vec::new();
@@ -814,7 +814,7 @@ pub fn sign_pczt_full_with_progress(
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn sign_pczt_full(_pczt_bytes: &[u8], _memo_text_supported: bool) -> Result<Vec<u8>, String> {
+pub fn sign_pczt_full(_pczt_bytes: &[u8], _memo_hash_supported: bool) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
 
@@ -822,7 +822,7 @@ pub fn sign_pczt_full(_pczt_bytes: &[u8], _memo_text_supported: bool) -> Result<
 pub fn sign_pczt_full_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_text_supported: bool,
+    _memo_hash_supported: bool,
 ) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }

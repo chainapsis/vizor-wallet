@@ -599,10 +599,10 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
     Ok(memo_reaches_ledger_hash_path(&memo))
 }
 
-/// Keep this string identical to `ledgerMemoUnsupportedError` in
+/// Keep this string identical to `ledgerMemoHashUnsupportedError` in
 /// `lib/src/features/ledger/ledger_capability.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
-pub(super) const LEDGER_MEMO_UNSUPPORTED: &str =
+pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
     "Update the Ledger Zcash app to sign non-English memos";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
@@ -754,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn memos_the_device_would_hash_are_refused_for_apps_without_memo_text() {
+    fn memos_the_device_would_hash_are_refused_for_apps_without_memo_hash() {
         for version in [
             BundleVersion::orchard_v2(),
             BundleVersion::orchard_v3(),
@@ -779,11 +779,11 @@ mod tests {
                     let pczt = memo_pczt(version, memo, value, true);
                     assert!(super::super::build_pczt_full_signing_plan(&pczt, false)
                         .unwrap_err()
-                        .contains(LEDGER_MEMO_UNSUPPORTED));
+                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
                     assert!(super::super::build_pczt_signing_plan(&pczt, false)
                         .unwrap_err()
-                        .contains(LEDGER_MEMO_UNSUPPORTED));
-                    // An app that renders the memo as text signs the same PCZT.
+                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    // An app that can show the memo hash signs the same PCZT.
                     assert!(super::super::build_pczt_full_signing_plan(&pczt, true).is_ok());
                     assert!(super::super::build_pczt_signing_plan(&pczt, true).is_ok());
                 }

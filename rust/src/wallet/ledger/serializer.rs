@@ -2,7 +2,7 @@
 
 use super::parse::{
     Bip32Derivation, Global, IronwoodBundle, ParsedPczt, ShieldedAction, ShieldedBundle,
-    TransparentInput, TransparentOutput, LEDGER_MEMO_UNSUPPORTED,
+    TransparentInput, TransparentOutput, LEDGER_MEMO_HASH_UNSUPPORTED,
 };
 
 pub(super) const MAX_PACKET_SIZE: usize = 255;
@@ -16,10 +16,10 @@ pub(super) struct CommandPackets {
 
 pub(super) fn serialize_pczt(
     pczt: &ParsedPczt,
-    memo_text_supported: bool,
+    memo_hash_supported: bool,
 ) -> Result<Vec<CommandPackets>, String> {
-    if !memo_text_supported && pczt.memo_reaches_hash_path {
-        return Err(LEDGER_MEMO_UNSUPPORTED.into());
+    if !memo_hash_supported && pczt.memo_reaches_hash_path {
+        return Err(LEDGER_MEMO_HASH_UNSUPPORTED.into());
     }
     let is_v6 = pczt.global.tx_version >= 6;
     let mut commands = vec![
