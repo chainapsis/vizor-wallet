@@ -15,7 +15,7 @@ use zcash_client_backend::data_api::{
 use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, AccountUuid};
 use zcash_keys::{
     encoding::encode_transparent_address,
-    keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
+    keys::{UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters};
@@ -23,6 +23,7 @@ use zeroize::{Zeroize, Zeroizing};
 use zip32::fingerprint::SeedFingerprint;
 
 use crate::wallet::{
+    addresses,
     db::{
         open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
         open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
@@ -133,8 +134,7 @@ pub fn mnemonic_to_entropy(phrase: &str) -> Result<Vec<u8>, String> {
     }
     let invalid = || "Invalid gift recovery phrase".to_string();
     let mnemonic = Mnemonic::<English>::from_phrase(phrase).map_err(|_| invalid())?;
-    let canonical = Mnemonic::<English>::from_entropy(mnemonic.entropy())
-        .map_err(|_| invalid())?;
+    let canonical = Mnemonic::<English>::from_entropy(mnemonic.entropy()).map_err(|_| invalid())?;
     // Legacy parsing can accept different whitespace. Compact sharing must not
     // change the mnemonic string used by retained claim-cache identities.
     if canonical.phrase() != phrase {
@@ -337,9 +337,39 @@ pub fn derive_software_address(
 ) -> Result<String, String> {
     let ufvk = software_account_ufvk(network, seed, account_index)?;
     let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
+        .default_address(addresses::receive_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
     Ok(ua.encode(&network))
+}
+
+/// Validate a Gift Card identity against its current or historical default address.
+pub(crate) fn validate_gift_address(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    address: &str,
+) -> Result<(), String> {
+    let ufvk = software_account_ufvk(network, seed, 0)?;
+    addresses::validate_gift_address(&ufvk, network, address)
+}
+
+#[cfg(test)]
+pub(crate) fn derive_legacy_software_address(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<String, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    Ok(addresses::legacy_default_address(&ufvk)?.encode(&network))
+}
+
+#[cfg(test)]
+pub(crate) fn derive_legacy_software_orchard_projection(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<String, String> {
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    addresses::orchard_projection(&addresses::legacy_default_address(&ufvk)?, network)
 }
 
 /// Return the transparent receiver at `m/44'/coin_type'/account'/0/0`.
@@ -428,9 +458,6 @@ fn import_ufvk_account(
     let purpose = AccountPurpose::Spending {
         derivation: Some(derivation),
     };
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
 
     let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
@@ -446,7 +473,9 @@ fn import_ufvk_account(
         Ok::<_, String>(account.id())
     })?;
 
-    Ok((account_id.expose_uuid().to_string(), ua.encode(&network)))
+    let uuid = account_id.expose_uuid().to_string();
+    let address = get_address_from_db(db_path, network, Some(&uuid))?;
+    Ok((uuid, address))
 }
 
 /// Idempotent, seed-free registration for the isolated Gift Card observer DB.
@@ -463,11 +492,7 @@ pub(crate) fn register_gift_card_observer(
     }
     let seed = mnemonic_bytes_to_seed(mnemonic)?;
     let ufvk = software_account_ufvk(network, &seed, 0)?;
-    let (address, _) = ufvk.default_address(shielded_address_request())
-        .map_err(|e| e.to_string())?;
-    if address.encode(&network) != expected_address {
-        return Err("Gift Card address does not match its recovery phrase".into());
-    }
+    addresses::validate_gift_address(&ufvk, network, expected_address)?;
     drop(seed);
     ensure_db_migrated_once(db_path, network)?;
     let mut db = open_wallet_db_for_mutation(db_path, network)?;
@@ -477,11 +502,15 @@ pub(crate) fn register_gift_card_observer(
         }
         return Ok(account.id().expose_uuid().to_string());
     }
-    let account = db.import_account_ufvk(
-        "Gift Card observer", &ufvk,
-        &make_birthday(network, Some(birthday_height)),
-        AccountPurpose::ViewOnly, None,
-    ).map_err(|e| e.to_string())?;
+    let account = db
+        .import_account_ufvk(
+            "Gift Card observer",
+            &ufvk,
+            &make_birthday(network, Some(birthday_height)),
+            AccountPurpose::ViewOnly,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
     Ok(account.id().expose_uuid().to_string())
 }
 
@@ -574,14 +603,9 @@ pub fn import_hardware_account(
             })?;
         Ok::<_, String>(account.id())
     })?;
-    // Hardware wallets (Keystone) have Orchard + transparent but no Sapling,
-    // so use Orchard-only address request instead of the standard shielded request.
-    let (ua, _di) = ufvk
-        .default_address(orchard_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
 
     let uuid_str = account_id.expose_uuid().to_string();
-    let addr_str: String = ua.encode(&network);
+    let addr_str = get_address_from_db(db_path, network, Some(&uuid_str))?;
     log::info!(
         "Imported hardware account: uuid={}, address={}",
         uuid_str,
@@ -605,22 +629,19 @@ pub fn init_db_and_create_account(
 
     let birthday = make_birthday(network, birthday_height);
 
-    let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
+    let account_id = with_wallet_db_write_lock("keys.create_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
         // The bootstrap account uses create_account (Derived) so initial
         // seed-aware DB setup records the seed fingerprint.
         db.create_account(name, seed, &birthday, None)
+            .map(|(account_id, _)| account_id)
             .map_err(|e| format!("Failed to create account: {e}"))
     })?;
 
-    let ufvk = usk.to_unified_full_viewing_key();
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
-
     let uuid_str = account_id.expose_uuid().to_string();
-    Ok((uuid_str, ua.encode(&network)))
+    let address = get_address_from_db(db_path, network, Some(&uuid_str))?;
+    Ok((uuid_str, address))
 }
 
 /// Import a same-seed software account for a specific ZIP32 account index as a
@@ -636,10 +657,6 @@ pub fn import_derived_account_at_index(
 ) -> Result<(String, String), String> {
     let birthday = make_birthday(network, birthday_height);
     let account_id = zip32_account_id(account_index)?;
-    let ufvk = software_account_ufvk(network, seed, account_index)?;
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
 
     let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
@@ -648,7 +665,9 @@ pub fn import_derived_account_at_index(
             .map_err(|e| format!("Failed to import derived account: {e}"))
     })?;
 
-    Ok((account.id().expose_uuid().to_string(), ua.encode(&network)))
+    let uuid = account.id().expose_uuid().to_string();
+    let address = get_address_from_db(db_path, network, Some(&uuid))?;
+    Ok((uuid, address))
 }
 
 pub struct AccountInfo {
@@ -742,7 +761,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
         let address = match account.ufvk() {
-            Some(ufvk) => current_receive_address(&db, network, id, ufvk)?,
+            Some(_) => addresses::current_receive_address(&db, db_path, network, id)?,
             None => String::new(),
         };
 
@@ -1248,9 +1267,9 @@ pub fn get_address_from_db(
         .map_err(|e| format!("Failed to get account: {e}"))?
         .ok_or("Account not found")?;
 
-    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+    account.ufvk().ok_or("Account does not have a UFVK")?;
 
-    current_receive_address(&db, network, account_id, ufvk)
+    addresses::current_receive_address(&db, db_path, network, account_id)
 }
 
 /// Export a single account's Unified Full Viewing Key (UFVK), encoded for
@@ -1277,62 +1296,8 @@ pub fn get_account_ufvk(
     Ok(ufvk.encode(&network))
 }
 
-fn current_receive_address(
-    db: &WalletDatabase,
-    network: WalletNetwork,
-    account_id: AccountUuid,
-    ufvk: &UnifiedFullViewingKey,
-) -> Result<String, String> {
-    let address = match ufvk.default_address(shielded_address_request()) {
-        Ok((default, _)) => {
-            let last = db
-                .get_last_generated_address_matching(account_id, shielded_address_request())
-                .map_err(|e| format!("Failed to get last generated shielded address: {e}"))?;
-            last.unwrap_or(default)
-        }
-        Err(shielded_err) => {
-            let (default, _) =
-                ufvk.default_address(orchard_address_request())
-                    .map_err(|orchard_err| {
-                        format!(
-                            "Failed to derive shielded address: {shielded_err}; \
-                         orchard fallback failed: {orchard_err}"
-                        )
-                    })?;
-            let last = db
-                .get_last_generated_address_matching(account_id, orchard_address_request())
-                .map_err(|e| format!("Failed to get last generated orchard address: {e}"))?;
-            last.unwrap_or(default)
-        }
-    };
-
-    Ok(address.encode(&network))
-}
-
 fn is_hardware_style_ufvk(ufvk: &UnifiedFullViewingKey) -> bool {
     ufvk.orchard().is_some() && ufvk.sapling().is_none()
-}
-
-/// Returns the standard shielded address request (Orchard + Sapling, no transparent).
-/// This matches the behavior of zodl/Zashi wallets.
-fn shielded_address_request() -> UnifiedAddressRequest {
-    UnifiedAddressRequest::custom(
-        ReceiverRequirement::Require, // Orchard
-        ReceiverRequirement::Require, // Sapling
-        ReceiverRequirement::Omit,    // Transparent
-    )
-    .expect("valid receiver requirements")
-}
-
-/// Returns an Orchard-only address request for hardware wallets.
-/// Keystone UFVKs typically contain Orchard + transparent but no Sapling.
-fn orchard_address_request() -> UnifiedAddressRequest {
-    UnifiedAddressRequest::custom(
-        ReceiverRequirement::Require, // Orchard
-        ReceiverRequirement::Omit,    // Sapling (not available on Keystone)
-        ReceiverRequirement::Omit,    // Transparent
-    )
-    .expect("valid receiver requirements")
 }
 
 /// Get the first external transparent receive address that has no received output.
@@ -1862,7 +1827,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reserved_orchard_addresses_are_distinct_without_becoming_current() {
+    fn test_reserved_orchard_addresses_are_distinct_and_sapling_free() {
         use zcash_keys::address::Address;
 
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1871,7 +1836,7 @@ mod tests {
 
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
-        let (uuid, current_address) =
+        let (uuid, _) =
             init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
                 .unwrap();
 
@@ -1898,10 +1863,6 @@ mod tests {
             assert!(!address.has_sapling());
             assert!(!address.has_transparent());
         }
-        assert_eq!(
-            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
-            current_address
-        );
     }
 
     #[test]
@@ -2132,16 +2093,20 @@ mod tests {
         );
 
         crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
-        let shielded_error = crate::wallet::sync::get_next_available_address(
+        let renewed_address = crate::wallet::sync::get_next_available_address(
             db_path_str,
             WalletNetwork::Main,
             &uuid,
             crate::wallet::sync::AddressRequestKind::Shielded,
         )
-        .unwrap_err();
-        assert!(shielded_error.contains("Sapling"));
+        .unwrap();
+        assert_ne!(default_address, renewed_address);
+        assert_eq!(
+            renewed_address,
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
 
-        let renewed_address = crate::wallet::sync::get_next_available_address(
+        let reserved_address = crate::wallet::sync::get_next_available_address(
             db_path_str,
             WalletNetwork::Main,
             &uuid,
@@ -2149,17 +2114,19 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(default_address, renewed_address);
+        assert_ne!(renewed_address, reserved_address);
         assert_eq!(
-            renewed_address,
+            reserved_address,
             get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
         );
 
-        let za = zcash_address::ZcashAddress::try_from_encoded(&renewed_address).unwrap();
-        let debug = format!("{:?}", za);
-        assert!(debug.contains("Orchard"));
-        assert!(!debug.contains("Sapling"));
-        assert!(!debug.contains("P2pkh"));
+        for address in [renewed_address, reserved_address] {
+            let za = zcash_address::ZcashAddress::try_from_encoded(&address).unwrap();
+            let debug = format!("{:?}", za);
+            assert!(debug.contains("Orchard"));
+            assert!(!debug.contains("Sapling"));
+            assert!(!debug.contains("P2pkh"));
+        }
     }
 
     #[test]
@@ -2429,8 +2396,14 @@ mod tests {
 
         let first_phrase = generate_mnemonic();
         let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
-        init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
-            .unwrap();
+        let (first_uuid, first_address) = init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &first_seed,
+            None,
+            "first",
+        )
+        .unwrap();
 
         let second_phrase = generate_mnemonic();
         let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
@@ -2456,12 +2429,13 @@ mod tests {
         assert!(accounts_before_delete
             .iter()
             .any(|account| account.name == "second" && !account.is_seed_anchor));
-
         delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
 
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+        assert_eq!(accounts[0].uuid, first_uuid);
+        assert_eq!(accounts[0].unified_address, first_address);
     }
 
     #[test]
@@ -3409,9 +3383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shielded_address_has_sapling_and_orchard_only() {
-        // Verify our address uses Sapling+Orchard receivers (no transparent),
-        // matching zodl/Zashi wallet behavior.
+    fn test_receive_address_is_orchard_only() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -3433,16 +3405,23 @@ mod tests {
         let za = zcash_address::ZcashAddress::try_from_encoded(&address).unwrap();
         let debug = format!("{:?}", za);
         assert!(
-            debug.contains("Sapling"),
-            "UA should contain Sapling receiver"
-        );
-        assert!(
             debug.contains("Orchard"),
             "UA should contain Orchard receiver"
         );
         assert!(
+            !debug.contains("Sapling"),
+            "UA should NOT contain Sapling receiver"
+        );
+        assert!(
             !debug.contains("P2pkh"),
             "UA should NOT contain transparent receiver"
+        );
+
+        assert_eq!(listed_account.unified_address, address);
+        assert_eq!(
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&listed_account.uuid))
+                .unwrap(),
+            address
         );
     }
 }

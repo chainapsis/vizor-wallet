@@ -31,6 +31,104 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('address-free gifts reuse a retained legacy address identity', () {
+    final retained = _link();
+    final addressFree = VizorPaymentLink.parse(retained.toUri().toString());
+    expect(addressFree.knownAddress, isNull);
+    expect(
+      paymentLinkWithRetainedAddress(addressFree, [retained]).address,
+      retained.address,
+    );
+    final unrelated = VizorPaymentLink(
+      network: retained.network,
+      address: 'u1unrelated',
+      amountZatoshi: retained.amountZatoshi + BigInt.one,
+      mnemonic:
+          'legal winner thank year wave sausage worth useful legal winner thank yellow',
+      birthdayHeight: retained.birthdayHeight,
+      label: retained.label,
+      createdAt: retained.createdAt,
+    );
+    expect(
+      paymentLinkWithRetainedAddress(addressFree, [unrelated]).knownAddress,
+      isNull,
+    );
+  });
+
+  test(
+    'corrected gift metadata retains the in-flight claim identity',
+    () async {
+      final retained = _link();
+      final store = PaymentLinkReceivedStore(
+        _PaymentLinkServiceReceivedStorage(),
+      );
+      await store.saveReady(retained);
+      await store.markClaimStarted(
+        address: retained.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      final corrected = VizorPaymentLink.parse(
+        VizorPaymentLink(
+          network: retained.network,
+          address: retained.address,
+          amountZatoshi: retained.amountZatoshi + BigInt.one,
+          mnemonic: retained.mnemonic,
+          birthdayHeight: retained.birthdayHeight,
+          label: 'Corrected label',
+          createdAt: retained.createdAt,
+        ).toRecoveryUri().toString(),
+      );
+      expect(corrected.hasSameCanonicalPayload(retained), isFalse);
+      expect(
+        paymentLinkClaimWalletDirectoryName(corrected),
+        paymentLinkClaimWalletDirectoryName(retained),
+      );
+
+      final resolved = paymentLinkWithRetainedAddress(
+        corrected,
+        (await store.load())
+            .map((r) => r.claimLink)
+            .whereType<VizorPaymentLink>(),
+      );
+      expect(resolved.address, retained.address);
+      expect(resolved.label, corrected.label);
+      expect(resolved.amountZatoshi, corrected.amountZatoshi);
+      expect(resolved.presentation, corrected.presentation);
+      expect((await store.find(resolved.address))?.isClaimInFlight, isTrue);
+      expect(await store.load(), hasLength(1));
+    },
+  );
+
+  test('retained gift addresses stay scoped to network and birthday', () {
+    final retained = _link();
+    final addressFree = VizorPaymentLink.parse(
+      retained.toRecoveryUri().toString(),
+    );
+    for (final identity in [
+      (network: 'regtest', birthday: retained.birthdayHeight),
+      (network: retained.network, birthday: retained.birthdayHeight + 1),
+    ]) {
+      final other = VizorPaymentLink(
+        network: identity.network,
+        address: retained.address,
+        amountZatoshi: retained.amountZatoshi,
+        mnemonic: retained.mnemonic,
+        birthdayHeight: identity.birthday,
+        label: retained.label,
+        createdAt: retained.createdAt,
+        presentation: retained.presentation,
+      );
+      expect(
+        paymentLinkWithRetainedAddress(addressFree, [other]).knownAddress,
+        isNull,
+      );
+    }
+    expect(
+      paymentLinkWithRetainedAddress(retained, [retained]),
+      same(retained),
+    );
+  });
+
   test('provisional creation time refreshes after funding mines', () {
     final unresolved = VizorPaymentLink.parse(_link().toUri().toString());
     final firstTime = DateTime.utc(2026, 9, 1);
@@ -264,6 +362,53 @@ void main() {
     },
   );
 
+  test('pool enrichment accepts an Orchard projection for shielded output', () {
+    const historical = 'u1-sapling-orchard';
+    const projection = 'u1-orchard-projection';
+    rust_sync.TransactionDetail detail(String pool) =>
+        rust_sync.TransactionDetail(
+          txidHex: 'claim',
+          txKind: 'sent',
+          outputs: [
+            rust_sync.TransactionDetailOutput(
+              address: historical,
+              amountZatoshi: BigInt.from(50000),
+              pool: pool,
+            ),
+          ],
+        );
+    var comparisons = 0;
+    bool sameReceiver(String first, String second) {
+      comparisons++;
+      return first == historical && second == projection;
+    }
+
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'claim',
+        details: [detail('shielded')],
+        destinationAddress: projection,
+        expectedAmountZatoshi: BigInt.from(50000),
+        sameOrchardReceiver: sameReceiver,
+      ),
+      'shielded',
+    );
+    expect(comparisons, 1);
+
+    comparisons = 0;
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'claim',
+        details: [detail('ironwood')],
+        destinationAddress: projection,
+        expectedAmountZatoshi: BigInt.from(50000),
+        sameOrchardReceiver: sameReceiver,
+      ),
+      isNull,
+    );
+    expect(comparisons, 0);
+  });
+
   group('claim destination hydration', () {
     final api = _ClaimDestinationRustApi();
     late _ClaimDestinationAccountNotifier accounts;
@@ -339,6 +484,63 @@ void main() {
         final reopened = await wallet.createOrOpen(link);
         expect(reopened.existed, isTrue);
         expect(reopened.dbPath, opened.dbPath);
+      },
+    );
+
+    test(
+      'claim wallet accepts a migrated legacy-index projection only',
+      () async {
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        final migratedProjection = rust_wallet.AccountInfo(
+          uuid: 'claim-wallet',
+          birthdayHeight: 0,
+          name: 'Gift Card claim',
+          unifiedAddress: 'u1orchardatlegacyindex',
+          isSeedAnchor: true,
+          isHardware: false,
+        );
+        api.validGiftAddresses.addAll({
+          _link().address,
+          migratedProjection.unifiedAddress,
+        });
+
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [migratedProjection],
+          ),
+          isTrue,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [
+              rust_wallet.AccountInfo(
+                uuid: 'claim-wallet',
+                birthdayHeight: 0,
+                name: 'Gift Card claim',
+                unifiedAddress: 'u1same-receiver-but-noncanonical',
+                isSeedAnchor: true,
+                isHardware: false,
+              ),
+            ],
+          ),
+          isFalse,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link().withResolvedMetadata(address: 'u1wrong-advertised'),
+            accounts: [migratedProjection],
+          ),
+          isFalse,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [migratedProjection, migratedProjection],
+          ),
+          isFalse,
+        );
       },
     );
 
@@ -2254,6 +2456,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
   final claimSyncDbPaths = <String>[];
+  final validGiftAddresses = <String>{};
 
   @override
   Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -2389,6 +2592,22 @@ class _ClaimDestinationRustApi implements RustLibApi {
     claimSyncCalls = 0;
     claimSyncModes = [];
     claimSyncDbPaths.clear();
+    validGiftAddresses
+      ..clear()
+      ..add(_link().address);
+  }
+
+  @override
+  Future<void> crateApiWalletValidateGiftAddress({
+    required String mnemonic,
+    required String network,
+    required String address,
+  }) async {
+    if (mnemonic != _link().mnemonic ||
+        network != _link().network ||
+        !validGiftAddresses.contains(address)) {
+      throw StateError('Gift address mismatch');
+    }
   }
 
   @override

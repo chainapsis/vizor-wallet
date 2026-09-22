@@ -209,6 +209,27 @@ class PaymentLinkClaimSession {
       claimableZatoshi > BigInt.zero && !waitingForFundingConfirmations;
 }
 
+@visibleForTesting
+VizorPaymentLink paymentLinkWithRetainedAddress(
+  VizorPaymentLink link,
+  Iterable<VizorPaymentLink> retainedLinks,
+) {
+  if (link.knownAddress != null) return link;
+  // Use the claim wallet identity so corrected share metadata still finds the
+  // address under which an earlier submission was persisted.
+  final walletIdentity = paymentLinkClaimWalletDirectoryName(link);
+  final retained = retainedLinks
+      .where(
+        (candidate) =>
+            candidate.knownAddress != null &&
+            paymentLinkClaimWalletDirectoryName(candidate) == walletIdentity,
+      )
+      .firstOrNull;
+  return retained == null
+      ? link
+      : link.withResolvedMetadata(address: retained.address);
+}
+
 enum PaymentLinkClaimBroadcastStatus {
   broadcasted,
   pendingBroadcast,
@@ -247,6 +268,7 @@ String? paymentLinkClaimDestinationPoolFromDetails({
   required Iterable<rust_sync.TransactionDetail> details,
   required String destinationAddress,
   required BigInt expectedAmountZatoshi,
+  bool Function(String first, String second)? sameOrchardReceiver,
 }) {
   final expectedTxids = claimTxids
       .split(',')
@@ -264,9 +286,13 @@ String? paymentLinkClaimDestinationPoolFromDetails({
     // Persisting a pool from a subset would prevent later enrichment retries.
     if (matchingDetails.isEmpty) return null;
     final detail = matchingDetails.first;
-    final matchingOutputs = detail.outputs
-        .where((output) => output.address == destinationAddress)
-        .toList();
+    final matchingOutputs = detail.outputs.where((output) {
+      final outputAddress = output.address;
+      if (outputAddress == destinationAddress) return true;
+      return output.pool.trim() == 'shielded' &&
+          outputAddress != null &&
+          sameOrchardReceiver?.call(outputAddress, destinationAddress) == true;
+    }).toList();
     if (matchingOutputs.isEmpty) return null;
     var selectedOutput = matchingOutputs.first;
     for (final output in matchingOutputs) {
@@ -1040,6 +1066,14 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw const PaymentLinkLongSyncConfirmationRequired();
     }
 
+    final retainedRecords = await _receivedStore.load();
+    link = paymentLinkWithRetainedAddress(
+      link,
+      retainedRecords
+          .map((record) => record.claimLink)
+          .whereType<VizorPaymentLink>(),
+    );
+
     final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
@@ -1060,12 +1094,7 @@ class PaymentLinkService implements PaymentLinkOperations {
           );
         }
         if (accounts == null ||
-            shouldRecreatePaymentLinkClaimWallet(
-              accountAddresses: [
-                for (final account in accounts) account.unifiedAddress,
-              ],
-              expectedAddress: link.knownAddress,
-            )) {
+            !await _claimWallet.matchesLink(link: link, accounts: accounts)) {
           if (accounts != null) {
             log(
               'PaymentLinkService: recreating incomplete payment-link claim '
@@ -1097,12 +1126,27 @@ class PaymentLinkService implements PaymentLinkOperations {
         importedAccountUuid = imported.accountUuid;
       }
       final advertisedAddress = link.knownAddress;
-      if (advertisedAddress != null && importedAddress != advertisedAddress) {
-        throw const FormatException(
-          'Payment link address does not match its recovery phrase.',
-        );
+      if (advertisedAddress != null) {
+        try {
+          await rust_wallet.validateGiftAddress(
+            mnemonic: link.mnemonic,
+            network: link.network,
+            address: advertisedAddress,
+          );
+          await rust_wallet.validateGiftAddress(
+            mnemonic: link.mnemonic,
+            network: link.network,
+            address: importedAddress,
+          );
+        } catch (_) {
+          throw const FormatException(
+            'Payment link address does not match its recovery phrase.',
+          );
+        }
       }
-      link = link.withResolvedMetadata(address: importedAddress);
+      link = link.withResolvedMetadata(
+        address: advertisedAddress ?? importedAddress,
+      );
       final existingRecord = await _receivedStore.find(link.address);
       if (existingRecord?.isClaimInFlight ?? false) {
         throw const PaymentLinkClaimInFlightException();
@@ -1616,12 +1660,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
+    if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
       return;
     }
     final evidence = await rust_sync.getPaymentLinkSpendEvidence(
@@ -1721,6 +1760,11 @@ class PaymentLinkService implements PaymentLinkOperations {
       details: details,
       destinationAddress: destinationAddress,
       expectedAmountZatoshi: expectedAmountZatoshi,
+      sameOrchardReceiver: (first, second) => rust_wallet.sameOrchardReceiver(
+        network: network,
+        first: first,
+        second: second,
+      ),
     );
     if (pool == null && details.length > 1) {
       log(
@@ -1750,10 +1794,10 @@ class PaymentLinkService implements PaymentLinkOperations {
         dbPath: tempWallet.dbPath,
         network: network,
       );
-      final claimAccount = accounts.where(
-        (account) => account.unifiedAddress == link.address,
-      );
-      if (claimAccount.length != 1) return null;
+      if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+        return null;
+      }
+      final claimAccount = accounts.single;
       final destinationAddress = await rust_wallet.getUnifiedAddress(
         dbPath: await getWalletDbPath(),
         network: network,
@@ -1762,7 +1806,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       return await _loadClaimDestinationPool(
         dbPath: tempWallet.dbPath,
         network: network,
-        accountUuid: claimAccount.single.uuid,
+        accountUuid: claimAccount.uuid,
         destinationAddress: destinationAddress,
         claimTxids: claimTxids,
         expectedAmountZatoshi: record.amountZatoshi,

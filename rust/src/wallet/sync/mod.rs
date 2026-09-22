@@ -33,6 +33,11 @@ pub(crate) mod proposal_locks;
 mod send;
 mod transactions;
 
+// Keep the existing address API path while its implementation lives with address policy.
+pub use crate::wallet::addresses::{
+    get_next_available_address, parse_address_request_kind, AddressRequestKind,
+};
+
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
 // `::extract_and_broadcast_pczt` etc. call path keeps resolving with
@@ -107,9 +112,8 @@ pub(crate) use send::ShieldTransparentStatus;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{
-    decrypt_and_store_transaction, get_next_available_address,
-    get_previous_transaction_count_for_address, parse_address_request_kind, set_transaction_status,
-    AddressRequestKind,
+    decrypt_and_store_transaction, get_previous_transaction_count_for_address,
+    set_transaction_status,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{

@@ -35,6 +35,39 @@ class PaymentLinkClaimWallet {
   final Ref _ref;
   final Map<String, Future<void>> _claimSyncs = {};
 
+  /// Verifies a cached claim wallet against the link's recovery phrase.
+  ///
+  /// VZR-160 changed freshly-derived software addresses from the legacy
+  /// Sapling+Orchard form to Orchard-only. Both strings identify account zero
+  /// for the same Gift Card seed, so string equality cannot decide whether an
+  /// older cache is reusable. Rust restricts this check to the legacy address,
+  /// the current address, or the Orchard projection at the legacy index;
+  /// arbitrary addresses that merely share a receiver are rejected.
+  Future<bool> matchesLink({
+    required VizorPaymentLink link,
+    required List<rust_wallet.AccountInfo> accounts,
+  }) async {
+    if (accounts.length != 1) return false;
+    try {
+      await rust_wallet.validateGiftAddress(
+        mnemonic: link.mnemonic,
+        network: link.network,
+        address: accounts.single.unifiedAddress,
+      );
+      final advertisedAddress = link.knownAddress;
+      if (advertisedAddress != null) {
+        await rust_wallet.validateGiftAddress(
+          mnemonic: link.mnemonic,
+          network: link.network,
+          address: advertisedAddress,
+        );
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> runClaimSync({
     required VizorPaymentLink link,
     required String dbPath,
@@ -108,12 +141,7 @@ class PaymentLinkClaimWallet {
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
+    if (!await matchesLink(link: link, accounts: accounts)) {
       log(
         'PaymentLinkService: retained claim wallet no longer matches its '
         'Gift Card identity; leaving it recoverable from the stored link',
@@ -179,12 +207,7 @@ class PaymentLinkClaimWallet {
         log('PaymentLinkClaimWallet: reopening the claim wallet failed: $e');
       }
       if (accounts != null &&
-          !shouldRecreatePaymentLinkClaimWallet(
-            accountAddresses: [
-              for (final account in accounts) account.unifiedAddress,
-            ],
-            expectedAddress: link.address,
-          )) {
+          await matchesLink(link: link, accounts: accounts)) {
         accountUuid = accounts.single.uuid;
       } else {
         // An import that died between creating the file and the account, or a

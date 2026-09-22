@@ -110,6 +110,17 @@ String giftMnemonicFromEntropy({required List<int> entropy}) => RustLib
     .api
     .crateApiWalletGiftMnemonicFromEntropy(entropy: entropy);
 
+/// Compare the Orchard receivers of two Unified Addresses on the same network.
+bool sameOrchardReceiver({
+  required String network,
+  required String first,
+  required String second,
+}) => RustLib.instance.api.crateApiWalletSameOrchardReceiver(
+  network: network,
+  first: first,
+  second: second,
+);
+
 /// Check locally retained gift metadata before sharing an address-free link.
 /// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
 Future<void> validateGiftAddress({
