@@ -169,7 +169,10 @@ ProviderContainer containerFor(
     ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
       (_) async => 'expected',
     ),
-    ledgerBluetoothAccountConnectorProvider.overrideWithValue((index, d) async {
+    ledgerBluetoothExistingAccountConnectorProvider.overrideWithValue((
+      index,
+      d,
+    ) async {
       expect(index, 3);
       expect(d.id, 'new');
       return export == null ? exported() : await export();

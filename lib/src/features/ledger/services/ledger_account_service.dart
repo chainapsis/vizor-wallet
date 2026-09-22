@@ -48,6 +48,7 @@ final ledgerAccountConnectorProvider = Provider<LedgerAccountConnector>((ref) {
     ref,
     accountIndex: accountIndex,
     transport: LedgerConnectionTransport.usb,
+    newAccount: true,
   );
 });
 
@@ -58,6 +59,21 @@ final ledgerBluetoothAccountConnectorProvider =
         accountIndex: accountIndex,
         transport: LedgerConnectionTransport.bluetooth,
         bluetoothDevice: device,
+        newAccount: true,
+      );
+    });
+
+/// Reads an account Vizor already holds, e.g. to confirm that a different
+/// Bluetooth Ledger carries it. Unlike connecting a new account, this accepts
+/// every app version that can still sign.
+final ledgerBluetoothExistingAccountConnectorProvider =
+    Provider<LedgerBluetoothAccountConnector>((ref) {
+      return (accountIndex, device) => _connectLedgerAccount(
+        ref,
+        accountIndex: accountIndex,
+        transport: LedgerConnectionTransport.bluetooth,
+        bluetoothDevice: device,
+        newAccount: false,
       );
     });
 
@@ -65,6 +81,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
   Ref ref, {
   required int accountIndex,
   required LedgerConnectionTransport transport,
+  required bool newAccount,
   LedgerBleDevice? bluetoothDevice,
 }) async {
   final check = ref.read(ledgerDeviceRequestsProvider).capture();
@@ -84,6 +101,14 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
       .read(ledgerAppReadinessServiceForTransportProvider(transport))
       .ensureReady();
   check();
+  // Refuse before asking the device to share a viewing key.
+  if (newAccount && !ledgerAppVersionAllowsNewAccounts(appVersion)) {
+    throw const LedgerAppReadinessException(
+      LedgerAppReadinessFailure.unsupportedVersion,
+      'Update the Ledger Zcash app to version '
+      '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
+    );
+  }
   final account = transport == LedgerConnectionTransport.bluetooth
       ? await _exportMobileAccount(
           check: check,

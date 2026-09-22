@@ -155,10 +155,9 @@ class LedgerPairingRecoveryService {
       return false;
     }
     // This requests viewing-key approval, never a transaction signature.
-    final exported = await ref.read(ledgerBluetoothAccountConnectorProvider)(
-      account.zip32AccountIndex!,
-      device,
-    );
+    final exported = await ref.read(
+      ledgerBluetoothExistingAccountConnectorProvider,
+    )(account.zip32AccountIndex!, device);
     check();
     if (expected == null ||
         expected.isEmpty ||

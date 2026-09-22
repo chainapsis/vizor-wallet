@@ -6,11 +6,11 @@ import '../../core/config/network_config.dart';
 
 /// What Vizor may ask a connected Ledger Zcash app to do, by app version.
 ///
-/// | Version  | Signing | Memo shown as a hash |
-/// |----------|---------|----------------------|
-/// | < 3.9.3  | refused | —                    |
-/// | 3.9.3    | yes     | refused              |
-/// | >= 3.9.4 | yes     | yes                  |
+/// | Version  | New account | Signing | Memo shown as a hash |
+/// |----------|-------------|---------|----------------------|
+/// | < 3.9.3  | refused     | refused | —                    |
+/// | 3.9.3    | refused     | yes     | refused              |
+/// | >= 3.9.4 | yes         | yes     | yes                  |
 ///
 /// The app shows a memo as text only when every byte is printable ASCII, and
 /// as a hash otherwise.
@@ -29,6 +29,13 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 /// the error Rust returns and `ledgerFailureGuidance` matches on.
 const ledgerMemoHashUnsupportedError =
     'Update the Ledger Zcash app to sign non-English memos';
+
+/// Accounts connected from now on start without the 3.9.3 memo limit; those
+/// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
+const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
+
+bool ledgerAppVersionAllowsNewAccounts(String appVersion) =>
+    _atLeast(appVersion, kMinimumLedgerZcashAppVersionForNewAccounts);
 
 /// Whether the app at `appVersion` can show a memo as a hash. Callers pass this
 /// into the Rust signing entry points, which hold the memo bytes; an unknown
