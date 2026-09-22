@@ -462,17 +462,20 @@ fn import_ufvk_account(
     let address = addresses::default_receive_address(&ufvk, network)?;
 
     let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
+        addresses::ensure_receive_table(db_path)?;
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        let account = db
-            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-            .map_err(|e| {
-                map_account_import_error(
-                    e,
-                    DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE,
-                    "Failed to import account",
-                )
-            })?;
-        Ok::<_, String>(account.id())
+        db.transactionally_with_extension(|db, ext| {
+            let account = db.import_account_ufvk(name, &ufvk, &birthday, purpose, None)?;
+            addresses::record_current_receive(ext, account.id(), &address)?;
+            Ok::<_, SqliteClientError>(account.id())
+        })
+        .map_err(|e| {
+            map_account_import_error(
+                e,
+                DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE,
+                "Failed to import account",
+            )
+        })
     })?;
 
     let uuid = account_id.expose_uuid().to_string();
@@ -584,27 +587,30 @@ pub fn import_hardware_account(
     let addr_str = addresses::default_receive_address(&ufvk, network)?;
 
     let account_id = with_wallet_db_write_lock("keys.import_hardware_account", || {
+        addresses::ensure_receive_table(db_path)?;
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
-        let account = db
-            .import_account_ufvk(
+        db.transactionally_with_extension(|db, ext| {
+            let account = db.import_account_ufvk(
                 name,
                 &ufvk,
                 &birthday,
                 purpose,
                 Some(hardware_signer_kind.key_source()),
+            )?;
+            addresses::record_current_receive(ext, account.id(), &addr_str)?;
+            Ok::<_, SqliteClientError>(account.id())
+        })
+        .map_err(|e| {
+            map_account_import_error(
+                e,
+                match hardware_signer_kind {
+                    HardwareSignerKind::Keystone => DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    HardwareSignerKind::Ledger => DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
+                },
+                "Failed to import hardware account",
             )
-            .map_err(|e| {
-                map_account_import_error(
-                    e,
-                    match hardware_signer_kind {
-                        HardwareSignerKind::Keystone => DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
-                        HardwareSignerKind::Ledger => DUPLICATE_LEDGER_ACCOUNT_MESSAGE,
-                    },
-                    "Failed to import hardware account",
-                )
-            })?;
-        Ok::<_, String>(account.id())
+        })
     })?;
 
     let uuid_str = account_id.expose_uuid().to_string();
@@ -631,16 +637,22 @@ pub fn init_db_and_create_account(
 
     let birthday = make_birthday(network, birthday_height);
 
-    let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
+    let (account_id, address) = with_wallet_db_write_lock("keys.create_account", || {
+        addresses::ensure_receive_table(db_path)?;
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
-
-        // The bootstrap account uses create_account (Derived) so initial
-        // seed-aware DB setup records the seed fingerprint.
-        db.create_account(name, seed, &birthday, None)
-            .map_err(|e| format!("Failed to create account: {e}"))
+        db.transactionally_with_extension(|db, ext| {
+            let (id, usk) = db.create_account(name, seed, &birthday, None)?;
+            let (ua, _) = usk
+                .to_unified_full_viewing_key()
+                .default_address(addresses::receive_address_request())
+                .map_err(SqliteClientError::AddressGeneration)?;
+            let address = ua.encode(&network);
+            addresses::record_current_receive(ext, id, &address)?;
+            Ok::<_, SqliteClientError>((id, address))
+        })
+        .map_err(|e| format!("Failed to create account: {e}"))
     })?;
 
-    let address = addresses::default_receive_address(&usk.to_unified_full_viewing_key(), network)?;
     let uuid_str = account_id.expose_uuid().to_string();
     Ok((uuid_str, address))
 }
@@ -663,10 +675,14 @@ pub fn import_derived_account_at_index(
     let address = addresses::default_receive_address(&ufvk, network)?;
 
     let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
+        addresses::ensure_receive_table(db_path)?;
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        db.import_account_hd(name, seed, account_id, &birthday, None)
-            .map(|(account, _usk)| account)
-            .map_err(|e| format!("Failed to import derived account: {e}"))
+        db.transactionally_with_extension(|db, ext| {
+            let (account, _) = db.import_account_hd(name, seed, account_id, &birthday, None)?;
+            addresses::record_current_receive(ext, account.id(), &address)?;
+            Ok::<_, SqliteClientError>(account)
+        })
+        .map_err(|e| format!("Failed to import derived account: {e}"))
     })?;
 
     let uuid = account.id().expose_uuid().to_string();
@@ -764,7 +780,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
         let address = match account.ufvk() {
-            Some(ufvk) => addresses::current_receive_address(&db, network, id, ufvk)?,
+            Some(ufvk) => addresses::current_receive_address(&db, db_path, network, id, ufvk)?,
             None => String::new(),
         };
 
@@ -1073,6 +1089,7 @@ fn delete_account_rows(
     )
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
 
+    addresses::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync_engine::ledger_discovery::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
     crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
@@ -1272,7 +1289,7 @@ pub fn get_address_from_db(
 
     let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
 
-    addresses::current_receive_address(&db, network, account_id, ufvk)
+    addresses::current_receive_address(&db, db_path, network, account_id, ufvk)
 }
 
 /// Export a single account's Unified Full Viewing Key (UFVK), encoded for
@@ -2123,7 +2140,7 @@ mod tests {
 
         assert_ne!(renewed_address, reserved_address);
         assert_eq!(
-            reserved_address,
+            renewed_address,
             get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
         );
 

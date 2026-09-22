@@ -271,11 +271,13 @@ void main() {
             sourcePool: 'shielded',
             outputs: [
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: 'unrelated-output',
                 amountZatoshi: BigInt.from(1),
                 pool: 'shielded',
               ),
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: 'destination-ua',
                 amountZatoshi: BigInt.from(445000000),
                 pool: 'ironwood',
@@ -320,6 +322,7 @@ void main() {
         txKind: 'sent',
         outputs: [
           rust_sync.TransactionDetailOutput(
+            usesOrchardReceiver: false,
             address: address,
             amountZatoshi: BigInt.from(50000),
             pool: pool,
@@ -368,52 +371,46 @@ void main() {
     },
   );
 
-  test('pool enrichment accepts an Orchard projection for shielded output', () {
-    const historical = 'u1-sapling-orchard';
-    const projection = 'u1-orchard-projection';
-    rust_sync.TransactionDetail detail(String pool) =>
-        rust_sync.TransactionDetail(
-          txidHex: 'claim',
-          txKind: 'sent',
-          outputs: [
-            rust_sync.TransactionDetailOutput(
-              address: historical,
-              amountZatoshi: BigInt.from(50000),
-              pool: pool,
+  test(
+    'pool enrichment matches Orchard and Ironwood receivers, not Sapling',
+    () {
+      const historical = 'u1-sapling-orchard';
+      const projection = 'u1-orchard-projection';
+      for (final (pool, usesOrchard) in [
+        ('shielded', true),
+        ('ironwood', true),
+        ('shielded', false),
+        ('transparent', false),
+      ]) {
+        var comparisons = 0;
+        final result = paymentLinkClaimDestinationPoolFromDetails(
+          claimTxids: 'claim',
+          details: [
+            rust_sync.TransactionDetail(
+              txidHex: 'claim',
+              txKind: 'sent',
+              outputs: [
+                rust_sync.TransactionDetailOutput(
+                  address: historical,
+                  amountZatoshi: BigInt.from(50000),
+                  pool: pool,
+                  usesOrchardReceiver: usesOrchard,
+                ),
+              ],
             ),
           ],
+          destinationAddress: projection,
+          expectedAmountZatoshi: BigInt.from(50000),
+          sameOrchardReceiver: (first, second) {
+            comparisons++;
+            return first == historical && second == projection;
+          },
         );
-    var comparisons = 0;
-    bool sameReceiver(String first, String second) {
-      comparisons++;
-      return first == historical && second == projection;
-    }
-
-    expect(
-      paymentLinkClaimDestinationPoolFromDetails(
-        claimTxids: 'claim',
-        details: [detail('shielded')],
-        destinationAddress: projection,
-        expectedAmountZatoshi: BigInt.from(50000),
-        sameOrchardReceiver: sameReceiver,
-      ),
-      'shielded',
-    );
-    expect(comparisons, 1);
-
-    comparisons = 0;
-    expect(
-      paymentLinkClaimDestinationPoolFromDetails(
-        claimTxids: 'claim',
-        details: [detail('ironwood')],
-        destinationAddress: projection,
-        expectedAmountZatoshi: BigInt.from(50000),
-        sameOrchardReceiver: sameReceiver,
-      ),
-      isNull,
-    );
-    expect(comparisons, 0);
-  });
+        expect(result, usesOrchard ? pool : isNull);
+        expect(comparisons, usesOrchard ? 1 : 0);
+      }
+    },
+  );
 
   group('claim destination hydration', () {
     final api = _ClaimDestinationRustApi();
@@ -2580,6 +2577,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
       txKind: txKind,
       outputs: [
         rust_sync.TransactionDetailOutput(
+          usesOrchardReceiver: false,
           address: 'u1receiveraddress',
           amountZatoshi: BigInt.from(50000),
           pool: 'ironwood',

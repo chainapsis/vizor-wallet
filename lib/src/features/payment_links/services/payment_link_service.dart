@@ -301,7 +301,7 @@ String? paymentLinkClaimDestinationPoolFromDetails({
     final matchingOutputs = detail.outputs.where((output) {
       final outputAddress = output.address;
       if (outputAddress == destinationAddress) return true;
-      return output.pool.trim() == 'shielded' &&
+      return output.usesOrchardReceiver &&
           outputAddress != null &&
           sameOrchardReceiver?.call(outputAddress, destinationAddress) == true;
     }).toList();

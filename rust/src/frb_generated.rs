@@ -13538,10 +13538,12 @@ impl SseDecode for crate::api::sync::TransactionDetailOutput {
         let mut var_address = <Option<String>>::sse_decode(deserializer);
         let mut var_amountZatoshi = <u64>::sse_decode(deserializer);
         let mut var_pool = <String>::sse_decode(deserializer);
+        let mut var_usesOrchardReceiver = <bool>::sse_decode(deserializer);
         return crate::api::sync::TransactionDetailOutput {
             address: var_address,
             amount_zatoshi: var_amountZatoshi,
             pool: var_pool,
+            uses_orchard_receiver: var_usesOrchardReceiver,
         };
     }
 }
@@ -18103,6 +18105,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionDetailOutput
             self.address.into_into_dart().into_dart(),
             self.amount_zatoshi.into_into_dart().into_dart(),
             self.pool.into_into_dart().into_dart(),
+            self.uses_orchard_receiver.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -21796,6 +21799,7 @@ impl SseEncode for crate::api::sync::TransactionDetailOutput {
         <Option<String>>::sse_encode(self.address, serializer);
         <u64>::sse_encode(self.amount_zatoshi, serializer);
         <String>::sse_encode(self.pool, serializer);
+        <bool>::sse_encode(self.uses_orchard_receiver, serializer);
     }
 }
 

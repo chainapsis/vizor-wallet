@@ -1,12 +1,13 @@
 //! Receive-address issuance and historical address compatibility.
 //!
-//! Exposed receive addresses contain only Orchard. Software receive issuance
-//! retains Sapling internally to distinguish it from reserved swap addresses.
+//! New receive addresses contain only Orchard. The active receive address is
+//! recorded separately from reserved swap addresses.
 //! The library retains its own internal address generation and key material.
 
 #[cfg(test)]
 mod tests;
 
+use rusqlite::OptionalExtension;
 use zcash_client_backend::data_api::{Account, WalletRead, WalletWrite};
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::{
@@ -16,14 +17,15 @@ use zcash_keys::{
 
 use super::{
     db::{
-        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+        open_readonly_conn_with_timeout, open_wallet_db_with_timeout,
+        open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
         WALLET_DB_BUSY_TIMEOUT,
     },
     keys::parse_account_uuid,
     network::WalletNetwork,
 };
 
-/// The receiver set exposed by Vizor and stored for reserved addresses.
+/// The receiver set for every new receive or reserved address.
 pub(crate) fn receive_address_request() -> UnifiedAddressRequest {
     UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,
@@ -33,7 +35,7 @@ pub(crate) fn receive_address_request() -> UnifiedAddressRequest {
     .expect("valid Orchard-only receiver requirements")
 }
 
-/// Preserve the stored receive/reservation distinction, exposing only Orchard.
+/// Issue an Orchard-only address and persist receive changes atomically.
 pub fn get_next_available_address(
     db_path: &str,
     network: WalletNetwork,
@@ -41,27 +43,34 @@ pub fn get_next_available_address(
     address_request: AddressRequestKind,
 ) -> Result<String, String> {
     let account_id = parse_account_uuid(account_uuid)?;
-
-    let (ua, _) = with_wallet_db_write_lock("addresses.get_next_available_address", || {
+    with_wallet_db_write_lock("addresses.get_next_available_address", || {
+        ensure_receive_table(db_path)?;
         let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
-        let account = db
-            .get_account(account_id)
-            .map_err(|e| format!("Failed to get account: {e}"))?
-            .ok_or("Account not found")?;
-        let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
-        let req = match address_request {
-            AddressRequestKind::Shielded => stored_receive_request(ufvk),
-            AddressRequestKind::Orchard => receive_address_request(),
+        let previous = if address_request == AddressRequestKind::Orchard {
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| e.to_string())?
+                .ok_or("Account not found")?;
+            let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+            Some(current_receive_address(
+                &db, db_path, network, account_id, ufvk,
+            )?)
+        } else {
+            None
         };
-        db.get_next_available_address(account_id, req)
-            .map_err(|e| format!("{e}"))?
-            .ok_or_else(|| "No address available".to_string())
-    })?;
-    orchard_projection(&ua, network)
+        db.transactionally_with_extension(|db, ext| {
+            let (ua, _) = db
+                .get_next_available_address(account_id, receive_address_request())?
+                .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+            let address = ua.encode(&network);
+            record_current_receive(ext, account_id, previous.as_deref().unwrap_or(&address))?;
+            Ok::<_, zcash_client_sqlite::error::SqliteClientError>(address)
+        })
+        .map_err(|e| format!("Failed to issue receive address: {e}"))
+    })
 }
 
-/// Shielded renews a receive address with the account's stored receiver set.
-/// Orchard uses Orchard-only storage for reservations and hardware receive.
+/// Shielded updates the active receive address; Orchard reserves an address.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressRequestKind {
     Shielded,
@@ -78,8 +87,8 @@ pub fn parse_address_request_kind(request: &str) -> Result<AddressRequestKind, S
     }
 }
 
-/// Preserve the existing software receive-address discriminator in stored rows.
-fn stored_receive_request(ufvk: &UnifiedFullViewingKey) -> UnifiedAddressRequest {
+/// Identify receive addresses in wallets created before explicit receive tracking.
+fn legacy_receive_request(ufvk: &UnifiedFullViewingKey) -> UnifiedAddressRequest {
     UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,
         if ufvk.sapling().is_some() {
@@ -93,13 +102,12 @@ fn stored_receive_request(ufvk: &UnifiedFullViewingKey) -> UnifiedAddressRequest
 }
 
 /// Derive the initial display address from account keys without another DB read.
-/// Unlike the standalone Gift Card address, this retains the legacy index.
 pub(crate) fn default_receive_address(
     ufvk: &UnifiedFullViewingKey,
     network: WalletNetwork,
 ) -> Result<String, String> {
     let (address, _) = ufvk
-        .default_address(stored_receive_request(ufvk))
+        .default_address(receive_address_request())
         .map_err(|e| format!("Failed to derive receive address: {e}"))?;
     orchard_projection(&address, network)
 }
@@ -107,17 +115,79 @@ pub(crate) fn default_receive_address(
 /// Read the latest receive address without promoting software swap reservations.
 pub(crate) fn current_receive_address(
     db: &WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
     account_id: AccountUuid,
     ufvk: &UnifiedFullViewingKey,
 ) -> Result<String, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(WALLET_DB_BUSY_TIMEOUT))?;
+    if receive_table_exists(&conn).map_err(|e| e.to_string())? {
+        let address: Option<String> = conn
+            .query_row(
+                "SELECT address FROM ext_vizor_receive_addresses WHERE account_uuid = ?1",
+                [account_id.expose_uuid().as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(address) = address {
+            return Ok(address);
+        }
+    }
     match db
-        .get_last_generated_address_matching(account_id, stored_receive_request(ufvk))
+        .get_last_generated_address_matching(account_id, legacy_receive_request(ufvk))
         .map_err(|e| format!("Failed to get last generated receive address: {e}"))?
     {
         Some(address) => orchard_projection(&address, network),
-        None => default_receive_address(ufvk, network),
+        None => {
+            let (address, _) = ufvk
+                .default_address(legacy_receive_request(ufvk))
+                .map_err(|e| format!("Failed to derive legacy receive address: {e}"))?;
+            orchard_projection(&address, network)
+        }
     }
+}
+
+pub(crate) fn ensure_receive_table(db_path: &str) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ext_vizor_receive_addresses (
+        account_uuid BLOB PRIMARY KEY NOT NULL,
+        address TEXT NOT NULL
+    )",
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) fn record_current_receive(
+    ext: &zcash_client_sqlite::ExtensionTransaction<'_>,
+    account_id: AccountUuid,
+    address: &str,
+) -> rusqlite::Result<()> {
+    ext.execute(
+        "INSERT INTO ext_vizor_receive_addresses (account_uuid, address) VALUES (?1, ?2)
+         ON CONFLICT(account_uuid) DO UPDATE SET address = excluded.address",
+        (account_id.expose_uuid().as_bytes().as_slice(), address),
+    )?;
+    Ok(())
+}
+
+fn receive_table_exists(conn: &rusqlite::Connection) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'ext_vizor_receive_addresses' AND type = 'table')",
+        [], |row| row.get(0),
+    )
+}
+
+pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result<(), String> {
+    if receive_table_exists(conn).map_err(|e| e.to_string())? {
+        conn.execute(
+            "DELETE FROM ext_vizor_receive_addresses WHERE account_uuid = ?1",
+            [uuid],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Change only the receiver set, preserving the exact Orchard payment address.

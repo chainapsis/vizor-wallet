@@ -13830,12 +13830,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetailOutput dco_decode_transaction_detail_output(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return TransactionDetailOutput(
       address: dco_decode_opt_String(arr[0]),
       amountZatoshi: dco_decode_u_64(arr[1]),
       pool: dco_decode_String(arr[2]),
+      usesOrchardReceiver: dco_decode_bool(arr[3]),
     );
   }
 
@@ -18710,10 +18711,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_address = sse_decode_opt_String(deserializer);
     var var_amountZatoshi = sse_decode_u_64(deserializer);
     var var_pool = sse_decode_String(deserializer);
+    var var_usesOrchardReceiver = sse_decode_bool(deserializer);
     return TransactionDetailOutput(
       address: var_address,
       amountZatoshi: var_amountZatoshi,
       pool: var_pool,
+      usesOrchardReceiver: var_usesOrchardReceiver,
     );
   }
 
@@ -22880,6 +22883,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.address, serializer);
     sse_encode_u_64(self.amountZatoshi, serializer);
     sse_encode_String(self.pool, serializer);
+    sse_encode_bool(self.usesOrchardReceiver, serializer);
   }
 
   @protected

@@ -390,6 +390,7 @@ pub(crate) struct TransactionDetailOutput {
     pub address: Option<String>,
     pub amount_zatoshi: u64,
     pub pool: String,
+    pub uses_orchard_receiver: bool,
 }
 
 pub(crate) struct ExportBirthdayAnchor {
@@ -809,6 +810,7 @@ pub(crate) fn get_transaction_detail(
             address: output.detail_address(tx_kind),
             amount_zatoshi: output.value,
             pool: output_pool_label(output.output_pool).to_string(),
+            uses_orchard_receiver: matches!(output.output_pool, ORCHARD_POOL | IRONWOOD_POOL),
         })
         .collect();
 
@@ -4519,53 +4521,60 @@ mod tests {
 
     #[test]
     fn detail_sent_row_returns_recipient_address_and_memo() {
-        let db = fresh_history_db();
-        let account = test_account_uuid();
-        let txid = fake_txid(0xD1);
+        for (output_pool, label, uses_orchard) in [
+            (SAPLING_POOL, "shielded", false),
+            (ORCHARD_POOL, "shielded", true),
+            (IRONWOOD_POOL, "ironwood", true),
+        ] {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xD1);
 
-        insert_history_tx(
-            &db,
-            account,
-            &txid,
-            Some(1_000_000),
-            1,
-            Some(1_000_100),
-            -1_010_000,
-            1_010_000,
-            0,
-            false,
-            Some("2026-04-28T17:00:00Z"),
-        );
-        insert_output_with_address_and_memo(
-            &db,
-            &txid,
-            3,
-            Some(account),
-            None,
-            1_000_000,
-            false,
-            Some("u-recipient"),
-            None,
-            Some(b"hello from activity"),
-        );
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                Some(1_000_000),
+                1,
+                Some(1_000_100),
+                -1_010_000,
+                1_010_000,
+                0,
+                false,
+                Some("2026-04-28T17:00:00Z"),
+            );
+            insert_output_with_address_and_memo(
+                &db,
+                &txid,
+                output_pool,
+                Some(account),
+                None,
+                1_000_000,
+                false,
+                Some("u-recipient"),
+                None,
+                Some(b"hello from activity"),
+            );
 
-        let got = get_transaction_detail(
-            db.path().to_str().unwrap(),
-            WalletNetwork::Test,
-            &account.to_string(),
-            &hex::encode(txid),
-            "sent",
-        )
-        .unwrap();
+            let got = get_transaction_detail(
+                db.path().to_str().unwrap(),
+                WalletNetwork::Test,
+                &account.to_string(),
+                &hex::encode(txid),
+                "sent",
+            )
+            .unwrap();
 
-        assert_eq!(got.txid_hex, hex::encode(txid));
-        assert_eq!(got.tx_kind, "sent");
-        assert_eq!(got.primary_address.as_deref(), Some("u-recipient"));
-        assert_eq!(got.memo.as_deref(), Some("hello from activity"));
-        assert_eq!(got.outputs.len(), 1);
-        assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
-        assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
-        assert_eq!(got.outputs[0].pool, "shielded");
+            assert_eq!(got.txid_hex, hex::encode(txid));
+            assert_eq!(got.tx_kind, "sent");
+            assert_eq!(got.primary_address.as_deref(), Some("u-recipient"));
+            assert_eq!(got.memo.as_deref(), Some("hello from activity"));
+            assert_eq!(got.outputs.len(), 1);
+            assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
+            assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
+            assert_eq!(got.outputs[0].pool, label);
+            assert_eq!(got.outputs[0].uses_orchard_receiver, uses_orchard);
+        }
     }
 
     #[test]

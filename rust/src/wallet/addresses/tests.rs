@@ -476,6 +476,10 @@ fn new_orchard_default_survives_later_transparent_alias_exposure() {
         "new Orchard default",
     )
     .unwrap();
+    assert_eq!(
+        issued,
+        orchard_projection(&account_ufvk(&seed), DiversifierIndex::new())
+    );
     let account_id = keys::parse_account_uuid(&uuid).unwrap();
 
     let mut alias_index = account_ufvk(&seed)
@@ -557,14 +561,22 @@ fn software_renewal_remains_current_after_reservation_and_reopen() {
         keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].unified_address,
         renewed
     );
-    let db = old_wallet(path);
-    let account = keys::parse_account_uuid(&uuid).unwrap();
-    let stored = db
-        .get_last_generated_address_matching(account, legacy_software_request())
-        .unwrap()
-        .unwrap();
-    assert!(stored.has_sapling());
-    assert_same_orchard_receiver(&stored.encode(&WalletNetwork::Main), &renewed);
+    let conn = rusqlite::Connection::open(path).unwrap();
+    for address in [&renewed, &reservation] {
+        let stored: String = conn
+            .query_row(
+                "SELECT address FROM addresses WHERE address = ?1",
+                [address],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let Address::Unified(ua) = Address::decode(&WalletNetwork::Main, &stored).unwrap() else {
+            panic!("not unified")
+        };
+        assert!(ua.has_orchard());
+        assert!(!ua.has_sapling());
+        assert!(ua.transparent().is_none());
+    }
     let again = get_next_available_address(
         path,
         WalletNetwork::Main,
@@ -577,5 +589,131 @@ fn software_renewal_remains_current_after_reservation_and_reopen() {
     assert_eq!(
         keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
         again
+    );
+}
+
+#[test]
+fn failed_receive_record_rolls_back_address_issuance() {
+    use crate::wallet::addresses::{get_next_available_address, AddressRequestKind};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let seed = SecretVec::new(vec![73; 32]);
+    let (uuid, initial) =
+        keys::init_db_and_create_account(path, WalletNetwork::Main, &seed, None, "software")
+            .unwrap();
+    crate::wallet::sync::update_chain_tip(path, WalletNetwork::Main, 2_500_000).unwrap();
+    let before = snapshot(path);
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch("CREATE TRIGGER reject_receive_update BEFORE UPDATE ON ext_vizor_receive_addresses BEGIN SELECT RAISE(ABORT, 'test write failure'); END").unwrap();
+    assert!(get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Shielded
+    )
+    .is_err());
+    assert_eq!(snapshot(path), before);
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        initial
+    );
+}
+
+#[test]
+fn legacy_hardware_receive_survives_new_reservations_and_renewal() {
+    use crate::wallet::addresses::{get_next_available_address, AddressRequestKind};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let mut db = old_wallet(path);
+    init_wallet_db(&mut db, None).unwrap();
+    let ufvk = hardware_ufvk(&SecretVec::new(vec![91; 32]));
+    let id = db
+        .import_account_ufvk(
+            "hardware",
+            &ufvk,
+            &old_birthday(),
+            AccountPurpose::Spending { derivation: None },
+            Some("vizor.hardware.keystone.v1"),
+        )
+        .unwrap()
+        .id();
+    db.update_chain_tip(BlockHeight::from_u32(2_500_000))
+        .unwrap();
+    let initial = old_current_address(&db, id, &ufvk, orchard_only_request());
+    drop(db);
+    let uuid = id.expose_uuid().to_string();
+    get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Orchard,
+    )
+    .unwrap();
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        initial
+    );
+    let renewed = get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Shielded,
+    )
+    .unwrap();
+    get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Orchard,
+    )
+    .unwrap();
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        renewed
+    );
+}
+
+#[test]
+fn imported_account_tracks_its_receive_address_and_cleans_up_on_deletion() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let first_seed = SecretVec::new(vec![73; 32]);
+    let second_seed = SecretVec::new(vec![91; 32]);
+    let (first, initial) =
+        keys::init_db_and_create_account(path, WalletNetwork::Main, &first_seed, None, "first")
+            .unwrap();
+    let (second, imported) =
+        keys::add_account(path, WalletNetwork::Main, "second", &second_seed, None).unwrap();
+    assert_eq!(
+        imported,
+        orchard_projection(&account_ufvk(&second_seed), DiversifierIndex::new())
+    );
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&second)).unwrap(),
+        imported
+    );
+    let db = old_wallet(path);
+    let account = db
+        .get_account(keys::parse_account_uuid(&second).unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(account.ufvk().unwrap().sapling().is_some());
+    drop(db);
+    keys::delete_account(path, WalletNetwork::Main, &second).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let remaining: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM ext_vizor_receive_addresses",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 1);
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&first)).unwrap(),
+        initial
     );
 }

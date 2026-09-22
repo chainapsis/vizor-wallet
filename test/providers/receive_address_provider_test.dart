@@ -51,7 +51,7 @@ void main() {
 
   for (final signer in [null, ...HardwareSignerKind.values]) {
     test(
-      '${signer?.name ?? "software"} renewal keeps the existing request dispatch',
+      '${signer?.name ?? "software"} renewal updates receive state while reservation stays separate',
       () async {
         final container = _container(signer);
         addTearDown(container.dispose);
@@ -62,9 +62,7 @@ void main() {
           accountUuid: 'account-1',
         );
         expect(renewed, orchardReceiveAddress);
-        expect(api.requests, [
-          ('account-1', signer == null ? 'shielded' : 'orchard'),
-        ]);
+        expect(api.requests, [('account-1', 'shielded')]);
         expect(container.read(accountProvider).value!.activeAddress, renewed);
 
         final reserved = await service.reserveOrchardAddress(
