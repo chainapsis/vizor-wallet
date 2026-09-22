@@ -36,8 +36,8 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 
 ## Environment and results
 
-- App: Zcash 3.9.3, `LedgerHQ/app-zcash` commit
-  `22dc38537f9a84b31b938e3ca95434595ef378d3`.
+- App: Zcash 3.9.4, `LedgerHQ/app-zcash` commit
+  `1a0f6495458ecb77abf97c8cff25b0a1a344daaa`.
 - Official builder and Speculos image digests are pinned in
   [`ledger-speculos-docker.sh`](../../scripts/e2e/ledger-speculos-docker.sh).
   Overrides: `VIZOR_LEDGER_BUILDER_IMAGE`, `VIZOR_LEDGER_SPECULOS_IMAGE`.
@@ -63,7 +63,7 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   discovery checkpoints (`complete=2`). Preparation checks the production
   shielding-progress API for one shieldable input; it does not run live discovery.
 - `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
-  Zcash 3.9.3 does not establish support; retain the production compatibility guard.
+  Zcash 3.9.4 has not been run against it; retain the production compatibility guard.
 - Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
   requests from synthetic eligible Ironwood notes. It verifies the zero-value
   foreign-hotkey output, then signs the SDK-redacted bytes through the production
