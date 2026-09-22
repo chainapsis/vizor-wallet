@@ -77,6 +77,12 @@ final ledgerBluetoothExistingAccountConnectorProvider =
       );
     });
 
+const _newAccountUpdateRequired = LedgerAppReadinessException(
+  LedgerAppReadinessFailure.unsupportedVersion,
+  'Update the Ledger Zcash app to version '
+  '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
+);
+
 Future<LedgerDeviceAccount> _connectLedgerAccount(
   Ref ref, {
   required int accountIndex,
@@ -97,17 +103,23 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
       !ledgerSupportsBluetooth(ref.read(ledgerTargetPlatformProvider))) {
     throw UnsupportedError('Connect your Ledger over USB on this platform.');
   }
-  final appVersion = await ref
-      .read(ledgerAppReadinessServiceForTransportProvider(transport))
-      .ensureReady();
+  final String appVersion;
+  try {
+    appVersion = await ref
+        .read(ledgerAppReadinessServiceForTransportProvider(transport))
+        .ensureReady();
+  } on LedgerAppReadinessException catch (error) {
+    // Readiness names the signing minimum, which a new account does not meet.
+    if (newAccount &&
+        error.failure == LedgerAppReadinessFailure.unsupportedVersion) {
+      throw _newAccountUpdateRequired;
+    }
+    rethrow;
+  }
   check();
   // Refuse before asking the device to share a viewing key.
   if (newAccount && !ledgerAppVersionAllowsNewAccounts(appVersion)) {
-    throw const LedgerAppReadinessException(
-      LedgerAppReadinessFailure.unsupportedVersion,
-      'Update the Ledger Zcash app to version '
-      '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
-    );
+    throw _newAccountUpdateRequired;
   }
   final account = transport == LedgerConnectionTransport.bluetooth
       ? await _exportMobileAccount(

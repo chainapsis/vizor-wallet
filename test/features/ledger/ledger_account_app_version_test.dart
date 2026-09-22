@@ -53,36 +53,39 @@ void main() {
     await settled;
   }
 
-  for (final transport in LedgerConnectionTransport.values) {
-    test('a new ${transport.name} account on 3.9.3 is refused before the '
-        'viewing-key request', () async {
-      final container = containerFor('3.9.3');
+  // 3.9.2 is already refused by readiness, which names the signing minimum.
+  for (final version in ['3.9.2', '3.9.3']) {
+    for (final transport in LedgerConnectionTransport.values) {
+      test('a new ${transport.name} account on $version is refused before the '
+          'viewing-key request', () async {
+        final container = containerFor(version);
 
-      await expectLater(
-        transport == LedgerConnectionTransport.usb
-            ? container.read(ledgerAccountConnectorProvider)(0)
-            : container.read(ledgerBluetoothAccountConnectorProvider)(
-                0,
-                _device,
-              ),
-        throwsA(
-          isA<LedgerAppReadinessException>()
-              .having(
-                (e) => e.failure,
-                'failure',
-                LedgerAppReadinessFailure.unsupportedVersion,
-              )
-              .having(
-                (e) => e.message,
-                'message',
-                'Update the Ledger Zcash app to version '
-                    '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
-              ),
-        ),
-      );
-      // Neither the Bluetooth plan nor the USB export was requested.
-      expect(api.planRequested.isCompleted, isFalse);
-    });
+        await expectLater(
+          transport == LedgerConnectionTransport.usb
+              ? container.read(ledgerAccountConnectorProvider)(0)
+              : container.read(ledgerBluetoothAccountConnectorProvider)(
+                  0,
+                  _device,
+                ),
+          throwsA(
+            isA<LedgerAppReadinessException>()
+                .having(
+                  (e) => e.failure,
+                  'failure',
+                  LedgerAppReadinessFailure.unsupportedVersion,
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Update the Ledger Zcash app to version '
+                      '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
+                ),
+          ),
+        );
+        // Neither the Bluetooth plan nor the USB export was requested.
+        expect(api.planRequested.isCompleted, isFalse);
+      });
+    }
   }
 
   test('a new account on 3.9.4 goes on to the viewing-key request', () async {
