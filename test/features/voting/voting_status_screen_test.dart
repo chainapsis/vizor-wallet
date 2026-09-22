@@ -2406,7 +2406,7 @@ void main() {
       await _pumpUntilFound(tester, find.text('Yes'));
       await tester.tap(find.text('Yes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Review answers'));
+      await tester.tap(find.text('Review answers').hitTestable());
       await _pumpUntilFound(tester, find.text('Review your answers'));
 
       router.pop();
@@ -3388,7 +3388,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review answers'));
+    await tester.tap(find.text('Review answers').hitTestable());
     await tester.pumpAndSettle();
 
     expect(find.text('Skip unanswered questions?'), findsOneWidget);
@@ -3418,6 +3418,57 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status account: account-1'), findsOneWidget);
+  });
+
+  testWidgets('live review return preserves ballot scroll and answers', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        for (var id = 1; id <= 37; id++)
+          _proposalJson(id, 'Proposal $id', ['Accept', 'Reject']),
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+    for (var id = 1; id <= 37; id++) {
+      container.read(votingDraftProvider(_draftKey).notifier).setChoice(id, 0);
+    }
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scroll = tester
+        .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .controller!;
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    final offset = scroll.offset;
+    await tester.tap(
+      find.byKey(const ValueKey('voting_review_answers_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Review your answers'), findsOneWidget);
+    GoRouter.of(tester.element(find.byType(VotingReviewView))).pop();
+    await tester.pumpAndSettle();
+    expect(scroll.offset, offset);
+    expect(container.read(votingDraftProvider(_draftKey)).choices.length, 37);
+    expect(find.byKey(const ValueKey('completion-check')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('review shows full proposal card with selected choice', (
@@ -3481,7 +3532,7 @@ void main() {
 
     await tester.tap(find.text('Preserve halvings'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review answers'));
+    await tester.tap(find.text('Review answers').hitTestable());
     await tester.pumpAndSettle();
 
     expect(find.text('Review your answers'), findsOneWidget);
@@ -3531,9 +3582,11 @@ void main() {
 
     await tester.tap(find.text('Yes'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Review answers'));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('voting_review_answers_button')),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review answers'));
+    await tester.tap(find.text('Review answers').hitTestable());
     await tester.pumpAndSettle();
 
     expect(find.text('Review your answers'), findsOneWidget);
@@ -3584,7 +3637,7 @@ void main() {
 
     await tester.tap(find.text('Yes'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review answers'));
+    await tester.tap(find.text('Review answers').hitTestable());
     await tester.pumpAndSettle();
 
     expect(find.text('Review your answers'), findsOneWidget);

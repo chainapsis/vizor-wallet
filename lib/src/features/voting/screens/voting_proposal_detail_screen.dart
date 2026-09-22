@@ -28,6 +28,7 @@ import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+import '../widgets/voting_proposal_list.dart';
 
 class VotingProposalDetailScreen extends StatelessWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
@@ -55,11 +56,13 @@ class VotingProposalDetailView extends ConsumerStatefulWidget {
   const VotingProposalDetailView({
     required this.roundId,
     required this.showDesktopToolbar,
+    this.mobileHeaderBuilder,
     super.key,
   });
 
   final String roundId;
   final bool showDesktopToolbar;
+  final VotingHeaderBuilder? mobileHeaderBuilder;
 
   @override
   ConsumerState<VotingProposalDetailView> createState() =>
@@ -192,7 +195,8 @@ class _VotingProposalDetailViewState
       votingParticipationUnavailableProvider(roundId),
     );
     final roundSession = ref.watch(votingSessionProvider(roundId));
-    return roundSession.when(
+    var ownsHeader = false;
+    final content = roundSession.when(
       skipLoadingOnRefresh: false,
       loading: () => _stateView(const VotingPaneLoading()),
       error: (error, _) => _stateView(
@@ -298,7 +302,10 @@ class _VotingProposalDetailViewState
         final votingEligibilityError =
             votingError?.isEligibilityFailure ?? false;
         _maybePrecomputeSnapshotBundles(state);
+        ownsHeader = proposals.isNotEmpty;
         return VotingActivePollContent(
+          key: ValueKey((roundId, accountUuid)),
+          mobileHeaderBuilder: widget.mobileHeaderBuilder,
           showDesktopToolbar: widget.showDesktopToolbar,
           roundId: roundId,
           title: round.title.isEmpty ? 'Token holder voting' : round.title,
@@ -355,6 +362,15 @@ class _VotingProposalDetailViewState
         );
       },
     );
+    if (widget.mobileHeaderBuilder != null && !ownsHeader) {
+      return Column(
+        children: [
+          widget.mobileHeaderBuilder!(false, null),
+          Expanded(child: content),
+        ],
+      );
+    }
+    return content;
   }
 
   void _clearShareStatusDeadline() {
@@ -553,9 +569,12 @@ class VotingActivePollContent extends StatefulWidget {
     required this.onChoice,
     this.participationUnavailable = false,
     this.onParticipationRetry,
+    this.onReviewRequested,
+    this.mobileHeaderBuilder,
   });
 
   final bool showDesktopToolbar;
+  final VotingHeaderBuilder? mobileHeaderBuilder;
   final String roundId;
   final String title;
   final int snapshotHeight;
@@ -567,6 +586,7 @@ class VotingActivePollContent extends StatefulWidget {
   final bool votingEligibilityConfirmed;
   final bool participationUnavailable;
   final VoidCallback? onParticipationRetry;
+  final VoidCallback? onReviewRequested;
 
   /// Whether the user may still pick answers. Broader than
   /// [votingEligibilityConfirmed]: it also covers the window where voting
@@ -585,6 +605,12 @@ class VotingActivePollContent extends StatefulWidget {
 
 class _ActivePollContentState extends State<VotingActivePollContent> {
   bool _showingIneligibleDialog = false;
+  int _answerRevision = 0;
+  int? _lastEditedProposalId;
+
+  bool get _hasAnswers => widget.proposals.any(
+    (proposal) => widget.draft.choices[proposal.id] != null,
+  );
 
   Future<void> _showIneligibleDialog() async {
     final message = widget.votingEligibilityErrorMessage;
@@ -645,8 +671,15 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       if (!mounted || continueToReview != true) return;
     }
 
-    if (mounted) {
-      context.push(votingReviewRoute(widget.roundId));
+    if (mounted &&
+        widget.votingEligibilityConfirmed &&
+        !widget.participationUnavailable &&
+        _hasAnswers) {
+      if (widget.onReviewRequested case final onReview?) {
+        onReview();
+      } else {
+        context.push(votingReviewRoute(widget.roundId));
+      }
     }
   }
 
@@ -702,7 +735,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
           !widget.participationUnavailable &&
           (canRetryEligibility ||
               isIneligible ||
-              widget.votingEligibilityConfirmed && !widget.draft.isEmpty),
+              widget.votingEligibilityConfirmed && _hasAnswers),
       label: widget.participationUnavailable
           ? 'Unavailable'
           : canRetryEligibility
@@ -714,44 +747,25 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     );
   }
 
-  Widget _buildProposalCard(VotingProposalView proposal) {
+  Widget _buildProposalCard(VotingProposalView proposal, bool advancing) {
     final isIneligible =
         !widget.votingEligibilityConfirmed &&
         widget.votingEligibilityErrorMessage != null;
     return VotingProposalCard(
       proposal: proposal,
+      advancing: advancing,
       selectedChoice: widget.answersEditable
           ? widget.draft.choices[proposal.id]
           : null,
       enabled: widget.answersEditable,
       onDisabledOptionTap: isIneligible ? _showIneligibleDialog : null,
-      onChoice: (choice) => widget.onChoice(proposal.id, choice),
-    );
-  }
-
-  Widget _buildMobileProposalContent() {
-    return VotingPaneScrollView(
-      maxWidth: 560,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.s,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildPollSummary(),
-          const SizedBox(height: AppSpacing.md),
-          for (var index = 0; index < widget.proposals.length; index++) ...[
-            _buildProposalCard(widget.proposals[index]),
-            if (index < widget.proposals.length - 1)
-              const SizedBox(height: AppSpacing.xs),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          _buildReviewAction(),
-        ],
-      ),
+      onChoice: (choice) {
+        setState(() {
+          _answerRevision++;
+          _lastEditedProposalId = proposal.id;
+        });
+        widget.onChoice(proposal.id, choice);
+      },
     );
   }
 
@@ -760,7 +774,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.showDesktopToolbar)
+        if (widget.showDesktopToolbar && widget.proposals.isEmpty)
           const AppPaneToolbar(backLinkMinWidth: 60),
         if (widget.participationUnavailable)
           Padding(
@@ -786,36 +800,24 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
                   title: 'No proposals',
                   message: 'This voting round does not contain any proposals.',
                 )
-              : kAppFormFactor == AppFormFactor.mobile
-              ? _buildMobileProposalContent()
-              : VotingPaneListView.separated(
-                  maxWidth: 560,
-                  padding: EdgeInsets.fromLTRB(
-                    widget.showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
-                    AppSpacing.sm,
-                    widget.showDesktopToolbar ? AppSpacing.md : AppSpacing.sm,
-                    AppSpacing.md,
-                  ),
-                  itemCount: widget.proposals.length + 2,
-                  separatorBuilder: (_, index) {
-                    final afterSummary = index == 0;
-                    final beforeAction = index == widget.proposals.length;
-                    return SizedBox(
-                      height: afterSummary || beforeAction
-                          ? AppSpacing.md
-                          : AppSpacing.xs,
-                    );
-                  },
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return _buildPollSummary();
-                    }
-                    if (index == widget.proposals.length + 1) {
-                      return _buildReviewAction();
-                    }
-                    final proposal = widget.proposals[index - 1];
-                    return _buildProposalCard(proposal);
-                  },
+              : VotingProposalList(
+                  key: ValueKey(widget.roundId),
+                  proposals: widget.proposals,
+                  choices: widget.draft.choices,
+                  summary: _buildPollSummary(),
+                  cardBuilder: _buildProposalCard,
+                  reviewAction: _buildReviewAction(),
+                  onReview:
+                      widget.votingEligibilityConfirmed &&
+                          !widget.participationUnavailable &&
+                          _hasAnswers
+                      ? _handleBottomActionPressed
+                      : null,
+                  answerRevision: _answerRevision,
+                  lastEditedProposalId: _lastEditedProposalId,
+                  showDesktopToolbar: widget.showDesktopToolbar,
+                  navigationEnabled: widget.answersEditable,
+                  mobileHeaderBuilder: widget.mobileHeaderBuilder,
                 ),
         ),
       ],
@@ -928,62 +930,70 @@ class _SkippedQuestionsDialog extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 360),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.background.neutralSubtleOpacity,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.warning,
-                        size: AppIconSize.medium,
-                        color: colors.icon.regular,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: colors.background.neutralSubtleOpacity,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: AppIcon(
+                          AppIcons.warning,
+                          size: AppIconSize.medium,
+                          color: colors.icon.regular,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      'Skip unanswered questions?',
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        'Skip unanswered questions?',
+                        style: AppTypography.bodyLarge.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'You have not answered $skippedCount of $totalCount '
-                'questions. The review screen will mark them as skipped, '
-                'and skipped questions will not be submitted.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
+                  ],
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                minWidth: 312,
-                child: const Text('Continue to review'),
-              ),
-              const SizedBox(height: AppSpacing.s),
-              AppButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                variant: AppButtonVariant.ghost,
-                minWidth: 312,
-                child: const Text('Keep voting'),
-              ),
-            ],
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'You have not answered $skippedCount of $totalCount '
+                  'questions. The review screen will mark them as skipped, '
+                  'and skipped questions will not be submitted.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  minWidth: 312,
+                  growWithContent: true,
+                  constrainContent: true,
+                  expand: true,
+                  child: const Text('Continue to review'),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                AppButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  variant: AppButtonVariant.ghost,
+                  minWidth: 312,
+                  growWithContent: true,
+                  constrainContent: true,
+                  expand: true,
+                  child: const Text('Keep voting'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1289,25 +1299,33 @@ class _MobilePollSummary extends StatelessWidget {
                 spacing: AppSpacing.xs,
                 runSpacing: AppSpacing.xs,
                 children: [
-                  AppButton(
-                    variant: AppButtonVariant.ghost,
-                    size: AppButtonSize.small,
-                    contentPadding: EdgeInsets.zero,
-                    onPressed: onToggle,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const AppIcon(AppIcons.expand, size: 16),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Text(
-                          expanded ? 'Hide description' : 'Show description',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: -0.04,
+                  IntrinsicWidth(
+                    child: AppButton(
+                      variant: AppButtonVariant.ghost,
+                      size: AppButtonSize.small,
+                      contentPadding: EdgeInsets.zero,
+                      onPressed: onToggle,
+                      growWithContent: true,
+                      constrainContent: true,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const AppIcon(AppIcons.expand, size: 16),
+                          const SizedBox(width: AppSpacing.xxs),
+                          Flexible(
+                            child: Text(
+                              expanded
+                                  ? 'Hide description'
+                                  : 'Show description',
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: -0.04,
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   ?forum,
@@ -1359,37 +1377,44 @@ class _PollSummary extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: AppSpacing.s),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineMedium.copyWith(
-                    color: colors.text.accent,
-                    fontFamily: 'Geist',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 20,
-                    height: 30 / 20,
-                    letterSpacing: 0,
+          child: LayoutBuilder(
+            builder: (context, constraints) => Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.headlineMedium.copyWith(
+                      color: colors.text.accent,
+                      fontFamily: 'Geist',
+                      fontWeight: FontWeight.w600,
+                      fontSize: 20,
+                      height: 30 / 20,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                '#${formatGroupedInteger(snapshotHeight)}',
-                style: AppTypography.headlineMedium.copyWith(
-                  color: colors.text.accent,
-                  fontFamily: 'Geist',
-                  fontWeight: FontWeight.w500,
-                  fontSize: 20,
-                  height: 30 / 20,
-                  letterSpacing: 0,
+                const SizedBox(width: AppSpacing.sm),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * .45,
+                  ),
+                  child: Text(
+                    '#${formatGroupedInteger(snapshotHeight)}',
+                    style: AppTypography.headlineMedium.copyWith(
+                      color: colors.text.accent,
+                      fontFamily: 'Geist',
+                      fontWeight: FontWeight.w500,
+                      fontSize: 20,
+                      height: 30 / 20,
+                      letterSpacing: 0,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -1461,6 +1486,9 @@ class _ReviewAnswersButton extends StatelessWidget {
           onPressed: enabled ? onPressed : null,
           variant: AppButtonVariant.primary,
           size: AppButtonSize.large,
+          growWithContent: true,
+          constrainContent: true,
+          expand: true,
           minWidth: constraints.maxWidth,
           child: Text(label),
         );
