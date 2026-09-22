@@ -138,6 +138,38 @@ void main() {
     },
   );
 
+  testWidgets('completion cue cannot open review before its label appears', (
+    tester,
+  ) async {
+    draft = const VotingDraftState(choices: {7: 0});
+    await pump(tester);
+    tester
+        .widgetList<VotingProposalCard>(find.byType(VotingProposalCard))
+        .last
+        .onChoice!(0);
+    await tester.pump();
+    final progress = find.byKey(const ValueKey('answer-progress'));
+    AppButton progressButton() => tester.widget<AppButton>(
+      find.ancestor(of: progress, matching: find.byType(AppButton)),
+    );
+    expect(find.byKey(const ValueKey('completion-check')), findsOneWidget);
+    expect(progressButton().onPressed, isNull);
+    await tester.tap(progress);
+    await tester.pump(const Duration(milliseconds: 699));
+    expect(reviews, 0);
+    expect(progressButton().onPressed, isNull);
+    expect(find.byKey(const ValueKey('sticky-review-action')), findsNothing);
+    await tester.tap(progress);
+    expect(reviews, 0);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('completion-check')), findsNothing);
+    expect(reviewButton(tester).onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('sticky-review-action')));
+    await tester.pump();
+    expect(reviews, 1);
+  });
+
   testWidgets(
     'hydrated complete draft has no cue and pending eligibility blocks review',
     (tester) async {

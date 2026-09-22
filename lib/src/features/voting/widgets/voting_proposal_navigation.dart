@@ -262,7 +262,9 @@ class _VotingProposalNavigationState extends State<VotingProposalNavigation> {
                           ? AppButtonSize.large
                           : AppButtonSize.medium,
                       focusNode: showReview ? _reviewFocus : _progressFocus,
-                      onPressed: complete ? widget.onReview : _showUnanswered,
+                      onPressed: complete
+                          ? (showReview ? widget.onReview : null)
+                          : _showUnanswered,
                       variant: showReview
                           ? AppButtonVariant.primary
                           : AppButtonVariant.secondary,
