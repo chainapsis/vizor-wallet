@@ -15,8 +15,8 @@ import '../../core/config/network_config.dart';
 /// The app shows a memo as text only when every byte is printable ASCII, and
 /// as a hash otherwise.
 ///
-/// Versions below 3.9.3 are refused outright: Ledger Live cannot install them,
-/// so reaching one means a locally built app rather than a user Vizor supports.
+/// Signing starts at 3.9.3 because Vizor builds transactions to that app's
+/// limits. Ledger Live still installs older versions on older firmware.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
 
 /// Before this version the app crashed while hashing a memo for display, so
