@@ -871,6 +871,7 @@ abstract class RustLibApi extends BaseApi {
   Future<LedgerAccountExport> crateApiLedgerLedgerExportAccount({
     required int accountIndex,
     required String network,
+    required String appVersion,
   });
 
   Future<String> crateApiLedgerLedgerExportUfvk({
@@ -6718,6 +6719,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<LedgerAccountExport> crateApiLedgerLedgerExportAccount({
     required int accountIndex,
     required String network,
+    required String appVersion,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6725,6 +6727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_32(accountIndex, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(appVersion, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6737,7 +6740,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerExportAccountConstMeta,
-        argValues: [accountIndex, network],
+        argValues: [accountIndex, network, appVersion],
         apiImpl: this,
       ),
     );
@@ -6746,7 +6749,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiLedgerLedgerExportAccountConstMeta =>
       const TaskConstMeta(
         debugName: "ledger_export_account",
-        argNames: ["accountIndex", "network"],
+        argNames: ["accountIndex", "network", "appVersion"],
       );
 
   @override

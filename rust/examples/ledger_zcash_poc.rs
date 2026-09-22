@@ -27,7 +27,7 @@ fn run() -> Result<(), String> {
                 .unwrap_or("0")
                 .parse::<u32>()
                 .map_err(|_| "Account index must be a non-negative integer".to_string())?;
-            println!("{}", ledger::get_ufvk(account_index)?);
+            println!("{}", ledger::get_ufvk(account_index, None)?);
             Ok(())
         }
         Some("sign") => {

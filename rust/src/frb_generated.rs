@@ -5350,11 +5350,15 @@ fn wire__crate__api__ledger__ledger_export_account_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_account_index = <u32>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_app_version = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::ledger::ledger_export_account(api_account_index, api_network)?;
+                    let output_ok = crate::api::ledger::ledger_export_account(
+                        api_account_index,
+                        api_network,
+                        api_app_version,
+                    )?;
                     Ok(output_ok)
                 })())
             }

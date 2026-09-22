@@ -112,10 +112,13 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
     let signing_client = SpeculosClient::new(signing_api_url)?;
     signing_client.require_supported_zcash_app()?;
 
+    // Read the app on its own session and hold export and signing to it, as
+    // the product's USB readiness does.
+    let app_version = ledger_device_app()?.app_version;
     let approval = config
         .auto_approve
         .then(|| ApprovalWorker::start(client.clone()));
-    let export_result = ledger_export_account(0, config.network.clone());
+    let export_result = ledger_export_account(0, config.network.clone(), app_version.clone());
     let automated_ufvk_review = approval
         .map(ApprovalWorker::finish)
         .transpose()?
@@ -138,9 +141,6 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         "ledger".into(),
     )?;
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
-    // Read the app on its own session and hold signing to it, as the product's
-    // USB readiness does.
-    let app_version = ledger_device_app()?.app_version;
     let approval = config
         .auto_approve
         .then(|| ApprovalWorker::start(signing_client));

@@ -6,11 +6,9 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidanc
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
-  test('a Ledger swapped during USB signing asks for one Ledger', () {
-    final guidance = ledgerFailureGuidance(
-      StateError(ledgerSigningAppChangedError),
-    );
-    expect(guidance?.message, ledgerSigningAppChangedError);
+  test('a Ledger swapped during a USB request asks for one Ledger', () {
+    final guidance = ledgerFailureGuidance(StateError(ledgerAppChangedError));
+    expect(guidance?.message, ledgerAppChangedError);
     expect(guidance?.retryable, isTrue);
   });
 

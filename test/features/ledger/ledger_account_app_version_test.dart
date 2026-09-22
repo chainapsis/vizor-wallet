@@ -88,6 +88,14 @@ void main() {
     }
   }
 
+  test('a new USB account exports only from the app readiness saw', () async {
+    final container = containerFor('3.9.4');
+    final account = await container.read(ledgerAccountConnectorProvider)(0);
+    // Rust rechecks this version on the export session before reading the key.
+    expect(api.exportedAppVersion, '3.9.4');
+    expect(account.appVersion, '3.9.4');
+  });
+
   test('a new account on 3.9.4 goes on to the viewing-key request', () async {
     final container = containerFor('3.9.4');
     await expectViewingKeyRequested(
@@ -111,10 +119,12 @@ void main() {
 class _Api extends RustLibApi {
   late Completer<void> planRequested;
   late Completer<LedgerUfvkApduPlan> _plan;
+  String? exportedAppVersion;
 
   void reset() {
     planRequested = Completer<void>();
     _plan = Completer<LedgerUfvkApduPlan>();
+    exportedAppVersion = null;
   }
 
   void completePlan() {
@@ -134,6 +144,20 @@ class _Api extends RustLibApi {
   }) {
     planRequested.complete();
     return _plan.future;
+  }
+
+  @override
+  Future<LedgerAccountExport> crateApiLedgerLedgerExportAccount({
+    required int accountIndex,
+    required String network,
+    required String appVersion,
+  }) async {
+    exportedAppVersion = appVersion;
+    return LedgerAccountExport(
+      ufvk: 'ufvk',
+      seedFingerprint: Uint8List(0),
+      accountIndex: accountIndex,
+    );
   }
 
   @override

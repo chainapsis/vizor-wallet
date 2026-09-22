@@ -95,19 +95,21 @@ pub fn ledger_validate_supported_pczt(pczt_bytes: Vec<u8>) -> Result<(), String>
 /// approves the request on the Ledger device.
 pub fn ledger_export_ufvk(account_index: u32, network: String) -> Result<String, String> {
     require_mainnet(&network)?;
-    ledger::get_ufvk(account_index)
+    ledger::get_ufvk(account_index, None)
 }
 
 /// Export the UFVK and the stable derivation metadata Vizor needs to import
 /// the corresponding watch-only account. The current Ledger APDU does not
 /// expose the ZIP-32 seed fingerprint, so the PoC uses a domain-separated hash
-/// of the approved UFVK as non-secret account metadata.
+/// of the approved UFVK as non-secret account metadata. `app_version` is the
+/// version app readiness reported; the export session must find the same app.
 pub fn ledger_export_account(
     account_index: u32,
     network: String,
+    app_version: String,
 ) -> Result<LedgerAccountExport, String> {
     require_mainnet(&network)?;
-    let ufvk = ledger::get_ufvk(account_index)?;
+    let ufvk = ledger::get_ufvk(account_index, Some(&app_version))?;
     Ok(LedgerAccountExport {
         seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
         ufvk,

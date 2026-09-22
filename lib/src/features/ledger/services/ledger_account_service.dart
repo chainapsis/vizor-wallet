@@ -131,6 +131,7 @@ Future<LedgerDeviceAccount> _connectLedgerAccount(
       : await rust_ledger.ledgerExportAccount(
           accountIndex: accountIndex,
           network: networkName,
+          appVersion: appVersion,
         );
   check();
   return LedgerDeviceAccount(

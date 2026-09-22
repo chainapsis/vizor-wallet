@@ -41,13 +41,16 @@ Future<String> ledgerExportUfvk({
 /// Export the UFVK and the stable derivation metadata Vizor needs to import
 /// the corresponding watch-only account. The current Ledger APDU does not
 /// expose the ZIP-32 seed fingerprint, so the PoC uses a domain-separated hash
-/// of the approved UFVK as non-secret account metadata.
+/// of the approved UFVK as non-secret account metadata. `app_version` is the
+/// version app readiness reported; the export session must find the same app.
 Future<LedgerAccountExport> ledgerExportAccount({
   required int accountIndex,
   required String network,
+  required String appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerExportAccount(
   accountIndex: accountIndex,
   network: network,
+  appVersion: appVersion,
 );
 
 /// Build the Zcash app's UFVK request without opening a desktop transport.

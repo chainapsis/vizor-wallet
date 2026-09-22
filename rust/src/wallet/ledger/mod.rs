@@ -61,11 +61,10 @@ const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
 /// Leads errors where the device's signatures verify against keys other than
 /// this account's, so the UI can ask for the Ledger that holds the account.
 const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
-/// Keep this string identical to `ledgerSigningAppChangedError` in
+/// Keep this string identical to `ledgerAppChangedError` in
 /// `lib/src/features/ledger/services/ledger_failure_guidance.dart`.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const LEDGER_SIGNING_APP_CHANGED: &str =
-    "Your Ledger changed during signing. Keep one Ledger connected and try again.";
+const LEDGER_APP_CHANGED: &str = "Your Ledger changed. Keep one Ledger connected and try again.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAppInfo {
@@ -588,10 +587,9 @@ pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     Err(unsupported_platform())
 }
 
-/// App readiness and signing open separate USB sessions, and each takes the
-/// first Ledger it finds. Signing proceeds only on the app readiness verified,
-/// so a swapped or second Ledger never receives a PCZT built for another
-/// app version.
+/// App readiness opens its own USB session, and every session takes the first
+/// Ledger it finds. UFVK export and signing proceed only on the app readiness
+/// verified, so a swapped or second Ledger never answers for another version.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn require_readiness_app(
     app: &transport::RunningDeviceApp,
@@ -600,7 +598,7 @@ fn require_readiness_app(
     if app.name == ZCASH_APP_NAME && app.version == expected_version {
         Ok(())
     } else {
-        Err(LEDGER_SIGNING_APP_CHANGED.into())
+        Err(LEDGER_APP_CHANGED.into())
     }
 }
 
@@ -657,13 +655,20 @@ fn is_terminal_app_transition_error(error: &str) -> bool {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn get_ufvk(account_index: u32) -> Result<String, String> {
+pub fn get_ufvk(account_index: u32, expected_app_version: Option<&str>) -> Result<String, String> {
     let operation = lock_operation()?;
-    transport::LedgerTransport::connect_ufvk(operation.context())?.ufvk(account_index)
+    let transport = transport::LedgerTransport::connect_ufvk(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
+    transport.ufvk(account_index)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
+pub fn get_ufvk(
+    _account_index: u32,
+    _expected_app_version: Option<&str>,
+) -> Result<String, String> {
     Err(unsupported_platform())
 }
 
@@ -1092,7 +1097,7 @@ mod tests {
 
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[test]
-    fn signing_requires_the_app_readiness_verified() {
+    fn usb_requests_require_the_app_readiness_verified() {
         let app = |name: &str, version: &str| transport::RunningDeviceApp {
             name: name.into(),
             version: version.into(),
@@ -1101,7 +1106,7 @@ mod tests {
         for (name, version) in [("Zcash", "3.9.3"), ("BOLOS", "3.9.4"), ("Bitcoin", "3.9.4")] {
             assert_eq!(
                 require_readiness_app(&app(name, version), "3.9.4").unwrap_err(),
-                LEDGER_SIGNING_APP_CHANGED
+                LEDGER_APP_CHANGED
             );
         }
     }

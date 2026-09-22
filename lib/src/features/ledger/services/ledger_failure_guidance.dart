@@ -44,10 +44,11 @@ class LedgerFailureGuidance {
   final bool retryable;
 }
 
-/// USB signing found a different app than readiness verified. Keep this
-/// identical to `LEDGER_SIGNING_APP_CHANGED` in `rust/src/wallet/ledger/mod.rs`.
-const ledgerSigningAppChangedError =
-    'Your Ledger changed during signing. Keep one Ledger connected and try again.';
+/// A USB export or signing session found a different app than readiness
+/// verified. Keep this identical to `LEDGER_APP_CHANGED` in
+/// `rust/src/wallet/ledger/mod.rs`.
+const ledgerAppChangedError =
+    'Your Ledger changed. Keep one Ledger connected and try again.';
 
 LedgerFailureGuidance? ledgerFailureGuidance(
   Object error, {
@@ -56,8 +57,8 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   if (isLedgerMemoHashUnsupported(error)) {
     return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
   }
-  if (error.toString().contains(ledgerSigningAppChangedError)) {
-    return const LedgerFailureGuidance(ledgerSigningAppChangedError);
+  if (error.toString().contains(ledgerAppChangedError)) {
+    return const LedgerFailureGuidance(ledgerAppChangedError);
   }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null
