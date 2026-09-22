@@ -959,6 +959,9 @@ edge in `MobileBottomSafeArea`
 
 ## Testing
 
+- Keep small Rust internal tests in the source file's `#[cfg(test)] mod tests`.
+- When fixtures or scenarios obscure the implementation, split into `<module>/tests.rs`; do not split by line count alone.
+- Put public-API integration tests in `rust/tests/`; do not widen production visibility for test placement.
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
 - Dart unit tests: `fvm flutter test` (mobile-tagged tests auto-skip).
   Mobile-UI tests:

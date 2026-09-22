@@ -284,7 +284,7 @@ mod tests {
         let network = keys::parse_network("regtest").unwrap();
         let phrase = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&phrase).unwrap();
-        let address = keys::derive_software_address(network, &seed, 0).unwrap();
+        let address = keys::derive_gift_address(network, &seed, 0).unwrap();
         let uuid =
             keys::register_gift_card_observer(path, network, phrase.as_bytes(), &address, 100)
                 .unwrap();
@@ -312,7 +312,7 @@ mod tests {
         drop(db);
         let other = keys::generate_mnemonic();
         let other_seed = keys::mnemonic_to_seed(&other).unwrap();
-        let other_address = keys::derive_software_address(network, &other_seed, 0).unwrap();
+        let other_address = keys::derive_gift_address(network, &other_seed, 0).unwrap();
         let second =
             keys::register_gift_card_observer(path, network, other.as_bytes(), &other_address, 50)
                 .unwrap();

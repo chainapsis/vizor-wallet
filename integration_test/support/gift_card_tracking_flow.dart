@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.d
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/rust/api/gift_card_tracking.dart' as tracking;
 
 import 'desktop_regtest_flow.dart';
@@ -54,13 +55,27 @@ Future<GiftCardUsage> waitForTrackedUsage(
         last?.cleaned == cleaned &&
         (reason == null || last?.reason == reason)) {
       final row = find.byKey(ValueKey('payment_link_recovery_$address'));
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.descendant(of: row, matching: find.text(last!.label)),
-        ),
-        description: 'created card row ${status.name}',
-      );
+      await pumpUntil(tester, () {
+        if (status == GiftCardUsageStatus.unknown) {
+          return tester.any(
+            find.descendant(of: row, matching: find.text(last!.label)),
+          );
+        }
+        final label = status == GiftCardUsageStatus.unused ? 'Unused' : 'Used';
+        final view = tester.widget<PaymentLinkCardsDesktopView>(
+          find.byType(PaymentLinkCardsDesktopView),
+        );
+        return tester.any(row) &&
+            tester.any(find.text(label)) &&
+            view.sections.any(
+              (section) =>
+                  section.label == label &&
+                  section.cards.any(
+                    (card) =>
+                        card.key == ValueKey('payment_link_recovery_$address'),
+                  ),
+            );
+      }, description: 'created card row ${status.name}');
       final accounts = await tracking.listGiftCardObservers(
         dbPath: await getGiftCardTrackingDbPath('regtest'),
       );

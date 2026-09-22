@@ -330,6 +330,7 @@ void main() {
           sourcePool: 'unknown',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _receivingAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'transparent',
@@ -367,6 +368,7 @@ void main() {
           sourcePool: 'shielded',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _recipientAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'shielded',
@@ -440,6 +442,7 @@ void main() {
           sourcePool: 'transparent',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _recipientAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'shielded',
@@ -875,6 +878,7 @@ void main() {
             sourcePool: 'transparent',
             outputs: [
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: _recipientAddress,
                 amountZatoshi: BigInt.from(12000000000),
                 pool: 'transparent',

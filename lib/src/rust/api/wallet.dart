@@ -110,6 +110,17 @@ String giftMnemonicFromEntropy({required List<int> entropy}) => RustLib
     .api
     .crateApiWalletGiftMnemonicFromEntropy(entropy: entropy);
 
+/// Compare the Orchard receivers of two Unified Addresses on the same network.
+bool sameOrchardReceiver({
+  required String network,
+  required String first,
+  required String second,
+}) => RustLib.instance.api.crateApiWalletSameOrchardReceiver(
+  network: network,
+  first: first,
+  second: second,
+);
+
 /// Check locally retained gift metadata before sharing an address-free link.
 /// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
 Future<void> validateGiftAddress({
@@ -120,6 +131,15 @@ Future<void> validateGiftAddress({
   mnemonic: mnemonic,
   network: network,
   address: address,
+);
+
+/// Derive accepted Gift Card addresses once for matching retained receipts.
+Future<List<String>> getGiftAddressVariants({
+  required String mnemonic,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletGetGiftAddressVariants(
+  mnemonic: mnemonic,
+  network: network,
 );
 
 /// Discover higher ZIP32 software accounts with transparent history that are
@@ -296,6 +316,17 @@ Future<void> deleteAccount({
 /// Drop process-local wallet summary data after the wallet DB is deleted.
 Future<void> evictWalletSummaryCache({required String dbPath}) =>
     RustLib.instance.api.crateApiWalletEvictWalletSummaryCache(dbPath: dbPath);
+
+/// Current and legacy receive representations owned by a local account.
+Future<List<String>> getReceiveAddressAliases({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetReceiveAddressAliases(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
 
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({

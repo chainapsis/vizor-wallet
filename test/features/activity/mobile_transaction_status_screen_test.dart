@@ -740,6 +740,7 @@ void main() {
           sourcePool: 'transparent',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _receivingShieldedAddress,
               amountZatoshi: BigInt.from(12312000000),
               pool: 'shielded',
