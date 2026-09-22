@@ -133,6 +133,15 @@ Future<void> validateGiftAddress({
   address: address,
 );
 
+/// Derive accepted Gift Card addresses once for matching retained receipts.
+Future<List<String>> getGiftAddressVariants({
+  required String mnemonic,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletGetGiftAddressVariants(
+  mnemonic: mnemonic,
+  network: network,
+);
+
 /// Discover higher ZIP32 software accounts with transparent history that are
 /// not already present in the wallet DB for this mnemonic.
 Future<SoftwareWalletImportDiscoveryResult>
@@ -307,6 +316,17 @@ Future<void> deleteAccount({
 /// Drop process-local wallet summary data after the wallet DB is deleted.
 Future<void> evictWalletSummaryCache({required String dbPath}) =>
     RustLib.instance.api.crateApiWalletEvictWalletSummaryCache(dbPath: dbPath);
+
+/// Current and legacy receive representations owned by a local account.
+Future<List<String>> getReceiveAddressAliases({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetReceiveAddressAliases(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
 
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({

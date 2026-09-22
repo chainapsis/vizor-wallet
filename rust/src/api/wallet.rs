@@ -397,6 +397,16 @@ pub fn validate_gift_address(
     validate().map_err(|_: String| "Gift address could not be verified".to_string())
 }
 
+/// Derive accepted Gift Card addresses once for matching retained receipts.
+pub fn get_gift_address_variants(mnemonic: String, network: String) -> Result<Vec<String>, String> {
+    let derive = || {
+        let network = keys::parse_network(&network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        keys::gift_address_variants(network, &seed)
+    };
+    derive().map_err(|_: String| "Gift address could not be verified".to_string())
+}
+
 /// Discover higher ZIP32 software accounts with transparent history that are
 /// not already present in the wallet DB for this mnemonic.
 pub fn discover_software_wallet_import_accounts(
@@ -1047,6 +1057,18 @@ pub fn delete_account(
 /// Drop process-local wallet summary data after the wallet DB is deleted.
 pub fn evict_wallet_summary_cache(db_path: String) {
     crate::wallet::wallet_summary_cache::evict_db(&db_path);
+}
+
+/// Current and legacy receive representations owned by a local account.
+pub fn get_receive_address_aliases(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Vec<String>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::get_receive_address_aliases(&db_path, network, &account_uuid)
+    })
 }
 
 /// Get the Unified Address for a specific account (or first account if uuid is None).

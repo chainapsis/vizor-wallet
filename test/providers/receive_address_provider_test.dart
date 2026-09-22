@@ -12,6 +12,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_review_layout.dart';
+
 import '../fixtures/orchard_receive_address.dart';
 
 // Orchard-only mainnet Unified Address from the repository's independent
@@ -48,6 +51,46 @@ void main() {
         .setMockMethodCallHandler(pathProvider, null);
     support.deleteSync(recursive: true);
   });
+
+  test(
+    'own-account lookup labels exact legacy aliases and rejects other addresses',
+    () async {
+      final container = _container(null);
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      final ownAccounts = await container.read(
+        ownAccountAddressesProvider.future,
+      );
+      for (final address in [orchardReceiveAddress, 'legacy-sapling-orchard']) {
+        final recipient = sendReviewRecipientFor(
+          contacts: const [],
+          address: address,
+          ownAccounts: ownAccounts,
+        );
+        expect(recipient, isA<SendReviewContactRecipient>());
+        expect(
+          (recipient as SendReviewContactRecipient).name,
+          ownAccounts[address]!.name,
+        );
+        expect(
+          paymentRequestRecipientIdentityFor(
+            contacts: const [],
+            address: address,
+            ownAccounts: ownAccounts,
+          )?.isOwnAccount,
+          isTrue,
+        );
+      }
+      expect(
+        sendReviewRecipientFor(
+          contacts: const [],
+          address: 'unrecognized-ua',
+          ownAccounts: ownAccounts,
+        ),
+        isA<SendReviewAddressRecipient>(),
+      );
+    },
+  );
 
   for (final signer in [null, ...HardwareSignerKind.values]) {
     test(
@@ -143,6 +186,21 @@ class _ReceiveAddressApi implements RustLibApi {
   final requests = <(String, String)>[];
   bool failRenewal = false;
   int unifiedAddressLookups = 0;
+
+  @override
+  Future<List<String>> crateApiWalletGetReceiveAddressAliases({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => [orchardReceiveAddress, 'legacy-sapling-orchard'];
+
+  @override
+  Future<List<String>> crateApiWalletGetRecentTransparentReceiveAddresses({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+    int? limit,
+  }) async => [];
 
   @override
   Future<String> crateApiWalletGetUnifiedAddress({

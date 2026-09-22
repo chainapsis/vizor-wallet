@@ -342,6 +342,14 @@ pub fn derive_gift_address(
     Ok(ua.encode(&network))
 }
 
+pub(crate) fn gift_address_variants(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+) -> Result<Vec<String>, String> {
+    let ufvk = software_account_ufvk(network, seed, 0)?;
+    addresses::gift_address_variants(&ufvk, network)
+}
+
 /// Validate a Gift Card identity against its current or historical default address.
 pub(crate) fn validate_gift_address(
     network: WalletNetwork,
@@ -1290,6 +1298,21 @@ pub fn get_address_from_db(
     let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
 
     addresses::current_receive_address(&db, db_path, network, account_id, ufvk)
+}
+
+pub fn get_receive_address_aliases(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<Vec<String>, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Account not found")?;
+    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+    addresses::receive_address_aliases(&db, db_path, network, account_id, ufvk)
 }
 
 /// Export a single account's Unified Full Viewing Key (UFVK), encoded for

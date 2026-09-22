@@ -213,6 +213,33 @@ fn old_default_nonzero_index_keeps_its_orchard_receiver_without_writes() {
 
     assert_eq!(projected, orchard_projection(&ufvk, legacy_index));
     assert_same_orchard_receiver(&old_displayed, &projected);
+    let aliases =
+        keys::get_receive_address_aliases(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+    assert!(aliases.contains(&old_displayed));
+    assert!(aliases.contains(&projected));
+    let foreign = account_ufvk(&SecretVec::new(vec![99; 32]));
+    let foreign_address = foreign
+        .default_address(legacy_software_request())
+        .unwrap()
+        .0;
+    let Address::Unified(own_address) =
+        Address::decode(&WalletNetwork::Main, &old_displayed).unwrap()
+    else {
+        panic!("not unified")
+    };
+    let mixed = zcash_keys::address::UnifiedAddress::from_receivers(
+        own_address.orchard().cloned(),
+        foreign_address.sapling().cloned(),
+        None,
+    )
+    .unwrap()
+    .encode(&WalletNetwork::Main);
+    assert!(super::same_orchard_receiver(
+        WalletNetwork::Main,
+        &mixed,
+        &projected
+    ));
+    assert!(!aliases.contains(&mixed));
     assert_eq!(snapshot(db_path_str), before);
     assert_eq!(
         keys::get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
@@ -247,6 +274,10 @@ fn old_renewed_sapling_address_is_projected_from_its_stored_index() {
         keys::get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap();
     assert_eq!(projected, orchard_projection(&ufvk, renewed_index));
     assert_same_orchard_receiver(&old_displayed, &projected);
+    let aliases =
+        keys::get_receive_address_aliases(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+    assert!(aliases.contains(&old_displayed));
+    assert!(aliases.contains(&projected));
     assert_eq!(snapshot(db_path_str), before);
 }
 

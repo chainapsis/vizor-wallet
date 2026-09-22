@@ -500,6 +500,36 @@ void main() {
       });
     }
 
+    test(
+      'completed receipt lookup derives keys once across many records',
+      () async {
+        final records = [
+          for (var i = 0; i < 100; i++)
+            PaymentLinkReceivedRecord.fromLink(
+              _link().withResolvedMetadata(address: 'unrelated-$i'),
+            ).copyWith(claimLink: null),
+          PaymentLinkReceivedRecord.fromLink(_link()).copyWith(claimLink: null),
+        ];
+        final reopened = VizorPaymentLink.parse(
+          _link().toRecoveryUri().toString(),
+        );
+        final result = await paymentLinkWithRetainedAddress(reopened, records);
+        expect(result.address, _link().address);
+        expect(api.giftVariantLookups, 1);
+      },
+    );
+
+    test('pending receipt lookup does not derive keys', () async {
+      final reopened = VizorPaymentLink.parse(
+        _link().toRecoveryUri().toString(),
+      );
+      final result = await paymentLinkWithRetainedAddress(reopened, [
+        PaymentLinkReceivedRecord.fromLink(_link()),
+      ]);
+      expect(result.address, _link().address);
+      expect(api.giftVariantLookups, 0);
+    });
+
     test('completed receipts reject unrelated seeds and networks', () async {
       final unrelated = PaymentLinkReceivedRecord.fromLink(
         _link().withResolvedMetadata(address: 'u1unrelated'),
@@ -2476,6 +2506,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   List<bool> claimSyncModes = [];
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
+  int giftVariantLookups = 0;
 
   @override
   Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -2612,9 +2643,22 @@ class _ClaimDestinationRustApi implements RustLibApi {
     claimSyncCalls = 0;
     claimSyncModes = [];
     claimSyncDbPaths.clear();
+    giftVariantLookups = 0;
     validGiftAddresses
       ..clear()
       ..add(_link().address);
+  }
+
+  @override
+  Future<List<String>> crateApiWalletGetGiftAddressVariants({
+    required String mnemonic,
+    required String network,
+  }) async {
+    giftVariantLookups++;
+    if (mnemonic != _link().mnemonic || network != _link().network) {
+      throw StateError('Gift address mismatch');
+    }
+    return validGiftAddresses.toList();
   }
 
   @override

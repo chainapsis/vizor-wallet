@@ -134,17 +134,43 @@ pub(crate) fn current_receive_address(
             return Ok(address);
         }
     }
+    orchard_projection(&legacy_receive_address(db, account_id, ufvk)?, network)
+}
+
+/// Exact account-owned aliases, including the pre-projection receive address.
+pub(crate) fn receive_address_aliases(
+    db: &WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    ufvk: &UnifiedFullViewingKey,
+) -> Result<Vec<String>, String> {
+    let current = current_receive_address(db, db_path, network, account_id, ufvk)?;
+    let legacy = legacy_receive_address(db, account_id, ufvk)?;
+    let mut aliases = vec![
+        current,
+        legacy.encode(&network),
+        orchard_projection(&legacy, network)?,
+    ];
+    aliases.sort();
+    aliases.dedup();
+    Ok(aliases)
+}
+
+fn legacy_receive_address(
+    db: &WalletDatabase,
+    account_id: AccountUuid,
+    ufvk: &UnifiedFullViewingKey,
+) -> Result<UnifiedAddress, String> {
     match db
         .get_last_generated_address_matching(account_id, legacy_receive_request(ufvk))
-        .map_err(|e| format!("Failed to get last generated receive address: {e}"))?
+        .map_err(|e| format!("Failed to get legacy receive address: {e}"))?
     {
-        Some(address) => orchard_projection(&address, network),
-        None => {
-            let (address, _) = ufvk
-                .default_address(legacy_receive_request(ufvk))
-                .map_err(|e| format!("Failed to derive legacy receive address: {e}"))?;
-            orchard_projection(&address, network)
-        }
+        Some(address) => Ok(address),
+        None => ufvk
+            .default_address(legacy_receive_request(ufvk))
+            .map(|(address, _)| address)
+            .map_err(|e| format!("Failed to derive legacy receive address: {e}")),
     }
 }
 
@@ -215,24 +241,35 @@ pub(crate) fn legacy_default_address(
         .map_err(|e| format!("Failed to derive historical address: {e}"))
 }
 
-/// Gift identities accept only the three default representations actually used
-/// by Vizor, rather than arbitrary addresses sharing one receiver.
+/// The default-address representations accepted for Gift Card identity.
+pub(crate) fn gift_address_variants(
+    ufvk: &UnifiedFullViewingKey,
+    network: WalletNetwork,
+) -> Result<Vec<String>, String> {
+    let legacy = legacy_default_address(ufvk)?;
+    let mut addresses = vec![
+        default_receive_address(ufvk, network)?,
+        legacy.encode(&network),
+        orchard_projection(&legacy, network)?,
+    ];
+    addresses.sort();
+    addresses.dedup();
+    Ok(addresses)
+}
+
 pub(crate) fn validate_gift_address(
     ufvk: &UnifiedFullViewingKey,
     network: WalletNetwork,
     candidate: &str,
 ) -> Result<(), String> {
-    let (current, _) = ufvk
-        .default_address(receive_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
-    if candidate == current.encode(&network) {
-        return Ok(());
+    if gift_address_variants(ufvk, network)?
+        .iter()
+        .any(|address| address == candidate)
+    {
+        Ok(())
+    } else {
+        Err("Gift Card address does not match its recovery phrase".into())
     }
-    let legacy = legacy_default_address(ufvk)?;
-    if candidate == legacy.encode(&network) || candidate == orchard_projection(&legacy, network)? {
-        return Ok(());
-    }
-    Err("Gift Card address does not match its recovery phrase".into())
 }
 
 /// Compare a historical shielded output with its Orchard-only display address.

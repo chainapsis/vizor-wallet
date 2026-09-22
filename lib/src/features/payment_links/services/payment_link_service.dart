@@ -216,6 +216,7 @@ Future<VizorPaymentLink> paymentLinkWithRetainedAddress(
 ) async {
   if (link.knownAddress != null) return link;
   final walletIdentity = paymentLinkClaimWalletDirectoryName(link);
+  Set<String>? acceptedAddresses;
   for (final record in records) {
     if (record.network != link.network) continue;
     final retainedLink = record.claimLink;
@@ -227,15 +228,17 @@ Future<VizorPaymentLink> paymentLinkWithRetainedAddress(
     } else {
       // Completed receipts retain only the address and transaction IDs. Match
       // current, legacy, and legacy-index projections without retaining secrets.
-      try {
-        await rust_wallet.validateGiftAddress(
-          mnemonic: link.mnemonic,
-          network: link.network,
-          address: record.address,
-        );
-      } catch (_) {
-        continue;
+      if (acceptedAddresses == null) {
+        try {
+          acceptedAddresses = (await rust_wallet.getGiftAddressVariants(
+            mnemonic: link.mnemonic,
+            network: link.network,
+          )).toSet();
+        } catch (_) {
+          acceptedAddresses = const <String>{};
+        }
       }
+      if (!acceptedAddresses.contains(record.address.trim())) continue;
     }
     return link.withResolvedMetadata(address: record.address);
   }
