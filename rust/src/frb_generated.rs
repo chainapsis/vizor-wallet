@@ -5619,6 +5619,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5628,6 +5629,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
                         api_pczt_bytes,
                         api_network,
                         api_memo_hash_supported,
+                        api_app_version,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5662,6 +5664,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5671,6 +5674,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
                         api_pczt_bytes,
                         api_network,
                         api_memo_hash_supported,
+                        api_app_version,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5706,6 +5710,7 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_compact = <bool>::sse_decode(&mut deserializer);
             let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::ledger::LedgerSigningEvent,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -5721,6 +5726,7 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
                             api_network,
                             api_compact,
                             api_memo_hash_supported,
+                            api_app_version,
                             api_sink,
                         );
                     })?;

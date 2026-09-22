@@ -92,12 +92,15 @@ void main() {
         );
         addTearDown(c.dispose);
         api.memoHashSupported = null;
+        api.appVersion = null;
         if (compact) {
           await c.read(ledgerActionPcztSignerProvider)('account', [1]);
         } else {
           await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
         }
         expect(api.memoHashSupported, supported);
+        // The signing session is held to the app readiness verified.
+        expect(api.appVersion, version);
       });
     }
   }
@@ -141,6 +144,7 @@ class _Api extends RustLibApi {
   String? model;
   bool? compact;
   bool? memoHashSupported;
+  String? appVersion;
 
   @override
   Stream<LedgerSigningEvent> crateApiLedgerLedgerSignWithProgress({
@@ -150,9 +154,11 @@ class _Api extends RustLibApi {
     required String network,
     required bool compact,
     required bool memoHashSupported,
+    String? appVersion,
   }) {
     this.compact = compact;
     this.memoHashSupported = memoHashSupported;
+    this.appVersion = appVersion;
     return Stream.fromIterable([
       LedgerSigningEvent(
         phase: 'sending',

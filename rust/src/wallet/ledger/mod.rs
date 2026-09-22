@@ -61,6 +61,11 @@ const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
 /// Leads errors where the device's signatures verify against keys other than
 /// this account's, so the UI can ask for the Ledger that holds the account.
 const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
+/// Keep this string identical to `ledgerSigningAppChangedError` in
+/// `lib/src/features/ledger/services/ledger_failure_guidance.dart`.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const LEDGER_SIGNING_APP_CHANGED: &str =
+    "Your Ledger changed during signing. Keep one Ledger connected and try again.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAppInfo {
@@ -583,6 +588,22 @@ pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     Err(unsupported_platform())
 }
 
+/// App readiness and signing open separate USB sessions, and each takes the
+/// first Ledger it finds. Signing proceeds only on the app readiness verified,
+/// so a swapped or second Ledger never receives a PCZT built for another
+/// app version.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn require_readiness_app(
+    app: &transport::RunningDeviceApp,
+    expected_version: &str,
+) -> Result<(), String> {
+    if app.name == ZCASH_APP_NAME && app.version == expected_version {
+        Ok(())
+    } else {
+        Err(LEDGER_SIGNING_APP_CHANGED.into())
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn read_device_app(context: OperationContext) -> Result<DeviceAppInfo, String> {
     let app = transport::LedgerTransport::connect(context)?.current_app()?;
@@ -650,8 +671,14 @@ pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
 pub fn sign_pczt(
     pczt_bytes: &[u8],
     memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
-    sign_pczt_with_progress(pczt_bytes, &|_, _| {}, memo_hash_supported)
+    sign_pczt_with_progress(
+        pczt_bytes,
+        &|_, _| {},
+        memo_hash_supported,
+        expected_app_version,
+    )
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -659,6 +686,7 @@ pub fn sign_pczt_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
     memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
@@ -697,6 +725,9 @@ pub fn sign_pczt_with_progress(
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
 
@@ -717,6 +748,7 @@ pub fn sign_pczt_with_progress(
 pub fn sign_pczt(
     _pczt_bytes: &[u8],
     _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -726,6 +758,7 @@ pub fn sign_pczt_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
     _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -734,8 +767,17 @@ pub fn sign_pczt_with_progress(
 /// transparent and Orchard-family signature it requires, verifies those
 /// signatures through the PCZT Signer role, and returns the signed PCZT.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn sign_pczt_full(pczt_bytes: &[u8], memo_hash_supported: bool) -> Result<Vec<u8>, String> {
-    sign_pczt_full_with_progress(pczt_bytes, &|_, _| {}, memo_hash_supported)
+pub fn sign_pczt_full(
+    pczt_bytes: &[u8],
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    sign_pczt_full_with_progress(
+        pczt_bytes,
+        &|_, _| {},
+        memo_hash_supported,
+        expected_app_version,
+    )
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -743,6 +785,7 @@ pub fn sign_pczt_full_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
     memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     let commands = serialize_pczt(&parsed, memo_hash_supported)?;
@@ -779,6 +822,9 @@ pub fn sign_pczt_full_with_progress(
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
 
@@ -814,7 +860,11 @@ pub fn sign_pczt_full_with_progress(
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn sign_pczt_full(_pczt_bytes: &[u8], _memo_hash_supported: bool) -> Result<Vec<u8>, String> {
+pub fn sign_pczt_full(
+    _pczt_bytes: &[u8],
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
+) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
 
@@ -823,6 +873,7 @@ pub fn sign_pczt_full_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
     _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
@@ -1038,6 +1089,22 @@ mod tests {
         consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
         value::Zatoshis,
     };
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn signing_requires_the_app_readiness_verified() {
+        let app = |name: &str, version: &str| transport::RunningDeviceApp {
+            name: name.into(),
+            version: version.into(),
+        };
+        assert!(require_readiness_app(&app("Zcash", "3.9.4"), "3.9.4").is_ok());
+        for (name, version) in [("Zcash", "3.9.3"), ("BOLOS", "3.9.4"), ("Bitcoin", "3.9.4")] {
+            assert_eq!(
+                require_readiness_app(&app(name, version), "3.9.4").unwrap_err(),
+                LEDGER_SIGNING_APP_CHANGED
+            );
+        }
+    }
 
     #[test]
     fn only_failed_signature_verification_reads_as_a_signature_mismatch() {
@@ -1365,7 +1432,7 @@ mod tests {
     #[test]
     fn shielded_only_api_rejects_transparent_inputs_before_transport() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        assert!(sign_pczt(&pczt_bytes, false)
+        assert!(sign_pczt(&pczt_bytes, false, None)
             .unwrap_err()
             .contains("use sign_pczt_full"));
     }

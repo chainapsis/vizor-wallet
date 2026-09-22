@@ -139,12 +139,14 @@ Future<List<LedgerActionSig>> ledgerSignPczt({
   required List<int> pcztBytes,
   required String network,
   required bool memoHashSupported,
+  String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPczt(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
   memoHashSupported: memoHashSupported,
+  appVersion: appVersion,
 );
 
 /// Stream a PCZT into Ledger, validate every returned transparent and
@@ -155,12 +157,14 @@ Future<Uint8List> ledgerSignPcztFull({
   required List<int> pcztBytes,
   required String network,
   required bool memoHashSupported,
+  String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPcztFull(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
   memoHashSupported: memoHashSupported,
+  appVersion: appVersion,
 );
 
 /// Durably checkpoint a Ledger-signed PCZT pair before any broadcast attempt.
@@ -253,6 +257,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   required String network,
   required bool compact,
   required bool memoHashSupported,
+  String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignWithProgress(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -260,6 +265,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   network: network,
   compact: compact,
   memoHashSupported: memoHashSupported,
+  appVersion: appVersion,
 );
 
 /// Public account material approved by the user on the Ledger device.

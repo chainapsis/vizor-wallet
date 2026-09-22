@@ -21,9 +21,9 @@ use std::{
 };
 
 use rust_lib_zcash_wallet::api::ledger::{
-    ledger_build_pczt_full_signing_apdu_plan, ledger_build_ufvk_apdu_plan, ledger_export_account,
-    ledger_finalize_mobile_pczt_full_signing, ledger_parse_mobile_ufvk_responses,
-    ledger_sign_pczt_full, LedgerApduCommand,
+    ledger_build_pczt_full_signing_apdu_plan, ledger_build_ufvk_apdu_plan, ledger_device_app,
+    ledger_export_account, ledger_finalize_mobile_pczt_full_signing,
+    ledger_parse_mobile_ufvk_responses, ledger_sign_pczt_full, LedgerApduCommand,
 };
 use rust_lib_zcash_wallet::{api::wallet::import_hardware_account, wallet::network::WalletNetwork};
 use serde_json::{json, Value};
@@ -138,6 +138,9 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         "ledger".into(),
     )?;
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
+    // Read the app on its own session and hold signing to it, as the product's
+    // USB readiness does.
+    let app_version = ledger_device_app()?.app_version;
     let approval = config
         .auto_approve
         .then(|| ApprovalWorker::start(signing_client));
@@ -147,6 +150,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         pczt.bytes.clone(),
         config.network,
         CANARY_MEMO_HASH_SUPPORTED,
+        Some(app_version),
     );
     let automated_signing_review = approval
         .map(ApprovalWorker::finish)

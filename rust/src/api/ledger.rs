@@ -233,10 +233,15 @@ pub fn ledger_sign_pczt(
     pczt_bytes: Vec<u8>,
     network: String,
     memo_hash_supported: bool,
+    app_version: Option<String>,
 ) -> Result<Vec<LedgerActionSig>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    to_action_sigs(ledger::sign_pczt(&pczt_bytes, memo_hash_supported)?)
+    to_action_sigs(ledger::sign_pczt(
+        &pczt_bytes,
+        memo_hash_supported,
+        app_version.as_deref(),
+    )?)
 }
 
 fn to_action_sigs(
@@ -268,16 +273,19 @@ pub fn ledger_sign_pczt_full(
     pczt_bytes: Vec<u8>,
     network: String,
     memo_hash_supported: bool,
+    app_version: Option<String>,
 ) -> Result<Vec<u8>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    ledger::sign_pczt_full(&pczt_bytes, memo_hash_supported).map_err(|error| {
-        log::error!(
-            "ledger: PCZT signing failed ({} bytes): {error}",
-            pczt_bytes.len()
-        );
-        error
-    })
+    ledger::sign_pczt_full(&pczt_bytes, memo_hash_supported, app_version.as_deref()).map_err(
+        |error| {
+            log::error!(
+                "ledger: PCZT signing failed ({} bytes): {error}",
+                pczt_bytes.len()
+            );
+            error
+        },
+    )
 }
 
 /// Durably checkpoint a Ledger-signed PCZT pair before any broadcast attempt.
@@ -474,6 +482,7 @@ pub fn ledger_sign_with_progress(
     network: String,
     compact: bool,
     memo_hash_supported: bool,
+    app_version: Option<String>,
     sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
 ) {
     let progress = |phase: &str, device_model: Option<&str>| {
@@ -495,6 +504,7 @@ pub fn ledger_sign_with_progress(
                     &pczt_bytes,
                     &progress,
                     memo_hash_supported,
+                    app_version.as_deref(),
                 )?)?,
             )
         } else {
@@ -503,6 +513,7 @@ pub fn ledger_sign_with_progress(
                     &pczt_bytes,
                     &progress,
                     memo_hash_supported,
+                    app_version.as_deref(),
                 )?),
                 vec![],
             )

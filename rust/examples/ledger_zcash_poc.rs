@@ -36,7 +36,7 @@ fn run() -> Result<(), String> {
                 .ok_or("Usage: ledger_zcash_poc sign <pczt-file>")?;
             let pczt = fs::read(&path).map_err(|e| format!("Read {path}: {e}"))?;
             // Real hardware: keep the memo guard, as 3.9.3 resets on hashed memos.
-            let signatures = ledger::sign_pczt(&pczt, false)?;
+            let signatures = ledger::sign_pczt(&pczt, false, None)?;
             for signature in signatures {
                 let pool = match signature.value_pool() {
                     orchard::ValuePool::Orchard => "orchard",
