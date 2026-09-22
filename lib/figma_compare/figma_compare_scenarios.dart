@@ -283,6 +283,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-memo-hash-update',
+    description: 'Ledger signing: memo needs a newer Zcash app',
+    builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
     description: 'Ledger voting: processing panel without caller background',
     builder: _buildLedgerVotingProcessing,
@@ -2187,6 +2192,12 @@ Widget _buildLedgerSigningFinishing(BuildContext context) =>
       phase: LedgerSigningModalPhase.saving,
       signingStage: LedgerSigningStage.finishing,
       mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

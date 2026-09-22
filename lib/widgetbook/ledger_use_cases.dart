@@ -110,7 +110,12 @@ enum LedgerSigningPlaygroundReadiness {
   failed,
 }
 
-enum LedgerSigningPlaygroundFailure { retry, openApp, reconnect }
+enum LedgerSigningPlaygroundFailure {
+  retry,
+  openApp,
+  reconnect,
+  memoHashUpdate,
+}
 
 Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
   final phase = context.knobs.object.dropdown<LedgerSigningModalPhase>(
@@ -558,6 +563,8 @@ LedgerSigningFailurePresentation _failurePresentation(
         showDeviceAppPrompt: true,
         actionLabel: 'Try again',
       ),
+    LedgerSigningPlaygroundFailure.memoHashUpdate =>
+      ledgerMemoHashUpdateFailure,
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',

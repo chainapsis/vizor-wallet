@@ -1358,6 +1358,39 @@ void main() {
   );
 
   testWidgets(
+    'Ledger memo refused by an older app asks for an update and a retry',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(ledgerMemoHashUnsupportedError);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
+
+      // After updating the app, a retry reads the new version.
+      await tester.tap(find.text('Try again'));
+      await _flushRealAsync(tester);
+      expect(signerCalls, 2);
+    },
+  );
+
+  testWidgets(
     'Ledger status 0x6a80 asks for a new transaction without blaming the user',
     (tester) async {
       var signerCalls = 0;

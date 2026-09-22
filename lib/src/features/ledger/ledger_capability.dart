@@ -52,6 +52,9 @@ const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
   'Automatic Orchard migration is not available for Ledger accounts.',
 );
 
+bool isLedgerMemoHashUnsupported(Object error) =>
+    error.toString().contains(ledgerMemoHashUnsupportedError);
+
 bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
     .toString()
     .toLowerCase()
