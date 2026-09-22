@@ -35,14 +35,8 @@ class PaymentLinkClaimWallet {
   final Ref _ref;
   final Map<String, Future<void>> _claimSyncs = {};
 
-  /// Verifies a cached claim wallet against the link's recovery phrase.
-  ///
-  /// VZR-160 changed freshly-derived software addresses from the legacy
-  /// Sapling+Orchard form to Orchard-only. Both strings identify account zero
-  /// for the same Gift Card seed, so string equality cannot decide whether an
-  /// older cache is reusable. Rust restricts this check to the legacy address,
-  /// the current address, or the Orchard projection at the legacy index;
-  /// arbitrary addresses that merely share a receiver are rejected.
+  /// Verifies the cached wallet and advertised address against the recovery
+  /// phrase, accepting current and legacy default-address representations.
   Future<bool> matchesLink({
     required VizorPaymentLink link,
     required List<rust_wallet.AccountInfo> accounts,

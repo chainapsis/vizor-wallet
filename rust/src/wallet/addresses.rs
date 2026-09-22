@@ -130,7 +130,7 @@ pub(crate) fn orchard_projection(
         .ok_or_else(|| "Receive address does not have an Orchard receiver".into())
 }
 
-/// Reconstruct a pre-VZR-160 identity, never for new address issuance.
+/// Reconstruct the legacy Sapling+Orchard default for Gift Card validation.
 pub(crate) fn legacy_default_address(
     ufvk: &UnifiedFullViewingKey,
 ) -> Result<UnifiedAddress, String> {
