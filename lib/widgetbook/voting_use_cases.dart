@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
@@ -30,6 +31,44 @@ import '../src/providers/voting/voting_submission_job_provider.dart';
 import '../src/rust/third_party/zcash_voting/config.dart';
 import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
+import 'fixtures/retroactive_q3_2026.dart';
+import 'voting_navigation_preview.dart';
+
+Widget buildRetroactiveVotingUseCase(BuildContext context) =>
+    _buildRetroactiveVoting(context, const {});
+
+Widget buildRetroactiveVotingPartialUseCase(BuildContext context) =>
+    _buildRetroactiveVoting(context, {
+      for (var i = 0; i < retroactiveQ3Proposals.length; i++)
+        if (i != 0 && i != 18 && i != 36) i: i % 4,
+    });
+
+Widget buildRetroactiveVotingCompleteUseCase(BuildContext context) =>
+    _buildRetroactiveVoting(context, {
+      for (var i = 0; i < retroactiveQ3Proposals.length; i++) i: i % 4,
+    });
+
+Widget _buildRetroactiveVoting(BuildContext context, Map<int, int> choices) {
+  final preview = VotingNavigationPreview(
+    key: ValueKey('retroactive-q3-${choices.length}'),
+    initialChoices: choices,
+    proposals: retroactiveQ3Proposals,
+    title: retroactiveQ3Title,
+    introduction: retroactiveQ3Intro,
+  );
+  if (kAppFormFactor == AppFormFactor.mobile) {
+    return MobileVotingScaffold(
+      title: 'Coinholder voting',
+      showHeader: false,
+      onBack: _previewNoop,
+      child: preview,
+    );
+  }
+  return AppDesktopShell(
+    sidebar: const _VotingPreviewSidebar(),
+    pane: AppDesktopPane(padding: EdgeInsets.zero, child: preview),
+  );
+}
 
 Widget buildDesktopVotingVotedUseCase(BuildContext context) {
   return AppDesktopShell(

@@ -283,6 +283,42 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 
   FigmaCompareScenario(
+    id: 'voting-retroactive-q3',
+    description: 'Published Q3 2026 retroactive grants ballot',
+    builder: buildRetroactiveVotingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3',
+    description: 'Published Q3 2026 retroactive grants ballot on mobile',
+    builder: buildRetroactiveVotingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-retroactive-q3-partial',
+    description: 'Q3 2026 ballot with three unanswered questions',
+    builder: buildRetroactiveVotingPartialUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-retroactive-q3-complete',
+    description: 'Q3 2026 ballot with all questions answered',
+    builder: buildRetroactiveVotingCompleteUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3-partial',
+    description: 'Mobile Q3 2026 ballot with three unanswered questions',
+    builder: buildRetroactiveVotingPartialUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3-complete',
+    description: 'Mobile Q3 2026 ballot with all questions answered',
+    builder: buildRetroactiveVotingCompleteUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'voting-share-status',
     description: 'Desktop completed vote with shares still submitting',
     builder: buildDesktopVotingVotedUseCase,
