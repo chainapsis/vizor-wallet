@@ -114,6 +114,10 @@ pub(super) struct ParsedPczt {
     pub transparent_outputs: Vec<TransparentOutput>,
     pub orchard_bundle: Option<ShieldedBundle>,
     pub ironwood_bundle: Option<IronwoodBundle>,
+    /// Whether any output memo would take the device's memo-hash render path.
+    /// Recorded here rather than rejected during parsing so the policy decision
+    /// stays with the caller that knows the connected app version.
+    pub memo_reaches_hash_path: bool,
 }
 
 pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
@@ -137,6 +141,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     let mut transparent_outputs = Vec::new();
     let mut orchard_bundle = None;
     let mut ironwood_bundle = None;
+    let mut memo_reaches_hash_path = false;
 
     let verifier = Verifier::new(pczt)
         .with_transparent::<String, _>(|bundle| {
@@ -154,6 +159,8 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
 
     let verifier = verifier
         .with_orchard::<String, _>(|bundle| {
+            memo_reaches_hash_path |=
+                bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
             orchard_bundle = convert_shielded_bundle(
                 bundle,
                 branch,
@@ -168,6 +175,8 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     if global.tx_version >= V6_TX_VERSION {
         verifier
             .with_ironwood::<String, _>(|bundle| {
+                memo_reaches_hash_path |=
+                    bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
                 ironwood_bundle =
                     convert_ironwood_bundle(bundle, branch, shielded_derivation.as_ref())
                         .map_err(OrchardError::Custom)?;
@@ -182,6 +191,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
         transparent_outputs,
         orchard_bundle,
         ironwood_bundle,
+        memo_reaches_hash_path,
     })
 }
 
@@ -484,7 +494,6 @@ fn convert_shielded_action(
 ) -> Result<ShieldedAction, String> {
     let spend = action.spend();
     let output = action.output();
-    validate_output_memo(action)?;
     let spend_value = spend
         .value()
         .map(|value| value.inner())
@@ -543,7 +552,16 @@ fn convert_shielded_action(
     })
 }
 
-fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
+fn bundle_memo_reaches_hash_path(bundle: &orchard::pczt::Bundle) -> Result<bool, String> {
+    for action in bundle.actions() {
+        if output_memo_reaches_hash_path(action)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool, String> {
     let output = action.output();
     let note = Note::from_parts(
         output
@@ -573,25 +591,22 @@ fn validate_output_memo(action: &orchard::pczt::Action) -> Result<(), String> {
     let Some((_, _, memo)) = recovered else {
         // Restricted zero-value outputs can have deliberately random ciphertext.
         return if note.value().inner() == 0 {
-            Ok(())
+            Ok(false)
         } else {
             Err("Could not verify the memo before Ledger signing".into())
         };
     };
-    if memo_reaches_ledger_hash_path(&memo) {
-        return Err(LEDGER_MEMO_UNSUPPORTED.into());
-    }
-    Ok(())
+    Ok(memo_reaches_ledger_hash_path(&memo))
 }
 
 /// Keep this string identical to `ledgerMemoUnsupportedError` in
 /// `lib/src/features/ledger/ledger_memo_policy.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
-const LEDGER_MEMO_UNSUPPORTED: &str = "Ledger can't sign non-English text yet";
+pub(super) const LEDGER_MEMO_UNSUPPORTED: &str = "Ledger can't sign non-English text yet";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
-/// text. The pinned app version does not survive that path, so we refuse the
-/// transaction here instead of sending it. Mirrors `memo_display` and
+/// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`
+/// refuses such a memo for them. Mirrors `memo_display` and
 /// `is_displayable_memo_text` in the device app.
 ///
 /// The device also falls back to hashing once a transaction's retained memo
@@ -738,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn memos_the_device_would_hash_are_rejected_before_ledger_commands_are_built() {
+    fn memos_the_device_would_hash_are_refused_for_apps_without_memo_text() {
         for version in [
             BundleVersion::orchard_v2(),
             BundleVersion::orchard_v3(),
@@ -761,19 +776,22 @@ mod tests {
             ] {
                 for value in [0, 90_000] {
                     let pczt = memo_pczt(version, memo, value, true);
-                    assert!(super::super::build_pczt_full_signing_plan(&pczt)
+                    assert!(super::super::build_pczt_full_signing_plan(&pczt, false)
                         .unwrap_err()
                         .contains(LEDGER_MEMO_UNSUPPORTED));
-                    assert!(super::super::build_pczt_signing_plan(&pczt)
+                    assert!(super::super::build_pczt_signing_plan(&pczt, false)
                         .unwrap_err()
                         .contains(LEDGER_MEMO_UNSUPPORTED));
+                    // An app that renders the memo as text signs the same PCZT.
+                    assert!(super::super::build_pczt_full_signing_plan(&pczt, true).is_ok());
+                    assert!(super::super::build_pczt_signing_plan(&pczt, true).is_ok());
                 }
             }
         }
     }
 
     #[test]
-    fn memo_check_uses_ciphertext_even_without_an_ock() {
+    fn memo_judgement_uses_ciphertext_even_without_an_ock() {
         let pczt = memo_pczt(
             BundleVersion::ironwood_v3(),
             "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
@@ -781,9 +799,7 @@ mod tests {
             false,
         );
         let pczt = crate::wallet::sync::redact_pczt_for_signer(&pczt).unwrap();
-        assert!(parse_pczt(&pczt)
-            .unwrap_err()
-            .contains(LEDGER_MEMO_UNSUPPORTED));
+        assert!(parse_pczt(&pczt).unwrap().memo_reaches_hash_path);
     }
 
     #[test]
@@ -804,7 +820,7 @@ mod tests {
                 &[b'x'; 512],
             ] {
                 let pczt = memo_pczt(version, memo, 90_000, true);
-                assert!(super::super::build_pczt_full_signing_plan(&pczt).is_ok());
+                assert!(super::super::build_pczt_full_signing_plan(&pczt, false).is_ok());
             }
         }
     }

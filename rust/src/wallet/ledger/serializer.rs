@@ -2,7 +2,7 @@
 
 use super::parse::{
     Bip32Derivation, Global, IronwoodBundle, ParsedPczt, ShieldedAction, ShieldedBundle,
-    TransparentInput, TransparentOutput,
+    TransparentInput, TransparentOutput, LEDGER_MEMO_UNSUPPORTED,
 };
 
 pub(super) const MAX_PACKET_SIZE: usize = 255;
@@ -14,7 +14,13 @@ pub(super) struct CommandPackets {
     pub finishes_pczt: bool,
 }
 
-pub(super) fn serialize_pczt(pczt: &ParsedPczt) -> Result<Vec<CommandPackets>, String> {
+pub(super) fn serialize_pczt(
+    pczt: &ParsedPczt,
+    memo_text_supported: bool,
+) -> Result<Vec<CommandPackets>, String> {
+    if !memo_text_supported && pczt.memo_reaches_hash_path {
+        return Err(LEDGER_MEMO_UNSUPPORTED.into());
+    }
     let is_v6 = pczt.global.tx_version >= 6;
     let mut commands = vec![
         CommandPackets {
@@ -462,29 +468,33 @@ mod tests {
             "shielded actions",
         );
 
-        assert!(serialize_pczt(&ParsedPczt {
-            global: global(6),
-            transparent_inputs: vec![],
-            transparent_outputs: vec![],
-            orchard_bundle: Some(ShieldedBundle {
-                actions: vec![shielded_action(); 32],
-                flags: 0,
-                value_balance: 0,
-                anchor: [0; 32],
-            }),
-            ironwood_bundle: Some(IronwoodBundle {
-                actions: vec![
-                    IronwoodAction {
-                        action: shielded_action(),
-                        note_plaintext_version: 3,
-                    };
-                    32
-                ],
-                flags: 0,
-                value_balance: 0,
-                anchor: [0; 32],
-            }),
-        })
+        assert!(serialize_pczt(
+            &ParsedPczt {
+                global: global(6),
+                transparent_inputs: vec![],
+                transparent_outputs: vec![],
+                memo_reaches_hash_path: false,
+                orchard_bundle: Some(ShieldedBundle {
+                    actions: vec![shielded_action(); 32],
+                    flags: 0,
+                    value_balance: 0,
+                    anchor: [0; 32],
+                }),
+                ironwood_bundle: Some(IronwoodBundle {
+                    actions: vec![
+                        IronwoodAction {
+                            action: shielded_action(),
+                            note_plaintext_version: 3,
+                        };
+                        32
+                    ],
+                    flags: 0,
+                    value_balance: 0,
+                    anchor: [0; 32],
+                }),
+            },
+            true
+        )
         .is_ok());
     }
 
@@ -498,13 +508,17 @@ mod tests {
 
     #[test]
     fn v6_command_order_includes_empty_ironwood_bundle() {
-        let commands = serialize_pczt(&ParsedPczt {
-            global: global(6),
-            transparent_inputs: vec![],
-            transparent_outputs: vec![],
-            orchard_bundle: None,
-            ironwood_bundle: None,
-        })
+        let commands = serialize_pczt(
+            &ParsedPczt {
+                global: global(6),
+                transparent_inputs: vec![],
+                transparent_outputs: vec![],
+                orchard_bundle: None,
+                ironwood_bundle: None,
+                memo_reaches_hash_path: false,
+            },
+            true,
+        )
         .unwrap();
 
         assert_eq!(

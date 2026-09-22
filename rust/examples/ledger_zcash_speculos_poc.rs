@@ -65,6 +65,9 @@ const SPECULOS_UFVK_STATUS_WAIT: Duration = Duration::from_secs(4);
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
 const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
+/// The canary exercises whichever app build is under test, so Vizor's memo
+/// policy must not decide what reaches the device.
+const CANARY_MEMO_TEXT_SUPPORTED: bool = true;
 
 fn main() {
     if let Err(error) = run() {
@@ -143,6 +146,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         account.account_uuid,
         pczt.bytes.clone(),
         config.network,
+        CANARY_MEMO_TEXT_SUPPORTED,
     );
     let automated_signing_review = approval
         .map(ApprovalWorker::finish)
@@ -323,6 +327,7 @@ fn run_file(config: Config) -> Result<(), String> {
         account_uuid.clone(),
         pczt.clone(),
         config.network.clone(),
+        CANARY_MEMO_TEXT_SUPPORTED,
     )?;
     if plan.commands.is_empty() {
         return Err("Vizor produced an empty Ledger signing plan".into());
@@ -381,6 +386,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
         account.account_uuid.clone(),
         pczt.bytes.clone(),
         config.network.clone(),
+        CANARY_MEMO_TEXT_SUPPORTED,
     )?;
     let (responses, automated_signing_review) =
         exchange_signing_plan(&signing_client, &plan.commands, config.auto_approve)?;

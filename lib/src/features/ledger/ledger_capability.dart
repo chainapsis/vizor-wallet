@@ -4,7 +4,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
 
+/// What Vizor may ask a connected Ledger Zcash app to do, by app version.
+///
+/// | Version  | Signing | Memo text beyond printable ASCII |
+/// |----------|---------|----------------------------------|
+/// | < 3.9.3  | refused | —                                |
+/// | 3.9.3    | yes     | no                               |
+/// | >= 3.9.4 | yes     | yes                              |
+///
+/// Versions below 3.9.3 are refused outright: Ledger Live cannot install them,
+/// so reaching one means a locally built app rather than a user Vizor supports.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
+
+/// Before this version the app took a fatal code path for any memo it could not
+/// render as printable ASCII, so Vizor refuses to send one to an older app.
+const kLedgerMemoTextAppVersion = '3.9.4';
+
+/// Whether `appVersion` can render memo text the device would otherwise hash.
+/// Callers pass this into the Rust signing entry points, which hold the memo
+/// bytes; an unparseable version fails closed.
+bool ledgerSupportsMemoText(String? appVersion) =>
+    appVersion != null && _atLeast(appVersion, kLedgerMemoTextAppVersion);
 
 const kLedgerLegacyOrchardRecoveryErrorCode =
     'ledger_legacy_orchard_recovery_unsupported';
@@ -125,9 +145,7 @@ bool isLedgerMobilePlatform(TargetPlatform platform) =>
     platform == TargetPlatform.iOS || platform == TargetPlatform.android;
 
 void requireSupportedLedgerAppVersion(String version) {
-  final parsed = _parseVersion(version);
-  final minimum = _parseVersion(kMinimumLedgerZcashAppVersion)!;
-  if (parsed == null || _compareVersion(parsed, minimum) < 0) {
+  if (!_atLeast(version, kMinimumLedgerZcashAppVersion)) {
     throw UnsupportedError(
       'Update the Ledger Zcash app to version '
       '$kMinimumLedgerZcashAppVersion or newer.',
@@ -146,6 +164,12 @@ final ledgerStaticCapabilityProvider = Provider<LedgerCapability>((ref) {
   );
   return ledgerStaticCapability(platform: platform, networkName: networkName);
 });
+
+bool _atLeast(String version, String minimum) {
+  final parsed = _parseVersion(version);
+  return parsed != null &&
+      _compareVersion(parsed, _parseVersion(minimum)!) >= 0;
+}
 
 ({int major, int minor, int patch})? _parseVersion(String value) {
   final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)$').firstMatch(value.trim());

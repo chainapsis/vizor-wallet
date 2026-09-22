@@ -3426,7 +3426,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         },
     )
     .unwrap();
-    crate::wallet::ledger::build_pczt_full_signing_plan(&bytes).unwrap();
+    crate::wallet::ledger::build_pczt_full_signing_plan(&bytes, false).unwrap();
     // Simulate the first round's inputs becoming spent, then select the remainder.
     // The persistent signed-operation pipeline already owns real broadcast recovery.
     let conn = Connection::open(path).unwrap();
