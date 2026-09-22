@@ -1,4 +1,3 @@
-import 'package:zcash_wallet/src/features/ledger/ledger_memo_policy.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -13,7 +12,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         ledgerPcztSupportValidatorProvider.overrideWithValue(
-          (_) async => throw StateError(ledgerMemoUnsupportedError),
+          (_) async => throw StateError(ledgerMemoHashUnsupportedError),
         ),
         ledgerPcztTransportSignerProvider.overrideWithValue((_, _) async {
           transportCalls++;

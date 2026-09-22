@@ -95,19 +95,21 @@ pub fn ledger_validate_supported_pczt(pczt_bytes: Vec<u8>) -> Result<(), String>
 /// approves the request on the Ledger device.
 pub fn ledger_export_ufvk(account_index: u32, network: String) -> Result<String, String> {
     require_mainnet(&network)?;
-    ledger::get_ufvk(account_index)
+    ledger::get_ufvk(account_index, None)
 }
 
 /// Export the UFVK and the stable derivation metadata Vizor needs to import
 /// the corresponding watch-only account. The current Ledger APDU does not
 /// expose the ZIP-32 seed fingerprint, so the PoC uses a domain-separated hash
-/// of the approved UFVK as non-secret account metadata.
+/// of the approved UFVK as non-secret account metadata. `app_version` is the
+/// version app readiness reported; the export session must find the same app.
 pub fn ledger_export_account(
     account_index: u32,
     network: String,
+    app_version: String,
 ) -> Result<LedgerAccountExport, String> {
     require_mainnet(&network)?;
-    let ufvk = ledger::get_ufvk(account_index)?;
+    let ufvk = ledger::get_ufvk(account_index, Some(&app_version))?;
     Ok(LedgerAccountExport {
         seed_fingerprint: ledger_account_fingerprint(&ufvk, account_index).to_vec(),
         ufvk,
@@ -144,16 +146,19 @@ pub fn ledger_parse_mobile_ufvk_responses(
 }
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
+/// `memo_hash_supported` comes from the connected app's version; see
+/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
 pub fn ledger_build_pczt_signing_apdu_plan(
     db_path: String,
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
+    memo_hash_supported: bool,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
-        commands: ledger::build_pczt_signing_plan(&pczt_bytes)?
+        commands: ledger::build_pczt_signing_plan(&pczt_bytes, memo_hash_supported)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -166,11 +171,12 @@ pub fn ledger_build_pczt_full_signing_apdu_plan(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
+    memo_hash_supported: bool,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
-        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes)?
+        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes, memo_hash_supported)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -228,10 +234,16 @@ pub fn ledger_sign_pczt(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
+    memo_hash_supported: bool,
+    app_version: Option<String>,
 ) -> Result<Vec<LedgerActionSig>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    to_action_sigs(ledger::sign_pczt(&pczt_bytes)?)
+    to_action_sigs(ledger::sign_pczt(
+        &pczt_bytes,
+        memo_hash_supported,
+        app_version.as_deref(),
+    )?)
 }
 
 fn to_action_sigs(
@@ -262,16 +274,20 @@ pub fn ledger_sign_pczt_full(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
+    memo_hash_supported: bool,
+    app_version: Option<String>,
 ) -> Result<Vec<u8>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
-    ledger::sign_pczt_full(&pczt_bytes).map_err(|error| {
-        log::error!(
-            "ledger: PCZT signing failed ({} bytes): {error}",
-            pczt_bytes.len()
-        );
-        error
-    })
+    ledger::sign_pczt_full(&pczt_bytes, memo_hash_supported, app_version.as_deref()).map_err(
+        |error| {
+            log::error!(
+                "ledger: PCZT signing failed ({} bytes): {error}",
+                pczt_bytes.len()
+            );
+            error
+        },
+    )
 }
 
 /// Durably checkpoint a Ledger-signed PCZT pair before any broadcast attempt.
@@ -467,6 +483,8 @@ pub fn ledger_sign_with_progress(
     pczt_bytes: Vec<u8>,
     network: String,
     compact: bool,
+    memo_hash_supported: bool,
+    app_version: Option<String>,
     sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
 ) {
     let progress = |phase: &str, device_model: Option<&str>| {
@@ -484,13 +502,20 @@ pub fn ledger_sign_with_progress(
         let (signed_pczt, signatures) = if compact {
             (
                 None,
-                to_action_sigs(ledger::sign_pczt_with_progress(&pczt_bytes, &progress)?)?,
+                to_action_sigs(ledger::sign_pczt_with_progress(
+                    &pczt_bytes,
+                    &progress,
+                    memo_hash_supported,
+                    app_version.as_deref(),
+                )?)?,
             )
         } else {
             (
                 Some(ledger::sign_pczt_full_with_progress(
                     &pczt_bytes,
                     &progress,
+                    memo_hash_supported,
+                    app_version.as_deref(),
                 )?),
                 vec![],
             )

@@ -56,7 +56,7 @@ if [[ "$LANE" == mobile ]]; then
 fi
 docker info >/dev/null
 
-APP_COMMIT=22dc38537f9a84b31b938e3ca95434595ef378d3
+APP_COMMIT=1a0f6495458ecb77abf97c8cff25b0a1a344daaa
 BUILDER_IMAGE="${VIZOR_LEDGER_BUILDER_IMAGE:-ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder@sha256:2e085afbe636098763e34ef6eca6069ea1a0f702805f6b14870c0f952262da6d}"
 SPECULOS_IMAGE="${VIZOR_LEDGER_SPECULOS_IMAGE:-ghcr.io/ledgerhq/speculos@sha256:6ed9eefd51cddd862b746719af4cd7a3265fe43d0588c388359753cab8d46d11}"
 RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vizor-speculos.XXXXXX")"
@@ -116,7 +116,7 @@ PYTHON
   fi
   VOLUME="$(docker volume create "$RESOURCE-target")"
   CONTAINERS+=("$RESOURCE-build")
-  echo "Building Zcash 3.9.3 Nano S+ ELF; log: $RUN_DIR/build.log"
+  echo "Building Zcash 3.9.4 Nano S+ ELF; log: $RUN_DIR/build.log"
   docker run --rm --name "$RESOURCE-build" \
     -v "$RUN_DIR/app-zcash:/app" -v "$VOLUME:/app/target" \
     -w /app "$BUILDER_IMAGE" cargo ledger build nanosplus ${build_features[@]+"${build_features[@]}"} > "$RUN_DIR/build.log" 2>&1

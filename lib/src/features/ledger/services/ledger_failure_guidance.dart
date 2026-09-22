@@ -6,7 +6,6 @@ import '../ledger_error_codes.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_mobile_ble_service.dart';
-import '../ledger_memo_policy.dart';
 
 /// The request a Ledger failure belongs to, for copy that names it.
 enum LedgerRequestKind {
@@ -45,12 +44,21 @@ class LedgerFailureGuidance {
   final bool retryable;
 }
 
+/// A USB export or signing session found a different app than readiness
+/// verified. Keep this identical to `LEDGER_APP_CHANGED` in
+/// `rust/src/wallet/ledger/mod.rs`.
+const ledgerAppChangedError =
+    'Your Ledger changed. Keep one Ledger connected and try again.';
+
 LedgerFailureGuidance? ledgerFailureGuidance(
   Object error, {
   LedgerRequestKind requestKind = LedgerRequestKind.send,
 }) {
-  if (error.toString().contains(ledgerMemoUnsupportedError)) {
-    return const LedgerFailureGuidance(ledgerMemoUnsupportedError);
+  if (isLedgerMemoHashUnsupported(error)) {
+    return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
+  }
+  if (error.toString().contains(ledgerAppChangedError)) {
+    return const LedgerFailureGuidance(ledgerAppChangedError);
   }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null

@@ -18,7 +18,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             env::set_var("VIZOR_LEDGER_SPECULOS_SIGNING_API_URL", api_url);
             let pczt = fs::read(input).map_err(|e| e.to_string())?;
             let approval = ApprovalWorker::start(client);
-            let signatures = ledger::sign_pczt(&pczt);
+            let signatures = ledger::sign_pczt(&pczt, super::CANARY_MEMO_HASH_SUPPORTED, None);
             let approved = approval.finish()?;
             let signatures = signatures?;
             if !approved {

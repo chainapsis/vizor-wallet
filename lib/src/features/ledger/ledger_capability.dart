@@ -4,7 +4,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
 
+/// What Vizor may ask a connected Ledger Zcash app to do, by app version.
+///
+/// | Version  | New account | Signing | Memo shown as a hash |
+/// |----------|-------------|---------|----------------------|
+/// | < 3.9.3  | refused     | refused | —                    |
+/// | 3.9.3    | refused     | yes     | refused              |
+/// | >= 3.9.4 | yes         | yes     | yes                  |
+///
+/// The app shows a memo as text only when every byte is printable ASCII, and
+/// as a hash otherwise.
+///
+/// Signing starts at 3.9.3 because Vizor builds transactions to that app's
+/// limits. Ledger Live still installs older versions on older firmware.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
+
+/// Before this version the app crashed while hashing a memo for display, so
+/// Vizor refuses to send such a memo to an older app.
+const kLedgerMemoHashAppVersion = '3.9.4';
+
+/// Shown when signing is refused because the connected app predates
+/// [kLedgerMemoHashAppVersion]. Keep this identical to
+/// `LEDGER_MEMO_HASH_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is
+/// the error Rust returns and `ledgerFailureGuidance` matches on.
+const ledgerMemoHashUnsupportedError =
+    'Update the Ledger Zcash app to sign non-English memos';
+
+/// Accounts connected from now on start without the 3.9.3 memo limit; those
+/// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
+const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
+
+bool ledgerAppVersionAllowsNewAccounts(String appVersion) =>
+    _atLeast(appVersion, kMinimumLedgerZcashAppVersionForNewAccounts);
+
+/// Whether the app at `appVersion` can show a memo as a hash. Callers pass this
+/// into the Rust signing entry points, which hold the memo bytes; an unknown
+/// version fails closed.
+bool ledgerSupportsMemoHash(String? appVersion) =>
+    appVersion != null && _atLeast(appVersion, kLedgerMemoHashAppVersion);
 
 const kLedgerLegacyOrchardRecoveryErrorCode =
     'ledger_legacy_orchard_recovery_unsupported';
@@ -21,6 +58,9 @@ const kLedgerLegacyOrchardRecoveryUnavailableMessage =
 const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
   'Automatic Orchard migration is not available for Ledger accounts.',
 );
+
+bool isLedgerMemoHashUnsupported(Object error) =>
+    error.toString().contains(ledgerMemoHashUnsupportedError);
 
 bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
     .toString()
@@ -125,9 +165,7 @@ bool isLedgerMobilePlatform(TargetPlatform platform) =>
     platform == TargetPlatform.iOS || platform == TargetPlatform.android;
 
 void requireSupportedLedgerAppVersion(String version) {
-  final parsed = _parseVersion(version);
-  final minimum = _parseVersion(kMinimumLedgerZcashAppVersion)!;
-  if (parsed == null || _compareVersion(parsed, minimum) < 0) {
+  if (!_atLeast(version, kMinimumLedgerZcashAppVersion)) {
     throw UnsupportedError(
       'Update the Ledger Zcash app to version '
       '$kMinimumLedgerZcashAppVersion or newer.',
@@ -146,6 +184,12 @@ final ledgerStaticCapabilityProvider = Provider<LedgerCapability>((ref) {
   );
   return ledgerStaticCapability(platform: platform, networkName: networkName);
 });
+
+bool _atLeast(String version, String minimum) {
+  final parsed = _parseVersion(version);
+  return parsed != null &&
+      _compareVersion(parsed, _parseVersion(minimum)!) >= 0;
+}
 
 ({int major, int minor, int patch})? _parseVersion(String value) {
   final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)$').firstMatch(value.trim());

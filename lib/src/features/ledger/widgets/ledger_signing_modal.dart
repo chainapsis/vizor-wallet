@@ -55,6 +55,17 @@ class LedgerSigningFailurePresentation {
   final bool pairingInvalid;
 }
 
+/// A memo the connected app would show as a hash was refused because the app
+/// predates [kLedgerMemoHashAppVersion]. Retrying after an update reads the new
+/// version, so the action stays a retry.
+const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
+  title: 'Ledger app update required',
+  statusLabel: 'Action needed',
+  message: ledgerMemoHashUnsupportedError,
+  showDeviceAppPrompt: false,
+  actionLabel: 'Try again',
+);
+
 class LedgerSigningModal extends ConsumerWidget {
   const LedgerSigningModal({
     required this.phase,

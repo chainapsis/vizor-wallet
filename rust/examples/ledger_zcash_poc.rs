@@ -27,7 +27,7 @@ fn run() -> Result<(), String> {
                 .unwrap_or("0")
                 .parse::<u32>()
                 .map_err(|_| "Account index must be a non-negative integer".to_string())?;
-            println!("{}", ledger::get_ufvk(account_index)?);
+            println!("{}", ledger::get_ufvk(account_index, None)?);
             Ok(())
         }
         Some("sign") => {
@@ -35,7 +35,8 @@ fn run() -> Result<(), String> {
                 .next()
                 .ok_or("Usage: ledger_zcash_poc sign <pczt-file>")?;
             let pczt = fs::read(&path).map_err(|e| format!("Read {path}: {e}"))?;
-            let signatures = ledger::sign_pczt(&pczt)?;
+            // Real hardware: keep the memo guard, as 3.9.3 resets on hashed memos.
+            let signatures = ledger::sign_pczt(&pczt, false, None)?;
             for signature in signatures {
                 let pool = match signature.value_pool() {
                     orchard::ValuePool::Orchard => "orchard",

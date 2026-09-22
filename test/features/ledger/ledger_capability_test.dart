@@ -72,6 +72,24 @@ void main() {
     );
   });
 
+  test('new accounts need app 3.9.4 while signing still accepts 3.9.3', () {
+    expect(ledgerAppVersionAllowsNewAccounts('3.9.4'), isTrue);
+    expect(ledgerAppVersionAllowsNewAccounts('3.10.0'), isTrue);
+    expect(ledgerAppVersionAllowsNewAccounts('3.9.3'), isFalse);
+    expect(ledgerAppVersionAllowsNewAccounts('unknown'), isFalse);
+    expect(() => requireSupportedLedgerAppVersion('3.9.3'), returnsNormally);
+  });
+
+  test('memo hashes are supported from app 3.9.4', () {
+    for (final version in ['3.9.4', '3.9.10', '3.10.0', '4.0.0']) {
+      expect(ledgerSupportsMemoHash(version), isTrue, reason: version);
+    }
+    // 3.9.3 still signs, but resets the device on a hashed memo.
+    for (final version in ['3.9.3', '3.9.2', 'unknown', '', null]) {
+      expect(ledgerSupportsMemoHash(version), isFalse, reason: '$version');
+    }
+  });
+
   test('quarantines legacy Orchard migration for Ledger', () {
     expect(ledgerAutomaticOrchardMigrationCapability.supported, isFalse);
     expect(
