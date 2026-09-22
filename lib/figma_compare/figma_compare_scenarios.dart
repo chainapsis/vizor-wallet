@@ -283,6 +283,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 
   FigmaCompareScenario(
+    id: 'voting-participation-unavailable',
+    description: 'Desktop ballot with participation already used',
+    builder: buildVotingUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-participation-unavailable',
+    description: 'Mobile ballot with participation already used',
+    builder: buildVotingUnavailableUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'voting-retroactive-q3',
     description: 'Published Q3 2026 retroactive grants ballot',
     builder: buildRetroactiveVotingUseCase,

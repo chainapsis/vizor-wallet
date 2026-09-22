@@ -97,6 +97,10 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'All answered',
                   builder: buildRetroactiveVotingCompleteUseCase,
                 ),
+                WidgetbookUseCase(
+                  name: 'Participation unavailable',
+                  builder: buildVotingUnavailableUseCase,
+                ),
               ],
             ),
             WidgetbookFolder(

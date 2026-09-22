@@ -33,6 +33,16 @@ import '../src/services/qr_scanner.dart';
 import '../src/services/voting/voting_config_loader.dart';
 import 'fixtures/retroactive_q3_2026.dart';
 import 'voting_navigation_preview.dart';
+import 'voting_unavailable_preview.dart';
+
+Widget buildVotingUnavailableUseCase(BuildContext context) {
+  const preview = VotingUnavailablePreview();
+  if (kAppFormFactor == AppFormFactor.mobile) return preview;
+  return AppDesktopShell(
+    sidebar: const _VotingPreviewSidebar(),
+    pane: const AppDesktopPane(padding: EdgeInsets.zero, child: preview),
+  );
+}
 
 Widget buildRetroactiveVotingUseCase(BuildContext context) =>
     _buildRetroactiveVoting(context, const {});

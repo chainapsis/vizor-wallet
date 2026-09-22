@@ -769,6 +769,21 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     );
   }
 
+  Widget _buildParticipationNotice() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        votingAlreadyUsedMessage,
+        key: const ValueKey('voting_participation_unavailable'),
+        style: AppTypography.labelLarge,
+      ),
+      TextButton(
+        onPressed: widget.onParticipationRetry,
+        child: const Text('Check again'),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -776,23 +791,10 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       children: [
         if (widget.showDesktopToolbar && widget.proposals.isEmpty)
           const AppPaneToolbar(backLinkMinWidth: 60),
-        if (widget.participationUnavailable)
+        if (widget.participationUnavailable && widget.proposals.isEmpty)
           Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  votingAlreadyUsedMessage,
-                  key: const ValueKey('voting_participation_unavailable'),
-                  style: AppTypography.labelLarge,
-                ),
-                TextButton(
-                  onPressed: widget.onParticipationRetry,
-                  child: const Text('Check again'),
-                ),
-              ],
-            ),
+            child: _buildParticipationNotice(),
           ),
         Expanded(
           child: widget.proposals.isEmpty
@@ -804,7 +806,16 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
                   key: ValueKey(widget.roundId),
                   proposals: widget.proposals,
                   choices: widget.draft.choices,
-                  summary: _buildPollSummary(),
+                  summary: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (widget.participationUnavailable) ...[
+                        _buildParticipationNotice(),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      _buildPollSummary(),
+                    ],
+                  ),
                   cardBuilder: _buildProposalCard,
                   reviewAction: _buildReviewAction(),
                   onReview:
