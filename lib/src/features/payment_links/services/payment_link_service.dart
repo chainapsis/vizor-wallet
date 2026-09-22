@@ -210,24 +210,36 @@ class PaymentLinkClaimSession {
 }
 
 @visibleForTesting
-VizorPaymentLink paymentLinkWithRetainedAddress(
+Future<VizorPaymentLink> paymentLinkWithRetainedAddress(
   VizorPaymentLink link,
-  Iterable<VizorPaymentLink> retainedLinks,
-) {
+  Iterable<PaymentLinkReceivedRecord> records,
+) async {
   if (link.knownAddress != null) return link;
-  // Use the claim wallet identity so corrected share metadata still finds the
-  // address under which an earlier submission was persisted.
   final walletIdentity = paymentLinkClaimWalletDirectoryName(link);
-  final retained = retainedLinks
-      .where(
-        (candidate) =>
-            candidate.knownAddress != null &&
-            paymentLinkClaimWalletDirectoryName(candidate) == walletIdentity,
-      )
-      .firstOrNull;
-  return retained == null
-      ? link
-      : link.withResolvedMetadata(address: retained.address);
+  for (final record in records) {
+    if (record.network != link.network) continue;
+    final retainedLink = record.claimLink;
+    if (retainedLink != null) {
+      // Preserve pending submissions even if share metadata was corrected.
+      if (paymentLinkClaimWalletDirectoryName(retainedLink) != walletIdentity) {
+        continue;
+      }
+    } else {
+      // Completed receipts retain only the address and transaction IDs. Match
+      // current, legacy, and legacy-index projections without retaining secrets.
+      try {
+        await rust_wallet.validateGiftAddress(
+          mnemonic: link.mnemonic,
+          network: link.network,
+          address: record.address,
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+    return link.withResolvedMetadata(address: record.address);
+  }
+  return link;
 }
 
 enum PaymentLinkClaimBroadcastStatus {
@@ -1067,12 +1079,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
 
     final retainedRecords = await _receivedStore.load();
-    link = paymentLinkWithRetainedAddress(
-      link,
-      retainedRecords
-          .map((record) => record.claimLink)
-          .whereType<VizorPaymentLink>(),
-    );
+    link = await paymentLinkWithRetainedAddress(link, retainedRecords);
 
     final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');

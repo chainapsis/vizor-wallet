@@ -328,9 +328,9 @@ fn software_account_ufvk(
     )
 }
 
-/// Derive the default shielded Unified Address for a software account without
-/// importing it into the wallet database.
-pub fn derive_software_address(
+/// Derive a standalone Orchard-only Gift Card address without importing an account.
+/// This can use a different diversifier index from the account receive address.
+pub fn derive_gift_address(
     network: WalletNetwork,
     seed: &SecretVec<u8>,
     account_index: u32,
@@ -459,6 +459,8 @@ fn import_ufvk_account(
         derivation: Some(derivation),
     };
 
+    let address = addresses::default_receive_address(&ufvk, network)?;
+
     let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         let account = db
@@ -474,7 +476,6 @@ fn import_ufvk_account(
     })?;
 
     let uuid = account_id.expose_uuid().to_string();
-    let address = get_address_from_db(db_path, network, Some(&uuid))?;
     Ok((uuid, address))
 }
 
@@ -580,6 +581,8 @@ pub fn import_hardware_account(
         derivation: Some(derivation),
     };
 
+    let addr_str = addresses::default_receive_address(&ufvk, network)?;
+
     let account_id = with_wallet_db_write_lock("keys.import_hardware_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
@@ -605,7 +608,6 @@ pub fn import_hardware_account(
     })?;
 
     let uuid_str = account_id.expose_uuid().to_string();
-    let addr_str = get_address_from_db(db_path, network, Some(&uuid_str))?;
     log::info!(
         "Imported hardware account: uuid={}, address={}",
         uuid_str,
@@ -629,18 +631,17 @@ pub fn init_db_and_create_account(
 
     let birthday = make_birthday(network, birthday_height);
 
-    let account_id = with_wallet_db_write_lock("keys.create_account", || {
+    let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
         // The bootstrap account uses create_account (Derived) so initial
         // seed-aware DB setup records the seed fingerprint.
         db.create_account(name, seed, &birthday, None)
-            .map(|(account_id, _)| account_id)
             .map_err(|e| format!("Failed to create account: {e}"))
     })?;
 
+    let address = addresses::default_receive_address(&usk.to_unified_full_viewing_key(), network)?;
     let uuid_str = account_id.expose_uuid().to_string();
-    let address = get_address_from_db(db_path, network, Some(&uuid_str))?;
     Ok((uuid_str, address))
 }
 
@@ -658,6 +659,9 @@ pub fn import_derived_account_at_index(
     let birthday = make_birthday(network, birthday_height);
     let account_id = zip32_account_id(account_index)?;
 
+    let ufvk = software_account_ufvk(network, seed, account_index)?;
+    let address = addresses::default_receive_address(&ufvk, network)?;
+
     let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         db.import_account_hd(name, seed, account_id, &birthday, None)
@@ -666,7 +670,6 @@ pub fn import_derived_account_at_index(
     })?;
 
     let uuid = account.id().expose_uuid().to_string();
-    let address = get_address_from_db(db_path, network, Some(&uuid))?;
     Ok((uuid, address))
 }
 
@@ -761,7 +764,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
         let address = match account.ufvk() {
-            Some(_) => addresses::current_receive_address(&db, db_path, network, id)?,
+            Some(ufvk) => addresses::current_receive_address(&db, network, id, ufvk)?,
             None => String::new(),
         };
 
@@ -1267,9 +1270,9 @@ pub fn get_address_from_db(
         .map_err(|e| format!("Failed to get account: {e}"))?
         .ok_or("Account not found")?;
 
-    account.ufvk().ok_or("Account does not have a UFVK")?;
+    let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
 
-    addresses::current_receive_address(&db, db_path, network, account_id)
+    addresses::current_receive_address(&db, network, account_id, ufvk)
 }
 
 /// Export a single account's Unified Full Viewing Key (UFVK), encoded for
@@ -1486,9 +1489,9 @@ mod tests {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let seed = mnemonic_to_seed(phrase).unwrap();
 
-        let main = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
-        let main_again = derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
-        let test = derive_software_address(WalletNetwork::Test, &seed, 0).unwrap();
+        let main = derive_gift_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let main_again = derive_gift_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let test = derive_gift_address(WalletNetwork::Test, &seed, 0).unwrap();
 
         assert_eq!(main, main_again);
         assert!(main.starts_with("u1"));
@@ -1827,7 +1830,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reserved_orchard_addresses_are_distinct_and_sapling_free() {
+    fn test_reserved_orchard_addresses_are_distinct_without_becoming_current() {
         use zcash_keys::address::Address;
 
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1836,7 +1839,7 @@ mod tests {
 
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
-        let (uuid, _) =
+        let (uuid, current_address) =
             init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
                 .unwrap();
 
@@ -1863,6 +1866,10 @@ mod tests {
             assert!(!address.has_sapling());
             assert!(!address.has_transparent());
         }
+        assert_eq!(
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
+            current_address
+        );
     }
 
     #[test]

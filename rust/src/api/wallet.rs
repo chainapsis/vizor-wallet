@@ -350,7 +350,7 @@ pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAcc
         let network = keys::parse_network(&network)?;
         let mnemonic = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
-        let unified_address = keys::derive_software_address(network, &seed, 0)?;
+        let unified_address = keys::derive_gift_address(network, &seed, 0)?;
 
         Ok(GeneratedSoftwareAccount {
             mnemonic,
@@ -1215,7 +1215,7 @@ mod tests {
                 original.to_seed("")
             );
             for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
-                let current = keys::derive_software_address(network, &restored_seed, 0).unwrap();
+                let current = keys::derive_gift_address(network, &restored_seed, 0).unwrap();
                 let legacy =
                     keys::derive_legacy_software_address(network, &restored_seed, 0).unwrap();
                 let legacy_projection =
@@ -1281,7 +1281,7 @@ mod tests {
             .find_map(|marker| {
                 let phrase = keys::mnemonic_from_entropy(vec![marker; 32]).ok()?;
                 let seed = keys::mnemonic_to_seed(&phrase).ok()?;
-                let current = keys::derive_software_address(network, &seed, 0).ok()?;
+                let current = keys::derive_gift_address(network, &seed, 0).ok()?;
                 let legacy = keys::derive_legacy_software_address(network, &seed, 0).ok()?;
                 let projection =
                     keys::derive_legacy_software_orchard_projection(network, &seed, 0).ok()?;

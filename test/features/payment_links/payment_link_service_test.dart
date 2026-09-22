@@ -31,12 +31,14 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('address-free gifts reuse a retained legacy address identity', () {
+  test('address-free gifts reuse a retained legacy address identity', () async {
     final retained = _link();
     final addressFree = VizorPaymentLink.parse(retained.toUri().toString());
     expect(addressFree.knownAddress, isNull);
     expect(
-      paymentLinkWithRetainedAddress(addressFree, [retained]).address,
+      (await paymentLinkWithRetainedAddress(addressFree, [
+        PaymentLinkReceivedRecord.fromLink(retained),
+      ])).address,
       retained.address,
     );
     final unrelated = VizorPaymentLink(
@@ -50,7 +52,9 @@ void main() {
       createdAt: retained.createdAt,
     );
     expect(
-      paymentLinkWithRetainedAddress(addressFree, [unrelated]).knownAddress,
+      (await paymentLinkWithRetainedAddress(addressFree, [
+        PaymentLinkReceivedRecord.fromLink(unrelated),
+      ])).knownAddress,
       isNull,
     );
   });
@@ -84,11 +88,9 @@ void main() {
         paymentLinkClaimWalletDirectoryName(retained),
       );
 
-      final resolved = paymentLinkWithRetainedAddress(
+      final resolved = await paymentLinkWithRetainedAddress(
         corrected,
-        (await store.load())
-            .map((r) => r.claimLink)
-            .whereType<VizorPaymentLink>(),
+        await store.load(),
       );
       expect(resolved.address, retained.address);
       expect(resolved.label, corrected.label);
@@ -99,7 +101,7 @@ void main() {
     },
   );
 
-  test('retained gift addresses stay scoped to network and birthday', () {
+  test('retained gift addresses stay scoped to network and birthday', () async {
     final retained = _link();
     final addressFree = VizorPaymentLink.parse(
       retained.toRecoveryUri().toString(),
@@ -119,12 +121,16 @@ void main() {
         presentation: retained.presentation,
       );
       expect(
-        paymentLinkWithRetainedAddress(addressFree, [other]).knownAddress,
+        (await paymentLinkWithRetainedAddress(addressFree, [
+          PaymentLinkReceivedRecord.fromLink(other),
+        ])).knownAddress,
         isNull,
       );
     }
     expect(
-      paymentLinkWithRetainedAddress(retained, [retained]),
+      await paymentLinkWithRetainedAddress(retained, [
+        PaymentLinkReceivedRecord.fromLink(retained),
+      ]),
       same(retained),
     );
   });
@@ -466,6 +472,60 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
+    });
+
+    for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
+      test('completed receipt $address survives secret cleanup', () async {
+        final link = _link().withResolvedMetadata(address: address);
+        api.validGiftAddresses.add(address);
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(link);
+        await store.markReceiving(
+          address: address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'aabb',
+          claimSubmittedAt: DateTime.utc(2026, 8, 6),
+        );
+        await store.markReceived(address: address);
+        await store.clearConfirmedClaimSecret(address: address);
+        final records = await store.load();
+        expect(records.single.claimLink, isNull);
+        final reopened = VizorPaymentLink.parse(
+          link.toRecoveryUri().toString(),
+        );
+        final resolved = await paymentLinkWithRetainedAddress(
+          reopened,
+          records,
+        );
+        expect(resolved.address, address);
+        expect((await store.find(resolved.address))?.claimTxids, 'aabb');
+        expect((await store.load()).single.claimLink, isNull);
+      });
+    }
+
+    test('completed receipts reject unrelated seeds and networks', () async {
+      final unrelated = PaymentLinkReceivedRecord.fromLink(
+        _link().withResolvedMetadata(address: 'u1unrelated'),
+      ).copyWith(claimLink: null);
+      final otherNetwork = PaymentLinkReceivedRecord.fromLink(
+        VizorPaymentLink(
+          network: 'regtest',
+          address: _link().address,
+          amountZatoshi: _link().amountZatoshi,
+          mnemonic: _link().mnemonic,
+          birthdayHeight: _link().birthdayHeight,
+          label: _link().label,
+          createdAt: _link().createdAt,
+        ),
+      ).copyWith(claimLink: null);
+      final reopened = VizorPaymentLink.parse(
+        _link().toRecoveryUri().toString(),
+      );
+      final resolved = await paymentLinkWithRetainedAddress(reopened, [
+        unrelated,
+        otherNetwork,
+      ]);
+      expect(resolved.knownAddress, isNull);
     });
 
     test(
@@ -2053,44 +2113,6 @@ void main() {
       expect(retryable.claimLink, isNotNull);
     },
   );
-
-  test('only reuses a complete claim wallet for the expected address', () {
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const [],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1expected', 'u1unexpected'],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1unexpected'],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1expected'],
-        expectedAddress: 'u1expected',
-      ),
-      isFalse,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1derived'],
-        expectedAddress: null,
-      ),
-      isFalse,
-    );
-  });
 
   test('claim broadcast stops when the wallet locks', () {
     expect(

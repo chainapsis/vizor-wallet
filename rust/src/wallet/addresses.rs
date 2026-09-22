@@ -1,14 +1,13 @@
 //! Receive-address issuance and historical address compatibility.
 //!
-//! New receive addresses contain only Orchard. Reading or recognizing an old
-//! address must retain its original receiver identity without rewriting the DB.
+//! Exposed receive addresses contain only Orchard. Software receive issuance
+//! retains Sapling internally to distinguish it from reserved swap addresses.
 //! The library retains its own internal address generation and key material.
 
 #[cfg(test)]
 mod tests;
 
-use rusqlite::OptionalExtension;
-use zcash_client_backend::data_api::{WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{Account, WalletRead, WalletWrite};
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::{
     address::{Address, UnifiedAddress},
@@ -17,14 +16,14 @@ use zcash_keys::{
 
 use super::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_db_with_timeout, with_wallet_db_write_lock,
-        WalletDatabase, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
+        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+        WALLET_DB_BUSY_TIMEOUT,
     },
     keys::parse_account_uuid,
     network::WalletNetwork,
 };
 
-/// The receiver set for all newly issued Vizor receive addresses.
+/// The receiver set exposed by Vizor and stored for reserved addresses.
 pub(crate) fn receive_address_request() -> UnifiedAddressRequest {
     UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,
@@ -34,26 +33,35 @@ pub(crate) fn receive_address_request() -> UnifiedAddressRequest {
     .expect("valid Orchard-only receiver requirements")
 }
 
-/// Issue the next Orchard-only address through the existing serialized DB write path.
+/// Preserve the stored receive/reservation distinction, exposing only Orchard.
 pub fn get_next_available_address(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    _address_request: AddressRequestKind,
+    address_request: AddressRequestKind,
 ) -> Result<String, String> {
     let account_id = parse_account_uuid(account_uuid)?;
-    let req = receive_address_request();
 
     let (ua, _) = with_wallet_db_write_lock("addresses.get_next_available_address", || {
         let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
+        let account = db
+            .get_account(account_id)
+            .map_err(|e| format!("Failed to get account: {e}"))?
+            .ok_or("Account not found")?;
+        let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
+        let req = match address_request {
+            AddressRequestKind::Shielded => stored_receive_request(ufvk),
+            AddressRequestKind::Orchard => receive_address_request(),
+        };
         db.get_next_available_address(account_id, req)
             .map_err(|e| format!("{e}"))?
             .ok_or_else(|| "No address available".to_string())
     })?;
-    Ok(ua.encode(&network))
+    orchard_projection(&ua, network)
 }
 
-/// Retained API values; both use the same receive-address policy for new issuance.
+/// Shielded renews a receive address with the account's stored receiver set.
+/// Orchard uses Orchard-only storage for reservations and hardware receive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressRequestKind {
     Shielded,
@@ -70,56 +78,45 @@ pub fn parse_address_request_kind(request: &str) -> Result<AddressRequestKind, S
     }
 }
 
-/// Read both historical Sapling + Orchard and new Orchard-only receive addresses.
-pub(crate) fn current_receive_address(
-    db: &WalletDatabase,
-    db_path: &str,
-    network: WalletNetwork,
-    account_id: AccountUuid,
-) -> Result<String, String> {
-    let request = UnifiedAddressRequest::custom(
+/// Preserve the existing software receive-address discriminator in stored rows.
+fn stored_receive_request(ufvk: &UnifiedFullViewingKey) -> UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,
-        ReceiverRequirement::Allow,
+        if ufvk.sapling().is_some() {
+            ReceiverRequirement::Require
+        } else {
+            ReceiverRequirement::Omit
+        },
         ReceiverRequirement::Omit,
     )
-    .expect("valid receive-address lookup");
-    let address = db
-        .get_last_generated_address_matching(account_id, request)
-        .map_err(|e| format!("Failed to get last generated receive address: {e}"))?;
-    let address = match address {
-        Some(address) => address,
-        None => stored_default_address(db_path, network, account_id)?,
-    };
+    .expect("valid stored receive-address requirements")
+}
+
+/// Derive the initial display address from account keys without another DB read.
+/// Unlike the standalone Gift Card address, this retains the legacy index.
+pub(crate) fn default_receive_address(
+    ufvk: &UnifiedFullViewingKey,
+    network: WalletNetwork,
+) -> Result<String, String> {
+    let (address, _) = ufvk
+        .default_address(stored_receive_request(ufvk))
+        .map_err(|e| format!("Failed to derive receive address: {e}"))?;
     orchard_projection(&address, network)
 }
 
-fn stored_default_address(
-    db_path: &str,
+/// Read the latest receive address without promoting software swap reservations.
+pub(crate) fn current_receive_address(
+    db: &WalletDatabase,
     network: WalletNetwork,
     account_id: AccountUuid,
-) -> Result<UnifiedAddress, String> {
-    // Account creation stores the default before pre-generating transparent gap
-    // addresses. Exposure height is mutable when historical transparent funds
-    // are found, so it cannot identify that original row.
-    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
-    let encoded: Option<String> = conn
-        .query_row(
-            "SELECT a.address FROM addresses a
-             JOIN accounts acct ON acct.id = a.account_id
-             WHERE acct.uuid = ?1 AND a.key_scope = 0
-               AND a.diversifier_index_be IS NOT NULL
-             ORDER BY a.id LIMIT 1",
-            [account_id.expose_uuid().as_bytes().as_slice()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to read stored default address: {e}"))?;
-    match encoded
-        .as_deref()
-        .and_then(|s| Address::decode(&network, s))
+    ufvk: &UnifiedFullViewingKey,
+) -> Result<String, String> {
+    match db
+        .get_last_generated_address_matching(account_id, stored_receive_request(ufvk))
+        .map_err(|e| format!("Failed to get last generated receive address: {e}"))?
     {
-        Some(Address::Unified(address)) if address.has_orchard() => Ok(address),
-        _ => Err("No stored Orchard receive address".into()),
+        Some(address) => orchard_projection(&address, network),
+        None => default_receive_address(ufvk, network),
     }
 }
 

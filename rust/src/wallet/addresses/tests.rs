@@ -251,7 +251,7 @@ fn old_renewed_sapling_address_is_projected_from_its_stored_index() {
 }
 
 #[test]
-fn latest_orchard_only_address_may_become_the_displayed_address() {
+fn legacy_receive_address_ignores_later_swap_reservations() {
     let seed = SecretVec::new(vec![73; 32]);
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -261,7 +261,7 @@ fn latest_orchard_only_address_may_become_the_displayed_address() {
     old_db
         .update_chain_tip(BlockHeight::from_u32(2_500_000))
         .unwrap();
-    old_db
+    let (receive, _) = old_db
         .get_next_available_address(account_id, legacy_software_request())
         .unwrap()
         .unwrap();
@@ -277,6 +277,10 @@ fn latest_orchard_only_address_may_become_the_displayed_address() {
 
     let uuid = account_id.expose_uuid().to_string();
     assert_eq!(
+        keys::get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        crate::wallet::addresses::orchard_projection(&receive, WalletNetwork::Main).unwrap()
+    );
+    assert_ne!(
         keys::get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap(),
         latest_orchard.encode(&WalletNetwork::Main)
     );
@@ -516,4 +520,62 @@ fn new_orchard_default_survives_later_transparent_alias_exposure() {
         issued
     );
     assert_eq!(snapshot(db_path_str), before);
+}
+
+#[test]
+fn software_renewal_remains_current_after_reservation_and_reopen() {
+    use crate::wallet::addresses::{get_next_available_address, AddressRequestKind};
+    let seed = SecretVec::new(vec![73; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let (uuid, initial) =
+        keys::init_db_and_create_account(path, WalletNetwork::Main, &seed, None, "software")
+            .unwrap();
+    crate::wallet::sync::update_chain_tip(path, WalletNetwork::Main, 2_500_000).unwrap();
+    let renewed = get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Shielded,
+    )
+    .unwrap();
+    assert_ne!(initial, renewed);
+    let reservation = get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Orchard,
+    )
+    .unwrap();
+    assert_ne!(renewed, reservation);
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        renewed
+    );
+    assert_eq!(
+        keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].unified_address,
+        renewed
+    );
+    let db = old_wallet(path);
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let stored = db
+        .get_last_generated_address_matching(account, legacy_software_request())
+        .unwrap()
+        .unwrap();
+    assert!(stored.has_sapling());
+    assert_same_orchard_receiver(&stored.encode(&WalletNetwork::Main), &renewed);
+    let again = get_next_available_address(
+        path,
+        WalletNetwork::Main,
+        &uuid,
+        AddressRequestKind::Shielded,
+    )
+    .unwrap();
+    assert_ne!(again, renewed);
+    assert_ne!(again, reservation);
+    assert_eq!(
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).unwrap(),
+        again
+    );
 }
