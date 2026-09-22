@@ -25,7 +25,6 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/send_prefill_args.dart';
-import '../../ledger/ledger_memo_policy.dart';
 import 'send_flow.dart';
 
 /// Validates a recipient address. Matches `rust_sync.validateAddress`.
@@ -290,10 +289,6 @@ class PaymentRequestPrecheck {
     // second, silent one here would only ever describe a request the parser
     // already refused.
     final memo = prefill.outgoingMemoText;
-    if (accountUuid != null && isLedgerAccount?.call(accountUuid) == true) {
-      final error = ledgerMemoError(prefill.memoText);
-      if (error != null) return PaymentRequestPrecheckFailed(error);
-    }
 
     final amountText = prefill.amountText?.trim();
     if (amountText == null || amountText.isEmpty) {

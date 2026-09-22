@@ -44,7 +44,6 @@ import 'keystone_send_scan_screen.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_content_view.dart';
-import '../../ledger/ledger_memo_policy.dart';
 import '../widgets/send_verify_address_overlay.dart';
 
 export '../services/send_flow.dart'
@@ -230,11 +229,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         .read(accountProvider.notifier)
         .hardwareSignerKindForAccount(_reviewArgs.proposalAccountUuid);
     if (signerKind == HardwareSignerKind.ledger) {
-      final error = ledgerMemoError(_reviewArgs.memo);
-      if (error != null) {
-        showAppToast(context, error, iconName: AppIcons.warning);
-        return;
-      }
       _showLedgerSigningModal();
       return;
     }

@@ -20,6 +20,13 @@ const kMinimumLedgerZcashAppVersion = '3.9.3';
 /// render as printable ASCII, so Vizor refuses to send one to an older app.
 const kLedgerMemoTextAppVersion = '3.9.4';
 
+/// Shown when signing is refused because the connected app predates
+/// [kLedgerMemoTextAppVersion]. Keep this identical to
+/// `LEDGER_MEMO_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is the
+/// error Rust returns and `ledgerFailureGuidance` matches on.
+const ledgerMemoUnsupportedError =
+    'Update the Ledger Zcash app to sign non-English memos';
+
 /// Whether `appVersion` can render memo text the device would otherwise hash.
 /// Callers pass this into the Rust signing entry points, which hold the memo
 /// bytes; an unparseable version fails closed.

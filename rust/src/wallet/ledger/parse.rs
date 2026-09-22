@@ -600,9 +600,10 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
 }
 
 /// Keep this string identical to `ledgerMemoUnsupportedError` in
-/// `lib/src/features/ledger/ledger_memo_policy.dart`: the Dart failure guidance
+/// `lib/src/features/ledger/ledger_capability.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
-pub(super) const LEDGER_MEMO_UNSUPPORTED: &str = "Ledger can't sign non-English text yet";
+pub(super) const LEDGER_MEMO_UNSUPPORTED: &str =
+    "Update the Ledger Zcash app to sign non-English memos";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`

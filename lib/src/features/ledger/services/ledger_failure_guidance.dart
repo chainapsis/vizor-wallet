@@ -6,7 +6,6 @@ import '../ledger_error_codes.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
 import 'ledger_mobile_ble_service.dart';
-import '../ledger_memo_policy.dart';
 
 /// The request a Ledger failure belongs to, for copy that names it.
 enum LedgerRequestKind {
