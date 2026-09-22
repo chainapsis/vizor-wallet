@@ -35,6 +35,33 @@ class PaymentLinkClaimWallet {
   final Ref _ref;
   final Map<String, Future<void>> _claimSyncs = {};
 
+  /// Verifies the cached wallet and advertised address against the recovery
+  /// phrase, accepting current and legacy default-address representations.
+  Future<bool> matchesLink({
+    required VizorPaymentLink link,
+    required List<rust_wallet.AccountInfo> accounts,
+  }) async {
+    if (accounts.length != 1) return false;
+    try {
+      await rust_wallet.validateGiftAddress(
+        mnemonic: link.mnemonic,
+        network: link.network,
+        address: accounts.single.unifiedAddress,
+      );
+      final advertisedAddress = link.knownAddress;
+      if (advertisedAddress != null) {
+        await rust_wallet.validateGiftAddress(
+          mnemonic: link.mnemonic,
+          network: link.network,
+          address: advertisedAddress,
+        );
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> runClaimSync({
     required VizorPaymentLink link,
     required String dbPath,
@@ -108,12 +135,7 @@ class PaymentLinkClaimWallet {
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
+    if (!await matchesLink(link: link, accounts: accounts)) {
       log(
         'PaymentLinkService: retained claim wallet no longer matches its '
         'Gift Card identity; leaving it recoverable from the stored link',
@@ -179,12 +201,7 @@ class PaymentLinkClaimWallet {
         log('PaymentLinkClaimWallet: reopening the claim wallet failed: $e');
       }
       if (accounts != null &&
-          !shouldRecreatePaymentLinkClaimWallet(
-            accountAddresses: [
-              for (final account in accounts) account.unifiedAddress,
-            ],
-            expectedAddress: link.address,
-          )) {
+          await matchesLink(link: link, accounts: accounts)) {
         accountUuid = accounts.single.uuid;
       } else {
         // An import that died between creating the file and the account, or a

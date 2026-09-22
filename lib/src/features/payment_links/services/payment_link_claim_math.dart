@@ -302,15 +302,6 @@ Future<bool> finalizeConfirmedPaymentLinkClaim({
 }
 
 @visibleForTesting
-bool shouldRecreatePaymentLinkClaimWallet({
-  required List<String> accountAddresses,
-  required String? expectedAddress,
-}) {
-  return accountAddresses.length != 1 ||
-      expectedAddress != null && accountAddresses.single != expectedAddress;
-}
-
-@visibleForTesting
 void requireUnlockedPaymentLinkWallet({required bool requiresUnlock}) {
   if (requiresUnlock) {
     throw StateError('Wallet is locked.');
