@@ -13,6 +13,44 @@ final class RecoveryTests: XCTestCase {
     }
 
     @MainActor
+    func testSupportedModelsScanConnectAndExchangeThroughSimulatedRadio() async {
+        for model in ["0004", "6004", "3004", "8004"] {
+            let serviceUUID = CBUUID(string: "13d63400-2c97-\(model)-0000-4c6564676572")
+            let radio = Radio(serviceUUID: serviceUUID)
+            let transport = BleTransport(configuration: nil, debugMode: false, module: radio)
+            let found = expectation(description: "\(model) discovered")
+            transport.scan(duration: 1) { discoveries in
+                XCTAssertEqual(discoveries.first?.serviceUUID, serviceUUID)
+                found.fulfill()
+            } stopped: { error in
+                if let error { XCTFail("\(model) scan failed: \(error)") }
+            }
+            await fulfillment(of: [found], timeout: 2)
+
+            let ready = expectation(description: "\(model) connected")
+            transport.connect(toPeripheralID: radio.device, disconnectedCallback: nil,
+                              success: { _ in ready.fulfill() },
+                              failure: { XCTFail("\(model) connection failed: \($0)") })
+            await fulfillment(of: [ready], timeout: 2)
+            XCTAssertEqual(radio.connects, 1)
+            XCTAssertEqual(radio.listenCharacteristics.last?.uuid,
+                           CBUUID(string: "13d63400-2c97-\(model)-0001-4c6564676572"))
+            XCTAssertEqual(radio.writeCharacteristics.last?.uuid,
+                           CBUUID(string: "13d63400-2c97-\(model)-0003-4c6564676572"))
+
+            let replied = expectation(description: "\(model) APDU response")
+            transport.exchange(apdu: APDU(data: [0xb0, 1, 0, 0])) { result in
+                XCTAssertEqual(try? result.get(), "9000")
+                replied.fulfill()
+            }
+            await Task.yield()
+            radio.deliver([5, 0, 0, 0, 2, 0x90, 0])
+            await fulfillment(of: [replied], timeout: 2)
+            transport.disconnect(completion: nil)
+        }
+    }
+
+    @MainActor
     func testNativeDisconnectCauseSurvivesPendingExchangeAndHandshake() async {
         let native = NSError(domain: CBErrorDomain, code: CBError.peerRemovedPairingInformation.rawValue,
                              userInfo: [NSLocalizedDescriptionKey: "Localized text is irrelevant"])
@@ -255,7 +293,12 @@ final class RecoveryTests: XCTestCase {
 }
 
 private final class Radio: BleTransportIO {
-    let device = PeripheralIdentifier(uuid: UUID(), name: "Ledger")
+    let device: PeripheralIdentifier
+    let serviceUUID: CBUUID
+    init(serviceUUID: CBUUID = CBUUID(string: "13d63400-2c97-0004-0000-4c6564676572")) {
+        self.device = PeripheralIdentifier(uuid: UUID(), name: "Ledger")
+        self.serviceUUID = serviceUUID
+    }
     var isBluetoothAvailable = true
     var bluetoothState: CBManagerState = .poweredOn
     weak var delegate: BleModuleDelegate?
@@ -265,20 +308,25 @@ private final class Radio: BleTransportIO {
     var answerMtu = true
     var failWrite = false
     var deferDisconnect = false
+    var listenCharacteristics: [CharacteristicIdentifier] = []
+    var writeCharacteristics: [CharacteristicIdentifier] = []
     func start(delegate: BleModuleDelegate) { self.delegate = delegate }
     func stopScanning() {}
     func scanLedger(duration: TimeInterval, serviceIdentifiers: [ServiceIdentifier], discovery: @escaping (ScanDiscovery, [ScanDiscovery]) -> ScanAction, expired: ((ScanDiscovery, [ScanDiscovery]) -> ScanAction)?, stopped: @escaping ([ScanDiscovery], Error?, Bool) -> Void) {
-        let found = ScanDiscovery(peripheralIdentifier: device, advertisementPacket: ["kCBAdvDataServiceUUIDs": [CBUUID(string: "13d63400-2c97-0004-0000-4c6564676572")]], rssi: -40)
+        guard serviceIdentifiers.contains(where: { $0.uuid == serviceUUID }) else { return }
+        let found = ScanDiscovery(peripheralIdentifier: device, advertisementPacket: ["kCBAdvDataServiceUUIDs": [serviceUUID]], rssi: -40)
         _ = discovery(found, [found])
         _ = discovery(found, [found]) // repeated advertisements must not reconnect
     }
     func connectLedger(_ id: PeripheralIdentifier, timeout: Timeout, callback: @escaping (Result<PeripheralIdentifier, Error>) -> Void) { connects += 1; if let connectError { callback(.failure(connectError)) } else { callback(.success(device)) } }
     func write<S: Sendable>(to: CharacteristicIdentifier, value: S, type: CBCharacteristicWriteType, completion: @escaping (WriteResult) -> Void) {
+        writeCharacteristics.append(to)
         if failWrite { completion(.failure(BleModuleError.notConnected)); return }
         completion(.success)
         if let apdu = value as? APDU, apdu.data.first == 8, answerMtu { deliver([8,0,0,0,0,153]) }
     }
     func listen<R: Receivable>(to: CharacteristicIdentifier, completion: @escaping (ReadResult<R>) -> Void, setupFinished: EmptyResponse?) {
+        listenCharacteristics.append(to)
         listener = { completion(ReadResult<R>(dataResult: .success($0))) }
         setupFinished?()
     }

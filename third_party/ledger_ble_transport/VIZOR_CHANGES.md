@@ -40,3 +40,7 @@ pairing_invalid, independent of localized text and callback ordering. Explicit
 cancellation, nil-error app switching and once-only draining retain their behavior.
 The local DisconnectionResponse callback signature differs from upstream; preserve
 it and its callers when updating this vendored package.
+
+Device discovery: add the official Flex and Nano Gen5 normal-mode BLE service
+and characteristic UUIDs. The upstream repository is archived, so this local
+configuration must be kept current when Ledger adds supported device models.

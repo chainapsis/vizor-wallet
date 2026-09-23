@@ -1123,18 +1123,22 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     from name: String,
     serviceUUID: CBUUID? = nil
   ) -> String {
-    // BleTransport 1.0.1 identifies Nano X separately and groups Flex/Stax
-    // under the FTS service. Prefer the advertised name inside that group.
     let service = serviceUUID?.uuidString.lowercased()
     if service == "13d63400-2c97-0004-0000-4c6564676572" {
       return "Ledger Nano X"
     }
+    if service == "13d63400-2c97-3004-0000-4c6564676572" {
+      return "Ledger Flex"
+    }
+    if service == "13d63400-2c97-8004-0000-4c6564676572" {
+      return "Ledger Nano Gen5"
+    }
     let normalized = name.lowercased()
     if service == "13d63400-2c97-6004-0000-4c6564676572" {
-      if normalized.contains("flex") { return "Ledger Flex" }
-      if normalized.contains("stax") { return "Ledger Stax" }
-      return "Ledger Flex / Stax"
+      return "Ledger Stax"
     }
+    if normalized.contains("nano gen5") || normalized.contains("nano gen 5") ||
+       normalized.contains("apex") { return "Ledger Nano Gen5" }
     if normalized.contains("stax") { return "Ledger Stax" }
     if normalized.contains("flex") { return "Ledger Flex" }
     if normalized.contains("nano x") { return "Ledger Nano X" }
