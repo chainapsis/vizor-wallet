@@ -13,12 +13,25 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.d
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
+import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeModalCorners.channel,
+      (_) async => null,
+    );
+  });
+  tearDown(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeModalCorners.channel,
+      null,
+    );
+  });
   setUpAll(loadFigmaCompareFonts);
 
   testWidgets(
@@ -650,70 +663,118 @@ void main() {
     expect(scrollable.position.maxScrollExtent, initialMaxExtent);
   });
 
-  testWidgets('vote config matches the default mobile Figma modal', (
-    tester,
-  ) async {
-    final semantics = tester.ensureSemantics();
-    try {
-      await _pumpMobileFixture(tester, buildMobileVotingConfigDefaultUseCase);
-      final modal = find.byKey(const ValueKey('mobile_voting_config_sheet'));
-      final source = find.byKey(const ValueKey('mobile_voting_source_default'));
-      final add = find.byKey(const ValueKey('mobile_voting_add_source'));
-      final toggle = find.byKey(
-        const ValueKey('mobile_voting_test_rounds_toggle'),
+  testWidgets(
+    'vote config preserves content geometry with 16pt outer margins',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        await _pumpMobileFixture(tester, buildMobileVotingConfigDefaultUseCase);
+        final modal = find.byKey(const ValueKey('mobile_voting_config_sheet'));
+        final source = find.byKey(
+          const ValueKey('mobile_voting_source_default'),
+        );
+        final add = find.byKey(const ValueKey('mobile_voting_add_source'));
+        final toggle = find.byKey(
+          const ValueKey('mobile_voting_test_rounds_toggle'),
+        );
+        final close = find.byKey(const ValueKey('mobile_voting_config_close'));
+        final modalRect = tester.getRect(modal);
+        expect(modalRect.size, const Size(361, 526));
+        expect(modalRect.left, 16);
+        expect(393 - modalRect.right, 16);
+        expect(852 - modalRect.bottom, 16);
+        // Content geometry is relative to the modal; outer clearance is tested
+        // independently so a margin change cannot hide an internal layout shift.
+        Rect relativeRect(Finder finder) =>
+            tester.getRect(finder).shift(-modalRect.topLeft);
+        expect(relativeRect(source), const Rect.fromLTWH(16, 173, 329, 64));
+        expect(relativeRect(add), const Rect.fromLTWH(16, 249, 329, 64));
+        expect(relativeRect(toggle), const Rect.fromLTWH(281, 345, 64, 28));
+        expect(relativeRect(close), const Rect.fromLTWH(16, 444, 329, 50));
+        expect(
+          relativeRect(
+            find.byKey(const ValueKey('mobile_voting_source_selected')),
+          ),
+          const Rect.fromLTWH(309, 193, 24, 24),
+        );
+        final title = tester.widget<Text>(find.text('Vote config'));
+        expect(title.style?.fontSize, 18);
+        expect(title.style?.fontWeight, FontWeight.w600);
+        expect(tester.widget<Text>(find.text('Default')).style?.fontSize, 16);
+        expect(find.text('Sources'), findsOneWidget);
+        expect(
+          tester.widget<AppButton>(close).variant,
+          AppButtonVariant.secondary,
+        );
+        final toggleSemantics = find.bySemanticsLabel('Show test rounds');
+        expect(toggleSemantics, findsOneWidget);
+        expect(
+          tester.getSemantics(toggleSemantics),
+          matchesSemantics(
+            label: 'Show test rounds',
+            hasEnabledState: true,
+            isEnabled: true,
+            hasToggledState: true,
+            isToggled: true,
+            hasTapAction: true,
+          ),
+        );
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getSemantics(toggleSemantics),
+          matchesSemantics(
+            label: 'Show test rounds',
+            hasEnabledState: true,
+            isEnabled: true,
+            hasToggledState: true,
+            isToggled: false,
+            hasTapAction: true,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+  );
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final inset in [34.0, 48.0]) {
+      testWidgets(
+        'vote config respects $platform bottom inset $inset and keyboard',
+        (tester) async {
+          tester.view.viewPadding = FakeViewPadding(bottom: inset);
+          tester.view.padding = FakeViewPadding(bottom: inset);
+          await _pumpMobileFixture(
+            tester,
+            buildMobileVotingConfigDefaultUseCase,
+          );
+          final modal = find.byKey(
+            const ValueKey('mobile_voting_config_sheet'),
+          );
+          final clearance = platform == TargetPlatform.iOS ? 16.0 : inset + 16;
+          expect(852 - tester.getRect(modal).bottom, clearance);
+          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+          tester.view.padding = const FakeViewPadding();
+          await tester.pumpAndSettle();
+          expect(852 - 280 - tester.getRect(modal).bottom, 16);
+          expect(
+            find
+                .byKey(const ValueKey('mobile_voting_config_close'))
+                .hitTestable(),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant.only(platform),
       );
-      final close = find.byKey(const ValueKey('mobile_voting_config_close'));
-      expect(tester.getRect(modal), const Rect.fromLTWH(16, 294, 361, 526));
-      expect(tester.getRect(source), const Rect.fromLTWH(32, 467, 329, 64));
-      expect(tester.getRect(add), const Rect.fromLTWH(32, 543, 329, 64));
-      expect(tester.getRect(toggle), const Rect.fromLTWH(297, 639, 64, 28));
-      expect(tester.getRect(close), const Rect.fromLTWH(32, 738, 329, 50));
-      expect(
-        tester.getRect(
-          find.byKey(const ValueKey('mobile_voting_source_selected')),
-        ),
-        const Rect.fromLTWH(325, 487, 24, 24),
-      );
-      final title = tester.widget<Text>(find.text('Vote config'));
-      expect(title.style?.fontSize, 18);
-      expect(title.style?.fontWeight, FontWeight.w600);
-      expect(tester.widget<Text>(find.text('Default')).style?.fontSize, 16);
-      expect(find.text('Sources'), findsOneWidget);
-      expect(
-        tester.widget<AppButton>(close).variant,
-        AppButtonVariant.secondary,
-      );
-      final toggleSemantics = find.bySemanticsLabel('Show test rounds');
-      expect(toggleSemantics, findsOneWidget);
-      expect(
-        tester.getSemantics(toggleSemantics),
-        matchesSemantics(
-          label: 'Show test rounds',
-          hasEnabledState: true,
-          isEnabled: true,
-          hasToggledState: true,
-          isToggled: true,
-          hasTapAction: true,
-        ),
-      );
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      expect(
-        tester.getSemantics(toggleSemantics),
-        matchesSemantics(
-          label: 'Show test rounds',
-          hasEnabledState: true,
-          isEnabled: true,
-          hasToggledState: true,
-          isToggled: false,
-          hasTapAction: true,
-        ),
-      );
-      expect(tester.takeException(), isNull);
-    } finally {
-      semantics.dispose();
     }
-  });
+  }
 
   testWidgets('config editor and validation remain reachable above keyboard', (
     tester,

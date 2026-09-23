@@ -56,10 +56,16 @@ validation; physical-device validation remains separate.
 The focused tests cover fallback and timeout, asymmetric radii, keyboard
 interruption, stale responses, route entrance/dismissal, content resizing,
 rotation/lifecycle recovery, centered/transparent cards, and Android behavior.
-The broader mobile run passed 116 tests with one pre-existing failure:
-`vote config matches the default mobile Figma modal` expects y=294 but gets
-310. The identical failure was reproduced from unchanged base `106c8528`.
-Five desktop modal tests and the full Flutter analyzer passed.
+The broader mobile run now passes all 122 tests. The pre-existing vote-config
+position failure was an outdated 32-point outer-margin expectation left after
+PR #729 changed the shared gap to 16. The test now checks outer clearance
+independently from modal-relative content geometry, runs on iOS and Android,
+and covers 34/48-point bottom insets and keyboard clearance. The deterministic
+`mobile-voting-config-default` widget capture confirms the 393 × 852 layout:
+modal frame (16, 310, 361, 526), with 16-point side and bottom gaps and no clipped
+controls. No production layout change was required. Five desktop modal tests
+passed during the corner implementation; the full Flutter analyzer also passes
+after this test correction.
 
 ## Reproduce native captures
 
