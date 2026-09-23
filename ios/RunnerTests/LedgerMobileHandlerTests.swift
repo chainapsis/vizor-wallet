@@ -558,9 +558,9 @@ final class LedgerMobileHandlerTests: XCTestCase {
       ("8004", "Ledger Nano Gen5"),
     ]
     transport.scanCallback?(services.map { service, _ in
-      (peripheral: PeripheralIdentifier(uuid: UUID(), name: "Ledger"), rssi: -40,
-       serviceUUID: CBUUID(string: "13d63400-2c97-\(service)-0000-4c6564676572"),
-       canWriteWithoutResponse: nil)
+      PeripheralInfo(peripheral: PeripheralIdentifier(uuid: UUID(), name: "Ledger"), rssi: -40,
+                     serviceUUID: CBUUID(string: "13d63400-2c97-\(service)-0000-4c6564676572"),
+                     canWriteWithoutResponse: nil)
     })
     XCTAssertEqual(models, services.map { $0.1 }.sorted())
     handler.close()
@@ -1148,7 +1148,7 @@ final class LedgerMobileHandlerTests: XCTestCase {
 }
 
 // The real handler and SDK protocol run in these tests, but there is no BLE
-// radio. A pending exchange deliberately ignores Task cancellation, like 1.0.1.
+// radio. A pending exchange deliberately ignores Task cancellation.
 private final class PendingLedgerTransport: BleTransportProtocol {
   static var shared: BleTransportProtocol { fatalError("Inject the test transport") }
   var isBluetoothAvailable = true
@@ -1250,12 +1250,16 @@ private final class PendingLedgerTransport: BleTransportProtocol {
     scans += 1
     scanCallback = callback
   }
+  func scan(duration: TimeInterval) -> AsyncThrowingStream<[PeripheralInfo], Error> { fatalError("unused") }
   func connect(toPeripheralID peripheral: PeripheralIdentifier, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier {
     reconnects += 1
     isConnected = true
     if let disconnectedCallback { disconnectedCallbacks.append(disconnectedCallback) }
     return peripheral
   }
+  func connect(toPeripheralNamed name: String, disconnectedCallback: DisconnectionResponse?,
+    success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
+  func connect(toPeripheralNamed name: String, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
   func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?, success: @escaping PeripheralResponse, failure: @escaping BleErrorResponse) { XCTFail("unused") }
   func create(scanDuration: TimeInterval, disconnectedCallback: DisconnectionResponse?) async throws -> PeripheralIdentifier { fatalError("unused") }
   func exchange(apdu: APDU, callback: @escaping (Result<String, BleTransportError>) -> Void) { XCTFail("unused") }

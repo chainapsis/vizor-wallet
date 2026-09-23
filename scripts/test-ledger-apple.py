@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='vizor-ledger-native-') as directory:
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(name: "LedgerNativeTests", platforms: [.macOS(.v13)], dependencies: [
-  .package(url: "https://github.com/chainapsis/hw-transport-ios-ble.git", revision: "771ea973415d69d70b324db18051db126f2d41a7")
+  .package(url: "https://github.com/chainapsis/hw-transport-ios-ble.git", revision: "75764d86c292ade766f2e9e9d46f061722af9ab8")
 ], targets: [
   .binaryTarget(name: "FlutterMacOS", path: "FlutterMacOS.xcframework"),
   .target(name: "Runner", dependencies: ["FlutterMacOS", .product(name: "BleTransport", package: "hw-transport-ios-ble")]),

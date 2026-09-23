@@ -628,7 +628,7 @@
 			repositoryURL = "https://github.com/chainapsis/hw-transport-ios-ble.git";
 			requirement = {
 				kind = revision;
-				revision = 771ea973415d69d70b324db18051db126f2d41a7;
+				revision = 75764d86c292ade766f2e9e9d46f061722af9ab8;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
