@@ -17,8 +17,8 @@ class SwapDepositRecoveryInfo {
   final String amountText;
   final String depositAddress;
 
-  /// Deadline with an explicit zone (UTC) — support compares it against
-  /// chain timestamps, so a local-time value would be ambiguous.
+  /// Deadline with an explicit zone (UTC), or "Not recorded" for a failed
+  /// swap whose stored intent has no deadline.
   final String expiredAtText;
   final String? memo;
   final String? depositTxId;

@@ -294,12 +294,16 @@ class _SwapActivityDetailSurfaceState
 
   /// "Sent a deposit?" on the expired page. Desktop stacks the pane
   /// modal like the recipient-address overlay; mobile opens the sheet.
-  void _showLateDeposit(SwapDepositRecoveryInfo info) {
+  void _showLateDeposit(
+    SwapDepositRecoveryInfo info, {
+    bool failedSwap = false,
+  }) {
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       unawaited(
         showAppMobileSheet<void>(
           context: context,
-          builder: (_) => SwapLateDepositSheet(info: info),
+          builder: (_) =>
+              SwapLateDepositSheet(info: info, failedSwap: failedSwap),
         ),
       );
       return;
@@ -492,7 +496,11 @@ class _SwapActivityDetailSurfaceState
             onShowPayRecipientAddress: _showPayRecipientAddress,
             onLateDeposit: recoveryInfo == null
                 ? null
-                : () => _showLateDeposit(recoveryInfo),
+                : () => _showLateDeposit(
+                    recoveryInfo,
+                    failedSwap:
+                        activityDetailIntent.status == SwapIntentStatus.failed,
+                  ),
           );
 
     return Stack(
@@ -551,7 +559,11 @@ class _SwapActivityDetailSurfaceState
         if (_lateDepositOverlayVisible && recoveryInfo != null)
           AppPaneModalOverlay(
             onDismiss: _closeLateDeposit,
-            child: SwapLateDepositModal(info: recoveryInfo),
+            child: SwapLateDepositModal(
+              info: recoveryInfo,
+              failedSwap:
+                  activityDetailIntent?.status == SwapIntentStatus.failed,
+            ),
           ),
         if (widget.layout != SwapActivityDetailLayout.mobile)
           Positioned.fill(
@@ -824,6 +836,11 @@ class _SwapActivityFlowContent extends StatelessWidget {
           : CrossAxisAlignment.center,
       children: [
         primaryContent,
+        if (intent.status == SwapIntentStatus.failed &&
+            onLateDeposit != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          SwapLateDepositPrompt(onTap: onLateDeposit!, failedSwap: true),
+        ],
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)

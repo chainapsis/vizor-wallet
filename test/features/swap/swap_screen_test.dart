@@ -1476,7 +1476,7 @@ void main() {
           showTabs: false,
           details: const [
             SwapStatusDetailRowData(
-              label: 'USDC refunded to',
+              label: 'Refund to',
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
@@ -6283,13 +6283,26 @@ void main() {
     final finalDetails = find.byKey(const ValueKey('swap_final_details'));
     expect(finalDetails, findsOneWidget);
 
-    // Failed terminal rows: Timestamp, USDC deposit tx, USDC refunded to, then
+    // Failed terminal rows: Timestamp, USDC deposit tx, Refund to, then
     // Total fees last. No Realized slippage on a failed swap.
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('USDC deposit tx'), findsOneWidget);
-    expect(find.text('USDC refunded to'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
     expect(find.text('Total fees'), findsOneWidget);
     expect(find.text('0.19 USDC'), findsOneWidget);
+    expect(find.text('No refund yet?'), findsOneWidget);
+    final refundAddressRow = tester.widget<ReviewListRow>(
+      find.byWidgetPredicate(
+        (widget) => widget is ReviewListRow && widget.label == 'Refund to',
+      ),
+    );
+    expect(refundAddressRow.copyText, '0xusdc-refund-address');
+
+    await tester.tap(find.text('No refund yet?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check your refund'), findsOneWidget);
+    expect(find.text('Email support'), findsOneWidget);
+    expect(find.text('Copy deposit details'), findsOneWidget);
 
     // The deposit-instruction address and delivery tx are not in terminal
     // details, and slippage rows are excluded on failure.
@@ -6302,7 +6315,7 @@ void main() {
 
     // Total fees is the last detail row.
     final fees = tester.getRect(find.text('Total fees'));
-    final refundRow = tester.getRect(find.text('USDC refunded to'));
+    final refundRow = tester.getRect(find.text('Refund to'));
     expect(fees.top, greaterThan(refundRow.top));
   });
 

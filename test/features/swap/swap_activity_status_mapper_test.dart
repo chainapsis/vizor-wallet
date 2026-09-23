@@ -699,22 +699,31 @@ void main() {
       presentation.details.map((detail) => detail.label),
       isNot(contains('Realized slippage')),
     );
+    expect(_detailValue(presentation.details, 'Refund to'), contains('u1'));
+    expect(_detailRow(presentation.details, 'Refund to').copyable, isTrue);
     expect(
-      _detailValue(presentation.details, 'ZEC refunded to'),
-      contains('u1'),
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyable,
-      isTrue,
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyText,
+      _detailRow(presentation.details, 'Refund to').copyText,
       'u1refund-address',
     );
     expect(
       _detailValue(presentation.details, 'Timestamp'),
       'May 7, 2026 10:30',
     );
+  });
+
+  test('failed external deposit keeps support details without a deadline', () {
+    final info = swapDepositRecoveryInfoFor(
+      _intent(
+        status: SwapIntentStatus.failed,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit-address',
+      ),
+    );
+
+    expect(info, isNotNull);
+    expect(info!.expiredAtText, 'Not recorded');
+    expect(info.depositAddress, '0xdeposit-address');
   });
 
   test('marks external source refund addresses copyable', () {

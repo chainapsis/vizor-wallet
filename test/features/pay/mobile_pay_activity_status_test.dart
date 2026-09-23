@@ -276,7 +276,7 @@ void main() {
       find.byKey(const ValueKey('mobile_pay_status_header')),
       findsNothing,
     );
-    expect(find.text('ZEC refunded to'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
     expect(find.text('Fees'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_pay_status_details')),

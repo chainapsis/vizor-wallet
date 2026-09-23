@@ -18,9 +18,14 @@ export '../models/swap_deposit_recovery_info.dart';
 /// Timeout-page prompt under the restart action. A quiet ghost button so it
 /// reads as a question, not as a peer of the page's one recovery action.
 class SwapLateDepositPrompt extends StatelessWidget {
-  const SwapLateDepositPrompt({required this.onTap, super.key});
+  const SwapLateDepositPrompt({
+    required this.onTap,
+    this.failedSwap = false,
+    super.key,
+  });
 
   final VoidCallback onTap;
+  final bool failedSwap;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +35,11 @@ class SwapLateDepositPrompt extends StatelessWidget {
       variant: AppButtonVariant.ghost,
       size: AppButtonSize.large,
       height: 36,
-      child: const Text(SwapRefundPolicy.lateDepositPrompt),
+      child: Text(
+        failedSwap
+            ? SwapRefundPolicy.failedRefundPrompt
+            : SwapRefundPolicy.lateDepositPrompt,
+      ),
     );
   }
 }
@@ -51,9 +60,14 @@ void _copyLateDepositDetails(
 /// decision — the host's `AppPaneModalOverlay` dismisses on scrim tap and
 /// Escape.
 class SwapLateDepositModal extends StatelessWidget {
-  const SwapLateDepositModal({required this.info, super.key});
+  const SwapLateDepositModal({
+    required this.info,
+    this.failedSwap = false,
+    super.key,
+  });
 
   final SwapDepositRecoveryInfo info;
+  final bool failedSwap;
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +79,9 @@ class SwapLateDepositModal extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            SwapRefundPolicy.lateDepositTitle,
+            failedSwap
+                ? SwapRefundPolicy.failedRefundTitle
+                : SwapRefundPolicy.lateDepositTitle,
             style: AppTypography.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               color: colors.text.accent,
@@ -73,12 +89,16 @@ class SwapLateDepositModal extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            SwapRefundPolicy.lateDepositBody,
+            failedSwap
+                ? SwapRefundPolicy.failedRefundBody
+                : SwapRefundPolicy.lateDepositBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            SwapRefundPolicy.lateDepositSupport,
+            failedSwap
+                ? SwapRefundPolicy.failedRefundSupport
+                : SwapRefundPolicy.lateDepositSupport,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -93,6 +113,8 @@ class SwapLateDepositModal extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             height: kAppModalButtonHeight,
             expand: true,
+            constrainContent: true,
+            growWithContent: true,
             trailing: const AppIcon(AppIcons.arrowTopRight, size: 16),
             child: const Text(SwapRefundPolicy.lateDepositSupportAction),
           ),
@@ -104,6 +126,8 @@ class SwapLateDepositModal extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             height: kAppModalButtonHeight,
             expand: true,
+            constrainContent: true,
+            growWithContent: true,
             leading: const AppIcon(AppIcons.copy, size: 16),
             child: const Text(SwapRefundPolicy.lateDepositAction),
           ),
@@ -132,28 +156,39 @@ Future<void> _openSupportEmail(SwapDepositRecoveryInfo info) async {
 /// Mobile late-deposit explainer: the shared `_Modal Type` sheet layout
 /// with the same copy and actions. Present through `showAppMobileSheet`.
 class SwapLateDepositSheet extends StatelessWidget {
-  const SwapLateDepositSheet({required this.info, super.key});
+  const SwapLateDepositSheet({
+    required this.info,
+    this.failedSwap = false,
+    super.key,
+  });
 
   final SwapDepositRecoveryInfo info;
+  final bool failedSwap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('swap_late_deposit_sheet'),
-      title: SwapRefundPolicy.lateDepositTitle,
+      title: failedSwap
+          ? SwapRefundPolicy.failedRefundTitle
+          : SwapRefundPolicy.lateDepositTitle,
       onClose: () => Navigator.of(context).maybePop(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            SwapRefundPolicy.lateDepositBody,
+            failedSwap
+                ? SwapRefundPolicy.failedRefundBody
+                : SwapRefundPolicy.lateDepositBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            SwapRefundPolicy.lateDepositSupport,
+            failedSwap
+                ? SwapRefundPolicy.failedRefundSupport
+                : SwapRefundPolicy.lateDepositSupport,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

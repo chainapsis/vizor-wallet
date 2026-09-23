@@ -503,7 +503,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         ),
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
-          label: '$sourceSymbol refunded to',
+          label: 'Refund to',
           address: refundAddress,
           asset: sourceAsset,
           addressBookContacts: addressBookContacts,
@@ -680,7 +680,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$sourceSymbol refunded to',
+        label: 'Refund to',
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -964,7 +964,7 @@ String _swapActivityUtcTimestampLabel(DateTime timestamp) {
   return '$month ${utc.day}, ${utc.year} $hour:$minute UTC';
 }
 
-/// Support bundle for an expired external → ZEC deposit, or null when the
+/// Support bundle for an expired or failed external → ZEC deposit, or null when the
 /// intent has no external deposit instruction to recover (ZEC-side deposits
 /// never leave the wallet, so there is nothing for NEAR to return).
 SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
@@ -972,7 +972,8 @@ SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
   final instruction = SwapActivityDepositInstruction.fromIntent(intent);
   final asset = swapActivitySellAsset(intent);
   final deadline = intent.depositDeadline;
-  if (instruction == null || asset == null || deadline == null) return null;
+  if (instruction == null || asset == null) return null;
+  if (deadline == null && intent.status != SwapIntentStatus.failed) return null;
   return SwapDepositRecoveryInfo(
     asset: asset,
     amountText: intent.sellAmount,
@@ -982,7 +983,9 @@ SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
       intent.depositTxHash,
       intent.originChainTxHash,
     ]),
-    expiredAtText: _swapActivityUtcTimestampLabel(deadline),
+    expiredAtText: deadline == null
+        ? 'Not recorded'
+        : _swapActivityUtcTimestampLabel(deadline),
   );
 }
 

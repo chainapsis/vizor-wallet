@@ -705,15 +705,46 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
 }
 
 Widget buildSwapStatusFailedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
+  return const _SwapStatusFailedUseCase();
+}
+
+class _SwapStatusFailedUseCase extends StatefulWidget {
+  const _SwapStatusFailedUseCase();
+
+  @override
+  State<_SwapStatusFailedUseCase> createState() =>
+      _SwapStatusFailedUseCaseState();
+}
+
+class _SwapStatusFailedUseCaseState extends State<_SwapStatusFailedUseCase> {
+  bool _modalOpen = false;
+
+  @override
+  Widget build(BuildContext context) => _SwapStatusPageFrame(
     backLabel: 'Activity',
-    child: _SwapStatusPreview(
-      title: 'Swap failed',
-      badgeKind: SwapStatusBadgeKind.failed,
-      statusLabel: 'Failed',
-      showTabs: false,
-      steps: const [],
-      details: _designFailedDetails,
+    overlay: _modalOpen
+        ? AppPaneModalOverlay(
+            onDismiss: () => setState(() => _modalOpen = false),
+            child: SwapLateDepositModal(info: _recoveryInfo, failedSwap: true),
+          )
+        : null,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SwapStatusPreview(
+          title: 'Swap failed',
+          badgeKind: SwapStatusBadgeKind.failed,
+          statusLabel: 'Failed',
+          showTabs: false,
+          steps: const [],
+          details: _designFailedDetails,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SwapLateDepositPrompt(
+          failedSwap: true,
+          onTap: () => setState(() => _modalOpen = true),
+        ),
+      ],
     ),
   );
 }
@@ -1080,8 +1111,10 @@ const _designFailedDetails = <SwapStatusDetailRowData>[
     accountProfilePictureId: _designAccountProfilePictureId,
   ),
   SwapStatusDetailRowData(
-    label: 'USDC refunded to',
+    label: 'Refund to',
     value: '0x123kjhc ... 4x98g20',
+    copyable: true,
+    copyText: '0x123kjhc000000000000000000004x98g20',
   ),
   SwapStatusDetailRowData(label: 'Total fees', value: '~0.25 USDC', help: true),
   SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
@@ -1188,11 +1221,13 @@ class _SwapFlowPageFrame extends StatelessWidget {
     required this.backLabel,
     required this.child,
     this.childAlignment = Alignment.center,
+    this.overlay,
   });
 
   final String backLabel;
   final Widget child;
   final Alignment childAlignment;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -1215,19 +1250,24 @@ class _SwapFlowPageFrame extends StatelessWidget {
               sidebar: const _PreviewSwapSidebar(),
               pane: AppDesktopPane(
                 padding: EdgeInsets.zero,
-                child: AppPaneScrollScaffold(
-                  toolbar: AppPaneToolbar(
-                    leading: AppBackLink(
-                      label: backLabel,
-                      minWidth: 60,
-                      onTap: () {},
+                child: Stack(
+                  children: [
+                    AppPaneScrollScaffold(
+                      toolbar: AppPaneToolbar(
+                        leading: AppBackLink(
+                          label: backLabel,
+                          minWidth: 60,
+                          onTap: () {},
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Align(alignment: childAlignment, child: child),
                     ),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
-                  ),
-                  child: Align(alignment: childAlignment, child: child),
+                    ?overlay,
+                  ],
                 ),
               ),
             ),
@@ -1241,16 +1281,22 @@ class _SwapFlowPageFrame extends StatelessWidget {
 typedef _SwapReviewPageFrame = _SwapFlowPageFrame;
 
 class _SwapStatusPageFrame extends StatelessWidget {
-  const _SwapStatusPageFrame({required this.backLabel, required this.child});
+  const _SwapStatusPageFrame({
+    required this.backLabel,
+    required this.child,
+    this.overlay,
+  });
 
   final String backLabel;
   final Widget child;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
     return _SwapFlowPageFrame(
       backLabel: backLabel,
       childAlignment: Alignment.topCenter,
+      overlay: overlay,
       child: child,
     );
   }

@@ -81,6 +81,37 @@ void main() {
     expect(find.text('Copy deposit details'), findsOneWidget);
   });
 
+  testWidgets('failed swap prompt opens refund guidance', (tester) async {
+    final info = SwapDepositRecoveryInfo(
+      asset: SwapAsset.usdc,
+      amountText: '150 USDC',
+      depositAddress: '0xdeposit',
+      expiredAtText: 'Sep 23, 2026 00:00 UTC',
+    );
+    await tester.pumpWidget(
+      _harness(
+        Builder(
+          builder: (context) => SwapLateDepositPrompt(
+            failedSwap: true,
+            onTap: () => showAppMobileSheet<void>(
+              context: context,
+              builder: (_) => SwapLateDepositSheet(
+                info: info,
+                failedSwap: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('No refund yet?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check your refund'), findsOneWidget);
+    expect(find.text('Email support'), findsOneWidget);
+    expect(find.text('Copy deposit details'), findsOneWidget);
+  });
+
   testWidgets('mobile deposit layout matches the Figma QR card metrics', (
     tester,
   ) async {

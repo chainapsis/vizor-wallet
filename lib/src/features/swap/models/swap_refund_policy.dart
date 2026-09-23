@@ -44,6 +44,12 @@ abstract final class SwapRefundPolicy {
       'If it’s confirmed and no swap or refund appears, email support.';
   static const lateDepositAction = 'Copy deposit details';
   static const lateDepositSupportAction = 'Email support';
+  static const failedRefundPrompt = 'No refund yet?';
+  static const failedRefundTitle = 'Check your refund';
+  static const failedRefundBody =
+      'If your deposit was confirmed, NEAR may return it to your refund '
+      'address. Check that address for a refund.';
+  static const failedRefundSupport = 'If no refund appears, email support.';
 
   /// Vizor's published support address. The user reviews and sends the draft
   /// in their email app; opening it does not submit a recovery request.

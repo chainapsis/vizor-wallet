@@ -1121,6 +1121,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSwapLateDepositModalUseCase,
   ),
   FigmaCompareScenario(
+    id: 'swap-policy-failed-desktop',
+    description: 'Desktop failed swap with refund help',
+    builder: buildSwapStatusFailedUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'swap-policy-deposit-mobile',
     description: 'Mobile deposit page',
     builder: buildSwapPolicyDepositMobileUseCase,
