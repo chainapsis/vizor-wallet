@@ -1170,7 +1170,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       var claimableZatoshi = BigInt.zero;
       var feeZatoshi = BigInt.zero;
       try {
-        final estimate = await rust_sync.estimateSendMax(
+        final estimate = await rust_sync.estimatePaymentLinkClaimMax(
           dbPath: tempWallet.dbPath,
           network: endpoint.networkName,
           accountUuid: importedAccountUuid,
@@ -1382,7 +1382,7 @@ class PaymentLinkService implements PaymentLinkOperations {
         'using ${endpoint.networkName}.',
       );
     }
-    final estimate = await rust_sync.estimateSendMax(
+    final estimate = await rust_sync.estimatePaymentLinkClaimMax(
       dbPath: session.dbPath,
       network: endpoint.networkName,
       accountUuid: session.accountUuid,
@@ -1405,6 +1405,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       amountZatoshi: session.link.amountZatoshi,
       memo: null,
       mnemonic: session.link.mnemonic,
+      paymentLinkClaim: true,
       beforeExecute: () => _revalidateClaimDestination(session),
       onSubmissionStarted: onSubmissionStarted,
     );
@@ -1523,24 +1524,37 @@ class PaymentLinkService implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     String? memo,
     String? mnemonic,
+    bool paymentLinkClaim = false,
     Future<void> Function()? beforeExecute,
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     await _requireShieldedAddress(toAddress);
+    assert(!paymentLinkClaim || (dbPath != null && memo == null));
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSendFlowId();
     Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
       String proposalDbPath,
     ) async {
-      final proposal = await rust_sync.proposeSend(
-        dbPath: proposalDbPath,
-        network: endpoint.networkName,
-        accountUuid: fromAccountUuid,
-        sendFlowId: sendFlowId,
-        toAddress: toAddress,
-        amountZatoshi: amountZatoshi,
-        memo: memo,
-      );
+      // Claims use the claim confirmation policy and discard the link
+      // wallet's OVK, so the shared seed cannot recover the recipient.
+      final proposal = paymentLinkClaim
+          ? await rust_sync.proposePaymentLinkClaim(
+              dbPath: proposalDbPath,
+              network: endpoint.networkName,
+              accountUuid: fromAccountUuid,
+              sendFlowId: sendFlowId,
+              toAddress: toAddress,
+              amountZatoshi: amountZatoshi,
+            )
+          : await rust_sync.proposeSend(
+              dbPath: proposalDbPath,
+              network: endpoint.networkName,
+              accountUuid: fromAccountUuid,
+              sendFlowId: sendFlowId,
+              toAddress: toAddress,
+              amountZatoshi: amountZatoshi,
+              memo: memo,
+            );
       return (dbPath: proposalDbPath, proposal: proposal);
     }
 

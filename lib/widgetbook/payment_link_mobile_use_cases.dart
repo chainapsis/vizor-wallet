@@ -427,7 +427,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
       waitingDescription:
           '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
       waitingIcon: AppIcons.time,
-      waitingStatusLabel: 'Wait 5:00 to claim',
+      waitingStatusLabel: 'Wait 1:15 to claim',
     ),
   );
 }

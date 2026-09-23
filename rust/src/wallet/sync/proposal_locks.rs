@@ -14,7 +14,7 @@ use std::sync::{
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{params, Connection};
 use zcash_client_backend::{
-    data_api::{OutputLockStore, WalletRead},
+    data_api::OutputLockStore,
     wallet::{LockOwner, OutputRef},
 };
 use zcash_primitives::transaction::TxId;
@@ -382,11 +382,9 @@ fn recover(db_path: &str, network: WalletNetwork, check_expiry: bool) -> Result<
 
         let mut db = open_wallet_db(db_path, network)?;
         let target_height = if check_expiry {
-            db.get_target_and_anchor_heights(
-                zcash_client_backend::data_api::wallet::ConfirmationsPolicy::default().trusted(),
-            )
-            .map_err(|e| format!("Read target height for send lock recovery: {e}"))?
-            .map(|(height, _)| u32::from(height))
+            super::wallet_target_height(&db)
+                .map_err(|e| format!("Read target height for send lock recovery: {e}"))?
+                .map(u32::from)
         } else {
             None
         };
@@ -425,6 +423,7 @@ fn recover(db_path: &str, network: WalletNetwork, check_expiry: bool) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zcash_client_backend::data_api::WalletRead;
 
     fn seed_reservation(db_path: &str, owner: LockOwner) {
         persist(

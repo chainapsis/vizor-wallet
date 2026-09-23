@@ -232,7 +232,7 @@ void main() {
         tester,
         () =>
             tester.any(find.byKey(const ValueKey('payment_link_claim_button'))),
-        description: 'received payment-link claim after six confirmations',
+        description: 'received payment-link claim after claim confirmations',
         timeout: const Duration(minutes: 2),
       );
       await tapAppWidget(

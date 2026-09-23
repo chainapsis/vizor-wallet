@@ -1619,9 +1619,9 @@ void main() {
       paymentLinkFundingConfirmationCountForClaim(
         recipientAmountZatoshi: BigInt.from(100000),
         transactions: transactions,
-        chainTipHeight: BigInt.from(103),
+        chainTipHeight: BigInt.from(100),
       ),
-      4,
+      1,
     );
   });
 
@@ -1660,9 +1660,21 @@ void main() {
         paymentLinkShouldWaitForFunding(
           recipientAmountZatoshi: BigInt.from(100000),
           totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
-          fundingConfirmationCount: 4,
+          fundingConfirmationCount: 1,
           birthdayHeight: 100,
           currentTipHeight: 104,
+        ),
+        isTrue,
+      );
+      // The fresh-card window outlasts the claim target: an empty scan this
+      // soon cannot rule out funding still in the mempool.
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: BigInt.zero,
+          fundingConfirmationCount: 0,
+          birthdayHeight: 100,
+          currentTipHeight: 105,
         ),
         isTrue,
       );
@@ -1680,9 +1692,9 @@ void main() {
         paymentLinkShouldWaitForFunding(
           recipientAmountZatoshi: BigInt.from(100000),
           totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
-          fundingConfirmationCount: 6,
+          fundingConfirmationCount: kPaymentLinkClaimConfirmationTarget,
           birthdayHeight: 100,
-          currentTipHeight: 105,
+          currentTipHeight: 102,
         ),
         isFalse,
       );
@@ -2539,12 +2551,12 @@ class _ClaimDestinationRustApi implements RustLibApi {
   int giftVariantLookups = 0;
 
   @override
-  Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
+  Future<rust_sync.SendMaxEstimateResult>
+  crateApiSyncEstimatePaymentLinkClaimMax({
     required String dbPath,
     required String network,
     required String accountUuid,
     required String toAddress,
-    String? memo,
   }) {
     estimateStarted.complete();
     return estimateGate!.future;

@@ -94,6 +94,7 @@ pub(crate) use send::{
     create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
     shield_transparent_balance,
 };
+pub(crate) use send::{estimate_send_max_for_purpose, propose_send_for_purpose, SendPurpose};
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
@@ -568,6 +569,37 @@ pub(super) struct StoredProposal {
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
     pub send_flow_id: String,
+    pub ovk_policy: StoredOvkPolicy,
+}
+
+/// Outgoing viewing key policy fixed when a proposal is created.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StoredOvkPolicy {
+    Sender,
+    /// Gift Card claims: the link's seed is a shared bearer secret, so its
+    /// OVK must not be able to recover the recipient address.
+    Discard,
+}
+
+impl StoredOvkPolicy {
+    pub(super) fn to_ovk_policy(self) -> zcash_client_backend::wallet::OvkPolicy {
+        match self {
+            Self::Sender => zcash_client_backend::wallet::OvkPolicy::Sender,
+            Self::Discard => zcash_client_backend::wallet::OvkPolicy::Discard,
+        }
+    }
+}
+
+/// Target height from the scan queue's chain tip. Unlike
+/// `get_target_and_anchor_heights`, this does not require an anchor
+/// checkpoint at any confirmation depth.
+pub(super) fn wallet_target_height(
+    db: &WalletDatabase,
+) -> Result<Option<zcash_client_backend::data_api::wallet::TargetHeight>, String> {
+    Ok(db
+        .chain_height()
+        .map_err(|e| e.to_string())?
+        .map(|height| zcash_client_backend::data_api::wallet::TargetHeight::from(height + 1)))
 }
 
 #[derive(Clone)]

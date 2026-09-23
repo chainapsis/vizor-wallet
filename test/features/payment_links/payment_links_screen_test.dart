@@ -1429,13 +1429,13 @@ void main() {
     expect(find.text('The link doesn’t look legit.'), findsNothing);
   });
 
-  testWidgets('waits for six confirmations before exposing the claim action', (
+  testWidgets('waits for confirmations before exposing the claim action', (
     tester,
   ) async {
     final operations = FakePaymentLinkOperations(
       claimable: false,
       waitingForFundingConfirmations: true,
-      fundingConfirmationCount: 2,
+      fundingConfirmationCount: 1,
     );
     final clipboard = FakePaymentLinkClipboard(
       text: incomingLink.toUri().toString(),
@@ -1455,13 +1455,13 @@ void main() {
       find.text('Your gift will be ready to claim shortly.'),
       findsOneWidget,
     );
-    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
     expect(find.text('Claim the gift card'), findsNothing);
 
     operations
       ..claimable = true
       ..waitingForFundingConfirmations = false
-      ..fundingConfirmationCount = 6;
+      ..fundingConfirmationCount = kPaymentLinkClaimConfirmationTarget;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
@@ -3369,14 +3369,14 @@ void main() {
         receivedRecords: [PaymentLinkReceivedRecord.fromLink(incomingLink)],
         claimable: false,
         waitingForFundingConfirmations: true,
-        fundingConfirmationCount: 2,
+        fundingConfirmationCount: 1,
       );
       await pumpPaymentLinksScreen(tester, operations: operations);
       await tester.tap(find.text('Received'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claim'));
       await tester.pumpAndSettle();
-      expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+      expect(find.text('Wait 1:15 to claim'), findsOneWidget);
 
       operations.waitingForFundingConfirmations = false;
       await tester.pump(const Duration(seconds: 10));

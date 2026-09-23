@@ -140,7 +140,7 @@ void main() {
         () => tester.any(
           find.textContaining(kPaymentLinkClaimWaitingDescription),
         ),
-        description: 'the received card to wait for six confirmations',
+        description: 'the received card to wait for claim confirmations',
         timeout: const Duration(minutes: 2),
       );
       expect(
@@ -157,7 +157,7 @@ void main() {
         () => tester.any(
           find.byKey(const ValueKey('payment_link_mobile_claim_button')),
         ),
-        description: 'the claim action after six confirmations',
+        description: 'the claim action after claim confirmations',
         timeout: const Duration(minutes: 3),
       );
       await _revealGiftMessage(tester);

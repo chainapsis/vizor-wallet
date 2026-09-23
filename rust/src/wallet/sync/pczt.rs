@@ -86,8 +86,24 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
-    retain_stored_proposal_lock_until_expiry, stored_proposal_lock,
+    retain_stored_proposal_lock_until_expiry, stored_proposal_lock, StoredOvkPolicy,
+    StoredProposal,
 };
+
+/// PCZT creation always uses the sender's OVK, so a proposal that requires
+/// `Discard` must not reach it. Releases the consumed proposal's input lock.
+fn reject_discard_ovk_proposal(stored: &StoredProposal) -> Result<(), String> {
+    if stored.ovk_policy != StoredOvkPolicy::Discard {
+        return Ok(());
+    }
+    let error = "Gift Card claim proposals cannot be signed as a PCZT".to_string();
+    match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+        Ok(()) => Err(error),
+        Err(cleanup_error) => Err(format!(
+            "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+        )),
+    }
+}
 
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
@@ -494,6 +510,7 @@ pub async fn create_pczt_from_proposal(
         send_flow_id,
         "Proposal not found (expired or already consumed)",
     )?;
+    reject_discard_ovk_proposal(&stored)?;
 
     let proposal_lock = match stored_proposal_lock(stored.proposal_id, &stored.send_flow_id) {
         Ok(lock) => lock,
@@ -612,6 +629,7 @@ pub async fn create_tex_pczts_from_proposal(
         send_flow_id,
         "Proposal not found (expired or already consumed)",
     )?;
+    reject_discard_ovk_proposal(&stored)?;
     if stored.proposal.steps().len() != 2 {
         let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
         return Err("Keystone TEX signing requires exactly two proposal steps".to_string());
@@ -3681,5 +3699,102 @@ mod tests {
                     "base-side signature must verify under the compact request's sighash and rk",
                 );
         }
+    }
+
+    #[tokio::test]
+    async fn gift_card_claim_proposal_is_rejected_before_pczt_and_releases_lock() {
+        use super::super::{proposal_locks, StoredProposalLock, PROPOSAL_STORE};
+        use ::transparent::bundle::{OutPoint, TxOut};
+        use std::collections::BTreeMap;
+        use zcash_client_backend::{
+            data_api::wallet::ConfirmationsPolicy,
+            fees::TransactionBalance,
+            proposal::Proposal,
+            wallet::{LockOwner, WalletTransparentOutput},
+            zip321::{Payment, TransactionRequest},
+        };
+        use zcash_keys::address::Address;
+        use zcash_protocol::{value::Zatoshis, PoolType};
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("claim.db");
+        let path = path.to_str().unwrap().to_owned();
+        crate::wallet::keys::ensure_db_initialized(&path, WalletNetwork::Test).unwrap();
+        let address = TransparentAddress::PublicKeyHash([7; 20]);
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([9; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(100_000), address.script().into()),
+            Some(BlockHeight::from_u32(1)),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let payment = Payment::new(
+            Address::Transparent(address).to_zcash_address(&WalletNetwork::Test),
+            Some(Zatoshis::const_from_u64(90_000)),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        // Proposal contents are irrelevant: rejection happens before any build.
+        let proposal = Proposal::single_step(
+            TransactionRequest::new(vec![payment]).unwrap(),
+            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
+            vec![utxo],
+            None,
+            BlockHeight::from_u32(1),
+            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
+            super::super::send::ConservativeZip317FeeRule,
+            BlockHeight::from_u32(2).into(),
+            ConfirmationsPolicy::default(),
+            false,
+            false,
+        )
+        .unwrap();
+        let id = 9_100_001u64;
+        let flow = "gift-claim-flow";
+        let owner = LockOwner::new([41; 32]);
+        proposal_locks::persist(&path, owner, &[], BlockHeight::from_u32(100)).unwrap();
+        {
+            let mut store = PROPOSAL_STORE.lock().unwrap();
+            store.locks.insert(
+                id,
+                StoredProposalLock {
+                    proposal: proposal.clone(),
+                    network: WalletNetwork::Test,
+                    db_path: path.clone(),
+                    owner,
+                    send_flow_id: flow.to_string(),
+                },
+            );
+            store.proposals.insert(
+                id,
+                StoredProposal {
+                    proposal_id: id,
+                    proposal,
+                    proposed_tx_version: None,
+                    network: WalletNetwork::Test,
+                    account_id: crate::wallet::keys::parse_account_uuid(
+                        "550e8400-e29b-41d4-a716-446655440000",
+                    )
+                    .unwrap(),
+                    send_flow_id: flow.to_string(),
+                    ovk_policy: StoredOvkPolicy::Discard,
+                },
+            );
+        }
+
+        let error =
+            create_pczt_from_proposal(&path, "http://127.0.0.1:1", WalletNetwork::Test, id, flow)
+                .await
+                .unwrap_err();
+
+        assert!(error.contains("cannot be signed as a PCZT"), "{error}");
+        let store = PROPOSAL_STORE.lock().unwrap();
+        assert!(!store.proposals.contains_key(&id));
+        assert!(!store.locks.contains_key(&id));
     }
 }
