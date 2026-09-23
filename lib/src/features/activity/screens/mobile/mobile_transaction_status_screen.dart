@@ -558,7 +558,9 @@ class _MobileTransactionStatusScreenState
             const MobileReviewFlowArrow(),
             MobileReviewInfoRow(
               label: 'To',
-              value: 'Shielded balance',
+              value: tx?.displayPool == 'ironwood'
+                  ? 'Shielded balance (Ironwood)'
+                  : 'Shielded balance',
               leading: MobileReviewIconBadge(
                 child: AppIcon(
                   AppIcons.shieldKeyholeOutline,
@@ -569,7 +571,9 @@ class _MobileTransactionStatusScreenState
               bottom: _BottomInfoRow(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.brandCrimson,
-                text: 'Shielded',
+                text: tx?.displayPool == 'ironwood'
+                    ? 'Shielded (Ironwood)'
+                    : 'Shielded',
               ),
             ),
           ]

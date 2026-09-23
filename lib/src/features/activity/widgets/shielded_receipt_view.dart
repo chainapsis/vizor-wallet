@@ -22,6 +22,7 @@ class ShieldedReceiptView extends StatelessWidget {
     required this.timestampText,
     required this.txIdText,
     this.status = ShieldedReceiptStatus.completed,
+    this.isIronwood = false,
     this.feeText,
     this.memoText,
     this.memoExpanded = false,
@@ -35,6 +36,10 @@ class ShieldedReceiptView extends StatelessWidget {
   final String timestampText;
   final String txIdText;
   final ShieldedReceiptStatus status;
+
+  /// True once the destination pool for this self-shield is Ironwood,
+  /// matching the "Shielded balance (Ironwood)" wording used on Home.
+  final bool isIronwood;
   final String? feeText;
   final String? memoText;
   final bool memoExpanded;
@@ -105,13 +110,15 @@ class ShieldedReceiptView extends StatelessWidget {
               const _ShieldedArrowSeparator(),
               ReviewInfoRow(
                 label: 'To',
-                value: 'Shielded balance',
+                value: isIronwood
+                    ? 'Shielded balance (Ironwood)'
+                    : 'Shielded balance',
                 leading: const ReviewInfoIconCircle(
                   iconName: AppIcons.shieldKeyholeOutline,
                 ),
                 bottomLeftIconName: AppIcons.shieldKeyhole,
                 bottomLeftIconColor: colors.text.brandCrimson,
-                bottomLeftText: 'Shielded',
+                bottomLeftText: isIronwood ? 'Shielded (Ironwood)' : 'Shielded',
               ),
             ],
           ),

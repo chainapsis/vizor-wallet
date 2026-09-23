@@ -83,7 +83,7 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Sending'
                 : 'Receiving',
           )
-        : _txTitle(kind),
+        : _txTitle(kind, displayPool),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard
         : _txIcon(kind, isPending: isPending),
@@ -207,12 +207,15 @@ String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
 String _pendingTxTitle(String verb) =>
     kAppFormFactor == AppFormFactor.mobile ? '$verb...' : '$verb ...';
 
-String _txTitle(String kind) {
+String _txTitle(String kind, String pool) {
   return switch (kind) {
     'receiving' => 'Receiving',
     'received' => 'Received',
     'sent' => 'Sent',
-    'shielded' => 'Shielded',
+    // Distinguish the destination pool for a self-shield, matching the
+    // "Shielded balance (Ironwood)" wording used elsewhere once a wallet's
+    // shielded funds have migrated to Ironwood.
+    'shielded' => pool == 'ironwood' ? 'Shielded (Ironwood)' : 'Shielded',
     'migration' => 'Migrated to Ironwood',
     _ => 'Transaction',
   };
