@@ -3322,3 +3322,51 @@ private final class KeychainAccessibilityMigrationCompletionStoreHarness:
     "\(version):\(service)"
   }
 }
+
+final class ModalCornerCacheTests: XCTestCase {
+  func testSuccessfulGeometrySurvivesServiceRestartAndSeparatesProfiles() {
+    let name = "modal-corner-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: name)!
+    defer { defaults.removePersistentDomain(forName: name) }
+    let cache = ModalCornerCache(defaults: defaults)
+    cache.store([46, 48], for: "iPhone-portrait-os26-rectA", limit: 201)
+    XCTAssertEqual(cache.radii(for: "iPhone-portrait-os26-rectA", limit: 201), [46, 48])
+    let restarted = ModalCornerCache(defaults: defaults)
+    XCTAssertEqual(restarted.radii(for: "iPhone-portrait-os26-rectA", limit: 201), [46, 48])
+    XCTAssertNil(restarted.radii(for: "iPhone-landscape-os26-rectA", limit: 201))
+    XCTAssertNil(restarted.radii(for: "iPhone-portrait-os27-rectA", limit: 201))
+    XCTAssertNil(restarted.radii(for: "iPhone-portrait-os26-rectB", limit: 201))
+  }
+
+  func testInvalidEntriesAreIgnoredAndValidFallbackRadiusIsCached() {
+    let name = "modal-corner-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: name)!
+    defer { defaults.removePersistentDomain(forName: name) }
+    defaults.set(["entries": ["negative": [-1.0, 46], "huge": [999.0, 999],
+      "short": [46.0]], "order": ["negative", "negative", "missing"]],
+      forKey: ModalCornerCache.storageKey)
+    let cache = ModalCornerCache(defaults: defaults)
+    for key in ["negative", "huge", "short"] {
+      XCTAssertNil(cache.radii(for: key, limit: 201))
+    }
+    cache.store([Double.nan, 46], for: "nan", limit: 201)
+    XCTAssertNil(cache.radii(for: "nan", limit: 201))
+    cache.store([32, 32], for: "valid32", limit: 201)
+    XCTAssertEqual(ModalCornerCache(defaults: defaults).radii(for: "valid32", limit: 201), [32, 32])
+  }
+
+  func testBoundedCacheRetainsRecentlyUsedGeometry() {
+    let name = "modal-corner-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: name)!
+    defer { defaults.removePersistentDomain(forName: name) }
+    let cache = ModalCornerCache(defaults: defaults)
+    for i in 0..<64 { cache.store([46, 46], for: "\(i)", limit: 201) }
+    XCTAssertNotNil(cache.radii(for: "0", limit: 201))
+    cache.store([46, 46], for: "64", limit: 201)
+    XCTAssertNotNil(cache.radii(for: "0", limit: 201))
+    XCTAssertNil(cache.radii(for: "1", limit: 201))
+    let restarted = ModalCornerCache(defaults: defaults)
+    XCTAssertNotNil(restarted.radii(for: "0", limit: 201))
+    XCTAssertNil(restarted.radii(for: "1", limit: 201))
+  }
+}
