@@ -4012,9 +4012,28 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-mod enhance_pir;
-mod gift_card_funding;
-pub(crate) use gift_card_funding::gift_card_funding_reason;
+        // Complete Ironwood incoming and outgoing details without disclosing transaction IDs. The
+        // independent position queue is populated atomically by compact scan.
+        // Box this transport-heavy future so its Hyper/Tor connector state does
+        // not inflate the already-large sync future exported through FRB.
+        if run_optional_enhance_pir(
+            &mut enhance_pir,
+            &mut db,
+            &mut client,
+            Some(&block_source),
+            &should_exit,
+        )
+        .await
+        {
+            log::info!("[{}] sync: exiting during private enhancement", elapsed());
+            return Ok(());
+        }
+
+        // Legacy enhancement remains available for status and transparent
+        // history. When private recovery is enabled, protected Ironwood
+        // transactions never fall back to GetTransaction(txid).
+        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+        public_enhancement_after_scan = true;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
