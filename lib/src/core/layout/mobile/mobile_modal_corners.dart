@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
 import '../../../services/native_modal_corners.dart';
 import '../../theme/app_radii.dart';
+import 'prepared_modal_sheet_route.dart';
 
 typedef _Geometry = ({Rect rect, Size viewSize, double scale});
 
@@ -28,11 +30,14 @@ class _MobileModalCornersState extends State<MobileModalCorners>
   static const _fallback = BorderRadius.all(Radius.circular(AppRadii.xLarge));
   static const _duration = Duration(milliseconds: 250);
   final _surfaceKey = GlobalKey();
-  final _cache = <_Geometry, BorderRadius>{};
+  bool _ready = false;
+  bool _animate = false;
   BorderRadius _target = _fallback;
   _Geometry? _request;
   Animation<double>? _routeAnimation;
+  PreparedModalSheetRoute<dynamic>? _preparedRoute;
   bool _scheduled = false;
+  bool _pending = false;
   bool _keyboard = false;
   bool _active = true;
   int _epoch = 0;
@@ -54,20 +59,27 @@ class _MobileModalCornersState extends State<MobileModalCorners>
     if (_viewSize != size || _scale != view.devicePixelRatio) {
       _viewSize = size;
       _scale = view.devicePixelRatio;
-      _invalidate(clearCache: true);
+      _invalidate();
     }
     if (_keyboard != keyboard) {
       _keyboard = keyboard;
       _invalidate();
     }
-    final animation = ModalRoute.of(context)?.animation;
+    final route = ModalRoute.of(context);
+    _preparedRoute = route is PreparedModalSheetRoute ? route : null;
+    final animation = route?.animation;
     if (_routeAnimation != animation) {
       _routeAnimation?.removeStatusListener(_routeStatusChanged);
       _routeAnimation = animation;
       animation?.addStatusListener(_routeStatusChanged);
       _invalidate();
     }
-    if (_keyboard || !widget.followsScreenCorners) _target = _fallback;
+    if (_keyboard || !widget.followsScreenCorners) {
+      _target = _fallback;
+      _animate = _ready;
+      _ready = true;
+      _preparedRoute?.cornersReady();
+    }
     _schedule();
   }
 
@@ -81,18 +93,20 @@ class _MobileModalCornersState extends State<MobileModalCorners>
     _schedule();
   }
 
-  void _invalidate({bool clearCache = false}) {
+  void _invalidate() {
     _epoch++;
     _request = null;
-    if (clearCache) _cache.clear();
+    _pending = false;
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _active = state == AppLifecycleState.resumed;
-    _invalidate(clearCache: true);
-    if (mounted) setState(() => _target = _fallback);
-    if (_active) _schedule();
+    _invalidate();
+    if (_active) {
+      _schedule();
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
   }
 
   void _routeStatusChanged(AnimationStatus status) {
@@ -100,7 +114,11 @@ class _MobileModalCornersState extends State<MobileModalCorners>
       _schedule();
     } else {
       // A settled-frame response must not alter a dismissing/dragged sheet.
-      _invalidate();
+      if (_pending) {
+        _invalidate();
+      } else {
+        _epoch++;
+      }
     }
   }
 
@@ -122,7 +140,10 @@ class _MobileModalCornersState extends State<MobileModalCorners>
       return;
     }
     final box = _surfaceKey.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize || box.size.isEmpty) return;
+    if (box is! RenderBox || !box.hasSize || box.size.isEmpty) {
+      _setTarget(_fallback);
+      return;
+    }
     final view = View.of(context);
     final geometry = (
       rect: box.localToGlobal(Offset.zero) & box.size,
@@ -132,16 +153,15 @@ class _MobileModalCornersState extends State<MobileModalCorners>
     if (_request == geometry) return;
     _request = geometry;
     final epoch = ++_epoch;
-    final cached = _cache[geometry];
-    if (cached != null) {
-      _setTarget(cached);
-      return;
-    }
+    _pending = true;
+    // Native owns the process-wide/persistent cache and validates the host on
+    // every read. Never expose the fallback while awaiting the initial result.
     final radii = await NativeModalCorners.resolve(
       rect: geometry.rect,
       viewSize: geometry.viewSize,
       scale: geometry.scale,
-    );
+    ).timeout(const Duration(milliseconds: 100), onTimeout: () => null);
+    if (epoch == _epoch) _pending = false;
     if (!mounted ||
         epoch != _epoch ||
         !_active ||
@@ -157,17 +177,23 @@ class _MobileModalCornersState extends State<MobileModalCorners>
               math.max(AppRadii.xLarge, radii.right),
             ),
           );
-    // Keep only a few successful geometries (e.g. before/after content growth).
-    // Failures deduplicate until the layout/lifecycle changes, but are not cached.
-    if (radii != null) {
-      if (_cache.length == 4) _cache.remove(_cache.keys.first);
-      _cache[geometry] = target;
-    }
     _setTarget(target);
   }
 
   void _setTarget(BorderRadius target) {
-    if (_target != target) setState(() => _target = target);
+    if (!_ready) {
+      setState(() {
+        _ready = true;
+        _animate = false;
+        _target = target;
+      });
+      _preparedRoute?.cornersReady();
+    } else if (_target != target) {
+      setState(() {
+        _animate = true;
+        _target = target;
+      });
+    }
   }
 
   @override
@@ -180,13 +206,24 @@ class _MobileModalCornersState extends State<MobileModalCorners>
         child: SizeChangedLayoutNotifier(
           child: KeyedSubtree(
             key: _surfaceKey,
-            child: TweenAnimationBuilder<BorderRadius?>(
-              tween: BorderRadiusTween(begin: _fallback, end: _target),
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : _duration,
-              curve: Curves.easeOutCubic,
-              builder: (context, radius, _) => widget.builder(context, radius!),
+            child: ExcludeSemantics(
+              excluding: !_ready,
+              child: IgnorePointer(
+                ignoring: !_ready,
+                child: Opacity(
+                  opacity: _ready ? 1 : 0,
+                  child: TweenAnimationBuilder<BorderRadius?>(
+                    tween: BorderRadiusTween(begin: _fallback, end: _target),
+                    duration:
+                        !_animate || MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : _duration,
+                    curve: Curves.easeOutCubic,
+                    builder: (context, radius, _) =>
+                        widget.builder(context, radius!),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

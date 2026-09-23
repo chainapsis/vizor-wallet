@@ -2,7 +2,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
-import 'package:flutter/material.dart' show Material, showModalBottomSheet;
+import 'package:flutter/material.dart'
+    show Material, MaterialLocalizations, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/app_modal_shape.dart';
 import 'mobile_modal_corners.dart';
+import 'prepared_modal_sheet_route.dart';
 
 /// Shows a mobile modal as a floating card — the Figma modal base
 /// (`_Modal Type`, e.g. 4600:50437). It still rises from the bottom, but
@@ -56,6 +58,31 @@ Future<T?> showAppMobileSheet<T>({
     final container = providerContainer;
     if (container == null) return themed;
     return UncontrolledProviderScope(container: container, child: themed);
+  }
+
+  if (defaultTargetPlatform == TargetPlatform.iOS && !transparentBackground) {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final localizations = MaterialLocalizations.of(context);
+    return navigator.push(
+      PreparedModalSheetRoute<T>(
+        capturedThemes: InheritedTheme.capture(
+          from: context,
+          to: navigator.context,
+        ),
+        modalBarrierColor: colors.background.neutralScrim,
+        barrierLabel: localizations.scrimLabel,
+        barrierOnTapHint: localizations.scrimOnTapHint(
+          localizations.bottomSheetLabel,
+        ),
+        isDismissible: isDismissible,
+        enableDrag: enableDrag,
+        builder: (_) => wrapSheet(
+          Builder(
+            builder: (context) => MobileModalCard(child: builder(context)),
+          ),
+        ),
+      ),
+    );
   }
 
   return showModalBottomSheet<T>(

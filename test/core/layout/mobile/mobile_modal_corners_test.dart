@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/prepared_modal_sheet_route.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -110,28 +111,29 @@ void main() {
     expect(calls, hasLength(1));
   });
 
-  iosTest('keyboard retargets current radius and restores cached geometry', (
-    tester,
-  ) async {
-    await pump(tester);
-    await tester.pumpAndSettle();
-    tester.view.viewInsets = const FakeViewPadding(bottom: 1005);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    final intermediate = radius(tester).bottomLeft.x;
-    expect(intermediate, greaterThan(32));
-    expect(intermediate, lessThan(46));
-    tester.view.viewInsets = const FakeViewPadding();
-    await tester.pump();
-    expect(radius(tester).bottomLeft.x, closeTo(intermediate, 0.001));
-    await tester.pumpAndSettle();
-    expect(radius(tester).bottomLeft.x, 46);
-    expect(calls, hasLength(1));
-    tester.view.viewInsets = const FakeViewPadding(bottom: 1005);
-    await tester.pumpAndSettle();
-    expect(radius(tester).bottomLeft.x, 32);
-    expect(radius(tester).topLeft.x, 32);
-  });
+  iosTest(
+    'keyboard retargets current radius and restores native cached geometry',
+    (tester) async {
+      await pump(tester);
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 1005);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final intermediate = radius(tester).bottomLeft.x;
+      expect(intermediate, greaterThan(32));
+      expect(intermediate, lessThan(46));
+      tester.view.viewInsets = const FakeViewPadding();
+      await tester.pump();
+      expect(radius(tester).bottomLeft.x, closeTo(intermediate, 0.001));
+      await tester.pumpAndSettle();
+      expect(radius(tester).bottomLeft.x, 46);
+      expect(calls, hasLength(2));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 1005);
+      await tester.pumpAndSettle();
+      expect(radius(tester).bottomLeft.x, 32);
+      expect(radius(tester).topLeft.x, 32);
+    },
+  );
 
   iosTest('late responses cannot restore corners while keyboard is open', (
     tester,
@@ -209,16 +211,17 @@ void main() {
     expect(calls.last.arguments, containsPair('viewWidth', 874.0));
     binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pumpAndSettle();
-    expect(radius(tester).bottomLeft.x, 32);
+    expect(radius(tester).bottomLeft.x, 46);
     binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
     expect(calls.length, 3);
     expect(radius(tester).bottomLeft.x, 46);
   });
 
-  iosTest(
-    'route entrance waits for layout and dismissal rejects late results',
-    (tester) async {
+  for (final timeout in [false, true]) {
+    iosTest('first visible route frame is final (timeout: $timeout)', (
+      tester,
+    ) async {
       final pending = Completer<Object?>();
       reply = (_) => pending.future;
       final navigator = GlobalKey<NavigatorState>();
@@ -241,20 +244,181 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(calls, isEmpty);
-      await tester.pump(const Duration(milliseconds: 300));
       await tester.pump();
       expect(calls, hasLength(1));
-      navigator.currentState!.pop();
+      expect(calls.single.arguments, containsPair('y', 344.0));
+      final card = find.byType(MobileModalCard, skipOffstage: false);
+      final route =
+          ModalRoute.of(tester.element(card))! as PreparedModalSheetRoute;
+      expect(route.offstage, isTrue);
+      final labels = MaterialLocalizations.of(tester.element(card));
+      expect(route.barrierLabel, labels.scrimLabel);
+      expect(
+        route.barrierOnTapHint,
+        labels.scrimOnTapHint(labels.bottomSheetLabel),
+      );
+      if (timeout) {
+        await tester.pump(const Duration(milliseconds: 101));
+      } else {
+        pending.complete({'bottomLeft': 46, 'bottomRight': 46});
+        await tester.pump();
+      }
       await tester.pump();
-      pending.complete({'bottomLeft': 62, 'bottomRight': 62});
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(radius(tester).bottomLeft.x, 32);
+      for (var i = 0; i < 35; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(radius(tester).bottomLeft.x, timeout ? 32 : 46);
+      }
+      if (timeout) {
+        pending.complete({'bottomLeft': 62, 'bottomRight': 62});
+        await tester.pumpAndSettle();
+        expect(radius(tester).bottomLeft.x, 32);
+      }
+      expect(calls, hasLength(1));
+      navigator.currentState!.pop();
       await tester.pumpAndSettle();
       expect(find.byType(MobileModalCard), findsNothing);
+    });
+  }
+
+  iosTest(
+    'inline card is hidden until final radius without remounting content',
+    (tester) async {
+      final pending = Completer<Object?>();
+      reply = (_) => pending.future;
+      final key = GlobalKey();
+      await pump(
+        tester,
+        child: SizedBox(key: key, height: 240, width: double.infinity),
+      );
+      final before = key.currentContext;
+      Opacity visibility() => tester.widget<Opacity>(
+        find
+            .descendant(
+              of: find.byType(MobileModalCard),
+              matching: find.byType(Opacity),
+            )
+            .first,
+      );
+      expect(visibility().opacity, 0);
+      pending.complete({'bottomLeft': 46, 'bottomRight': 46});
+      await tester.pump();
+      await tester.pump();
+      expect(visibility().opacity, 1);
+      expect(radius(tester).bottomLeft.x, 46);
+      expect(identical(before, key.currentContext), isTrue);
     },
   );
+
+  for (final closeEarly in [false, true]) {
+    iosTest('preparation tolerates covering or closing route ($closeEarly)', (
+      tester,
+    ) async {
+      final pending = Completer<Object?>();
+      reply = (_) => pending.future;
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppMobileSheet<void>(
+                context: context,
+                builder: (_) =>
+                    const SizedBox(height: 240, width: double.infinity),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pump();
+      await tester.pump();
+      final card = find.byType(MobileModalCard, skipOffstage: false);
+      final route =
+          ModalRoute.of(tester.element(card))! as PreparedModalSheetRoute;
+      if (closeEarly) {
+        navigator.currentState!.pop();
+      } else {
+        navigator.currentState!.push(
+          DialogRoute<void>(
+            context: navigator.currentContext!,
+            builder: (_) => const Text('Cover'),
+          ),
+        );
+      }
+      await tester.pump();
+      pending.complete({'bottomLeft': 46, 'bottomRight': 46});
+      await tester.pumpAndSettle();
+      if (!closeEarly) {
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(route.offstage, isFalse);
+        expect(radius(tester).bottomLeft.x, 46);
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+      }
+      expect(find.byType(MobileModalCard), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  iosTest('a resize query canceled by drag retries at the settled position', (
+    tester,
+  ) async {
+    final height = ValueNotifier(240.0);
+    addTearDown(height.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showAppMobileSheet<void>(
+              context: context,
+              builder: (_) => ValueListenableBuilder<double>(
+                valueListenable: height,
+                builder: (_, value, _) => ColoredBox(
+                  color: Colors.red,
+                  child: SizedBox(height: value, width: double.infinity),
+                ),
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final pending = Completer<Object?>();
+    reply = (_) => pending.future;
+    height.value = 320;
+    await tester.pump();
+    await tester.pump();
+    expect(calls, hasLength(2));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(MobileModalCard)),
+    );
+    await gesture.moveBy(const Offset(0, 30));
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump();
+    final route = ModalRoute.of(tester.element(find.byType(MobileModalCard)))!;
+    expect(route.animation!.value, lessThan(1));
+    reply = (_) async => {'bottomLeft': 60, 'bottomRight': 60};
+    pending.complete({'bottomLeft': 40, 'bottomRight': 40});
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(calls, hasLength(3));
+    expect(radius(tester).bottomLeft.x, 60);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+  });
 
   iosTest('content growth remeasures the actual surface', (tester) async {
     final height = ValueNotifier(240.0);
