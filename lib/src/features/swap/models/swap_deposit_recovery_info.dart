@@ -1,8 +1,8 @@
 import '../domain/swap_contract.dart';
 
 /// Everything a user needs to hand support when an external → ZEC deposit
-/// missed its deadline. The timeout page's late-deposit explainer copies it
-/// as one clipboard bundle.
+/// missed its deadline. The timeout page's recovery explainer includes it in
+/// an email draft and can also copy it as one clipboard bundle.
 class SwapDepositRecoveryInfo {
   const SwapDepositRecoveryInfo({
     required this.asset,

@@ -288,17 +288,6 @@ class _SwapActivityDetailSurfaceState
     setState(() => _lateDepositOverlayVisible = false);
   }
 
-  /// Mobile help for the deposit page's Network row; desktop uses the row's
-  /// own tooltip and never calls this.
-  void _showNetworkHelp(SwapAsset asset) {
-    unawaited(
-      showAppMobileSheet<void>(
-        context: context,
-        builder: (_) => SwapDepositNetworkSheet(asset: asset),
-      ),
-    );
-  }
-
   void _cleanupCancelledKeystoneSigningRequest(
     _SwapKeystoneSigningRequest request,
   ) {
@@ -461,9 +450,6 @@ class _SwapActivityDetailSurfaceState
             onLateDeposit: recoveryInfo == null
                 ? null
                 : () => _showLateDeposit(recoveryInfo),
-            onNetworkHelp: widget.layout == SwapActivityDetailLayout.mobile
-                ? _showNetworkHelp
-                : null,
           );
 
     return Stack(
@@ -593,7 +579,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
     this.onLateDeposit,
-    this.onNetworkHelp,
     super.key,
   });
 
@@ -616,9 +601,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   /// has no external deposit to recover, which hides the prompt.
   final VoidCallback? onLateDeposit;
 
-  /// Deposit page (mobile): opens the Network help sheet for the asset.
-  final ValueChanged<SwapAsset>? onNetworkHelp;
-
   @override
   Widget build(BuildContext context) {
     final flowContent = _SwapActivityFlowContent(
@@ -636,7 +618,6 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       intentIsHardware: intentIsHardware,
       onShowPayRecipientAddress: onShowPayRecipientAddress,
       onLateDeposit: onLateDeposit,
-      onNetworkHelp: onNetworkHelp,
     );
     final isDepositPage = swapActivityShowsDepositPage(
       intent,
@@ -691,7 +672,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
     this.onLateDeposit,
-    this.onNetworkHelp,
   });
 
   final SwapState state;
@@ -709,7 +689,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
   final VoidCallback? onLateDeposit;
-  final ValueChanged<SwapAsset>? onNetworkHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -732,7 +711,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intentIsHardware: intentIsHardware,
     );
     final depositAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
-    final onNetworkHelp = this.onNetworkHelp;
     final primaryContent = switch (intent.status) {
       SwapIntentStatus.expired =>
         layout == SwapActivityDetailLayout.mobile
@@ -756,12 +734,6 @@ class _SwapActivityFlowContent extends StatelessWidget {
           checkWarning: depositCheckWarning,
           onDeposited: onMarkDeposited,
           mobile: layout == SwapActivityDetailLayout.mobile,
-          // External deposits are the one place a wrong network can strand
-          // funds; the ZEC-side hardware page below never needs the row.
-          showNetworkRow: true,
-          onNetworkHelp: onNetworkHelp == null
-              ? null
-              : () => onNetworkHelp(depositAsset),
         ),
       _ when showHardwareDepositPage && depositInstruction != null =>
         SwapHardwareZecDepositPageContent(

@@ -8,10 +8,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/dot_qr_shape.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_policy_notes.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 
 Widget _harness(
@@ -35,6 +38,49 @@ Widget _harness(
 }
 
 void main() {
+  testWidgets('expired deposit prompt opens the recovery sheet', (
+    tester,
+  ) async {
+    final info = SwapDepositRecoveryInfo(
+      asset: SwapAsset.usdc,
+      amountText: '150 USDC',
+      depositAddress: '0xdeposit',
+      expiredAtText: 'Sep 23, 2026 00:00 UTC',
+    );
+    await tester.pumpWidget(
+      _harness(
+        Builder(
+          builder: (context) => MobileSwapTimeoutContent(
+            onRestart: () {},
+            onLateDeposit: () => showAppMobileSheet<void>(
+              context: context,
+              builder: (_) => SwapLateDepositSheet(info: info),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Sent a deposit?'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check your deposit'), findsOneWidget);
+    expect(
+      find.textContaining('Check the transaction in the wallet you sent from'),
+      findsOneWidget,
+    );
+    expect(find.text('Email support'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('swap_late_deposit_support_button')),
+          )
+          .variant,
+      AppButtonVariant.ghost,
+    );
+    expect(find.text('Copy deposit details'), findsOneWidget);
+  });
+
   testWidgets('mobile deposit layout matches the Figma QR card metrics', (
     tester,
   ) async {
@@ -126,6 +172,78 @@ void main() {
     );
   });
 
+  testWidgets('network guidance uses the existing gap at 360dp', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SwapHardwareZecDepositPageContent(
+          asset: SwapAsset.usdc,
+          amountText: '999.99 USDC',
+          depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+          expiresInLabel: '2hrs',
+          onDepositZec: () {},
+          mobile: true,
+        ),
+        mediaSize: const Size(360, 800),
+        width: 328,
+      ),
+    );
+    final baselineAddressWidth = tester
+        .getSize(find.byKey(const ValueKey('swap_deposit_address_right_item')))
+        .width;
+    final baselinePanelHeight = tester
+        .getSize(find.byKey(const ValueKey('swap_deposit_tokens_panel')))
+        .height;
+    final baselineButtonTop = tester
+        .getRect(find.byKey(const ValueKey('swap_deposit_confirm_button')))
+        .top;
+
+    await tester.pumpWidget(
+      _harness(_content(), mediaSize: const Size(360, 800), width: 328),
+    );
+
+    final card = find.byKey(const ValueKey('swap_deposit_qr_card'));
+    final guidance = find.byKey(
+      const ValueKey('swap_deposit_network_guidance'),
+    );
+    final details = find.byKey(const ValueKey('swap_deposit_details'));
+    final address = find.byKey(
+      const ValueKey('swap_deposit_address_right_item'),
+    );
+    final button = find.byKey(const ValueKey('swap_deposit_confirm_button'));
+    final panel = find.byKey(const ValueKey('swap_deposit_tokens_panel'));
+
+    expect(find.text('USDC on Ethereum only'), findsOneWidget);
+    expect(find.text('One-time address'), findsOneWidget);
+    expect(tester.getSize(guidance).height, AppSpacing.lg);
+    expect(tester.getRect(guidance).top, tester.getRect(card).bottom);
+    expect(tester.getRect(guidance).bottom, tester.getRect(details).top);
+    expect(tester.getSize(address).width, baselineAddressWidth);
+    expect(tester.getRect(button).top, baselineButtonTop);
+    expect(tester.getSize(panel).height, baselinePanelHeight);
+    expect(
+      tester.getSize(panel).height,
+      tester.getSize(card).height +
+          AppSpacing.lg +
+          tester.getSize(details).height +
+          AppSpacing.lg +
+          tester.getSize(button).height,
+    );
+    expect(tester.takeException(), isNull);
+
+    final help = find.byKey(const ValueKey('swap_deposit_network_help'));
+    expect(tester.getSize(help).height, 40);
+    expect(tester.getSize(help).width, greaterThan(200));
+    await tester.tap(find.text('USDC on Ethereum only'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('swap_deposit_network_sheet')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Recovery isn’t guaranteed'), findsOneWidget);
+  });
+
   testWidgets('mobile deposit copy icons match the Figma size', (tester) async {
     await tester.pumpWidget(_harness(_content()));
 
@@ -182,7 +300,7 @@ void main() {
 
     expect(addressText, findsOneWidget);
     expect(tester.getSize(addressRight).width, greaterThanOrEqualTo(190));
-    expect(tester.getSize(copyButton), const Size(20, 20));
+    expect(tester.getSize(copyButton), const Size(24, 24));
     expect(
       tester.getRect(addressText).right,
       lessThanOrEqualTo(tester.getRect(copyButton).left - AppSpacing.xxs),

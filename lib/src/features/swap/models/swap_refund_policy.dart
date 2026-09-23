@@ -1,52 +1,81 @@
-/// NEAR Intents recovery policy for funds that never reach the automatic
-/// refund rail (wrong token, wrong network, expired one-time address, wrong
-/// refund address). Deposits that do reach the rail — including ones that
-/// land after the deadline — are refunded to the refund address regardless
-/// of size; the floor applies only to manual recovery requests for user
-/// error. Source: near.com/terms, "Asset Recovery" and "Failed Execution,
-/// Deadlines, and Refunds".
+import 'swap_deposit_recovery_info.dart';
+
+/// NEAR Intents recovery policy. User-error recovery requests below $300 in
+/// USD value are not considered; requests at or above that value remain
+/// not guaranteed. Late deposits may be refunded, but no refund is guaranteed.
+/// Sources: near.com/terms, "Incorrect Transfers, Unsupported Assets, and No
+/// Recovery Obligation" and "Failed Execution, Deadlines, and Refunds";
+/// docs.near-intents.org/security-compliance/terms-of-service, section 12.4.
 ///
-/// Placement: the policy lives on the one row where the mistake it describes
-/// can happen — the deposit page's "Network" row, behind its help affordance
-/// (tooltip on desktop, bottom sheet on mobile). The row itself is a plain
-/// fact; the post-failure surfaces offer the support bundle. Kept in one
-/// place so the figure and the copy can move to remote config without
-/// touching the surfaces that show them.
+/// The deposit page offers network guidance; post-failure surfaces offer the
+/// support bundle. Kept together so policy copy remains consistent.
 abstract final class SwapRefundPolicy {
   /// USD value below which NEAR will not consider a user-error recovery
-  /// request. At or above it, recovery is still discretionary.
+  /// request. At or above it, NEAR may still decline the request.
   static const recoveryFloorUsd = 300;
 
-  static const _floorText = r'$300';
+  static const depositNetworkHelpTitle = 'Deposit network';
 
-  /// Deposit page (external → ZEC): help behind the "Network" row.
-  static const depositNetworkHelpTitle = 'Network';
+  static String depositNetworkHint({
+    required String symbol,
+    required String chainLabel,
+  }) => '$symbol on $chainLabel only';
 
   static String depositNetworkHelp({
     required String symbol,
     required String chainLabel,
   }) =>
-      'Send $symbol on $chainLabel only. A deposit on another network or in '
-      'another token isn’t returned automatically — NEAR reviews those '
-      'manually, for amounts of $_floorText or more.';
+      'Send $symbol on $chainLabel to this address. Deposits made with a '
+      'different token or network may not be credited.\n\n'
+      'NEAR considers recovery requests for these deposits only at '
+      '\$$recoveryFloorUsd or more. Recovery isn’t guaranteed.';
 
   /// Deposit timeout page: a quiet prompt under the restart action that
-  /// opens the late-deposit explainer (modal on desktop, sheet on mobile).
+  /// opens the deposit recovery explainer (modal on desktop, sheet on mobile).
   /// Only offered when the swap's deposit details are known, since the
-  /// explainer's action is the support bundle. A late deposit is still on
-  /// the automatic rail, so no floor is mentioned.
-  static const lateDepositPrompt = 'Made a late deposit?';
-  static const lateDepositTitle = 'Late deposit';
+  /// explainer's action is the support bundle. The user-error recovery floor
+  /// does not describe the late-deposit refund attempt.
+  static const lateDepositPrompt = 'Sent a deposit?';
+  static const lateDepositTitle = 'Check your deposit';
   static const lateDepositBody =
-      'Deposits that arrive after the deadline are refunded to your refund '
-      'address automatically.';
+      'Check the transaction in the wallet you sent from. If your deposit '
+      'arrived late, NEAR may try to refund it to your refund address.';
   static const lateDepositSupport =
-      'If nothing arrives, copy the deposit details and send them to Vizor '
-      'support.';
+      'If it’s confirmed and no swap or refund appears, email support.';
   static const lateDepositAction = 'Copy deposit details';
-  static const lateDepositSupportAction = 'Contact support';
+  static const lateDepositSupportAction = 'Email support';
 
-  /// Vizor support page (email + bug-report guidance). Recovery requests
-  /// reach NEAR through Vizor, not through the user directly.
+  /// Vizor's published support address. The user reviews and sends the draft
+  /// in their email app; opening it does not submit a recovery request.
+  static const supportEmail = 'support@vizor.cash';
+
+  static Uri supportEmailUri(SwapDepositRecoveryInfo info) {
+    final depositTxId = info.depositTxId?.trim();
+    final body = [
+      'Hello Vizor support,',
+      '',
+      'Could you check this swap deposit? I don’t see a completed swap or refund.',
+      '',
+      'Transaction hash: ${depositTxId == null || depositTxId.isEmpty ? '[Add the hash from the sending wallet, if available]' : depositTxId}',
+      'Expected deposit: ${info.amountText} on ${info.asset.chainLabel}',
+      'One-time deposit address: ${info.depositAddress}',
+      if (info.memo?.trim().isNotEmpty ?? false) 'Memo: ${info.memo!.trim()}',
+      'Deposit deadline: ${info.expiredAtText}',
+      '',
+      'Additional details (optional):',
+      '[Add anything else that may help]',
+    ].join('\n');
+    final query =
+        <String, String>{'subject': 'Vizor swap deposit check', 'body': body}
+            .entries
+            .map(
+              (entry) =>
+                  '${Uri.encodeComponent(entry.key)}=${Uri.encodeComponent(entry.value)}',
+            )
+            .join('&');
+    return Uri(scheme: 'mailto', path: supportEmail, query: query);
+  }
+
+  /// Fallback when the device has no configured email app.
   static final supportUri = Uri.parse('https://vizor.cash/support/');
 }

@@ -978,7 +978,10 @@ SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
     amountText: intent.sellAmount,
     depositAddress: instruction.address,
     memo: instruction.memo,
-    depositTxId: intent.depositTxHash,
+    depositTxId: _firstNonEmpty([
+      intent.depositTxHash,
+      intent.originChainTxHash,
+    ]),
     expiredAtText: _swapActivityUtcTimestampLabel(deadline),
   );
 }

@@ -35,7 +35,10 @@ class SwapLateDepositPrompt extends StatelessWidget {
   }
 }
 
-void _copyLateDepositDetails(BuildContext context, SwapDepositRecoveryInfo info) {
+void _copyLateDepositDetails(
+  BuildContext context,
+  SwapDepositRecoveryInfo info,
+) {
   copyTextWithToast(
     context,
     text: info.bundleText,
@@ -81,23 +84,11 @@ class SwapLateDepositModal extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          // The copy action sits outside `AppModalActions`: its two-up slots
-          // cap the label at ~74px once a leading icon is set.
-          AppButton(
-            key: const ValueKey('swap_late_deposit_copy_button'),
-            onPressed: () => _copyLateDepositDetails(context, info),
-            variant: AppButtonVariant.secondary,
-            size: AppButtonSize.mediumLarge,
-            height: kAppModalButtonHeight,
-            expand: true,
-            leading: const AppIcon(AppIcons.copy, size: 16),
-            child: const Text(SwapRefundPolicy.lateDepositAction),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          // The arrow is the project's external-link cue.
+          // Support remains available after the user checks the transaction;
+          // tapping opens a prefilled draft for review in the mail app.
           AppButton(
             key: const ValueKey('swap_late_deposit_support_button'),
-            onPressed: _openSupport,
+            onPressed: () => unawaited(_openSupportEmail(info)),
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.mediumLarge,
             height: kAppModalButtonHeight,
@@ -105,15 +96,36 @@ class SwapLateDepositModal extends StatelessWidget {
             trailing: const AppIcon(AppIcons.arrowTopRight, size: 16),
             child: const Text(SwapRefundPolicy.lateDepositSupportAction),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          AppButton(
+            key: const ValueKey('swap_late_deposit_copy_button'),
+            onPressed: () => _copyLateDepositDetails(context, info),
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.mediumLarge,
+            height: kAppModalButtonHeight,
+            expand: true,
+            leading: const AppIcon(AppIcons.copy, size: 16),
+            child: const Text(SwapRefundPolicy.lateDepositAction),
+          ),
         ],
       ),
     );
   }
 }
 
-void _openSupport() {
-  unawaited(
-    launchUrl(SwapRefundPolicy.supportUri, mode: LaunchMode.externalApplication),
+Future<void> _openSupportEmail(SwapDepositRecoveryInfo info) async {
+  try {
+    final opened = await launchUrl(
+      SwapRefundPolicy.supportEmailUri(info),
+      mode: LaunchMode.externalApplication,
+    );
+    if (opened) return;
+  } catch (_) {
+    // Fall back to the published support page if no email app is configured.
+  }
+  await launchUrl(
+    SwapRefundPolicy.supportUri,
+    mode: LaunchMode.externalApplication,
   );
 }
 
@@ -148,22 +160,26 @@ class SwapLateDepositSheet extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
-            key: const ValueKey('swap_late_deposit_copy_button'),
-            onPressed: () => _copyLateDepositDetails(context, info),
-            variant: AppButtonVariant.secondary,
+            key: const ValueKey('swap_late_deposit_support_button'),
+            onPressed: () => unawaited(_openSupportEmail(info)),
+            variant: AppButtonVariant.ghost,
             expand: true,
-            leading: const AppIcon(AppIcons.copy, size: 20),
-            child: const Text(SwapRefundPolicy.lateDepositAction),
+            constrainContent: true,
+            growWithContent: true,
+            trailing: const AppIcon(AppIcons.arrowTopRight, size: 20),
+            child: const Text(SwapRefundPolicy.lateDepositSupportAction),
           ),
           const SizedBox(height: AppSpacing.xs),
           // The scaffold's pinned close button dismisses the sheet.
           AppButton(
-            key: const ValueKey('swap_late_deposit_support_button'),
-            onPressed: _openSupport,
+            key: const ValueKey('swap_late_deposit_copy_button'),
+            onPressed: () => _copyLateDepositDetails(context, info),
             variant: AppButtonVariant.ghost,
             expand: true,
-            trailing: const AppIcon(AppIcons.arrowTopRight, size: 20),
-            child: const Text(SwapRefundPolicy.lateDepositSupportAction),
+            constrainContent: true,
+            growWithContent: true,
+            leading: const AppIcon(AppIcons.copy, size: 20),
+            child: const Text(SwapRefundPolicy.lateDepositAction),
           ),
         ],
       ),
@@ -171,10 +187,6 @@ class SwapLateDepositSheet extends StatelessWidget {
   }
 }
 
-/// Mobile counterpart of the desktop tooltip on the deposit page's "Network"
-/// row: the shared `_Modal Type` layout with the same help text and a single
-/// dismiss action. Present through `showAppMobileSheet`, which supplies the
-/// card chrome.
 class SwapDepositNetworkSheet extends StatelessWidget {
   const SwapDepositNetworkSheet({required this.asset, super.key});
 
@@ -187,25 +199,12 @@ class SwapDepositNetworkSheet extends StatelessWidget {
       key: const ValueKey('swap_deposit_network_sheet'),
       title: SwapRefundPolicy.depositNetworkHelpTitle,
       onClose: () => Navigator.of(context).maybePop(),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            SwapRefundPolicy.depositNetworkHelp(
-              symbol: asset.symbol,
-              chainLabel: asset.chainLabel,
-            ),
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            key: const ValueKey('swap_deposit_network_sheet_dismiss'),
-            onPressed: () => Navigator.of(context).maybePop(),
-            expand: true,
-            child: const Text('Got it'),
-          ),
-        ],
+      child: Text(
+        SwapRefundPolicy.depositNetworkHelp(
+          symbol: asset.symbol,
+          chainLabel: asset.chainLabel,
+        ),
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
       ),
     );
   }

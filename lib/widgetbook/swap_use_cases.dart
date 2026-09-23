@@ -321,17 +321,12 @@ Widget buildSwapDepositDurationUseCase(BuildContext context) {
 }
 
 Widget buildSwapDepositCountdownUseCase(BuildContext context) {
-  return _SwapFlowPageFrame(
-    backLabel: 'Review',
-    child: SwapDepositTokensPageContent(
-      asset: SwapAsset.usdc,
-      amountText: '999.99 USDC',
-      depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
-      expiresInLabel: '14:59',
-      expiresAt: DateTime.now().add(const Duration(minutes: 14, seconds: 59)),
-      onDeposited: () {},
-    ),
-  );
+  final mobile = _depositLayoutKnob(context) == _DepositLayout.mobile;
+  final showNetworkSheet =
+      mobile &&
+      context.knobs.boolean(label: 'Network help sheet', initialValue: false);
+  if (showNetworkSheet) return buildSwapDepositNetworkSheetUseCase(context);
+  return _depositCountdownPage(mobile: mobile, amountText: '999.99 USDC');
 }
 
 Widget buildSwapDepositMemoQrUseCase(BuildContext context) {
@@ -362,85 +357,58 @@ Widget buildSwapDepositHardwareZecUseCase(BuildContext context) {
 }
 
 Widget buildSwapDepositTimeoutUseCase(BuildContext context) {
-  return _SwapFlowPageFrame(
-    backLabel: 'Swap',
-    child: SwapDepositTimeoutPageContent(onRestart: () {}),
-  );
-}
-
-// MARK: - NEAR recovery policy (sub-$300 floor) placement
-
-// The deposit page states the network as a fact, in the same row language as
-// amount and address, with the policy behind that row's help icon — the one
-// place the mistake it describes can happen. After a missed deadline the
-// existing timeout page gains the refund note and a copy of the support
-// bundle, but only when the swap's deposit details are known.
-
-// Two knob-driven use cases: layout (desktop / mobile) and the policy
-// element on/off. The help sheet and the late-deposit modal/sheet open live
-// from their own triggers, exactly as the activity detail host wires them.
-
-enum _PolicyLayout { desktop, mobile }
-
-_PolicyLayout _policyLayoutKnob(BuildContext context) {
-  return context.knobs.object.segmented<_PolicyLayout>(
-    label: 'Layout',
-    options: _PolicyLayout.values,
-    // Follow the compiled token set (`--dart-define=VIZOR_FORM_FACTOR`), so
-    // a mobile-token run opens on the mobile layout; the knob still lets
-    // either layout be previewed against either token set.
-    initialOption: kAppFormFactor == AppFormFactor.mobile
-        ? _PolicyLayout.mobile
-        : _PolicyLayout.desktop,
-    labelBuilder: (l) => l.name,
-  );
-}
-
-Widget buildSwapPolicyDepositUseCase(BuildContext context) {
-  final layout = _policyLayoutKnob(context);
-  final networkRow = context.knobs.boolean(
-    label: 'Network row',
-    initialValue: true,
-  );
-  return _policyDepositPage(
-    mobile: layout == _PolicyLayout.mobile,
-    networkRow: networkRow,
-  );
-}
-
-Widget buildSwapPolicyTimeoutUseCase(BuildContext context) {
-  final layout = _policyLayoutKnob(context);
+  final mobile = _depositLayoutKnob(context) == _DepositLayout.mobile;
   final prompt = context.knobs.boolean(
     label: 'Late-deposit prompt',
     initialValue: true,
   );
-  return _policyTimeoutPage(
-    mobile: layout == _PolicyLayout.mobile,
-    prompt: prompt,
+  return _depositTimeoutPage(mobile: mobile, prompt: prompt);
+}
+
+// MARK: - NEAR deposit recovery policy
+
+// The deposit page uses the gap under the QR card for network guidance. After
+// a missed deadline the timeout page offers recovery guidance when deposit
+// details are known.
+// The late-deposit modal/sheet opens from its prompt.
+
+enum _DepositLayout { desktop, mobile }
+
+_DepositLayout _depositLayoutKnob(BuildContext context) {
+  return context.knobs.object.segmented<_DepositLayout>(
+    label: 'Layout',
+    options: _DepositLayout.values,
+    // Follow the compiled token set (`--dart-define=VIZOR_FORM_FACTOR`), so
+    // a mobile-token run opens on the mobile layout; the knob still lets
+    // either layout be previewed against either token set.
+    initialOption: kAppFormFactor == AppFormFactor.mobile
+        ? _DepositLayout.mobile
+        : _DepositLayout.desktop,
+    labelBuilder: (l) => l.name,
   );
 }
 
 // Fixed-state entry points for figma-compare captures.
 
-Widget buildSwapDepositNetworkRowUseCase(BuildContext context) =>
-    _policyDepositPage(mobile: false, networkRow: true);
+Widget buildSwapPolicyDepositDesktopUseCase(BuildContext context) =>
+    _depositCountdownPage(mobile: false, amountText: '150 USDC');
 
-Widget buildMobileSwapDepositNetworkRowUseCase(BuildContext context) =>
-    _policyDepositPage(mobile: true, networkRow: true);
+Widget buildSwapPolicyDepositMobileUseCase(BuildContext context) =>
+    _depositCountdownPage(mobile: true, amountText: '150 USDC');
 
-Widget buildMobileSwapDepositNetworkSheetUseCase(BuildContext context) =>
+Widget buildSwapDepositNetworkSheetUseCase(BuildContext context) =>
     const _MobileScanCardFrame(
       child: SwapDepositNetworkSheet(asset: SwapAsset.usdc),
     );
 
 Widget buildSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
-    _policyTimeoutPage(mobile: false, prompt: true);
+    _depositTimeoutPage(mobile: false, prompt: true);
 
 Widget buildSwapLateDepositModalUseCase(BuildContext context) =>
-    _policyTimeoutPage(mobile: false, prompt: true, modalOpen: true);
+    _depositTimeoutPage(mobile: false, prompt: true, modalOpen: true);
 
 Widget buildMobileSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
-    _policyTimeoutPage(mobile: true, prompt: true);
+    _depositTimeoutPage(mobile: true, prompt: true);
 
 Widget buildMobileSwapLateDepositSheetUseCase(BuildContext context) =>
     _MobileScanCardFrame(child: SwapLateDepositSheet(info: _recoveryInfo));
@@ -454,29 +422,27 @@ final _recoveryInfo = SwapDepositRecoveryInfo(
   expiredAtText: 'May 20, 2026 13:20 UTC',
 );
 
-Widget _policyDepositPage({required bool mobile, required bool networkRow}) {
+Widget _depositCountdownPage({
+  required bool mobile,
+  required String amountText,
+}) {
   Widget page(BuildContext context) => SwapDepositTokensPageContent(
     asset: SwapAsset.usdc,
-    amountText: '150 USDC',
+    amountText: amountText,
     depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
     expiresInLabel: '14:59',
     expiresAt: DateTime.now().add(const Duration(minutes: 14, seconds: 59)),
-    showNetworkRow: networkRow,
     mobile: mobile,
     onDeposited: () {},
-    // Mobile help is a sheet; desktop keeps the row's tooltip.
-    onNetworkHelp: mobile
-        ? () => showAppMobileSheet<void>(
-            context: context,
-            builder: (_) => const SwapDepositNetworkSheet(asset: SwapAsset.usdc),
-          )
-        : null,
   );
   if (mobile) return _MobilePhoneFrame(child: Builder(builder: page));
-  return _SwapFlowPageFrame(backLabel: 'Review', child: Builder(builder: page));
+  return _SwapFlowPageFrame(
+    backLabel: 'Review',
+    child: Builder(builder: page),
+  );
 }
 
-Widget _policyTimeoutPage({
+Widget _depositTimeoutPage({
   required bool mobile,
   required bool prompt,
   bool modalOpen = false,
@@ -494,6 +460,12 @@ Widget _policyTimeoutPage({
               : null,
         ),
       ),
+    );
+  }
+  if (!prompt && !modalOpen) {
+    return _SwapFlowPageFrame(
+      backLabel: 'Swap',
+      child: SwapDepositTimeoutPageContent(onRestart: () {}),
     );
   }
   return _DesktopTimeoutPreview(prompt: prompt, initiallyOpen: modalOpen);
