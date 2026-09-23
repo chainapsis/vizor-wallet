@@ -124,6 +124,8 @@ Future<T> _runWithSyncPausedForAccountMutation<T>(
                 resumeAfterFailure;
       if (shouldResume) {
         syncNotifier.resumeAfterWalletMutation(pause);
+      } else {
+        syncNotifier.endWalletMutationPause();
       }
     }
   } catch (error, stackTrace) {

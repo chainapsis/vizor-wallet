@@ -14,8 +14,8 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module services the queue
-//! against lightwalletd via three gRPC calls (`GetTransaction`,
+//! `db.transaction_data_requests()`. This module services the non-private
+//! portions of the queue against lightwalletd via gRPC (`GetTransaction`,
 //! `TransactionsInvolvingAddress`) and writes the results back into
 //! `db` using `decrypt_and_store_transaction` and
 //! `set_transaction_status`. The loop retries up to three times
@@ -109,7 +109,7 @@ pub(super) async fn run_enhancement(
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
 
-    backfill_stored_fees(client, db, db_path).await?;
+    backfill_stored_fees(client, db, db_path, should_exit).await?;
 
     for _ in 0..3 {
         let requests = db
@@ -118,17 +118,24 @@ pub(super) async fn run_enhancement(
         if requests.is_empty() {
             break;
         }
-
         // If nothing in the queue is actionable (e.g. address-scoped
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(request_is_actionable);
+        let actionable = requests.iter().any(|request| match request {
+            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
+            TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                request.block_range_end().is_some()
+            }
+        });
         if !actionable {
             break;
         }
 
         for req in &requests {
+            if should_exit() {
+                return Ok(());
+            }
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
@@ -137,7 +144,12 @@ pub(super) async fn run_enhancement(
                         continue;
                     }
 
-                    match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
+                    match cancelable(
+                        lwd::get_transaction(client, txid.as_ref().to_vec()),
+                        should_exit,
+                    )
+                    .await
+                    {
                         Ok(raw) => {
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
@@ -158,7 +170,9 @@ pub(super) async fn run_enhancement(
                                                 "sync: decrypt_and_store_transaction failed: {e}"
                                             );
                                         }
-                                        if let Err(e) = fill_missing_fee(client, db_path, &tx).await
+                                        if let Err(e) =
+                                            fill_missing_fee(client, db_path, &tx, should_exit)
+                                                .await
                                         {
                                             log::warn!(
                                                 "sync: fee enhancement failed for {txid_str}: {e}"
@@ -318,12 +332,16 @@ async fn backfill_stored_fees(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &WalletDatabase,
     db_path: &str,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     for txid in stored_transaction_ids_missing_fee(db_path)? {
+        if should_exit() {
+            return Ok(());
+        }
         let txid_str = format!("{txid}");
         match db.get_transaction(txid) {
             Ok(Some(tx)) => {
-                if let Err(e) = fill_missing_fee(client, db_path, &tx).await {
+                if let Err(e) = fill_missing_fee(client, db_path, &tx, should_exit).await {
                     log::warn!("sync: stored fee enhancement failed for {txid_str}: {e}");
                 }
             }
@@ -365,21 +383,11 @@ fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncEr
         .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
 }
 
-/// Whether servicing `request` can make progress right now. Transaction
-/// requests always can; address-scoped requests need a bounded block range.
-fn request_is_actionable(request: &TransactionDataRequest) -> bool {
-    match request {
-        TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-        TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-            req.block_range_end().is_some()
-        }
-    }
-}
-
 async fn fill_missing_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     if !should_fill_missing_fee(db_path, tx)? {
         return Ok(());
@@ -390,7 +398,7 @@ async fn fill_missing_fee(
     // that fee too so these rows do not remain in the backfill query forever.
     let prevout_values = match tx.transparent_bundle() {
         Some(bundle) if !bundle.vin.is_empty() => {
-            let values = fetch_transparent_prevout_values(client, tx).await?;
+            let values = fetch_transparent_prevout_values(client, tx, should_exit).await?;
             if values.is_empty() {
                 return Ok(());
             }
@@ -411,6 +419,7 @@ async fn fill_missing_fee(
 async fn fetch_transparent_prevout_values(
     client: &mut CompactTxStreamerClient<Channel>,
     tx: &Transaction,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<BTreeMap<OutPoint, Zatoshis>, SyncError> {
     let Some(bundle) = tx.transparent_bundle() else {
         return Ok(BTreeMap::new());
@@ -426,7 +435,12 @@ async fn fetch_transparent_prevout_values(
             continue;
         }
 
-        let parent_raw = match lwd::get_transaction(client, outpoint.hash().to_vec()).await {
+        let parent_raw = match cancelable(
+            lwd::get_transaction(client, outpoint.hash().to_vec()),
+            should_exit,
+        )
+        .await
+        {
             Ok(raw) => raw,
             Err(e) => {
                 log::warn!(
@@ -908,5 +922,83 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+}
+
+/// Cancellation is checked before dispatch and after completion, and dropping
+/// the request future interrupts an in-flight wait. No queued request survives.
+async fn cancelable<T, E: CancelError>(
+    request: impl std::future::Future<Output = Result<T, E>>,
+    should_exit: &impl Fn() -> bool,
+) -> Result<T, E> {
+    if should_exit() {
+        return Err(E::cancelled());
+    }
+    let result = tokio::select! {
+        biased;
+        _ = super::watch_for_exit(should_exit) => return Err(E::cancelled()),
+        result = request => result,
+    };
+    if should_exit() {
+        return Err(E::cancelled());
+    }
+    result
+}
+
+trait CancelError {
+    fn cancelled() -> Self;
+}
+impl CancelError for SyncError {
+    fn cancelled() -> Self {
+        Self::other("enhancement cancelled")
+    }
+}
+impl CancelError for Status {
+    fn cancelled() -> Self {
+        Self::cancelled("enhancement cancelled")
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    #[tokio::test]
+    async fn cancelled_public_batch_never_dispatches_the_next_transaction() {
+        let cancelled = AtomicBool::new(false);
+        let dispatched = AtomicUsize::new(0);
+        let exit = || cancelled.load(Ordering::SeqCst);
+        let first = cancelable(
+            async {
+                dispatched.fetch_add(1, Ordering::SeqCst);
+                cancelled.store(true, Ordering::SeqCst);
+                Ok::<_, SyncError>(())
+            },
+            &exit,
+        )
+        .await;
+        assert!(first.is_err());
+        let second = cancelable(
+            async {
+                dispatched.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, SyncError>(())
+            },
+            &exit,
+        )
+        .await;
+        assert!(second.is_err());
+        assert_eq!(dispatched.load(Ordering::SeqCst), 1);
+    }
+    #[tokio::test]
+    async fn cancellation_drops_a_waiting_public_request() {
+        let cancelled = AtomicBool::new(false);
+        let exit = || cancelled.load(Ordering::SeqCst);
+        let request = cancelable(std::future::pending::<Result<(), SyncError>>(), &exit);
+        let cancel = async {
+            tokio::task::yield_now().await;
+            cancelled.store(true, Ordering::SeqCst);
+        };
+        let (result, _) = tokio::join!(request, cancel);
+        assert!(result.is_err());
     }
 }

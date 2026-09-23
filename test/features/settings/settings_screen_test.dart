@@ -25,6 +25,17 @@ import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  testWidgets('private recovery is labelled experimental', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+    expect(
+      find.textContaining('Experimental.', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
   test('uninstall setting is supported only on macOS and Linux', () {
     expect(settingsUninstallSupported(platform: TargetPlatform.macOS), isTrue);
     expect(settingsUninstallSupported(platform: TargetPlatform.linux), isTrue);
@@ -567,6 +578,16 @@ void main() {
       ),
       const Size(44, 20),
     );
+    expect(find.text('Advanced'), findsNothing);
+    expect(find.text('Private Ironwood recovery'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),
+      ),
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+    );
 
     final status = tester.widget<Text>(
       find.byKey(const ValueKey('network_privacy_status_connected_true')),
@@ -611,6 +632,21 @@ void main() {
     } finally {
       _resetPlatformOverride();
     }
+  });
+
+  testWidgets('private Ironwood recovery is hidden off mainnet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(network: 'test', enhancePirEnabled: true),
+    );
+    await tester.pump();
+
+    expect(find.text('Private Ironwood recovery'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+      findsNothing,
+    );
   });
 
   testWidgets('Tor stays effective while switching to direct', (tester) async {
@@ -729,6 +765,8 @@ Widget _settingsHarness({
   List<bool>? networkPrivacyCalls,
   List<Override> extraOverrides = const [],
   AccountState? accountState,
+  String network = 'main',
+  bool enhancePirEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -759,7 +797,11 @@ Widget _settingsHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
-        _settingsBootstrap(accountState ?? _bootstrap.initialAccountState),
+        _settingsBootstrap(
+          accountState ?? _bootstrap.initialAccountState,
+          network: network,
+          enhancePirEnabled: enhancePirEnabled,
+        ),
       ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       networkPrivacyProvider.overrideWith(
@@ -834,7 +876,12 @@ class _FailedWindowsUpdateNotifier extends WindowsUpdateNotifier {
   );
 }
 
-final _bootstrap = AppBootstrapState(
+final _bootstrap = _bootstrapForNetwork('main');
+
+AppBootstrapState _bootstrapForNetwork(
+  String network, {
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
@@ -842,28 +889,33 @@ final _bootstrap = AppBootstrapState(
     activeAddress: 'u1settingsscreenaddress',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
 );
 
-AppBootstrapState _settingsBootstrap(AccountState accountState) =>
-    AppBootstrapState(
-      initialLocation: _bootstrap.initialLocation,
-      initialAccountState: accountState,
-      initialSyncSnapshot: _bootstrap.initialSyncSnapshot,
-      network: _bootstrap.network,
-      rpcEndpointConfig: _bootstrap.rpcEndpointConfig,
-      themeMode: _bootstrap.themeMode,
-      privacyModeEnabled: _bootstrap.privacyModeEnabled,
-      isPasswordConfigured: _bootstrap.isPasswordConfigured,
-      isUnlocked: _bootstrap.isUnlocked,
-      passwordRotationRecoveryFailed: _bootstrap.passwordRotationRecoveryFailed,
-    );
+AppBootstrapState _settingsBootstrap(
+  AccountState accountState, {
+  String network = 'main',
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
+  initialLocation: '/settings',
+  initialAccountState: accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
+);
 
 double _toggleTrackOpacity(WidgetTester tester) {
   final opacity = tester.widget<Opacity>(
