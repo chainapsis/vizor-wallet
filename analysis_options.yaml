@@ -15,6 +15,11 @@ analyzer:
     # Cargokit build_tool is a vendored helper package with its own pubspec.
     # Root `flutter analyze` cannot resolve its package-scoped dependencies.
     - rust_builder/cargokit/build_tool/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

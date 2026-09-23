@@ -9,6 +9,8 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
+import 'src/core/lifecycle/signing_shutdown_host.dart';
+import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -23,6 +25,7 @@ import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/app_toast.dart';
@@ -39,6 +42,9 @@ import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/donation/donation_config.dart';
 import 'src/features/donation/screens/donation_screen.dart';
+import 'src/features/ledger/ledger_capability.dart';
+import 'src/features/ledger/services/ledger_account_service.dart';
+import 'src/features/ledger/services/ledger_operation_recovery.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
@@ -58,6 +64,8 @@ import 'src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import 'src/features/onboarding/keystone/keystone_scan_qr_screen.dart';
 import 'src/features/onboarding/keystone/keystone_select_account_screen.dart';
 import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
+import 'src/features/onboarding/ledger/ledger_connect_screen.dart';
+import 'src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
@@ -82,6 +90,7 @@ import 'src/features/send/widgets/payment_request_host.dart';
 import 'src/features/send/services/send_flow.dart'
     show
         SendReviewArgs,
+        resolveSendReviewRoutePayload,
         resolveSendStatusRoutePayload,
         SendStatusRoutePayloadObserver,
         sendStatusRoutePayloadProvider,
@@ -122,6 +131,7 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
+import 'src/rust/api/voting.dart' as rust_voting;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
@@ -129,11 +139,46 @@ import 'src/providers/payment_request_flow_provider.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
+StreamSubscription<rust_voting.ApiVotingObservability>?
+_votingObservabilitySubscription;
+
+/// Mirrors Rust voting observability into the Flutter console.
+///
+/// Rust `log` records reach os_log (subsystem `frb_user`) and never the
+/// `flutter run` console, so without this stream these reports are invisible
+/// exactly where a developer is already looking. os_log still receives every
+/// line: this is a second sink, not a replacement.
+///
+/// Registered unconditionally on purpose. Collection is governed on the Rust
+/// side by `VOTING_OBSERVABILITY_ENABLED`, so a build with it off simply
+/// yields a silent stream — keeping the enable decision in one place instead
+/// of splitting it across two languages.
+void _startVotingObservabilityLogging() {
+  unawaited(_votingObservabilitySubscription?.cancel());
+  _votingObservabilitySubscription = rust_voting
+      .setVotingObservabilitySink()
+      .listen(
+        (snapshot) {
+          log('voting-obs ${snapshot.context}: ${snapshot.rendered}');
+          // Failures are logged separately because the rendered report shows
+          // per-stage outcomes without an error category; these carry the
+          // SDK's stable `error_kind`, which is the reason a stage failed.
+          for (final failure in snapshot.failures) {
+            log('voting-obs ${snapshot.context}: FAILED $failure');
+          }
+        },
+        // The stream ending is normal at shutdown; a failure in a debugging
+        // aid must never take down the wallet runtime with it.
+        onError: (Object error) => log('voting-obs: stream failed: $error'),
+      );
+}
+
 Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SecureStorageDiagnostics.instance.initialize();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  _startVotingObservabilityLogging();
   log('runtime: applying network privacy policy');
   await initializeNetworkPrivacyRuntime();
   await rust_simple.configureFastTestnetMigration(
@@ -239,7 +284,22 @@ Future<void> runZcashWalletApp() async {
     app = await buildBootstrappedZcashWalletApp();
   }
   log('runtime: launching app');
-  runApp(app);
+  runApp(
+    SigningShutdownHost(
+      desktop: isDesktopLayoutPlatform,
+      coordinator: SigningShutdownCoordinator(
+        onExitStarted: () {
+          appShutdownSignal.begin();
+          rust_sync.cancelFullSync();
+          rust_sync.stopMempoolObserver();
+        },
+        releaseReservations: rust_sync.shutdownSigningReservations,
+        onError: (error, _) =>
+            log('Shutdown reservation cleanup deferred: $error'),
+      ),
+      child: app,
+    ),
+  );
   if (isDesktopLayoutPlatform && Platform.isWindows) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(showDesktopWindow());
@@ -507,6 +567,169 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       child: const WelcomeScreen(showBackButton: true),
       transitionsBuilder: _onboardingFadeTransition,
     ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger',
+    redirect: (_, _) => ref.read(ledgerStaticCapabilityProvider).supported
+        ? null
+        : '/add-account',
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: const LedgerConnectScreen(),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/birthday',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerBirthdayArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: ImportWalletBirthdayScreen.ledger(
+          onBirthdaySelected: (birthdayHeight) async {
+            if (!context.mounted) return;
+            if (!ref.read(appSecurityProvider).isPasswordConfigured) {
+              context.go(
+                '/onboarding/ledger/set-password',
+                extra: LedgerSetPasswordArgs(
+                  account: args.account,
+                  birthdayHeight: birthdayHeight,
+                ),
+              );
+              return;
+            }
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: birthdayHeight,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/set-password',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerSetPasswordArgs ? null : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerSetPasswordArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: SetPasswordScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: 'Wallet Birthday Height',
+            routePath: '/onboarding/ledger/birthday',
+            routeExtra: LedgerBirthdayArgs(account: args.account),
+          ),
+          ledgerOnContinue: (password) async {
+            if (!context.mounted) return;
+            context.go(
+              '/onboarding/ledger/customise-account',
+              extra: LedgerCustomiseAccountArgs(
+                account: args.account,
+                birthdayHeight: args.birthdayHeight,
+                pendingPassword: password,
+              ),
+            );
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/customise-account',
+    redirect: (_, state) {
+      if (!ref.read(ledgerStaticCapabilityProvider).supported) {
+        return '/add-account';
+      }
+      return state.extra is LedgerCustomiseAccountArgs
+          ? null
+          : '/onboarding/ledger';
+    },
+    pageBuilder: (context, state) {
+      final args = state.extra as LedgerCustomiseAccountArgs;
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: kOnboardingForwardDuration,
+        reverseTransitionDuration: kOnboardingReverseDuration,
+        child: CustomiseAccountScreen.ledger(
+          ledgerBackTarget: OnboardingBackTarget.route(
+            label: args.pendingPassword == null
+                ? 'Wallet Birthday Height'
+                : 'Set Password',
+            routePath: args.pendingPassword == null
+                ? '/onboarding/ledger/birthday'
+                : '/onboarding/ledger/set-password',
+            routeExtra: args.pendingPassword == null
+                ? LedgerBirthdayArgs(account: args.account)
+                : LedgerSetPasswordArgs(
+                    account: args.account,
+                    birthdayHeight: args.birthdayHeight,
+                  ),
+          ),
+          onFinish: (name, profilePictureId) async {
+            Future<void> importAccount() =>
+                ref.read(ledgerAccountImporterProvider)(
+                  name: name,
+                  account: args.account,
+                  birthdayHeight: args.birthdayHeight,
+                  profilePictureId: profilePictureId,
+                );
+
+            final pendingPassword = args.pendingPassword;
+            if (pendingPassword == null) {
+              await importAccount();
+              if (!context.mounted) return;
+              context.go('/home');
+              return;
+            }
+
+            final securityNotifier = ref.read(appSecurityProvider.notifier);
+            final routerRefresh = ref.read(routerRefreshProvider);
+            var passwordPrepared = false;
+            var passwordCommitted = false;
+            try {
+              await routerRefresh.pauseWhile(() async {
+                await securityNotifier.preparePasswordSetup(pendingPassword);
+                passwordPrepared = true;
+                await importAccount();
+                securityNotifier.commitPasswordSetup();
+                passwordCommitted = true;
+                if (!context.mounted) return;
+                context.go('/home');
+              });
+            } catch (_) {
+              if (passwordPrepared && !passwordCommitted) {
+                await securityNotifier.rollbackPasswordSetup();
+              }
+              rethrow;
+            }
+          },
+        ),
+        transitionsBuilder: _onboardingFadeTransition,
+      );
+    },
   ),
   ShellRoute(
     pageBuilder: (context, state, child) => CustomTransitionPage<void>(
@@ -856,7 +1079,14 @@ Page<dynamic> buildDesktopSendReviewPage(
   BuildContext context,
   GoRouterState state,
 ) {
-  final args = state.extra;
+  final args = resolveSendReviewRoutePayload(
+    routePayload: state.extra,
+    retainedPayload: ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(sendStatusRoutePayloadProvider),
+    sendFlowId: state.uri.queryParameters['flow'],
+  );
   if (args is! SendReviewArgs) {
     return _payloadKeyedDesktopPage(
       state,
@@ -1082,6 +1312,9 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       if (args is KeystoneBroadcastArgs) {
         return SendStatusScreen(args: args.reviewArgs, keystone: args);
       }
+      if (args is LedgerBroadcastArgs) {
+        return SendStatusScreen(args: args.reviewArgs, ledger: args);
+      }
       if (args is! SendReviewArgs) return const SendScreen();
       return SendStatusScreen(args: args);
     },
@@ -1271,7 +1504,11 @@ class ZcashWalletApp extends ConsumerWidget {
                                     // up, in `_IncomingLinkHost`.
                                     child: PaymentRequestHost(
                                       router: router,
-                                      child: child!,
+                                      child: LedgerOperationRecoveryHost(
+                                        child: MobileNumericKeyboardToolbar(
+                                          child: child!,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1944,6 +2181,9 @@ class _WindowsUpdatePromptHostState
                   ).animate(animation);
                   return FadeTransition(
                     opacity: animation,
+                    // Keep semantics attached through zero-opacity frames
+                    // when a dismissed update prompt is shown again.
+                    alwaysIncludeSemantics: true,
                     child: SlideTransition(position: position, child: child),
                   );
                 },

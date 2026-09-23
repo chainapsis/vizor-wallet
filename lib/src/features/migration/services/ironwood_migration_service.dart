@@ -1721,7 +1721,7 @@ class IronwoodMigrationService {
         }
         try {
           _checkLinuxSecretOperation(secretGeneration, context);
-          return startSoftwareMigration(
+          return await startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             network: endpoint.networkName,
@@ -2055,6 +2055,19 @@ class IronwoodMigrationService {
   prepareKeystoneImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) => prepareHardwareImmediateMigrationRequest(
+    accountUuid: accountUuid,
+    approvedPlan: approvedPlan,
+  );
+
+  /// Prepares the single Immediate-migration PCZT for an external signer.
+  ///
+  /// The Rust bridge still uses the historical `Keystone*` wire structs, but
+  /// the payload is signer-neutral and is also consumed by Ledger accounts.
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareHardwareImmediateMigrationRequest({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -2075,6 +2088,17 @@ class IronwoodMigrationService {
 
   Future<rust_sync.IronwoodMigrationResult>
   completeKeystoneImmediateMigrationRequest({
+    required String accountUuid,
+    required String requestId,
+    required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  }) => completeHardwareImmediateMigrationRequest(
+    accountUuid: accountUuid,
+    requestId: requestId,
+    signedMessages: signedMessages,
+  );
+
+  Future<rust_sync.IronwoodMigrationResult>
+  completeHardwareImmediateMigrationRequest({
     required String accountUuid,
     required String requestId,
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
@@ -3003,6 +3027,14 @@ class IronwoodMigrationService {
   Future<void> discardKeystonePrivateMigrationRequest({
     required String accountUuid,
     required String requestId,
+  }) => discardHardwareMigrationRequest(
+    accountUuid: accountUuid,
+    requestId: requestId,
+  );
+
+  Future<void> discardHardwareMigrationRequest({
+    required String accountUuid,
+    required String requestId,
   }) {
     final endpoint = getEndpoint();
     return operationRegistry.run(
@@ -3013,6 +3045,10 @@ class IronwoodMigrationService {
   }
 
   Future<rust_sync.KeystoneMigrationProofStatus> keystoneProofStatus({
+    required String requestId,
+  }) => hardwareMigrationProofStatus(requestId: requestId);
+
+  Future<rust_sync.KeystoneMigrationProofStatus> hardwareMigrationProofStatus({
     required String requestId,
   }) {
     return getKeystoneProofStatus(requestId: requestId);

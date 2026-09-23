@@ -2259,6 +2259,30 @@ pub fn get_shield_transparent_status(
     })
 }
 
+/// Local DB progress only; no address discovery or network requests.
+pub struct LedgerShieldingProgress {
+    pub input_count: u32,
+    pub input_limit: u32,
+    pub below_threshold: bool,
+}
+
+pub fn get_ledger_shielding_progress(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<LedgerShieldingProgress, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let progress =
+            wallet_sync::get_ledger_shielding_progress(&db_path, network, &account_uuid)?;
+        Ok(LedgerShieldingProgress {
+            input_count: progress.input_count,
+            input_limit: progress.input_limit,
+            below_threshold: progress.below_threshold,
+        })
+    })
+}
+
 /// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
@@ -2453,6 +2477,7 @@ pub struct TransactionDetailOutput {
     pub address: Option<String>,
     pub amount_zatoshi: u64,
     pub pool: String,
+    pub uses_orchard_receiver: bool,
 }
 
 pub fn get_transaction_history(
@@ -2570,6 +2595,7 @@ pub fn get_transaction_detail(
                     address: output.address,
                     amount_zatoshi: output.amount_zatoshi,
                     pool: output.pool,
+                    uses_orchard_receiver: output.uses_orchard_receiver,
                 })
                 .collect(),
         })
@@ -2934,4 +2960,10 @@ pub fn get_payment_link_spend_evidence(
             verified_height: evidence.verified_height,
         })
     })
+}
+
+/// End the foreground signing session during normal application shutdown.
+/// Durable signed or submitted transactions are retained for recovery.
+pub fn shutdown_signing_reservations() -> Result<(), String> {
+    wallet_sync::shutdown_signing_reservations()
 }

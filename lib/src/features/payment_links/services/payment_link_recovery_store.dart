@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
+import '../models/gift_card_usage.dart';
 import 'payment_link_lifecycle_revision.dart';
 
 const _storageVersion = 1;
+// Envelope flag: every draft in this payload was written by a build that marks
+// the broadcast boundary. Older builds ignore it and drop it on rewrite.
+const _submissionMarkersKey = 'submissionMarkersRecorded';
 const _fundingMetadataWriteAttempts = 2;
 
 final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
@@ -23,18 +27,26 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
 
 enum PaymentLinkRecoveryState { draft, funded, shared }
 
-class PaymentLinkUnsharedGiftCardsException implements Exception {
-  const PaymentLinkUnsharedGiftCardsException({
-    required this.sourceAccountUuid,
-    required this.count,
-  });
-
-  final String sourceAccountUuid;
-  final int count;
-
-  @override
-  String toString() =>
-      'Copy your unshared gift card links before deleting this account.';
+/// Removal confirmation copy for funded gift card links that were never
+/// shared; removal proceeds, so the user must copy them first. A null [count]
+/// means the check failed or has not finished.
+String? unsharedGiftCardRemovalWarning(
+  int? count, {
+  required bool walletReset,
+}) {
+  if (count == null) {
+    final action = walletReset ? 'resetting Vizor' : 'removing this account';
+    return "Couldn't check for unshared gift card links. "
+        'Copy any links you still need before $action.';
+  }
+  if (count <= 0) return null;
+  final subject = walletReset ? 'Resetting Vizor' : 'Removing this account';
+  if (count == 1) {
+    return '1 funded gift card link has not been shared. '
+        '$subject loses it. Copy the link first.';
+  }
+  return '$count funded gift card links have not been shared. '
+      '$subject loses them. Copy the links first.';
 }
 
 const _fieldNotProvided = Object();
@@ -48,9 +60,11 @@ class PaymentLinkRecoveryRecord {
     this.fundingTxids,
     this.preparedExpiryHeight,
     this.submittedAtHeight,
+    this.usage = const GiftCardUsage(),
     required this.claimFeeReserveZatoshi,
   });
 
+  final GiftCardUsage usage;
   final VizorPaymentLink link;
   final String sourceAccountUuid;
   final PaymentLinkRecoveryState state;
@@ -58,13 +72,12 @@ class PaymentLinkRecoveryRecord {
   final String? fundingTxids;
   final int? preparedExpiryHeight;
 
-  /// The chain height the wallet knew when a software funding broadcast
-  /// started.
+  /// The chain height the wallet knew when a funding broadcast started.
   ///
-  /// It is written before the broadcast boundary is crossed, so a broadcast
-  /// whose result never came back — an FFI or channel failure after the
-  /// transaction reached the network — still leaves a durable trace to
-  /// reconcile. `0` means the height was unknown at submission time.
+  /// Every funding path — software, Keystone and Ledger — writes it before the
+  /// broadcast boundary is crossed, so a broadcast whose result never came
+  /// back still leaves a durable trace, and a draft without it provably never
+  /// reached the network. `0` means the height was unknown at submission time.
   final int? submittedAtHeight;
 
   /// Amount actually reserved for claiming when this card was funded.
@@ -90,15 +103,24 @@ class PaymentLinkRecoveryRecord {
       preparedExpiryHeight == null &&
       submittedAtHeight == null;
 
+  /// Funded and not yet shared, or a draft whose broadcast boundary was
+  /// crossed. A draft that never reached it — even one carrying a prepared
+  /// hardware txid — holds nothing and does not block deleting its account.
+  bool get mayHoldUnsharedFunds =>
+      state == PaymentLinkRecoveryState.funded ||
+      (state == PaymentLinkRecoveryState.draft && submittedAtHeight != null);
+
   PaymentLinkRecoveryRecord copyWith({
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
     Object? fundingTxids = _fieldNotProvided,
     Object? preparedExpiryHeight = _fieldNotProvided,
     Object? submittedAtHeight = _fieldNotProvided,
+    GiftCardUsage? usage,
   }) {
     return PaymentLinkRecoveryRecord(
       link: link,
+      usage: usage ?? this.usage,
       claimFeeReserveZatoshi: claimFeeReserveZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       state: state,
@@ -252,21 +274,49 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  /// Records that a software funding broadcast is about to be handed to the
-  /// network, before its transaction id can be known.
+  /// Records that a funding broadcast is about to be handed to the network.
   ///
   /// The software path only learns its transaction id from the broadcast
   /// result, so a failure that loses that result would otherwise leave an inert
   /// draft that recovery cannot tell apart from one that never funded. Writing
   /// the submission height first turns that case into an ambiguous submission
-  /// the reconciler can settle against the link's own wallet.
+  /// the reconciler can settle against the link's own wallet. Hardware drafts
+  /// already carry their prepared txid; the marker is what separates one that
+  /// reached the network from one abandoned before signing.
   ///
   /// Idempotent: an already-recorded height is the earlier, safer one and is
-  /// kept. A draft that already carries a transaction id, or a record past
-  /// `draft`, needs no marker and is returned unchanged.
+  /// kept. A record past `draft` needs no marker and is returned unchanged.
   Future<PaymentLinkRecoveryRecord> markSubmissionStarted({
     required String address,
     required int chainHeight,
+    DateTime? updatedAt,
+  }) async {
+    return (await _markSubmissionStarted(
+      address: address,
+      chainHeight: chainHeight,
+      updatedAt: updatedAt,
+      requireRecord: true,
+    ))!;
+  }
+
+  /// [markSubmissionStarted] for a Ledger outbox broadcast, which may outlive
+  /// a draft the reconciler already removed as expired; Rust settles that
+  /// operation itself. Returns null when [address] has no record.
+  Future<PaymentLinkRecoveryRecord?> markSubmissionStartedIfPresent({
+    required String address,
+    required int chainHeight,
+  }) {
+    return _markSubmissionStarted(
+      address: address,
+      chainHeight: chainHeight,
+      requireRecord: false,
+    );
+  }
+
+  Future<PaymentLinkRecoveryRecord?> _markSubmissionStarted({
+    required String address,
+    required int chainHeight,
+    required bool requireRecord,
     DateTime? updatedAt,
   }) {
     return _runExclusive(() async {
@@ -278,9 +328,11 @@ class PaymentLinkRecoveryStore {
         );
       }
       final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
+      final existing = requireRecord
+          ? _findRequired(records, address)
+          : _findByAddress(records, address);
+      if (existing == null) return null;
       if (existing.state != PaymentLinkRecoveryState.draft) return existing;
-      if (existing.fundingTxids?.trim().isNotEmpty ?? false) return existing;
       if (existing.submittedAtHeight != null) return existing;
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.draft,
@@ -307,6 +359,9 @@ class PaymentLinkRecoveryStore {
   /// No expiry height is recorded, because the software path never sees one.
   /// The reconciler therefore promotes such a draft when its transaction is
   /// mined but never expires it.
+  ///
+  /// A recorded broadcast txid proves the broadcast boundary was crossed, so
+  /// a missing submission marker is filled in with an unknown height.
   Future<PaymentLinkRecoveryRecord> markSubmitted({
     required String address,
     required String fundingTxids,
@@ -333,12 +388,15 @@ class PaymentLinkRecoveryStore {
             'Payment link funding was prepared with a different transaction.',
           );
         }
-        return existing;
+        if (existing.submittedAtHeight != null) return existing;
       }
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.draft,
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
-        fundingTxids: submittedTxids,
+        fundingTxids: (existingTxids?.isNotEmpty ?? false)
+            ? existingTxids
+            : submittedTxids,
+        submittedAtHeight: existing.submittedAtHeight ?? 0,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -456,6 +514,47 @@ class PaymentLinkRecoveryStore {
     });
   }
 
+  /// Removes a prepared hardware draft whose flow ended before its broadcast
+  /// boundary. Checked under the store lock, so a marker written after the
+  /// caller's read keeps the draft.
+  Future<void> removeUnsubmittedPreparedDraft({required String address}) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findByAddress(records, address);
+      if (existing == null) return;
+      if (existing.state != PaymentLinkRecoveryState.draft ||
+          (existing.fundingTxids?.trim().isEmpty ?? true) ||
+          existing.submittedAtHeight != null) {
+        throw StateError(
+          'Only an unsubmitted prepared payment link draft can be removed.',
+        );
+      }
+      await _writeRecords(
+        records.where((record) => record.link.address != address).toList(),
+      );
+    });
+  }
+
+  /// Drops [sourceAccountUuid]'s drafts that never crossed the broadcast
+  /// boundary. Called once the account itself is gone: they can no longer be
+  /// funded, and the reconciler cannot query a deleted account's history.
+  Future<int> removeUnsubmittedDraftsForAccount(String sourceAccountUuid) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final kept = records
+          .where(
+            (record) =>
+                record.sourceAccountUuid != sourceAccountUuid ||
+                record.state != PaymentLinkRecoveryState.draft ||
+                record.mayHoldUnsharedFunds,
+          )
+          .toList();
+      final removed = records.length - kept.length;
+      if (removed > 0) await _writeRecords(kept);
+      return removed;
+    });
+  }
+
   Future<void> removeUnsharedExpiredFunding({
     required String address,
     required String fundingTxids,
@@ -476,6 +575,36 @@ class PaymentLinkRecoveryStore {
       );
     });
   }
+
+  /// Compare identity and funding before applying an asynchronous observation.
+  /// Preserve independent funding/share changes made while the scan ran.
+  Future<bool> updateUsage({
+    required PaymentLinkRecoveryRecord expected,
+    required GiftCardUsage usage,
+  }) => _runExclusive(() async {
+    final records = await _loadUnlocked();
+    final current = _findByAddress(records, expected.link.address);
+    if (current == null ||
+        !current.link.hasSameCanonicalPayload(expected.link) ||
+        current.fundingTxids != expected.fundingTxids ||
+        jsonEncode(current.usage.toJson()) !=
+            jsonEncode(expected.usage.toJson())) {
+      return false;
+    }
+    // Apply the same validation to writes and reads.
+    GiftCardUsage.fromJson(usage.toJson());
+    await _writeRecords(
+      _replaceByAddress(
+        records,
+        current.copyWith(
+          state: current.state,
+          updatedAt: current.updatedAt,
+          usage: usage,
+        ),
+      ),
+    );
+    return true;
+  });
 
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {
     final raw = await _storage.read();
@@ -499,7 +628,11 @@ class PaymentLinkRecoveryStore {
           'Recovery payload records are missing.',
         );
       }
-      return [for (final item in items) _recordFromJson(item)];
+      final records = [for (final item in items) _recordFromJson(item)];
+      if (decoded[_submissionMarkersKey] == true) return records;
+      return [
+        for (final record in records) _withLegacySubmissionMarker(record),
+      ];
     } on PaymentLinkRecoveryStoreFormatException {
       rethrow;
     } catch (error) {
@@ -518,6 +651,7 @@ class PaymentLinkRecoveryStore {
     await _storage.write(
       jsonEncode({
         'version': _storageVersion,
+        _submissionMarkersKey: true,
         'records': [for (final record in records) _recordToJson(record)],
       }),
     );
@@ -653,6 +787,24 @@ PaymentLinkRecoveryRecord? _findByAddress(
   return null;
 }
 
+/// Older builds could broadcast a draft's funding without writing the marker,
+/// so a legacy draft carrying a txid is treated as submitted at an unknown
+/// height.
+PaymentLinkRecoveryRecord _withLegacySubmissionMarker(
+  PaymentLinkRecoveryRecord record,
+) {
+  if (record.state != PaymentLinkRecoveryState.draft ||
+      record.submittedAtHeight != null ||
+      (record.fundingTxids?.trim().isEmpty ?? true)) {
+    return record;
+  }
+  return record.copyWith(
+    state: record.state,
+    updatedAt: record.updatedAt,
+    submittedAtHeight: 0,
+  );
+}
+
 PaymentLinkRecoveryRecord _findRequired(
   List<PaymentLinkRecoveryRecord> records,
   String address,
@@ -684,7 +836,10 @@ List<PaymentLinkRecoveryRecord> _replaceByAddress(
 
 Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
   return {
-    'link': record.link.toUri().toString(),
+    'usage': record.usage.toJson(),
+    'link': record.link.toRecoveryUri().toString(),
+    'address': record.link.address,
+    'createdAt': record.link.createdAt.toUtc().toIso8601String(),
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
@@ -711,6 +866,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
   final linkRaw = value['link'];
+  final address = value['address'];
+  final createdAtRaw = value['createdAt'];
   final sourceAccountUuid = value['sourceAccountUuid'];
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
@@ -718,6 +875,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final submittedAtHeight = value['submittedAtHeight'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
+      (address != null && (address is! String || address.isEmpty)) ||
+      (createdAtRaw != null && createdAtRaw is! String) ||
       sourceAccountUuid is! String ||
       sourceAccountUuid.isEmpty ||
       stateRaw is! String ||
@@ -732,9 +891,17 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
   final updatedAt = DateTime.tryParse(updatedAtRaw);
+  final createdAt = createdAtRaw == null
+      ? null
+      : DateTime.tryParse(createdAtRaw as String);
   if (updatedAt == null) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record timestamp is invalid.',
+    );
+  }
+  if (createdAtRaw != null && createdAt == null) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record creation timestamp is invalid.',
     );
   }
   late final PaymentLinkRecoveryState state;
@@ -760,8 +927,34 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     );
   }
 
+  final parsedLink = VizorPaymentLink.parse(linkRaw);
+  final addressMismatch =
+      parsedLink.knownAddress != null &&
+      address != null &&
+      parsedLink.knownAddress != address;
+  final createdAtMismatch =
+      parsedLink.knownCreatedAt != null &&
+      createdAt != null &&
+      parsedLink.knownCreatedAt != createdAt;
+  if (addressMismatch || createdAtMismatch) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record link metadata does not match its record.',
+    );
+  }
+  final resolvedAddress = (address as String?) ?? parsedLink.knownAddress;
+  final resolvedCreatedAt = createdAt ?? parsedLink.knownCreatedAt;
+  if (resolvedAddress == null || resolvedCreatedAt == null) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record link metadata is missing.',
+    );
+  }
+
   return PaymentLinkRecoveryRecord(
-    link: VizorPaymentLink.parse(linkRaw),
+    link: parsedLink.withResolvedMetadata(
+      address: resolvedAddress,
+      createdAt: resolvedCreatedAt,
+    ),
+    usage: GiftCardUsage.fromJson(value['usage']),
     claimFeeReserveZatoshi: reserve,
     sourceAccountUuid: sourceAccountUuid,
     state: state,
@@ -772,6 +965,8 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   );
 }
 
+/// Gift Cards that block deleting [sourceAccountUuid]: see
+/// [PaymentLinkRecoveryRecord.mayHoldUnsharedFunds].
 int countUnsharedFundedPaymentLinks(
   Iterable<PaymentLinkRecoveryRecord> records, {
   required String sourceAccountUuid,
@@ -781,13 +976,7 @@ int countUnsharedFundedPaymentLinks(
       .where(
         (record) =>
             record.sourceAccountUuid == sourceAccountUuid &&
-            (record.state == PaymentLinkRecoveryState.funded ||
-                (record.state == PaymentLinkRecoveryState.draft &&
-                    (record.fundingTxids?.trim().isNotEmpty ?? false)) ||
-                // An ambiguous submission has no transaction id to check, and
-                // its broadcast may well have landed. Blocking the delete is
-                // the conservative answer.
-                record.isAmbiguousSubmission),
+            record.mayHoldUnsharedFunds,
       )
       .length;
 }

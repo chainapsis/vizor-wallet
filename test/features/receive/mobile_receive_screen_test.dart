@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fixtures/orchard_receive_address.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
 const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
@@ -77,7 +78,7 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     renewals++;
-    return 'u1renewedaddress9876543210abcdefghij';
+    return orchardReceiveAddress;
   }
 
   @override
@@ -412,8 +413,12 @@ void main() {
 
     expect(service.renewals, 1);
     expect(
-      find.textContaining('u1renewedaddr', findRichText: true),
+      find.textContaining('u1ddnjsdcpm36', findRichText: true),
       findsOneWidget,
+    );
+    expect(
+      tester.widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface)).address,
+      orchardReceiveAddress,
     );
   });
 
@@ -536,6 +541,8 @@ void main() {
 
     await _pumpReceive(tester, _FakeReceiveAddressService());
 
+    await tester.tap(find.bySemanticsLabel('Generate new shielded address'));
+    await _settle(tester);
     await tester.tap(find.text('Share shielded address'));
     await _settle(tester);
 
@@ -543,7 +550,7 @@ void main() {
     expect(shareCalls, hasLength(1));
     expect(
       (shareCalls.single.arguments as Map<Object?, Object?>)['text'],
-      _shielded,
+      orchardReceiveAddress,
     );
   });
 
@@ -602,7 +609,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey('request_amount_input')),
-      '0.5',
+      ',5',
     );
     await _settle(tester);
 

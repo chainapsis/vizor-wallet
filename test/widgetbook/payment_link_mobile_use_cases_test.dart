@@ -16,6 +16,33 @@ import '../figma_compare/figma_compare_font_loader.dart';
 void main() {
   setUpAll(loadFigmaCompareFonts);
 
+  testWidgets('focused gift amount preview normalizes and validates input', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobilePaymentLinkAmountFocusedUseCase);
+    final field = find.byKey(
+      const ValueKey('mobile_payment_link_focused_amount_editor'),
+    );
+    final controller = tester.widget<EditableText>(field).controller;
+    // This visual fixture intentionally keeps its price-loading animation active.
+    for (final separator in ['.', ',']) {
+      await tester.enterText(field, '');
+      await tester.enterText(field, separator);
+      await tester.pump();
+      expect(controller.text, '0.');
+      expect(controller.selection, const TextSelection.collapsed(offset: 2));
+      await tester.enterText(field, '0.5');
+      await tester.pump();
+      expect(controller.text, '0.5');
+      expect(controller.selection, const TextSelection.collapsed(offset: 3));
+    }
+    for (final invalid in ['a.5', '0.123456789']) {
+      await tester.enterText(field, invalid);
+      await tester.pump();
+      expect(controller.text, '0.5');
+    }
+  });
+
   testWidgets('Redeem opens the shared scanner and can return to paste', (
     tester,
   ) async {
@@ -88,6 +115,20 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final entry in <String, WidgetBuilder>{
+    'cards list': buildMobilePaymentLinkHomeCardsUseCase,
+    'share QR': buildMobilePaymentLinkShareQrUseCase,
+  }.entries) {
+    testWidgets('${entry.key} fixture renders without provider errors', (
+      tester,
+    ) async {
+      await _pumpUseCase(tester, entry.value);
+      await tester.pumpAndSettle();
+      expect(find.text('Gift Cards'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('received Gift Card flips to its message', (tester) async {
     await _pumpUseCase(tester, buildMobilePaymentLinkReceivedUseCase);

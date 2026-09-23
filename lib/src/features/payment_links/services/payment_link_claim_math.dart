@@ -91,6 +91,52 @@ int paymentLinkFundingConfirmationCountForClaim({
   return min(confirmationCount, kPaymentLinkClaimConfirmationTarget);
 }
 
+/// Preserve original/legacy dates, but replace a local fallback once mined.
+@visibleForTesting
+VizorPaymentLink resolvePaymentLinkCreatedAt({
+  required VizorPaymentLink link,
+  required List<rust_sync.TransactionInfo> transactions,
+  DateTime Function()? now,
+}) {
+  if (link.knownCreatedAt != null && !link.isCreatedAtProvisional) return link;
+  final fundingTime = paymentLinkFundingCreatedAt(
+    recipientAmountZatoshi: link.amountZatoshi,
+    transactions: transactions,
+  );
+  return link.withResolvedMetadata(
+    createdAt:
+        fundingTime ?? link.knownCreatedAt ?? (now ?? DateTime.now)().toUtc(),
+    isCreatedAtProvisional: fundingTime == null,
+  );
+}
+
+@visibleForTesting
+DateTime? paymentLinkFundingCreatedAt({
+  required BigInt recipientAmountZatoshi,
+  required List<rust_sync.TransactionInfo> transactions,
+}) {
+  final expectedFunding = paymentLinkFundingAmountZatoshi(
+    recipientAmountZatoshi,
+  );
+  DateTime? createdAt;
+  for (final transaction in transactions) {
+    if (transaction.expiredUnmined ||
+        transaction.txKind != 'received' ||
+        BigInt.from(transaction.accountBalanceDelta) != expectedFunding ||
+        transaction.blockTime <= BigInt.zero) {
+      continue;
+    }
+    final candidate = DateTime.fromMillisecondsSinceEpoch(
+      transaction.blockTime.toInt() * Duration.millisecondsPerSecond,
+      isUtc: true,
+    );
+    if (createdAt == null || candidate.isBefore(createdAt)) {
+      createdAt = candidate;
+    }
+  }
+  return createdAt;
+}
+
 @visibleForTesting
 bool paymentLinkShouldWaitForFunding({
   required BigInt recipientAmountZatoshi,
@@ -253,15 +299,6 @@ Future<bool> finalizeConfirmedPaymentLinkClaim({
   if (!await deleteRetainedWallet(record)) return false;
   await clearClaimSecret(record.address);
   return true;
-}
-
-@visibleForTesting
-bool shouldRecreatePaymentLinkClaimWallet({
-  required List<String> accountAddresses,
-  required String expectedAddress,
-}) {
-  return accountAddresses.length != 1 ||
-      accountAddresses.single != expectedAddress;
 }
 
 @visibleForTesting

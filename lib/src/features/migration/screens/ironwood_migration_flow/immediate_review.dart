@@ -18,6 +18,8 @@ class _IronwoodMigrationImmediateReviewContentState
     extends ConsumerState<_IronwoodMigrationImmediateReviewContent> {
   bool _isBroadcasting = false;
   String? _error;
+  String? _ledgerAccountUuid;
+  rust_sync.OrchardMigrationImmediatePlan? _ledgerPlan;
 
   void _retryPlan() {
     setState(() => _error = null);
@@ -36,7 +38,16 @@ class _IronwoodMigrationImmediateReviewContentState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      if (accountState.activeAccount?.isHardware ?? false) {
+      final activeAccount = accountState.activeAccount;
+      if (activeAccount?.isLedger ?? false) {
+        if (!mounted) return;
+        setState(() {
+          _ledgerAccountUuid = accountUuid;
+          _ledgerPlan = plan;
+        });
+        return;
+      }
+      if (activeAccount?.isKeystone ?? false) {
         if (!mounted) return;
         context.go('/migration/immediate/keystone/sign', extra: plan);
         return;
@@ -67,8 +78,38 @@ class _IronwoodMigrationImmediateReviewContentState
     }
   }
 
+  Future<void> _completeLedgerMigration(
+    rust_sync.IronwoodMigrationResult _,
+  ) async {
+    try {
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (_) {
+      // Broadcast completion is authoritative; regular sync will reconcile it.
+    }
+    if (mounted) context.go('/home');
+  }
+
+  void _cancelLedgerMigration() {
+    if (!mounted) return;
+    setState(() {
+      _ledgerAccountUuid = null;
+      _ledgerPlan = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final ledgerAccountUuid = _ledgerAccountUuid;
+    final ledgerPlan = _ledgerPlan;
+    if (ledgerAccountUuid != null && ledgerPlan != null) {
+      return LedgerImmediateMigrationSigningOverlay(
+        accountUuid: ledgerAccountUuid,
+        plan: ledgerPlan,
+        onCancel: _cancelLedgerMigration,
+        onComplete: _completeLedgerMigration,
+      );
+    }
+
     final planAsync = widget.previewPlan == null
         ? ref.watch(ironwoodMigrationImmediatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationImmediatePlan?>.data(
@@ -95,6 +136,8 @@ class _IronwoodMigrationImmediateReviewContentState
         ? 'No spendable Orchard balance is available for Immediate migration.'
         : null;
     final displayedError = _error ?? planMessage;
+    final isLedgerAccount =
+        ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
 
     return SizedBox(
       key: const ValueKey('ironwood_migration_immediate_review_screen'),
@@ -177,8 +220,8 @@ class _IronwoodMigrationImmediateReviewContentState
                                   text:
                                       'Crosses in one visible step — your '
                                       '$amount and timing are ',
-                                  children: const [
-                                    TextSpan(
+                                  children: [
+                                    const TextSpan(
                                       text:
                                           'easier to associate with your '
                                           'wallet.',
@@ -187,9 +230,11 @@ class _IronwoodMigrationImmediateReviewContentState
                                       ),
                                     ),
                                     TextSpan(
-                                      text:
-                                          '\nConsider choosing a Private '
-                                          'Migration option.',
+                                      text: isLedgerAccount
+                                          ? '\nPrivate migration is not '
+                                                'available for Ledger accounts.'
+                                          : '\nConsider choosing a Private '
+                                                'Migration option.',
                                     ),
                                   ],
                                 ),
@@ -232,7 +277,9 @@ class _IronwoodMigrationImmediateReviewContentState
                   minWidth: 230,
                   expand: true,
                   leading: const AppIcon(AppIcons.chevronBackward, size: 18),
-                  child: const Text('Consider another option'),
+                  child: Text(
+                    isLedgerAccount ? 'Back' : 'Consider another option',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 AppButton(

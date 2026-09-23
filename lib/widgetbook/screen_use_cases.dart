@@ -19,6 +19,7 @@ import '../src/features/activity/screens/mobile/mobile_transaction_status_screen
 import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
+import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
 import '../src/core/layout/app_layout.dart';
@@ -2283,6 +2284,7 @@ Widget _buildAccountsUseCase(
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(accountState.activeAccountUuid),
       ),
+      paymentLinkUnsharedFundedCountProvider.overrideWith((ref, _) async => 0),
     ],
     child: _AccountsHarness(
       initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
@@ -2530,6 +2532,7 @@ Widget _buildMobileAccountsUseCase(
           status: migrationStatus,
         ),
       ),
+      paymentLinkUnsharedFundedCountProvider.overrideWith((ref, _) async => 0),
     ],
     child: Center(
       child: SizedBox(
@@ -4977,7 +4980,10 @@ class _PreviewAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> removeAccount(String uuid) async {
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     final prev = state.value ?? initialState;
     final updated = [
       for (final account in prev.accounts)
@@ -4987,7 +4993,7 @@ class _PreviewAccountNotifier extends AccountNotifier {
   }
 
   @override
-  Future<void> resetWallet() async {
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     state = const AsyncData(AccountState());
   }
 }

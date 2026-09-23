@@ -2,6 +2,34 @@
 
 ## Gift Cards
 
+Sender usage tracking and empty observer DB reuse:
+
+```bash
+scripts/e2e/flutter-macos-regtest-gift-card-tracking.sh
+```
+
+This runner resets the disposable regtest chain by default, imports the funded
+sender, drives creation and receipt in the UI, and checks `Unused`, `Use detected`
+at one confirmation, and `Used` plus automatic observer deletion at six. It then
+restarts the process after 200 mined blocks, checks persisted usage and the same
+empty DB path, and repeats the lifecycle for a new card. It uses the production
+tracking timer rather than forcing refreshes. Logs and app-content PNG captures
+are written to `.regtest-logs/gift-card-tracking/`. The window stays hidden by
+default. Run prepare/resume together: resume requires prepare's retained wallet
+and manifest.
+
+The companion Rust scenario verifies the skipped block interval directly with
+real shielded notes and a changed tree frontier, then imports an older card:
+
+```bash
+cargo test --manifest-path rust/Cargo.toml --test regtest_gift_card_tracking -- --ignored --nocapture --test-threads=1
+```
+
+Start a healthy regtest stack first. Do not run this command concurrently with
+an app E2E: both mine on the same chain. It uses temporary wallet DBs and does not
+inject scan queue rows. The test is excluded from ordinary Rust test runs.
+
+
 The macOS regtest runners cover the Gift Card (payment-link) flows. They
 share `scripts/e2e/lib-payment-link.sh`, which starts the regtest stack, funds
 the sender account, and passes the regtest + payment-link defines every phase

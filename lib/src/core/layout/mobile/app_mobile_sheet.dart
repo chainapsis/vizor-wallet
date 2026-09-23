@@ -16,13 +16,10 @@ import '../../widgets/app_icon.dart';
 ///
 /// - 16px side margins ([AppSpacing.sm]) — card x=16, width=361 on the
 ///   393-wide artboard.
-/// - 32px bottom gap ([AppSpacing.base]) — bottom-anchored cards end at
-///   y=820 on the 852-tall artboard. On iOS the home indicator is a
-///   ~13pt overlay, so the fixed gap already clears it and the safe-area
-///   inset is not stacked on top (matching the project's
-///   `MobileBottomSafeArea` rule). On Android the navigation bar takes
-///   real, device-dependent space, so its inset is added on top of the
-///   visual gap.
+/// - 16px bottom gap ([AppSpacing.sm]) to match the side margins. On iOS
+///   this gap includes the home-indicator clearance without adding the
+///   bottom safe-area inset. Android adds its device-dependent navigation
+///   inset to the same visual gap.
 /// - All-corner radius of [AppRadii.xLarge] (radii/L = 32) on a
 ///   `background.base` surface with the Figma shadow overlay.
 /// - When the software keyboard is open the card floats 16px above it
@@ -111,9 +108,9 @@ class MobileModalCard extends StatelessWidget {
   /// Bottom sheets retain the default side and safe-area-aware bottom gaps.
   final EdgeInsets? margin;
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
+  /// Default bottom clearance shared by the card and content that sizes
+  /// itself to the space above it. Explicit [margin] overrides this gap.
+  static double bottomGapFor(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final keyboardInset = mediaQuery.viewInsets.bottom;
 
@@ -123,14 +120,20 @@ class MobileModalCard extends StatelessWidget {
       // the software keyboard.
       bottomGap = keyboardInset + AppSpacing.sm;
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      // The home indicator floats inside the 32px gap; do not stack the
+      // The home indicator floats inside the 16px gap; do not stack the
       // safe-area inset on top of it.
-      bottomGap = AppSpacing.base;
+      bottomGap = AppSpacing.sm;
     } else {
       // Android nav bars vary per device and occupy real space — keep the
-      // 32px visual gap above whatever inset the device reports.
-      bottomGap = AppSpacing.base + mediaQuery.viewPadding.bottom;
+      // 16px visual gap above whatever inset the device reports.
+      bottomGap = AppSpacing.sm + mediaQuery.viewPadding.bottom;
     }
+    return bottomGap;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
 
     final Widget card = transparentBackground
         ? child
@@ -164,7 +167,7 @@ class MobileModalCard extends StatelessWidget {
           EdgeInsets.only(
             left: sideMargin,
             right: sideMargin,
-            bottom: bottomGap,
+            bottom: bottomGapFor(context),
           ),
       child: card,
     );

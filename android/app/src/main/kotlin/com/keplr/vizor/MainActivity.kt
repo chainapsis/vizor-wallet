@@ -11,6 +11,7 @@ import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
+import io.flutter.plugin.common.EventChannel
 
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
@@ -91,6 +92,7 @@ class MainActivity : FlutterFragmentActivity() {
             ArrayList(pendingIncomingUris.filter(::isSecretFreeIncomingUri))
         )
     }
+    private lateinit var ledgerMobileHandler: LedgerMobileHandler
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -127,6 +129,31 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, result ->
             sensitiveClipboardHandler.handle(call, result)
         }
+        ledgerMobileHandler = LedgerMobileHandler(this)
+        val pairingChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.zcash.wallet/ledger_mobile/pairing"
+        )
+        ledgerMobileHandler.onPairingInvalid = { connectionId ->
+            pairingChannel.invokeMethod("pairingInvalid", mapOf("connectionId" to connectionId))
+        }
+        val signingProgressChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.zcash.wallet/ledger_mobile/signing_progress"
+        )
+        ledgerMobileHandler.onSigningProgress = { requestId, phase ->
+            signingProgressChannel.invokeMethod("progress", mapOf("requestId" to requestId, "phase" to phase))
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.METHOD_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            ledgerMobileHandler.handle(call, result)
+        }
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LedgerMobileHandler.EVENT_CHANNEL
+        ).setStreamHandler(ledgerMobileHandler)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CAMERA_PERMISSION_CHANNEL
@@ -278,6 +305,25 @@ class MainActivity : FlutterFragmentActivity() {
         // this process's copy, so a restore after process death may hand back
         // either this intent or the one that created the activity record.
         captureIncomingUri(intent)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (
+            ::ledgerMobileHandler.isInitialized &&
+            ledgerMobileHandler.onRequestPermissionsResult(requestCode, grantResults)
+        ) {
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onDestroy() {
+        if (::ledgerMobileHandler.isInitialized) ledgerMobileHandler.close()
+        super.onDestroy()
     }
 
     private fun openAppSettings(): Boolean {

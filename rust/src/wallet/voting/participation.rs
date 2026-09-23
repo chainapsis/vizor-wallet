@@ -121,7 +121,7 @@ fn confirmed_keys(
     notes: &[NoteInfo],
     keys: &[String],
 ) -> Result<Vec<String>, String> {
-    let db = super::db::open_voting_db(db_path, account)?;
+    let db = super::db::open_voting_db(db_path, account).map_err(|e| e.to_string())?;
     let mut found = Vec::new();
     for index in 0..db.get_bundle_count(round).map_err(|_| INVALID)? {
         if db.load_van_position(round, index).is_err() {
@@ -588,27 +588,39 @@ fn save_exclusions(
     snapshot: u64,
     excluded: &[String],
 ) -> Result<bool, String> {
-    super::db::with_voting_sidecar_write_lock(db_path, || {
-        let db = super::db::open_voting_db(db_path, account)?;
-        db.conn().execute_batch(TABLE).map_err(|_| INVALID)?;
-        // Never replan a round someone has already started locally, including
-        // a concurrently prepared round. Existing recovery remains authoritative.
-        if db.get_bundle_count(round).map_err(|_| INVALID)? > 0 {
-            return Ok(true);
-        }
-        db.conn()
-            .execute(
-                "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
-                rusqlite::params![
-                    account,
-                    round,
-                    snapshot,
-                    serde_json::to_string(excluded).map_err(|_| INVALID)?
-                ],
-            )
-            .map_err(|_| INVALID)?;
-        Ok(false)
-    })
+    // No sidecar write lock: it existed because delegation bundles held
+    // independent SQLite connections that could race each other. Every handle
+    // for one sidecar now shares a single connection with SDK-owned busy
+    // handling, so opening and writing here is already serialized.
+    let db = super::db::open_voting_db(db_path, account).map_err(|_| INVALID)?;
+    let excluded = serde_json::to_string(excluded).map_err(|_| INVALID)?;
+    // One guard across the check and the write. Individually serialized
+    // statements are not enough here: `setup_bundles` committing a bundle plan
+    // between them would leave this recording exclusions for a round the
+    // wallet has just started, and reporting "not started locally" for it —
+    // which is what makes Home cache an active round as unavailable. The
+    // bundle count is queried inline rather than through `get_bundle_count`
+    // because that re-locks the same connection.
+    let conn = db.conn();
+    conn.execute_batch(TABLE).map_err(|_| INVALID)?;
+    let bundles: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM bundles WHERE round_id = ?1 AND wallet_id = ?2",
+            rusqlite::params![round, db.wallet_id()],
+            |row| row.get(0),
+        )
+        .map_err(|_| INVALID)?;
+    // Never replan a round someone has already started locally, including
+    // a concurrently prepared round. Existing recovery remains authoritative.
+    if bundles > 0 {
+        return Ok(true);
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO vizor_voting_participation VALUES (?1,?2,?3,?4)",
+        rusqlite::params![account, round, snapshot, excluded],
+    )
+    .map_err(|_| INVALID)?;
+    Ok(false)
 }
 
 pub fn filter_notes(
@@ -650,77 +662,10 @@ pub fn clear_account(db: &zcash_voting::storage::VotingDb) -> Result<(), String>
     Ok(())
 }
 
-/// Assemble SDK bundles from the participation-filtered snapshot note set.
-/// Keep proof/signature/witness algorithms owned by the pinned SDK.
-pub fn prepare_bundle(
-    db: &zcash_voting::storage::VotingDb,
-    wallet: &crate::wallet::db::WalletDatabase,
-    params: zcash_voting::delegate::PrepareDelegationBundleParams<'_>,
-) -> Result<zcash_voting::delegate::PreparedDelegationBundle, zcash_voting::VotingError> {
-    use zcash_voting::{delegate, selection, VotingError};
-    let err = |message: String| VotingError::InvalidInput { message };
-    let lwd = params.lwd;
-    if lwd.network != params.voting_hotkey.network() {
-        return Err(err("Voting network mismatch".into()));
-    }
-    delegate::ensure_round_context(
-        db,
-        lwd.network,
-        &lwd.round_params,
-        &lwd.resolved_round_name,
-        params.session_json,
-    )?;
-    let scanned = wallet
-        .block_fully_scanned()
-        .map_err(|_| err(INVALID.into()))?
-        .map(|m| u64::from(u32::from(m.block_height())))
-        .unwrap_or(0);
-    let inputs =
-        selection::gather_delegation_wallet_inputs(selection::GatherDelegationWalletParams {
-            wallet_db: wallet,
-            account_uuid: params.account_uuid,
-            voting_hotkey: params.voting_hotkey,
-            snapshot_height: lwd.round_params.snapshot_height,
-            scanned_height: scanned,
-            anchor_tree_state_bytes: lwd.anchor_tree_state_bytes,
-            resolved_round_name: lwd.resolved_round_name.clone(),
-        })?;
-    let round = lwd.round_params.vote_round_id.as_str();
-    let notes = filter_notes(
-        db,
-        round,
-        lwd.round_params.snapshot_height,
-        &inputs.round_note_infos,
-    )
-    .map_err(err)?;
-    let layout =
-        db.ensure_bundles_with_skipped_suffix_with_policy(round, &notes, params.bundle_policy)?;
-    let bundle_note_infos = zcash_voting::round::bundle_notes_for_index_for_round(
-        &notes,
-        &layout,
-        params.bundle_index,
-        db,
-        round,
-    )?;
-    let prepared = delegate::PreparedDelegationBundle {
-        round_id: round.to_string(),
-        round_params: lwd.round_params,
-        bundle_index: params.bundle_index,
-        layout,
-        bundle_note_infos,
-        delegation_keys: inputs.delegation_keys,
-        branch_id_provider: lwd.branch_id_provider,
-        anchor_tree_state_bytes: inputs.anchor_tree_state_bytes,
-        network: lwd.network,
-        round_name: lwd.resolved_round_name,
-    };
-    prepared.ensure_witnesses(db, wallet)?;
-    Ok(prepared)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
     fn fixture(network: &str) -> (serde_json::Value, Vec<String>, i64) {
         let text = match network {
             "main" => include_str!("../../../tests/fixtures/voting-participation/main.json"),
@@ -1008,7 +953,16 @@ mod tests {
         )
         .unwrap()
         .is_empty());
-        db.store_van_position(&params.vote_round_id, 0, 1).unwrap();
+        // The SDK made `store_van_position` crate-private; the lifecycle owns
+        // it now. This fixture still needs a confirmed VAN position, so it
+        // writes the row the SDK would have written.
+        db.conn()
+            .execute(
+                "UPDATE bundles SET van_leaf_position = ?1 WHERE round_id = ?2 \
+                 AND wallet_id = ?3 AND bundle_index = ?4",
+                rusqlite::params![1i64, &params.vote_round_id, db.wallet_id(), 0i64],
+            )
+            .unwrap();
         assert_eq!(
             confirmed_keys(
                 path,

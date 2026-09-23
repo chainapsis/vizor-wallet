@@ -68,8 +68,17 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub birthday_height: u32,
+    pub zip32_account_index: Option<u32>,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    pub hardware_signer_kind: Option<String>,
+}
+
+/// Stored hardware signer metadata used to migrate pre-key_source accounts.
+pub struct LegacyHardwareAccount {
+    pub account_uuid: String,
+    pub hardware_signer_kind: String,
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -341,13 +350,61 @@ pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAcc
         let network = keys::parse_network(&network)?;
         let mnemonic = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
-        let unified_address = keys::derive_software_address(network, &seed, 0)?;
+        let unified_address = keys::derive_gift_address(network, &seed, 0)?;
 
         Ok(GeneratedSoftwareAccount {
             mnemonic,
             unified_address,
         })
     })
+}
+
+/// Validate and recover original English BIP-39 entropy without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_to_entropy(mnemonic: String) -> Result<Vec<u8>, String> {
+    keys::mnemonic_to_entropy(&mnemonic)
+}
+
+/// Reconstruct an English BIP-39 phrase without deriving keys or doing I/O.
+#[flutter_rust_bridge::frb(sync)]
+pub fn gift_mnemonic_from_entropy(entropy: Vec<u8>) -> Result<String, String> {
+    keys::mnemonic_from_entropy(entropy)
+}
+
+/// Compare the Orchard receivers of two Unified Addresses on the same network.
+#[flutter_rust_bridge::frb(sync)]
+pub fn same_orchard_receiver(network: String, first: String, second: String) -> bool {
+    let network = match keys::parse_network(&network) {
+        Ok(network) => network,
+        Err(_) => return false,
+    };
+    crate::wallet::addresses::same_orchard_receiver(network, &first, &second)
+}
+
+/// Check locally retained gift metadata before sharing an address-free link.
+/// Profile zero uses an empty BIP-39 passphrase and ZIP32 account zero, matching funding.
+pub fn validate_gift_address(
+    mnemonic: String,
+    network: String,
+    address: String,
+) -> Result<(), String> {
+    let validate = || {
+        let network = keys::parse_network(&network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        keys::validate_gift_address(network, &seed, address.trim())?;
+        Ok(())
+    };
+    validate().map_err(|_: String| "Gift address could not be verified".to_string())
+}
+
+/// Derive accepted Gift Card addresses once for matching retained receipts.
+pub fn get_gift_address_variants(mnemonic: String, network: String) -> Result<Vec<String>, String> {
+    let derive = || {
+        let network = keys::parse_network(&network)?;
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        keys::gift_address_variants(network, &seed)
+    };
+    derive().map_err(|_: String| "Gift address could not be verified".to_string())
 }
 
 /// Discover higher ZIP32 software accounts with transparent history that are
@@ -898,9 +955,11 @@ pub fn import_hardware_account(
     seed_fingerprint: Vec<u8>,
     zip32_index: u32,
     birthday_height: Option<u64>,
+    hardware_signer_kind: String,
 ) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let hardware_signer_kind = keys::HardwareSignerKind::parse(&hardware_signer_kind)?;
         let (account_uuid, unified_address) = keys::import_hardware_account(
             &db_path,
             network,
@@ -909,11 +968,32 @@ pub fn import_hardware_account(
             &seed_fingerprint,
             zip32_index,
             birthday_height,
+            hardware_signer_kind,
         )?;
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
         })
+    })
+}
+
+/// Backfill stored hardware accounts that predate authoritative Rust signer
+/// metadata.
+pub fn backfill_legacy_hardware_accounts(
+    db_path: String,
+    network: String,
+    accounts: Vec<LegacyHardwareAccount>,
+) -> Result<u32, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let accounts = accounts
+            .into_iter()
+            .map(|account| {
+                keys::HardwareSignerKind::parse(&account.hardware_signer_kind)
+                    .map(|kind| (account.account_uuid, kind))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        keys::backfill_legacy_hardware_accounts(&db_path, network, &accounts)
     })
 }
 
@@ -928,8 +1008,11 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 uuid: a.uuid,
                 name: a.name,
                 unified_address: a.unified_address,
+                birthday_height: a.birthday_height,
+                zip32_account_index: a.zip32_account_index,
                 is_seed_anchor: a.is_seed_anchor,
                 is_hardware: a.is_hardware,
+                hardware_signer_kind: a.hardware_signer_kind.map(|kind| kind.as_str().to_string()),
             })
             .collect())
     })
@@ -974,6 +1057,18 @@ pub fn delete_account(
 /// Drop process-local wallet summary data after the wallet DB is deleted.
 pub fn evict_wallet_summary_cache(db_path: String) {
     crate::wallet::wallet_summary_cache::evict_db(&db_path);
+}
+
+/// Current and legacy receive representations owned by a local account.
+pub fn get_receive_address_aliases(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Vec<String>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::get_receive_address_aliases(&db_path, network, &account_uuid)
+    })
 }
 
 /// Get the Unified Address for a specific account (or first account if uuid is None).
@@ -1127,11 +1222,134 @@ pub fn get_recent_transparent_receive_addresses(
 mod tests {
     use super::*;
 
+    #[test]
+    fn gift_entropy_preserves_wallet_and_rejects_invalid_inputs() {
+        use secrecy::ExposeSecret;
+        for length in [16, 20, 24, 28, 32] {
+            let entropy: Vec<u8> = (0..length).collect();
+            let phrase = gift_mnemonic_from_entropy(entropy.clone()).unwrap();
+            assert_eq!(gift_mnemonic_to_entropy(phrase.clone()).unwrap(), entropy);
+            assert!(gift_mnemonic_to_entropy(phrase.replace(' ', "  ")).is_err());
+            let original = bip0039::Mnemonic::<bip0039::English>::from_entropy(entropy).unwrap();
+            let restored_seed = keys::mnemonic_to_seed(&phrase).unwrap();
+            assert_eq!(
+                restored_seed.expose_secret().as_slice(),
+                original.to_seed("")
+            );
+            for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
+                let current = keys::derive_gift_address(network, &restored_seed, 0).unwrap();
+                let legacy =
+                    keys::derive_legacy_software_address(network, &restored_seed, 0).unwrap();
+                let legacy_projection =
+                    keys::derive_legacy_software_orchard_projection(network, &restored_seed, 0)
+                        .unwrap();
+                for address in [&current, &legacy, &legacy_projection] {
+                    validate_gift_address(
+                        phrase.clone(),
+                        network_name(network).into(),
+                        address.to_string(),
+                    )
+                    .unwrap();
+                }
+                assert!(validate_gift_address(
+                    phrase.clone(),
+                    network_name(network).into(),
+                    format!("{current}x")
+                )
+                .is_err());
+                let other_network = match network {
+                    WalletNetwork::Main => WalletNetwork::Regtest,
+                    _ => WalletNetwork::Main,
+                };
+                assert!(validate_gift_address(
+                    phrase.clone(),
+                    network_name(other_network).into(),
+                    current.clone(),
+                )
+                .is_err());
+                let other_phrase =
+                    keys::mnemonic_from_entropy(vec![1; usize::from(length)]).unwrap();
+                assert!(
+                    validate_gift_address(other_phrase, network_name(network).into(), current,)
+                        .is_err()
+                );
+            }
+        }
+        for length in [0, 15, 17, 31, 33, 512] {
+            assert!(gift_mnemonic_from_entropy(vec![0; length]).is_err());
+        }
+        for phrase in [
+            "private-input-invalid".to_string(),
+            "abandon ".repeat(12),
+            "a".repeat(513),
+        ] {
+            let error = gift_mnemonic_to_entropy(phrase.clone()).unwrap_err();
+            assert!(!error.contains(&phrase));
+        }
+        assert_eq!(
+            generate_software_account("main".into())
+                .unwrap()
+                .mnemonic
+                .split_whitespace()
+                .count(),
+            24
+        );
+    }
+
+    #[test]
+    fn gift_address_validation_accepts_nonzero_legacy_index_projection_only() {
+        let network = WalletNetwork::Main;
+        let (phrase, current, legacy, projection) = (0u8..=u8::MAX)
+            .find_map(|marker| {
+                let phrase = keys::mnemonic_from_entropy(vec![marker; 32]).ok()?;
+                let seed = keys::mnemonic_to_seed(&phrase).ok()?;
+                let current = keys::derive_gift_address(network, &seed, 0).ok()?;
+                let legacy = keys::derive_legacy_software_address(network, &seed, 0).ok()?;
+                let projection =
+                    keys::derive_legacy_software_orchard_projection(network, &seed, 0).ok()?;
+                (projection != current).then_some((phrase, current, legacy, projection))
+            })
+            .expect("a fixture with a nonzero legacy Sapling-compatible diversifier index");
+
+        assert_ne!(projection, current);
+        assert_ne!(projection, legacy);
+        validate_gift_address(phrase.clone(), "main".into(), legacy).unwrap();
+        validate_gift_address(phrase.clone(), "main".into(), projection.clone()).unwrap();
+        assert!(validate_gift_address(phrase, "main".into(), format!("{projection}x")).is_err());
+    }
+
+    #[test]
+    fn orchard_receiver_comparison_is_network_scoped() {
+        const LEGACY_BIP39_VECTOR_MAINNET_UA: &str =
+            "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
+
+        assert!(same_orchard_receiver(
+            "main".into(),
+            LEGACY_BIP39_VECTOR_MAINNET_UA.into(),
+            BIP39_VECTOR_MAINNET_UA.into(),
+        ));
+        assert!(!same_orchard_receiver(
+            "regtest".into(),
+            LEGACY_BIP39_VECTOR_MAINNET_UA.into(),
+            BIP39_VECTOR_MAINNET_UA.into(),
+        ));
+        assert!(!same_orchard_receiver(
+            "main".into(),
+            LEGACY_BIP39_VECTOR_MAINNET_UA.into(),
+            format!("{BIP39_VECTOR_MAINNET_UA}x"),
+        ));
+        assert!(!same_orchard_receiver(
+            "main".into(),
+            LEGACY_BIP39_VECTOR_MAINNET_UA.into(),
+            BIP39_VECTOR_MAINNET_TADDR.into(),
+        ));
+    }
+
     const BIP39_VECTOR_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     const BIP39_VECTOR_PASSPHRASE: &str = "TREZOR";
     const BIP39_VECTOR_MAINNET_UA: &str =
-        "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
+        "u16yrmgarlnpx3ktaxq4l8mmc8wwnw3nmml02nujwghr2enf3jggmfjqax44yqts3csnxrtq8pyshk9ryew2zlrp3x5lyc64usqsnwnu0v";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
     #[test]
@@ -1147,7 +1365,7 @@ mod tests {
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {
         // These expected addresses were generated outside this crate from the
         // BIP39 TREZOR vector: bip_utils for m/44'/133'/0'/0/0, and the
-        // Python zcash-test-vectors implementation for the Orchard + Sapling
+        // Python zcash-test-vectors implementation for the Orchard-only
         // default Unified Address. Keep them as fixed external oracles instead
         // of deriving the expected values with the production Rust code.
         let temp_dir = tempfile::tempdir().unwrap();

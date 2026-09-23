@@ -304,6 +304,14 @@ target account exists before removing account-scoped wallet rows.
 Voting background work that can write account state or secure storage must
 register with the destructive-operation drain before its first asynchronous
 step, and account deletion/reset must await that work before clearing data.
+Ledger outbox operations and their caller-side result persistence must register
+with `ledgerOperationLifecycleProvider` before their first asynchronous step.
+Account deletion/reset block new Ledger work and drain accepted operations before
+invalidating the secret session or deleting wallet data. Keep the lease through
+swap/pay metadata persistence and outbox acknowledgement; do not cancel a
+broadcast after submission merely to unblock deletion. Device approval remains
+outside this durable-operation lease. Ledger account import uses the same Linux
+`runMutation` boundary as software and Keystone imports.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
@@ -574,6 +582,14 @@ process memory, applied by the Dart layer at startup and by the settings
 toggle; every foreground lightwalletd and HTTP path goes through the
 policy-aware openers and fails closed while Tor is starting or broken.
 
+- **Voting SDK network clients are constructed only in**
+  `rust/src/wallet/voting/network_clients.rs`. Chain, helper, PIR, and
+  vote-tree are separate transport roles; injecting a chain transport does
+  not configure the tree. Both tree pre-sync and the round executor must use
+  the same shared routed transport. When upgrading the SDK, audit new
+  network-capable entry points and extend the routing table and service tests
+  in `rust/src/wallet/voting/README.md`. The Rust suite includes a supplemental
+  constructor guard; it does not replace checking actual network behavior.
 - **iOS background migration transport is pinned direct**
   (`open_background_direct_lwd_channel`), bypassing the route policy as a
   product decision. A background pass never brings Tor up or borrows the
@@ -653,6 +669,36 @@ Keep desktop and mobile consistent when cancelling signing, not merely closing t
 - Swap / Pay: return to the composer without preserving inputs; obtain a new quote on the next Review.
 - Vote: preserve saved partial signatures and resume unsigned bundles.
 - For transaction proposals, finish input-lock release and balance refresh before allowing retry.
+
+Send proposal reservations are process-scoped until a signed outbox checkpoint
+or the first broadcast attempt. Wallet-owned PCZTs carry the reservation owner;
+strip that metadata from device signer views. Ledger checkpoint insertion and
+reservation transfer must commit in the same SQLite transaction. Keystone marks
+retention before the first network submission, including TEX's first round.
+Normal app exit closes the proposal gate, requests sync cancellation, and hides
+its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+acquire the wallet write lock and drain accepted DB creators, then releases only
+unsubmitted reservations without waiting on SQLite contention. Once the budget
+expires, it starts no further cleanup; unfinished work is left for startup
+recovery. It does not interrupt an active DB operation. Dart bounds its cleanup
+wait at 300ms. On macOS, the exit-only `desktop_exit` channel orders the window
+out synchronously and suppresses last-window auto-quit while Dart is preparing
+its exit reply; ordinary window visibility still uses `window_manager`.
+Backgrounding or hiding a window by itself does not end the session.
+Before the first balance read after restart, the DB migration gate recovers
+abandoned process-scoped reservations without network access. Legacy retained,
+signed, and ambiguous-broadcast reservations keep their expiry-based recovery.
+Never clear all account locks: migration owners and durable outbox work are
+outside cancellation cleanup.
+
+Android Ledger device work must use `LedgerMobileHandler.launchOperation`,
+including app queries and app-opening approval, not only signing APDUs. Register
+ownership before dispatch, settle each MethodChannel result once, and retain the
+SDK-wide exclusion until the job actually completes after cancellation. Discovery
+and disconnect cleanup also participate in exclusion across Activity recreation.
+Dart preparation uses `ledgerDeviceRequestsProvider`: capture before the first
+await and check before starting the next stage or publishing a result. Do not
+apply this cancellable device policy to already-submitted durable broadcasts.
 
 ### Hardware Wallet (Keystone) Send Flow
 
@@ -913,6 +959,9 @@ edge in `MobileBottomSafeArea`
 
 ## Testing
 
+- Keep small Rust internal tests in the source file's `#[cfg(test)] mod tests`.
+- When fixtures or scenarios obscure the implementation, split into `<module>/tests.rs`; do not split by line count alone.
+- Put public-API integration tests in `rust/tests/`; do not widen production visibility for test placement.
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
 - Dart unit tests: `fvm flutter test` (mobile-tagged tests auto-skip).
   Mobile-UI tests:

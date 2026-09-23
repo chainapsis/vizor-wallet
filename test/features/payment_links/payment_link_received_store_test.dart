@@ -7,6 +7,130 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  test(
+    'provisional date survives restart and lifecycle, enrichment preserves claim metadata',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        priorTxids: ['old'],
+      );
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'pending',
+      );
+      store = PaymentLinkReceivedStore(storage);
+      final before = (await store.load()).single;
+      expect(before.isCreatedAtProvisional, isTrue);
+      expect(before.claimLink!.isCreatedAtProvisional, isTrue);
+      final minedTime = DateTime.utc(2026, 9, 17);
+      await store.resolveProvisionalCreatedAt(
+        address: link.address,
+        createdAt: minedTime,
+      );
+      final after = (await PaymentLinkReceivedStore(storage).load()).single;
+      expect(after.createdAt, minedTime);
+      expect(after.claimLink!.createdAt, minedTime);
+      expect(after.isCreatedAtProvisional, isFalse);
+      expect(after.claimLink!.isCreatedAtProvisional, isFalse);
+      expect(after.status, before.status);
+      expect(after.updatedAt, before.updatedAt);
+      expect(after.claimSubmittedAt, before.claimSubmittedAt);
+      expect(after.claimTxids, before.claimTxids);
+      expect(after.destinationAccountUuid, before.destinationAccountUuid);
+      await store.saveReady(link); // A stale provisional preview arrives late.
+      expect((await store.load()).single.createdAt, minedTime);
+      expect((await store.load()).single.isCreatedAtProvisional, isFalse);
+      await store.resolveProvisionalCreatedAt(
+        address: link.address,
+        createdAt: minedTime.add(const Duration(days: 1)),
+      );
+      expect((await store.load()).single.createdAt, minedTime);
+    },
+  );
+
+  test('old records without provenance preserve their date', () async {
+    final storage = _FakePaymentLinkReceivedStorage();
+    final store = PaymentLinkReceivedStore(storage);
+    await store.saveReady(_link());
+    final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+    (payload['records'] as List).single.remove('isCreatedAtProvisional');
+    storage.value = jsonEncode(payload);
+    await store.resolveProvisionalCreatedAt(
+      address: _link().address,
+      createdAt: DateTime.utc(2026, 9, 17),
+    );
+    final restored = (await store.load()).single;
+    expect(restored.createdAt, _link().createdAt);
+    expect(restored.claimLink!.isCreatedAtProvisional, isFalse);
+  });
+
+  for (final version in [1, 2]) {
+    for (final mismatch in [false, true]) {
+      test(
+        'v$version received link validates address before hydration: mismatch=$mismatch',
+        () async {
+          final storage = _FakePaymentLinkReceivedStorage();
+          final store = PaymentLinkReceivedStore(storage);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            priorTxids: [],
+          );
+          final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+          final row =
+              (payload['records'] as List).single as Map<String, dynamic>;
+          if (version == 1) {
+            final encoded = base64Url.encode(
+              utf8.encode(
+                jsonEncode({
+                  'v': 1,
+                  'network': link.network,
+                  'address': link.address,
+                  'amountZatoshi': link.amountZatoshi.toString(),
+                  'mnemonic': link.mnemonic,
+                  'birthdayHeight': link.birthdayHeight,
+                  'label': link.label,
+                  'createdAt': link.createdAt.toIso8601String(),
+                }),
+              ),
+            );
+            row['claimLink'] = link
+                .toUri()
+                .replace(fragment: 'v1=$encoded')
+                .toString();
+          }
+          if (mismatch) row['address'] = 'u1differentaddress';
+          storage.value = jsonEncode(payload);
+          final original = storage.value;
+          if (version == 1 && mismatch) {
+            await expectLater(
+              store.load(),
+              throwsA(isA<PaymentLinkReceivedStoreFormatException>()),
+            );
+            // A failed read must preserve the original recovery data.
+            expect(storage.value, original);
+            return;
+          }
+          final restored = (await store.load()).single;
+          expect(restored.status, PaymentLinkReceivedStatus.submitting);
+          expect(restored.claimLink!.address, row['address']);
+          expect(restored.claimLink!.createdAt, link.createdAt);
+          expect(restored.claimLink!.mnemonic, link.mnemonic);
+          expect(restored.destinationAccountUuid, 'receiver');
+          expect(await store.countReceivingForAccount('receiver'), 1);
+        },
+      );
+    }
+  }
+
   for (final status in PaymentLinkReceivedStatus.values) {
     for (final explicitNull in [false, true]) {
       test(
@@ -140,6 +264,26 @@ void main() {
     );
   }
 
+  for (final enclosedFiat in [142.23, null]) {
+    test('retry falls back to enclosed fiat: $enclosedFiat', () async {
+      final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
+      final link = _link(fiatAmount: enclosedFiat);
+      await store.saveReady(link);
+      final first = await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 200),
+      );
+      await store.markReadyToClaim(address: link.address, expected: first);
+      final retry = await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+      );
+      expect(retry.fiatSnapshot?.amount, enclosedFiat);
+      expect((await store.load()).single.fiatSnapshot?.amount, enclosedFiat);
+    });
+  }
+
   test('an old outcome cannot settle a newer submission', () async {
     final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
     final link = _link();
@@ -214,6 +358,33 @@ void main() {
     expect(await store.countReceivingForAccount('receiver'), 0);
     expect((await store.load()).single.claimLink!.toUri(), link.toUri());
   });
+
+  test(
+    'claim fiat survives repeat retention, completion and restart',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      final store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 200),
+      );
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'claim-tx',
+      );
+      await store.markReceived(address: link.address);
+      await store.clearConfirmedClaimSecret(address: link.address);
+      final record = (await PaymentLinkReceivedStore(storage).load()).single;
+      expect(record.fiatSnapshot!.amount, 200);
+      expect(record.claimLink, isNull);
+      expect(link.presentation!.fiatSnapshot!.amount, 142.23);
+    },
+  );
 
   test(
     'retains fiat after submission, completion, and restart without bearer data',
@@ -663,7 +834,10 @@ void main() {
   });
 }
 
-VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
+VizorPaymentLink _link({
+  String address = 'u1paymentlinkaddress',
+  double? fiatAmount = 142.23,
+}) {
   return VizorPaymentLink(
     network: 'main',
     address: address,
@@ -673,9 +847,11 @@ VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
     birthdayHeight: 3_456_789,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
-    presentation: const PaymentLinkPresentation(
+    presentation: PaymentLinkPresentation(
       artworkId: 'ruby',
-      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 142.23),
+      fiatSnapshot: fiatAmount == null
+          ? null
+          : PaymentLinkFiatSnapshot(amount: fiatAmount),
       message: 'Enjoy your gift!',
     ),
   );

@@ -29,6 +29,15 @@ VIZOR_LINUX_FLAVOR=testnet bundle exec fastlane linux package
 VIZOR_LINUX_FLAVORS=mainnet,testnet bundle exec fastlane linux release
 ```
 
+## Native build dependencies
+
+Ledger USB uses HIDAPI's `linux-static-hidraw` backend. Install `libudev-dev`
+and `pkg-config` in the Linux build environment (or distribution equivalents).
+The release build script checks this before building; `libudev` remains a native
+runtime dependency. The AppImage dependency collector includes linked libraries.
+Bundles include the Ledger udev rule and host setup instructions under
+`data/ledger-usb`; packaging never changes host USB permissions automatically.
+
 ## Required environment variables
 
 - `RELEASE_REPOSITORY`

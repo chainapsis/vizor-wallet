@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
+
+part 'compact_payment_link_codec.dart';
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
@@ -11,7 +15,7 @@ const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
   defaultValue: false,
 );
 
-/// Display-only value captured when the sender creates the card.
+/// Display-only value captured at card creation or claim time.
 /// It never participates in funding or claim calculations.
 class PaymentLinkFiatSnapshot {
   const PaymentLinkFiatSnapshot({required this.amount, this.currency = 'USD'});
@@ -152,27 +156,89 @@ class PaymentLinkPresentation {
 class VizorPaymentLink {
   const VizorPaymentLink({
     required this.network,
-    required this.address,
+    required String address,
     required this.amountZatoshi,
     required this.mnemonic,
     required this.birthdayHeight,
     required this.label,
-    required this.createdAt,
+    required DateTime createdAt,
     this.presentation,
-  });
+    this.isCreatedAtProvisional = false,
+  }) : _address = address,
+       _createdAt = createdAt;
+
+  const VizorPaymentLink._parsed({
+    required this.network,
+    required String? address,
+    required this.amountZatoshi,
+    required this.mnemonic,
+    required this.birthdayHeight,
+    required this.label,
+    required DateTime? createdAt,
+    required this.presentation,
+    this.isCreatedAtProvisional = false,
+  }) : _address = address,
+       _createdAt = createdAt;
 
   static const maxEncodedLength = 16 * 1024;
-  static const _version = 1;
-  static const _fragmentPrefix = 'v1=';
+  static const _version = 2;
+  static const _fragmentPrefix = 'v2=';
+  static const _legacyVersion = 1;
+  static const _legacyFragmentPrefix = 'v1=';
 
   final String network;
-  final String address;
+  final String? _address;
   final BigInt amountZatoshi;
   final String mnemonic;
   final int birthdayHeight;
   final String label;
-  final DateTime createdAt;
+  final DateTime? _createdAt;
+
+  /// Local-only provenance; never included in the shared payload.
+  final bool isCreatedAtProvisional;
   final PaymentLinkPresentation? presentation;
+
+  /// The address derived from [mnemonic], when it is known locally.
+  ///
+  /// Versions 2 and 3 do not carry this value. A received link gains it when its
+  /// temporary claim wallet imports the mnemonic.
+  String get address =>
+      _address ??
+      (throw StateError('Payment link address has not been derived yet.'));
+
+  /// The card creation time, when it is known locally or from the chain.
+  ///
+  /// Versions 2 and 3 do not carry this value. A received link gains it from the
+  /// funding transaction's block time after its claim wallet syncs.
+  DateTime get createdAt =>
+      _createdAt ??
+      (throw StateError('Payment link creation time is not known yet.'));
+
+  /// Returns the locally known address without requiring it to be resolved.
+  String? get knownAddress => _address;
+
+  /// Returns the locally known creation time without requiring chain data.
+  DateTime? get knownCreatedAt => _createdAt;
+
+  /// Adds metadata derived while opening or syncing the claim wallet.
+  VizorPaymentLink withResolvedMetadata({
+    String? address,
+    DateTime? createdAt,
+    bool? isCreatedAtProvisional,
+  }) {
+    return VizorPaymentLink._parsed(
+      network: network,
+      address: address ?? _address,
+      amountZatoshi: amountZatoshi,
+      mnemonic: mnemonic,
+      birthdayHeight: birthdayHeight,
+      label: label,
+      createdAt: createdAt ?? _createdAt,
+      isCreatedAtProvisional:
+          isCreatedAtProvisional ?? this.isCreatedAtProvisional,
+      presentation: presentation,
+    );
+  }
 
   static bool supportsNetwork(String network) {
     final normalizedNetwork = network.trim();
@@ -188,13 +254,44 @@ class VizorPaymentLink {
     return _encodedPayload() == other._encodedPayload();
   }
 
-  Uri toUri() {
-    return Uri(
+  /// The established v2 representation. Prefer the purpose-specific methods
+  /// below for sharing or persistence.
+  Uri toUri() => toRecoveryUri();
+
+  /// Stable local serialization, independent of the selected share writer.
+  /// Resolved address, time, and submission evidence live in the enclosing record.
+  Uri toRecoveryUri() => _uri('$_fragmentPrefix${_encodedPayload()}');
+
+  /// Serialize for sharing. Callers dropping a known address must first verify
+  /// it asynchronously with [rust_wallet.validateGiftAddress].
+  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+
+  /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
+  /// The caller must first verify the original mnemonic against a known address.
+  /// Canonicalization is used only to validate, never to replace the stored secret.
+  Uri? toLegacyWhitespaceShareUri() {
+    final original = mnemonic.trim();
+    final canonical = original.split(RegExp(r'\s+')).join(' ');
+    if (canonical == original) return null;
+    if (knownAddress == null) {
+      throw const FormatException('Gift card address could not be verified.');
+    }
+    // Apply every compact payload check as well, including BIP-39 validation.
+    _uri('v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}');
+    return toRecoveryUri();
+  }
+
+  static Uri _uri(String fragment) {
+    final uri = Uri(
       scheme: VizorDeepLink.scheme,
       host: VizorDeepLink.host,
       path: VizorDeepLink.paymentLinkPath,
-      fragment: '$_fragmentPrefix${_encodedPayload()}',
+      fragment: fragment,
     );
+    if (uri.toString().length > maxEncodedLength) {
+      throw const FormatException('Payment link is too large.');
+    }
+    return uri;
   }
 
   String _encodedPayload() {
@@ -207,12 +304,10 @@ class VizorPaymentLink {
     final payload = <String, Object?>{
       'v': _version,
       'network': normalizedNetwork,
-      'address': address.trim(),
       'amountZatoshi': amountZatoshi.toString(),
       'mnemonic': mnemonic.trim(),
       'birthdayHeight': birthdayHeight,
       'label': label.trim(),
-      'createdAt': createdAt.toUtc().toIso8601String(),
     };
     final presentationPayload = presentation?.toPayload();
     if (presentationPayload != null) {
@@ -239,10 +334,21 @@ class VizorPaymentLink {
     }
 
     final fragment = uri.fragment;
-    if (!fragment.startsWith(_fragmentPrefix)) {
+    if (fragment.startsWith('v3=')) {
+      return _CompactPaymentLinkCodec.decode(fragment.substring(3));
+    }
+    final int expectedVersion;
+    final String fragmentPrefix;
+    if (fragment.startsWith(_fragmentPrefix)) {
+      expectedVersion = _version;
+      fragmentPrefix = _fragmentPrefix;
+    } else if (fragment.startsWith(_legacyFragmentPrefix)) {
+      expectedVersion = _legacyVersion;
+      fragmentPrefix = _legacyFragmentPrefix;
+    } else {
       throw const FormatException('Payment link is missing its payload.');
     }
-    final encoded = fragment.substring(_fragmentPrefix.length);
+    final encoded = fragment.substring(fragmentPrefix.length);
     if (encoded.isEmpty || encoded.contains('&')) {
       throw const FormatException('Payment link payload is invalid.');
     }
@@ -260,18 +366,24 @@ class VizorPaymentLink {
       throw const FormatException('Payment link payload is invalid.');
     }
     final payload = decodedJson;
-    if (payload['v'] != _version) {
+    if (payload['v'] != expectedVersion) {
       throw const FormatException('Payment link version is not supported.');
     }
 
     final network = _readString(payload, 'network');
-    final address = _readString(payload, 'address');
     final amountZatoshi = _readBigInt(payload, 'amountZatoshi');
     final mnemonic = _readString(payload, 'mnemonic');
     final birthdayHeight = _readInt(payload, 'birthdayHeight');
     final label = _readString(payload, 'label');
-    final createdAtRaw = _readString(payload, 'createdAt');
-    final createdAt = DateTime.tryParse(createdAtRaw);
+    final address = expectedVersion == _legacyVersion
+        ? _readString(payload, 'address')
+        : null;
+    final createdAtRaw = expectedVersion == _legacyVersion
+        ? _readString(payload, 'createdAt')
+        : null;
+    final createdAt = createdAtRaw == null
+        ? null
+        : DateTime.tryParse(createdAtRaw);
     final presentation = PaymentLinkPresentation.fromPayload(
       payload['presentation'],
     );
@@ -279,7 +391,7 @@ class VizorPaymentLink {
     if (!supportsNetwork(network)) {
       throw const FormatException('Payment link network is not supported.');
     }
-    if (address.isEmpty) {
+    if (address != null && address.isEmpty) {
       throw const FormatException('Payment link address is missing.');
     }
     if (amountZatoshi <= BigInt.zero) {
@@ -291,11 +403,11 @@ class VizorPaymentLink {
     if (birthdayHeight <= 0) {
       throw const FormatException('Payment link birthday height is invalid.');
     }
-    if (createdAt == null) {
+    if (createdAtRaw != null && createdAt == null) {
       throw const FormatException('Payment link timestamp is invalid.');
     }
 
-    return VizorPaymentLink(
+    return VizorPaymentLink._parsed(
       network: network,
       address: address,
       amountZatoshi: amountZatoshi,

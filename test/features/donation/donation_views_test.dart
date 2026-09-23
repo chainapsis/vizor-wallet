@@ -6,6 +6,8 @@ import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart'
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
 
+import '../../support/leading_decimal_input.dart';
+
 Widget _host(Widget child) => MaterialApp(
   home: AppThemeHost(
     themeMode: ThemeMode.light,
@@ -98,6 +100,10 @@ void main() {
       }
 
       var formatters = await pumpFormatters(DonationAmountMode.zec);
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('donation_amount_field')),
+      );
       expect(formatters.first, isA<CommaToDotInputFormatter>());
       var formatter = formatters.last as DecimalAmountInputFormatter;
       expect(formatter.maxFractionDigits, 8);
@@ -137,7 +143,10 @@ void main() {
       );
       expect(
         formatter.formatEditUpdate(TextEditingValue.empty, leadingDecimalEdit),
-        same(leadingDecimalEdit),
+        const TextEditingValue(
+          text: '0.5',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
       );
       const eightFractionDigits = TextEditingValue(text: '1.12345678');
       expect(
@@ -173,6 +182,10 @@ void main() {
       );
 
       formatters = await pumpFormatters(DonationAmountMode.usd);
+      await expectLeadingDecimalInput(
+        tester,
+        find.byKey(const ValueKey('donation_amount_field')),
+      );
       formatter = formatters.last as DecimalAmountInputFormatter;
       expect(formatter.maxFractionDigits, 2);
       expect(formatter.maxLength, 12);

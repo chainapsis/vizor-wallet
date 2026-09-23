@@ -82,3 +82,30 @@ Future<void> deletePaymentLinkClaimWalletDirectories({
     Error.throwWithStackTrace(firstError, firstStackTrace!);
   }
 }
+
+/// Scoped to both the wallet instance and network; never overlaps claim DBs.
+Future<String> getGiftCardTrackingDbPath(String network) async {
+  if (!RegExp(r'^[a-z0-9]+$').hasMatch(network)) {
+    throw ArgumentError.value(network, 'network');
+  }
+  final support = await getWalletSupportDirectory();
+  final walletName = await getWalletDbName();
+  final directory = Directory(
+    '${support.path}${Platform.pathSeparator}gift_card_tracking_${walletName}_$network',
+  );
+  await directory.create(recursive: true);
+  return '${directory.path}${Platform.pathSeparator}observer.db';
+}
+
+Future<void> deleteGiftCardTrackingDirectories() async {
+  final support = await getWalletSupportDirectory();
+  await for (final entity in support.list(followLinks: false)) {
+    if (entity is Directory &&
+        entity.path
+            .split(Platform.pathSeparator)
+            .last
+            .startsWith('gift_card_tracking_')) {
+      await entity.delete(recursive: true);
+    }
+  }
+}

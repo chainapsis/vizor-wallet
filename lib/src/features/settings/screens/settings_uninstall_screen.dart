@@ -288,9 +288,8 @@ class _SettingsUninstallScreenState
 
   void _closeApp() {
     // SystemNavigator.pop() does not terminate a Flutter desktop app, so use
-    // window_manager to actually close the window. No close interceptors
-    // (setPreventClose/onWindowClose) are registered anywhere in the app, so
-    // destroy() exits unintercepted.
+    // window_manager to actually close the window. The wallet has already
+    // been wiped and drained; destroy() bypasses normal signing exit cleanup.
     if (isDesktopLayoutPlatform) {
       unawaited(windowManager.destroy());
       return;

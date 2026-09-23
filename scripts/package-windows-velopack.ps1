@@ -13,9 +13,12 @@ param(
   [string]$UpdateReleaseBaseUrl = $env:VIZOR_UPDATE_RELEASE_BASE_URL,
   [string]$CoinGeckoPriceBaseUrl = $env:VIZOR_COINGECKO_PRICE_BASE_URL,
   [string]$WalletLinkBackendUrl = $env:VIZOR_WALLET_LINK_BACKEND_URL,
+  [string]$SignToolPath = $env:VIZOR_WINDOWS_SIGNTOOL_PATH,
   [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
   [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
   [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
+  [ValidateSet("x64", "arm64")]
+  [string]$Arch = "x64",
   [switch]$Msi,
   [switch]$Clean
 )
@@ -70,13 +73,42 @@ function Remove-BuildSubdirectory($path) {
   }
 }
 
-function Get-FvmVersion {
-  if (-not (Test-Path ".fvmrc")) {
-    return $null
+function Assert-WindowsBuildArch($fvmCommand, $requestedArch) {
+  # Flutter selects the Windows target from its Dart process ABI, not the OS.
+  # Use FVM for both this probe and the build, including custom FVM cache paths.
+  $probePath = Join-Path $scriptDir "windows-build-arch.dart"
+  Write-Host "SDK probe: PowerShell $($PSVersionTable.PSVersion); requested=$requestedArch"
+  Write-Host "Pinned Flutter: $((Get-Content -Raw (Join-Path $repoRoot '.fvmrc') | ConvertFrom-Json).flutter)"
+  $probeOutput = @()
+  $probeExitCode = $null
+  $savedErrorActionPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords.
+    # A warning must not abort before the process exits. Scope this preference
+    # to the probe and continue to reject nonzero exits and invalid ABI output.
+    $ErrorActionPreference = "Continue"
+    $global:LASTEXITCODE = $null
+    $probeOutput = @(& $fvmCommand dart $probePath 2>&1)
+    $probeExitCode = $LASTEXITCODE
+  } catch {
+    throw "FVM Dart architecture probe could not run: $($_.Exception.Message)"
+  } finally {
+    $ErrorActionPreference = $savedErrorActionPreference
   }
-
-  $config = Get-Content -Raw -Path ".fvmrc" | ConvertFrom-Json
-  return $config.flutter
+  if ($null -eq $probeExitCode -or $probeExitCode -ne 0) {
+    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
+    throw "FVM Dart architecture probe failed with exit code '$probeExitCode'. See FVM probe output above."
+  }
+  $archLines = @($probeOutput | ForEach-Object { "$($_)".Trim() } |
+    Where-Object { $_ -cmatch '^VIZOR_WINDOWS_BUILD_ARCH=(x64|arm64)$' })
+  if ($archLines.Count -ne 1) {
+    foreach ($line in $probeOutput) { Write-Host "FVM probe: $line" }
+    throw "Could not determine a unique Windows architecture from the FVM Dart SDK. Run 'fvm dart scripts/windows-build-arch.dart' to check the pinned SDK."
+  }
+  $sdkArch = ($archLines[0] -split '=')[1]
+  if ($requestedArch -ne $sdkArch) {
+    throw "Requested Windows $requestedArch, but the FVM Dart SDK builds $sdkArch. Install the pinned Flutter SDK with Windows $requestedArch Dart, or explicitly select -Arch $sdkArch (VIZOR_WINDOWS_ARCH=$sdkArch for Fastlane)."
+  }
 }
 
 function Get-PubspecVersion {
@@ -235,12 +267,9 @@ function Write-UpdateFeedSignature($feedPath, $signingKeyBase64) {
   )
 }
 
-$fvmVersion = Get-FvmVersion
-if ($fvmVersion) {
-  $fvmSdk = Join-Path $env:USERPROFILE "fvm\versions\$fvmVersion"
-  Add-PathIfExists (Join-Path $fvmSdk "bin\cache\dart-sdk\bin")
-  Add-PathIfExists (Join-Path $fvmSdk "bin")
-}
+# Keep the host Dart that activated FVM on PATH. Prepending Flutter's bundled
+# Dart here can invalidate FVM's cached snapshot (the two SDKs may differ).
+# FVM itself selects the project's pinned SDK for both the probe and build.
 Add-PathIfExists "C:\Program Files\Git\cmd"
 $userDotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
 $dotnetRoot = $env:DOTNET_ROOT
@@ -262,6 +291,10 @@ $fvmExe = Resolve-Command `
   "fvm" `
   @((Join-Path $env:LOCALAPPDATA "Pub\Cache\bin\fvm.bat")) `
   "Install FVM, then run this script again."
+# Validate before resolving packaging tools, changing build settings, or cleaning
+# output. Normalize accepted case variants so artifact names remain canonical.
+$Arch = $Arch.ToLowerInvariant()
+Assert-WindowsBuildArch $fvmExe $Arch
 $vpkExe = Resolve-Command `
   "vpk" `
   @((Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe")) `
@@ -271,6 +304,8 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
   $Version = Get-PubspecVersion
 }
 
+Write-Host "Packaging Windows $Arch $Network release."
+
 if ($Network -eq "mainnet") {
   if ([string]::IsNullOrWhiteSpace($PackId)) {
     $PackId = "com.keplr.vizor"
@@ -279,7 +314,7 @@ if ($Network -eq "mainnet") {
     $PackTitle = "Vizor"
   }
   if ([string]::IsNullOrWhiteSpace($Channel)) {
-    $Channel = "win-x64-mainnet"
+    $Channel = "win-$Arch-mainnet"
   }
   if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = "build\velopack\mainnet"
@@ -294,7 +329,7 @@ if ($Network -eq "mainnet") {
     $PackTitle = "Vizor Testnet"
   }
   if ([string]::IsNullOrWhiteSpace($Channel)) {
-    $Channel = "win-x64-testnet"
+    $Channel = "win-$Arch-testnet"
   }
   if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = "build\velopack\testnet"
@@ -335,7 +370,7 @@ if (-not [string]::IsNullOrWhiteSpace($UpdateReleaseBaseUrl)) {
   $env:VIZOR_UPDATE_RELEASE_BASE_URL = $UpdateReleaseBaseUrl.Trim()
 }
 
-$packDir = Join-Path $repoRoot "build\windows\x64\runner\Release"
+$packDir = Join-Path $repoRoot "build\windows\$Arch\runner\Release"
 $mainExe = Join-Path $packDir "Vizor.exe"
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir
 
@@ -361,7 +396,7 @@ $flutterBuildArgs = @(
   "--dart-define=VIZOR_WALLET_LINK_BACKEND_URL=$WalletLinkBackendUrl"
 )
 
-$cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"
+$cmakeCache = Join-Path $repoRoot "build\windows\$Arch\CMakeCache.txt"
 if (Test-Path $cmakeCache) {
   Remove-Item -LiteralPath $cmakeCache -Force
 }
@@ -391,12 +426,25 @@ $packArgs = @(
   "--skipVeloAppCheck"
 )
 
+if ($Arch -eq "arm64") {
+  $packArgs += @("--runtime", "win-arm64")
+}
+
 if ($Msi) {
   $packArgs += "--msi"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($effectiveCodeSignParams)) {
-  $packArgs += @("--signParams", $effectiveCodeSignParams)
+  if (-not [string]::IsNullOrWhiteSpace($SignToolPath)) {
+    if (-not [System.IO.Path]::IsPathRooted($SignToolPath) -or -not (Test-Path -LiteralPath $SignToolPath -PathType Leaf) -or $SignToolPath.Contains('"')) {
+      throw "VIZOR_WINDOWS_SIGNTOOL_PATH must point to an existing absolute SignTool path."
+    }
+    # Velopack --signParams uses its embedded tool, which may be x64 on ARM64.
+    $signTemplate = '"' + $SignToolPath + '" sign ' + $effectiveCodeSignParams + ' {{file}}'
+    $packArgs += @("--signTemplate", $signTemplate)
+  } else {
+    $packArgs += @("--signParams", $effectiveCodeSignParams)
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($CodeSignParallel)) {
     $parsedParallel = 0
@@ -411,9 +459,16 @@ if (-not [string]::IsNullOrWhiteSpace($effectiveCodeSignParams)) {
   }
 }
 
-& $vpkExe @packArgs
-if ($LASTEXITCODE -ne 0) {
-  throw "Velopack packaging failed with exit code $LASTEXITCODE."
+if ($packArgs -contains '--signTemplate' -and [System.IO.Path]::GetExtension($vpkExe) -eq '.exe') {
+  . (Join-Path $scriptDir 'windows-native-command.ps1')
+  $packExitCode = Invoke-WindowsNativeCommand -FilePath $vpkExe -ArgumentList $packArgs
+} else {
+  # Preserve the existing x64 invocation and PowerShell-based local fixtures.
+  & $vpkExe @packArgs
+  $packExitCode = $LASTEXITCODE
+}
+if ($packExitCode -ne 0) {
+  throw "Velopack packaging failed with exit code $packExitCode."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
@@ -431,4 +486,4 @@ if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   Write-Warning "VIZOR_UPDATE_FEED_SIGNING_KEY_B64 is not set. Release feed signature was not created."
 }
 
-Write-Host "Velopack $Network package created in $resolvedOutputDir"
+Write-Host "Velopack $Network $Arch package created in $resolvedOutputDir"

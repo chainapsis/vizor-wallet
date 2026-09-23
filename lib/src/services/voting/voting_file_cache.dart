@@ -126,11 +126,13 @@ class VotingFileCache {
   Future<void> writeNotes(
     String account,
     String scope,
-    Map<String, dynamic> notes,
-  ) async {
+    Map<String, dynamic> notes, {
+    bool Function()? isCurrent,
+  }) async {
     final root = await directory();
     final file = File('${root.path}/${notePath(account, scope)}');
     await _serialized(file.path, () async {
+      if (isCurrent?.call() == false) return;
       final parts = jsonDecode(scope) as List;
       if (await File(
         '${root.path}/${_endedPath(parts[0] as String, parts[1] as String)}',
@@ -148,6 +150,7 @@ class VotingFileCache {
         }
         merged[entry.key] = next;
       }
+      if (isCurrent?.call() == false) return;
       await _replace(
         file,
         jsonEncode({'version': 1, 'scope': scope, 'notes': merged}),

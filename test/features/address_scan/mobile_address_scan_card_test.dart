@@ -89,6 +89,53 @@ bool _hasRoundedCameraClip(WidgetTester tester) {
 }
 
 void main() {
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final (bottomInset, keyboardInset) in [
+      (34.0, 0.0),
+      (48.0, 0.0),
+      (34.0, 200.0),
+    ]) {
+      testWidgets(
+        'scanner keeps its top aligned on $platform with bottom inset '
+        '$bottomInset and keyboard $keyboardInset',
+        (tester) async {
+          _useSwapViewport(tester);
+          tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+          tester.view.padding = FakeViewPadding(
+            bottom: keyboardInset > 0 ? 0 : bottomInset,
+          );
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboardInset);
+          addTearDown(tester.view.resetViewPadding);
+          addTearDown(tester.view.resetPadding);
+          addTearDown(tester.view.resetViewInsets);
+          final controller = MobileScannerController(autoStart: false);
+          addTearDown(controller.dispose);
+          controller.value = controller.value.copyWith(
+            isInitialized: true,
+            isRunning: true,
+          );
+
+          await tester.pumpWidget(_swapHost(_card(controller)));
+          await tester.pump();
+
+          final camera = tester.getRect(find.byKey(_cameraKey));
+          final systemClearance = keyboardInset > 0
+              ? keyboardInset
+              : platform == TargetPlatform.iOS
+              ? 0.0
+              : bottomInset;
+          // With no status-bar inset, the top nav ends at y=72; the
+          // scanner keeps its one-pixel overlap while bottom insets vary.
+          expect(camera.topLeft, const Offset(16, 71));
+          expect(393 - camera.right, 16);
+          expect(852 - camera.bottom - systemClearance, 16);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
+
   testWidgets('requesting access shows the permission card and Cancel', (
     tester,
   ) async {

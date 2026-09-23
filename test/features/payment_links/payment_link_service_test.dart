@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -27,6 +30,155 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('address-free gifts reuse a retained legacy address identity', () async {
+    final retained = _link();
+    final addressFree = VizorPaymentLink.parse(retained.toUri().toString());
+    expect(addressFree.knownAddress, isNull);
+    expect(
+      (await paymentLinkWithRetainedAddress(addressFree, [
+        PaymentLinkReceivedRecord.fromLink(retained),
+      ])).address,
+      retained.address,
+    );
+    final unrelated = VizorPaymentLink(
+      network: retained.network,
+      address: 'u1unrelated',
+      amountZatoshi: retained.amountZatoshi + BigInt.one,
+      mnemonic:
+          'legal winner thank year wave sausage worth useful legal winner thank yellow',
+      birthdayHeight: retained.birthdayHeight,
+      label: retained.label,
+      createdAt: retained.createdAt,
+    );
+    expect(
+      (await paymentLinkWithRetainedAddress(addressFree, [
+        PaymentLinkReceivedRecord.fromLink(unrelated),
+      ])).knownAddress,
+      isNull,
+    );
+  });
+
+  test(
+    'corrected gift metadata retains the in-flight claim identity',
+    () async {
+      final retained = _link();
+      final store = PaymentLinkReceivedStore(
+        _PaymentLinkServiceReceivedStorage(),
+      );
+      await store.saveReady(retained);
+      await store.markClaimStarted(
+        address: retained.address,
+        destinationAccountUuid: 'receiver-account',
+      );
+      final corrected = VizorPaymentLink.parse(
+        VizorPaymentLink(
+          network: retained.network,
+          address: retained.address,
+          amountZatoshi: retained.amountZatoshi + BigInt.one,
+          mnemonic: retained.mnemonic,
+          birthdayHeight: retained.birthdayHeight,
+          label: 'Corrected label',
+          createdAt: retained.createdAt,
+        ).toRecoveryUri().toString(),
+      );
+      expect(corrected.hasSameCanonicalPayload(retained), isFalse);
+      expect(
+        paymentLinkClaimWalletDirectoryName(corrected),
+        paymentLinkClaimWalletDirectoryName(retained),
+      );
+
+      final resolved = await paymentLinkWithRetainedAddress(
+        corrected,
+        await store.load(),
+      );
+      expect(resolved.address, retained.address);
+      expect(resolved.label, corrected.label);
+      expect(resolved.amountZatoshi, corrected.amountZatoshi);
+      expect(resolved.presentation, corrected.presentation);
+      expect((await store.find(resolved.address))?.isClaimInFlight, isTrue);
+      expect(await store.load(), hasLength(1));
+    },
+  );
+
+  test('retained gift addresses stay scoped to network and birthday', () async {
+    final retained = _link();
+    final addressFree = VizorPaymentLink.parse(
+      retained.toRecoveryUri().toString(),
+    );
+    for (final identity in [
+      (network: 'regtest', birthday: retained.birthdayHeight),
+      (network: retained.network, birthday: retained.birthdayHeight + 1),
+    ]) {
+      final other = VizorPaymentLink(
+        network: identity.network,
+        address: retained.address,
+        amountZatoshi: retained.amountZatoshi,
+        mnemonic: retained.mnemonic,
+        birthdayHeight: identity.birthday,
+        label: retained.label,
+        createdAt: retained.createdAt,
+        presentation: retained.presentation,
+      );
+      expect(
+        (await paymentLinkWithRetainedAddress(addressFree, [
+          PaymentLinkReceivedRecord.fromLink(other),
+        ])).knownAddress,
+        isNull,
+      );
+    }
+    expect(
+      await paymentLinkWithRetainedAddress(retained, [
+        PaymentLinkReceivedRecord.fromLink(retained),
+      ]),
+      same(retained),
+    );
+  });
+
+  test('provisional creation time refreshes after funding mines', () {
+    final unresolved = VizorPaymentLink.parse(_link().toUri().toString());
+    final firstTime = DateTime.utc(2026, 9, 1);
+    final provisional = resolvePaymentLinkCreatedAt(
+      link: unresolved,
+      transactions: [],
+      now: () => firstTime,
+    );
+    expect(provisional.isCreatedAtProvisional, isTrue);
+    final waiting = resolvePaymentLinkCreatedAt(
+      link: provisional,
+      transactions: [],
+      now: () => firstTime.add(const Duration(days: 1)),
+    );
+    expect(waiting.createdAt, firstTime);
+    final transactions = [
+      _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        accountBalanceDelta: paymentLinkFundingAmountZatoshi(
+          _link().amountZatoshi,
+        ).toInt(),
+        minedHeight: 100,
+        blockTime: 1800000000,
+      ),
+    ];
+    final confirmed = resolvePaymentLinkCreatedAt(
+      link: waiting,
+      transactions: transactions,
+    );
+    expect(
+      confirmed.createdAt,
+      DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+    );
+    expect(confirmed.isCreatedAtProvisional, isFalse);
+    expect(
+      resolvePaymentLinkCreatedAt(
+        link: _link(),
+        transactions: transactions,
+      ).createdAt,
+      _link().createdAt,
+    );
+    expect(confirmed.toUri(), unresolved.toUri());
+  });
 
   test(
     'orphan cleanup preserves other accounts and networks and retries file failures',
@@ -119,11 +271,13 @@ void main() {
             sourcePool: 'shielded',
             outputs: [
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: 'unrelated-output',
                 amountZatoshi: BigInt.from(1),
                 pool: 'shielded',
               ),
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: 'destination-ua',
                 amountZatoshi: BigInt.from(445000000),
                 pool: 'ironwood',
@@ -168,6 +322,7 @@ void main() {
         txKind: 'sent',
         outputs: [
           rust_sync.TransactionDetailOutput(
+            usesOrchardReceiver: false,
             address: address,
             amountZatoshi: BigInt.from(50000),
             pool: pool,
@@ -216,11 +371,54 @@ void main() {
     },
   );
 
+  test(
+    'pool enrichment matches Orchard and Ironwood receivers, not Sapling',
+    () {
+      const historical = 'u1-sapling-orchard';
+      const projection = 'u1-orchard-projection';
+      for (final (pool, usesOrchard) in [
+        ('shielded', true),
+        ('ironwood', true),
+        ('shielded', false),
+        ('transparent', false),
+      ]) {
+        var comparisons = 0;
+        final result = paymentLinkClaimDestinationPoolFromDetails(
+          claimTxids: 'claim',
+          details: [
+            rust_sync.TransactionDetail(
+              txidHex: 'claim',
+              txKind: 'sent',
+              outputs: [
+                rust_sync.TransactionDetailOutput(
+                  address: historical,
+                  amountZatoshi: BigInt.from(50000),
+                  pool: pool,
+                  usesOrchardReceiver: usesOrchard,
+                ),
+              ],
+            ),
+          ],
+          destinationAddress: projection,
+          expectedAmountZatoshi: BigInt.from(50000),
+          sameOrchardReceiver: (first, second) {
+            comparisons++;
+            return first == historical && second == projection;
+          },
+        );
+        expect(result, usesOrchard ? pool : isNull);
+        expect(comparisons, usesOrchard ? 1 : 0);
+      }
+    },
+  );
+
   group('claim destination hydration', () {
     final api = _ClaimDestinationRustApi();
     late _ClaimDestinationAccountNotifier accounts;
     late ProviderContainer container;
     late PaymentLinkService service;
+    late _ClaimMarketDataSource marketData;
+    late bool pricingEnabled;
     late Directory supportDirectory;
     late _PaymentLinkServiceReceivedStorage receivedStorage;
     const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
@@ -239,9 +437,13 @@ void main() {
           );
       api.reset();
       accounts = _ClaimDestinationAccountNotifier();
+      marketData = _ClaimMarketDataSource();
+      pricingEnabled = true;
       receivedStorage = _PaymentLinkServiceReceivedStorage();
       container = ProviderContainer(
         overrides: [
+          swapFeatureEnabledProvider.overrideWith((ref) => pricingEnabled),
+          zecMarketDataSourceProvider.overrideWithValue(marketData),
           accountProvider.overrideWith(() => accounts),
           syncProvider.overrideWith(
             () => FakeSyncNotifier(
@@ -268,6 +470,297 @@ void main() {
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
     });
+
+    for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
+      test('completed receipt $address survives secret cleanup', () async {
+        final link = _link().withResolvedMetadata(address: address);
+        api.validGiftAddresses.add(address);
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(link);
+        await store.markReceiving(
+          address: address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'aabb',
+          claimSubmittedAt: DateTime.utc(2026, 8, 6),
+        );
+        await store.markReceived(address: address);
+        await store.clearConfirmedClaimSecret(address: address);
+        final records = await store.load();
+        expect(records.single.claimLink, isNull);
+        final reopened = VizorPaymentLink.parse(
+          link.toRecoveryUri().toString(),
+        );
+        final resolved = await paymentLinkWithRetainedAddress(
+          reopened,
+          records,
+        );
+        expect(resolved.address, address);
+        expect((await store.find(resolved.address))?.claimTxids, 'aabb');
+        expect((await store.load()).single.claimLink, isNull);
+      });
+    }
+
+    test(
+      'completed receipt lookup derives keys once across many records',
+      () async {
+        final records = [
+          for (var i = 0; i < 100; i++)
+            PaymentLinkReceivedRecord.fromLink(
+              _link().withResolvedMetadata(address: 'unrelated-$i'),
+            ).copyWith(claimLink: null),
+          PaymentLinkReceivedRecord.fromLink(_link()).copyWith(claimLink: null),
+        ];
+        final reopened = VizorPaymentLink.parse(
+          _link().toRecoveryUri().toString(),
+        );
+        final result = await paymentLinkWithRetainedAddress(reopened, records);
+        expect(result.address, _link().address);
+        expect(api.giftVariantLookups, 1);
+      },
+    );
+
+    test('pending receipt lookup does not derive keys', () async {
+      final reopened = VizorPaymentLink.parse(
+        _link().toRecoveryUri().toString(),
+      );
+      final result = await paymentLinkWithRetainedAddress(reopened, [
+        PaymentLinkReceivedRecord.fromLink(_link()),
+      ]);
+      expect(result.address, _link().address);
+      expect(api.giftVariantLookups, 0);
+    });
+
+    test('completed receipts reject unrelated seeds and networks', () async {
+      final unrelated = PaymentLinkReceivedRecord.fromLink(
+        _link().withResolvedMetadata(address: 'u1unrelated'),
+      ).copyWith(claimLink: null);
+      final otherNetwork = PaymentLinkReceivedRecord.fromLink(
+        VizorPaymentLink(
+          network: 'regtest',
+          address: _link().address,
+          amountZatoshi: _link().amountZatoshi,
+          mnemonic: _link().mnemonic,
+          birthdayHeight: _link().birthdayHeight,
+          label: _link().label,
+          createdAt: _link().createdAt,
+        ),
+      ).copyWith(claimLink: null);
+      final reopened = VizorPaymentLink.parse(
+        _link().toRecoveryUri().toString(),
+      );
+      final resolved = await paymentLinkWithRetainedAddress(reopened, [
+        unrelated,
+        otherNetwork,
+      ]);
+      expect(resolved.knownAddress, isNull);
+    });
+
+    test(
+      'unresolved v2 links create and reopen the current claim wallet',
+      () async {
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        final link = VizorPaymentLink.parse(_link().toUri().toString());
+        expect(link.knownAddress, isNull);
+        final opened = await wallet.createOrOpen(link);
+        expect(opened.existed, isFalse);
+        expect(
+          opened.directory.path,
+          '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+        );
+        await File(opened.dbPath).writeAsString('current');
+        final reopened = await wallet.createOrOpen(link);
+        expect(reopened.existed, isTrue);
+        expect(reopened.dbPath, opened.dbPath);
+      },
+    );
+
+    test(
+      'claim wallet accepts a migrated legacy-index projection only',
+      () async {
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        final migratedProjection = rust_wallet.AccountInfo(
+          uuid: 'claim-wallet',
+          birthdayHeight: 0,
+          name: 'Gift Card claim',
+          unifiedAddress: 'u1orchardatlegacyindex',
+          isSeedAnchor: true,
+          isHardware: false,
+        );
+        api.validGiftAddresses.addAll({
+          _link().address,
+          migratedProjection.unifiedAddress,
+        });
+
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [migratedProjection],
+          ),
+          isTrue,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [
+              rust_wallet.AccountInfo(
+                uuid: 'claim-wallet',
+                birthdayHeight: 0,
+                name: 'Gift Card claim',
+                unifiedAddress: 'u1same-receiver-but-noncanonical',
+                isSeedAnchor: true,
+                isHardware: false,
+              ),
+            ],
+          ),
+          isFalse,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link().withResolvedMetadata(address: 'u1wrong-advertised'),
+            accounts: [migratedProjection],
+          ),
+          isFalse,
+        );
+        expect(
+          await wallet.matchesLink(
+            link: _link(),
+            accounts: [migratedProjection, migratedProjection],
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    for (final legacyExists in [false, true]) {
+      for (final currentExists in [false, true]) {
+        test(
+          'claim wallet lookup: legacy=$legacyExists current=$currentExists',
+          () async {
+            final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+            final legacy = Directory(
+              '${supportDirectory.path}/$_legacyClaimDirectory',
+            );
+            final current = Directory(
+              '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(_link())}',
+            );
+            // An empty legacy directory must not hide a current DB.
+            await legacy.create();
+            if (legacyExists) {
+              await File(
+                '${legacy.path}/zcash_wallet.db',
+              ).writeAsString('legacy');
+              await File(
+                '${legacy.path}/zcash_wallet.db-wal',
+              ).writeAsString('wal');
+            }
+            if (currentExists) {
+              await current.create();
+              await File(
+                '${current.path}/zcash_wallet.db',
+              ).writeAsString('current');
+            }
+            final opened = await wallet.createOrOpen(_link());
+            expect(
+              opened.directory.path,
+              legacyExists ? legacy.path : current.path,
+            );
+            expect(opened.existed, legacyExists || currentExists);
+            if (legacyExists) {
+              expect(await File(opened.dbPath).readAsString(), 'legacy');
+              expect(await File('${opened.dbPath}-wal').readAsString(), 'wal');
+              final store = container.read(paymentLinkReceivedStoreProvider);
+              final record = await store.saveReady(_link());
+              expect(await wallet.deleteRetained(record), isTrue);
+              expect(await legacy.exists(), isFalse);
+              if (currentExists) {
+                expect(
+                  await File('${current.path}/zcash_wallet.db').readAsString(),
+                  'current',
+                );
+              }
+            }
+          },
+        );
+      }
+    }
+
+    for (final currentExists in [false, true]) {
+      test(
+        'legacy submitting recovery with current cache=$currentExists',
+        () async {
+          api.poolFixture = true;
+          api.localClaimTxids = ['old', 'pending'];
+          api.claimHistory = [_transaction(txid: 'pending', txKind: 'sent')];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            priorTxids: ['old'],
+          );
+          // Simulate the v1 link persisted by the pre-upgrade app.
+          final saved =
+              jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
+          final legacyPayload = base64Url.encode(
+            utf8.encode(
+              jsonEncode({
+                'v': 1,
+                'network': link.network,
+                'address': link.address,
+                'amountZatoshi': link.amountZatoshi.toString(),
+                'mnemonic': link.mnemonic,
+                'birthdayHeight': link.birthdayHeight,
+                'label': link.label,
+                'createdAt': link.createdAt.toIso8601String(),
+              }),
+            ),
+          );
+          (saved['records'] as List).single['claimLink'] = link
+              .toUri()
+              .replace(fragment: 'v1=$legacyPayload')
+              .toString();
+          receivedStorage.value = jsonEncode(saved);
+          final legacy = Directory(
+            '${supportDirectory.path}/$_legacyClaimDirectory',
+          );
+          await legacy.create();
+          final legacyDbPath = '${legacy.path}/zcash_wallet.db';
+          await File(legacyDbPath).writeAsString('retained attempt');
+          if (currentExists) {
+            final current = Directory(
+              '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+            );
+            await current.create();
+            await File(
+              '${current.path}/zcash_wallet.db',
+            ).writeAsString('new cache');
+          }
+          await container.read(syncProvider.future);
+          final recovered = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(recovered.status, PaymentLinkReceivedStatus.receiving);
+          expect(recovered.claimTxids, 'pending');
+          expect(api.claimSyncDbPaths, isNotEmpty);
+          expect(api.claimSyncDbPaths, everyElement(legacyDbPath));
+          expect(await store.countReceivingForAccount('receiver'), 1);
+
+          // An expired attempt must become retryable and release account deletion.
+          api.claimHistory = [
+            _transaction(txid: 'pending', txKind: 'sent', expiredUnmined: true),
+          ];
+          final settled = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(settled.status, PaymentLinkReceivedStatus.readyToClaim);
+          expect(settled.availability, PaymentLinkAvailability.failed);
+          expect(await store.countReceivingForAccount('receiver'), 0);
+        },
+      );
+    }
 
     for (final oldTransactions in [
       <String>[],
@@ -394,6 +887,86 @@ void main() {
       },
     );
 
+    for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
+      test('claim persists fresh fiat or enclosed fallback: $price', () async {
+        marketData.price = price;
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final submission = service.claimPreparedLink(_claimSession());
+        final failed = expectLater(submission, throwsStateError);
+        await api.estimateStarted.future;
+        final record =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(marketData.calls, 1);
+        expect(record.fiatSnapshot!.amount, price == 200.0 ? 0.2 : 0.1);
+        expect(record.claimLink!.presentation!.fiatSnapshot!.amount, 0.1);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      });
+    }
+
+    for (final lateFailure in [false, true]) {
+      test(
+        'slow price cannot block claim or replace fallback: $lateFailure',
+        () async {
+          final priceGate = Completer<ZecMarketData?>();
+          marketData.pending = priceGate;
+          api.poolFixture = true;
+          api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+          final submission = service.claimPreparedLink(_claimSession());
+          final failed = expectLater(submission, throwsStateError);
+          // Claim preparation must start while the price request is unresolved.
+          await api.estimateStarted.future.timeout(const Duration(seconds: 3));
+          expect(priceGate.isCompleted, isFalse);
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          if (lateFailure) {
+            priceGate.completeError(StateError('late price failure'));
+          } else {
+            priceGate.complete(const ZecMarketData(usdPrice: 200));
+          }
+          await Future<void>.delayed(Duration.zero);
+          expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          api.estimateGate!.completeError(StateError('preparation failed'));
+          await failed;
+        },
+      );
+    }
+
+    test('disabled pricing keeps enclosed fiat without a request', () async {
+      pricingEnabled = false;
+      container.invalidate(swapFeatureEnabledProvider);
+      marketData.price = 200;
+      api.poolFixture = true;
+      api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+      final submission = service.claimPreparedLink(_claimSession());
+      final failed = expectLater(submission, throwsStateError);
+      await api.estimateStarted.future;
+      final record =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(marketData.calls, 0);
+      expect(record.fiatSnapshot!.amount, 0.1);
+      api.estimateGate!.completeError(StateError('preparation failed'));
+      await failed;
+    });
+
+    test('price lookup exception does not block claim preparation', () async {
+      marketData.throwOnFetch = true;
+      api.poolFixture = true;
+      api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+      final submission = service.claimPreparedLink(_claimSession());
+      final failed = expectLater(submission, throwsStateError);
+      await api.estimateStarted.future;
+      final record =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(record.fiatSnapshot!.amount, 0.1);
+      api.estimateGate!.completeError(StateError('preparation failed'));
+      await failed;
+    });
+
     test(
       'recovery cannot settle a submission still preparing transactions',
       () async {
@@ -419,6 +992,60 @@ void main() {
           (await store.load()).single.availability,
           PaymentLinkAvailability.failed,
         );
+      },
+    );
+
+    test(
+      'retained receipt recovery refreshes a persisted provisional date',
+      () async {
+        api.poolFixture = true;
+        api.localClaimTxids = ['pending'];
+        final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
+        api.claimHistory = [
+          _transaction(
+            txid: 'funding',
+            txKind: 'received',
+            minedHeight: 95,
+            accountBalanceDelta: paymentLinkFundingAmountZatoshi(
+              link.amountZatoshi,
+            ).toInt(),
+            blockTime: 1800000000,
+          ),
+          _transaction(txid: 'pending', txKind: 'sent'),
+        ];
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(link);
+        await store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'receiver',
+        );
+        await store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'pending',
+        );
+        final before = (await store.load()).single;
+        final directory = Directory(
+          '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+        );
+        await directory.create();
+        await File(
+          '${directory.path}/zcash_wallet.db',
+        ).writeAsString('retained');
+        await container.read(syncProvider.future);
+        final after = (await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        )).single;
+        expect(
+          after.createdAt,
+          DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+        );
+        expect(after.isCreatedAtProvisional, isFalse);
+        expect(after.claimLink!.isCreatedAtProvisional, isFalse);
+        expect(after.claimTxids, before.claimTxids);
+        expect(after.status, before.status);
+        expect(after.claimSubmittedAt, before.claimSubmittedAt);
       },
     );
 
@@ -968,6 +1595,34 @@ void main() {
     );
   });
 
+  test('claim creation time follows the matching funding block time', () {
+    final expectedFunding = paymentLinkFundingAmountZatoshi(
+      BigInt.from(100000),
+    );
+    final createdAt = paymentLinkFundingCreatedAt(
+      recipientAmountZatoshi: BigInt.from(100000),
+      transactions: [
+        _transaction(
+          txid: 'dust',
+          txKind: 'received',
+          accountBalanceDelta: 1,
+          blockTime: 1800000001,
+        ),
+        _transaction(
+          txid: 'funding',
+          txKind: 'received',
+          accountBalanceDelta: expectedFunding.toInt(),
+          blockTime: 1800000000,
+        ),
+      ],
+    );
+
+    expect(
+      createdAt,
+      DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+    );
+  });
+
   test(
     'claim waits while funding is pending or still in its initial window',
     () {
@@ -1486,37 +2141,6 @@ void main() {
     },
   );
 
-  test('only reuses a complete claim wallet for the expected address', () {
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const [],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1expected', 'u1unexpected'],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1unexpected'],
-        expectedAddress: 'u1expected',
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRecreatePaymentLinkClaimWallet(
-        accountAddresses: const ['u1expected'],
-        expectedAddress: 'u1expected',
-      ),
-      isFalse,
-    );
-  });
-
   test('claim broadcast stops when the wallet locks', () {
     expect(
       () => requireUnlockedPaymentLinkWallet(requiresUnlock: true),
@@ -1814,10 +2438,18 @@ class _RecordingPaymentLinkRecoveryStorage
   }
 }
 
+// Frozen pre-v2 directory for _link(), computed with the address in the hash.
+const _legacyClaimDirectory =
+    'payment_link_claim_main_'
+    'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
     address: 'u1paymentlinkaddress',
+    presentation: const PaymentLinkPresentation(
+      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 0.1),
+    ),
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
@@ -1833,6 +2465,7 @@ rust_sync.TransactionInfo _transaction({
   int minedHeight = 0,
   bool expiredUnmined = false,
   int accountBalanceDelta = 1,
+  int blockTime = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -1840,7 +2473,7 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.zero,
-    blockTime: BigInt.zero,
+    blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,
     displayAmount: BigInt.one,
@@ -1871,6 +2504,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
   var syncStarted = Completer<void>();
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
+  final claimSyncDbPaths = <String>[];
+  final validGiftAddresses = <String>{};
+  int giftVariantLookups = 0;
 
   @override
   Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
@@ -1890,12 +2526,13 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String network,
   }) async {
     if (!poolFixture) return [];
-    final isClaimWallet = dbPath.contains(
-      paymentLinkClaimWalletDirectoryName(_link()),
-    );
+    final isClaimWallet =
+        dbPath.contains(paymentLinkClaimWalletDirectoryName(_link())) ||
+        dbPath.contains(_legacyClaimDirectory);
     return [
       rust_wallet.AccountInfo(
         uuid: isClaimWallet ? 'claim-wallet' : 'receiver',
+        birthdayHeight: 0,
         name: 'Test',
         unifiedAddress: isClaimWallet ? _link().address : 'u1receiveraddress',
         isSeedAnchor: true,
@@ -1928,6 +2565,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     if (!poolFixture) throw StateError('Unexpected claim sync');
     claimSyncCalls++;
     claimSyncModes.add(allowResubmit);
+    claimSyncDbPaths.add(dbPath);
     if (!syncStarted.isCompleted) syncStarted.complete();
     await syncGate?.future;
   }
@@ -1970,6 +2608,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
       txKind: txKind,
       outputs: [
         rust_sync.TransactionDetailOutput(
+          usesOrchardReceiver: false,
           address: 'u1receiveraddress',
           amountZatoshi: BigInt.from(50000),
           pool: 'ironwood',
@@ -2003,6 +2642,36 @@ class _ClaimDestinationRustApi implements RustLibApi {
     syncStarted = Completer<void>();
     claimSyncCalls = 0;
     claimSyncModes = [];
+    claimSyncDbPaths.clear();
+    giftVariantLookups = 0;
+    validGiftAddresses
+      ..clear()
+      ..add(_link().address);
+  }
+
+  @override
+  Future<List<String>> crateApiWalletGetGiftAddressVariants({
+    required String mnemonic,
+    required String network,
+  }) async {
+    giftVariantLookups++;
+    if (mnemonic != _link().mnemonic || network != _link().network) {
+      throw StateError('Gift address mismatch');
+    }
+    return validGiftAddresses.toList();
+  }
+
+  @override
+  Future<void> crateApiWalletValidateGiftAddress({
+    required String mnemonic,
+    required String network,
+    required String address,
+  }) async {
+    if (mnemonic != _link().mnemonic ||
+        network != _link().network ||
+        !validGiftAddresses.contains(address)) {
+      throw StateError('Gift address mismatch');
+    }
   }
 
   @override
@@ -2050,4 +2719,19 @@ class _ClaimDestinationRpcNotifier extends RpcEndpointNotifier {
     networkName: 'main',
     lightwalletdUrl: 'https://example.invalid:9067',
   );
+}
+
+class _ClaimMarketDataSource implements ZecMarketDataSource {
+  double? price;
+  bool throwOnFetch = false;
+  Completer<ZecMarketData?>? pending;
+  int calls = 0;
+
+  @override
+  Future<ZecMarketData?> fetchMarketData() async {
+    calls++;
+    if (pending != null) return pending!.future;
+    if (throwOnFetch) throw StateError('price unavailable');
+    return price == null ? null : ZecMarketData(usdPrice: price!);
+  }
 }

@@ -22,6 +22,25 @@ final paymentLinkHardwareSigningServiceProvider =
       );
     });
 
+final paymentLinkFundingSurfaceRegistryProvider = Provider(
+  (ref) => PaymentLinkFundingSurfaceRegistry(),
+);
+
+/// Gift Card addresses whose hardware funding flow is still open in this
+/// process, from PCZT creation until the draft is discarded or broadcast.
+///
+/// A prepared draft carries its txid while the device is still signing, so
+/// recovery must not mistake an open flow for an abandoned one.
+class PaymentLinkFundingSurfaceRegistry {
+  final Set<String> _open = {};
+
+  bool isOpen(String address) => _open.contains(address);
+
+  void open(String address) => _open.add(address);
+
+  void close(String address) => _open.remove(address);
+}
+
 abstract interface class PaymentLinkHardwareSigningService {
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
@@ -49,11 +68,11 @@ abstract interface class PaymentLinkHardwareSigningService {
   /// Applies [pcztWithSignaturesBytes] and broadcasts the funding transaction.
   ///
   /// [onSubmissionStarted] fires immediately before the transaction is handed
-  /// to the network, mirroring the software path's
-  /// `runPaymentLinkFundingSubmission` marker. Once it has fired the caller
-  /// must keep the recovery draft on failure: the network may already hold
-  /// the transaction, and the draft carries the `markPrepared` txid the
-  /// reconciler needs to settle it.
+  /// to the network, after the durable submission marker is written,
+  /// mirroring the software path's `runPaymentLinkFundingSubmission` marker.
+  /// Once it has fired the caller must keep the recovery draft on failure:
+  /// the network may already hold the transaction, and the draft carries the
+  /// `markPrepared` txid the reconciler needs to settle it.
   Future<PaymentLinkHardwareFundingResult> broadcastSignedPczt({
     required PaymentLinkHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
@@ -119,6 +138,7 @@ class RustPaymentLinkHardwareSigningService
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
+    _surfaces.open(link.address);
     final sendFlowId =
         'payment-link-hw-${DateTime.now().microsecondsSinceEpoch}';
 
@@ -185,9 +205,13 @@ class RustPaymentLinkHardwareSigningService
           'address=${link.address} error=$cleanupError',
         );
       }
+      _surfaces.close(link.address);
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
+
+  PaymentLinkFundingSurfaceRegistry get _surfaces =>
+      _ref.read(paymentLinkFundingSurfaceRegistryProvider);
 
   @override
   Future<List<String>> encodeSigningUrParts({
@@ -263,6 +287,9 @@ class RustPaymentLinkHardwareSigningService
         'PaymentLinkHardwareSigning: canceled funding cleanup failed '
         'address=${draft.link.address} error=$error',
       );
+    } finally {
+      // Recovery removes the draft later if this cleanup failed.
+      _surfaces.close(draft.link.address);
     }
   }
 
@@ -300,21 +327,32 @@ class RustPaymentLinkHardwareSigningService
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    // Rust broadcasts before it stores, so from here on a throw can no longer
-    // prove the network did not accept the transaction.
-    await onSubmissionStarted?.call();
-    final stored = await rust_sync
-        .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          proposalId: draft.proposalId,
-          sendFlowId: draft.sendFlowId,
-          pcztWithProofs: [Uint8List.fromList(pcztWithProofsBytes)],
-          signatureBlobs: [Uint8List.fromList(pcztWithSignaturesBytes)],
-          spendParamsPath: spendParamsPath,
-          outputParamsPath: outputParamsPath,
-        );
+    final rust_sync.StoreAndBroadcastPcztsResult stored;
+    try {
+      // The durable marker lands before the broadcast: a draft without it
+      // provably never reached the network. A missing draft aborts here.
+      await _recoveryStore.markSubmissionStarted(
+        address: draft.link.address,
+        chainHeight: _ref.read(syncProvider).value?.chainTipHeight ?? 0,
+      );
+      // Rust broadcasts before it stores, so from here on a throw can no
+      // longer prove the network did not accept the transaction.
+      await onSubmissionStarted?.call();
+      stored = await rust_sync
+          .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            proposalId: draft.proposalId,
+            sendFlowId: draft.sendFlowId,
+            pcztWithProofs: [Uint8List.fromList(pcztWithProofsBytes)],
+            signatureBlobs: [Uint8List.fromList(pcztWithSignaturesBytes)],
+            spendParamsPath: spendParamsPath,
+            outputParamsPath: outputParamsPath,
+          );
+    } finally {
+      _surfaces.close(draft.link.address);
+    }
     final result = rust_sync.ExtractAndBroadcastPcztResult(
       txid: stored.txids
           .split(',')

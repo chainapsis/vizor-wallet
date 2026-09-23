@@ -5,7 +5,9 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var numericKeyboardHandler: NumericKeyboardHandler?
   private var customHapticEngine: CHHapticEngine?
+  private var ledgerMobileHandler: LedgerMobileHandler?
 
   override func application(
     _ application: UIApplication,
@@ -51,6 +53,30 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
+
+    ledgerMobileHandler?.close()
+    let ledgerMobileHandler = LedgerMobileHandler()
+    self.ledgerMobileHandler = ledgerMobileHandler
+    let ledgerMobileChannel = FlutterMethodChannel(
+      name: LedgerMobileHandler.methodChannelName,
+      binaryMessenger: messenger
+    )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    ledgerMobileHandler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
+    ledgerMobileChannel.setMethodCallHandler { call, result in
+      ledgerMobileHandler.handle(call, result: result)
+    }
+    let ledgerMobileDiscoveryChannel = FlutterEventChannel(
+      name: LedgerMobileHandler.eventChannelName,
+      binaryMessenger: messenger
+    )
+    ledgerMobileDiscoveryChannel.setStreamHandler(ledgerMobileHandler)
 
     let keychainAccessibilityMigrationHandler =
       KeychainAccessibilityMigrationChannel()
@@ -553,6 +579,39 @@ import UIKit
       }
     }
 
+    // MethodChannel for the native screenshot/recording privacy shield —
+    // mirrors the macOS `PrivacyExposureChannel` contract on the shared
+    // `privacy_shield` channel. iOS only needs the window-blanking half.
+    let privacyShieldChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/privacy_shield",
+      binaryMessenger: messenger
+    )
+    SecureScreenshotShield.shared.onStatusChanged = { status in
+      privacyShieldChannel.invokeMethod("protectionStatusChanged", arguments: status)
+    }
+    privacyShieldChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setSensitiveContentVisible":
+        guard
+          let args = call.arguments as? [String: Any],
+          let visible = args["visible"] as? Bool
+        else {
+          result(
+            FlutterError(
+              code: "bad_args",
+              message: "Expected visible argument.",
+              details: nil
+            )
+          )
+          return
+        }
+        SecureScreenshotShield.shared.setSensitiveContentVisible(visible)
+        result(SecureScreenshotShield.shared.status)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.
     let screenshotChannel = FlutterEventChannel(
@@ -958,6 +1017,263 @@ private enum SensitiveClipboardHandler {
       return double
     }
     return nil
+  }
+}
+
+/// Attempts to exclude the app window from screenshots and screen recordings
+/// while a sensitive screen (secret passphrase / import) is showing.
+///
+/// Uses the private `isSecureTextEntry` layer technique: the key window's layer
+/// is re-parented into a hidden secure `UITextField`'s canvas layer, which
+/// is normally excluded from capture. This is not a documented whole-window
+/// protection API: an applied graft still needs device/OS capture validation.
+///
+/// Missing windows/hosts report pending; an unknown canvas reports failure
+/// without grafting a guessed layer. The post-capture warning is retained,
+/// but is not a substitute for capture exclusion, especially during recording.
+///
+/// Lives in this file so it needs no `project.pbxproj` entry, matching
+/// `ScreenshotStreamHandler`.
+final class SecureScreenshotShield {
+  static let shared = SecureScreenshotShield()
+
+  // Ported from no_screenshot's open-source iOS-26 technique. The secure-canvas
+  // capture exclusion already worked (stills came out black); only geometry was
+  // broken on iOS 26.5. Two fixes vs the old code: (1) find the canvas by the
+  // secure field's private CANVAS SUBVIEW class name instead of sublayer index
+  // (index `.last` grabbed a small offset aux layer on iOS 26.5), and (2) re-pin
+  // the reparented window layer to full window bounds so it no longer collapses
+  // into a corner. The flag stays as the single kill switch, and the screenshot
+  // warning sheet remains the permanent fallback if a future iOS breaks the
+  // private-layer layout this relies on.
+  private static let isNativeBlankingEnabled = true
+
+  private let secureField = UITextField()
+  private var isLayerAttached = false
+  private weak var shieldedWindow: UIWindow?
+  private weak var shieldedWindowLayer: CALayer?
+  private weak var canvasLayer: CALayer?
+  private var geometryObservers: [NSObjectProtocol] = []
+  private let windowProvider: () -> UIWindow?
+  private let canvasProvider: (UITextField) -> CALayer?
+  private let notificationCenter: NotificationCenter
+  private(set) var status: [String: Any] = ["state": "disabled", "visible": false]
+  var onStatusChanged: (([String: Any]) -> Void)?
+
+  // Injectable UIKit boundaries allow lifecycle tests without capturing secrets
+  // or depending on the simulator's private secure-text renderer.
+  init(
+    windowProvider: @escaping () -> UIWindow? = SecureScreenshotShield.keyWindow,
+    canvasProvider: @escaping (UITextField) -> CALayer? = SecureScreenshotShield.secureCanvasLayer,
+    notificationCenter: NotificationCenter = .default
+  ) {
+    self.windowProvider = windowProvider
+    self.canvasProvider = canvasProvider
+    self.notificationCenter = notificationCenter
+  }
+
+  deinit {
+    geometryObservers.forEach { notificationCenter.removeObserver($0) }
+    if isLayerAttached {
+      Self.restoreLayerHierarchy(windowLayer: shieldedWindowLayer, secureLayer: secureField.layer)
+    }
+  }
+
+  private func report(_ state: String, reason: String = "") {
+    let next: [String: Any] = [
+      "state": state, "reason": reason, "visible": secureField.isSecureTextEntry,
+    ]
+    guard !NSDictionary(dictionary: status).isEqual(to: next) else { return }
+    status = next
+    if state == "failed" { NSLog("Screenshot shield unavailable: %@", reason) }
+    onStatusChanged?(next)
+  }
+
+  /// Idempotent: repeated calls with the same value only toggle the flag, and
+  /// the one-time layer setup runs at most once even across Dart hot restarts.
+  func setSensitiveContentVisible(_ visible: Bool) {
+    guard Self.isNativeBlankingEnabled else {
+      report("failed", reason: "native_blanking_disabled")
+      return
+    }
+    Self.performOnMain { [weak self] in
+      guard let self else { return }
+      // Retain the desired protection even before UIKit has a key window.
+      // Dart deduplicates visibility updates, so activation must be able to
+      // retry the attachment without another MethodChannel call.
+      self.secureField.isSecureTextEntry = visible
+      if !visible {
+        self.report("disabled")
+        return
+      }
+      self.installGeometryObservers()
+      self.attachLayerIfNeeded()
+      guard self.isLayerAttached else { return }
+      self.reassertWindowGeometry()
+    }
+  }
+
+  /// MethodChannel handlers use the main thread by default. Apply inline there
+  /// so capture exclusion is enabled before the handler returns; retain a safe
+  /// fallback for any future caller that reaches this API off-main.
+  static func performOnMain(_ operation: @escaping () -> Void) {
+    if Thread.isMainThread {
+      operation()
+    } else {
+      DispatchQueue.main.async(execute: operation)
+    }
+  }
+
+  private func attachLayerIfNeeded() {
+    // Keep the existing graft intact while UIKit temporarily has no key window.
+    // If the same window becomes key again, the identity check below reuses it
+    // instead of trying to insert the secure field beneath its own descendant.
+    guard secureField.isSecureTextEntry else { return }
+    guard let window = windowProvider() else {
+      report("pending", reason: "no_key_window")
+      return
+    }
+
+    // Re-graft if not attached, or if the window we grafted into is gone or is
+    // no longer the key window — a UIScene can reconnect and hand us a fresh
+    // UIWindow. Without this, `isLayerAttached` would latch to a dead window and
+    // silently stop blanking: a screenshot would then capture the secret in
+    // plaintext with no error and no fallback.
+    if isLayerAttached {
+      if let attached = shieldedWindow, attached === window {
+        report("applied")
+        return
+      }
+      Self.restoreLayerHierarchy(
+        windowLayer: shieldedWindowLayer,
+        secureLayer: secureField.layer
+      )
+      isLayerAttached = false
+      shieldedWindow = nil
+      shieldedWindowLayer = nil
+      canvasLayer = nil
+    }
+
+    secureField.isUserInteractionEnabled = false
+    secureField.translatesAutoresizingMaskIntoConstraints = false
+    // Stop a rightward shift under RTL device languages.
+    secureField.semanticContentAttribute = .forceLeftToRight
+    secureField.textAlignment = .left
+
+    // Build the field's internal (canvas) layer tree, then detach the field as a
+    // SUBVIEW so we never create a circular view hierarchy (an iOS 26 crash
+    // trap); only the LAYERS are grafted below.
+    window.addSubview(secureField)
+    secureField.layoutIfNeeded()
+    secureField.removeFromSuperview()
+
+    // Only re-parent once every dependency is present, so a partial failure
+    // leaves the window untouched.
+    guard let superlayer = window.layer.superlayer else {
+      report("pending", reason: "no_window_host")
+      return
+    }
+    guard let canvas = canvasProvider(secureField) else {
+      report("failed", reason: "secure_canvas_unavailable")
+      return
+    }
+
+    // Zero the container so the reparented window layer inherits no offset.
+    secureField.layer.frame = .zero
+    secureField.layer.masksToBounds = false
+    canvas.masksToBounds = false
+
+    superlayer.addSublayer(secureField.layer)
+    canvas.addSublayer(window.layer)
+
+    shieldedWindow = window
+    shieldedWindowLayer = window.layer
+    canvasLayer = canvas
+    isLayerAttached = true
+    report("applied")
+
+    reassertWindowGeometry()
+    installGeometryObservers()
+  }
+
+  /// Reverses the secure-canvas graft before moving the field to a different
+  /// window. The field layer occupies the window layer's former host position,
+  /// so restore the window there before attempting another UIKit attachment.
+  static func restoreLayerHierarchy(
+    windowLayer: CALayer?,
+    secureLayer: CALayer
+  ) {
+    let originalSuperlayer = secureLayer.superlayer
+    windowLayer?.removeFromSuperlayer()
+    secureLayer.removeFromSuperlayer()
+    if let originalSuperlayer, let windowLayer {
+      originalSuperlayer.addSublayer(windowLayer)
+    }
+  }
+
+  /// Do not guess by layer size/index: an arbitrary layer does not establish
+  /// capture exclusion. This private canvas still needs real-device validation.
+  static func secureCanvasLayer(of field: UITextField) -> CALayer? {
+    if let byName = field.subviews.first(where: {
+      String(describing: type(of: $0)).contains("CanvasView")
+    }) {
+      return byName.layer
+    }
+    return nil
+  }
+
+  /// Force the reparented window layer (and the canvas above it) back to full
+  /// window bounds at origin zero. UIKit re-lays the window layer on
+  /// rotation/scene changes, so this is re-run from the observers and before
+  /// each visibility toggle.
+  private func reassertWindowGeometry() {
+    guard let window = shieldedWindow, let canvas = canvasLayer else { return }
+    let full = CGRect(origin: .zero, size: window.bounds.size)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    canvas.frame = full
+    canvas.masksToBounds = false
+    window.layer.frame = full
+    CATransaction.commit()
+  }
+
+  private func installGeometryObservers() {
+    guard geometryObservers.isEmpty else { return }
+    let nc = notificationCenter
+    let reassert: (Notification) -> Void = { [weak self] _ in
+      guard let self else { return }
+      // These observers deliver on the main queue. Re-graft synchronously so a
+      // newly active window is protected before UIKit presents its first frame.
+      self.attachLayerIfNeeded()
+      self.reassertWindowGeometry()
+
+      // Rotation can settle the final window bounds after its notification.
+      // Re-pin geometry once more without delaying the security attachment.
+      DispatchQueue.main.async { [weak self] in
+        self?.reassertWindowGeometry()
+      }
+    }
+    geometryObservers = [
+      nc.addObserver(
+        forName: UIDevice.orientationDidChangeNotification,
+        object: nil, queue: .main, using: reassert
+      ),
+      nc.addObserver(
+        forName: UIScene.didActivateNotification,
+        object: nil, queue: .main, using: reassert
+      ),
+      nc.addObserver(
+        forName: UIApplication.didBecomeActiveNotification,
+        object: nil, queue: .main, using: reassert
+      ),
+    ]
+  }
+
+  static func keyWindow() -> UIWindow? {
+    return UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
   }
 }
 

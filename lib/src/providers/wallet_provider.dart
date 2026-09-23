@@ -24,7 +24,20 @@ class WalletNotifier extends AsyncNotifier<WalletState> {
   @override
   FutureOr<WalletState> build() {
     final bootstrap = ref.watch(appBootstrapProvider);
-    final accountState = ref.watch(accountProvider);
+    // Ledger connection metadata is not wallet routing state. Rebuilding here
+    // would refresh GoRouter during signing and discard typed route extras.
+    // Keep loading/error transitions and every field exposed below observable.
+    final accountState = ref.watch(
+      accountProvider.select(
+        (value) => value.whenData(
+          (account) => (
+            hasAccounts: account.hasAccounts,
+            activeAddress: account.activeAddress,
+            activeAccountUuid: account.activeAccountUuid,
+          ),
+        ),
+      ),
+    );
 
     return accountState.when(
       data: (state) {

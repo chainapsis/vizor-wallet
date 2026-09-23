@@ -150,6 +150,7 @@ class _Harness {
 Future<_Harness> _pumpHost(
   WidgetTester tester, {
   bool realComposer = false,
+  Widget? home,
   FutureOr<List<AddressBookContact>> contacts = const [],
   FutureOr<Map<String, AccountInfo>> ownAccounts = const {},
 }) async {
@@ -165,7 +166,9 @@ Future<_Harness> _pumpHost(
       for (final path in ['/home', if (!realComposer) '/send'])
         GoRoute(
           path: path,
-          builder: (_, _) => Scaffold(body: Text('screen $path')),
+          builder: (_, _) => path == '/home' && home != null
+              ? home
+              : Scaffold(body: Text('screen $path')),
         ),
       if (realComposer)
         buildMobileRoutes(
@@ -283,6 +286,33 @@ void main() {
     expect(harness.container.read(paymentRequestFlowProvider), isNull);
     expect(_discarded, [BigInt.from(11)]);
     expect(harness.location, '/home');
+  });
+
+  testWidgets('presenting a payment request clears the underlying focus', (
+    tester,
+  ) async {
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+    final harness = await _pumpHost(
+      tester,
+      home: Scaffold(
+        body: TextField(
+          focusNode: focusNode,
+          keyboardType: TextInputType.number,
+        ),
+      ),
+    );
+    focusNode.requestFocus();
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    harness.container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(_request, source: PaymentRequestSource.link);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment request'), findsOneWidget);
+    expect(focusNode.hasFocus, isFalse);
   });
 
   testWidgets('a short drag returns the sheet to its original position', (

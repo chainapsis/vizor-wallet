@@ -37,6 +37,7 @@ typedef SendStatusBroadcastRunner =
       required WidgetRef ref,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
+      LedgerBroadcastArgs? ledger,
       required Future<bool> Function() confirmSaplingParamsDownload,
       Future<bool> Function()? shouldAbort,
     });
@@ -47,10 +48,12 @@ class SendStatusScreen extends ConsumerStatefulWidget {
     required this.args,
     this.keystone,
     this.broadcastRunner,
+    this.ledger,
   });
 
   final SendReviewArgs args;
   final KeystoneBroadcastArgs? keystone;
+  final LedgerBroadcastArgs? ledger;
 
   /// The software send's missing-mnemonic branch is `!Platform.isMacOS`, so a
   /// macOS test host cannot reach it through the real runner.
@@ -96,7 +99,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     super.initState();
     _sendStatusTerminal = ref.read(sendStatusTerminalProvider.notifier);
     _syncNotifier = ref.read(syncProvider.notifier);
-    _proposalConsumed = widget.keystone != null;
+    _proposalConsumed = widget.keystone != null || widget.ledger != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -226,6 +229,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       ref: ref,
       args: widget.args,
       keystone: widget.keystone,
+      ledger: widget.ledger,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );

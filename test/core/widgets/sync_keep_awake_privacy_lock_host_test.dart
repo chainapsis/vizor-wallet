@@ -4,6 +4,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:zcash_wallet/src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -86,6 +88,79 @@ const _fingerprintBiometricState = BiometricUnlockState(
 );
 
 void main() {
+  testWidgets(
+    'idle privacy lock dismisses the numeric keyboard and native control',
+    (tester) async {
+      _setMobileViewport(tester);
+      const channel = MethodChannel('com.zcash.wallet/numeric_keyboard');
+      final calls = <MethodCall>[];
+      addTearDown(() {
+        tester.view.resetViewInsets();
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        );
+      });
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return null;
+      });
+      await tester.pumpWidget(
+        _app(
+          child: MaterialApp(
+            builder: (_, child) => AppTheme(
+              data: AppThemeData.dark,
+              child: SyncKeepAwakePrivacyLockHost(
+                idleTimeout: const Duration(minutes: 1),
+                child: MobileNumericKeyboardToolbar(child: child!),
+              ),
+            ),
+            home: const Scaffold(
+              body: TextField(
+                key: ValueKey('numeric-input'),
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ),
+          syncNotifier: FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      );
+      await _settleInitialSync(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('numeric-input')),
+        '123',
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pump();
+      await tester.pump();
+      expect(calls.last.arguments['visible'], true);
+      await tester.pump(const Duration(seconds: 61));
+      await tester.pump();
+      expect(find.text('Unlock Vizor'), findsOneWidget);
+      expect(tester.testTextInput.isVisible, false);
+      expect(calls.last.arguments['visible'], false);
+      expect(
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorStateOfType<EditableTextState>()
+            ?.widget
+            .keyboardType,
+        isNull,
+      );
+      expect(find.text('123'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      tester.view.resetViewInsets();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
   testWidgets('shows the privacy screen after keep-awake idle timeout', (
     tester,
   ) async {
@@ -855,7 +930,7 @@ void _setMobileViewport(
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget _app({required FakeSyncNotifier syncNotifier}) {
+Widget _app({required FakeSyncNotifier syncNotifier, Widget? child}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
@@ -865,7 +940,7 @@ Widget _app({required FakeSyncNotifier syncNotifier}) {
       ),
       syncProvider.overrideWith(() => syncNotifier),
     ],
-    child: _themedApp(),
+    child: child ?? _themedApp(),
   );
 }
 

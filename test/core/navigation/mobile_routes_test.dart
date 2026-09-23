@@ -293,7 +293,6 @@ void main() {
       expect(find.text('u1firstrequestaddress'), findsNothing);
     },
   );
-
   testWidgets('send amount and review routes push Cupertino pages', (
     tester,
   ) async {
@@ -673,6 +672,12 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
 
   @override
   Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {}
+
+  @override
+  Future<void> settlePcztDraftAfterLedgerBroadcast({
+    required SwapHardwarePcztDraft draft,
+    required String? status,
+  }) async {}
 
   @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({

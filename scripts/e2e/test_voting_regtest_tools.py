@@ -9,6 +9,9 @@ from unittest.mock import patch
 import threading
 import urllib.request
 import json
+import base64
+import copy
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -42,6 +45,83 @@ class ExporterTests(unittest.TestCase):
     def test_rejects_non_object_stream_item(self) -> None:
         with self.assertRaisesRegex(ValueError, "non-object"):
             exporter.decode_stream("[]")
+
+
+class DiscoveryTests(unittest.TestCase):
+    def test_revision_tracks_only_backend_discovery_fields(self):
+        config = {"config_version": 1, "rounds": {}, "vote_servers": [{"url": "https://vote.invalid"}]}
+        first = {"vote_round_id": "a" * 64, "status": 1, "vote_end_time": 9000, "title": "Test"}
+        second = {**first, "vote_round_id": "b" * 64}
+        listing = {"rounds": [first, second]}
+        revision = gateway.discovery_revision(b"local-static", config, listing)
+        equivalent = copy.deepcopy(listing)
+        equivalent["rounds"].reverse()
+        for row in equivalent["rounds"]:
+            row["vote_round_id"] = base64.b64encode(bytes.fromhex(row["vote_round_id"])).decode()
+            row["status"] = str(row["status"])
+            row["vote_end_time"] = str(row["vote_end_time"])
+            row["vote_count"] = 123
+            row["nc_root"] = "changed"
+        self.assertEqual(gateway.discovery_revision(b"local-static", dict(reversed(list(config.items()))), equivalent), revision)
+        for field, value in [("title", "Updated"), ("status", 2), ("vote_end_time", 9999)]:
+            changed = copy.deepcopy(listing)
+            changed["rounds"][0][field] = value
+            self.assertNotEqual(gateway.discovery_revision(b"local-static", config, changed), revision)
+        self.assertNotEqual(gateway.discovery_revision(b"other-static", config, listing), revision)
+        self.assertNotEqual(gateway.discovery_revision(b"local-static", {**config, "config_version": 2}, listing), revision)
+        self.assertNotEqual(gateway.discovery_revision(b"local-static", config, {"rounds": [first]}), revision)
+
+    def test_http_snapshot_and_publication_use_only_local_public_files(self):
+        class Upstream(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"rounds":[]}')
+            def log_message(self, *_):
+                pass
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "static-voting-config.json").write_text('{}')
+            (root / "dynamic-voting-config.json").write_text('{"rounds":{}}')
+            (root / "same-round.json").write_text('{"rounds":{},"label":"updated"}')
+            (root / "signing.seed").write_text('test-only-private-fixture')
+            upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+            handler = type("DiscoveryGateway", (gateway.GatewayHandler,), {
+                "config_dir": root, "vote_target": upstream.server_address,
+                "discovery_transition": True,
+            })
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            for item in (upstream, server):
+                threading.Thread(target=item.serve_forever, daemon=True).start()
+            url = f"http://127.0.0.1:{server.server_port}"
+            try:
+                with urllib.request.urlopen(url + '/v1/voting/discovery/prod') as response:
+                    first = json.load(response)
+                self.assertEqual(first['scope'], 'prod')
+                self.assertEqual(first['schemaVersion'], 1)
+                self.assertRegex(first['revision'], r'^sha256:[0-9a-f]{64}$')
+                self.assertTrue(first['checkedAt'].endswith('Z'))
+                with urllib.request.urlopen(urllib.request.Request(url + '/publish-discovery', data=b'{"stage":"same-round"}')):
+                    pass
+                with urllib.request.urlopen(url + '/v1/voting/discovery/prod') as response:
+                    second = json.load(response)
+                self.assertNotEqual(first['revision'], second['revision'])
+                self.assertEqual(handler.discovery_successes, 2)
+                (root / "dynamic-voting-config.json").write_text('invalid-json')
+                with self.assertRaises(urllib.error.HTTPError) as failed:
+                    urllib.request.urlopen(url + '/v1/voting/discovery/prod')
+                self.assertEqual(failed.exception.code, 503)
+                self.assertEqual(failed.exception.headers['Cache-Control'], 'no-store')
+                self.assertEqual(handler.discovery_requests, 3)
+                self.assertEqual(handler.discovery_successes, 2)
+                for name in ['signing.seed', 'same-round.json']:
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(url + '/config.vizor-vote.invalid/' + name)
+                    self.assertEqual(error.exception.code, 404)
+            finally:
+                for item in (server, upstream):
+                    item.shutdown()
+                    item.server_close()
 
 
 class GatewayTests(unittest.TestCase):

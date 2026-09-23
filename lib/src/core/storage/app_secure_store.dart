@@ -18,6 +18,7 @@ import '../config/network_config.dart';
 import '../security/password_policy.dart';
 import '../security/software_wallet_secret.dart';
 import '../../rust/api/secret.dart' as rust_secret;
+import 'voting_hotkey_store.dart';
 import 'secure_storage_diagnostics.dart';
 import 'linux_keyring_coordinator.dart';
 
@@ -175,6 +176,13 @@ class AppSecureStore {
   final _secretMutationLock = _AsyncLock();
   final bool enforcesSessionGeneration;
   int _sessionGeneration = 0;
+
+  /// Shared across provider containers so creation outlives the initiating UI.
+  late final votingHotkeys = VotingHotkeyStore(
+    readHotkey: readVotingHotkey,
+    writeHotkey: writeVotingHotkey,
+    deleteHotkey: deleteVotingHotkey,
+  );
   String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;

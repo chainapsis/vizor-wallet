@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_archive_header.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -12,27 +11,70 @@ import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
-import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_archive_header.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
-import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/gift_card_privacy_checks.dart';
+import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  registerGiftCardPrivacyChecks(mobile: false);
+  testWidgets(
+    'gift amount normalizes leading separators and preserves precision',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester);
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(
+                    const ValueKey('payment_link_amount_continue_button'),
+                  ),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      await tester.enterText(field, ',12345678');
+      await tester.pumpAndSettle();
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      final controller = tester.widget<EditableText>(editable).controller;
+      expect(controller.text, '0.12345678');
+      await tester.enterText(field, '0.123456789');
+      await tester.pumpAndSettle();
+      expect(controller.text, '0.12345678');
+    },
+  );
+
   testWidgets('copying an older card preserves creation order after reload', (
     tester,
   ) async {
@@ -73,7 +115,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(clipboard.copiedSecrets, [otherAccountLink.toUri().toString()]);
+    expect(clipboard.copiedSecrets, [otherAccountLink.toShareUri().toString()]);
     expect(
       operations.records.first.updatedAt.isAfter(fundedRecovery.updatedAt),
       isTrue,
@@ -1520,6 +1562,29 @@ void main() {
 
       await tester.tap(find.text('Create new card'));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+        tester
+                    .widget<PaymentLinkCardSelectorRail>(
+                      find.byType(PaymentLinkCardSelectorRail),
+                    )
+                    .selected
+                    .index >
+                PaymentLinkCardArtwork.ruby.index
+            ? -100
+            : 100,
+        scrollable: find.descendant(
+          of: find.byType(PaymentLinkCardSelectorRail),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await Scrollable.ensureVisible(
+        tester.element(
+          find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+        ),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_link_card_selector_ruby')),
       );
@@ -1574,6 +1639,62 @@ void main() {
     },
   );
 
+  testWidgets(
+    'new cards select a valid design and keep preview and selection in sync',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester);
+
+      void expectArtwork(PaymentLinkCardArtwork artwork) {
+        expect(
+          tester
+              .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+              .artwork,
+          artwork,
+        );
+        final selected = tester
+            .widgetList<PaymentLinkCardSelector>(
+              find.byType(PaymentLinkCardSelector),
+            )
+            .where((selector) => selector.selected);
+        expect(selected.map((selector) => selector.artwork), [artwork]);
+      }
+
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      final artwork = tester
+          .widget<PaymentLinkCardSelectorRail>(
+            find.byType(PaymentLinkCardSelectorRail),
+          )
+          .selected;
+      expect(PaymentLinkCardArtwork.values, contains(artwork));
+      expectArtwork(artwork);
+
+      final otherDesign = find
+          .byType(PaymentLinkCardSelector)
+          .hitTestable()
+          .evaluate()
+          .map((element) => element.widget as PaymentLinkCardSelector)
+          .firstWhere((selector) => !selector.selected);
+      await tester.tap(find.byKey(otherDesign.key!));
+      await tester.pumpAndSettle();
+      expectArtwork(otherDesign.artwork);
+      await tester.pump();
+      expectArtwork(otherDesign.artwork);
+
+      await tester.tap(find.widgetWithText(AppBackLink, 'Home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new card'));
+      await tester.pumpAndSettle();
+      final newArtwork = tester
+          .widget<PaymentLinkCardSelectorRail>(
+            find.byType(PaymentLinkCardSelectorRail),
+          )
+          .selected;
+      expect(PaymentLinkCardArtwork.values, contains(newArtwork));
+      expectArtwork(newArtwork);
+    },
+  );
+
   testWidgets('sends the selected artwork and message through creation', (
     tester,
   ) async {
@@ -1581,6 +1702,29 @@ void main() {
     await pumpPaymentLinksScreen(tester, operations: operations);
 
     await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+      tester
+                  .widget<PaymentLinkCardSelectorRail>(
+                    find.byType(PaymentLinkCardSelectorRail),
+                  )
+                  .selected
+                  .index >
+              PaymentLinkCardArtwork.ruby.index
+          ? -100
+          : 100,
+      scrollable: find.descendant(
+        of: find.byType(PaymentLinkCardSelectorRail),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await Scrollable.ensureVisible(
+      tester.element(
+        find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+      ),
+      alignment: 0.5,
+    );
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('payment_link_card_selector_ruby')),
@@ -2293,8 +2437,11 @@ void main() {
 
     expect(operations.preparedLinks.single.address, secondIncomingLink.address);
     expect(
-      container.read(paymentLinkIntakeProvider).pendingLink?.address,
-      incomingLink.address,
+      container
+          .read(paymentLinkIntakeProvider)
+          .pendingLink
+          ?.hasSameCanonicalPayload(incomingLink),
+      isTrue,
     );
   });
 
@@ -3053,7 +3200,7 @@ void main() {
       find.byType(PaymentLinkQrShareCard),
     );
     expect(shareCard.artwork, PaymentLinkCardArtwork.ruby);
-    expect(shareCard.qrData, incomingLink.toUri().toString());
+    expect(shareCard.qrData, incomingLink.toShareUri().toString());
 
     await tester.tap(find.text('Save QR code'));
     await tester.pump();

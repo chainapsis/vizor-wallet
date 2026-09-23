@@ -1,5 +1,8 @@
-import 'package:flutter/cupertino.dart' show CupertinoPage;
+import 'package:flutter/cupertino.dart' show BuildContext, CupertinoPage;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../providers/app_security_provider.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -9,11 +12,14 @@ import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_screens.dart';
 import '../../features/onboarding/mobile/mobile_keystone_screens.dart';
+import '../../features/onboarding/mobile/mobile_ledger_birthday_screen.dart';
+import '../../features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../../features/onboarding/mobile/mobile_wallet_link_screens.dart';
+import '../../features/onboarding/ledger/ledger_setup_args.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
 
 /// Mobile onboarding tree: single-pane screens pushed as
@@ -200,6 +206,40 @@ List<RouteBase> mobileOnboardingRoutes() => [
       child: const MobileKeystoneBirthdayScreen(),
     ),
   ),
+  GoRoute(
+    path: '/onboarding/ledger',
+    redirect: (context, _) => _mobileLedgerRedirect(context),
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: const MobileLedgerConnectScreen(),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/birthday',
+    redirect: (context, state) async =>
+        await _mobileLedgerRedirect(context) ??
+        (state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger'),
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileLedgerBirthdayScreen(
+        args: state.extra as LedgerBirthdayArgs,
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/ledger/customise-account',
+    redirect: (context, state) async =>
+        await _mobileLedgerRedirect(context) ??
+        (state.extra is LedgerCustomiseAccountArgs
+            ? null
+            : '/onboarding/ledger'),
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileLedgerCustomiseAccountScreen(
+        args: state.extra as LedgerCustomiseAccountArgs,
+      ),
+    ),
+  ),
   // Legacy keystone aliases land on the mobile flow entry.
   GoRoute(path: '/import-keystone', redirect: (_, _) => '/onboarding/keystone'),
   GoRoute(
@@ -207,3 +247,11 @@ List<RouteBase> mobileOnboardingRoutes() => [
     redirect: (_, _) => '/onboarding/keystone',
   ),
 ];
+
+// Fresh wallets may export a Ledger account before configuring a passcode.
+// The account mutation separately requires a prepared setup or unlocked wallet.
+Future<String?> _mobileLedgerRedirect(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final security = container.read(appSecurityProvider);
+  return security.requiresUnlock ? '/unlock' : null;
+}

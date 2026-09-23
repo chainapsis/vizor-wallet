@@ -78,6 +78,7 @@ class PaymentLinkReceivedRecord {
     required this.address,
     required this.amountZatoshi,
     required this.createdAt,
+    this.isCreatedAtProvisional = false,
     required this.artworkId,
     required this.status,
     required this.claimLink,
@@ -102,6 +103,7 @@ class PaymentLinkReceivedRecord {
       address: link.address,
       amountZatoshi: link.amountZatoshi,
       createdAt: link.createdAt.toUtc(),
+      isCreatedAtProvisional: link.isCreatedAtProvisional,
       artworkId: link.presentation?.artworkId,
       message: link.presentation?.message,
       fiatSnapshot: link.presentation?.fiatSnapshot,
@@ -117,6 +119,7 @@ class PaymentLinkReceivedRecord {
   final String address;
   final BigInt amountZatoshi;
   final DateTime createdAt;
+  final bool isCreatedAtProvisional;
   final String? artworkId;
   final String? message;
   final PaymentLinkFiatSnapshot? fiatSnapshot;
@@ -167,11 +170,14 @@ class PaymentLinkReceivedRecord {
       status == PaymentLinkReceivedStatus.submitting;
 
   PaymentLinkReceivedRecord copyWith({
+    Object? fiatSnapshot = _fieldNotProvided,
     PaymentLinkReceivedStatus? status,
     Object? claimLink = _fieldNotProvided,
     Object? destinationAccountUuid = _fieldNotProvided,
     Object? claimTxids = _fieldNotProvided,
     DateTime? updatedAt,
+    DateTime? createdAt,
+    bool? isCreatedAtProvisional,
     DateTime? claimSubmittedAt,
     String? claimDestinationPool,
     PaymentLinkAvailability? availability,
@@ -182,10 +188,14 @@ class PaymentLinkReceivedRecord {
       network: network,
       address: address,
       amountZatoshi: amountZatoshi,
-      createdAt: createdAt,
+      createdAt: createdAt ?? this.createdAt,
+      isCreatedAtProvisional:
+          isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       artworkId: artworkId,
       message: message,
-      fiatSnapshot: fiatSnapshot,
+      fiatSnapshot: identical(fiatSnapshot, _fieldNotProvided)
+          ? this.fiatSnapshot
+          : fiatSnapshot as PaymentLinkFiatSnapshot?,
       status: status ?? this.status,
       claimLink: identical(claimLink, _fieldNotProvided)
           ? this.claimLink
@@ -328,6 +338,25 @@ class PaymentLinkReceivedStore {
         .length;
   }
 
+  /// Only enrich the date; do not alter lifecycle metadata or list ordering.
+  Future<void> resolveProvisionalCreatedAt({
+    required String address,
+    required DateTime createdAt,
+  }) => _runExclusive(() async {
+    final records = await _loadUnlocked();
+    final existing = _findByAddress(records, address);
+    if (existing == null || !existing.isCreatedAtProvisional) return;
+    final updated = existing.copyWith(
+      createdAt: createdAt.toUtc(),
+      isCreatedAtProvisional: false,
+      claimLink: existing.claimLink?.withResolvedMetadata(
+        createdAt: createdAt.toUtc(),
+        isCreatedAtProvisional: false,
+      ),
+    );
+    await _writeRecords(_replaceByAddress(records, updated));
+  });
+
   Future<PaymentLinkReceivedRecord> saveReady(
     VizorPaymentLink link, {
     DateTime? updatedAt,
@@ -338,14 +367,23 @@ class PaymentLinkReceivedStore {
       if (existing?.status == PaymentLinkReceivedStatus.received) {
         return existing!;
       }
+      // A late preview must not replace a resolved date or move the original
+      // fallback forward each time the same unconfirmed link is reopened.
+      if (existing != null && link.isCreatedAtProvisional) {
+        link = link.withResolvedMetadata(
+          createdAt: existing.createdAt,
+          isCreatedAtProvisional: existing.isCreatedAtProvisional,
+        );
+      }
       final record = PaymentLinkReceivedRecord(
         network: link.network,
         address: link.address,
         amountZatoshi: link.amountZatoshi,
         createdAt: link.createdAt.toUtc(),
+        isCreatedAtProvisional: link.isCreatedAtProvisional,
         artworkId: link.presentation?.artworkId,
         message: link.presentation?.message,
-        fiatSnapshot: link.presentation?.fiatSnapshot,
+        fiatSnapshot: existing?.fiatSnapshot ?? link.presentation?.fiatSnapshot,
         status: existing?.status ?? PaymentLinkReceivedStatus.readyToClaim,
         claimLink: link,
         destinationAccountUuid: existing?.destinationAccountUuid,
@@ -413,6 +451,7 @@ class PaymentLinkReceivedStore {
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
+        isCreatedAtProvisional: existing.isCreatedAtProvisional,
         artworkId: existing.artworkId,
         message: existing.message,
         fiatSnapshot: existing.fiatSnapshot,
@@ -438,6 +477,7 @@ class PaymentLinkReceivedStore {
     required String destinationAccountUuid,
     DateTime? updatedAt,
     List<String> priorTxids = const [],
+    PaymentLinkFiatSnapshot? fiatSnapshot,
   }) {
     return _runExclusive(() async {
       final normalizedAccountUuid = destinationAccountUuid.trim();
@@ -459,6 +499,8 @@ class PaymentLinkReceivedStore {
       }
       final submissionTime = (updatedAt ?? DateTime.now()).toUtc();
       final updated = existing.copyWith(
+        fiatSnapshot:
+            fiatSnapshot ?? existing.claimLink?.presentation?.fiatSnapshot,
         status: PaymentLinkReceivedStatus.submitting,
         availability: PaymentLinkAvailability.checking,
         archived: false,
@@ -486,6 +528,7 @@ class PaymentLinkReceivedStore {
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
+        isCreatedAtProvisional: existing.isCreatedAtProvisional,
         artworkId: existing.artworkId,
         message: existing.message,
         fiatSnapshot: existing.fiatSnapshot,
@@ -572,6 +615,7 @@ class PaymentLinkReceivedStore {
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
         createdAt: existing.createdAt,
+        isCreatedAtProvisional: existing.isCreatedAtProvisional,
         artworkId: existing.artworkId,
         message: existing.message,
         fiatSnapshot: existing.fiatSnapshot,
@@ -745,6 +789,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'address': record.address,
     'amountZatoshi': record.amountZatoshi.toString(),
     'createdAt': record.createdAt.toUtc().toIso8601String(),
+    'isCreatedAtProvisional': record.isCreatedAtProvisional,
     'artworkId': record.artworkId,
     'message': record.message,
     'fiat': record.fiatSnapshot?.toPayload(),
@@ -752,7 +797,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'availability': record.availability.name,
     'archived': record.archived,
     'claimPriorTxids': record.claimPriorTxids,
-    'claimLink': record.claimLink?.toUri().toString(),
+    'claimLink': record.claimLink?.toRecoveryUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
     'claimTxids': record.claimTxids,
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
@@ -771,6 +816,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final address = value['address'];
   final amountRaw = value['amountZatoshi'];
   final createdAtRaw = value['createdAt'];
+  final provisionalRaw = value['isCreatedAtProvisional'];
   final artworkId = value['artworkId'];
   final message = value['message'];
   final statusRaw = value['status'];
@@ -789,6 +835,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       address.isEmpty ||
       amountRaw is! String ||
       createdAtRaw is! String ||
+      (provisionalRaw != null && provisionalRaw is! bool) ||
       (artworkId != null && artworkId is! String) ||
       (message != null && message is! String) ||
       statusRaw is! String ||
@@ -835,17 +882,25 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       'A submitted Card must retain its claim submission timestamp.',
     );
   }
-  final claimLink = claimLinkRaw == null
+  final parsedClaimLink = claimLinkRaw == null
       ? null
       : VizorPaymentLink.parse(claimLinkRaw);
-  if (claimLink != null &&
-      (claimLink.network != network ||
-          claimLink.address != address ||
-          claimLink.amountZatoshi != amountZatoshi)) {
+  // Validate the embedded v1 address before hydration replaces it. V2 omits
+  // the address and relies on the resolved metadata stored with the record.
+  if (parsedClaimLink != null &&
+      (parsedClaimLink.network != network ||
+          (parsedClaimLink.knownAddress != null &&
+              parsedClaimLink.knownAddress != address) ||
+          parsedClaimLink.amountZatoshi != amountZatoshi)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card link metadata does not match its record.',
     );
   }
+  final claimLink = parsedClaimLink?.withResolvedMetadata(
+    address: address,
+    createdAt: createdAt,
+    isCreatedAtProvisional: provisionalRaw == true,
+  );
   if (status != PaymentLinkReceivedStatus.received && claimLink == null) {
     throw const PaymentLinkReceivedStoreFormatException(
       'An unfinished received Card must retain its claim link.',
@@ -910,6 +965,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     address: address,
     amountZatoshi: amountZatoshi,
     createdAt: createdAt.toUtc(),
+    isCreatedAtProvisional: provisionalRaw == true,
     artworkId: artworkId as String?,
     message: message as String?,
     fiatSnapshot: PaymentLinkFiatSnapshot.fromPayload(value['fiat']),

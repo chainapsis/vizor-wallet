@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex, OnceLock,
+        Mutex, MutexGuard, OnceLock, TryLockError,
     },
     time::{Duration, Instant},
 };
@@ -28,6 +28,7 @@ pub(crate) const READ_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 /// drop (including unwind) makes it even again. Summary readers publish
 /// only when the epoch is even and unchanged across the load.
 static WALLET_DB_WRITE_EPOCH: AtomicU64 = AtomicU64::new(0);
+static WALLET_DB_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 struct WriteEpochGuard;
 
@@ -117,8 +118,6 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     // cache can reject loads that overlapped a write. The epoch is global
     // (not keyed by path), which may over-invalidate unrelated wallets —
     // correctness over precision.
-    static WALLET_DB_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
     let wait_start = Instant::now();
     let guard = match lock.lock() {
@@ -137,6 +136,42 @@ pub(crate) fn with_wallet_db_write_lock<T>(
         );
     }
 
+    run_wallet_db_write(operation, guard, write)
+}
+
+/// Best-effort exit cleanup must not queue indefinitely behind a scan. Taking
+/// this same lock still orders cleanup after any accepted proposal creator.
+pub(crate) fn with_wallet_db_write_lock_until<T>(
+    operation: &'static str,
+    deadline: Instant,
+    write: impl FnOnce() -> T,
+) -> Result<T, String> {
+    let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Shutdown DB cleanup deferred to startup recovery".into());
+        }
+        let guard = match lock.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => {
+                log::error!("wallet DB write lock poisoned while entering {operation}; continuing");
+                poisoned.into_inner()
+            }
+            Err(TryLockError::WouldBlock) => {
+                std::thread::sleep(remaining.min(Duration::from_millis(5)));
+                continue;
+            }
+        };
+        return Ok(run_wallet_db_write(operation, guard, write));
+    }
+}
+
+fn run_wallet_db_write<T>(
+    operation: &'static str,
+    guard: MutexGuard<'_, ()>,
+    write: impl FnOnce() -> T,
+) -> T {
     // Odd while the write closure runs; Drop makes it even on every exit.
     WALLET_DB_WRITE_EPOCH.fetch_add(1, Ordering::AcqRel);
     let _epoch_guard = WriteEpochGuard;
@@ -215,6 +250,35 @@ mod tests {
         });
 
         assert!(called);
+    }
+
+    #[test]
+    fn deadline_does_not_wait_for_a_busy_writer_or_run_cleanup() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            with_wallet_db_write_lock("test.busy_writer", || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+        entered_rx.recv().unwrap();
+        let result = with_wallet_db_write_lock_until(
+            "test.deadline",
+            Instant::now() + Duration::from_millis(20),
+            || panic!("timed-out cleanup must not run"),
+        );
+        release_tx.send(()).unwrap();
+        writer.join().unwrap();
+        assert!(result.is_err());
+        with_wallet_db_write_lock_until(
+            "test.after_deadline",
+            Instant::now() + Duration::from_secs(5),
+            || {
+                assert_eq!(wallet_db_write_epoch() % 2, 1);
+            },
+        )
+        .unwrap();
     }
 
     #[test]

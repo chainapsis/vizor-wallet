@@ -1,3 +1,4 @@
+import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -163,9 +164,27 @@ class MobileVotingStatusScreen extends StatelessWidget {
           MobileVotingSubmissionProgressScreen(
             activeStep: presentation.activeStep,
             activeStepProgress: presentation.activeStepProgress,
+            activeStepDetail: presentation.activeStepDetail,
+            warning: presentation.warning,
           ),
       contentWrapper: (_, content) =>
           MobileVotingScaffold(title: 'Submit vote', child: content),
+      ledgerStatusBuilder: (_, presentation, panel) => Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileVotingSubmissionProgressScreen(
+            activeStep: presentation.activeStep,
+            activeStepProgress: presentation.activeStepProgress,
+            activeStepDetail: presentation.activeStepDetail,
+            warning: presentation.warning,
+          ),
+          MobileLedgerSigningSurface(
+            canLeave: panel.onCancel != null,
+            onBack: panel.onCancel ?? () {},
+            child: panel,
+          ),
+        ],
+      ),
       keystoneStatusBuilder: (_, presentation) =>
           MobileKeystoneVotingSigningScreen(presentation: presentation),
     );

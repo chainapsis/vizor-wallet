@@ -8,6 +8,8 @@ import '../services/voting/voting_file_cache.dart';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
@@ -15,16 +17,17 @@ import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
+import '../core/layout/app_form_factor.dart';
 import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
+import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import '../features/payment_links/services/payment_link_received_store.dart';
-import '../features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../features/payment_links/services/payment_link_recovery_store.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
@@ -58,6 +61,9 @@ const _duplicateSoftwareAccountImportMessage =
     'This account is already in your wallet.';
 const _duplicateKeystoneAccountImportMessage =
     'This Keystone account is already in your wallet.';
+
+const _duplicateLedgerAccountImportMessage =
+    'This Ledger account is already in your wallet.';
 
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
@@ -96,6 +102,24 @@ class WalletResetInFlightGiftCardClaimsException implements Exception {
   String toString() => kWalletResetInFlightGiftCardClaimsMessage;
 }
 
+/// Removal was confirmed against [confirmedCount] unshared Gift Cards, but
+/// more became funded while pending work drained, or the recheck failed
+/// ([count] is null); the user must confirm again.
+class UnsharedGiftCardsChangedException implements Exception {
+  const UnsharedGiftCardsChangedException({
+    required this.confirmedCount,
+    this.count,
+  });
+
+  final int confirmedCount;
+  final int? count;
+
+  @override
+  String toString() => count == null
+      ? "Couldn't recheck gift card links. Review the warning and confirm again."
+      : 'More gift card links were funded. Review the warning and confirm again.';
+}
+
 class WalletResetException implements Exception {
   const WalletResetException({required this.cause, required this.dbDeleted});
 
@@ -113,6 +137,7 @@ class LinkedWalletAccountImport {
     required this.zip32AccountIndex,
     required this.isHardware,
     required this.isSeedAnchor,
+    this.hardwareSignerKind,
     this.mnemonic,
     this.bip39Passphrase = '',
     this.ufvk,
@@ -126,6 +151,7 @@ class LinkedWalletAccountImport {
   final int zip32AccountIndex;
   final bool isHardware;
   final bool isSeedAnchor;
+  final HardwareSignerKind? hardwareSignerKind;
   final String? mnemonic;
   final String bip39Passphrase;
   final String? ufvk;
@@ -490,7 +516,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
-      return rust_wallet.discoverSoftwareWalletImportAccounts(
+      return await rust_wallet.discoverSoftwareWalletImportAccounts(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         birthdayHeight: birthdayHeight != null
@@ -520,7 +546,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
-      return rust_wallet.previewSoftwareAccountTransparentBalance(
+      return await rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         network: network,
@@ -660,6 +686,42 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
   }
 
+  Future<void> recordLedgerConnection({
+    required String uuid,
+    required LedgerConnectionTransport transport,
+    String? deviceId,
+    String? deviceName,
+    String? deviceModel,
+  }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+    final prev = state.value ?? const AccountState();
+    final target = prev.accounts.where((account) => account.uuid == uuid);
+    if (target.isEmpty || !target.single.isLedger) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown Ledger account UUID');
+    }
+    AccountInfo updateConnection(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(
+            ledgerLastTransport: transport,
+            ledgerDeviceId: deviceId,
+            ledgerDeviceName: deviceName,
+            ledgerDeviceModel: deviceModel,
+          )
+        : account;
+    final updated = prev.accounts.map(updateConnection).toList(growable: false);
+    await _saveAccounts(updated);
+    if (!ref.mounted) return;
+    // This is a UI-state merge, independent of Linux secret-session policy.
+    // A metadata write must not undo a lock or account switch on any platform.
+    final current = state.value ?? const AccountState();
+    state = AsyncData(
+      current.copyWith(
+        accounts: current.accounts
+            .map(updateConnection)
+            .toList(growable: false),
+      ),
+    );
+    log('recordLedgerConnection: $uuid → ${transport.name}');
+  });
+
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
@@ -668,11 +730,55 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// records or secure storage. Process-local voting state is then cleared
   /// before the wallet delete. Durable voting rows, hotkeys, and other
   /// account-scoped sidecars are cleared after the wallet account is deleted.
-  Future<void> removeAccount(String uuid) => ref
+  ///
+  /// [confirmedUnsharedGiftCardCount] is the unshared Gift Card count the user
+  /// was warned about; null skips the post-drain recheck.
+  Future<void> removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) => ref
       .read(linuxKeyringCoordinatorProvider)
-      .runMutation(() => _removeAccount(uuid));
+      .runMutation(
+        () => _removeAccount(
+          uuid,
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        ),
+      );
 
-  Future<void> _removeAccount(String uuid) async {
+  /// Refuses when Gift Cards were funded after the user confirmed, e.g. by a
+  /// signed Ledger operation that finished while deletion drained its work.
+  Future<void> _throwIfUnsharedGiftCardsIncreased(
+    Iterable<String> accountUuids,
+    int? confirmedCount,
+  ) async {
+    if (confirmedCount == null) return;
+    final int count;
+    try {
+      final records = await ref.read(paymentLinkRecoveryStoreProvider).load();
+      count = accountUuids.fold(
+        0,
+        (sum, uuid) =>
+            sum +
+            countUnsharedFundedPaymentLinks(records, sourceAccountUuid: uuid),
+      );
+    } catch (e, st) {
+      // A card may have been funded during the drain; reconfirm without a
+      // count rather than proceed silently.
+      log('unshared gift card recheck failed: $e\n$st');
+      throw UnsharedGiftCardsChangedException(confirmedCount: confirmedCount);
+    }
+    if (count > confirmedCount) {
+      throw UnsharedGiftCardsChangedException(
+        confirmedCount: confirmedCount,
+        count: count,
+      );
+    }
+  }
+
+  Future<void> _removeAccount(
+    String uuid, {
+    int? confirmedUnsharedGiftCardCount,
+  }) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
     final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
@@ -680,11 +786,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
     }
 
-    _storage.invalidatePendingSecretOperations();
-
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
+    final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
       // Gift Card claims first, and before the in-flight count below: that
       // count is a one-shot read, and a claim that enters `submitting` right
       // after it returned zero would revalidate its destination against an
@@ -693,11 +801,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // new claims and draining the running ones here means a claim already
       // under way finishes first, and the count then sees it and refuses the
       // deletion. The pause holds until the wallet rows are gone.
+      await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain(accountUuid: uuid);
+      await _throwIfUnsharedGiftCardsIncreased([
+        uuid,
+      ], confirmedUnsharedGiftCardCount);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      ledgerLifecycle.resume();
       claimLifecycle.resume();
+      giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
       shareTracking.requestRestore();
     }
@@ -718,15 +832,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       throw PaymentLinkInFlightClaimsException(
         destinationAccountUuid: uuid,
         count: receivingGiftCardCount,
-      );
-    }
-    final unsharedGiftCardCount = await ref
-        .read(paymentLinkRecoveryReconcilerProvider)
-        .countUnsharedFundedForAccount(uuid);
-    if (unsharedGiftCardCount > 0) {
-      throw PaymentLinkUnsharedGiftCardsException(
-        sourceAccountUuid: uuid,
-        count: unsharedGiftCardCount,
       );
     }
     final remaining = [
@@ -793,6 +898,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           .read(swapActivityStoreProvider)
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
+    // Only after the Rust delete, which also drops this account's Ledger
+    // outbox: a checkpointed draft must never lose its secret while its
+    // signed transaction can still be broadcast.
+    try {
+      await ref
+          .read(paymentLinkRecoveryStoreProvider)
+          .removeUnsubmittedDraftsForAccount(uuid);
+    } catch (e, st) {
+      log('removeAccount: failed to drop Gift Card drafts for $uuid: $e\n$st');
+    }
     try {
       await _storage.deleteVotingHotkeysForAccount(uuid);
     } catch (e, st) {
@@ -881,29 +996,50 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   ///
   /// Once the durable wallet data is gone, the Tor route is returned to Direct
   /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
-  Future<void> resetWallet() => ref
+  ///
+  /// [confirmedUnsharedGiftCardCount] works as in [removeAccount], summed over
+  /// every account.
+  Future<void> resetWallet({int? confirmedUnsharedGiftCardCount}) => ref
       .read(linuxKeyringCoordinatorProvider)
-      .runMutation(() => _resetWallet());
+      .runMutation(
+        () => _resetWallet(
+          confirmedUnsharedGiftCardCount: confirmedUnsharedGiftCardCount,
+        ),
+      );
 
-  Future<void> _resetWallet() async {
+  Future<void> _resetWallet({int? confirmedUnsharedGiftCardCount}) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-    _storage.invalidatePendingSecretOperations();
 
     final claimLifecycle = ref.read(paymentLinkClaimLifecycleRegistryProvider);
+    final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
+    final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
+    var resetCompleted = false;
     try {
+      await ledgerLifecycle.quiesceAndDrain();
+      _storage.invalidatePendingSecretOperations();
+      await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
       await shareTracking.quiesceAndDrain();
+      await _throwIfUnsharedGiftCardsIncreased([
+        for (final account in state.value?.accounts ?? const <AccountInfo>[])
+          account.uuid,
+      ], confirmedUnsharedGiftCardCount);
       await _resetWalletWithShareTrackingStopped();
+      resetCompleted = true;
       resumeClaimLifecycle = true;
     } catch (error) {
       restoreAfterFailure = error is! WalletResetException || !error.dbDeleted;
       resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      ledgerLifecycle.resume();
       if (resumeClaimLifecycle) claimLifecycle.resume();
+      // Release only after all destructive work has finished. New onboarding
+      // reuses this registry; stale registrations re-read the now-empty store.
+      if (resetCompleted || restoreAfterFailure) giftTracking.resume();
       shareTracking.resume();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
@@ -1046,6 +1182,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // Finish the remaining safe cleanup, but do not report a complete
         // reset while a privacy-sensitive claim database remains.
         recordError('payment-link claim db cleanup', e, st);
+      }
+      try {
+        await deleteGiftCardTrackingDirectories();
+      } catch (e, st) {
+        recordError('gift-card observer db cleanup', e, st);
       }
       try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();
@@ -1280,6 +1421,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
         birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.keystone.name,
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;
@@ -1290,6 +1432,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.keystone,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
         profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
@@ -1306,6 +1451,124 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       log('importKeystoneAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Import a Ledger-backed account using the UFVK approved on the device.
+  Future<void> importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _importLedgerAccount(
+          name: name,
+          ufvk: ufvk,
+          seedFingerprint: seedFingerprint,
+          zip32Index: zip32Index,
+          birthdayHeight: birthdayHeight,
+          profilePictureId: profilePictureId,
+          connectionTransport: connectionTransport,
+          ledgerDeviceId: ledgerDeviceId,
+          ledgerDeviceName: ledgerDeviceName,
+          ledgerDeviceModel: ledgerDeviceModel,
+        ),
+      );
+
+  Future<void> _importLedgerAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
+    LedgerConnectionTransport? connectionTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) async {
+    try {
+      // A first mobile account requires a prepared passcode session. Existing
+      // wallets must be unlocked; route arguments alone never authorize import.
+      if (kAppFormFactor == AppFormFactor.mobile) {
+        final security = ref.read(appSecurityProvider);
+        final firstAccount = state.value?.accounts.isEmpty == true;
+        final preparedSetup = ref
+            .read(appSecurityProvider.notifier)
+            .hasPreparedPasswordSetup;
+        if (!(security.isPasswordConfigured && security.isUnlocked) &&
+            !(firstAccount && preparedSetup)) {
+          throw StateError(
+            'Set up and unlock your wallet before adding a Ledger account.',
+          );
+        }
+      }
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
+      final prev = state.value ?? const AccountState();
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+
+      final result = await rust_wallet.importHardwareAccount(
+        dbPath: dbPath,
+        network: network,
+        name: accountName,
+        ufvkString: ufvk,
+        seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index,
+        birthdayHeight: BigInt.from(birthdayHeight),
+        hardwareSignerKind: HardwareSignerKind.ledger.name,
+      );
+      final accountUuid = result.accountUuid;
+      final address = result.unifiedAddress;
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: prev.accounts.length,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        birthdayHeight: birthdayHeight,
+        zip32AccountIndex: zip32Index,
+        ledgerLastTransport: connectionTransport,
+        ledgerDeviceId: ledgerDeviceId,
+        ledgerDeviceName: ledgerDeviceName,
+        ledgerDeviceModel: ledgerDeviceModel,
+        profilePictureId: normalizedProfilePictureId,
+      );
+      final updated = [...prev.accounts, newAccount];
+      await _saveAccounts(updated);
+      await _storage.writeString(_activeAccountKey, accountUuid);
+
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: accountUuid,
+          activeAddress: address,
+        ),
+      );
+      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+    } catch (e, st) {
+      log('importLedgerAccount: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -1367,6 +1630,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               seedFingerprint: input.seedFingerprint ?? const [],
               zip32Index: input.zip32AccountIndex,
               birthdayHeight: BigInt.from(input.birthdayHeight),
+              hardwareSignerKind:
+                  (input.hardwareSignerKind ?? HardwareSignerKind.keystone)
+                      .name,
             );
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
@@ -1414,6 +1680,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: input.name,
             order: nextOrder,
             isHardware: input.isHardware,
+            hardwareSignerKind: input.isHardware
+                ? input.hardwareSignerKind ?? HardwareSignerKind.keystone
+                : null,
             isSeedAnchor: isSeedAnchor,
             profilePictureId: normalizeProfilePictureId(
               input.profilePictureId ?? kDefaultProfilePictureId,
@@ -1535,6 +1804,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     return false;
   }
+
+  HardwareSignerKind? hardwareSignerKindForAccount(String uuid) {
+    final accounts = state.value?.accounts ?? const <AccountInfo>[];
+    for (final account in accounts) {
+      if (account.uuid == uuid) return account.hardwareSignerKind;
+    }
+    return null;
+  }
+
+  bool isKeystoneAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.keystone;
+
+  bool isLedgerAccount(String uuid) =>
+      hardwareSignerKindForAccount(uuid) == HardwareSignerKind.ledger;
 
   /// Get the mnemonic for the active account.
   Future<String?> getActiveMnemonic() async {
@@ -1666,6 +1949,7 @@ bool isWalletLinkDuplicateImportError(Object error) {
   final message = _normalizedExceptionMessage(error);
   return message == _duplicateSoftwareAccountImportMessage ||
       message == _duplicateKeystoneAccountImportMessage ||
+      message == _duplicateLedgerAccountImportMessage ||
       (message.contains('account corresponding to the data provided') &&
           message.contains('already exists in the wallet'));
 }

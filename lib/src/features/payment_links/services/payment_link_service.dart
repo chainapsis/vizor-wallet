@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/config/swap_feature_config.dart';
+import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -17,10 +19,12 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
+import 'payment_link_sharing.dart';
 import 'payment_link_transaction_matching.dart';
 
 part 'payment_link_claim_receipt.dart';
@@ -38,6 +42,9 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
+// Optional display pricing must not inherit transport retries or Tor bootstrap
+// waits. After this deadline the claim proceeds with the enclosed fiat value.
+const _paymentLinkClaimPriceTimeout = Duration(seconds: 1);
 
 class PaymentLinkFundingQuote {
   const PaymentLinkFundingQuote({
@@ -202,6 +209,42 @@ class PaymentLinkClaimSession {
       claimableZatoshi > BigInt.zero && !waitingForFundingConfirmations;
 }
 
+@visibleForTesting
+Future<VizorPaymentLink> paymentLinkWithRetainedAddress(
+  VizorPaymentLink link,
+  Iterable<PaymentLinkReceivedRecord> records,
+) async {
+  if (link.knownAddress != null) return link;
+  final walletIdentity = paymentLinkClaimWalletDirectoryName(link);
+  Set<String>? acceptedAddresses;
+  for (final record in records) {
+    if (record.network != link.network) continue;
+    final retainedLink = record.claimLink;
+    if (retainedLink != null) {
+      // Preserve pending submissions even if share metadata was corrected.
+      if (paymentLinkClaimWalletDirectoryName(retainedLink) != walletIdentity) {
+        continue;
+      }
+    } else {
+      // Completed receipts retain only the address and transaction IDs. Match
+      // current, legacy, and legacy-index projections without retaining secrets.
+      if (acceptedAddresses == null) {
+        try {
+          acceptedAddresses = (await rust_wallet.getGiftAddressVariants(
+            mnemonic: link.mnemonic,
+            network: link.network,
+          )).toSet();
+        } catch (_) {
+          acceptedAddresses = const <String>{};
+        }
+      }
+      if (!acceptedAddresses.contains(record.address.trim())) continue;
+    }
+    return link.withResolvedMetadata(address: record.address);
+  }
+  return link;
+}
+
 enum PaymentLinkClaimBroadcastStatus {
   broadcasted,
   pendingBroadcast,
@@ -240,6 +283,7 @@ String? paymentLinkClaimDestinationPoolFromDetails({
   required Iterable<rust_sync.TransactionDetail> details,
   required String destinationAddress,
   required BigInt expectedAmountZatoshi,
+  bool Function(String first, String second)? sameOrchardReceiver,
 }) {
   final expectedTxids = claimTxids
       .split(',')
@@ -257,9 +301,13 @@ String? paymentLinkClaimDestinationPoolFromDetails({
     // Persisting a pool from a subset would prevent later enrichment retries.
     if (matchingDetails.isEmpty) return null;
     final detail = matchingDetails.first;
-    final matchingOutputs = detail.outputs
-        .where((output) => output.address == destinationAddress)
-        .toList();
+    final matchingOutputs = detail.outputs.where((output) {
+      final outputAddress = output.address;
+      if (outputAddress == destinationAddress) return true;
+      return output.usesOrchardReceiver &&
+          outputAddress != null &&
+          sameOrchardReceiver?.call(outputAddress, destinationAddress) == true;
+    }).toList();
     if (matchingOutputs.isEmpty) return null;
     var selectedOutput = matchingOutputs.first;
     for (final output in matchingOutputs) {
@@ -480,7 +528,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
-    // Gift Card v1 funds one generated shielded UA with a single transaction.
+    // Gift Card funding uses one generated shielded UA and one transaction.
     // The current selector's multi-step TEX path cannot apply to this address.
     // The common send result still uses `txids`; that does not imply multi-tx
     // card creation support. Revisit activity and fee aggregation if this changes.
@@ -491,23 +539,25 @@ class PaymentLinkService implements PaymentLinkOperations {
           ),
           link: link,
           sourceAccountUuid: sourceAccountUuid,
-          createTransaction: (markSubmissionStarted) =>
-              runPaymentLinkFundingSubmission(
-                (markLocalSubmission) => _sendShielded(
-                  fromAccountUuid: sourceAccountUuid,
-                  toAddress: link.address,
-                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-                  memo: null,
-                  onSubmissionStarted: () async {
-                    // The durable trace has to land before the broadcast, and
-                    // the local marker only after it: a failed write leaves
-                    // the submission unmarked, which classifies the failure as
-                    // definitely-not-submitted and discards the inert draft.
-                    await markSubmissionStarted();
-                    markLocalSubmission();
-                  },
-                ),
+          createTransaction: (markSubmissionStarted) async {
+            await _registerObserver(link);
+            return runPaymentLinkFundingSubmission(
+              (markLocalSubmission) => _sendShielded(
+                fromAccountUuid: sourceAccountUuid,
+                toAddress: link.address,
+                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                memo: null,
+                onSubmissionStarted: () async {
+                  // The durable trace has to land before the broadcast, and
+                  // the local marker only after it: a failed write leaves
+                  // the submission unmarked, which classifies the failure as
+                  // definitely-not-submitted and discards the inert draft.
+                  await markSubmissionStarted();
+                  markLocalSubmission();
+                },
               ),
+            );
+          },
           // The in-memory sync tip, not a network round trip: this runs on the
           // broadcast path, and a height the wallet already knows is enough to
           // date the submission.
@@ -570,7 +620,23 @@ class PaymentLinkService implements PaymentLinkOperations {
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
+    await _registerObserver(link);
     return link;
+  }
+
+  Future<void> _registerObserver(VizorPaymentLink link) async {
+    try {
+      final tracker = _ref.read(giftCardTrackingServiceProvider);
+      final cards = await _recoveryStore.load();
+      final card = cards
+          .where((c) => c.link.address == link.address)
+          .firstOrNull;
+      if (card != null) await tracker.register(card);
+    } catch (_) {
+      // The durable draft is also a retryable registration intent. Observation
+      // failure must never turn an accepted funding into another send attempt.
+      log('Gift Card observer registration deferred');
+    }
   }
 
   Future<VizorPaymentLink> _createFundingLink({
@@ -613,6 +679,10 @@ class PaymentLinkService implements PaymentLinkOperations {
       createdAt: DateTime.now(),
       presentation: presentation,
     );
+    // Fail before saving or funding a draft if the selected share format cannot
+    // represent it. All funding signers use this same creation path.
+    await preparePaymentLinkShareUri(link);
+    link.toRecoveryUri();
     return link;
   }
 
@@ -984,10 +1054,6 @@ class PaymentLinkService implements PaymentLinkOperations {
     required bool allowLongSync,
   }) async {
     log('PaymentLinkClaim: preparation started');
-    final existingRecord = await _receivedStore.find(link.address);
-    if (existingRecord?.isClaimInFlight ?? false) {
-      throw const PaymentLinkClaimInFlightException();
-    }
     await _requireShieldedAddress(destinationAddress);
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -1015,6 +1081,9 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw const PaymentLinkLongSyncConfirmationRequired();
     }
 
+    final retainedRecords = await _receivedStore.load();
+    link = await paymentLinkWithRetainedAddress(link, retainedRecords);
+
     final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
@@ -1035,12 +1104,7 @@ class PaymentLinkService implements PaymentLinkOperations {
           );
         }
         if (accounts == null ||
-            shouldRecreatePaymentLinkClaimWallet(
-              accountAddresses: [
-                for (final account in accounts) account.unifiedAddress,
-              ],
-              expectedAddress: link.address,
-            )) {
+            !await _claimWallet.matchesLink(link: link, accounts: accounts)) {
           if (accounts != null) {
             log(
               'PaymentLinkService: recreating incomplete payment-link claim '
@@ -1071,10 +1135,31 @@ class PaymentLinkService implements PaymentLinkOperations {
         importedAddress = imported.address;
         importedAccountUuid = imported.accountUuid;
       }
-      if (importedAddress != link.address) {
-        throw const FormatException(
-          'Payment link address does not match its recovery phrase.',
-        );
+      final advertisedAddress = link.knownAddress;
+      if (advertisedAddress != null) {
+        try {
+          await rust_wallet.validateGiftAddress(
+            mnemonic: link.mnemonic,
+            network: link.network,
+            address: advertisedAddress,
+          );
+          await rust_wallet.validateGiftAddress(
+            mnemonic: link.mnemonic,
+            network: link.network,
+            address: importedAddress,
+          );
+        } catch (_) {
+          throw const FormatException(
+            'Payment link address does not match its recovery phrase.',
+          );
+        }
+      }
+      link = link.withResolvedMetadata(
+        address: advertisedAddress ?? importedAddress,
+      );
+      final existingRecord = await _receivedStore.find(link.address);
+      if (existingRecord?.isClaimInFlight ?? false) {
+        throw const PaymentLinkClaimInFlightException();
       }
       log('PaymentLinkClaim: recovery address validated');
 
@@ -1112,6 +1197,16 @@ class PaymentLinkService implements PaymentLinkOperations {
         accountUuid: importedAccountUuid,
         limit: null,
       );
+      link = resolvePaymentLinkCreatedAt(
+        link: link,
+        transactions: transactions,
+      );
+      if (!link.isCreatedAtProvisional) {
+        await _receivedStore.resolveProvisionalCreatedAt(
+          address: link.address,
+          createdAt: link.createdAt,
+        );
+      }
       final fundingConfirmationCount =
           paymentLinkFundingConfirmationCountForClaim(
             recipientAmountZatoshi: link.amountZatoshi,
@@ -1194,10 +1289,26 @@ class PaymentLinkService implements PaymentLinkOperations {
       accountUuid: session.accountUuid,
       claimTxids: '',
     );
+    PaymentLinkFiatSnapshot? claimFiatSnapshot;
+    if (_ref.read(swapFeatureEnabledProvider)) {
+      try {
+        final marketData = await _ref
+            .read(zecMarketDataSourceProvider)
+            .fetchMarketData()
+            .timeout(_paymentLinkClaimPriceTimeout);
+        claimFiatSnapshot = PaymentLinkFiatSnapshot.capture(
+          amountZatoshi: session.link.amountZatoshi,
+          zecUsdUnitPrice: marketData?.usdPrice,
+        );
+      } catch (_) {
+        // Price lookup is best-effort; retain the card's enclosed fiat value.
+      }
+    }
     final startedRecord = await _receivedStore.markClaimStarted(
       address: session.link.address,
       destinationAccountUuid: session.destinationAccountUuid,
       priorTxids: priorEvidence.localClaimTxids,
+      fiatSnapshot: claimFiatSnapshot,
     );
     var submissionStarted = false;
     try {
@@ -1559,12 +1670,7 @@ class PaymentLinkService implements PaymentLinkOperations {
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
+    if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
       return;
     }
     final evidence = await rust_sync.getPaymentLinkSpendEvidence(
@@ -1664,6 +1770,11 @@ class PaymentLinkService implements PaymentLinkOperations {
       details: details,
       destinationAddress: destinationAddress,
       expectedAmountZatoshi: expectedAmountZatoshi,
+      sameOrchardReceiver: (first, second) => rust_wallet.sameOrchardReceiver(
+        network: network,
+        first: first,
+        second: second,
+      ),
     );
     if (pool == null && details.length > 1) {
       log(
@@ -1693,19 +1804,19 @@ class PaymentLinkService implements PaymentLinkOperations {
         dbPath: tempWallet.dbPath,
         network: network,
       );
-      final claimAccount = accounts.where(
-        (account) => account.unifiedAddress == link.address,
-      );
-      if (claimAccount.length != 1) return null;
+      if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+        return null;
+      }
+      final claimAccount = accounts.single;
       final destinationAddress = await rust_wallet.getUnifiedAddress(
         dbPath: await getWalletDbPath(),
         network: network,
         accountUuid: destinationAccountUuid,
       );
-      return _loadClaimDestinationPool(
+      return await _loadClaimDestinationPool(
         dbPath: tempWallet.dbPath,
         network: network,
-        accountUuid: claimAccount.single.uuid,
+        accountUuid: claimAccount.uuid,
         destinationAddress: destinationAddress,
         claimTxids: claimTxids,
         expectedAmountZatoshi: record.amountZatoshi,

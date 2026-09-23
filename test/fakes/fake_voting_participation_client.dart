@@ -12,6 +12,29 @@ class FakeVotingParticipationClient extends VotingParticipationClient {
   Completer<void>? gate;
   VotingParticipationResult? result;
 
+  int localRefreshes = 0;
+  int localWrites = 0;
+  Completer<void>? localGate;
+  Object? localError;
+  void Function()? onLocalRefresh;
+  Completer<void>? localWriteGate;
+  final localContexts = <ApiVotingRoundContext>[];
+
+  @override
+  Future<void> refreshLocal(
+    ApiVotingRoundContext context, {
+    bool Function()? isCurrent,
+  }) async {
+    localRefreshes++;
+    localContexts.add(context);
+    await localGate?.future;
+    if (isCurrent?.call() == false) return;
+    if (localError case final error?) throw error;
+    onLocalRefresh?.call();
+    await localWriteGate?.future;
+    localWrites++;
+  }
+
   @override
   Future<VotingParticipationResult> check(
     ApiVotingRoundContext context,

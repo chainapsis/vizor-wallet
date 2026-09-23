@@ -38,6 +38,7 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
     required ref,
     required args,
     keystone,
+    ledger,
     required confirmSaplingParamsDownload,
     shouldAbort,
   }) => outcome;
@@ -64,6 +65,24 @@ bool _sendStatusTerminal(WidgetTester tester) {
     tester.element(find.byType(MaterialApp)),
     listen: false,
   ).read(sendStatusTerminalProvider);
+}
+
+Widget _ledgerApp({required MobileSendBroadcastRunner broadcastRunner}) {
+  return ProviderScope(
+    child: MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: MobileSendStatusScreen(
+          args: _args,
+          ledger: LedgerBroadcastArgs(
+            reviewArgs: _args,
+            operationId: 'send:account-1:flow-1',
+          ),
+          broadcastRunner: broadcastRunner,
+        ),
+      ),
+    ),
+  );
 }
 
 bool _statusRouteCanPop(WidgetTester tester) {
@@ -143,6 +162,35 @@ void main() {
       findsNothing,
     );
     expect(_statusRouteCanPop(tester), isFalse);
+  });
+
+  testWidgets('passes the durable Ledger operation to broadcast', (
+    tester,
+  ) async {
+    LedgerBroadcastArgs? capturedLedger;
+    await tester.pumpWidget(
+      _ledgerApp(
+        broadcastRunner:
+            ({
+              required ref,
+              required args,
+              keystone,
+              ledger,
+              required confirmSaplingParamsDownload,
+              shouldAbort,
+            }) async {
+              capturedLedger = ledger;
+              return const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.succeeded,
+                proposalConsumed: true,
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(capturedLedger?.operationId, 'send:account-1:flow-1');
+    expect(find.text('Sent!'), findsOneWidget);
   });
 
   testWidgets('broadcast success shows the complete state with custom haptic', (

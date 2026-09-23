@@ -11,18 +11,15 @@ part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
 /// account and its scan range. Share-payload fields such as amount, label,
-/// timestamp, and presentation deliberately do not participate, so a corrected
-/// payload can reuse already-scanned state.
+/// address, timestamp, and presentation deliberately do not participate, so a
+/// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
       .convert(
-        utf8.encode(
-          '${link.network}:${link.address}:${link.mnemonic}:'
-          '${link.birthdayHeight}',
-        ),
+        utf8.encode('${link.network}:${link.mnemonic}:${link.birthdayHeight}'),
       )
       .toString();
   return paymentLinkClaimWalletDirectoryNameFor(
@@ -37,6 +34,33 @@ class PaymentLinkClaimWallet {
 
   final Ref _ref;
   final Map<String, Future<void>> _claimSyncs = {};
+
+  /// Verifies the cached wallet and advertised address against the recovery
+  /// phrase, accepting current and legacy default-address representations.
+  Future<bool> matchesLink({
+    required VizorPaymentLink link,
+    required List<rust_wallet.AccountInfo> accounts,
+  }) async {
+    if (accounts.length != 1) return false;
+    try {
+      await rust_wallet.validateGiftAddress(
+        mnemonic: link.mnemonic,
+        network: link.network,
+        address: accounts.single.unifiedAddress,
+      );
+      final advertisedAddress = link.knownAddress;
+      if (advertisedAddress != null) {
+        await rust_wallet.validateGiftAddress(
+          mnemonic: link.mnemonic,
+          network: link.network,
+          address: advertisedAddress,
+        );
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> runClaimSync({
     required VizorPaymentLink link,
@@ -111,12 +135,7 @@ class PaymentLinkClaimWallet {
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (shouldRecreatePaymentLinkClaimWallet(
-      accountAddresses: [
-        for (final account in accounts) account.unifiedAddress,
-      ],
-      expectedAddress: link.address,
-    )) {
+    if (!await matchesLink(link: link, accounts: accounts)) {
       log(
         'PaymentLinkService: retained claim wallet no longer matches its '
         'Gift Card identity; leaving it recoverable from the stored link',
@@ -129,6 +148,18 @@ class PaymentLinkClaimWallet {
       accountUuid: accounts.single.uuid,
       limit: null,
     );
+    final fundingTime = paymentLinkFundingCreatedAt(
+      recipientAmountZatoshi: link.amountZatoshi,
+      transactions: transactions,
+    );
+    if (record.isCreatedAtProvisional && fundingTime != null) {
+      await _ref
+          .read(paymentLinkReceivedStoreProvider)
+          .resolveProvisionalCreatedAt(
+            address: record.address,
+            createdAt: fundingTime,
+          );
+    }
     final evidence = await rust_sync.getPaymentLinkSpendEvidence(
       dbPath: tempWallet.dbPath,
       accountUuid: accounts.single.uuid,
@@ -170,12 +201,7 @@ class PaymentLinkClaimWallet {
         log('PaymentLinkClaimWallet: reopening the claim wallet failed: $e');
       }
       if (accounts != null &&
-          !shouldRecreatePaymentLinkClaimWallet(
-            accountAddresses: [
-              for (final account in accounts) account.unifiedAddress,
-            ],
-            expectedAddress: link.address,
-          )) {
+          await matchesLink(link: link, accounts: accounts)) {
         accountUuid = accounts.single.uuid;
       } else {
         // An import that died between creating the file and the account, or a
@@ -225,6 +251,30 @@ class PaymentLinkClaimWallet {
   ) async {
     final supportDir = await getWalletSupportDirectory();
     final separator = Platform.pathSeparator;
+    // Pre-v2 wallets included the address in their identity. Keep using their
+    // DB (including local submission metadata and SQLite sidecars) in place.
+    // Prefer it even if a newer cache also exists: a rescan of that cache cannot
+    // replace the original attempt's locally recorded transaction evidence.
+    final legacyAddress = link.knownAddress;
+    if (legacyAddress != null) {
+      final legacyIdentity = sha256.convert(
+        utf8.encode(
+          '${link.network}:$legacyAddress:${link.mnemonic}:'
+          '${link.birthdayHeight}',
+        ),
+      );
+      final legacyName = paymentLinkClaimWalletDirectoryNameFor(
+        network: link.network.trim(),
+        identityHash: legacyIdentity.toString(),
+      );
+      final legacyDirectory = Directory(
+        '${supportDir.path}$separator$legacyName',
+      );
+      final legacyDbPath = '${legacyDirectory.path}${separator}zcash_wallet.db';
+      if (await File(legacyDbPath).exists()) {
+        return (directory: legacyDirectory, dbPath: legacyDbPath);
+      }
+    }
     final directory = Directory(
       '${supportDir.path}$separator${paymentLinkClaimWalletDirectoryName(link)}',
     );

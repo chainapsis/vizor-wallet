@@ -20,6 +20,7 @@ import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_compose_view.dart';
+import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
@@ -178,6 +179,47 @@ Widget buildMobileSendAmountEmptyUseCase(BuildContext context) {
   );
 }
 
+/// Figma 4479:47503: resolve the recipient from data, without a route label.
+Widget buildMobileSendAmountContactUseCase(BuildContext context) {
+  return _mobileSendAmountCaptureFrame(
+    context,
+    const _MobileSendHarness(
+      contacts: _mobileSendContacts,
+      initialRecipient: _mobileShieldedAddress,
+      initialAmount: '12',
+    ),
+  );
+}
+
+Widget buildMobileSendAmountOwnAccountUseCase(BuildContext context) {
+  return _mobileSendAmountCaptureFrame(
+    context,
+    const _MobileSendHarness(
+      ownAccounts: {
+        _mobileShieldedAddress: AccountInfo(
+          uuid: 'savings',
+          name: 'Savings',
+          order: 1,
+          profilePictureId: 'pfp-02',
+        ),
+      },
+      initialRecipient: _mobileShieldedAddress,
+      initialAmount: '12',
+    ),
+  );
+}
+
+Widget _mobileSendAmountCaptureFrame(BuildContext context, Widget child) {
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(
+      padding: const EdgeInsets.only(top: 55),
+      viewPadding: const EdgeInsets.only(top: 55),
+      viewInsets: const EdgeInsets.only(bottom: 318),
+    ),
+    child: child,
+  );
+}
+
 Widget buildMobileSendAmountErrorUseCase(BuildContext context) {
   return const _MobileSendHarness(
     initialRecipient: _mobileShieldedAddress,
@@ -327,6 +369,7 @@ class _SendPageFrame extends StatelessWidget {
 class _MobileSendHarness extends StatelessWidget {
   const _MobileSendHarness({
     this.contacts = const [],
+    this.ownAccounts = const {},
     this.initialRecipient,
     this.initialAmount,
     this.initialFiatAmount,
@@ -341,6 +384,7 @@ class _MobileSendHarness extends StatelessWidget {
   });
 
   final List<AddressBookContact> contacts;
+  final Map<String, AccountInfo> ownAccounts;
   final String? initialRecipient;
   final String? initialAmount;
   final String? initialFiatAmount;
@@ -359,6 +403,7 @@ class _MobileSendHarness extends StatelessWidget {
       overrides: [
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
         sendProvingKeyWarmupProvider.overrideWithValue(() {}),
+        ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
         syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(

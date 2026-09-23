@@ -1,0 +1,598 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'ledger_bluetooth_access.dart';
+import '../../../rust/api/ledger.dart' as rust_ledger;
+
+const kLedgerPairingInvalidMessage =
+    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
+
+bool ledgerPairingNeedsReset(Object? error) =>
+    (error is LedgerMobileException &&
+        error.failure == LedgerMobileFailure.pairingInvalid) ||
+    error?.toString() == kLedgerPairingInvalidMessage;
+
+enum LedgerMobileFailure {
+  busy,
+  permissionDenied,
+  locationDisabled,
+  bluetoothOff,
+  pairingRejected,
+  pairingInvalid,
+  disconnected,
+  locked,
+  rejected,
+  wrongApp,
+  cancelled,
+  unavailable,
+}
+
+class LedgerMobileException implements Exception {
+  const LedgerMobileException(
+    this.failure,
+    this.message, {
+    this.nativeDomain,
+    this.nativeCode,
+  });
+
+  final String? nativeDomain;
+  final int? nativeCode;
+
+  final LedgerMobileFailure failure;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class LedgerBleDevice {
+  const LedgerBleDevice({
+    required this.id,
+    required this.name,
+    required this.model,
+  });
+
+  final String id;
+  final String name;
+  final String model;
+}
+
+class LedgerMobileAppInfo {
+  const LedgerMobileAppInfo({required this.name, required this.version});
+
+  final String name;
+  final String version;
+}
+
+sealed class LedgerDiscoveryUpdate {
+  const LedgerDiscoveryUpdate();
+}
+
+class LedgerDevicesDiscovered extends LedgerDiscoveryUpdate {
+  const LedgerDevicesDiscovered(this.devices);
+
+  final List<LedgerBleDevice> devices;
+}
+
+class LedgerDiscoveryEnded extends LedgerDiscoveryUpdate {
+  const LedgerDiscoveryEnded();
+}
+
+class LedgerDiscoveryFailed extends LedgerDiscoveryUpdate {
+  const LedgerDiscoveryFailed(this.error);
+
+  final LedgerMobileException error;
+}
+
+abstract interface class LedgerMobileBleService {
+  String? get connectedDeviceId;
+
+  Stream<LedgerDiscoveryUpdate> discoverDevices();
+
+  Future<bool> requestPermissions();
+
+  Future<void> stopDiscovery();
+
+  Future<void> connect(LedgerBleDevice device);
+
+  Future<void> disconnect();
+
+  Future<LedgerMobileAppInfo> currentApp();
+
+  Future<LedgerMobileAppInfo> requestOpenZcashApp();
+
+  Future<List<Uint8List>> exchangeUfvk(rust_ledger.LedgerUfvkApduPlan plan);
+
+  Future<List<Uint8List>> exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands,
+  );
+
+  Future<void> cancelSigning();
+}
+
+/// Evidence is scoped to one selected connection, including late OS broadcasts.
+/// Consumers retain this listenable rather than following a subsequent attempt.
+abstract interface class LedgerPairingEvidenceService {
+  ValueListenable<bool>? get pairingInvalidEvidence;
+}
+
+/// Optional progress capability; existing test/custom transports remain compatible.
+abstract interface class LedgerProgressBleService {
+  Future<List<Uint8List>> exchangeApdusWithProgress(
+    List<rust_ledger.LedgerApduCommand> commands,
+    void Function(String) onProgress,
+  );
+}
+
+/// Method channel shared by every native Ledger Bluetooth runner.
+const kLedgerMobileMethodChannel = 'com.zcash.wallet/ledger_mobile';
+
+final ledgerMobileBleServiceProvider = Provider<LedgerMobileBleService>((ref) {
+  final service = MethodChannelLedgerMobileBleService();
+  ref.onDispose(service._stopPairingEvidence);
+  return service;
+});
+
+class MethodChannelLedgerMobileBleService
+    implements
+        LedgerMobileBleService,
+        LedgerProgressBleService,
+        LedgerPairingEvidenceService,
+        LedgerBluetoothAccess,
+        LedgerBluetoothPairingSettings {
+  MethodChannelLedgerMobileBleService({
+    Future<void> Function(Duration duration)? reviewBusyDelay,
+  }) : _reviewBusyDelay =
+           reviewBusyDelay ?? ((duration) => Future<void>.delayed(duration));
+
+  static const _pairingChannel = MethodChannel(
+    'com.zcash.wallet/ledger_mobile/pairing',
+  );
+  static int _nextConnectionId = 0;
+  static String? _observedConnectionId;
+  static void Function()? _onPairingInvalid;
+  String? _connectionId;
+  ValueNotifier<bool>? _pairingInvalidEvidence;
+
+  @override
+  ValueListenable<bool>? get pairingInvalidEvidence => _pairingInvalidEvidence;
+
+  void _stopPairingEvidence() {
+    if (_observedConnectionId == _connectionId) {
+      _observedConnectionId = null;
+      _onPairingInvalid = null;
+    }
+    _pairingInvalidEvidence = null;
+  }
+
+  void _startPairingEvidence() {
+    _stopPairingEvidence();
+    final evidence = _pairingInvalidEvidence = ValueNotifier(false);
+    _observedConnectionId = _connectionId = '${++_nextConnectionId}';
+    _onPairingInvalid = () {
+      _connectedDeviceId = null;
+      evidence.value = true;
+    };
+    _pairingChannel.setMethodCallHandler((call) async {
+      if (call.method != 'pairingInvalid' || call.arguments is! Map) return;
+      final id = (call.arguments as Map)['connectionId'];
+      if (id is String && id == _observedConnectionId) {
+        _onPairingInvalid?.call();
+      }
+    });
+  }
+
+  static const _progressChannel = MethodChannel(
+    'com.zcash.wallet/ledger_mobile/signing_progress',
+  );
+  static int _nextProgressId = 0;
+  static final _progressObservers = <String, void Function(String)>{};
+
+  @override
+  Future<List<Uint8List>> exchangeApdusWithProgress(
+    List<rust_ledger.LedgerApduCommand> commands,
+    void Function(String) onProgress,
+  ) async {
+    final generation = _operationGeneration;
+    final id = '${++_nextProgressId}';
+    _progressChannel.setMethodCallHandler((call) async {
+      if (call.method != 'progress' || call.arguments is! Map) return;
+      final arguments = call.arguments as Map;
+      final phase = arguments['phase'];
+      if (phase is String) {
+        _progressObservers[arguments['requestId']]?.call(phase);
+      }
+    });
+    _progressObservers[id] = (phase) {
+      if (generation == _operationGeneration) onProgress(phase);
+    };
+    try {
+      return await _exchangeApdus(commands, progressId: id);
+    } finally {
+      _progressObservers.remove(id);
+    }
+  }
+
+  static const _methods = MethodChannel(kLedgerMobileMethodChannel);
+  static const _events = EventChannel(
+    'com.zcash.wallet/ledger_mobile/discovery',
+  );
+  static const _reviewBusyStatus = 0x6901;
+  static const _reviewBusyMaxAttempts = 3;
+  static const _reviewBusyRetryDelay = Duration(milliseconds: 200);
+  final Future<void> Function(Duration duration) _reviewBusyDelay;
+  String? _connectedDeviceId;
+  int _operationGeneration = 0;
+
+  @override
+  String? get connectedDeviceId => _connectedDeviceId;
+
+  @override
+  Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
+    _stopPairingEvidence();
+    final controller = StreamController<Object?>();
+    final subscription = _events.receiveBroadcastStream().listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    try {
+      await _methods.invokeMethod<void>('startDiscovery');
+      await for (final event in controller.stream) {
+        yield _decodeDiscoveryEvent(event);
+      }
+    } on PlatformException catch (error) {
+      yield LedgerDiscoveryFailed(_mapPlatformError(error));
+    } finally {
+      await subscription.cancel();
+      if (!controller.isClosed) await controller.close();
+    }
+  }
+
+  @override
+  Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async {
+    final value = await _methods.invokeMapMethod<Object?, Object?>(
+      'bluetoothAccessStatus',
+    );
+    return LedgerBluetoothAccessStatus.fromMap(value ?? const {});
+  }
+
+  @override
+  Future<bool> openBluetoothSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothSettings') ?? false;
+
+  @override
+  Future<bool> openBluetoothPairingSettings() async =>
+      await _methods.invokeMethod<bool>('openBluetoothPairingSettings') ??
+      false;
+
+  @override
+  Future<bool> requestPermissions() async {
+    try {
+      return await _methods.invokeMethod<bool>('requestPermissions') ?? false;
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  @override
+  Future<void> stopDiscovery() => _invokeVoid('stopDiscovery');
+
+  @override
+  Future<void> connect(LedgerBleDevice device) async {
+    final generation = _operationGeneration;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _startPairingEvidence();
+    }
+    await _invokeVoid('connect', <String, Object>{
+      'deviceId': device.id,
+      'connectionId': ?_connectionId,
+      'deviceName': device.name,
+      'deviceModel': device.model,
+    });
+    _checkOperationActive(generation);
+    if (_pairingInvalidEvidence?.value == true) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.pairingInvalid,
+        kLedgerPairingInvalidMessage,
+      );
+    }
+    _connectedDeviceId = device.id;
+  }
+
+  @override
+  Future<void> disconnect() async {
+    _operationGeneration++;
+    _connectedDeviceId = null;
+    await _invokeVoid('disconnect');
+  }
+
+  @override
+  Future<LedgerMobileAppInfo> currentApp() async {
+    final generation = _operationGeneration;
+    try {
+      final value = await _invokeMap('currentApp');
+      _checkOperationActive(generation);
+      return _decodeApp(value);
+    } on LedgerMobileException catch (error) {
+      _checkOperationActive(generation);
+      if (error.failure == LedgerMobileFailure.disconnected) {
+        _connectedDeviceId = null;
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<LedgerMobileAppInfo> requestOpenZcashApp() async {
+    final generation = _operationGeneration;
+    final value = await _invokeMap('openZcashApp');
+    _checkOperationActive(generation);
+    return _decodeApp(value);
+  }
+
+  @override
+  Future<List<Uint8List>> exchangeUfvk(
+    rust_ledger.LedgerUfvkApduPlan plan,
+  ) async {
+    final generation = _operationGeneration;
+    try {
+      for (var attempt = 0; attempt < _reviewBusyMaxAttempts; attempt++) {
+        _checkOperationActive(generation);
+        final responses = await _invokeApduResponses('exchangeUfvk', {
+          'first': _encodeCommand(plan.first),
+          'continuation': _encodeCommand(plan.continuation),
+        });
+        _checkOperationActive(generation);
+        // The UFVK review starts on the first command. A 0x6901 reply means
+        // the SDK rejected that command before the Zcash app received it.
+        if (responses.length != 1 ||
+            !_hasStatus(responses.single, _reviewBusyStatus) ||
+            attempt + 1 == _reviewBusyMaxAttempts) {
+          return responses;
+        }
+        await _reviewBusyDelay(_reviewBusyRetryDelay);
+      }
+      throw StateError('the bounded Ledger review retry loop always returns');
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  @override
+  Future<List<Uint8List>> exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands,
+  ) => _exchangeApdus(commands);
+
+  Future<List<Uint8List>> _exchangeApdus(
+    List<rust_ledger.LedgerApduCommand> commands, {
+    String? progressId,
+  }) async {
+    final generation = _operationGeneration;
+    try {
+      if (commands.isEmpty) {
+        return await _invokeApduResponses('exchangeApdus', const {
+          'commands': <Object>[],
+        });
+      }
+
+      final completed = <Uint8List>[];
+      var pending = commands;
+      var reviewBusyAttempts = 0;
+      while (pending.isNotEmpty) {
+        _checkOperationActive(generation);
+        final responses = await _invokeApduResponses('exchangeApdus', {
+          'commands': pending.map(_encodeCommand).toList(growable: false),
+          'progressId': ?progressId,
+        });
+        _checkOperationActive(generation);
+        if (responses.isEmpty) return completed;
+
+        var retryIndex = -1;
+        for (var index = 0; index < responses.length; index++) {
+          final response = responses[index];
+          if (_hasStatus(response, _reviewBusyStatus)) {
+            reviewBusyAttempts++;
+            if (reviewBusyAttempts == _reviewBusyMaxAttempts ||
+                index >= pending.length) {
+              completed.add(response);
+              return completed;
+            }
+            retryIndex = index;
+            break;
+          }
+
+          completed.add(response);
+          reviewBusyAttempts = 0;
+          if (!_hasStatus(response, 0x9000)) return completed;
+        }
+
+        if (retryIndex < 0) return completed;
+        pending = pending.sublist(retryIndex);
+        await _reviewBusyDelay(_reviewBusyRetryDelay);
+      }
+      return completed;
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  @override
+  Future<void> cancelSigning() {
+    _stopPairingEvidence();
+    // Invalidate Dart retries before waiting for the native cancellation reply.
+    _operationGeneration++;
+    // Native cancellation retires the BLE session. Do not advertise its cached
+    // identifier as a usable connection on the next attempt.
+    _connectedDeviceId = null;
+    return _invokeVoid('cancelSigning');
+  }
+
+  void _checkOperationActive(int generation) {
+    if (generation != _operationGeneration) {
+      throw const LedgerMobileException(
+        LedgerMobileFailure.cancelled,
+        'The Ledger operation was cancelled.',
+      );
+    }
+  }
+
+  Future<void> _invokeVoid(
+    String method, [
+    Map<String, Object>? arguments,
+  ]) async {
+    try {
+      await _methods.invokeMethod<void>(method, arguments);
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  Future<Map<Object?, Object?>> _invokeMap(String method) async {
+    try {
+      final result = await _methods.invokeMapMethod<Object?, Object?>(method);
+      if (result == null) {
+        throw const LedgerMobileException(
+          LedgerMobileFailure.unavailable,
+          'Ledger returned an empty response.',
+        );
+      }
+      return result;
+    } on PlatformException catch (error) {
+      throw _mapPlatformError(error);
+    }
+  }
+
+  Future<List<Uint8List>> _invokeApduResponses(
+    String method,
+    Map<String, Object> arguments,
+  ) async {
+    final result = await _methods.invokeListMethod<Object>(method, arguments);
+    return (result ?? const <Object>[])
+        .map(
+          (response) =>
+              Uint8List.fromList(List<int>.from(response as List<Object?>)),
+        )
+        .toList(growable: false);
+  }
+
+  static bool _hasStatus(List<int> response, int status) {
+    return response.length >= 2 &&
+        response[response.length - 2] == status >> 8 &&
+        response.last == status & 0xff;
+  }
+
+  static Map<String, Object> _encodeCommand(
+    rust_ledger.LedgerApduCommand command,
+  ) => <String, Object>{
+    'cla': command.cla,
+    'ins': command.ins,
+    'p1': command.p1,
+    'p2': command.p2,
+    'data': command.data,
+  };
+
+  static LedgerMobileAppInfo _decodeApp(Map<Object?, Object?> value) {
+    return LedgerMobileAppInfo(
+      name: value['name']! as String,
+      version: value['version']! as String,
+    );
+  }
+
+  static LedgerDiscoveryUpdate _decodeDiscoveryEvent(Object? event) {
+    final value = event! as Map<Object?, Object?>;
+    switch (value['type']) {
+      case 'devices':
+        final devices = (value['devices']! as List<Object?>)
+            .map((item) {
+              final device = item! as Map<Object?, Object?>;
+              return LedgerBleDevice(
+                id: device['id']! as String,
+                name: device['name']! as String,
+                model: device['model']! as String,
+              );
+            })
+            .toList(growable: false);
+        return LedgerDevicesDiscovered(devices);
+      case 'ended':
+        return const LedgerDiscoveryEnded();
+      case 'error':
+        return LedgerDiscoveryFailed(
+          _errorFromCode(
+            value['code'] as String? ?? 'unavailable',
+            value['message'] as String? ?? 'Ledger discovery failed.',
+            details: value['details'],
+          ),
+        );
+      default:
+        return const LedgerDiscoveryFailed(
+          LedgerMobileException(
+            LedgerMobileFailure.unavailable,
+            'Ledger discovery returned an unknown event.',
+          ),
+        );
+    }
+  }
+
+  LedgerMobileException _mapPlatformError(PlatformException error) {
+    final mapped = _errorFromCode(
+      error.code,
+      error.code == 'pairing_invalid'
+          ? kLedgerPairingInvalidMessage
+          : error.message ?? 'Ledger mobile connection failed.',
+      details: error.details,
+    );
+    if (ledgerFailureInvalidatesConnection(mapped.failure)) {
+      _connectedDeviceId = null;
+    }
+    return mapped;
+  }
+
+  static LedgerMobileException _errorFromCode(
+    String code,
+    String message, {
+    Object? details,
+  }) {
+    final failure = switch (code) {
+      'busy' => LedgerMobileFailure.busy,
+      'permission_denied' => LedgerMobileFailure.permissionDenied,
+      'location_disabled' => LedgerMobileFailure.locationDisabled,
+      'bluetooth_off' => LedgerMobileFailure.bluetoothOff,
+      'pairing_rejected' => LedgerMobileFailure.pairingRejected,
+      'pairing_invalid' => LedgerMobileFailure.pairingInvalid,
+      'disconnected' => LedgerMobileFailure.disconnected,
+      'locked' => LedgerMobileFailure.locked,
+      'rejected' => LedgerMobileFailure.rejected,
+      'wrong_app' => LedgerMobileFailure.wrongApp,
+      'cancelled' => LedgerMobileFailure.cancelled,
+      _ => LedgerMobileFailure.unavailable,
+    };
+    return LedgerMobileException(
+      failure,
+      message,
+      nativeDomain: details is Map && details['nativeDomain'] is String
+          ? details['nativeDomain'] as String
+          : null,
+      nativeCode: details is Map && details['nativeCode'] is int
+          ? details['nativeCode'] as int
+          : null,
+    );
+  }
+}
+
+/// Identity alone is not proof of a usable native session. Busy and device
+/// decisions keep ownership; transport/environment failures require cleanup.
+bool ledgerFailureInvalidatesConnection(LedgerMobileFailure failure) =>
+    switch (failure) {
+      LedgerMobileFailure.disconnected ||
+      LedgerMobileFailure.unavailable ||
+      LedgerMobileFailure.bluetoothOff ||
+      LedgerMobileFailure.permissionDenied ||
+      LedgerMobileFailure.locationDisabled ||
+      LedgerMobileFailure.pairingInvalid ||
+      LedgerMobileFailure.pairingRejected => true,
+      _ => false,
+    };

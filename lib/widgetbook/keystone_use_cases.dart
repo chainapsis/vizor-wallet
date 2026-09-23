@@ -16,6 +16,7 @@ import '../src/core/theme/app_theme.dart';
 import '../src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../src/features/keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
+import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import '../src/features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import '../src/features/onboarding/mobile/mobile_keystone_scan_card.dart';
@@ -28,57 +29,25 @@ import '../src/services/qr_scanner.dart' show ScanResult;
 
 Widget buildMobileKeystoneScanRequestingUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
-    child: MobileKeystoneScanCardContent(
-      key: ValueKey('mobile_keystone_scan_widgetbook_card'),
-      status: AddressQrCameraStatus.requesting,
-      cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 694,
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
+    status: AddressQrCameraStatus.requesting,
   );
 }
 
 Widget buildMobileKeystoneScanDeniedUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
-    child: MobileKeystoneScanCardContent(
-      key: ValueKey('mobile_keystone_scan_widgetbook_card'),
-      status: AddressQrCameraStatus.denied,
-      cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 694,
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
+    status: AddressQrCameraStatus.denied,
   );
 }
 
 Widget buildMobileKeystoneScanActiveUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
-    child: MobileKeystoneScanCardContent(
-      key: ValueKey('mobile_keystone_scan_widgetbook_card'),
-      status: AddressQrCameraStatus.active,
-      cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 694,
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
+    status: AddressQrCameraStatus.active,
   );
 }
 
 Widget buildMobileKeystoneScanLoadingUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
-    child: MobileKeystoneScanCardContent(
-      key: ValueKey('mobile_keystone_scan_widgetbook_card'),
-      status: AddressQrCameraStatus.loading,
-      cameraView: _MobileKeystoneScanCameraPreview(),
-      cameraHeight: 694,
-      onTorch: _noop,
-      onClose: _noop,
-      onRetry: _noop,
-    ),
+    status: AddressQrCameraStatus.loading,
   );
 }
 
@@ -231,9 +200,9 @@ class _SeededKeystoneOnboardingNotifier extends KeystoneOnboardingNotifier {
 }
 
 class _MobileKeystoneModalScanFrame extends StatelessWidget {
-  const _MobileKeystoneModalScanFrame({required this.child});
+  const _MobileKeystoneModalScanFrame({required this.status});
 
-  final Widget child;
+  final AddressQrCameraStatus status;
 
   @override
   Widget build(BuildContext context) {
@@ -260,14 +229,31 @@ class _MobileKeystoneModalScanFrame extends StatelessWidget {
             IgnorePointer(
               child: ModalBarrier(color: colors.background.neutralScrim),
             ),
-            SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: child),
-                ],
+            Builder(
+              builder: (context) => SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Spacer(),
+                    MobileModalCard(
+                      child: MobileKeystoneScanCardContent(
+                        key: const ValueKey(
+                          'mobile_keystone_scan_widgetbook_card',
+                        ),
+                        status: status,
+                        cameraView: const _MobileKeystoneScanCameraPreview(),
+                        cameraHeight:
+                            MobileAddressScanCardContent.modalCameraHeight(
+                              context,
+                            ),
+                        onTorch: _noop,
+                        onClose: _noop,
+                        onRetry: _noop,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

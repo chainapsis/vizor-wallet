@@ -43,6 +43,33 @@ private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
   }
 }
 
+/// Exit-only hiding needs to be synchronous and must suppress AppKit's
+/// last-window auto-quit until Flutter has replied to its termination request.
+final class DesktopExitChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/desktop_exit",
+      binaryMessenger: messenger
+    )
+    self.channel = channel
+    channel.setMethodCallHandler { [weak window] call, result in
+      guard call.method == "hideForExit" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let window, let delegate = NSApp.delegate as? AppDelegate else {
+        result(FlutterError(code: "missing_window", message: "The main window is unavailable.", details: nil))
+        return
+      }
+      delegate.isPreparingDesktopExit = true
+      window.orderOut(nil)
+      result(nil)
+    }
+  }
+}
+
 final class WindowAppearanceChannel {
   private static var shared: WindowAppearanceChannel?
 
@@ -1040,8 +1067,12 @@ class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
   private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+  private var ledgerBleHandler: LedgerMobileHandler?
+  private var ledgerBleMethodChannel: FlutterMethodChannel?
+  private var ledgerBleDiscoveryChannel: FlutterEventChannel?
 
   deinit {
+    ledgerBleHandler?.close()
     for observer in vizorWindowToolbarObservers {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -1057,6 +1088,10 @@ class MainFlutterWindow: NSWindow {
     installVizorWindowToolbarObservers()
     applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
+    DesktopExitChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     WindowAppearanceChannel.register(
       window: self,
       visualEffectView: desktopWindowViewController.visualEffectView,
@@ -1084,9 +1119,41 @@ class MainFlutterWindow: NSWindow {
     PaymentUriChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
+    registerLedgerBleChannels(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func registerLedgerBleChannels(messenger: FlutterBinaryMessenger) {
+    ledgerBleHandler?.close()
+    let handler = LedgerMobileHandler()
+    ledgerBleHandler = handler
+
+    let methodChannel = FlutterMethodChannel(
+      name: LedgerMobileHandler.methodChannelName,
+      binaryMessenger: messenger
+    )
+    let signingProgressChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/ledger_mobile/signing_progress",
+      binaryMessenger: messenger
+    )
+    handler.onSigningProgress = { requestId, phase in
+      signingProgressChannel.invokeMethod("progress", arguments: ["requestId": requestId, "phase": phase])
+    }
+    methodChannel.setMethodCallHandler { call, result in
+      handler.handle(call, result: result)
+    }
+    ledgerBleMethodChannel = methodChannel
+
+    let discoveryChannel = FlutterEventChannel(
+      name: LedgerMobileHandler.eventChannelName,
+      binaryMessenger: messenger
+    )
+    discoveryChannel.setStreamHandler(handler)
+    ledgerBleDiscoveryChannel = discoveryChannel
   }
 
   override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {

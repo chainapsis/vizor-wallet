@@ -4,7 +4,9 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../models/vizor_payment_link.dart';
+import 'payment_link_hardware_signing_service.dart';
 import 'payment_link_lifecycle_revision.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_service.dart';
@@ -55,15 +57,33 @@ final paymentLinkRecoveryReconcilerProvider =
           return Map.fromEntries(entries);
         },
         loadLinkFundingHistory: claimWallet.loadFundingHistory,
+        loadLedgerOperationRefs: () async => {
+          for (final operation
+              in await ref.read(ledgerSignedOperationServiceProvider).list())
+            ?operation.externalRef,
+        },
+        loadSignedPendingGiftCardRefs: (accountUuid) async => {
+          for (final operation
+              in await ref.read(ledgerSignedOperationServiceProvider).list())
+            if (operation.kind == LedgerSignedOperationKind.giftCard &&
+                operation.accountUuid == accountUuid &&
+                operation.state == 'signed_pending_broadcast')
+              ?operation.externalRef,
+        },
+        isFundingSurfaceOpen: ref
+            .read(paymentLinkFundingSurfaceRegistryProvider)
+            .isOpen,
       );
     });
 
+/// Count behind the account-removal warning; see
+/// [PaymentLinkRecoveryReconciler.countUnsharedForRemovalWarning].
 final paymentLinkUnsharedFundedCountProvider =
     FutureProvider.family<int, String>((ref, sourceAccountUuid) async {
       ref.watch(paymentLinkLifecycleRevisionProvider);
       return ref
           .watch(paymentLinkRecoveryReconcilerProvider)
-          .countUnsharedFundedForAccount(sourceAccountUuid);
+          .countUnsharedForRemovalWarning(sourceAccountUuid);
     });
 
 enum PaymentLinkPreparedFundingDisposition { pending, funded, expired }
@@ -135,16 +155,33 @@ class PaymentLinkRecoveryReconciler {
     required Future<BigInt> Function() loadScannedHeight,
     required PaymentLinkFundingHistoryLoader loadTransactionsByAccount,
     required PaymentLinkOwnFundingHistoryLoader loadLinkFundingHistory,
+    Future<Set<String>> Function()? loadLedgerOperationRefs,
+    Future<Set<String>> Function(String accountUuid)?
+    loadSignedPendingGiftCardRefs,
+    bool Function(String address)? isFundingSurfaceOpen,
   }) : _loadCurrentHeight = loadCurrentHeight,
        _loadScannedHeight = loadScannedHeight,
        _loadTransactionsByAccount = loadTransactionsByAccount,
-       _loadLinkFundingHistory = loadLinkFundingHistory;
+       _loadLinkFundingHistory = loadLinkFundingHistory,
+       _loadLedgerOperationRefs = loadLedgerOperationRefs,
+       _loadSignedPendingGiftCardRefs = loadSignedPendingGiftCardRefs,
+       _isFundingSurfaceOpen = isFundingSurfaceOpen;
 
   final PaymentLinkRecoveryStore _store;
   final Future<BigInt> Function() _loadCurrentHeight;
   final Future<BigInt> Function() _loadScannedHeight;
   final PaymentLinkFundingHistoryLoader _loadTransactionsByAccount;
   final PaymentLinkOwnFundingHistoryLoader _loadLinkFundingHistory;
+
+  /// External refs of every Ledger signed-outbox operation. Without this and
+  /// [_isFundingSurfaceOpen], abandoned prepared drafts wait for expiry.
+  final Future<Set<String>> Function()? _loadLedgerOperationRefs;
+
+  /// External refs of this account's Gift Card Ledger operations that are
+  /// signed but not yet broadcast.
+  final Future<Set<String>> Function(String accountUuid)?
+  _loadSignedPendingGiftCardRefs;
+  final bool Function(String address)? _isFundingSurfaceOpen;
 
   /// Removes drafts that were saved but never reached the broadcast boundary
   /// (app killed mid-propose): they hold nothing and would otherwise sit in
@@ -173,6 +210,59 @@ class PaymentLinkRecoveryReconciler {
     return changed ? _store.load() : records;
   }
 
+  /// Removes hardware drafts prepared but abandoned before their broadcast
+  /// boundary, instead of waiting for expiry and a synced wallet. A Ledger
+  /// outbox operation exists from the moment the device signature is
+  /// checkpointed, and an open funding flow owns its draft until then, so
+  /// neither a draft being signed nor one awaiting broadcast is touched.
+  Future<List<PaymentLinkRecoveryRecord>> _dropAbandonedPreparedDrafts(
+    List<PaymentLinkRecoveryRecord> records,
+  ) async {
+    final loadLedgerOperationRefs = _loadLedgerOperationRefs;
+    final isFundingSurfaceOpen = _isFundingSurfaceOpen;
+    if (loadLedgerOperationRefs == null || isFundingSurfaceOpen == null) {
+      return records;
+    }
+    final now = DateTime.now().toUtc();
+    final candidates = records
+        .where(
+          (record) =>
+              record.state == PaymentLinkRecoveryState.draft &&
+              (record.fundingTxids?.trim().isNotEmpty ?? false) &&
+              record.submittedAtHeight == null &&
+              now.difference(record.updatedAt) >
+                  kPaymentLinkInertDraftRetention &&
+              !isFundingSurfaceOpen(record.link.address),
+        )
+        .toList();
+    if (candidates.isEmpty) return records;
+    final Set<String> operationRefs;
+    try {
+      operationRefs = await loadLedgerOperationRefs();
+    } catch (error) {
+      // Includes the pause during account deletion; retry on a later load.
+      log('PaymentLinkRecoveryReconciler: Ledger outbox lookup failed: $error');
+      return records;
+    }
+    var changed = false;
+    for (final record in candidates) {
+      final address = record.link.address;
+      if (operationRefs.contains(address) || isFundingSurfaceOpen(address)) {
+        continue;
+      }
+      try {
+        await _store.removeUnsubmittedPreparedDraft(address: address);
+        changed = true;
+      } catch (error) {
+        log(
+          'PaymentLinkRecoveryReconciler: abandoned draft cleanup failed '
+          'address=$address error=$error',
+        );
+      }
+    }
+    return changed ? _store.load() : records;
+  }
+
   Future<int> countUnsharedFundedForAccount(String sourceAccountUuid) async {
     if (sourceAccountUuid.isEmpty) return 0;
     return countUnsharedFundedPaymentLinks(
@@ -181,9 +271,35 @@ class PaymentLinkRecoveryReconciler {
     );
   }
 
+  /// [countUnsharedFundedForAccount] plus drafts whose Ledger funding is
+  /// signed and can still be broadcast. Throws when the outbox is unreadable,
+  /// so the warning falls back to "couldn't check".
+  Future<int> countUnsharedForRemovalWarning(String sourceAccountUuid) async {
+    if (sourceAccountUuid.isEmpty) return 0;
+    final records = await load();
+    final count = countUnsharedFundedPaymentLinks(
+      records,
+      sourceAccountUuid: sourceAccountUuid,
+    );
+    final loadSignedPending = _loadSignedPendingGiftCardRefs;
+    if (loadSignedPending == null) return count;
+    final signedPending = await loadSignedPending(sourceAccountUuid);
+    return count +
+        records
+            .where(
+              (record) =>
+                  record.sourceAccountUuid == sourceAccountUuid &&
+                  record.state == PaymentLinkRecoveryState.draft &&
+                  !record.mayHoldUnsharedFunds &&
+                  signedPending.contains(record.link.address),
+            )
+            .length;
+  }
+
   Future<List<PaymentLinkRecoveryRecord>> load() async {
     var records = await _store.load();
     records = await _dropInertDrafts(records);
+    records = await _dropAbandonedPreparedDrafts(records);
     final preparedDrafts = records
         .where(
           (record) =>
@@ -325,7 +441,7 @@ class PaymentLinkRecoveryReconciler {
           );
         }
       }
-      return changed ? _store.load() : records;
+      return changed ? await _store.load() : records;
     } catch (error) {
       // Retain the bearer secret and retry on the next foreground refresh when
       // chain height or wallet history is temporarily unavailable.

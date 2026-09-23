@@ -8,46 +8,56 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/comma_to_dot_input_formatter.dart';
+import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
+import '../../swap/models/swap_fiat_value_formatting.dart';
+import '../models/gift_card_usage.dart';
 import '../models/vizor_payment_link.dart';
+import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
-import '../services/payment_link_qr_image_saver.dart';
 import '../services/payment_link_qr_export.dart';
+import '../services/payment_link_qr_image_saver.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_recovery_store.dart';
 import '../services/payment_link_service.dart';
-import '../widgets/payment_link_claim_outcome_view.dart';
+import '../services/payment_link_sharing.dart';
+import '../widgets/gift_card_usage_status.dart';
+import '../widgets/mobile/payment_link_claim_account_sheet.dart';
+import '../widgets/mobile/payment_link_mobile_views.dart';
+import '../widgets/mobile/payment_link_scan_sheet.dart';
+import '../widgets/mobile/payment_link_share_sheet.dart';
 import '../widgets/payment_link_archive_header.dart';
 import '../widgets/payment_link_card_flip.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
+import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
+import '../widgets/payment_link_ledger_signing_overlay.dart';
 import '../widgets/payment_link_long_sync_warning.dart';
-import '../widgets/mobile/payment_link_mobile_views.dart';
-import '../widgets/mobile/payment_link_claim_account_sheet.dart';
-import '../widgets/mobile/payment_link_share_sheet.dart';
-import '../widgets/mobile/payment_link_scan_sheet.dart';
+import '../widgets/payment_link_privacy_button.dart';
 import 'payment_links_local_page.dart';
 import 'payment_links_mobile_body.dart';
 
@@ -106,15 +116,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return 'Wait $minutes:$seconds to claim';
   }
 
-  static final _amountFormatter = TextInputFormatter.withFunction((
-    oldValue,
-    newValue,
-  ) {
-    final isNumericAmount = RegExp(
-      r'^(?:\d+(?:\.\d{0,8})?|\.\d{0,8})?$',
-    ).hasMatch(newValue.text);
-    return isNumericAmount ? newValue : oldValue;
-  });
+  static const _amountFormatters = [
+    CommaToDotInputFormatter(),
+    DecimalAmountInputFormatter(maxFractionDigits: 8),
+  ];
 
   final TextEditingController _amountController = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
@@ -147,6 +152,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   final GlobalKey _shareQrCardKey = GlobalKey();
   PaymentLinkRecoveryRecord? _shareQrRecord;
+  String? _shareQrData;
+  bool _preparingShareQr = false;
   PaymentLinkFundingQuote? _maxFundingQuote;
   PaymentLinkFundingQuote? _fundingQuote;
   String? _fundingQuoteRequestedAccountUuid;
@@ -157,7 +164,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   VizorPaymentLink? _longSyncLink;
   VizorPaymentLink? _retryLink;
   PaymentLinkFundingResult? _pendingFundingMetadata;
-  _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
+  _PaymentLinkHardwareFundingRequest? _hardwareFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
   bool _maxFundingQuoteInProgress = false;
@@ -283,7 +290,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _redeemState = PaymentLinkRedeemVisualState.paste;
       }
       _page = page;
-      if (page != PaymentLinksLocalPage.shareQr) _shareQrRecord = null;
+      if (page != PaymentLinksLocalPage.shareQr) {
+        _shareQrRecord = null;
+        _shareQrData = null;
+      }
       _showHelp = false;
       _longSyncLink = null;
     });
@@ -306,7 +316,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _amountController.clear();
     _messageController.clear();
     setState(() {
-      _selectedArtwork = PaymentLinkCardArtwork.gift;
+      _selectedArtwork = PaymentLinkCardArtwork
+          .values[Random().nextInt(PaymentLinkCardArtwork.values.length)];
       _maxFundingQuote = null;
       _maxFundingQuoteInProgress = false;
       _fundingQuote = null;
@@ -315,6 +326,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _amountSupportingTextIsError = false;
       _readyLink = null;
       _shareQrRecord = null;
+      _shareQrData = null;
       _reviewShowsBack = false;
       _readyShowsBack = false;
       _messageEditorRevealed = false;
@@ -887,7 +899,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
 
     final wasPastAmountStep = _page != PaymentLinksLocalPage.amount;
-    final hadKeystoneRequest = _keystoneFundingRequest != null;
+    final hadHardwareRequest = _hardwareFundingRequest != null;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration += 1;
     _maxFundingQuoteGeneration += 1;
@@ -896,8 +908,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _maxFundingQuoteInProgress = false;
       _fundingQuote = null;
       _fundingQuoteInProgress = false;
-      if (hadKeystoneRequest) {
-        _keystoneFundingRequest = null;
+      if (hadHardwareRequest) {
+        _hardwareFundingRequest = null;
         _operationInProgress = false;
       }
       _amountSupportingText = null;
@@ -1096,6 +1108,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  void _confirmCardCreated({required bool broadcastAccepted}) {
+    if (kAppFormFactor == AppFormFactor.mobile && broadcastAccepted) {
+      unawaited(AppHaptics.sendSuccess());
+    }
+  }
+
   Future<void> _createFundedLink() async {
     if (_operationInProgress) return;
     if (_pendingFundingMetadata != null) {
@@ -1140,7 +1158,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         .isHardwareAccount(sourceAccountUuid)) {
       setState(() {
         _operationInProgress = true;
-        _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(
+        _hardwareFundingRequest = _PaymentLinkHardwareFundingRequest(
+          signerKind: ref
+              .read(accountProvider.notifier)
+              .hardwareSignerKindForAccount(sourceAccountUuid),
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
           presentation: presentation,
@@ -1198,6 +1219,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
     } catch (_) {
       if (mounted) _showError('Gift card creation failed. Try again.');
     } finally {
@@ -1245,6 +1267,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _readyShowsBack = false;
         _page = PaymentLinksLocalPage.ready;
       });
+      _confirmCardCreated(broadcastAccepted: pending.broadcastAccepted);
     } catch (_) {
       if (mounted) {
         _showError(
@@ -1259,8 +1282,37 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
-  Future<void> _cancelKeystoneFunding() async {
-    final request = _keystoneFundingRequest;
+  Widget _buildHardwareFundingOverlay(
+    _PaymentLinkHardwareFundingRequest request,
+  ) {
+    if (request.signerKind == HardwareSignerKind.ledger) {
+      return PaymentLinkLedgerSigningOverlay(
+        key: ObjectKey(request),
+        amountZatoshi: request.amountZatoshi,
+        sourceAccountUuid: request.sourceAccountUuid,
+        presentation: request.presentation,
+        onCancel: _cancelHardwareFunding,
+        onFundingBroadcast: (link, result) async {
+          // Persistence is already complete; an old account must not replace
+          // a newly opened wizard after a background completion.
+          if (_hardwareFundingRequest != request) return;
+          await _completeHardwareFunding(request, link, result);
+        },
+      );
+    }
+    return PaymentLinkKeystoneSigningOverlay(
+      key: ObjectKey(request),
+      amountZatoshi: request.amountZatoshi,
+      sourceAccountUuid: request.sourceAccountUuid,
+      presentation: request.presentation,
+      onCancel: _cancelHardwareFunding,
+      onFundingBroadcast: (link, result) =>
+          _completeHardwareFunding(request, link, result),
+    );
+  }
+
+  Future<void> _cancelHardwareFunding() async {
+    final request = _hardwareFundingRequest;
     if (request == null) return;
     // The signing surface has released its input lock and refreshed balance.
     // Recheck fees before making the preserved review actionable again.
@@ -1275,7 +1327,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     } catch (error) {
       log('PaymentLinks: cancelled funding review refresh failed: $error');
     }
-    if (!mounted || _keystoneFundingRequest != request) return;
+    if (!mounted || _hardwareFundingRequest != request) return;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid != request.sourceAccountUuid ||
         (quote != null &&
@@ -1293,7 +1345,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _maxFundingQuote = null;
       _maxFundingQuoteGeneration++;
       _maxFundingQuoteInProgress = false;
-      _keystoneFundingRequest = null;
+      _hardwareFundingRequest = null;
       _operationInProgress = false;
     });
     if (quote == null) _showError(_amountSupportingText!);
@@ -1301,15 +1353,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     unawaited(_loadRecoveries(showError: false));
   }
 
-  Future<void> _completeKeystoneFunding(
+  Future<void> _completeHardwareFunding(
+    _PaymentLinkHardwareFundingRequest request,
     VizorPaymentLink link,
     PaymentLinkHardwareFundingResult result,
   ) async {
     await _loadRecoveries(showError: false);
-    if (!mounted) return;
+    if (!mounted || _hardwareFundingRequest != request) return;
     if (!result.fundingMetadataSaved) {
       setState(() {
-        _keystoneFundingRequest = null;
+        _hardwareFundingRequest = null;
         _operationInProgress = false;
         _pendingFundingMetadata = PaymentLinkFundingResult(
           link: link,
@@ -1333,7 +1386,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       return;
     }
     setState(() {
-      _keystoneFundingRequest = null;
+      _hardwareFundingRequest = null;
       _operationInProgress = false;
       _readyLink = link;
       _fundingProgressByAddress = {
@@ -1348,6 +1401,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _confirmCardCreated(
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
+    );
     unawaited(_refreshFundingProgress());
     if (result.status == 'broadcasted_storage_failed' ||
         result.status == 'broadcast_unknown') {
@@ -1367,10 +1423,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       return;
     }
     setState(() => _copyingLinkAddresses.add(link.address));
+    final epoch = _mobileNavigationEpoch;
     try {
-      await ref
-          .read(paymentLinkClipboardProvider)
-          .copySecret(link.toUri().toString());
+      final uri = await preparePaymentLinkShareUri(link);
+      if (!mounted || epoch != _mobileNavigationEpoch) return;
+      await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
       try {
         await ref
             .read(paymentLinkOperationsProvider)
@@ -1383,7 +1440,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         }
       }
     } catch (_) {
-      if (mounted) _showError('Gift link could not be copied.');
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be copied.');
+      }
     } finally {
       if (mounted) setState(() => _copyingLinkAddresses.remove(link.address));
     }
@@ -1448,19 +1507,33 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   Future<void> _checkPaymentLink(VizorPaymentLink link) async {
     if (_operationInProgress) return;
-    if (ref
-        .read(paymentLinkClaimCoordinatorProvider)
-        .isSubmitting(link.address)) {
+    final knownAddress = link.knownAddress;
+    final matchingInFlight = _receivedCards
+        .where(
+          (record) =>
+              record.isClaimInFlight &&
+              record.claimLink?.hasSameCanonicalPayload(link) == true,
+        )
+        .firstOrNull;
+    final inFlightAddress = knownAddress ?? matchingInFlight?.address;
+    if (inFlightAddress != null &&
+        (matchingInFlight != null ||
+            ref
+                .read(paymentLinkClaimCoordinatorProvider)
+                .isSubmitting(inFlightAddress))) {
       setState(() {
-        _rememberReceivedLink(link);
+        if (knownAddress != null) _rememberReceivedLink(link);
         _setReceivedCardStatus(
-          link.address,
+          inFlightAddress,
           PaymentLinkReceivedStatus.receiving,
         );
         _activeCardsTab = PaymentLinkCardsTab.received;
         _page = PaymentLinksLocalPage.home;
       });
       if (kAppFormFactor == AppFormFactor.mobile) context.go('/home');
+      if (matchingInFlight != null) {
+        _showError(const PaymentLinkClaimInFlightException().toString());
+      }
       return;
     }
     setState(() {
@@ -1517,14 +1590,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           activeAccountUuid != session.destinationAccountUuid &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
-        _receivedLink = link;
+        _receivedLink = session.link;
         _handleClaimDestinationAccountChanged(activeAccountUuid);
         return;
       }
       if (session.waitingForFundingConfirmations) {
         setState(() {
           _receivedClaimSession = session;
-          _receivedLink = link;
+          _receivedLink = session.link;
           _longSyncLink = null;
           _retryLink = null;
           _receivedShowsBack = false;
@@ -1547,7 +1620,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       }
       setState(() {
         _receivedClaimSession = session;
-        _receivedLink = link;
+        _receivedLink = session.link;
         _longSyncLink = null;
         _retryLink = null;
         _receivedShowsBack = false;
@@ -1660,7 +1733,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         });
         return;
       }
-      setState(() => _receivedClaimSession = refreshed);
+      setState(() {
+        _receivedClaimSession = refreshed;
+        _receivedLink = refreshed.link;
+      });
     } catch (error) {
       log(
         'PaymentLinkClaim: confirmation refresh failed '
@@ -1962,6 +2038,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           _page = PaymentLinksLocalPage.home;
         });
         if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+          unawaited(AppHaptics.sendSuccess());
           context.go('/home');
         } else {
           // Pending or partial broadcast is not success. The Received row
@@ -2043,7 +2120,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GiftCardTrackingScope(child: _buildContent(context));
+
+  Widget _buildContent(BuildContext context) {
     ref.listen<String?>(
       accountProvider.select((state) => state.value?.activeAccountUuid),
       _handleActiveAccountChanged,
@@ -2095,26 +2175,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             : null);
 
     if (kAppFormFactor == AppFormFactor.mobile) {
-      final mobileKeystoneRequest = _keystoneFundingRequest;
+      final mobileHardwareRequest = _hardwareFundingRequest;
       return PaymentLinksMobileBody(
         page: _page,
         navigationLocked: _mobileNavigationLocked,
-        onCancelKeystone: _cancelKeystoneFunding,
+        onCancelKeystone: _cancelHardwareFunding,
         redeemState: _redeemState,
         claimOutcome: _buildClaimOutcome(),
         operationInProgress: _operationInProgress,
         redeemActionLabel: _redeemActionLabel,
         redeemFromQrCode: _redeemFromQrCode,
-        keystoneOverlay: mobileKeystoneRequest == null
+        keystoneOverlay: mobileHardwareRequest == null
             ? null
-            : PaymentLinkKeystoneSigningOverlay(
-                key: ObjectKey(mobileKeystoneRequest),
-                amountZatoshi: mobileKeystoneRequest.amountZatoshi,
-                sourceAccountUuid: mobileKeystoneRequest.sourceAccountUuid,
-                presentation: mobileKeystoneRequest.presentation,
-                onCancel: _cancelKeystoneFunding,
-                onFundingBroadcast: _completeKeystoneFunding,
-              ),
+            : _buildHardwareFundingOverlay(mobileHardwareRequest),
         hasCards:
             _visibleRecoveries.isNotEmpty || _visibleReceivedCards.isNotEmpty,
         cardsSections: () => _cardsSections(
@@ -2125,7 +2198,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         selectedArtwork: _selectedArtwork,
         amountController: _amountController,
         amountFocusNode: _amountFocusNode,
-        amountInputFormatters: [_amountFormatter],
+        amountInputFormatters: _amountFormatters,
         amountFiatText: amountFiatSupportingText,
         amountFiatLoading: amountFiatLoading,
         maxAmountText: _maxAmountText,
@@ -2186,21 +2259,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       amountFiatText: amountFiatSupportingText,
       amountFiatLoading: amountFiatLoading,
     );
-    final keystoneRequest = _keystoneFundingRequest;
+    final hardwareRequest = _hardwareFundingRequest;
     final longSyncLink = _longSyncLink;
-    final pane = keystoneRequest != null
+    final pane = hardwareRequest != null
         ? Stack(
             fit: StackFit.expand,
             children: [
               currentPage,
               Positioned.fill(
-                child: PaymentLinkKeystoneSigningOverlay(
-                  amountZatoshi: keystoneRequest.amountZatoshi,
-                  sourceAccountUuid: keystoneRequest.sourceAccountUuid,
-                  presentation: keystoneRequest.presentation,
-                  onCancel: _cancelKeystoneFunding,
-                  onFundingBroadcast: _completeKeystoneFunding,
-                ),
+                child: _buildHardwareFundingOverlay(hardwareRequest),
               ),
             ],
           )
@@ -2280,6 +2347,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   Widget _buildCardsList() {
     return PaymentLinkCardsDesktopView(
+      headerAction: const PaymentLinkPrivacyButton(),
       sections: _cardsSections(
         recoveryRow: _buildRecoveryRow,
         receivedRow: _buildReceivedRow,
@@ -2306,33 +2374,47 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// The Gift Card grouping both form factors render.
   ///
-  /// Created Cards split into `Creating` / `Pending` by funding readiness and
-  /// received Cards form one list; only the row widgets differ per form
-  /// factor, so the grouping and the tab selection stay here rather than
-  /// being restated in the mobile view.
+  /// Created cards share Pending / Unused / Used groups on both form factors.
+  /// Rows retain their detailed status and actions; received grouping is separate.
   List<PaymentLinkCardsSection> _cardsSections({
     required Widget Function(PaymentLinkRecoveryRecord record) recoveryRow,
     required Widget Function(PaymentLinkReceivedRecord record) receivedRow,
     List<Widget> emptyReceivedCards = const <Widget>[],
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
-      final creatingCards = <Widget>[];
       final pendingCards = <Widget>[];
+      final unusedCards = <Widget>[];
+      final usedCards = <Widget>[];
       for (final record in _visibleRecoveries) {
         final fundingReady =
             _fundingProgressByAddress[record.link.address]?.isReady ?? false;
-        (fundingReady ? pendingCards : creatingCards).add(recoveryRow(record));
+        final usage = ref
+            .watch(giftCardUsageProvider(record.link.address))
+            .value;
+        final status = usage?.status ?? record.usage.status;
+        final cards = switch ((fundingReady, status)) {
+          (true, GiftCardUsageStatus.unused) => unusedCards,
+          (true, GiftCardUsageStatus.spendDetected) => usedCards,
+          (true, GiftCardUsageStatus.used) => usedCards,
+          _ => pendingCards,
+        };
+        cards.add(recoveryRow(record));
       }
       return <PaymentLinkCardsSection>[
-        if (creatingCards.isNotEmpty)
-          PaymentLinkCardsSection(
-            label: kPaymentLinkCreatingSectionLabel,
-            cards: creatingCards,
-          ),
         if (pendingCards.isNotEmpty)
           PaymentLinkCardsSection(
             label: kPaymentLinkPendingSectionLabel,
             cards: pendingCards,
+          ),
+        if (unusedCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUnusedSectionLabel,
+            cards: unusedCards,
+          ),
+        if (usedCards.isNotEmpty)
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUsedSectionLabel,
+            cards: usedCards,
           ),
       ];
     }
@@ -2428,7 +2510,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.link.createdAt),
       statusText: state.canUseLink ? null : state.statusText,
       onAction: null,
@@ -2436,6 +2521,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
+      usageStatus: state.canUseLink
+          ? GiftCardUsageStatusView(
+              address: record.link.address,
+              inline: true,
+              hideStableLabel: true,
+            )
+          : null,
     );
   }
 
@@ -2447,13 +2539,24 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListMobileRow(
       key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
-      amountText: '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.link.createdAt),
       statusText: state.canUseLink ? null : state.statusText,
       showLinkActions: state.canUseLink,
       onCopyLink: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       onShowQr: actionsEnabled ? () => _openShareQr(record) : null,
       showLoader: state.showLoader,
+      metadata: state.canUseLink
+          ? GiftCardUsageStatusView(
+              address: record.link.address,
+              inline: true,
+              dateText: _formatCardDate(record.link.createdAt),
+              hideStableLabel: true,
+            )
+          : null,
     );
   }
 
@@ -2465,8 +2568,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     );
   }
 
-  void _openShareQr(PaymentLinkRecoveryRecord record) {
-    if (_operationInProgress) return;
+  Future<void> _openShareQr(PaymentLinkRecoveryRecord record) async {
+    if (_operationInProgress || _preparingShareQr) return;
+    _preparingShareQr = true;
+    final epoch = _mobileNavigationEpoch;
+    late final String shareData;
+    try {
+      shareData = (await preparePaymentLinkShareUri(record.link)).toString();
+    } catch (_) {
+      if (mounted && epoch == _mobileNavigationEpoch) {
+        _showError('Gift link could not be shared.');
+      }
+      return;
+    } finally {
+      _preparingShareQr = false;
+    }
+    if (!mounted || epoch != _mobileNavigationEpoch) return;
     if (kAppFormFactor == AppFormFactor.mobile) {
       unawaited(
         showAppMobileSheet<void>(
@@ -2475,7 +2592,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             artwork: PaymentLinkCardArtwork.fromProtocolId(
               record.link.presentation?.artworkId,
             ),
-            link: record.link.toUri().toString(),
+            link: shareData,
             onShare: (png, origin) =>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
@@ -2494,6 +2611,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
     setState(() {
       _shareQrRecord = record;
+      _shareQrData = shareData;
       _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;
@@ -2510,7 +2628,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       artwork: PaymentLinkCardArtwork.fromProtocolId(
         record.link.presentation?.artworkId,
       ),
-      qrData: record.link.toUri().toString(),
+      qrData: _shareQrData!,
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onSaveQr: _operationInProgress || saving
           ? null
@@ -2593,7 +2711,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId),
-      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
       actionLabel:
@@ -2626,7 +2747,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     return PaymentLinkCardListMobileRow(
       key: ValueKey('payment_link_mobile_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId),
-      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
       actionLabel:
@@ -2663,7 +2787,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         amountController: _amountController,
         amountFocusNode: _amountFocusNode,
         amountEditorKey: const ValueKey('payment_link_amount_editor'),
-        amountInputFormatters: [_amountFormatter],
+        amountInputFormatters: _amountFormatters,
         onAmountChanged: _handleAmountChanged,
         supportingText: fiatText,
         supportingLoading: fiatLoading,
@@ -2822,6 +2946,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           ? PaymentLinkReadyVisualState.waiting
           : PaymentLinkReadyVisualState.ready,
       card: card,
+      usageStatus: GiftCardUsageStatusView(
+        address: link.address,
+        showCheckedAt: true,
+      ),
       decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       onCopy: !readyToShare || _operationInProgress || copying
@@ -2838,9 +2966,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   String? _savedCardFiatText(VizorPaymentLink? link) {
     final snapshot = link?.presentation?.fiatSnapshot;
-    if (snapshot == null ||
-        !ref.watch(swapFeatureEnabledProvider) ||
-        ref.watch(privacyModeProvider)) {
+    if (snapshot == null || !ref.watch(swapFeatureEnabledProvider)) {
       return null;
     }
     return swapFormatCompactFiatValue(snapshot.amount);
@@ -2912,13 +3038,15 @@ String _paymentLinkFormatFailureCategory(FormatException error) {
   return 'format_error';
 }
 
-class _PaymentLinkKeystoneFundingRequest {
-  const _PaymentLinkKeystoneFundingRequest({
+class _PaymentLinkHardwareFundingRequest {
+  const _PaymentLinkHardwareFundingRequest({
     required this.amountZatoshi,
     required this.sourceAccountUuid,
     required this.presentation,
+    required this.signerKind,
   });
 
+  final HardwareSignerKind? signerKind;
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation presentation;

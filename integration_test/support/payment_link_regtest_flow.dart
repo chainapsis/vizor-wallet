@@ -7,10 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
@@ -120,6 +120,46 @@ Future<void> openPaymentLinksFromSettings(WidgetTester tester) async {
   );
 }
 
+Future<void> selectPaymentLinkArtworkForRegtest(
+  WidgetTester tester,
+  String artworkId,
+) async {
+  final target = find.byKey(ValueKey('payment_link_card_selector_$artworkId'));
+  // The rail is lazy and starts centered on a randomly selected artwork.
+  final rail = tester.widget<PaymentLinkCardSelectorRail>(
+    find.byType(PaymentLinkCardSelectorRail),
+  );
+  final targetIndex = rail.artworks.indexWhere(
+    (a) => a.protocolId == artworkId,
+  );
+  expect(targetIndex, greaterThanOrEqualTo(0));
+  final selectedIndex = rail.artworks.indexOf(rail.selected);
+  await tester.scrollUntilVisible(
+    target,
+    targetIndex < selectedIndex ? -80 : 80,
+    scrollable: find.descendant(
+      of: find.byKey(const ValueKey('payment_link_card_selector_scroll')),
+      matching: find.byType(Scrollable),
+    ),
+    maxScrolls: 30,
+  );
+  // ensureVisible's default edge alignment can leave the item under the rail's
+  // clipped fade. Center it before hit testing, without changing selection state.
+  await Scrollable.ensureVisible(tester.element(target), alignment: 0.5);
+  await tester.pump(const Duration(milliseconds: 100));
+  expect(target.hitTestable(), findsOneWidget);
+  await tapAppWidget(tester, ValueKey('payment_link_card_selector_$artworkId'));
+  expect(
+    tester
+        .widget<PaymentLinkCardSelectorRail>(
+          find.byType(PaymentLinkCardSelectorRail),
+        )
+        .selected
+        .protocolId,
+    artworkId,
+  );
+}
+
 Future<VizorPaymentLink> createPaymentLinkForRegtest(
   WidgetTester tester, {
   required String amountText,
@@ -132,7 +172,7 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
     const ValueKey('payment_link_amount_editor'),
     amountText,
   );
-  await tapAppWidget(tester, ValueKey('payment_link_card_selector_$artworkId'));
+  await selectPaymentLinkArtworkForRegtest(tester, artworkId);
   await tapAppButton(
     tester,
     const ValueKey('payment_link_amount_continue_button'),
@@ -173,8 +213,17 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
   expect(link.network, paymentLinkRegtestNetwork);
   expect(link.presentation?.artworkId, artworkId);
   expect(link.presentation?.message, message);
+  final operations = ProviderScope.containerOf(
+    tester.element(find.byType(ZcashWalletApp)),
+  ).read(paymentLinkOperationsProvider);
+  final recovery = (await operations.loadCreatedLinkRecoveries()).singleWhere(
+    (record) => link.hasSameCanonicalPayload(record.link),
+  );
   await tapPaymentLinkText(tester, 'Return home');
-  return link;
+  return link.withResolvedMetadata(
+    address: recovery.link.address,
+    createdAt: recovery.link.createdAt,
+  );
 }
 
 Future<void> claimPaymentLinkForRegtest(
@@ -182,7 +231,7 @@ Future<void> claimPaymentLinkForRegtest(
   VizorPaymentLink link, {
   bool waitUntilReceiving = true,
 }) async {
-  await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
+  await Clipboard.setData(ClipboardData(text: link.toShareUri().toString()));
   await tapPaymentLinkText(tester, 'Redeem a card');
   await tapPaymentLinkText(tester, 'Paste card link');
   await pumpUntil(
@@ -465,9 +514,9 @@ Future<void> tapPaymentLinkText(WidgetTester tester, String text) async {
 Future<String> readPaymentLinkFromClipboard() async {
   final data = await Clipboard.getData(Clipboard.kTextPlain);
   final rawLink = data?.text?.trim() ?? '';
-  if (!rawLink.startsWith(
-    'https://${VizorDeepLink.host}${VizorDeepLink.paymentLinkPath}#v1=',
-  )) {
+  try {
+    VizorPaymentLink.parse(rawLink);
+  } on FormatException {
     fail('The clipboard did not contain a Vizor payment link.');
   }
   return rawLink;

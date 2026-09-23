@@ -456,6 +456,34 @@ void main() {
     },
   );
 
+  test(
+    'prepared setup is revoked by lock on platforms without generation enforcement',
+    () async {
+      final mobileStore = AppSecureStore.testing(
+        storage: storage,
+        enforceSessionGeneration: false,
+      );
+      await mobileStore.clearPasswordConfiguration();
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => AppSecurityNotifier.testing(store: mobileStore),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final security = container.read(appSecurityProvider.notifier);
+      await security.preparePasswordSetup(_password);
+      expect(security.hasPreparedPasswordSetup, isTrue);
+      security.lock();
+      expect(security.hasPreparedPasswordSetup, isFalse);
+      mobileStore.setSessionPassword(_password);
+      expect(security.hasPreparedPasswordSetup, isFalse);
+      await security.rollbackPasswordSetup();
+    },
+  );
+
   group('Linux AppSecurityNotifier', () {
     late ProviderContainer container;
     late AppSecurityNotifier security;
@@ -479,6 +507,36 @@ void main() {
       container.dispose();
       coordinator.dispose();
     });
+
+    test(
+      'prepared setup authority expires on rollback, commit, and session change',
+      () async {
+        await store.clearPasswordConfiguration();
+        expect(security.hasPreparedPasswordSetup, isFalse);
+        await security.preparePasswordSetup(_password);
+        expect(security.hasPreparedPasswordSetup, isTrue);
+        expect(
+          container.read(appSecurityProvider).isPasswordConfigured,
+          isFalse,
+        );
+        await security.rollbackPasswordSetup();
+        expect(security.hasPreparedPasswordSetup, isFalse);
+        await security.preparePasswordSetup(_password);
+        expect(security.hasPreparedPasswordSetup, isTrue);
+        store.clearSessionPassword();
+        expect(security.hasPreparedPasswordSetup, isFalse);
+        store.setSessionPassword(_password);
+        expect(security.hasPreparedPasswordSetup, isFalse);
+        await security.rollbackPasswordSetup();
+        await security.preparePasswordSetup(_password);
+        security.commitPasswordSetup();
+        expect(security.hasPreparedPasswordSetup, isFalse);
+        expect(
+          container.read(appSecurityProvider).isPasswordConfigured,
+          isTrue,
+        );
+      },
+    );
 
     test(
       'locking during setup derivation prevents writing a new password',

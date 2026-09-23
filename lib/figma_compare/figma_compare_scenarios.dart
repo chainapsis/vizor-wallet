@@ -1,7 +1,16 @@
+import 'ledger_pairing_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../src/app_bootstrap.dart';
+import '../src/core/layout/app_form_factor.dart';
+import '../src/features/ledger/services/ledger_signing_progress.dart';
+import '../src/features/ledger/widgets/ledger_signing_modal.dart';
+import '../widgetbook/ledger_use_cases.dart';
+import '../src/features/onboarding/ledger/ledger_connect_screen.dart';
 
 import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/keystone_use_cases.dart';
@@ -16,12 +25,16 @@ import '../widgetbook/payment_request_use_cases.dart';
 import '../widgetbook/receive_use_cases.dart';
 import '../widgetbook/request_amount_use_cases.dart';
 import '../widgetbook/send_review_status_use_cases.dart';
+import '../widgetbook/send_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
+import 'gift_card_usage_use_cases.dart';
+import 'mobile_method_selection_capture.dart';
+import 'ledger_recovery_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -52,6 +65,311 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-permission',
+    description: 'Ledger onboarding: permission recovery',
+    builder: buildLedgerPickerPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restored',
+    description: 'Ledger recovery: permission restored, manual retry',
+    builder: buildLedgerPermissionRestoredCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location-permission',
+    description: 'Ledger recovery: legacy Android location permission',
+    builder: buildLedgerLocationPermissionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-request',
+    description: 'Ledger recovery: request permission',
+    builder: buildLedgerPermissionRequestCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission-restricted',
+    description: 'Ledger recovery: restricted permission',
+    builder: buildLedgerPermissionRestrictedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-permission',
+    description: 'Ledger recovery: permission',
+    builder: buildLedgerPermissionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-mobile-large-text',
+    description: 'Mobile Ledger picker with large text',
+    builder: buildLedgerMobileLargeTextCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-searching',
+    description: 'Ledger discovery in progress',
+    builder: buildLedgerSearchingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-searching-devices',
+    description: 'Ledger discovery with selectable devices',
+    builder: buildLedgerSearchingDevicesCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-device-selection',
+    description: 'Ledger select before Bluetooth interaction',
+    builder: buildLedgerDeviceSelectionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+
+  FigmaCompareScenario(
+    id: 'ledger-saved',
+    description: 'Save another Ledger, then wait for manual rediscovery',
+    builder: buildLedgerDeviceSelectionCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-known-device-connecting',
+    description: 'Saved Ledger connection without viewing-key approval',
+    builder: buildLedgerKnownDeviceConnectingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-android-pairing-invalid',
+    description: 'Android confirmed key loss recovery',
+    builder: buildLedgerAndroidInvalidPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-request-declined',
+    description: 'Request declined after selecting the saved Ledger',
+    builder: buildLedgerRequestDeclinedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-request-failed',
+    description: 'General request failure after selecting the saved Ledger',
+    builder: buildLedgerRequestFailedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-pairing-invalid',
+    description: 'Confirmed invalid Bluetooth pairing',
+    builder: buildLedgerInvalidPairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-repairing',
+    description: 'Ledger verified re-pairing',
+    builder: buildLedgerRePairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-pairing',
+    description: 'Ledger recovery: pairing',
+    builder: buildLedgerPairingCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-bluetooth-off',
+    description: 'Ledger recovery: bluetooth-off',
+    builder: buildLedgerBluetoothOffCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-disconnected',
+    description: 'Ledger recovery: disconnected',
+    builder: buildLedgerDisconnectedCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-busy',
+    description: 'Ledger recovery: busy',
+    builder: buildLedgerBusyCapture,
+    desktop: true,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-location',
+    description: 'Ledger recovery: location',
+    builder: buildLedgerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-pairing',
+    description: 'Ledger recovery: picker-pairing',
+    builder: buildLedgerPickerPairingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-picker-location',
+    description: 'Ledger recovery: picker-location',
+    builder: buildLedgerPickerLocationCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-preparing',
+    description: 'Ledger signing: preparing',
+    builder: _buildLedgerSigningPreparing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing',
+    description: 'Ledger signing: processing',
+    builder: _buildLedgerSigningProcessing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing-nano',
+    description: 'Ledger signing: Nano X preparation time guidance',
+    builder: _buildLedgerSigningProcessingNano,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-checking',
+    description: 'Ledger signing: checking device readiness',
+    builder: _buildLedgerSigningChecking,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-opening',
+    description: 'Ledger signing: confirm opening Zcash',
+    builder: _buildLedgerSigningOpening,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-processing-multiple',
+    description: 'Ledger signing: processing transaction one of two',
+    builder: _buildLedgerSigningProcessingMultiple,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-reviewing',
+    description: 'Ledger signing: reviewing',
+    builder: _buildLedgerSigningReviewing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-finishing',
+    description: 'Ledger signing: finishing',
+    builder: _buildLedgerSigningFinishing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-memo-hash-update',
+    description: 'Ledger signing: memo needs a newer Zcash app',
+    builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-voting-processing',
+    description: 'Ledger voting: processing panel without caller background',
+    builder: _buildLedgerVotingProcessing,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-method-selection-ledger',
+    description: 'Mobile method selection with Ledger available',
+    builder: buildMobileMethodSelectionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-sidebar',
+    description: 'Desktop Ledger import sidebar illustration',
+    builder: _buildLedgerOnboardingSidebar,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildGiftCardUsageCheckingCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-list',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageListCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-checking',
+    description: 'Inline Gift Card usage states',
+    builder: buildMobileGiftCardUsageCheckingCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-list',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageListCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-share',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageShareCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-usage-activity',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageActivityCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-usage-ready',
+    description: 'Gift Card sender usage preview',
+    builder: buildGiftCardUsageReadyCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-amount-contact',
+    description: 'Mobile amount screen resolving a saved contact (4479:47503)',
+    builder: buildMobileSendAmountContactUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-amount-own-account',
+    description: 'Mobile amount screen resolving a local account',
+    builder: buildMobileSendAmountOwnAccountUseCase,
+    desktop: false,
+    mobile: true,
+    allowFocus: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-gift-card-keystone-loading',
     description: 'Shared Keystone signing loading',
@@ -175,20 +493,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Desktop completed vote with shares still submitting',
     builder: buildDesktopVotingVotedUseCase,
     scrollToEnd: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-voting-share-in-progress',
-    description: 'Mobile encrypted vote shares while submission is in progress',
-    builder: buildVotingShareStatusUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-voting-share-complete',
-    description: 'Mobile encrypted vote shares after submission completes',
-    builder: buildVotingShareStatusCompleteUseCase,
-    desktop: false,
-    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'donation-zec-empty',
@@ -1859,9 +2163,87 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 ];
 
+Widget _buildLedgerOnboardingSidebar(BuildContext context) => ProviderScope(
+  overrides: [appBootstrapProvider.overrideWithValue(AppBootstrapState.empty)],
+  child: const LedgerOnboardingShell(
+    activeStep: LedgerOnboardingStep.birthday,
+    backTarget: null,
+    child: SizedBox.shrink(),
+  ),
+);
+
 FigmaCompareScenario? findFigmaCompareScenario(String id) {
   for (final scenario in figmaCompareScenarios) {
     if (scenario.id == id) return scenario;
   }
   return null;
 }
+
+Widget _buildLedgerSigningPreparing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.preparing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessingNano(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      deviceModel: 'Ledger Nano X',
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningReviewing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.reviewing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningChecking(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      readiness: LedgerSigningPlaygroundReadiness.checkingDevice,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningOpening(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      readiness: LedgerSigningPlaygroundReadiness.confirmOpening,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningProcessingMultiple(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      signingStage: LedgerSigningStage.sending,
+      roundCount: 2,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningFinishing(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.saving,
+      signingStage: LedgerSigningStage.finishing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
+    );
+
+Widget _buildLedgerVotingProcessing(BuildContext context) =>
+    buildLedgerVotingProcessingPreview(
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );

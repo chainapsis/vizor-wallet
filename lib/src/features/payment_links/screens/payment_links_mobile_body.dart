@@ -7,8 +7,8 @@
 /// file is left with the state machine plus one render tree instead of two.
 library;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
@@ -26,6 +26,8 @@ import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
+import '../widgets/payment_link_ledger_signing_overlay.dart';
+import '../widgets/payment_link_privacy_button.dart';
 import 'payment_links_local_page.dart';
 
 class PaymentLinksMobileBody extends StatelessWidget {
@@ -231,6 +233,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
 
   Widget _buildCardsList(BuildContext context) {
     return PaymentLinkCardsMobileView(
+      headerAction: const PaymentLinkPrivacyButton(),
       sections: cardsSections(),
       emptyLabel: activeCardsTab == PaymentLinkCardsTab.created
           ? kPaymentLinkNoCreatedCardsText
@@ -272,6 +275,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
         semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
+        loop: true,
         artworks: PaymentLinkCardArtwork.values,
         selected: selectedArtwork,
         width: 393,
@@ -623,7 +627,16 @@ class _PaymentLinksMobileNavigatorState
                   ),
                 ),
               ),
-            if (signing != null)
+            if (signing is PaymentLinkLedgerSigningOverlay)
+              CustomTransitionPage<Object?>(
+                key: _signingKey,
+                opaque: false,
+                transitionsBuilder:
+                    (context, animation, secondaryAnimation, child) =>
+                        FadeTransition(opacity: animation, child: child),
+                child: AppToastHost(child: signing),
+              )
+            else if (signing != null)
               CupertinoPage<Object?>(
                 key: _signingKey,
                 // The shared signing flow owns its decode/finalization guard.

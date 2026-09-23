@@ -1,7 +1,15 @@
 import '../../../providers/account_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../ledger/services/ledger_account_service.dart';
+import '../ledger/ledger_setup_args.dart';
 
-enum SetPasswordFlow { create, importWallet, importKeystone, importWalletLink }
+enum SetPasswordFlow {
+  create,
+  importWallet,
+  importKeystone,
+  importLedger,
+  importWalletLink,
+}
 
 class CreateSecretPassphraseArgs {
   const CreateSecretPassphraseArgs({required this.mnemonic});
@@ -28,6 +36,7 @@ class CustomiseAccountArgs {
     SetPasswordFlow.create => '/onboarding/customise-account',
     SetPasswordFlow.importWallet => '/import/customise-account',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/customise-account',
+    SetPasswordFlow.importLedger => '/onboarding/customise-account',
     SetPasswordFlow.importWalletLink => throw StateError(
       'Wallet Link does not use account customisation.',
     ),
@@ -65,6 +74,7 @@ class SetPasswordScreenArgs {
     this.bip39Passphrase = '',
     this.birthdayHeight,
     this.selectedAdditionalAccountIndices = const [],
+    this.ledgerAccount,
     this.keystoneAccountName,
     this.keystoneUfvk,
     this.keystoneSeedFingerprint,
@@ -108,6 +118,16 @@ class SetPasswordScreenArgs {
          keystoneZip32Index: zip32Index,
        );
 
+  /// Shared mobile passcode flow; desktop retains LedgerSetPasswordArgs.
+  const SetPasswordScreenArgs.importLedger({
+    required LedgerDeviceAccount account,
+    required int birthdayHeight,
+  }) : this._(
+         flow: SetPasswordFlow.importLedger,
+         ledgerAccount: account,
+         birthdayHeight: birthdayHeight,
+       );
+
   const SetPasswordScreenArgs.importWalletLink({
     required String network,
     required List<LinkedWalletAccountImport> accounts,
@@ -125,6 +145,7 @@ class SetPasswordScreenArgs {
          walletLinkKeyBytes: keyBytes,
        );
 
+  final LedgerDeviceAccount? ledgerAccount;
   final SetPasswordFlow flow;
   final String? mnemonic;
   final String bip39Passphrase;
@@ -159,6 +180,7 @@ class SetPasswordScreenArgs {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
     SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
+    SetPasswordFlow.importLedger => '/onboarding/ledger/birthday',
     SetPasswordFlow.importWalletLink => '/onboarding/link-desktop/contacts',
   };
 
@@ -173,6 +195,7 @@ class SetPasswordScreenArgs {
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
     SetPasswordFlow.importKeystone => this,
+    SetPasswordFlow.importLedger => LedgerBirthdayArgs(account: ledgerAccount!),
     SetPasswordFlow.importWalletLink => this,
   };
 }

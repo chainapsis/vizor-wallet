@@ -3,29 +3,38 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_export.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../fakes/fake_gift_link_rust_api.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
 
@@ -44,6 +53,8 @@ Future<void> pumpPaymentLinksScreen(
   FakePaymentLinkOperations? operations,
   FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
+  PaymentLinkLedgerFundingService? ledgerFunding,
+  LedgerPcztSigner? ledgerSigner,
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
   PaymentLinkScanner? scanner,
@@ -53,9 +64,15 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  PrivacyModeNotifier? privacyNotifier,
+  Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
 }) async {
+  if (!RustLib.instance.initialized) {
+    RustLib.initMock(api: FakeGiftLinkRustApi());
+    addTearDown(RustLib.dispose);
+  }
   await tester.binding.setSurfaceSize(logicalSize);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final paymentLinkOperations = operations ?? FakePaymentLinkOperations();
@@ -67,6 +84,18 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (privacyNotifier != null)
+          privacyModeProvider.overrideWith(() => privacyNotifier),
+        // These tests exercise funding and navigation with fake operations.
+        // Observer behavior has its own controlled service and widget tests.
+        giftCardTrackingServiceProvider.overrideWithValue(
+          _IdleGiftCardTracker(),
+        ),
+        if (giftCardUsages != null)
+          giftCardUsageProvider.overrideWith(
+            (ref, address) async =>
+                giftCardUsages[address] ?? const GiftCardUsage(),
+          ),
         appBootstrapProvider.overrideWithValue(appBootstrap),
         if (pricingEnabled != null)
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
@@ -84,6 +113,21 @@ Future<void> pumpPaymentLinksScreen(
           paymentLinkQrShareHandlerProvider.overrideWithValue(qrShareHandler),
         if (scanner != null)
           paymentLinkScannerProvider.overrideWithValue(scanner),
+        if (ledgerFunding != null)
+          paymentLinkLedgerFundingServiceProvider.overrideWithValue(
+            ledgerFunding,
+          ),
+        if (ledgerSigner != null)
+          ledgerPcztSignerProvider.overrideWith(
+            (ref) => (accountUuid, pcztBytes) {
+              ref
+                  .read(ledgerSigningProgressProvider.notifier)
+                  .begin(accountUuid)('reviewing');
+              return ledgerSigner(accountUuid, pcztBytes);
+            },
+          ),
+        if (ledgerFunding != null)
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
         if (hardwareSigning != null)
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,
@@ -221,6 +265,31 @@ final hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final ledgerGiftBootstrap = AppBootstrapState(
+  initialLocation: '/payment-links',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1ledger',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 const twoAccountHardwareState = AccountState(
   accounts: [
     AccountInfo(
@@ -290,7 +359,7 @@ final incomingLink = VizorPaymentLink(
   network: 'main',
   address: 'u1paymentlinkaddress',
   amountZatoshi: BigInt.from(445000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 6),
@@ -304,7 +373,7 @@ final secondIncomingLink = VizorPaymentLink(
   network: 'main',
   address: 'u1secondpaymentlinkaddress',
   amountZatoshi: BigInt.from(225000000),
-  mnemonic: List.filled(24, 'legal').join(' '),
+  mnemonic: giftTestMnemonic12,
   birthdayHeight: 3000001,
   label: 'Second payment link',
   createdAt: DateTime.utc(2026, 8, 7),
@@ -336,7 +405,7 @@ final otherAccountLink = VizorPaymentLink(
   network: 'main',
   address: 'u1otheraccountpaymentlinkaddress',
   amountZatoshi: BigInt.from(100000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 5),
@@ -364,7 +433,7 @@ final unknownOriginLink = VizorPaymentLink(
   network: 'main',
   address: 'u1unknownoriginpaymentlinkaddress',
   amountZatoshi: BigInt.from(200000000),
-  mnemonic: List.filled(24, 'abandon').join(' '),
+  mnemonic: giftTestMnemonic24,
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 4),
@@ -497,7 +566,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
       network: 'main',
       address: 'u1createdpaymentlinkaddress',
       amountZatoshi: amountZatoshi,
-      mnemonic: List.filled(24, 'abandon').join(' '),
+      mnemonic: giftTestMnemonic24,
       birthdayHeight: 3000000,
       label: 'Payment link',
       createdAt: DateTime.utc(2026, 8, 6),
@@ -634,6 +703,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    link = _resolveFixtureLinkMetadata(link);
     final destination = readClaimDestination?.call();
     preparedLinks.add(link);
     allowLongSyncCalls.add(allowLongSync);
@@ -664,6 +734,28 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
           (claimable
               ? PaymentLinkAvailability.available
               : PaymentLinkAvailability.noBalance),
+    );
+  }
+
+  VizorPaymentLink _resolveFixtureLinkMetadata(VizorPaymentLink link) {
+    if (link.knownAddress != null && link.knownCreatedAt != null) return link;
+    final fixtures = [
+      incomingLink,
+      secondIncomingLink,
+      otherAccountLink,
+      unknownOriginLink,
+    ];
+    for (final fixture in fixtures) {
+      if (fixture.hasSameCanonicalPayload(link)) {
+        return link.withResolvedMetadata(
+          address: fixture.address,
+          createdAt: fixture.createdAt,
+        );
+      }
+    }
+    return link.withResolvedMetadata(
+      address: 'u1resolvedpaymentlinkaddress',
+      createdAt: DateTime.utc(2026, 8, 6),
     );
   }
 
@@ -941,4 +1033,12 @@ RenderEditable findRenderEditable(RenderObject root) {
     found ??= findRenderEditable(child);
   });
   return found!;
+}
+
+class _IdleGiftCardTracker implements GiftCardTrackingService {
+  @override
+  Future<void> refresh({bool force = false}) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -156,7 +156,7 @@ void main() {
       ..resetDevicePixelRatio();
   });
 
-  testWidgets('keeps the Figma camera height on tall phones', (tester) async {
+  testWidgets('keeps the camera top aligned on tall phones', (tester) async {
     _setViewSize(tester, const Size(393, 852));
     final controller = MobileScannerController(autoStart: false);
     addTearDown(controller.dispose);
@@ -171,7 +171,7 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_explainer')),
       findsNothing,
     );
-    expect(_cameraViewportSize(tester), const Size(361, 694));
+    expect(_cameraViewportSize(tester), const Size(361, 710));
     expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
   });
 
@@ -189,7 +189,7 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_permission_card')),
       findsOneWidget,
     );
-    expect(_cameraViewportSize(tester), const Size(361, 694));
+    expect(_cameraViewportSize(tester), const Size(361, 710));
     expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
     expect(
       find.byKey(const ValueKey('mobile_keystone_scan_camera')),
@@ -324,7 +324,7 @@ void main() {
       find.byKey(const ValueKey('mobile_keystone_scan_explainer')),
       findsNothing,
     );
-    expect(cameraSize, const Size(361, 509));
+    expect(cameraSize, const Size(361, 525));
     expect(_cameraViewportTopLeft(tester), const Offset(16, 126));
   });
 

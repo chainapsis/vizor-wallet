@@ -2,28 +2,157 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:go_router/go_router.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
-import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
-import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
+import '../../support/gift_card_privacy_checks.dart';
+import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  registerGiftCardPrivacyChecks(mobile: true);
+  final haptics = <String>[];
+  const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+  setUp(() {
+    haptics.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, (call) async {
+          haptics.add(call.method);
+          return true;
+        });
+  });
+  tearDown(
+    () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(hapticsChannel, null),
+  );
+
+  testWidgets(
+    'created cards group by usage without repeating stable row status',
+    (tester) async {
+      PaymentLinkRecoveryRecord recovery(
+        VizorPaymentLink link,
+        GiftCardUsageStatus status,
+      ) => PaymentLinkRecoveryRecord(
+        link: link,
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: DateTime.utc(2026, 9, 17),
+        fundingTxids: 'funding-${link.address}',
+        usage: GiftCardUsage(status: status),
+      );
+      final records = [
+        recovery(incomingLink, GiftCardUsageStatus.unknown),
+        recovery(secondIncomingLink, GiftCardUsageStatus.spendDetected),
+        recovery(otherAccountLink, GiftCardUsageStatus.unused),
+        recovery(unknownOriginLink, GiftCardUsageStatus.used),
+      ];
+      final usages = {
+        for (final record in records) record.link.address: record.usage,
+      };
+
+      await pumpPaymentLinksScreen(
+        tester,
+        logicalSize: const Size(390, 844),
+        operations: FakePaymentLinkOperations(records: records),
+        giftCardUsages: usages,
+      );
+      await tester.pumpAndSettle();
+
+      final pendingHeading = find.text('Pending').first;
+      final unusedHeading = find.text('Unused').first;
+      final usedHeading = find.text('Used').first;
+      expect(pendingHeading, findsOneWidget);
+      expect(unusedHeading, findsOneWidget);
+      expect(usedHeading, findsOneWidget);
+      expect(
+        tester.getTopLeft(pendingHeading).dy,
+        lessThan(tester.getTopLeft(unusedHeading).dy),
+      );
+      expect(
+        tester.getTopLeft(unusedHeading).dy,
+        lessThan(tester.getTopLeft(usedHeading).dy),
+      );
+      expect(find.text('Unverified'), findsOneWidget);
+      expect(find.text('Use detected'), findsNothing);
+      expect(find.text('Unused'), findsOneWidget);
+      expect(find.text('Used'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(
+                ValueKey(
+                  'payment_link_mobile_recovery_${secondIncomingLink.address}',
+                ),
+              ),
+            )
+            .dy,
+        greaterThan(tester.getTopLeft(usedHeading).dy),
+      );
+    },
+  );
+
+  testWidgets(
+    'gift amount normalizes leading separators and preserves precision',
+    (tester) async {
+      await pumpPaymentLinksScreen(tester, logicalSize: const Size(390, 844));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_links_mobile_create_button')),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await expectLeadingDecimalInput(
+        tester,
+        field,
+        onIncompleteAmount: () {
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(
+                    const ValueKey(
+                      'payment_link_mobile_amount_continue_button',
+                    ),
+                  ),
+                )
+                .onPressed,
+            isNull,
+          );
+        },
+      );
+      await tester.enterText(field, ',12345678');
+      await tester.pumpAndSettle();
+      final editable = find.descendant(
+        of: field,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      );
+      final controller = tester.widget<EditableText>(editable).controller;
+      expect(controller.text, '0.12345678');
+      await tester.enterText(field, '0.123456789');
+      await tester.pumpAndSettle();
+      expect(controller.text, '0.12345678');
+    },
+  );
+
   testWidgets('copying an older card preserves creation order after reload', (
     tester,
   ) async {
@@ -67,7 +196,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(clipboard.copiedSecrets, [otherAccountLink.toUri().toString()]);
+    expect(clipboard.copiedSecrets, [otherAccountLink.toShareUri().toString()]);
     expect(
       operations.records.first.updatedAt.isAfter(fundedRecovery.updatedAt),
       isTrue,
@@ -262,6 +391,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        expect(haptics, isEmpty);
         final hasFiat = settings.$1 && settings.$3 != null;
         void expectSavedFiat() {
           expect(
@@ -480,6 +610,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(operations.createdFiatSnapshots, hasLength(1));
+        expect(haptics, ['sendSuccess']);
         expect(
           operations.createdFiatSnapshots.single?.amount,
           pricingEnabled ? 125 : null,
@@ -506,10 +637,28 @@ void main() {
       final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
       final max = find.byKey(const ValueKey('payment_link_max_button'));
       expect(find.textContaining('Use max:'), findsOneWidget);
+      final artwork = tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork;
+      expect(PaymentLinkCardArtwork.values, contains(artwork));
+      expect(
+        tester
+            .widget<PaymentLinkCardSelectorRail>(
+              find.byType(PaymentLinkCardSelectorRail),
+            )
+            .selected,
+        artwork,
+      );
 
       for (final amount in ['0', '2']) {
         await tester.enterText(editor, amount);
         await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+              .artwork,
+          artwork,
+        );
         expect(find.text('Fiat unavailable'), findsNothing);
         expect(find.textContaining(r'$'), findsNothing);
         expect(
@@ -915,6 +1064,7 @@ void main() {
       prepare.complete();
       await tester.pumpAndSettle();
       expect(find.text('Claiming...'), findsOneWidget);
+      expect(haptics, isEmpty);
       final submitted = operations.claimedSessions.single;
       expect(submitted.destinationAccountUuid, 'account-2');
       expect(submitted.destinationAddress, 'u1account-2address');
@@ -1084,6 +1234,13 @@ void main() {
       find.byKey(const ValueKey('payment_links_mobile_create_button')),
     );
     await tester.pumpAndSettle();
+    final otherDesign = tester
+        .widgetList<PaymentLinkCardSelector>(
+          find.byType(PaymentLinkCardSelector).hitTestable(),
+        )
+        .firstWhere((selector) => !selector.selected);
+    await tester.tap(find.byKey(otherDesign.key!));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '0.1',
@@ -1119,6 +1276,20 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('0.1'), findsOneWidget);
+    expect(
+      tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork,
+      otherDesign.artwork,
+    );
+    expect(
+      tester
+          .widget<PaymentLinkCardSelectorRail>(
+            find.byType(PaymentLinkCardSelectorRail),
+          )
+          .selected,
+      otherDesign.artwork,
+    );
   });
 
   testWidgets(
@@ -1141,6 +1312,7 @@ void main() {
         '/payment-links',
       );
       expect(find.text('Claiming...'), findsOneWidget);
+      expect(haptics, isEmpty);
 
       await tester.tap(
         find.byKey(const ValueKey('payment_link_mobile_claim_button')),
@@ -1152,6 +1324,7 @@ void main() {
       claim.complete(broadcastedClaimResult);
       await _pumpClaimFrames(tester);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+      expect(haptics, ['sendSuccess']);
       expect(
         find.byKey(const ValueKey('payment_links_mobile_screen')),
         findsNothing,
@@ -1238,6 +1411,7 @@ void main() {
           find.text('Claim result is not confirmed. Check its status.'),
           findsOneWidget,
         );
+        expect(haptics, isEmpty);
         expect(find.text('Claim the gift'), findsNothing);
         expect(find.text('Try again'), findsNothing);
       },
@@ -1310,7 +1484,7 @@ void main() {
         find.byType(PaymentLinkQrShareCard),
       );
       expect(card.artwork, PaymentLinkCardArtwork.ruby);
-      expect(card.qrData, incomingLink.toUri().toString());
+      expect(card.qrData, incomingLink.toShareUri().toString());
       expect(operations.sharedLinks, isEmpty);
 
       await tester.tap(find.text('Share card'));

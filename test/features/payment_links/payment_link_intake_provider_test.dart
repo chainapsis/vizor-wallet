@@ -16,8 +16,8 @@ void main() {
 
     expect(result, PaymentLinkIntakeResult.accepted);
     expect(
-      container.read(paymentLinkIntakeProvider).pendingLink?.address,
-      link.address,
+      container.read(paymentLinkIntakeProvider).pendingLink?.knownAddress,
+      isNull,
     );
     expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
   });
@@ -55,7 +55,7 @@ void main() {
 
     expect(result, PaymentLinkIntakeResult.rejected);
     final state = container.read(paymentLinkIntakeProvider);
-    expect(state.pendingLink?.address, link.address);
+    expect(state.pendingLink?.knownAddress, isNull);
     expect(state.errorMessage, isNotNull);
     expect(state.errorMessage, isNot(contains('not-base64')));
   });
@@ -69,7 +69,8 @@ void main() {
 
     final taken = notifier.takePending();
 
-    expect(taken?.address, link.address);
+    expect(taken?.knownAddress, isNull);
+    expect(taken?.mnemonic, link.mnemonic);
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
   });
 
@@ -91,8 +92,8 @@ void main() {
     notifier.receive(first.toUri().toString());
     notifier.receive(second.toUri().toString());
 
-    expect(notifier.takePending()?.address, first.address);
-    expect(notifier.takePending()?.address, second.address);
+    expect(notifier.takePending()?.amountZatoshi, first.amountZatoshi);
+    expect(notifier.takePending()?.amountZatoshi, second.amountZatoshi);
     expect(notifier.takePending(), isNull);
   });
 
@@ -126,7 +127,6 @@ void main() {
       _link(amountZatoshi: original.amountZatoshi + BigInt.one),
       _link(birthdayHeight: original.birthdayHeight - 1),
       _link(label: '${original.label} updated'),
-      _link(createdAt: original.createdAt.add(const Duration(seconds: 1))),
       _link(presentation: const PaymentLinkPresentation(message: 'Updated')),
     ];
 
@@ -152,7 +152,7 @@ void main() {
     for (var i = 0; i < kPaymentLinkIntakeQueueCapacity; i++) {
       expect(
         notifier.receive(
-          _link(address: 'u1paymentlinkaddress$i').toUri().toString(),
+          _link(amountZatoshi: BigInt.from(100000 + i)).toUri().toString(),
         ),
         PaymentLinkIntakeResult.accepted,
       );
@@ -160,7 +160,7 @@ void main() {
 
     expect(
       notifier.receive(
-        _link(address: 'u1paymentlinkoverflow').toUri().toString(),
+        _link(amountZatoshi: BigInt.from(200000)).toUri().toString(),
       ),
       PaymentLinkIntakeResult.rejected,
     );

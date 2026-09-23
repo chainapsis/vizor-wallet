@@ -203,9 +203,11 @@ class PaymentRequestPrecheck {
     required this.discardProposal,
     required this.spendableIsAuthoritativeNow,
     this.spendableBalanceNow,
+    this.isLedgerAccount,
   });
 
   final PaymentRequestValidateAddress validateAddress;
+  final bool Function(String accountUuid)? isLedgerAccount;
 
   /// Which network [validateAddress] is asked about. Required, with no
   /// default: the build constant is the wrong answer for any wallet whose
@@ -433,6 +435,8 @@ BigInt paymentRequestSpendableOf(
 final paymentRequestPrecheckProvider = Provider<PaymentRequestPrecheck>((ref) {
   final syncNotifier = ref.read(syncProvider.notifier);
   return PaymentRequestPrecheck(
+    isLedgerAccount: (accountUuid) =>
+        ref.read(accountProvider.notifier).isLedgerAccount(accountUuid),
     validateAddress: rust_sync.validateAddress,
     // The same endpoint the proposal below is made against, so a link can
     // never be refused for a network the wallet is not on.

@@ -13,6 +13,8 @@ import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_profile_picture.dart';
+import '../src/core/widgets/comma_to_dot_input_formatter.dart';
+import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
@@ -379,7 +381,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(
         sections: const [
           PaymentLinkCardsSection(
-            label: 'Creating',
+            label: kPaymentLinkPendingSectionLabel,
             cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
@@ -391,7 +393,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
             ],
           ),
           PaymentLinkCardsSection(
-            label: 'Pending',
+            label: kPaymentLinkUnusedSectionLabel,
             cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
@@ -409,6 +411,11 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                 onCopyLink: _noop,
                 onShowQr: _noop,
               ),
+            ],
+          ),
+          PaymentLinkCardsSection(
+            label: kPaymentLinkUsedSectionLabel,
+            cards: [
               PaymentLinkCardListRow(
                 thumbnail: _PaymentLinkThumbnail(
                   PaymentLinkCardArtwork.chestLava,
@@ -1045,15 +1052,10 @@ class PaymentLinkInteractiveDesktopPreview extends StatefulWidget {
 class _PaymentLinkInteractiveDesktopPreviewState
     extends State<PaymentLinkInteractiveDesktopPreview> {
   static const _usdPerZec = 272.0;
-  static final _amountFormatter = TextInputFormatter.withFunction((
-    oldValue,
-    newValue,
-  ) {
-    final isNumericAmount = RegExp(
-      r'^(?:\d+(?:\.\d{0,8})?|\.\d{0,8})?$',
-    ).hasMatch(newValue.text);
-    return isNumericAmount ? newValue : oldValue;
-  });
+  static const _amountFormatters = [
+    CommaToDotInputFormatter(),
+    DecimalAmountInputFormatter(maxFractionDigits: 8),
+  ];
 
   late final TextEditingController _amountController;
   final FocusNode _amountFocusNode = FocusNode();
@@ -1151,7 +1153,7 @@ class _PaymentLinkInteractiveDesktopPreviewState
                 amountEditorKey: const ValueKey(
                   'payment_link_interactive_amount_editor',
                 ),
-                amountInputFormatters: [_amountFormatter],
+                amountInputFormatters: _amountFormatters,
                 onAmountChanged: _handleAmountChanged,
                 maxAmountText: '142.23',
                 onUseMax: _useMax,

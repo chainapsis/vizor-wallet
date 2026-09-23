@@ -637,6 +637,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     required this.onBack,
     required this.onCopy,
     this.decoration,
+    this.usageStatus,
     this.onCardTap,
     this.onReturnHome,
     this.backLabel = 'Home',
@@ -651,6 +652,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
 
   final PaymentLinkReadyVisualState state;
   final Widget card;
+  final Widget? usageStatus;
   final Widget? decoration;
   final VoidCallback onBack;
   final VoidCallback? onCopy;
@@ -690,7 +692,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
         alignment: Alignment.topCenter,
         child: SizedBox(
           width: 520,
-          height: 624,
+          height: usageStatus == null ? 624 : 688,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -719,6 +721,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                 right: 0,
                 child: Column(
                   children: [
+                    ?usageStatus,
                     if (waiting) ...[
                       Text(
                         waitingPrimaryText,
@@ -734,7 +737,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                           color: context.colors.text.secondary,
                         ),
                       ),
-                    ] else
+                    ] else ...[
                       Text(
                         'Share this link with the intended recipient so they\n'
                         'can claim the Card using their Vizor app.',
@@ -743,7 +746,28 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                           color: context.colors.text.secondary,
                         ),
                       ),
-                    const SizedBox(height: AppSpacing.lg),
+                      // Fit the guidance into the original action gap, while
+                      // allowing wrapped or scaled text to use more space.
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: AppSpacing.lg,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppSpacing.xs,
+                            bottom: AppSpacing.sm,
+                          ),
+                          child: Text(
+                            'You can copy this link again from Settings → My gift cards.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.secondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (waiting) const SizedBox(height: AppSpacing.lg),
                     if (waiting)
                       PaymentLinkDashedStatusPill(label: waitingStatusLabel)
                     else
@@ -1001,6 +1025,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
     required this.amountText,
     required this.dateText,
     this.statusText,
+    this.usageStatus,
     this.actionLabel,
     this.onAction,
     this.showCopyIcon = false,
@@ -1016,6 +1041,7 @@ class PaymentLinkCardListRow extends StatelessWidget {
          'A status or Gift Card link actions must be provided.',
        );
 
+  final Widget? usageStatus;
   final Widget thumbnail;
   final String amountText;
   final String dateText;
@@ -1048,6 +1074,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
               children: [
                 Text(
                   amountText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: context.colors.text.primary,
                   ),
@@ -1063,6 +1091,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
                   ),
                 Text(
                   dateText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -1077,6 +1107,10 @@ class PaymentLinkCardListRow extends StatelessWidget {
               enabled: onSecondaryAction != null,
             ),
             const SizedBox(width: AppSpacing.s),
+          ],
+          if (usageStatus != null) ...[
+            SizedBox(width: 112, child: usageStatus),
+            const SizedBox(width: AppSpacing.xs),
           ],
           if (showLinkActions)
             Row(
@@ -1181,6 +1215,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     this.onTabSelected,
     this.backLabel = 'Home',
     this.title = 'Gift Cards',
+    this.headerAction,
     super.key,
   });
 
@@ -1192,6 +1227,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
   final String backLabel;
   final String title;
+  final Widget? headerAction;
 
   @override
   State<PaymentLinkCardsDesktopView> createState() =>
@@ -1274,12 +1310,25 @@ class _PaymentLinkCardsDesktopViewState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                widget.title,
-                textAlign: TextAlign.center,
-                style: AppTypography.headlineLarge.copyWith(
-                  color: context.colors.text.accent,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (widget.headerAction != null)
+                    const SizedBox(width: 32 + AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: context.colors.text.accent,
+                      ),
+                    ),
+                  ),
+                  if (widget.headerAction != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    widget.headerAction!,
+                  ],
+                ],
               ),
               const SizedBox(height: AppSpacing.s),
               Semantics(

@@ -1,0 +1,341 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/storage/wallet_paths.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../rust/api/ledger.dart' as rust_ledger;
+import '../ledger_capability.dart';
+import 'ledger_app_readiness_service.dart';
+import 'ledger_connection_service.dart';
+import 'ledger_device_request.dart';
+import 'ledger_mobile_ble_service.dart';
+import 'ledger_signing_progress.dart';
+import 'ledger_signing_status_gate.dart';
+
+export 'ledger_signing_status_gate.dart';
+
+typedef LedgerPcztSigner =
+    Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
+typedef LedgerPcztSupportValidator = Future<void> Function(List<int> pcztBytes);
+typedef LedgerVotingPcztSigner =
+    Future<List<LedgerVotingSignature>> Function(
+      String accountUuid,
+      List<int> pcztBytes,
+    );
+typedef LedgerOperationCanceller = Future<void> Function();
+typedef LedgerWalletDbPathLoader = Future<String> Function();
+final ledgerWalletDbPathProvider = Provider<LedgerWalletDbPathLoader>((_) {
+  return getWalletDbPath;
+});
+
+final ledgerRustOperationCancellerProvider = Provider<LedgerOperationCanceller>(
+  (_) => () async {
+    rust_ledger.ledgerCancelOperation();
+  },
+);
+
+class LedgerVotingSignature {
+  const LedgerVotingSignature({
+    required this.pool,
+    required this.actionIndex,
+    required this.signature,
+  });
+
+  final int pool;
+  final int actionIndex;
+  final List<int> signature;
+}
+
+LedgerVotingSignature requireMatchingLedgerVotingSignature({
+  required List<LedgerVotingSignature> signatures,
+  required int actionIndex,
+}) {
+  if (signatures.length != 1) {
+    throw StateError(
+      'Ledger returned a different number of voting signatures than requested.',
+    );
+  }
+  final signature = signatures.single;
+  if (signature.pool != 1 ||
+      signature.actionIndex != actionIndex ||
+      signature.signature.length != 64) {
+    throw StateError(
+      'Ledger returned a voting signature that does not match this bundle.',
+    );
+  }
+  return signature;
+}
+
+final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
+  ref,
+) {
+  final requests = ref.watch(ledgerDeviceRequestsProvider);
+  return () => requests.cancelWhile(() async {
+    ref.read(ledgerSigningProgressProvider.notifier).cancel();
+    ref.read(ledgerMobileSigningStatusGateProvider).cancelPending();
+    try {
+      await ref.read(ledgerRustOperationCancellerProvider)();
+    } finally {
+      try {
+        await ref.read(ledgerMobileBleServiceProvider).cancelSigning();
+      } catch (_) {
+        // Cancelling an idle transport is best-effort and must not hide the
+        // active transport's result, including a Rust cancellation failure.
+      }
+    }
+  });
+});
+
+/// Only valid inside a transport callback: [LedgerConnectionService] runs app
+/// readiness before invoking one, which is what publishes the version.
+String? _readyAppVersion(Ref ref) =>
+    ref.read(ledgerAppReadinessStateProvider).version;
+
+final ledgerPcztSupportValidatorProvider = Provider<LedgerPcztSupportValidator>(
+  (_) =>
+      (pcztBytes) =>
+          rust_ledger.ledgerValidateSupportedPczt(pcztBytes: pcztBytes),
+);
+
+/// Raw transport signer retained for the opt-in Orchard-to-Ironwood canary.
+/// Product flows must use [ledgerPcztSignerProvider], which applies the release
+/// support gate before opening a transport session.
+final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
+  final capability = ref.watch(ledgerStaticCapabilityProvider);
+  final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
+  final networkName = ref.watch(
+    rpcEndpointProvider.select((endpoint) => endpoint.networkName),
+  );
+  return (accountUuid, pcztBytes) async {
+    final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    final progress = ref
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin(accountUuid);
+    capability.requireSupported();
+    final dbPath = await loadWalletDbPath();
+    check();
+    return ref
+        .read(ledgerConnectionServiceProvider)
+        .run(
+          accountUuid: accountUuid,
+          onBluetoothConnected: (device) =>
+              progress('preparing', deviceModel: device.model),
+          usb: () async => (await _signUsbWithProgress(
+            progress: progress,
+            compact: false,
+            dbPath: dbPath,
+            accountUuid: accountUuid,
+            pcztBytes: pcztBytes,
+            network: networkName,
+            appVersion: _readyAppVersion(ref),
+          )).signedPczt!,
+          bluetooth: (mobile) async {
+            return ref.read(ledgerMobileSigningStatusGateProvider).run(
+              () async {
+                check();
+                final plan = await rust_ledger
+                    .ledgerBuildPcztFullSigningApduPlan(
+                      dbPath: dbPath,
+                      accountUuid: accountUuid,
+                      pcztBytes: pcztBytes,
+                      network: networkName,
+                      memoHashSupported: ledgerSupportsMemoHash(
+                        _readyAppVersion(ref),
+                      ),
+                    );
+                check();
+                final responses = await _exchangeWithProgress(
+                  mobile,
+                  plan.commands,
+                  progress,
+                );
+                check();
+                return rust_ledger.ledgerFinalizeMobilePcztFullSigning(
+                  dbPath: dbPath,
+                  accountUuid: accountUuid,
+                  pcztBytes: pcztBytes,
+                  network: networkName,
+                  responses: responses,
+                );
+              },
+            );
+          },
+        );
+  };
+});
+
+final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
+  final validate = ref.watch(ledgerPcztSupportValidatorProvider);
+  final sign = ref.watch(ledgerPcztTransportSignerProvider);
+  return (accountUuid, pcztBytes) async {
+    final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    ref.read(ledgerSigningProgressProvider.notifier).begin(accountUuid);
+    await validate(pcztBytes);
+    check();
+    return sign(accountUuid, pcztBytes);
+  };
+});
+
+/// Compact signing boundary for flows that persist the proofed PCZT separately
+/// and only need Ledger's spend-authorization signatures.
+final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
+  final capability = ref.watch(ledgerStaticCapabilityProvider);
+  final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
+  final networkName = ref.watch(
+    rpcEndpointProvider.select((endpoint) => endpoint.networkName),
+  );
+  return (accountUuid, pcztBytes) async {
+    final check = ref.read(ledgerDeviceRequestsProvider).capture();
+    ref
+        .read(ledgerAppReadinessStateProvider.notifier)
+        .update(const LedgerAppReadinessState.idle());
+    final progress = ref
+        .read(ledgerSigningProgressProvider.notifier)
+        .begin(accountUuid);
+    capability.requireSupported();
+    final dbPath = await loadWalletDbPath();
+    check();
+    final signatures = await ref
+        .read(ledgerConnectionServiceProvider)
+        .run(
+          accountUuid: accountUuid,
+          onBluetoothConnected: (device) =>
+              progress('preparing', deviceModel: device.model),
+          usb: () async => (await _signUsbWithProgress(
+            progress: progress,
+            compact: true,
+            dbPath: dbPath,
+            accountUuid: accountUuid,
+            pcztBytes: pcztBytes,
+            network: networkName,
+            appVersion: _readyAppVersion(ref),
+          )).signatures,
+          bluetooth: (mobile) => ref
+              .read(ledgerMobileSigningStatusGateProvider)
+              .run(
+                () => _signMobileVotingPczt(
+                  check: check,
+                  progress: progress,
+                  mobile: mobile,
+                  dbPath: dbPath,
+                  accountUuid: accountUuid,
+                  pcztBytes: pcztBytes,
+                  networkName: networkName,
+                  memoHashSupported: ledgerSupportsMemoHash(
+                    _readyAppVersion(ref),
+                  ),
+                ),
+              ),
+        );
+    return [
+      for (final signature in signatures)
+        LedgerVotingSignature(
+          pool: signature.pool,
+          actionIndex: signature.actionIndex,
+          signature: signature.sig,
+        ),
+    ];
+  };
+});
+
+/// Voting deliberately consumes only action signatures, not a transaction-like
+/// signed PCZT. The host memo associated with the request is not asserted to be
+/// clear-sign metadata displayed by the current Ledger Zcash app.
+final ledgerVotingPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
+  return ref.watch(ledgerActionPcztSignerProvider);
+});
+
+Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
+  required void Function() check,
+  required void Function(String) progress,
+  required LedgerMobileBleService mobile,
+  required String dbPath,
+  required String accountUuid,
+  required List<int> pcztBytes,
+  required String networkName,
+  required bool memoHashSupported,
+}) async {
+  check();
+  final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    pcztBytes: pcztBytes,
+    network: networkName,
+    memoHashSupported: memoHashSupported,
+  );
+  check();
+  final responses = await _exchangeWithProgress(
+    mobile,
+    plan.commands,
+    progress,
+  );
+  check();
+  return rust_ledger.ledgerFinalizeMobilePcztSigning(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    pcztBytes: pcztBytes,
+    network: networkName,
+    responses: responses,
+  );
+}
+
+Future<List<Uint8List>> _exchangeWithProgress(
+  LedgerMobileBleService mobile,
+  List<rust_ledger.LedgerApduCommand> commands,
+  void Function(String) progress,
+) async {
+  if (mobile is LedgerProgressBleService) {
+    return (mobile as LedgerProgressBleService).exchangeApdusWithProgress(
+      commands,
+      progress,
+    );
+  }
+  // Custom/test transports without native events cannot claim review is visible.
+  progress('sending');
+  final responses = await mobile.exchangeApdus(commands);
+  progress('finishing');
+  return responses;
+}
+
+Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
+  required String dbPath,
+  required String accountUuid,
+  required List<int> pcztBytes,
+  required String network,
+  required bool compact,
+  required String? appVersion,
+  required LedgerSigningProgressReporter progress,
+}) async {
+  rust_ledger.LedgerSigningEvent? result;
+  await for (final event in rust_ledger.ledgerSignWithProgress(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    pcztBytes: pcztBytes,
+    network: network,
+    compact: compact,
+    memoHashSupported: ledgerSupportsMemoHash(appVersion),
+    // USB signing opens a new session; Rust holds it to this version.
+    appVersion: appVersion,
+  )) {
+    if (event.error case final error?) {
+      throw StateError(error);
+    }
+    if (event.phase == 'complete') {
+      result = event;
+    } else {
+      progress(event.phase, deviceModel: event.deviceModel);
+    }
+  }
+  if (result == null) {
+    throw StateError('Ledger signing ended without a result.');
+  }
+  return result;
+}
