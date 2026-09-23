@@ -1168,8 +1168,8 @@ void main() {
         state: PaymentLinkPreviewState.receivedWaiting,
       ),
     );
-    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
-    final waitLabel = find.text('Wait 5:00 to claim');
+    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
+    final waitLabel = find.text('Wait 1:15 to claim');
     final claimPill = find
         .ancestor(of: waitLabel, matching: find.byType(CustomPaint))
         .first;

@@ -664,51 +664,58 @@ pub(super) async fn download_subtree_roots(
     }
 
     if ironwood_enabled {
-        let mut stream = await_tonic_stream(
-            "ironwood subtree roots",
-            LIGHTWALLETD_STREAM_START_TIMEOUT,
-            client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
-                start_index: ironwood_start as u32,
-                shielded_protocol: service::ShieldedProtocol::Ironwood.into(),
-                max_entries: 0,
-            })),
-        )
-        .await
-        .map_err(|e| status_to_network_error("ironwood subtree roots", e))?;
-
-        let mut roots = Vec::new();
-        while let Some(root) =
-            next_stream_message(&mut stream, "ironwood subtree roots stream").await?
-        {
-            let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
-                SyncError::parse(format!(
-                    "ironwood subtree root: expected 32 bytes, got {}",
-                    root.root_hash.len()
-                ))
-            })?;
-            let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
-                .ok_or_else(|| {
-                    SyncError::parse("ironwood subtree root: bad node bytes".to_string())
-                })?;
-            roots.push(CommitmentTreeRoot::from_parts(
-                BlockHeight::from_u32(root.completing_block_height as u32),
-                node,
-            ));
-        }
-        log::info!(
-            "[{}] sync: downloaded {} ironwood subtree roots",
-            elapsed(),
-            roots.len()
-        );
-        if !roots.is_empty() {
-            with_wallet_db_write_lock("sync_engine.put_ironwood_subtree_roots", || {
-                db.put_ironwood_subtree_roots(ironwood_start, roots.as_slice())
-                    .map_err(|e| SyncError::db(format!("put_ironwood_subtree_roots: {e}")))
-            })?;
-        }
+        download_ironwood_subtree_roots(client, db, ironwood_start).await?;
     }
 
     log::info!("[{}] sync: subtree roots done", elapsed());
+    Ok(())
+}
+
+/// Fetches only the missing completed Ironwood subtrees.
+pub(super) async fn download_ironwood_subtree_roots(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    ironwood_start: u64,
+) -> Result<(), SyncError> {
+    let mut stream = await_tonic_stream(
+        "ironwood subtree roots",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
+            start_index: ironwood_start as u32,
+            shielded_protocol: service::ShieldedProtocol::Ironwood.into(),
+            max_entries: 0,
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("ironwood subtree roots", e))?;
+
+    let mut roots = Vec::new();
+    while let Some(root) = next_stream_message(&mut stream, "ironwood subtree roots stream").await?
+    {
+        let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
+            SyncError::parse(format!(
+                "ironwood subtree root: expected 32 bytes, got {}",
+                root.root_hash.len()
+            ))
+        })?;
+        let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
+            .ok_or_else(|| SyncError::parse("ironwood subtree root: bad node bytes".to_string()))?;
+        roots.push(CommitmentTreeRoot::from_parts(
+            BlockHeight::from_u32(root.completing_block_height as u32),
+            node,
+        ));
+    }
+    log::info!(
+        "[{}] sync: downloaded {} ironwood subtree roots",
+        elapsed(),
+        roots.len()
+    );
+    if !roots.is_empty() {
+        with_wallet_db_write_lock("sync_engine.put_ironwood_subtree_roots", || {
+            db.put_ironwood_subtree_roots(ironwood_start, roots.as_slice())
+                .map_err(|e| SyncError::db(format!("put_ironwood_subtree_roots: {e}")))
+        })?;
+    }
     Ok(())
 }
 

@@ -298,6 +298,38 @@ Future<SendMaxEstimateResult> estimateSendMax({
   memo: memo,
 );
 
+/// Propose a Gift Card claim from its temporary wallet. Uses the claim
+/// confirmation policy and discards the outgoing viewing key, so the link's
+/// seed cannot recover the recipient address.
+Future<ProposalResult> proposePaymentLinkClaim({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String toAddress,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncProposePaymentLinkClaim(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  toAddress: toAddress,
+  amountZatoshi: amountZatoshi,
+);
+
+/// Estimate the maximum Gift Card claim under the claim confirmation policy.
+Future<SendMaxEstimateResult> estimatePaymentLinkClaimMax({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+}) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkClaimMax(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  toAddress: toAddress,
+);
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 Future<ExecuteProposalResult> executeProposal({

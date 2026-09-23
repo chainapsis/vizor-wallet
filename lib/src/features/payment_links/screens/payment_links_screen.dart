@@ -2152,7 +2152,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         pricingEnabled &&
             (_page == PaymentLinksLocalPage.amount ||
                 _page == PaymentLinksLocalPage.message ||
-                _page == PaymentLinksLocalPage.review)
+                _page == PaymentLinksLocalPage.review ||
+                _page == PaymentLinksLocalPage.received)
         ? ref.watch(zecHomeMarketDataStateProvider)
         : null;
 

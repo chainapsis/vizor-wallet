@@ -1170,6 +1170,62 @@ pub fn estimate_send_max(
     })
 }
 
+/// Propose a Gift Card claim from its temporary wallet. Uses the claim
+/// confirmation policy and discards the outgoing viewing key, so the link's
+/// seed cannot recover the recipient address.
+pub fn propose_payment_link_claim(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    to_address: String,
+    amount_zatoshi: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::propose_send_for_purpose(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &to_address,
+            amount_zatoshi,
+            None,
+            wallet_sync::SendPurpose::PaymentLinkClaim,
+        )?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+/// Estimate the maximum Gift Card claim under the claim confirmation policy.
+pub fn estimate_payment_link_claim_max(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    to_address: String,
+) -> Result<SendMaxEstimateResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::estimate_send_max_for_purpose(
+            &db_path,
+            network,
+            &account_uuid,
+            &to_address,
+            None,
+            wallet_sync::SendPurpose::PaymentLinkClaim,
+        )?;
+        Ok(SendMaxEstimateResult {
+            amount_zatoshi: r.amount_zatoshi,
+            fee_zatoshi: r.fee_zatoshi,
+            needs_sapling_params: r.needs_sapling_params,
+        })
+    })
+}
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 pub fn execute_proposal(

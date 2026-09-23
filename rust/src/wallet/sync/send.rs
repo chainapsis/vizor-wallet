@@ -95,7 +95,6 @@ use zcash_protocol::{
     PoolType, ShieldedPool,
 };
 
-use crate::wallet::confirmations_policy;
 use crate::wallet::db::{
     open_wallet_db_readonly_with_timeout, open_wallet_raw_conn_with_timeout,
     with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
@@ -103,6 +102,7 @@ use crate::wallet::db::{
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
+use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
@@ -110,9 +110,33 @@ use super::migration_wallet_ops::{
 };
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
-    open_wallet_db_for_read, stored_proposal_lock, StoredProposal, StoredProposalLock,
-    WalletDatabase, PROPOSAL_STORE,
+    open_wallet_db_for_read, stored_proposal_lock, wallet_target_height, StoredOvkPolicy,
+    StoredProposal, StoredProposalLock, WalletDatabase, PROPOSAL_STORE,
 };
+
+/// Selects the confirmation and outgoing viewing key policies for a send.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SendPurpose {
+    Ordinary,
+    /// Spends a Gift Card's bearer wallet into the recipient's account.
+    PaymentLinkClaim,
+}
+
+impl SendPurpose {
+    fn confirmations_policy(self) -> ConfirmationsPolicy {
+        match self {
+            Self::Ordinary => confirmations_policy(),
+            Self::PaymentLinkClaim => payment_link_claim_confirmations_policy(),
+        }
+    }
+
+    fn ovk_policy(self) -> StoredOvkPolicy {
+        match self {
+            Self::Ordinary => StoredOvkPolicy::Sender,
+            Self::PaymentLinkClaim => StoredOvkPolicy::Discard,
+        }
+    }
+}
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
 const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
@@ -766,6 +790,29 @@ pub(crate) fn propose_send(
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<ProposalResult, String> {
+    propose_send_for_purpose(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        to_address,
+        amount_zatoshi,
+        memo_str,
+        SendPurpose::Ordinary,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn propose_send_for_purpose(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+    purpose: SendPurpose,
+) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
@@ -792,6 +839,7 @@ pub(crate) fn propose_send(
             &migration_locks,
             &spend_policy,
             proposed_tx_version,
+            purpose.confirmations_policy(),
         )?;
         let (proposal, stored_tx_version) = propose_with_note_version_downgrade(
             pass1_proposal,
@@ -807,6 +855,7 @@ pub(crate) fn propose_send(
                     &migration_locks,
                     &spend_policy,
                     tx_version,
+                    purpose.confirmations_policy(),
                 )
             },
         );
@@ -886,6 +935,7 @@ pub(crate) fn propose_send(
                 network,
                 account_id,
                 send_flow_id: send_flow_id.to_string(),
+                ovk_policy: purpose.ovk_policy(),
             },
         );
 
@@ -926,6 +976,7 @@ pub fn estimate_fee(
         &migration_locks,
         &spend_policy,
         proposed_tx_version,
+        confirmations_policy(),
     )?;
     // Same two-pass rule as `propose_send`, so the displayed estimate equals
     // the stored proposal's fee.
@@ -941,6 +992,7 @@ pub fn estimate_fee(
                 &migration_locks,
                 &spend_policy,
                 tx_version,
+                confirmations_policy(),
             )
         });
 
@@ -960,6 +1012,24 @@ pub(crate) fn estimate_send_max(
     to_address: &str,
     memo_str: Option<&str>,
 ) -> Result<SendMaxEstimateResult, String> {
+    estimate_send_max_for_purpose(
+        db_path,
+        network,
+        account_uuid,
+        to_address,
+        memo_str,
+        SendPurpose::Ordinary,
+    )
+}
+
+pub(crate) fn estimate_send_max_for_purpose(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    to_address: &str,
+    memo_str: Option<&str>,
+    purpose: SendPurpose,
+) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     // librustzcash's max-spend proposal path no longer takes a proposed tx
@@ -975,6 +1045,7 @@ pub(crate) fn estimate_send_max(
         to_address,
         memo_str,
         &spend_pools,
+        purpose.confirmations_policy(),
     )?;
     summarize_send_max_proposal(&proposal)
 }
@@ -1388,8 +1459,8 @@ async fn execute_stored_proposal(
                 return Err("Send proposal input lock changed while refreshing chain tip".into());
             }
             let mut db = open_wallet_db(db_path, network)?;
-            let (target_height, _) = db
-                .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+            // The proposal already fixed its anchor; expiry needs only the tip.
+            let target_height = wallet_target_height(&db)
                 .map_err(|e| format!("Read wallet target height before send: {e}"))?
                 .ok_or("Wallet must sync before executing a send proposal")?;
             let current_target_height = BlockHeight::from(target_height);
@@ -1410,6 +1481,7 @@ async fn execute_stored_proposal(
             .map_err(|e| format!("Revalidate send proposal input locks: {e:?}"))?;
             super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
             let account_id = stored.account_id;
+            let ovk_policy = stored.ovk_policy.to_ovk_policy();
             let account = db
                 .get_account(account_id)
                 .map_err(|e| format!("{e}"))?
@@ -1439,7 +1511,7 @@ async fn execute_stored_proposal(
                         &prover,
                         &prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
+                        ovk_policy.clone(),
                         &proposal,
                         Some(live_expiry_height),
                     )
@@ -1454,7 +1526,7 @@ async fn execute_stored_proposal(
                         &spend_prover,
                         &output_prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
+                        ovk_policy.clone(),
                         &proposal,
                         Some(live_expiry_height),
                     )
@@ -3521,8 +3593,8 @@ fn propose_send_with_reserved_notes(
     migration_locks: &BTreeSet<(String, u32)>,
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
+    confirmations_policy: ConfirmationsPolicy,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
-    let confirmations_policy = confirmations_policy();
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
         .map_err(|e| format!("Read chain state for proposal: {e}"))?
@@ -3945,6 +4017,7 @@ fn build_send_max_proposal(
     to_address: &str,
     memo_str: Option<&str>,
     spend_pools: &[ShieldedPool],
+    confirmations_policy: ConfirmationsPolicy,
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -3985,7 +4058,7 @@ fn build_send_max_proposal(
         to,
         memo_bytes,
         MaxSpendMode::MaxSpendable,
-        confirmations_policy(),
+        confirmations_policy,
         &LockedInputPolicy::Exclude,
         None,
     )
@@ -4000,9 +4073,9 @@ fn proposed_tx_version_for_wallet_db(
     network: WalletNetwork,
     context: &str,
 ) -> Result<Option<TxVersion>, String> {
-    let confirmations_policy = confirmations_policy();
-    let (target_height, _) = db
-        .get_target_and_anchor_heights(confirmations_policy.trusted())
+    // The version depends only on the target height. Reading it through an
+    // anchor query would fail before the send's own confirmation policy runs.
+    let target_height = wallet_target_height(db)
         .map_err(|e| format!("Read chain state for {context}: {e}"))?
         .ok_or_else(|| format!("Wallet must sync before {context}"))?;
     Ok(proposed_tx_version_for_send(network, target_height))

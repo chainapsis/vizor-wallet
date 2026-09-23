@@ -23,7 +23,9 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
 import '../../fakes/fake_sync_notifier.dart';
+
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -418,6 +420,7 @@ void main() {
     late ProviderContainer container;
     late PaymentLinkService service;
     late _ClaimMarketDataSource marketData;
+    late _ClaimPreviewMarketData previewPrice;
     late bool pricingEnabled;
     late Directory supportDirectory;
     late _PaymentLinkServiceReceivedStorage receivedStorage;
@@ -444,6 +447,9 @@ void main() {
         overrides: [
           swapFeatureEnabledProvider.overrideWith((ref) => pricingEnabled),
           zecMarketDataSourceProvider.overrideWithValue(marketData),
+          zecHomeMarketDataStateProvider.overrideWith(() {
+            return previewPrice = _ClaimPreviewMarketData();
+          }),
           accountProvider.overrideWith(() => accounts),
           syncProvider.overrideWith(
             () => FakeSyncNotifier(
@@ -889,7 +895,8 @@ void main() {
 
     for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
       test('claim persists fresh fiat or enclosed fallback: $price', () async {
-        marketData.price = price;
+        container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+        previewPrice.setPrice(price);
         api.poolFixture = true;
         api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
         final submission = service.claimPreparedLink(_claimSession());
@@ -898,7 +905,7 @@ void main() {
         final record =
             (await container.read(paymentLinkReceivedStoreProvider).load())
                 .single;
-        expect(marketData.calls, 1);
+        expect(marketData.calls, 0);
         expect(record.fiatSnapshot!.amount, price == 200.0 ? 0.2 : 0.1);
         expect(record.claimLink!.presentation!.fiatSnapshot!.amount, 0.1);
         api.estimateGate!.completeError(StateError('preparation failed'));
@@ -906,28 +913,24 @@ void main() {
       });
     }
 
-    for (final lateFailure in [false, true]) {
+    for (final latePrice in [200.0, null]) {
       test(
-        'slow price cannot block claim or replace fallback: $lateFailure',
+        'pending preview price never delays claim or replaces fallback: $latePrice',
         () async {
-          final priceGate = Completer<ZecMarketData?>();
-          marketData.pending = priceGate;
+          container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+          marketData.pending = Completer<ZecMarketData?>();
           api.poolFixture = true;
           api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
           final submission = service.claimPreparedLink(_claimSession());
           final failed = expectLater(submission, throwsStateError);
-          // Claim preparation must start while the price request is unresolved.
+          // Both the shared preview and any accidental new lookup stay pending.
           await api.estimateStarted.future.timeout(const Duration(seconds: 3));
-          expect(priceGate.isCompleted, isFalse);
           final store = container.read(paymentLinkReceivedStoreProvider);
           expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
-          if (lateFailure) {
-            priceGate.completeError(StateError('late price failure'));
-          } else {
-            priceGate.complete(const ZecMarketData(usdPrice: 200));
-          }
+          previewPrice.setPrice(latePrice);
           await Future<void>.delayed(Duration.zero);
           expect((await store.load()).single.fiatSnapshot!.amount, 0.1);
+          expect(marketData.calls, 0);
           api.estimateGate!.completeError(StateError('preparation failed'));
           await failed;
         },
@@ -935,6 +938,8 @@ void main() {
     }
 
     test('disabled pricing keeps enclosed fiat without a request', () async {
+      container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+      previewPrice.setPrice(200);
       pricingEnabled = false;
       container.invalidate(swapFeatureEnabledProvider);
       marketData.price = 200;
@@ -952,7 +957,7 @@ void main() {
       await failed;
     });
 
-    test('price lookup exception does not block claim preparation', () async {
+    test('claim without a preview never starts a price request', () async {
       marketData.throwOnFetch = true;
       api.poolFixture = true;
       api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
@@ -963,9 +968,34 @@ void main() {
           (await container.read(paymentLinkReceivedStoreProvider).load())
               .single;
       expect(record.fiatSnapshot!.amount, 0.1);
+      expect(marketData.calls, 0);
       api.estimateGate!.completeError(StateError('preparation failed'));
       await failed;
     });
+
+    for (final age in [
+      const Duration(minutes: 3),
+      const Duration(seconds: -1),
+    ]) {
+      test('claim ignores a preview price with age $age', () async {
+        container.listen(zecHomeMarketDataStateProvider, (_, _) {});
+        previewPrice.setPrice(200, fetchedAt: DateTime.now().subtract(age));
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final failed = expectLater(
+          service.claimPreparedLink(_claimSession()),
+          throwsStateError,
+        );
+        await api.estimateStarted.future;
+        final record =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(record.fiatSnapshot!.amount, 0.1);
+        expect(marketData.calls, 0);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      });
+    }
 
     test(
       'recovery cannot settle a submission still preparing transactions',
@@ -1589,9 +1619,9 @@ void main() {
       paymentLinkFundingConfirmationCountForClaim(
         recipientAmountZatoshi: BigInt.from(100000),
         transactions: transactions,
-        chainTipHeight: BigInt.from(103),
+        chainTipHeight: BigInt.from(100),
       ),
-      4,
+      1,
     );
   });
 
@@ -1630,9 +1660,21 @@ void main() {
         paymentLinkShouldWaitForFunding(
           recipientAmountZatoshi: BigInt.from(100000),
           totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
-          fundingConfirmationCount: 4,
+          fundingConfirmationCount: 1,
           birthdayHeight: 100,
           currentTipHeight: 104,
+        ),
+        isTrue,
+      );
+      // The fresh-card window outlasts the claim target: an empty scan this
+      // soon cannot rule out funding still in the mempool.
+      expect(
+        paymentLinkShouldWaitForFunding(
+          recipientAmountZatoshi: BigInt.from(100000),
+          totalZatoshi: BigInt.zero,
+          fundingConfirmationCount: 0,
+          birthdayHeight: 100,
+          currentTipHeight: 105,
         ),
         isTrue,
       );
@@ -1650,9 +1692,9 @@ void main() {
         paymentLinkShouldWaitForFunding(
           recipientAmountZatoshi: BigInt.from(100000),
           totalZatoshi: paymentLinkFundingAmountZatoshi(BigInt.from(100000)),
-          fundingConfirmationCount: 6,
+          fundingConfirmationCount: kPaymentLinkClaimConfirmationTarget,
           birthdayHeight: 100,
-          currentTipHeight: 105,
+          currentTipHeight: 102,
         ),
         isFalse,
       );
@@ -2509,12 +2551,12 @@ class _ClaimDestinationRustApi implements RustLibApi {
   int giftVariantLookups = 0;
 
   @override
-  Future<rust_sync.SendMaxEstimateResult> crateApiSyncEstimateSendMax({
+  Future<rust_sync.SendMaxEstimateResult>
+  crateApiSyncEstimatePaymentLinkClaimMax({
     required String dbPath,
     required String network,
     required String accountUuid,
     required String toAddress,
-    String? memo,
   }) {
     estimateStarted.complete();
     return estimateGate!.future;
@@ -2719,6 +2761,21 @@ class _ClaimDestinationRpcNotifier extends RpcEndpointNotifier {
     networkName: 'main',
     lightwalletdUrl: 'https://example.invalid:9067',
   );
+}
+
+class _ClaimPreviewMarketData extends ZecHomeMarketDataNotifier {
+  @override
+  ZecHomeMarketDataState build() =>
+      const ZecHomeMarketDataState(isLoading: true);
+
+  void setPrice(double? price, {DateTime? fetchedAt}) {
+    final data = price == null ? null : ZecMarketData(usdPrice: price);
+    state = ZecHomeMarketDataState(
+      displayData: data,
+      liveData: data,
+      fetchedAt: fetchedAt ?? DateTime.now(),
+    );
+  }
 }
 
 class _ClaimMarketDataSource implements ZecMarketDataSource {

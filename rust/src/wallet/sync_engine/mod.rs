@@ -47,6 +47,7 @@ use {
 
 mod address_history;
 mod block_source;
+mod claim_roots;
 mod enhance;
 mod gift_card_funding;
 pub(crate) use gift_card_funding::gift_card_funding_reason;
@@ -2514,6 +2515,7 @@ pub async fn run_payment_link_claim_sync(
     cancel: Arc<AtomicBool>,
     allow_resubmit: bool,
 ) -> Result<(), String> {
+    let started = std::time::Instant::now();
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
 
@@ -2543,7 +2545,13 @@ pub async fn run_payment_link_claim_sync(
             Ok(()) if cancel.load(Ordering::Relaxed) => {
                 return Err("Gift Card scan cancelled".to_string())
             }
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                log::info!(
+                    "PaymentLinkClaim: scan ready elapsed_ms={}",
+                    started.elapsed().as_millis()
+                );
+                return Ok(());
+            }
             Err(error) => {
                 let strategy = error.recovery_strategy();
                 last_error = error.to_string();
@@ -2610,7 +2618,7 @@ async fn run_payment_link_claim_sync_once(
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(|error| SyncError::db(format!("payment-link recover send locks: {error}")))?;
 
-    download_subtree_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
+    claim_roots::prepare_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
     let mut rewind_attempts = 0u32;
     loop {

@@ -9,7 +9,11 @@
 /// caller.
 part of 'payment_link_service.dart';
 
-const kPaymentLinkClaimConfirmationTarget = 6;
+// Matches the Rust claim policy (`PAYMENT_LINK_CLAIM_CONFIRMATIONS`).
+const kPaymentLinkClaimConfirmationTarget = 2;
+// Claim sync scans compact blocks only, so it cannot see a just-shared card's
+// funding in the mempool. Keep treating an empty card as pending this long.
+const kPaymentLinkFreshCardGraceBlocks = 6;
 // Match ordinary Receive for display; retain recovery material through the
 // spendability window so a shallow reorg can still recover the claim.
 const kPaymentLinkReceiptConfirmationTarget = 1;
@@ -152,8 +156,7 @@ bool paymentLinkShouldWaitForFunding({
     recipientAmountZatoshi,
   );
   if (totalZatoshi >= expectedFunding) return true;
-  return currentTipHeight - birthdayHeight <
-      kPaymentLinkClaimConfirmationTarget;
+  return currentTipHeight - birthdayHeight < kPaymentLinkFreshCardGraceBlocks;
 }
 
 @visibleForTesting

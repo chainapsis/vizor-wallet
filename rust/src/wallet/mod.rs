@@ -22,6 +22,10 @@ const TRUSTED_CONFIRMATIONS: u32 = 3;
 // ZIP 315 default of 10 confirmations.
 const UNTRUSTED_CONFIRMATIONS: u32 = 6;
 const ALLOW_ZERO_CONFIRMATION_SHIELDING: bool = true;
+// Gift Card claims spend a bearer card into the recipient's own wallet. Two
+// confirmations anchor one block below the tip, so a one-block reorg cannot
+// invalidate the claim.
+const PAYMENT_LINK_CLAIM_CONFIRMATIONS: u32 = 2;
 
 fn confirmations_policy() -> ConfirmationsPolicy {
     ConfirmationsPolicy::new(
@@ -30,6 +34,13 @@ fn confirmations_policy() -> ConfirmationsPolicy {
         ALLOW_ZERO_CONFIRMATION_SHIELDING,
     )
     .expect("trusted confirmations do not exceed untrusted confirmations")
+}
+
+fn payment_link_claim_confirmations_policy() -> ConfirmationsPolicy {
+    let confirmations =
+        NonZeroU32::new(PAYMENT_LINK_CLAIM_CONFIRMATIONS).expect("claim confirmations are nonzero");
+    ConfirmationsPolicy::new(confirmations, confirmations, false)
+        .expect("claim confirmations are symmetric")
 }
 
 #[cfg(test)]
@@ -64,5 +75,32 @@ mod tests {
 
         assert_eq!(confirmations_remaining(105), 1);
         assert_eq!(confirmations_remaining(106), 0);
+    }
+
+    #[test]
+    fn gift_card_claims_spend_external_funds_after_two_confirmations() {
+        let policy = payment_link_claim_confirmations_policy();
+        let confirmations_remaining = |target_height| {
+            policy.confirmations_until_spendable(
+                TargetHeight::from(target_height),
+                PoolType::Shielded(ShieldedPool::Orchard),
+                Some(Scope::External),
+                Some(BlockHeight::from_u32(100)),
+                false,
+                None,
+                false,
+            )
+        };
+
+        assert_eq!(
+            u32::from(policy.trusted()),
+            PAYMENT_LINK_CLAIM_CONFIRMATIONS
+        );
+        assert_eq!(
+            u32::from(policy.untrusted()),
+            PAYMENT_LINK_CLAIM_CONFIRMATIONS
+        );
+        assert_eq!(confirmations_remaining(101), 1);
+        assert_eq!(confirmations_remaining(102), 0);
     }
 }
