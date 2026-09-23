@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0A0E0010000000000000001 /* ModalCornerHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A0E0010000000000000002 /* ModalCornerHandler.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		1C17EF09E57FB1CC13229F6C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13C168564DA439E9BD411F5A /* Pods_RunnerTests.framework */; };
 		265BA9AB2F7BDB1D00287691 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 265BA9AA2F7BDB1D00287691 /* WidgetKit.framework */; };
@@ -86,6 +87,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C0A0E0010000000000000002 /* ModalCornerHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalCornerHandler.swift; sourceTree = "<group>"; };
 		13C168564DA439E9BD411F5A /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
@@ -289,6 +291,7 @@
 				B6A100012F9A000100000001 /* BackgroundMigrationManager.swift */,
 				BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */,
 				DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */,
+				C0A0E0010000000000000002 /* ModalCornerHandler.swift */,
 				5736417D0A4E184E8572693A /* WalletPathResolver.swift */,
 				KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */,
 				LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */,
@@ -579,6 +582,7 @@
 				B6A100022F9A000100000001 /* BackgroundMigrationManager.swift in Sources */,
 				BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */,
 				DATEPCK01ED2DC5600515810 /* DatePickerHandler.swift in Sources */,
+				C0A0E0010000000000000001 /* ModalCornerHandler.swift in Sources */,
 				5736417E0A4E184E8572693A /* WalletPathResolver.swift in Sources */,
 				KEYMIG010000000000000001 /* KeychainAccessibilityMigrator.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,

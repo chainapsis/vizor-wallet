@@ -3322,3 +3322,50 @@ private final class KeychainAccessibilityMigrationCompletionStoreHarness:
     "\(version):\(service)"
   }
 }
+
+final class ModalCornerCacheTests: XCTestCase {
+  func testMemoryLifetimeAndProfileSeparation() {
+    let cache = ModalCornerCache()
+    cache.store([46, 48], for: "portrait", limit: 201)
+    XCTAssertEqual(cache.radii(for: "portrait", limit: 201), [46, 48])
+    XCTAssertNil(cache.radii(for: "landscape", limit: 201))
+    XCTAssertNil(ModalCornerCache().radii(for: "portrait", limit: 201))
+  }
+
+  func testHeightIndependentReferenceAndConservativeEligibility() {
+    let bounds = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let short = CGRect(x: 16, y: 607, width: 370, height: 251)
+    let tall = CGRect(x: 16, y: 306, width: 370, height: 552)
+    let reference = ModalCornerGeometry.referenceRect(for: short, in: bounds)
+    XCTAssertEqual(reference, ModalCornerGeometry.referenceRect(for: tall, in: bounds))
+    XCTAssertEqual(reference, CGRect(x: 16, y: 0, width: 370, height: 858))
+    XCTAssertNotEqual(reference,
+      ModalCornerGeometry.referenceRect(for: short.offsetBy(dx: 0, dy: -1), in: bounds))
+    XCTAssertTrue(ModalCornerGeometry.supports(short, radii: [46, 48]))
+    XCTAssertTrue(ModalCornerGeometry.supports(
+      CGRect(x: 16, y: 698, width: 370, height: 160), radii: [46, 48]))
+    XCTAssertFalse(ModalCornerGeometry.supports(
+      CGRect(x: 16, y: 699, width: 370, height: 159), radii: [46, 48]))
+    XCTAssertFalse(ModalCornerGeometry.supports(
+      CGRect(x: 16, y: 0, width: 180, height: 400), radii: [46, 48]))
+    let cache = ModalCornerCache()
+    cache.store([46, 48], for: NSCoder.string(for: reference), limit: 201)
+    XCTAssertEqual(cache.radii(for: NSCoder.string(for:
+      ModalCornerGeometry.referenceRect(for: tall, in: bounds)), limit: 201), [46, 48])
+  }
+
+  func testInvalidEntriesAndBoundedLRU() {
+    let cache = ModalCornerCache()
+    for value in [[-1.0, 46], [999.0, 999], [46.0], [Double.nan, 46]] {
+      cache.store(value, for: "invalid", limit: 201)
+      XCTAssertNil(cache.radii(for: "invalid", limit: 201))
+    }
+    cache.store([32, 32], for: "valid32", limit: 201)
+    XCTAssertEqual(cache.radii(for: "valid32", limit: 201), [32, 32])
+    for i in 0..<64 { cache.store([46, 46], for: "\(i)", limit: 201) }
+    XCTAssertNotNil(cache.radii(for: "0", limit: 201))
+    cache.store([46, 46], for: "64", limit: 201)
+    XCTAssertNotNil(cache.radii(for: "0", limit: 201))
+    XCTAssertNil(cache.radii(for: "1", limit: 201))
+  }
+}

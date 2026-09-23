@@ -2,9 +2,11 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 
 import '../theme/app_theme.dart';
 import 'app_button.dart';
+import 'app_modal_shape.dart';
 
 const kAppModalCardWidth = 312.0;
 const kAppModalButtonHeight = 36.0;
@@ -38,6 +40,9 @@ class AppModalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final ios = defaultTargetPlatform == TargetPlatform.iOS;
+    final radius = BorderRadius.circular(AppRadii.large);
+    final shape = appModalShape(radius);
     final card = Container(
       width: width,
       clipBehavior: Clip.antiAlias,
@@ -47,17 +52,23 @@ class AppModalCard extends StatelessWidget {
         AppSpacing.sm,
         bottomPadding,
       ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appModalShadow,
-      ),
+      decoration: ios
+          ? ShapeDecoration(
+              color: colors.background.base,
+              shape: shape,
+              shadows: appModalShadow,
+            )
+          : BoxDecoration(
+              color: colors.background.base,
+              borderRadius: radius,
+              boxShadow: appModalShadow,
+            ),
       child: child,
     );
     if (!highlight) return card;
     return CustomPaint(
       key: const ValueKey('app_modal_inner_highlight'),
-      foregroundPainter: const _AppModalInnerHighlightPainter(),
+      foregroundPainter: _AppModalInnerHighlightPainter(shape),
       child: card,
     );
   }
@@ -65,24 +76,24 @@ class AppModalCard extends StatelessWidget {
 
 /// Figma `Shadow Overlay` inner highlight for the shared desktop modal card.
 class _AppModalInnerHighlightPainter extends CustomPainter {
-  const _AppModalInnerHighlightPainter();
+  const _AppModalInnerHighlightPainter(this.shape);
+
+  final ShapeBorder shape;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      const Radius.circular(AppRadii.large),
-    );
+    final path = shape.getOuterPath(Offset.zero & size);
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = const Color(0x26FFFFFF)
       ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.inner, 2);
-    canvas.drawRRect(rrect, paint);
+    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(_AppModalInnerHighlightPainter oldDelegate) => false;
+  bool shouldRepaint(_AppModalInnerHighlightPainter oldDelegate) =>
+      oldDelegate.shape != shape;
 }
 
 const appModalShadow = [

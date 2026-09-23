@@ -14,6 +14,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/voting/voting_pir_warmup_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
@@ -921,9 +922,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
     final colors = context.colors;
     return Dialog(
       backgroundColor: colors.background.ground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+      shape: appModalShape(BorderRadius.circular(AppRadii.large)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Padding(
@@ -1018,6 +1017,7 @@ class VotingIneligibleDialog extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 560),
           child: MobileModalCard(
             margin: EdgeInsets.zero,
+            followsScreenCorners: false,
             child: SingleChildScrollView(
               child: MobileModalScaffold(
                 title: 'Not eligible for this voting round',
@@ -1062,9 +1062,7 @@ class VotingIneligibleDialog extends StatelessWidget {
     }
     return Dialog(
       backgroundColor: colors.background.ground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
+      shape: appModalShape(BorderRadius.circular(AppRadii.large)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Padding(
