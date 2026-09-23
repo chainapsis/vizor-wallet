@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -28,6 +29,7 @@ import '../providers/pay_deposit_transaction_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
+import 'swap_deposit_policy_notes.dart';
 import 'swap_deposit_tokens_page_content.dart';
 import 'swap_keystone_signing_overlay.dart';
 import 'swap_ledger_signing_overlay.dart';
@@ -92,6 +94,8 @@ class _SwapActivityDetailSurfaceState
   );
   _SwapHardwareSigningRequest? _hardwareSigningRequest;
   _PayRecipientOverlayRequest? _payRecipientOverlayRequest;
+  // Desktop only; mobile presents the same explainer as a bottom sheet.
+  var _lateDepositOverlayVisible = false;
   String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
 
@@ -111,6 +115,7 @@ class _SwapActivityDetailSurfaceState
         oldWidget.autoSignZecDeposit != widget.autoSignZecDeposit) {
       _initialIntentApplied = false;
       _payRecipientOverlayRequest = null;
+      _lateDepositOverlayVisible = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _applyInitialIntent();
@@ -287,6 +292,30 @@ class _SwapActivityDetailSurfaceState
     setState(() => _payRecipientOverlayRequest = null);
   }
 
+  /// "Sent a deposit?" on the expired page. Desktop stacks the pane
+  /// modal like the recipient-address overlay; mobile opens the sheet.
+  void _showLateDeposit(
+    SwapDepositRecoveryInfo info, {
+    bool failedSwap = false,
+  }) {
+    if (widget.layout == SwapActivityDetailLayout.mobile) {
+      unawaited(
+        showAppMobileSheet<void>(
+          context: context,
+          builder: (_) =>
+              SwapLateDepositSheet(info: info, failedSwap: failedSwap),
+        ),
+      );
+      return;
+    }
+    setState(() => _lateDepositOverlayVisible = true);
+  }
+
+  void _closeLateDeposit() {
+    if (!_lateDepositOverlayVisible) return;
+    setState(() => _lateDepositOverlayVisible = false);
+  }
+
   void _cleanupCancelledHardwareSigningRequest(
     _SwapHardwareSigningRequest request,
   ) {
@@ -441,6 +470,9 @@ class _SwapActivityDetailSurfaceState
         hardwareSigningRequest?.clearPendingIntentOnCancel == true &&
         activityDetailIntent?.id == hardwareSigningRequest?.intentId;
 
+    final recoveryInfo = activityDetailIntent == null
+        ? null
+        : swapDepositRecoveryInfoFor(activityDetailIntent);
     final Widget pageContent = activityDetailIntent == null
         ? const _SwapActivityMissingPanel()
         : holdInitialAutoSignContent || hideTransientSigningContent
@@ -462,6 +494,13 @@ class _SwapActivityDetailSurfaceState
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
             onShowPayRecipientAddress: _showPayRecipientAddress,
+            onLateDeposit: recoveryInfo == null
+                ? null
+                : () => _showLateDeposit(
+                    recoveryInfo,
+                    failedSwap:
+                        activityDetailIntent.status == SwapIntentStatus.failed,
+                  ),
           );
 
     return Stack(
@@ -515,6 +554,15 @@ class _SwapActivityDetailSurfaceState
               contactName: request.contact?.label,
               contactProfilePictureId: request.contact?.profilePictureId,
               onClose: _closePayRecipientAddress,
+            ),
+          ),
+        if (_lateDepositOverlayVisible && recoveryInfo != null)
+          AppPaneModalOverlay(
+            onDismiss: _closeLateDeposit,
+            child: SwapLateDepositModal(
+              info: recoveryInfo,
+              failedSwap:
+                  activityDetailIntent?.status == SwapIntentStatus.failed,
             ),
           ),
         if (widget.layout != SwapActivityDetailLayout.mobile)
@@ -603,6 +651,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.onLateDeposit,
     super.key,
   });
 
@@ -621,6 +670,10 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
 
+  /// Expired page: opens the late-deposit explainer. Null when the intent
+  /// has no external deposit to recover, which hides the prompt.
+  final VoidCallback? onLateDeposit;
+
   @override
   Widget build(BuildContext context) {
     final flowContent = _SwapActivityFlowContent(
@@ -637,6 +690,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
       onShowPayRecipientAddress: onShowPayRecipientAddress,
+      onLateDeposit: onLateDeposit,
     );
     final isDepositPage = swapActivityShowsDepositPage(
       intent,
@@ -690,6 +744,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.onLateDeposit,
   });
 
   final SwapState state;
@@ -706,6 +761,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final bool intentIsHardware;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final VoidCallback? onLateDeposit;
 
   @override
   Widget build(BuildContext context) {
@@ -727,14 +783,21 @@ class _SwapActivityFlowContent extends StatelessWidget {
       intent,
       intentIsHardware: intentIsHardware,
     );
+    final depositAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
     final primaryContent = switch (intent.status) {
       SwapIntentStatus.expired =>
         layout == SwapActivityDetailLayout.mobile
-            ? MobileSwapTimeoutContent(onRestart: onReviewFreshQuote)
-            : SwapDepositTimeoutPageContent(onRestart: onReviewFreshQuote),
+            ? MobileSwapTimeoutContent(
+                onRestart: onReviewFreshQuote,
+                onLateDeposit: onLateDeposit,
+              )
+            : SwapDepositTimeoutPageContent(
+                onRestart: onReviewFreshQuote,
+                onLateDeposit: onLateDeposit,
+              ),
       _ when showExternalDepositPage && depositInstruction != null =>
         SwapDepositTokensPageContent(
-          asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
+          asset: depositAsset,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
           expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
@@ -773,6 +836,12 @@ class _SwapActivityFlowContent extends StatelessWidget {
           : CrossAxisAlignment.center,
       children: [
         primaryContent,
+        if (intent.status == SwapIntentStatus.failed &&
+            intent.providerRefundInfo?.hasRecordedRefund != true &&
+            onLateDeposit != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          SwapLateDepositPrompt(onTap: onLateDeposit!, failedSwap: true),
+        ],
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)
@@ -885,7 +954,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       ),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
-      final terminal = !presentation.showTabs;
+      final headerLabels = mobileSwapStatusHeaderLabels(intent.status);
       final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
@@ -919,14 +988,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               )
             : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && terminal ? 'You paid' : presentation.payLabel,
+          label: !paymentMode && headerLabels.pay != null
+              ? headerLabels.pay!
+              : presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && terminal
-              ? 'You received'
+          label: !paymentMode && headerLabels.receive != null
+              ? headerLabels.receive!
               : presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
@@ -1011,6 +1082,17 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     );
   }
 }
+
+({String? pay, String? receive}) mobileSwapStatusHeaderLabels(
+  SwapIntentStatus status,
+) => switch (status) {
+  SwapIntentStatus.complete => (pay: 'You paid', receive: 'You received'),
+  SwapIntentStatus.failed || SwapIntentStatus.refunded => (
+    pay: 'Deposit amount',
+    receive: 'Expected to receive',
+  ),
+  _ => (pay: null, receive: null),
+};
 
 BigInt? _confirmedPayDepositFeeZatoshi(rust_sync.TransactionInfo? transaction) {
   if (transaction == null ||

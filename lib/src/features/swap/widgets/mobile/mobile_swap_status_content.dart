@@ -971,7 +971,12 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
         Overlay.maybeOf(context) == null) {
       return child;
     }
-    return AppTooltip(message: message, tapToShow: true, child: child);
+    return AppTooltip(
+      message: message,
+      tapToShow: true,
+      focusable: true,
+      child: child,
+    );
   }
 }
 

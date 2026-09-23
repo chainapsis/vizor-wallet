@@ -6,6 +6,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_book_helpers.dart';
 import 'swap_address_formatting.dart';
+import 'swap_deposit_recovery_info.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
@@ -443,6 +444,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ? '$sourceSymbol tx (shielded)'
       : '$sourceSymbol deposit tx';
   final feesLabel = payMode ? 'Fees' : 'Total fees';
+  final recordedRefundFee = _recordedRefundFeeText(intent.providerRefundInfo);
   final payRateText = payMode
       ? _swapActivityPayRateText(intent, receiveAsset)
       : null;
@@ -502,23 +504,31 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         ),
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
-          label: '$sourceSymbol refunded to',
+          label: 'Refund to',
           address: refundAddress,
           asset: sourceAsset,
           addressBookContacts: addressBookContacts,
           contactId: sendsZec ? null : intent.userExternalContactId,
         ),
       ?txIdRow,
-      SwapStatusDetailRowData(
-        label: feesLabel,
-        value:
-            intent.totalFeesText ??
-            intent.swapFeeText ??
-            intent.providerRefundInfo?.refundFeeText ??
-            'Included',
-        help: true,
-        helpTooltip: swapTotalFeesTooltip,
-      ),
+      if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
+        SwapStatusDetailRowData(
+          label: 'Refunded amount',
+          value: intent.providerRefundInfo!.refundedAmountText!,
+        ),
+      if (failed && recordedRefundFee != null)
+        SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
+      if (!failed)
+        SwapStatusDetailRowData(
+          label: feesLabel,
+          value:
+              intent.totalFeesText ??
+              intent.swapFeeText ??
+              intent.providerRefundInfo?.refundFeeText ??
+              'Included',
+          help: true,
+          helpTooltip: swapTotalFeesTooltip,
+        ),
     ];
   }
 
@@ -649,6 +659,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     intent.swapFeeText,
     intent.providerRefundInfo?.refundFeeText,
   ]);
+  final recordedRefundFee = _recordedRefundFeeText(intent.providerRefundInfo);
   return [
     SwapStatusDetailRowData(
       label: paid ? 'You paid' : 'You pay',
@@ -656,13 +667,15 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     ),
     if (payRateText != null)
       SwapStatusDetailRowData(label: 'Rate', value: payRateText),
-    if (feeText != null)
+    if (!failed && feeText != null)
       SwapStatusDetailRowData(
         label: terminal ? 'Fees' : 'Network + conversion fees',
         value: feeText,
         help: true,
         helpTooltip: terminal ? swapTotalFeesTooltip : swapFeeTooltip,
       ),
+    if (failed && recordedRefundFee != null)
+      SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: '$sourceSymbol tx (shielded)',
@@ -679,12 +692,17 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: '$sourceSymbol refunded to',
+        label: 'Refund to',
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
   ];
+}
+
+String? _recordedRefundFeeText(SwapProviderRefundInfo? info) {
+  if (info?.hasRecordedRefund != true) return null;
+  return _firstNonEmpty([info?.recordedRefundFeeText]);
 }
 
 SwapStatusDetailRowData? _swapActivityTxIdRow({
@@ -951,6 +969,41 @@ String? _swapActivityTimestampLabel(DateTime? timestamp) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$month ${local.day}, ${local.year} $hour:$minute';
+}
+
+/// Same shape as [_swapActivityTimestampLabel] but pinned to UTC and
+/// labelled, for text that leaves the app (support bundles).
+String _swapActivityUtcTimestampLabel(DateTime timestamp) {
+  final utc = timestamp.toUtc();
+  final month = _monthNames[utc.month - 1];
+  final hour = utc.hour.toString().padLeft(2, '0');
+  final minute = utc.minute.toString().padLeft(2, '0');
+  return '$month ${utc.day}, ${utc.year} $hour:$minute UTC';
+}
+
+/// Support bundle for an expired or failed external → ZEC deposit, or null when the
+/// intent has no external deposit instruction to recover (ZEC-side deposits
+/// never leave the wallet, so there is nothing for NEAR to return).
+SwapDepositRecoveryInfo? swapDepositRecoveryInfoFor(SwapIntent intent) {
+  if (intent.direction?.sendsZec ?? true) return null;
+  final instruction = SwapActivityDepositInstruction.fromIntent(intent);
+  final asset = swapActivitySellAsset(intent);
+  final deadline = intent.depositDeadline;
+  if (instruction == null || asset == null) return null;
+  if (deadline == null && intent.status != SwapIntentStatus.failed) return null;
+  return SwapDepositRecoveryInfo(
+    asset: asset,
+    amountText: intent.sellAmount,
+    depositAddress: instruction.address,
+    memo: instruction.memo,
+    depositTxId: _firstNonEmpty([
+      intent.depositTxHash,
+      intent.originChainTxHash,
+    ]),
+    expiredAtText: deadline == null
+        ? 'Not recorded'
+        : _swapActivityUtcTimestampLabel(deadline),
+  );
 }
 
 class SwapActivityDepositInstruction {

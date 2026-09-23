@@ -1476,7 +1476,7 @@ void main() {
           showTabs: false,
           details: const [
             SwapStatusDetailRowData(
-              label: 'USDC refunded to',
+              label: 'Refund to',
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
@@ -6283,13 +6283,25 @@ void main() {
     final finalDetails = find.byKey(const ValueKey('swap_final_details'));
     expect(finalDetails, findsOneWidget);
 
-    // Failed terminal rows: Timestamp, USDC deposit tx, USDC refunded to, then
-    // Total fees last. No Realized slippage on a failed swap.
+    // Failed terminal rows omit quote fees, which are not a charged amount.
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('USDC deposit tx'), findsOneWidget);
-    expect(find.text('USDC refunded to'), findsOneWidget);
-    expect(find.text('Total fees'), findsOneWidget);
-    expect(find.text('0.19 USDC'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Total fees'), findsNothing);
+    expect(find.text('0.19 USDC'), findsNothing);
+    expect(find.text('No refund yet?'), findsOneWidget);
+    final refundAddressRow = tester.widget<ReviewListRow>(
+      find.byWidgetPredicate(
+        (widget) => widget is ReviewListRow && widget.label == 'Refund to',
+      ),
+    );
+    expect(refundAddressRow.copyText, '0xusdc-refund-address');
+
+    await tester.tap(find.text('No refund yet?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check your refund'), findsOneWidget);
+    expect(find.text('Email support'), findsOneWidget);
+    expect(find.text('Copy deposit details'), findsOneWidget);
 
     // The deposit-instruction address and delivery tx are not in terminal
     // details, and slippage rows are excluded on failure.
@@ -6299,11 +6311,49 @@ void main() {
     expect(find.text('Realized slippage'), findsNothing);
     expect(find.text('Slippage tolerance'), findsNothing);
     expect(find.text('Guaranteed minimum'), findsNothing);
+  });
 
-    // Total fees is the last detail row.
-    final fees = tester.getRect(find.text('Total fees'));
-    final refundRow = tester.getRect(find.text('USDC refunded to'));
-    expect(fees.top, greaterThan(refundRow.top));
+  testWidgets('failed swap with a recorded refund shows the actual refund', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialIntents: [
+        _persistedExternalToZecIntent(
+          id: 'failed-refunded-deposit',
+          stagingAddress: 'u1failed-recipient',
+        ).copyWith(
+          status: SwapIntentStatus.failed,
+          oneClickRefundTo: '0xusdc-refund-address',
+          totalFeesText: '0.01794 USDC',
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '2.3 USDC',
+            refundedAmountText: '2.2976 USDC',
+            refundFeeText: '0.0024 USDC',
+            recordedRefundFeeText: '0.0024 USDC',
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'failed-refunded-deposit');
+
+    expect(find.text('Refunded amount'), findsOneWidget);
+    expect(find.text('2.2976 USDC'), findsOneWidget);
+    expect(find.text('Refund fee'), findsOneWidget);
+    expect(find.text('0.0024 USDC'), findsOneWidget);
+    expect(find.text('Total fees'), findsNothing);
+    expect(find.text('No refund yet?'), findsNothing);
   });
 
   testWidgets('open swap sessions poll status after the configured interval', (

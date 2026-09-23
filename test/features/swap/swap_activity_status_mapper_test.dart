@@ -169,11 +169,76 @@ void main() {
     );
     expect(
       presentation.details.map((detail) => detail.label),
+      isNot(contains('Refund fee')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
       isNot(contains('Slippage tolerance')),
     );
     expect(
       presentation.details.map((detail) => detail.label),
       isNot(contains('Guaranteed minimum')),
+    );
+  });
+
+  test(
+    'shows only the recorded refund fee after a failed swap is refunded',
+    () {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: SwapIntentStatus.failed,
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.usdc,
+          totalFeesText: '0.01794 USDC',
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '2.3 USDC',
+            refundedAmountText: '2.2976 USDC',
+            refundFeeText: '0.0024 USDC',
+            recordedRefundFeeText: '0.0024 USDC',
+          ),
+        ),
+      );
+
+      expect(_detailValue(presentation.details, 'Refund fee'), '0.0024 USDC');
+      expect(
+        _detailValue(presentation.details, 'Refunded amount'),
+        '2.2976 USDC',
+      );
+      expect(
+        presentation.details.map((detail) => detail.label),
+        isNot(contains('Total fees')),
+      );
+    },
+  );
+
+  test('does not show a quoted fee when a failed swap has no refund', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.failed,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        totalFeesText: '0.335 SOL',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          refundedAmountText: '0 USDC',
+          refundFeeText: '0.014 USDC',
+          recordedRefundFeeText: '0.014 USDC',
+        ),
+      ),
+    );
+
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Refund fee')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Refunded amount')),
     );
   });
 
@@ -690,31 +755,39 @@ void main() {
     expect(presentation.badgeKind, SwapStatusBadgeKind.failed);
     expect(presentation.progressIndex, 3);
     expect(presentation.showTabs, isFalse);
-    expect(_detailValue(presentation.details, 'Total fees'), '0.00002 ZEC');
     expect(
-      _detailRow(presentation.details, 'Total fees').helpTooltip,
-      swapTotalFeesTooltip,
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
     );
     expect(
       presentation.details.map((detail) => detail.label),
       isNot(contains('Realized slippage')),
     );
+    expect(_detailValue(presentation.details, 'Refund to'), contains('u1'));
+    expect(_detailRow(presentation.details, 'Refund to').copyable, isTrue);
     expect(
-      _detailValue(presentation.details, 'ZEC refunded to'),
-      contains('u1'),
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyable,
-      isTrue,
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyText,
+      _detailRow(presentation.details, 'Refund to').copyText,
       'u1refund-address',
     );
     expect(
       _detailValue(presentation.details, 'Timestamp'),
       'May 7, 2026 10:30',
     );
+  });
+
+  test('failed external deposit keeps support details without a deadline', () {
+    final info = swapDepositRecoveryInfoFor(
+      _intent(
+        status: SwapIntentStatus.failed,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit-address',
+      ),
+    );
+
+    expect(info, isNotNull);
+    expect(info!.expiredAtText, 'Not recorded');
+    expect(info.depositAddress, '0xdeposit-address');
   });
 
   test('marks external source refund addresses copyable', () {

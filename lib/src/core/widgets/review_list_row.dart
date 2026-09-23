@@ -139,6 +139,9 @@ class ReviewListRow extends StatelessWidget {
             if (trailingIconTooltip != null)
               AppTooltip(
                 message: trailingIconTooltip,
+                // The icon is the only way to reach this text, so it has to
+                // be reachable without a pointer.
+                focusable: onPressed == null,
                 child: _HoverTintIcon(
                   iconName: resolvedTrailingIconName,
                   color: trailingIconColor ?? resolvedValueColor,

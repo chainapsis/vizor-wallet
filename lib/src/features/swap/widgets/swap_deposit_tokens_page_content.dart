@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -14,6 +15,8 @@ import '../../../core/widgets/dot_qr_shape.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_deposit_qr_payload.dart';
+import '../models/swap_refund_policy.dart';
+import 'swap_deposit_policy_notes.dart';
 
 class SwapDepositTokensPageContent extends StatelessWidget {
   const SwapDepositTokensPageContent({
@@ -58,6 +61,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       now: now,
       memo: memo,
       mobile: mobile,
+      showNetworkGuidance: true,
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
@@ -128,6 +132,7 @@ class _SwapDepositPageShell extends StatelessWidget {
     this.now,
     this.memo,
     this.mobile = false,
+    this.showNetworkGuidance = false,
   });
 
   final SwapAsset asset;
@@ -139,6 +144,7 @@ class _SwapDepositPageShell extends StatelessWidget {
   final String? memo;
   final Widget actionArea;
   final bool mobile;
+  final bool showNetworkGuidance;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +170,10 @@ class _SwapDepositPageShell extends StatelessWidget {
             now: now,
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        if (showNetworkGuidance)
+          _DepositNetworkGuidance(asset: asset, mobile: true)
+        else
+          const SizedBox(height: AppSpacing.lg),
         _DepositDetailsList(
           asset: asset,
           amountText: amountText,
@@ -203,7 +212,10 @@ class _SwapDepositPageShell extends StatelessWidget {
               now: now,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          if (showNetworkGuidance)
+            _DepositNetworkGuidance(asset: asset, mobile: false)
+          else
+            const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
             asset: asset,
             amountText: amountText,
@@ -212,6 +224,114 @@ class _SwapDepositPageShell extends StatelessWidget {
           ),
           actionArea,
         ],
+      ),
+    );
+  }
+}
+
+/// Uses the existing gap between the QR card and deposit details. The
+/// address row and the confirm action keep their original positions.
+class _DepositNetworkGuidance extends StatefulWidget {
+  const _DepositNetworkGuidance({required this.asset, required this.mobile});
+
+  final SwapAsset asset;
+  final bool mobile;
+
+  @override
+  State<_DepositNetworkGuidance> createState() =>
+      _DepositNetworkGuidanceState();
+}
+
+class _DepositNetworkGuidanceState extends State<_DepositNetworkGuidance> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final asset = widget.asset;
+    final hint = SwapRefundPolicy.depositNetworkHint(
+      symbol: asset.symbol,
+      chainLabel: asset.chainLabel,
+    );
+    final message = SwapRefundPolicy.depositNetworkHelp(
+      symbol: asset.symbol,
+      chainLabel: asset.chainLabel,
+    );
+    final active = _hovered || _pressed;
+    final color = active ? colors.text.accent : colors.text.secondary;
+    final Widget guidance;
+    if (widget.mobile) {
+      guidance = Semantics(
+        button: true,
+        label: '$hint. Deposit network details',
+        child: AppButton(
+          onPressed: () => unawaited(
+            showAppMobileSheet<void>(
+              context: context,
+              builder: (_) => SwapDepositNetworkSheet(asset: asset),
+            ),
+          ),
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.small,
+          height: 40,
+          constrainContent: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          enabledBackgroundColor: const Color(0x00000000),
+          pressedBackgroundColor: const Color(0x00000000),
+          enabledLabelColor: colors.text.secondary,
+          pressedLabelColor: colors.text.accent,
+          trailing: const AppIcon(AppIcons.help, size: 16),
+          child: ExcludeSemantics(
+            child: Text(hint, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      );
+    } else {
+      guidance = AppTooltip(
+        message: message,
+        tapToShow: true,
+        focusable: true,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => setState(() => _pressed = true),
+            onPointerUp: (_) => setState(() => _pressed = false),
+            onPointerCancel: (_) => setState(() => _pressed = false),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(color: color),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  AppIcon(AppIcons.help, size: 16, color: color),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      key: const ValueKey('swap_deposit_network_guidance'),
+      height: AppSpacing.lg,
+      child: Center(
+        child: ConstrainedBox(
+          key: const ValueKey('swap_deposit_network_help'),
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: SizedBox(height: 40, child: guidance),
+        ),
       ),
     );
   }
@@ -468,7 +588,11 @@ class _DepositCheckWarning extends StatelessWidget {
 }
 
 class SwapDepositTimeoutPageContent extends StatelessWidget {
-  const SwapDepositTimeoutPageContent({required this.onRestart, super.key});
+  const SwapDepositTimeoutPageContent({
+    required this.onRestart,
+    this.onLateDeposit,
+    super.key,
+  });
 
   static const _lightIllustration =
       'assets/illustrations/swap_deposit_timeout_illustration_light.png';
@@ -476,6 +600,11 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
       'assets/illustrations/swap_deposit_timeout_illustration_dark.png';
 
   final VoidCallback onRestart;
+
+  /// Opens the late-deposit explainer (`SwapLateDepositModal`). Offered as a
+  /// quiet prompt under the restart action; the host passes it only when the
+  /// swap's deposit details are known.
+  final VoidCallback? onLateDeposit;
 
   @override
   Widget build(BuildContext context) {
@@ -554,6 +683,10 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             leading: const AppIcon(AppIcons.renew, size: 16),
             child: const Text('Restart swap'),
           ),
+          if (onLateDeposit != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            SwapLateDepositPrompt(onTap: onLateDeposit!),
+          ],
         ],
       ),
     );
@@ -748,11 +881,13 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
         key: const ValueKey('swap_deposit_expiry_label'),
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Deposit within',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: textStyle,
+          Flexible(
+            child: Text(
+              'Deposit within',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -805,6 +940,10 @@ class _DepositExpiryLineState extends State<_DepositExpiryLine> {
 /// (~53 modules), so pin a minimum version: short data renders just as fine and
 /// dotted as the design, longer data still grows naturally.
 const _depositMinQrVersion = 9;
+
+/// Copy-button tap target on the detail rows. The icons stay 20px; the slot
+/// meets the WCAG 2.5.8 24px minimum inside the 32px row.
+const _kDepositTrailingHitSize = 24.0;
 
 QrImage _depositQrImage(String data) {
   final natural = QrCode.fromData(
@@ -1145,6 +1284,7 @@ class _DesktopDepositDetailRow extends StatelessWidget {
                         copyText: copyText,
                         toastMessage: toastMessage,
                         size: AppIconSize.medium,
+                        hitSize: _kDepositTrailingHitSize,
                         color: colors.icon.muted,
                       ),
                     ],
@@ -1161,7 +1301,7 @@ class _DesktopDepositDetailRow extends StatelessWidget {
   double _rightNaturalWidth(BuildContext context, {required TextStyle style}) {
     return _textWidth(context, value, style) +
         AppSpacing.xxs +
-        AppIconSize.medium +
+        _kDepositTrailingHitSize +
         AppSpacing.xxs;
   }
 
@@ -1253,6 +1393,7 @@ class _MobileDepositDetailRow extends StatelessWidget {
                     copyText: copyText,
                     toastMessage: toastMessage,
                     size: _copyIconSize,
+                    hitSize: _kDepositTrailingHitSize,
                     color: colors.icon.regular.withValues(alpha: 0.72),
                   ),
                 ],
@@ -1291,6 +1432,7 @@ class _DepositCopyButton extends StatelessWidget {
     required this.copyText,
     required this.toastMessage,
     required this.size,
+    required this.hitSize,
     required this.color,
   });
 
@@ -1300,10 +1442,13 @@ class _DepositCopyButton extends StatelessWidget {
   final double size;
   final Color color;
 
+  /// Tap target, larger than the drawn icon (WCAG 2.5.8 minimum 24px).
+  final double hitSize;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: size,
+      dimension: hitSize,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(

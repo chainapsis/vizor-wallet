@@ -1111,6 +1111,42 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSwapPageTorBlockedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'swap-policy-deposit-desktop',
+    description: 'Desktop deposit page',
+    builder: buildSwapPolicyDepositDesktopUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-late-deposit-modal',
+    description: 'Desktop deposit recovery explainer modal',
+    builder: buildSwapLateDepositModalUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-policy-failed-desktop',
+    description: 'Desktop failed swap with refund help',
+    builder: buildSwapStatusFailedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-policy-deposit-mobile',
+    description: 'Mobile deposit page',
+    builder: buildSwapPolicyDepositMobileUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-policy-network-sheet-mobile',
+    description: 'Mobile deposit network guidance sheet',
+    builder: buildSwapDepositNetworkSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-swap-late-deposit-sheet',
+    description: 'Mobile late-deposit explainer sheet',
+    builder: buildMobileSwapLateDepositSheetUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,
