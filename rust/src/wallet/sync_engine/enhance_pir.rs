@@ -17,7 +17,7 @@ use std::{
 use tonic::transport::Channel;
 use zakura_pir_enhance::transport::{self, BoundedBody, PendingClient};
 use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
-use zakura_pir_enhance::{ClientError, ClientResourceLimits, EnhanceGeneration};
+use zakura_pir_enhance::{ClientError, ClientResourceLimits, Manifest};
 use zcash_client_backend::{
     data_api::enhance_pir::{
         EnhancePirRead, EnhancePirStoreResult, EnhancePirWrite, IronwoodEnhanceDiscoveryRequest,
@@ -154,7 +154,7 @@ impl EnhancePirSync {
     fn acceptance(
         &self,
         db: &WalletDatabase,
-        generation: &EnhanceGeneration,
+        generation: &Manifest,
     ) -> Result<Acceptance, EnhancePirRunError> {
         Ok(zakura_pir_enhance::wallet::acceptance(
             db,
@@ -249,7 +249,7 @@ impl EnhancePirSync {
         }
         let uncovered = self.session.as_ref().is_none_or(|session| {
             work.positions()
-                .any(|p| p >= session.generation().ironwood_tree_size)
+                .any(|p| p >= session.generation().coverage.records)
         });
         set_phase(
             &self.db_path,
@@ -279,8 +279,8 @@ impl EnhancePirSync {
                         // A stale service replica must not replace usable coverage
                         // with an older, smaller snapshot of the accepted chain.
                         if self.session.as_ref().is_none_or(|current| {
-                            pending.generation().ironwood_tree_size
-                                > current.generation().ironwood_tree_size
+                            pending.generation().coverage.records
+                                > current.generation().coverage.records
                         }) {
                             self.session = Some(pending.accept(&acceptance)?);
                         }

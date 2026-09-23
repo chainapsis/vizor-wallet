@@ -18,7 +18,7 @@ and mapping records to the original captured request identities:
 ```toml
 [dependencies.zakura-pir-enhance]
 git = "https://github.com/zakura-core/wallet-libraries.git"
-rev = "8df21dfd8f61da72a1af4df61efd648f51c18210"
+rev = "84c5551adf3aa92b52d7bd0f5ffd5e5e3dda326e"
 default-features = false
 features = ["wallet"]
 ```
@@ -118,7 +118,7 @@ there is no separate `mobile-settings-recovery` fixture. Render with
 `--form-factor mobile` for the mobile fixtures.
 
 The client and wallet-library patches are pinned to shared revision
-`8df21dfd8f61da72a1af4df61efd648f51c18210`; no absolute local library paths are required.
+`84c5551adf3aa92b52d7bd0f5ffd5e5e3dda326e`; no absolute local library paths are required.
 The existing locally modified voting checkout
 was preserved. This checkout's manifest resolves `zcash_voting 5.0.0` from the
 registry; verification used that resolution without changing voting sources. Any
