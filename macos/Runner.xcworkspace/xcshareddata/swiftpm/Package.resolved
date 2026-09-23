@@ -1,6 +1,14 @@
 {
-  "originHash" : "e605012cfee868f9d25d9b91f413a0cf2d3622fbe5f1044fbc6bf4863ecdeaa4",
+  "originHash" : "7fa91347e6b4cb6c64c757fe07994c0cfee6d0d16f3e787ef039c839a386558a",
   "pins" : [
+    {
+      "identity" : "hw-transport-ios-ble",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/chainapsis/hw-transport-ios-ble.git",
+      "state" : {
+        "revision" : "771ea973415d69d70b324db18051db126f2d41a7"
+      }
+    },
     {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",

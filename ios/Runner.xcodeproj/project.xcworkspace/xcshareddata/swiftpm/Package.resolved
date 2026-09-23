@@ -1,0 +1,14 @@
+{
+  "originHash" : "8d08409a4ea238ff53c1e70563f3ba316037eca60f4c147697ebb39790ba4aee",
+  "pins" : [
+    {
+      "identity" : "hw-transport-ios-ble",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/chainapsis/hw-transport-ios-ble.git",
+      "state" : {
+        "revision" : "771ea973415d69d70b324db18051db126f2d41a7"
+      }
+    }
+  ],
+  "version" : 3
+}

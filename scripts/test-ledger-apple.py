@@ -5,7 +5,6 @@ Uses the FVM Flutter framework and the project's pinned Ledger BLE revision.
 The temporary Swift package imports real Flutter/BLE modules; only devices are
 faked by LedgerMobileHandlerTests. It does not access wallet storage.
 """
-import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,11 +27,11 @@ with tempfile.TemporaryDirectory(prefix='vizor-ledger-native-') as directory:
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(name: "LedgerNativeTests", platforms: [.macOS(.v13)], dependencies: [
-  .package(path: %s)
+  .package(url: "https://github.com/chainapsis/hw-transport-ios-ble.git", revision: "771ea973415d69d70b324db18051db126f2d41a7")
 ], targets: [
   .binaryTarget(name: "FlutterMacOS", path: "FlutterMacOS.xcframework"),
-  .target(name: "Runner", dependencies: ["FlutterMacOS", .product(name: "BleTransport", package: "ledger_ble_transport")]),
-  .testTarget(name: "RunnerTests", dependencies: ["Runner", "FlutterMacOS", .product(name: "BleTransport", package: "ledger_ble_transport")])
+  .target(name: "Runner", dependencies: ["FlutterMacOS", .product(name: "BleTransport", package: "hw-transport-ios-ble")]),
+  .testTarget(name: "RunnerTests", dependencies: ["Runner", "FlutterMacOS", .product(name: "BleTransport", package: "hw-transport-ios-ble")])
 ])
-''' % json.dumps(str(root / 'third_party/ledger_ble_transport')))
+''')
     subprocess.run(['swift', 'test', '--package-path', str(package)], check=True)
