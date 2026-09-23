@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/widgets.dart';
+import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
@@ -89,6 +90,19 @@ bool _hasRoundedCameraClip(WidgetTester tester) {
 }
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeModalCorners.channel,
+      (_) async => null,
+    );
+  });
+  tearDown(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeModalCorners.channel,
+      null,
+    );
+  });
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
     for (final (bottomInset, keyboardInset) in [
       (34.0, 0.0),

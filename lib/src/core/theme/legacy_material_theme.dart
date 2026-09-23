@@ -1,6 +1,9 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+import 'app_radii.dart';
 
 /// LEGACY Zcash Wallet Material theme — Stitch-based tokens.
 ///
@@ -223,6 +226,13 @@ bool get _isDesktop =>
 ThemeData _buildTheme(ColorScheme colorScheme) {
   return ThemeData(
     useMaterial3: true,
+    dialogTheme: defaultTargetPlatform == TargetPlatform.iOS
+        ? const DialogThemeData(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.all(Radius.circular(AppRadii.xLarge)),
+            ),
+          )
+        : null,
     brightness: colorScheme.brightness,
     colorScheme: colorScheme,
     textTheme: _buildTextTheme(colorScheme.onSurface),
