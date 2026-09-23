@@ -15,7 +15,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.d
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
-    show mobileSwapStatusRecipientFullAddress;
+    show mobileSwapStatusHeaderLabels, mobileSwapStatusRecipientFullAddress;
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -122,6 +122,18 @@ SwapIntent _intent({
 }
 
 void main() {
+  test('mobile failed and refunded headers do not imply delivery', () {
+    for (final status in [SwapIntentStatus.failed, SwapIntentStatus.refunded]) {
+      final labels = mobileSwapStatusHeaderLabels(status);
+      expect(labels.pay, 'Deposit amount');
+      expect(labels.receive, 'Expected to receive');
+    }
+    expect(
+      mobileSwapStatusHeaderLabels(SwapIntentStatus.complete).receive,
+      'You received',
+    );
+  });
+
   const details = [
     SwapStatusDetailRowData(
       label: 'Total fees',

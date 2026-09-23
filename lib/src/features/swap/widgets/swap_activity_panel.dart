@@ -953,7 +953,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       ),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
-      final terminal = !presentation.showTabs;
+      final headerLabels = mobileSwapStatusHeaderLabels(intent.status);
       final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
@@ -987,14 +987,16 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               )
             : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && terminal ? 'You paid' : presentation.payLabel,
+          label: !paymentMode && headerLabels.pay != null
+              ? headerLabels.pay!
+              : presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && terminal
-              ? 'You received'
+          label: !paymentMode && headerLabels.receive != null
+              ? headerLabels.receive!
               : presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
@@ -1079,6 +1081,17 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     );
   }
 }
+
+({String? pay, String? receive}) mobileSwapStatusHeaderLabels(
+  SwapIntentStatus status,
+) => switch (status) {
+  SwapIntentStatus.complete => (pay: 'You paid', receive: 'You received'),
+  SwapIntentStatus.failed || SwapIntentStatus.refunded => (
+    pay: 'Deposit amount',
+    receive: 'Expected to receive',
+  ),
+  _ => (pay: null, receive: null),
+};
 
 BigInt? _confirmedPayDepositFeeZatoshi(rust_sync.TransactionInfo? transaction) {
   if (transaction == null ||
