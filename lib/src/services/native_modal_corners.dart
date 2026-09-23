@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 /// Optional iOS geometry. A missing/old native host must never block a modal.
 abstract final class NativeModalCorners {
   static const channel = MethodChannel('com.zcash.wallet/modal_corners');
+  // Debug preview counters are never updated in release builds.
+  static int debugCacheHits = 0;
+  static int debugCalculations = 0;
   static const timeout = Duration(milliseconds: 300);
 
   static Future<({double left, double right})?> resolve({
@@ -25,6 +28,11 @@ abstract final class NativeModalCorners {
           })
           .timeout(timeout);
       if (raw is! Map) return null;
+      assert(() {
+        if (raw['cacheHit'] == true) debugCacheHits++;
+        if (raw['cacheHit'] == false) debugCalculations++;
+        return true;
+      }());
       final left = raw['bottomLeft'];
       final right = raw['bottomRight'];
       final limit = viewSize.shortestSide / 2;

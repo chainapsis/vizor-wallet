@@ -9,6 +9,7 @@ import time
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--device', required=True, help='Simulator UDID')
 parser.add_argument('--output', type=Path, required=True)
+parser.add_argument('--expect-cache', choices=['cold', 'warm'])
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 bundle = 'com.keplr.vizor'
@@ -30,7 +31,11 @@ deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     results = exchange / 'results.json'
     if results.exists():
-        data = json.loads(results.read_text())
+        try:
+            data = json.loads(results.read_text())
+        except json.JSONDecodeError:
+            time.sleep(0.05)
+            continue
         (args.output / 'results.json').write_text(json.dumps(data, indent=2))
         if isinstance(data, dict):
             raise RuntimeError(data)
@@ -41,6 +46,11 @@ while time.monotonic() < deadline:
             assert len(record['surfaces']) == 1, record
             surface = record['surfaces'][0]
             assert surface['tl'] == 32, record
+            if name in ('dark-sheet', 'centered-dialog', 'light-tall-sheet'):
+                assert record['frames'], record
+                assert all(frame['bl'] == surface['bl'] and
+                           frame['br'] == surface['br']
+                           for frame in record['frames']), record
             if name in ('keyboard', 'centered-dialog'):
                 assert surface['bl'] == surface['br'] == 32, record
             else:
@@ -48,8 +58,13 @@ while time.monotonic() < deadline:
                 assert surface['frame'][0] == 16, record
         assert by_id['keyboard']['keyboard'] > 0, 'Enable the software keyboard'
         assert by_id['keyboard-closed']['keyboard'] == 0
-        assert (by_id['dark-sheet']['surfaces'][0]['bl'] ==
-                by_id['keyboard-closed']['surfaces'][0]['bl'])
+        assert abs(by_id['dark-sheet']['surfaces'][0]['bl'] -
+                   by_id['keyboard-closed']['surfaces'][0]['bl']) < 0.001
+        if args.expect_cache == 'cold':
+            assert by_id['dark-sheet']['nativeCalculations'] >= 1, data
+        if args.expect_cache == 'warm':
+            assert data[-1]['nativeCalculations'] == 0, data
+            assert data[-1]['nativeCacheHits'] >= 3, data
         print(json.dumps(data, indent=2))
         break
     ready = exchange / 'ready.json'

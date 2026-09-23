@@ -24,17 +24,45 @@ ambiguous hosts, off-window geometry, malformed responses, channel errors and
 300 ms timeouts fall back to the original 32-point bottom radius. No private
 screen-radius API or device-model lookup table is used.
 
-Queries occur after settled layout, not on every animation frame. Each card
-caches up to four successful geometries, invalidating them for viewport changes
-and lifecycle transitions. Keyboard appearance restores 32; closing it restores
-the eligible native geometry. Late responses are invalidated on keyboard,
-viewport, lifecycle, route animation and disposal changes. Transparent cards
-own their surfaces and make no query.
+### Cache lifetime and eligibility
 
-Both fallback and adapted corners remain superellipses. A 250 ms ease-out cubic
-animation interpolates only the radii, so interrupted keyboard transitions
-continue from the current shape. Reduce Motion disables that interpolation.
-The material clip, shadow and inner highlight share the same shape.
+The engine-owned native handler reads a bounded 64-entry persistent LRU cache
+from UserDefaults when it is registered. Successful results survive modal
+closure, foreground/background transitions and process restarts. Failed queries
+and timeouts are never stored. Keys include hardware model, OS version,
+orientation, logical viewport, display scale/native dimensions, the exact final
+card rectangle (including height), minimum radius and cache schema version.
+No time-based expiration is needed. Rotation selects a different key without
+throwing away the previous orientation's entries.
+
+Even a hit passes through the native channel to check the current active,
+single-scene, full-screen host. It skips UIKit's radius calculation, not host
+validation. This avoids applying a stale Dart-only cache after a window/scene
+change. Centered and transparent cards do not query geometry.
+
+### First visible frame
+
+For iOS `showAppMobileSheet`, `PreparedModalSheetRoute` uses ModalRoute's offstage
+layout to measure the genuine final frame. The route's entrance waits for the
+initial radius. Once ready, the shape is installed without interpolation and
+the ordinary Material entrance starts from zero. The content stays mounted
+through preparation, preserving text fields and camera state.
+
+Direct/inline `MobileModalCard` users also suppress paint, pointer events and
+semantics until their first settled geometry resolves. Their surrounding route
+is not hidden or restarted. Preparation waits at most 100 ms for a native
+response after measurement; missing/failed/slow responses choose 32. A late
+initial response cannot change the currently displayed card. Native successful
+results can still populate the cache for a future presentation. The channel's
+own 300 ms timeout bounds its request independently.
+
+Both fallback and adapted corners remain superellipses. Only subsequent layout
+changes (such as the keyboard) interpolate radii with a 250 ms ease-out cubic
+animation; interrupted transitions continue from the current shape. Keyboard
+appearance selects 32 without deleting cached screen geometry. Foreground
+recovery validates geometry again without first resetting the visible corners.
+Reduce Motion disables radius interpolation. Material clip, shadow and inner
+highlight share one shape.
 
 ## Validation (2026-09-23)
 
@@ -48,6 +76,20 @@ Vizor PR688 E2E, iPhone 17 Pro, iOS 26.5, 402 × 874 logical points, scale 3:
 | Centered dialog | 32 | 32 / 32 | 40, 325.5, 322, 251 |
 | Light tall sheet | 32 | 46 / 46 | 16, 306, 370, 552 |
 
+First-frame/cache follow-up: both cold and warm runs kept bottom radii at
+46 throughout every sampled entrance frame for the short and tall sheets.
+The cold run performed two UIKit calculations (one per distinct rectangle) and
+one cache hit on keyboard dismissal. After process restart, the warm run used
+three cache hits and performed zero UIKit calculations. Keyboard transitions
+still interpolate 46 → 32 → 46; centered dialog frames stay at 32.
+
+Three native `ModalCornerCacheTests` passed on the designated simulator's Xcode
+test clone: persistence/profile separation, corrupt-value rejection (including
+valid 32-point caching), and bounded LRU retention. Flutter regressions cover
+late timeout responses, first visible frames, preserving child identity,
+covered/closed preparation, interrupted resize queries and localized scrim
+semantics.
+
 The real Runner and production modal widgets were used with a deterministic
 preview entry point, without initializing the Dart wallet/Rust runtime or sync.
 Screenshots verified surface, clip and shadow alignment. This is simulator
@@ -56,7 +98,7 @@ validation; physical-device validation remains separate.
 The focused tests cover fallback and timeout, asymmetric radii, keyboard
 interruption, stale responses, route entrance/dismissal, content resizing,
 rotation/lifecycle recovery, centered/transparent cards, and Android behavior.
-The broader mobile run now passes all 122 tests. The pre-existing vote-config
+The broader mobile run now passes all 127 tests. The pre-existing vote-config
 position failure was an outdated 32-point outer-margin expectation left after
 PR #729 changed the shared gap to 16. The test now checks outer clearance
 independently from modal-relative content geometry, runs on iOS and Android,
@@ -81,6 +123,9 @@ python3 scripts/e2e/ios-modal-corners.py --device <UDID> --output /tmp/modal-cap
 ```
 
 The script launches the installed preview, captures five screenshots and writes
-`results.json`, asserting native adaptation, keyboard fallback/restoration and
-fixed centered corners. It expects an iOS 26+ rounded iPhone simulator. The
+`results.json`, asserting native adaptation, keyboard fallback/restoration,
+fixed centered corners and constant radii from the first visible entrance frame.
+Use `--expect-cache cold` for a fresh cache, then run again with
+`--expect-cache warm` to verify zero UIKit recalculations after process restart.
+It expects an iOS 26+ rounded iPhone simulator. The
 normal `lib/main.dart` entry point does not import this harness.

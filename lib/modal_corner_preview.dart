@@ -10,6 +10,7 @@ import 'src/core/layout/mobile/app_mobile_sheet.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
+import 'src/services/native_modal_corners.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,14 +53,55 @@ class _CasesState extends State<_Cases> {
   final records = <Map<String, Object?>>[];
   final output = Directory('${Directory.systemTemp.path}/vizor-modal-corners');
   String status = 'Preparing modal verification';
+  String stage = '';
+  final frames = <Map<String, Object?>>[];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPersistentFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => sampleFrame());
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => run());
   }
 
+  void sampleFrame() {
+    if (!mounted || frames.length >= 1000) return;
+    final element = cardKey.currentContext as Element?;
+    if (element == null) return;
+    final route = ModalRoute.of(element);
+    if (route?.offstage == true) return;
+    double opacity = 1;
+    BorderRadius? radius;
+    Rect? rect;
+    element.visitAncestorElements((ancestor) {
+      final widget = ancestor.widget;
+      if (widget is Opacity) opacity *= widget.opacity;
+      if (widget is Material && widget.shape is RoundedSuperellipseBorder) {
+        radius ??= (widget.shape! as RoundedSuperellipseBorder).borderRadius
+            .resolve(TextDirection.ltr);
+        final box = ancestor.renderObject! as RenderBox;
+        rect ??= box.localToGlobal(Offset.zero) & box.size;
+      }
+      return true;
+    });
+    if (opacity == 0 ||
+        radius == null ||
+        rect!.top >=
+            View.of(context).physicalSize.height /
+                View.of(context).devicePixelRatio) {
+      return;
+    }
+    frames.add({
+      'stage': stage,
+      'bl': radius!.bottomLeft.x,
+      'br': radius!.bottomRight.x,
+      'progress': route?.animation?.value,
+    });
+  }
+
   Future<void> capture(String id) async {
+    stage = id;
     await Future<void>.delayed(const Duration(milliseconds: 700));
     final surfaces = <Map<String, Object?>>[];
     void inspect(Element element) {
@@ -95,6 +137,9 @@ class _CasesState extends State<_Cases> {
       'id': id,
       'surfaces': surfaces,
       'keyboard': view.viewInsets.bottom / view.devicePixelRatio,
+      'nativeCacheHits': NativeModalCorners.debugCacheHits,
+      'nativeCalculations': NativeModalCorners.debugCalculations,
+      'frames': frames.where((frame) => frame['stage'] == id).toList(),
     };
     records.add(record);
     await File('${output.path}/ready.json').writeAsString(jsonEncode(record));
