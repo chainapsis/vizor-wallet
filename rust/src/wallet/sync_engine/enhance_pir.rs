@@ -301,7 +301,7 @@ impl EnhancePirSync {
             self.pending_session = None;
             set_phase(&self.db_path, "retrying_later");
         }
-        let Some(session) = &self.session else {
+        let Some(session) = &mut self.session else {
             return Ok(());
         };
         // Rejected before any network I/O when the batch exceeds the client's
