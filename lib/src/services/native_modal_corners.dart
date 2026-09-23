@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Optional iOS geometry. A missing/old native host must never block a modal.
+/// Optional iOS geometry. An unavailable channel must never block a modal.
 abstract final class NativeModalCorners {
   static const channel = MethodChannel('com.zcash.wallet/modal_corners');
   // Debug preview counters are never updated in release builds.

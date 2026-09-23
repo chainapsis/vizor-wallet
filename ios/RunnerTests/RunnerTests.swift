@@ -3324,13 +3324,7 @@ private final class KeychainAccessibilityMigrationCompletionStoreHarness:
 }
 
 final class ModalCornerCacheTests: XCTestCase {
-  func testMemoryLifetimeAndLegacyCleanup() {
-    let name = "modal-corner-tests-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: name)!
-    defer { defaults.removePersistentDomain(forName: name) }
-    defaults.set(["old": 46], forKey: "vizor.modalCorners.v2")
-    _ = ModalCornerHandler(defaults: defaults)
-    XCTAssertNil(defaults.object(forKey: "vizor.modalCorners.v2"))
+  func testMemoryLifetimeAndProfileSeparation() {
     let cache = ModalCornerCache()
     cache.store([46, 48], for: "portrait", limit: 201)
     XCTAssertEqual(cache.radii(for: "portrait", limit: 201), [46, 48])

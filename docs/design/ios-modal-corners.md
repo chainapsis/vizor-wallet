@@ -28,8 +28,7 @@ screen-radius API or device-model lookup table is used.
 
 The engine-owned native handler keeps a bounded 64-entry memory LRU. Successful
 results survive modal closure and foreground/background transitions, but not
-engine/process restarts. The previous `vizor.modalCorners.v2` UserDefaults entry
-is removed on handler creation; geometry is no longer loaded from or saved to disk.
+engine/process restarts. Geometry is never loaded from or saved to disk.
 Keys include orientation, logical viewport, display scale/native dimensions and
 left/right/bottom placement. Content height and top position are excluded.
 Hardware/OS identifiers are unnecessary within one process. Failed queries are
@@ -85,13 +84,9 @@ Vizor PR688 E2E, iPhone 17 Pro, iOS 26.5, 402 × 874 logical points, scale 3:
 | Centered dialog | 32 | 32 / 32 | 40, 325.5, 322, 251 |
 | Light tall sheet | 32 | 46 / 46 | 16, 306, 370, 552 |
 
-The earlier persistent-cache implementation was verified to keep 46 throughout
-short/tall entrance frames, with keyboard transitions 46 → 32 → 46 and centered
-frames at 32. The memory-cache revision retains those presentation rules.
-
 Memory-cache regression coverage checks height-independent reference geometry,
-conservative size eligibility, in-memory reuse, empty new instances, legacy
-storage cleanup, invalid-value rejection and bounded LRU retention. Flutter
+conservative size eligibility, in-memory reuse, empty new instances,
+invalid-value rejection and bounded LRU retention. Flutter
 regressions cover late timeout responses, first visible frames, preserving child
 identity, covered/closed preparation, interrupted resize queries and localized
 scrim semantics. No height-by-height simulator sweep was performed.

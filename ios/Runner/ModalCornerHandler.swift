@@ -7,11 +7,6 @@ final class ModalCornerHandler {
   private let probe = UIView()
   private let cache = ModalCornerCache()
 
-  init(defaults: UserDefaults = .standard) {
-    // One-way cleanup of the previous persistent cache; geometry stays in RAM.
-    defaults.removeObject(forKey: "vizor.modalCorners.v2")
-  }
-
   func handle(_ call: FlutterMethodCall, result: FlutterResult) {
     guard call.method == "resolve" else { result(FlutterMethodNotImplemented); return }
     guard #available(iOS 26.0, *), Thread.isMainThread,
