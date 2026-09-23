@@ -74,6 +74,7 @@ class SwapProviderRefundInfo {
   const SwapProviderRefundInfo({
     this.minimumDepositText,
     this.refundFeeText,
+    this.recordedRefundFeeText,
     this.depositedAmountText,
     this.refundedAmountText,
     this.refundReason,
@@ -81,13 +82,26 @@ class SwapProviderRefundInfo {
 
   final String? minimumDepositText;
   final String? refundFeeText;
+
+  /// Refund fee reported in status details, rather than the quote estimate.
+  final String? recordedRefundFeeText;
   final String? depositedAmountText;
   final String? refundedAmountText;
   final String? refundReason;
 
+  bool get hasRecordedRefund {
+    final amountText = refundedAmountText?.trim();
+    if (amountText == null || amountText.isEmpty) return false;
+    final amount = double.tryParse(
+      amountText.split(' ').first.replaceAll(',', ''),
+    );
+    return amount != null && amount > 0;
+  }
+
   bool get hasAny =>
       minimumDepositText != null ||
       refundFeeText != null ||
+      recordedRefundFeeText != null ||
       depositedAmountText != null ||
       refundedAmountText != null ||
       refundReason != null;
@@ -97,6 +111,8 @@ class SwapProviderRefundInfo {
     return SwapProviderRefundInfo(
       minimumDepositText: other.minimumDepositText ?? minimumDepositText,
       refundFeeText: other.refundFeeText ?? refundFeeText,
+      recordedRefundFeeText:
+          other.recordedRefundFeeText ?? recordedRefundFeeText,
       depositedAmountText: other.depositedAmountText ?? depositedAmountText,
       refundedAmountText: other.refundedAmountText ?? refundedAmountText,
       refundReason: other.refundReason ?? refundReason,

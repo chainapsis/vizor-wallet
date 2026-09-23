@@ -1116,7 +1116,6 @@ const _designFailedDetails = <SwapStatusDetailRowData>[
     copyable: true,
     copyText: '0x123kjhc000000000000000000004x98g20',
   ),
-  SwapStatusDetailRowData(label: 'Total fees', value: '~0.25 USDC', help: true),
   SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
 ];
 

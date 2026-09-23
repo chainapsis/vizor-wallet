@@ -444,6 +444,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ? '$sourceSymbol tx (shielded)'
       : '$sourceSymbol deposit tx';
   final feesLabel = payMode ? 'Fees' : 'Total fees';
+  final recordedRefundFee = _recordedRefundFeeText(intent.providerRefundInfo);
   final payRateText = payMode
       ? _swapActivityPayRateText(intent, receiveAsset)
       : null;
@@ -510,16 +511,24 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           contactId: sendsZec ? null : intent.userExternalContactId,
         ),
       ?txIdRow,
-      SwapStatusDetailRowData(
-        label: feesLabel,
-        value:
-            intent.totalFeesText ??
-            intent.swapFeeText ??
-            intent.providerRefundInfo?.refundFeeText ??
-            'Included',
-        help: true,
-        helpTooltip: swapTotalFeesTooltip,
-      ),
+      if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
+        SwapStatusDetailRowData(
+          label: 'Refunded amount',
+          value: intent.providerRefundInfo!.refundedAmountText!,
+        ),
+      if (failed && recordedRefundFee != null)
+        SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
+      if (!failed)
+        SwapStatusDetailRowData(
+          label: feesLabel,
+          value:
+              intent.totalFeesText ??
+              intent.swapFeeText ??
+              intent.providerRefundInfo?.refundFeeText ??
+              'Included',
+          help: true,
+          helpTooltip: swapTotalFeesTooltip,
+        ),
     ];
   }
 
@@ -650,6 +659,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     intent.swapFeeText,
     intent.providerRefundInfo?.refundFeeText,
   ]);
+  final recordedRefundFee = _recordedRefundFeeText(intent.providerRefundInfo);
   return [
     SwapStatusDetailRowData(
       label: paid ? 'You paid' : 'You pay',
@@ -657,13 +667,15 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     ),
     if (payRateText != null)
       SwapStatusDetailRowData(label: 'Rate', value: payRateText),
-    if (feeText != null)
+    if (!failed && feeText != null)
       SwapStatusDetailRowData(
         label: terminal ? 'Fees' : 'Network + conversion fees',
         value: feeText,
         help: true,
         helpTooltip: terminal ? swapTotalFeesTooltip : swapFeeTooltip,
       ),
+    if (failed && recordedRefundFee != null)
+      SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: '$sourceSymbol tx (shielded)',
@@ -686,6 +698,11 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
         addressBookContacts: addressBookContacts,
       ),
   ];
+}
+
+String? _recordedRefundFeeText(SwapProviderRefundInfo? info) {
+  if (info?.hasRecordedRefund != true) return null;
+  return _firstNonEmpty([info?.recordedRefundFeeText]);
 }
 
 SwapStatusDetailRowData? _swapActivityTxIdRow({

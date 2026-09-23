@@ -837,6 +837,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
       children: [
         primaryContent,
         if (intent.status == SwapIntentStatus.failed &&
+            intent.providerRefundInfo?.hasRecordedRefund != true &&
             onLateDeposit != null) ...[
           const SizedBox(height: AppSpacing.sm),
           SwapLateDepositPrompt(onTap: onLateDeposit!, failedSwap: true),
