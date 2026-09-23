@@ -26,14 +26,23 @@ screen-radius API or device-model lookup table is used.
 
 ### Cache lifetime and eligibility
 
-The engine-owned native handler reads a bounded 64-entry persistent LRU cache
-from UserDefaults when it is registered. Successful results survive modal
-closure, foreground/background transitions and process restarts. Failed queries
-and timeouts are never stored. Keys include hardware model, OS version,
-orientation, logical viewport, display scale/native dimensions, the exact final
-card rectangle (including height), minimum radius and cache schema version.
-No time-based expiration is needed. Rotation selects a different key without
-throwing away the previous orientation's entries.
+The engine-owned native handler keeps a bounded 64-entry memory LRU. Successful
+results survive modal closure and foreground/background transitions, but not
+engine/process restarts. The previous `vizor.modalCorners.v2` UserDefaults entry
+is removed on handler creation; geometry is no longer loaded from or saved to disk.
+Keys include orientation, logical viewport, display scale/native dimensions and
+left/right/bottom placement. Content height and top position are excluded.
+Hardware/OS identifiers are unnecessary within one process. Failed queries are
+not cached. Rotation selects a different key without clearing prior entries.
+
+UIKit receives a tall reference rectangle extending from the window's top to
+the actual modal's bottom, retaining its horizontal position and width. This
+makes the first calculation independent of which modal opens first. Applying
+its result requires actual height >= `2 * (32 + max(bottomLeft, bottomRight))`;
+width must also be >= `4 * max(bottomLeft, bottomRight)`. These are conservative
+app policies, not UIKit formulas. Smaller cards use the original 32-point radius
+and never populate the shared cache. Eligibility is checked on cache hits too.
+At a 46-point bottom radius, the minimum height is 156 points.
 
 Even a hit passes through the native channel to check the current active,
 single-scene, full-screen host. It skips UIKit's radius calculation, not host
@@ -76,19 +85,22 @@ Vizor PR688 E2E, iPhone 17 Pro, iOS 26.5, 402 × 874 logical points, scale 3:
 | Centered dialog | 32 | 32 / 32 | 40, 325.5, 322, 251 |
 | Light tall sheet | 32 | 46 / 46 | 16, 306, 370, 552 |
 
-First-frame/cache follow-up: both cold and warm runs kept bottom radii at
-46 throughout every sampled entrance frame for the short and tall sheets.
-The cold run performed two UIKit calculations (one per distinct rectangle) and
-one cache hit on keyboard dismissal. After process restart, the warm run used
-three cache hits and performed zero UIKit calculations. Keyboard transitions
-still interpolate 46 → 32 → 46; centered dialog frames stay at 32.
+The earlier persistent-cache implementation was verified to keep 46 throughout
+short/tall entrance frames, with keyboard transitions 46 → 32 → 46 and centered
+frames at 32. The memory-cache revision retains those presentation rules.
 
-Three native `ModalCornerCacheTests` passed on the designated simulator's Xcode
-test clone: persistence/profile separation, corrupt-value rejection (including
-valid 32-point caching), and bounded LRU retention. Flutter regressions cover
-late timeout responses, first visible frames, preserving child identity,
-covered/closed preparation, interrupted resize queries and localized scrim
-semantics.
+Memory-cache regression coverage checks height-independent reference geometry,
+conservative size eligibility, in-memory reuse, empty new instances, legacy
+storage cleanup, invalid-value rejection and bounded LRU retention. Flutter
+regressions cover late timeout responses, first visible frames, preserving child
+identity, covered/closed preparation, interrupted resize queries and localized
+scrim semantics. No height-by-height simulator sweep was performed.
+
+The memory-cache revision passed 127 Flutter tests, three native tests and
+Flutter analysis. The designated simulator E2E passed: one UIKit calculation
+for the first sheet, two memory hits across keyboard restoration and the tall
+sheet, with stable 46-point entrance frames and 32-point keyboard/centered
+fallback. These checks do not replace physical-device validation.
 
 The real Runner and production modal widgets were used with a deterministic
 preview entry point, without initializing the Dart wallet/Rust runtime or sync.
@@ -125,7 +137,7 @@ python3 scripts/e2e/ios-modal-corners.py --device <UDID> --output /tmp/modal-cap
 The script launches the installed preview, captures five screenshots and writes
 `results.json`, asserting native adaptation, keyboard fallback/restoration,
 fixed centered corners and constant radii from the first visible entrance frame.
-Use `--expect-cache cold` for a fresh cache, then run again with
-`--expect-cache warm` to verify zero UIKit recalculations after process restart.
+Every run restarts the process and expects one UIKit calculation, then at least
+two memory hits across keyboard restoration and a different-height sheet.
 It expects an iOS 26+ rounded iPhone simulator. The
 normal `lib/main.dart` entry point does not import this harness.

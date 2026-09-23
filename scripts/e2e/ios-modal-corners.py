@@ -9,7 +9,6 @@ import time
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--device', required=True, help='Simulator UDID')
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--expect-cache', choices=['cold', 'warm'])
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 bundle = 'com.keplr.vizor'
@@ -60,11 +59,11 @@ while time.monotonic() < deadline:
         assert by_id['keyboard-closed']['keyboard'] == 0
         assert abs(by_id['dark-sheet']['surfaces'][0]['bl'] -
                    by_id['keyboard-closed']['surfaces'][0]['bl']) < 0.001
-        if args.expect_cache == 'cold':
-            assert by_id['dark-sheet']['nativeCalculations'] >= 1, data
-        if args.expect_cache == 'warm':
-            assert data[-1]['nativeCalculations'] == 0, data
-            assert data[-1]['nativeCacheHits'] >= 3, data
+        # Every launch starts empty. Different sheet heights and keyboard
+        # restoration share the single calculation in this process.
+        assert by_id['dark-sheet']['nativeCalculations'] == 1, data
+        assert data[-1]['nativeCalculations'] == 1, data
+        assert data[-1]['nativeCacheHits'] >= 2, data
         print(json.dumps(data, indent=2))
         break
     ready = exchange / 'ready.json'
