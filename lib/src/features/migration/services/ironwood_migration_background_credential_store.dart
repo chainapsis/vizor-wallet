@@ -468,6 +468,8 @@ class IronwoodMigrationBackgroundLifecycle {
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
        _isIOS = isIOS ?? Platform.isIOS,
+       // Android does not register this MethodChannel yet. Keep production
+       // lifecycle calls disabled there until the native lease API exists.
        _isAndroid = isAndroid ?? false,
        _resumeRetryDelays =
            resumeRetryDelays ??
@@ -496,6 +498,11 @@ class IronwoodMigrationBackgroundLifecycle {
     String leaseId,
     Future<T> Function() action,
   ) => runZoned(action, zoneValues: {_quiescenceLeaseZoneKey: leaseId});
+
+  /// Gives a new mutation its own lease, independent of wall-clock changes or
+  /// other callers. Cleanup and late callbacks remain scoped to this identity.
+  static Future<T> runWithNewQuiescenceLease<T>(Future<T> Function() action) =>
+      runWithQuiescenceLease(_newQuiescenceLeaseId(), action);
 
   String? get _scopedLeaseId =>
       Zone.current[_quiescenceLeaseZoneKey] as String?;
@@ -526,11 +533,10 @@ class IronwoodMigrationBackgroundLifecycle {
 
   Future<void> resumeAfterMutation() async {
     if (!_isIOS && !_isAndroid) return;
-    final scopedLeaseId = _scopedLeaseId;
     // Reserve before awaiting the channel so concurrent resumes cannot select
     // the same lease. Retries within this call keep using the reserved ID.
     final leaseId =
-        scopedLeaseId ??
+        _scopedLeaseId ??
         (_quiescenceLeaseIds.isNotEmpty
             ? _quiescenceLeaseIds.removeFirst()
             : _newQuiescenceLeaseId());
@@ -558,7 +564,11 @@ class IronwoodMigrationBackgroundLifecycle {
         }
       }
       if (!released) {
-        if (id != scopedLeaseId) _pendingResumeLeaseIds.add(id);
+        // Retain every unreleased ID, scoped ones included: a one-shot scoped
+        // zone never runs again, so dropping its ID would leave the native
+        // gate paused for the rest of the process. A zone that does retry
+        // re-selects the same ID and the set union above collapses the two.
+        _pendingResumeLeaseIds.add(id);
         lastError =
             releaseError ?? StateError('Native resume was not attempted.');
       }

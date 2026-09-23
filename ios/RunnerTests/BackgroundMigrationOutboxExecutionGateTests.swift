@@ -5,6 +5,35 @@ import XCTest
 #endif
 
 final class BackgroundMigrationOutboxExecutionGateTests: XCTestCase {
+  func testReleasedLeaseCannotAuthorizeLatePauseDuringRetry() {
+    let gate = BackgroundMigrationOutboxExecutionGate()
+    gate.pause(leaseId: "expired")
+    XCTAssertTrue(gate.contains(leaseId: "expired"))
+    gate.resume(leaseId: "expired")
+    gate.pause(leaseId: "retry")
+    XCTAssertFalse(gate.contains(leaseId: "expired"))
+    XCTAssertFalse(gate.waitUntilIdle(leaseId: "expired"))
+    XCTAssertTrue(gate.contains(leaseId: "retry"))
+    XCTAssertTrue(gate.waitUntilIdle(leaseId: "retry"))
+  }
+
+  func testReleasingLeaseWakesDrainWithoutCancellingBroadcast() {
+    let gate = BackgroundMigrationOutboxExecutionGate()
+    XCTAssertTrue(gate.tryBeginRun())
+    gate.pause(leaseId: "expired")
+    let drained = expectation(description: "retired lease stops waiting")
+    DispatchQueue.global().async {
+      XCTAssertFalse(gate.waitUntilIdle(leaseId: "expired"))
+      drained.fulfill()
+    }
+    gate.resume(leaseId: "expired")
+    wait(for: [drained], timeout: 2)
+    XCTAssertFalse(gate.tryBeginRun())
+    gate.finishRun()
+    XCTAssertTrue(gate.tryBeginRun())
+    gate.finishRun()
+  }
+
   func testIdlePauseBlocksAdmissionUntilResume() {
     let gate = BackgroundMigrationOutboxExecutionGate()
     gate.pause(leaseId: "a")

@@ -311,10 +311,14 @@ import UIKit
         gate.pause(leaseId: leaseId)
         DispatchQueue.global(qos: .utility).async {
           // Includes runOutboxOnceNow, not just BGProcessingTask's queue.
-          gate.waitUntilIdle()
+          gate.waitUntilIdle(leaseId: leaseId)
           DispatchQueue.main.async {
+            guard gate.contains(leaseId: leaseId) else {
+              result(false)
+              return
+            }
             BackgroundMigrationManager.shared.quiesce { outboxSuccess in
-              guard outboxSuccess else {
+              guard outboxSuccess, gate.contains(leaseId: leaseId) else {
                 result(false)
                 return
               }

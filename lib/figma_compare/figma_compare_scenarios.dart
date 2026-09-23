@@ -1011,6 +1011,23 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildImportCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-recovery',
+    description: 'Private recovery setting at rest',
+    builder: buildSettingsRecoveryUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-recovery-changing',
+    description: 'Private recovery setting transition',
+    builder: buildSettingsRecoveryChangingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-recovery-changing',
+    description: 'Mobile private recovery setting transition',
+    builder: buildMobileSettingsRecoveryChangingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,

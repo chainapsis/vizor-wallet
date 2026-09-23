@@ -7,12 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
+import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
+import 'enhance_pir_provider.dart';
 import 'app_security_provider.dart';
 import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
@@ -629,10 +631,91 @@ class WalletMutationSyncPause {
 }
 
 @visibleForTesting
-bool shouldStartSyncForPolledTip(SyncState? current, int latestTipHeight) {
-  return !(current?.isSyncComplete ?? false) ||
+bool shouldStartSyncForPolledTip(
+  SyncState? current,
+  int latestTipHeight, {
+  bool hasActiveRecovery = false,
+}) {
+  return hasActiveRecovery ||
+      !(current?.isSyncComplete ?? false) ||
       latestTipHeight > (current?.chainTipHeight ?? 0);
 }
+
+@visibleForTesting
+const kRecoveryRestartInitialBackoff = Duration(seconds: 30);
+@visibleForTesting
+const kRecoveryRestartMaxBackoff = Duration(minutes: 10);
+
+/// Rate-limits sync restarts that exist only to retry private recovery.
+///
+/// Durable PIR obligations stay pending for as long as the work cannot
+/// progress — the service has no usable snapshot, its anchor is not scanned
+/// yet, or a rediscovery job cannot be reconstructed. A bare "work remains"
+/// check therefore turns every 10-second poll into a full foreground sync at
+/// an unchanged tip, re-running tip validation, transparent-UTXO refresh, and
+/// the 100-block rediscovery cover download for work that will fail again.
+///
+/// The gate treats an attempt as actionable only once its deadline passes,
+/// and grows the wait only when the previous attempt left the outstanding
+/// count exactly where it was. Any movement — work completed, or new work
+/// discovered by fresh scanning — starts over at the base interval, so a
+/// service that recovers is picked up promptly.
+///
+/// Syncs driven by a new chain tip or an incomplete previous sync are
+/// unaffected: those run recovery anyway, and they coincide with the newly
+/// scanned blocks that can make a stuck job resolvable.
+@visibleForTesting
+class RecoveryRestartGate {
+  RecoveryRestartGate({DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+
+  int? _lastUnits;
+  DateTime? _retryAt;
+  Duration _backoff = kRecoveryRestartInitialBackoff;
+
+  void reset() {
+    _lastUnits = null;
+    _retryAt = null;
+    _backoff = kRecoveryRestartInitialBackoff;
+  }
+
+  /// [outstanding] is the durable query + rediscovery obligation count.
+  /// Suspended work is excluded by the caller: it is not retryable, so it
+  /// must never schedule network work of its own.
+  bool shouldRestart(int outstanding) {
+    if (outstanding <= 0) {
+      reset();
+      return false;
+    }
+    final at = _now();
+    final deadline = _retryAt;
+    if (deadline != null && at.isBefore(deadline)) return false;
+    final previous = _lastUnits;
+    final stalled = previous != null && outstanding == previous;
+    _backoff = stalled
+        ? _doubledBackoff(_backoff)
+        : kRecoveryRestartInitialBackoff;
+    _lastUnits = outstanding;
+    _retryAt = at.add(_backoff);
+    return true;
+  }
+
+  static Duration _doubledBackoff(Duration current) {
+    final doubled = current * 2;
+    return doubled > kRecoveryRestartMaxBackoff
+        ? kRecoveryRestartMaxBackoff
+        : doubled;
+  }
+}
+
+/// Native resume retires the lease and prevents late callbacks from pausing
+/// managers. A stalled channel must therefore fail within the deadline.
+@visibleForTesting
+Future<void> waitForRecoveryQuiescence(
+  Future<void> quiescence, {
+  Duration timeout = const Duration(seconds: 120),
+}) => quiescence.timeout(timeout);
 
 /// Whether a restart must abort because Rust network tasks are still running.
 ///
@@ -660,8 +743,17 @@ bool shouldRestartSyncForMigrationEntry({
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
-  SyncNotifier({Future<String> Function()? walletDbPathResolver})
-    : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
+  SyncNotifier({
+    Future<String> Function()? walletDbPathResolver,
+    IronwoodMigrationBackgroundLifecycle? recoveryLifecycle,
+    Duration recoveryTransitionTimeout = const Duration(seconds: 120),
+  }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
+       _recoveryLifecycle =
+           recoveryLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance,
+       _recoveryTransitionTimeout = recoveryTransitionTimeout;
+
+  final IronwoodMigrationBackgroundLifecycle _recoveryLifecycle;
+  final Duration _recoveryTransitionTimeout;
 
   static const _authoritativeBalanceRecoveryDelays = <Duration>[
     Duration.zero,
@@ -673,6 +765,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   final Future<String> Function() _walletDbPathResolver;
   bool _isSyncing = false;
+  bool _recoverySettingTransition = false;
+  final RecoveryRestartGate _recoveryRestartGate = RecoveryRestartGate();
+  int _walletMutationPauseCount = 0;
+  bool _pendingMutationRestartSync = false;
+  bool _pendingMutationRestartPolling = false;
+  int _recoveryStatusReadCount = 0;
+  Completer<void>? _recoveryStatusReadsDrained;
   bool _isInForeground = true;
   int _foregroundEpoch = 0;
   int _activeSyncForegroundEpoch = 0;
@@ -1050,6 +1149,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
   void startSync({int? latestTipHeight}) {
     if (_isShuttingDown) return;
+    if (_recoverySettingTransition) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping foreground sync start');
       return;
@@ -1625,7 +1725,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   bool needsPauseForWalletMutation() =>
-      _walletMutationSyncPauseSnapshot().hadWorkToPause;
+      _walletMutationSyncPauseSnapshot().hadWorkToPause ||
+      _recoveryStatusReadCount > 0;
 
   void clearCachedWalletDbPath() {
     _cachedDbPath = null;
@@ -1634,63 +1735,182 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @visibleForTesting
   Future<String> resolveWalletDbPathForTesting() => _getDbPath();
 
-  Future<WalletMutationSyncPause> pauseForWalletMutation({
-    FutureOr<void> Function()? onStoppingSync,
-  }) async {
-    final pause = _walletMutationSyncPauseSnapshot();
-
-    if (!pause.hadWorkToPause) {
-      return pause;
+  Future<rust_sync.EnhanceRecoveryStatus?> recoveryStatus() async {
+    if (_requiresUnlock ||
+        _getActiveAccountUuid() == null ||
+        _walletMutationPauseCount > 0) {
+      return null;
     }
-
-    ++_syncGen;
-    ++_progressEventVersion;
-    ++_balanceReadVersion;
-    _stopPolling();
-    await onStoppingSync?.call();
-    log('SyncNotifier: pausing sync for wallet DB mutation');
-    _isSyncing = false;
-    rust_sync.setSyncMode(mode: 0);
-    rust_sync.cancelFullSync();
-    _stopMempoolObserver();
-    await _syncSub?.cancel();
-    _syncSub = null;
-
-    final prev = state.value;
-    if (prev != null) {
-      state = AsyncData(prev.withSyncActivityStopped());
+    // Register before the first asynchronous step so account deletion/reset can
+    // close admission and drain every reader before touching the wallet DB.
+    _recoveryStatusReadCount++;
+    try {
+      final dbPath = await _getDbPath();
+      if (_walletMutationPauseCount > 0) return null;
+      return await rust_sync.getEnhanceRecoveryStatus(
+        dbPath: dbPath,
+        network: _endpointConfig.networkName,
+      );
+    } finally {
+      _recoveryStatusReadCount--;
+      if (_recoveryStatusReadCount == 0) {
+        _recoveryStatusReadsDrained?.complete();
+        _recoveryStatusReadsDrained = null;
+      }
     }
-
-    final stopped = await _waitForRustTasksToStop(
-      timeoutMs: 120000,
-      onSyncTimeout:
-          'SyncNotifier: timed out waiting for Rust sync to stop before wallet '
-          'mutation',
-      onMempoolTimeout:
-          'SyncNotifier: timed out waiting for mempool observer to stop before '
-          'wallet mutation',
-    );
-    if (!stopped) {
-      resumeAfterWalletMutation(pause);
-      throw StateError('Sync did not stop before wallet database mutation.');
-    }
-
-    return pause;
   }
 
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
-    if (_requiresUnlock) return;
+  Future<void> _drainRecoveryStatusReads() {
+    if (_recoveryStatusReadCount == 0) return Future.value();
+    return (_recoveryStatusReadsDrained ??= Completer<void>()).future;
+  }
 
-    if (pause.hadActiveSync || pause.hadMempoolObserver) {
+  /// Exit a pause without resuming. Destructive callers use this when the
+  /// wallet DB may already be gone, so it also discards any restart another
+  /// pause deferred: nothing should sync a wallet that was just reset.
+  void endWalletMutationPause() => _endWalletMutationPause(resume: false);
+
+  void _endWalletMutationPause({required bool resume}) {
+    if (_walletMutationPauseCount > 0) {
+      _walletMutationPauseCount--;
+    }
+    // Another wallet mutation still owns the DB — account deletion or a reset
+    // is mid-flight. Restarting here would open and write the wallet DB
+    // underneath it, so hand the restart to whichever pause exits last.
+    if (_walletMutationPauseCount > 0) return;
+    final restartSync = resume && _pendingMutationRestartSync;
+    final restartPolling = resume && _pendingMutationRestartPolling;
+    _pendingMutationRestartSync = false;
+    _pendingMutationRestartPolling = false;
+    // Check nothing else when there is nothing to restart: the opt-out exit
+    // runs after a wallet reset, where reading providers is unsafe.
+    if (!restartSync && !restartPolling) return;
+    if (_requiresUnlock) return;
+    if (restartSync) {
       log('SyncNotifier: resuming sync and mempool observation after pause');
       startSync();
     }
-    if (pause.hadPolling || pause.hadActiveSync) {
+    if (restartPolling) {
       _startPolling();
     }
   }
 
+  Future<void> withRecoverySettingPaused(Future<void> Function() action) async {
+    if (_recoverySettingTransition) {
+      throw StateError('Setting transition already running.');
+    }
+    _recoverySettingTransition = true;
+    await IronwoodMigrationBackgroundLifecycle.runWithNewQuiescenceLease(
+      () async {
+        final lifecycle = _recoveryLifecycle;
+        WalletMutationSyncPause? pause;
+        try {
+          await waitForRecoveryQuiescence(
+            lifecycle.quiesce(),
+            timeout: _recoveryTransitionTimeout,
+          );
+          pause = await pauseForWalletMutation();
+          await action();
+        } finally {
+          _recoverySettingTransition = false;
+          try {
+            await lifecycle.resumeAfterMutation().timeout(
+              _recoveryTransitionTimeout,
+            );
+          } catch (error) {
+            log('Could not resume native preparation: $error');
+          }
+          // The toggle changes which obligations are retryable at all, so
+          // the previous attempt's backoff no longer describes this wallet.
+          _recoveryRestartGate.reset();
+          // Release only a pause this transition actually took. `quiesce()`
+          // can fail before one exists, and a `pauseForWalletMutation` that
+          // throws has already released its own. Decrementing the shared
+          // counter here would consume an overlapping account deletion's
+          // pause and start sync while it is still deleting.
+          final acquired = pause;
+          if (acquired != null) {
+            resumeAfterWalletMutation(
+              acquired,
+              forceRestart:
+                  !_requiresUnlock &&
+                  _isInForeground &&
+                  (ref.read(accountProvider).value?.hasAccounts ?? false),
+            );
+          }
+        }
+      },
+    );
+  }
+
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    _walletMutationPauseCount++;
+    final pause = _walletMutationSyncPauseSnapshot();
+
+    try {
+      if (pause.hadWorkToPause) {
+        ++_syncGen;
+        ++_progressEventVersion;
+        ++_balanceReadVersion;
+        _stopPolling();
+        await onStoppingSync?.call();
+        log('SyncNotifier: pausing sync for wallet DB mutation');
+        _isSyncing = false;
+        rust_sync.setSyncMode(mode: 0);
+        rust_sync.cancelFullSync();
+        _stopMempoolObserver();
+        await _syncSub?.cancel();
+        _syncSub = null;
+
+        final prev = state.value;
+        if (prev != null) {
+          state = AsyncData(prev.withSyncActivityStopped());
+        }
+
+        final stopped = await _waitForRustTasksToStop(
+          timeoutMs: 120000,
+          onSyncTimeout:
+              'SyncNotifier: timed out waiting for Rust sync to stop before '
+              'wallet mutation',
+          onMempoolTimeout:
+              'SyncNotifier: timed out waiting for mempool observer to stop '
+              'before wallet mutation',
+        );
+        if (!stopped) {
+          throw StateError(
+            'Sync did not stop before wallet database mutation.',
+          );
+        }
+      }
+
+      await _drainRecoveryStatusReads().timeout(_recoveryTransitionTimeout);
+      return pause;
+    } catch (_) {
+      resumeAfterWalletMutation(pause);
+      rethrow;
+    }
+  }
+
+  /// [forceRestart] resumes sync and polling regardless of what the pause
+  /// snapshot captured — the recovery toggle stops sync itself, so it must
+  /// bring it back even when nothing was running when it took the pause.
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {
+    _pendingMutationRestartSync |=
+        forceRestart || pause.hadActiveSync || pause.hadMempoolObserver;
+    _pendingMutationRestartPolling |=
+        forceRestart || pause.hadPolling || pause.hadActiveSync;
+    _endWalletMutationPause(resume: true);
+  }
+
   Future<void> clearSensitiveStateForLock() async {
+    _recoveryRestartGate.reset();
+    _pendingMutationRestartSync = false;
+    _pendingMutationRestartPolling = false;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
     ++_syncGen;
@@ -1843,6 +2063,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> _checkAndSync() async {
     if (_isShuttingDown) return;
+    if (_recoverySettingTransition) return;
     final gen = _syncGen;
     final epoch = _sensitiveStateEpoch;
     final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
@@ -1867,7 +2088,32 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         log('AutoSync: skipping restart after lock transition');
         return;
       }
-      if (shouldStartSyncForPolledTip(current, tip.toInt())) {
+      // Skip the status read entirely when the tip or an incomplete previous
+      // sync already calls for a restart: that sync runs recovery anyway.
+      var recoveryRestart = false;
+      if (!shouldStartSyncForPolledTip(current, tip.toInt()) &&
+          ref.read(enhancePirProvider)) {
+        final recovery = await recoveryStatus();
+        if (_recoverySettingTransition ||
+            _requiresUnlock ||
+            gen != _syncGen ||
+            epoch != _sensitiveStateEpoch) {
+          return;
+        }
+        // A null status means the read bailed out — locked, no active
+        // account, or a wallet mutation pause — not that the queue drained.
+        // Leave the gate's deadline alone rather than clearing it.
+        recoveryRestart =
+            recovery != null &&
+            _recoveryRestartGate.shouldRestart(
+              recovery.queries + recovery.rediscovery,
+            );
+      }
+      if (shouldStartSyncForPolledTip(
+        current,
+        tip.toInt(),
+        hasActiveRecovery: recoveryRestart,
+      )) {
         log(
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',
         );

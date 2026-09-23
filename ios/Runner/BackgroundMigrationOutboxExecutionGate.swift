@@ -39,11 +39,26 @@ final class BackgroundMigrationOutboxExecutionGate: @unchecked Sendable {
     condition.unlock()
   }
 
-  /// Must run off the main thread and outside the runner's execution queue.
-  func waitUntilIdle() {
+  /// Late quiescence callbacks must check their own lease on the main thread
+  /// before pausing a manager. Another mutation's lease is not authorization.
+  func contains(leaseId: String) -> Bool {
     condition.lock()
     defer { condition.unlock() }
-    while running { condition.wait() }
+    return mutationLeases.contains(leaseId)
+  }
+
+  /// Must run off the main thread and outside the runner's execution queue.
+  /// Returns false if the supplied lease was retired, without waiting for or
+  /// cancelling an admitted broadcast. Callers must recheck the lease before
+  /// applying a pause on another queue. Without a lease, waits for a full drain.
+  @discardableResult
+  func waitUntilIdle(leaseId: String? = nil) -> Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    while running && (leaseId.map { mutationLeases.contains($0) } ?? true) {
+      condition.wait()
+    }
+    return leaseId.map { mutationLeases.contains($0) } ?? true
   }
 
   /// Successful account removal/reset also retires safety holds left by a
@@ -68,6 +83,7 @@ final class BackgroundMigrationOutboxExecutionGate: @unchecked Sendable {
     condition.lock()
     defer { condition.unlock() }
     mutationLeases.remove(leaseId)
+    condition.broadcast()
     return mutationLeases.isEmpty
   }
 }

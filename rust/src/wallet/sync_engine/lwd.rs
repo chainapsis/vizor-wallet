@@ -233,12 +233,12 @@ async fn open_lwd_channel_for_route(
 }
 
 #[derive(Clone)]
-struct DirectRouteConnector {
+pub(super) struct DirectRouteConnector {
     inner: HttpConnector,
 }
 
 impl DirectRouteConnector {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut inner = HttpConnector::new();
         inner.enforce_http(false);
         // Tonic applies the endpoint's `tcp_nodelay` (enabled by default) only

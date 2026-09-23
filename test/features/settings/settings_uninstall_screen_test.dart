@@ -316,7 +316,10 @@ class _TestSyncNotifier extends SyncNotifier {
   }
 
   @override
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {}
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {}
 
   @override
   void clearCachedWalletDbPath() {}
