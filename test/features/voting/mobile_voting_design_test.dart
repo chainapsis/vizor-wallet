@@ -349,7 +349,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.drag(
-      find.byType(VotingPaneScrollView),
+      find.byType(SingleChildScrollView),
       const Offset(0, -1000),
     );
     await tester.pumpAndSettle();
@@ -485,7 +485,7 @@ void main() {
         expect(tester.getTopLeft(card).dy, greaterThan(collapsedTop));
         expect(find.byType(VotingForumLinkButton), findsOneWidget);
         await tester.drag(
-          find.byType(VotingPaneScrollView),
+          find.byType(SingleChildScrollView),
           const Offset(0, -1600),
         );
         await tester.pumpAndSettle();
