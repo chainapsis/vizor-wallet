@@ -154,7 +154,7 @@ class _MobileModalCornersState extends State<MobileModalCorners>
     _request = geometry;
     final epoch = ++_epoch;
     _pending = true;
-    // Native owns the process-wide/persistent cache and validates the host on
+    // Native owns the shared memory cache and validates the host on
     // every read. Never expose the fallback while awaiting the initial result.
     final radii = await NativeModalCorners.resolve(
       rect: geometry.rect,
