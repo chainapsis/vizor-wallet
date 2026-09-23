@@ -401,14 +401,8 @@ Widget buildSwapDepositNetworkSheetUseCase(BuildContext context) =>
       child: SwapDepositNetworkSheet(asset: SwapAsset.usdc),
     );
 
-Widget buildSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
-    _depositTimeoutPage(mobile: false, prompt: true);
-
 Widget buildSwapLateDepositModalUseCase(BuildContext context) =>
     _depositTimeoutPage(mobile: false, prompt: true, modalOpen: true);
-
-Widget buildMobileSwapDepositTimeoutRecoveryUseCase(BuildContext context) =>
-    _depositTimeoutPage(mobile: true, prompt: true);
 
 Widget buildMobileSwapLateDepositSheetUseCase(BuildContext context) =>
     _MobileScanCardFrame(child: SwapLateDepositSheet(info: _recoveryInfo));

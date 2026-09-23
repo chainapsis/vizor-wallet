@@ -1116,11 +1116,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSwapPolicyDepositDesktopUseCase,
   ),
   FigmaCompareScenario(
-    id: 'swap-deposit-timeout-recovery',
-    description: 'Desktop deposit timeout with the sent-deposit prompt',
-    builder: buildSwapDepositTimeoutRecoveryUseCase,
-  ),
-  FigmaCompareScenario(
     id: 'swap-late-deposit-modal',
     description: 'Desktop deposit recovery explainer modal',
     builder: buildSwapLateDepositModalUseCase,
@@ -1136,13 +1131,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'swap-policy-network-sheet-mobile',
     description: 'Mobile deposit network guidance sheet',
     builder: buildSwapDepositNetworkSheetUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
-    id: 'mobile-swap-deposit-timeout-recovery',
-    description: 'Mobile deposit timeout with the late-deposit prompt',
-    builder: buildMobileSwapDepositTimeoutRecoveryUseCase,
     desktop: false,
     mobile: true,
   ),
