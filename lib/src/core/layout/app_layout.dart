@@ -17,27 +17,19 @@ const _windowAppearanceChannel = MethodChannel(
   'com.zcash.wallet/window_appearance',
 );
 
-/// Two fixed-aspect-ratio layouts the desktop app supports.
+/// Two default window shapes the desktop app switches between.
 ///
 /// - [large]: landscape, width:height = 1080:720 (3:2 = 1.5, wider than tall)
 /// - [small]: portrait,  width:height =  65:133  (≈ 0.489, taller than wide)
 ///
-/// Mobile and web are permanently [small]. On desktop the OS window is
-/// reshaped to the selected ratio and its aspect ratio is enforced for
-/// user drag-resize.
+/// Mobile and web are permanently [small]. On desktop these sizes are only
+/// applied on startup and on an explicit mode toggle — the user can freely
+/// drag-resize the window to any shape at or above [minimumSize] afterward;
+/// [AppLayoutNotifier] infers which mode the resulting shape is closer to
+/// for responsive layout purposes.
 enum AppLayoutMode {
   large,
   small;
-
-  /// Width / height for this layout.
-  double get aspectRatio {
-    switch (this) {
-      case AppLayoutMode.large:
-        return 1080.0 / 720.0;
-      case AppLayoutMode.small:
-        return (50.0 * 1.3) / 133.0;
-    }
-  }
 
   /// Default window size applied at startup and on explicit toggle.
   Size get defaultSize {
@@ -94,7 +86,6 @@ Future<void> initializeDesktopWindow({
     await _applyWindowsClientAreaLayout(initialMode, center: true);
   } else {
     await windowManager.setMinimumSize(initialMode.minimumSize);
-    await windowManager.setAspectRatio(initialMode.aspectRatio);
     await windowManager.setSize(initialMode.defaultSize, animate: false);
   }
 }
@@ -163,7 +154,6 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
         await _applyWindowsClientAreaLayout(mode);
       } else {
         await windowManager.setMinimumSize(mode.minimumSize);
-        await windowManager.setAspectRatio(mode.aspectRatio);
         await windowManager.setSize(mode.defaultSize, animate: false);
       }
     } catch (e, st) {
