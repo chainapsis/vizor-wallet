@@ -1961,6 +1961,15 @@ async fn run_optional_enhance_pir(
     match Box::pin(enhance_pir.run(db, client, cached, should_exit)).await {
         Ok(()) => false,
         Err(EnhancePirRunError::ExitRequested) => true,
+        Err(EnhancePirRunError::HttpStatus(status)) => {
+            enhance_pir.defer();
+            log::warn!(
+                "[{}] sync: private Ironwood enhancement returned HTTP {}; queued work will retry on a later sync",
+                elapsed(),
+                status,
+            );
+            false
+        }
         Err(EnhancePirRunError::Failed(error)) => {
             enhance_pir.defer();
             log::warn!(
