@@ -18,7 +18,7 @@ and mapping records to the original captured request identities:
 ```toml
 [dependencies.zakura-pir-enhance]
 git = "https://github.com/zakura-core/wallet-libraries.git"
-rev = "9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+rev = "dd3e8fd05c022e284d4580f92287606ede522a2d"
 default-features = false
 features = ["wallet"]
 ```
@@ -51,9 +51,24 @@ rows, independent of the server's advertised resource requirements.
    non-recovery remain incomplete suspensions.
 6. Reread durable work after progress. Active deferred work retries through normal
    foreground polling even at an unchanged chain tip. Suspensions alone do not
-   trigger network work. Initialization refresh is limited to once per minute for
-   the current wallet, and accepted older coverage can run while a pending newer
-   anchor awaits scanning.
+   trigger network work. Uncovered-work discovery is limited to once per minute;
+   accepted routing also follows the client's 30-second freshness deadline.
+   HTTP 409/410 forces a routing refresh, wallet anchor validation, and one retry
+   of the durable remainder within the same pass. Repeated failure leaves that
+   work queued for a later sync. A routing revision can change without coverage
+   growing; unchanged setup material is reused after acceptance.
+
+Direct HTTPS and Tor inspect response status before reading a body. An error
+body that stalls, truncates, or exceeds its limit cannot hide a received 409/410.
+One 120-second deadline covers route acquisition, response headers, and body;
+cancellation takes precedence over response processing.
+
+The scripted recovery tests in `enhance_pir_tests.rs` exercise the production
+scheduler and real v7 client, including partial commits, bounded retries, anchor
+rejection, cancellation, and unchanged coverage. Their storage adapter fakes
+wallet persistence and acceptance outcomes; they do not prove wallet record
+authentication or deployed service behavior. Transport tests use paused time
+and synthetic bodies to check status handling and the overall deadline.
 
 No application write lock or database transaction spans network I/O. Counts are
 logged in aggregate; local transaction/action identities are not sent to PIR.
@@ -118,12 +133,10 @@ there is no separate `mobile-settings-recovery` fixture. Render with
 `--form-factor mobile` for the mobile fixtures.
 
 The client and wallet-library patches are pinned to shared revision
-`9b190657d129d08e964623d0ecc1d8e4ffb31b1d`; no absolute local library paths are required.
-The existing locally modified voting checkout
-was preserved. This checkout's manifest resolves `zcash_voting 5.0.0` from the
-registry; verification used that resolution without changing voting sources. Any
-local voting override used by another development environment remains a separate
-portability prerequisite.
+`dd3e8fd05c022e284d4580f92287606ede522a2d`. This local checkout also patches
+`zcash_voting` and `valar-ypir` from `/tmp/crates-src` to align their Spiral
+dependency with the Enhance v7 client. Remove these local patches once
+compatible crate releases are available.
 
 Deterministic tests do not validate deployed end-to-end recovery. Live service
 smoke tests and heavy regtest/device suites remain separate acceptance steps.

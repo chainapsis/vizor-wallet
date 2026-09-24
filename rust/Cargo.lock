@@ -2944,13 +2944,13 @@ dependencies = [
 
 [[package]]
 name = "inspiring"
-version = "0.1.0"
-source = "git+https://github.com/valargroup/ipir-sp.git?rev=6f74a2d754b58934f925fc8a347f46620148ad47#6f74a2d754b58934f925fc8a347f46620148ad47"
+version = "0.1.0-rc.1"
+source = "git+https://github.com/valargroup/ipir-sp.git?rev=611a29284264d844bf4dba00de2874c5b762f8c2#611a29284264d844bf4dba00de2874c5b762f8c2"
 dependencies = [
  "rand_chacha 0.3.1",
  "rayon",
  "thiserror 1.0.69",
- "valar-spiral-rs 0.5.2 (git+https://github.com/valargroup/spiral-rs.git?rev=584fee3893b1d2d17b5d774c83bd801fb70d5ace)",
+ "valar-spiral-rs",
 ]
 
 [[package]]
@@ -2964,8 +2964,8 @@ dependencies = [
 
 [[package]]
 name = "ipir-sp"
-version = "0.1.0"
-source = "git+https://github.com/valargroup/ipir-sp.git?rev=6f74a2d754b58934f925fc8a347f46620148ad47#6f74a2d754b58934f925fc8a347f46620148ad47"
+version = "0.1.0-rc.2"
+source = "git+https://github.com/valargroup/ipir-sp.git?rev=611a29284264d844bf4dba00de2874c5b762f8c2#611a29284264d844bf4dba00de2874c5b762f8c2"
 dependencies = [
  "clap",
  "env_logger",
@@ -2979,7 +2979,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "simplepir-kernel",
- "valar-spiral-rs 0.5.2 (git+https://github.com/valargroup/spiral-rs.git?rev=584fee3893b1d2d17b5d774c83bd801fb70d5ace)",
+ "valar-spiral-rs",
 ]
 
 [[package]]
@@ -4704,6 +4704,7 @@ dependencies = [
  "hyper-util",
  "ics23",
  "incrementalmerkletree",
+ "ipir-sp",
  "ledger-transport",
  "ledger-transport-hid",
  "log",
@@ -5274,12 +5275,12 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "simplepir-kernel"
-version = "0.1.0"
-source = "git+https://github.com/valargroup/ipir-sp.git?rev=6f74a2d754b58934f925fc8a347f46620148ad47#6f74a2d754b58934f925fc8a347f46620148ad47"
+version = "0.1.0-rc.1"
+source = "git+https://github.com/valargroup/ipir-sp.git?rev=611a29284264d844bf4dba00de2874c5b762f8c2#611a29284264d844bf4dba00de2874c5b762f8c2"
 dependencies = [
  "inspiring",
  "rayon",
- "valar-spiral-rs 0.5.2 (git+https://github.com/valargroup/spiral-rs.git?rev=584fee3893b1d2d17b5d774c83bd801fb70d5ace)",
+ "valar-spiral-rs",
 ]
 
 [[package]]
@@ -7238,23 +7239,9 @@ dependencies = [
 
 [[package]]
 name = "valar-spiral-rs"
-version = "0.5.2"
+version = "0.5.3-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "208d4b69c6a9b7b0c7d856133009a514e10236cdc698ad0b6b87f2e3c4e6d9cb"
-dependencies = [
- "fastrand",
- "getrandom 0.2.17",
- "rand 0.8.7",
- "rand_chacha 0.3.1",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
-]
-
-[[package]]
-name = "valar-spiral-rs"
-version = "0.5.2"
-source = "git+https://github.com/valargroup/spiral-rs.git?rev=584fee3893b1d2d17b5d774c83bd801fb70d5ace#584fee3893b1d2d17b5d774c83bd801fb70d5ace"
+checksum = "25241fdd53c5952c5c80557c6d248a2835cf9e722de52e16bbbba794009b80b9"
 dependencies = [
  "fastrand",
  "getrandom 0.2.17",
@@ -7268,8 +7255,6 @@ dependencies = [
 [[package]]
 name = "valar-ypir"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06a0e6155d97d9e2df44a7f552383a311fbcb5528dfc93e9b3236c98184eb840"
 dependencies = [
  "cc",
  "fastrand",
@@ -7279,7 +7264,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
- "valar-spiral-rs 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "valar-spiral-rs",
 ]
 
 [[package]]
@@ -7977,7 +7962,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc5"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=9b190657d129d08e964623d0ecc1d8e4ffb31b1d#9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=dd3e8fd05c022e284d4580f92287606ede522a2d#dd3e8fd05c022e284d4580f92287606ede522a2d"
 dependencies = [
  "arti-client",
  "async-trait",
@@ -8046,7 +8031,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc5"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=9b190657d129d08e964623d0ecc1d8e4ffb31b1d#9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=dd3e8fd05c022e284d4580f92287606ede522a2d#dd3e8fd05c022e284d4580f92287606ede522a2d"
 dependencies = [
  "bip32",
  "bitflags 2.13.1",
@@ -8249,7 +8234,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc3"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=9b190657d129d08e964623d0ecc1d8e4ffb31b1d#9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=dd3e8fd05c022e284d4580f92287606ede522a2d#dd3e8fd05c022e284d4580f92287606ede522a2d"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8278,7 +8263,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance"
 version = "0.1.0"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=9b190657d129d08e964623d0ecc1d8e4ffb31b1d#9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=dd3e8fd05c022e284d4580f92287606ede522a2d#dd3e8fd05c022e284d4580f92287606ede522a2d"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -8299,7 +8284,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.1.0"
-source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=9b190657d129d08e964623d0ecc1d8e4ffb31b1d#9b190657d129d08e964623d0ecc1d8e4ffb31b1d"
+source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=dd3e8fd05c022e284d4580f92287606ede522a2d#dd3e8fd05c022e284d4580f92287606ede522a2d"
 
 [[package]]
 name = "zakura-primitives"
@@ -8562,8 +8547,6 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2417d8fd1c8f92b0e55e3d47e13360acee8f3a46bbe803f384e4421f1a22db7a"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -8597,7 +8580,7 @@ dependencies = [
  "tower-service",
  "url",
  "uuid",
- "valar-spiral-rs 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "valar-spiral-rs",
  "valar-ypir",
  "vote-commitment-tree",
  "vote-commitment-tree-client",

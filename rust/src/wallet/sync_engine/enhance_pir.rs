@@ -7,7 +7,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use http::{Method, Request, StatusCode};
 use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming;
+use hyper::body::{Body, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{
@@ -20,8 +20,8 @@ use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
 use zakura_pir_enhance::{ClientError, ClientResourceLimits, Manifest};
 use zcash_client_backend::{
     data_api::enhance_pir::{
-        EnhancePirRead, EnhancePirStoreResult, EnhancePirWrite, IronwoodEnhanceDiscoveryRequest,
-        IronwoodEnhanceDiscoveryResult,
+        EnhancePirRead, EnhancePirRequest, EnhancePirStoreResult, EnhancePirWrite,
+        IronwoodEnhanceDiscoveryRequest, IronwoodEnhanceDiscoveryResult,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -33,10 +33,81 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_LOGICAL_ROWS: u64 = 65_536;
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
 
+fn routing_is_current_or_newer(current: &Manifest, candidate: &Manifest) -> bool {
+    current_or_newer_routing_revision(
+        (current.generation, current.recovery_epoch),
+        (candidate.generation, candidate.recovery_epoch),
+    )
+}
+
+fn current_or_newer_routing_revision(current: (u64, u64), candidate: (u64, u64)) -> bool {
+    candidate.0 >= current.0 && candidate.1 >= current.1
+}
+
+fn client_transport_error(error: EnhancePirRunError) -> ClientError {
+    match error {
+        EnhancePirRunError::ExitRequested => ClientError::Cancelled,
+        EnhancePirRunError::HttpStatus(status) => ClientError::HttpStatus(status),
+        EnhancePirRunError::Failed(error) => ClientError::Transport(error.to_string()),
+    }
+}
+
+fn is_stale_routing_status(status: u16) -> bool {
+    matches!(status, 409 | 410)
+}
+
 fn rediscovery_cover_start(height: BlockHeight) -> BlockHeight {
     BlockHeight::from_u32(
         u32::from(height).saturating_sub(REDISCOVERY_COVER_BLOCKS.saturating_sub(1)),
     )
+}
+
+/// Storage boundary for recovery scheduling. The production adapter retains
+/// wallet anchor validation, record authentication, and serialized writes.
+trait RecoveryWallet {
+    fn work(&self) -> Result<PreparedWork, EnhancePirRunError>;
+    fn accept(
+        &self,
+        network: WalletNetwork,
+        manifest: &Manifest,
+    ) -> Result<Acceptance, EnhancePirRunError>;
+    fn apply(
+        &mut self,
+        request: EnhancePirRequest,
+        record: &zakura_pir_enhance::EnhanceRecord,
+    ) -> Result<EnhancePirStoreResult, EnhancePirRunError>;
+}
+
+impl RecoveryWallet for WalletDatabase {
+    fn work(&self) -> Result<PreparedWork, EnhancePirRunError> {
+        Ok(PreparedWork::new(
+            self.enhance_pir_work()
+                .map_err(|e| SyncError::db(e.to_string()))?,
+        ))
+    }
+    fn accept(
+        &self,
+        network: WalletNetwork,
+        manifest: &Manifest,
+    ) -> Result<Acceptance, EnhancePirRunError> {
+        Ok(zakura_pir_enhance::wallet::acceptance(
+            self,
+            manifest,
+            &network,
+            ClientResourceLimits::new(MAX_LOGICAL_ROWS),
+        )
+        .map_err(|e| SyncError::db(e.to_string()))??)
+    }
+    fn apply(
+        &mut self,
+        request: EnhancePirRequest,
+        record: &zakura_pir_enhance::EnhanceRecord,
+    ) -> Result<EnhancePirStoreResult, EnhancePirRunError> {
+        Ok(with_wallet_db_write_lock("enhance_pir.apply", || {
+            self.apply_ironwood_enhance_record(request, record)
+        })
+        .map_err(|e| SyncError::db(e.to_string()))?)
+    }
 }
 
 pub(super) struct EnhancePirSync {
@@ -51,6 +122,7 @@ pub(super) struct EnhancePirSync {
 #[derive(Debug)]
 pub(super) enum EnhancePirRunError {
     ExitRequested,
+    HttpStatus(u16),
     Failed(SyncError),
 }
 impl From<SyncError> for EnhancePirRunError {
@@ -122,10 +194,7 @@ impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
         if (self.should_exit)() {
             return Err(ClientError::Cancelled);
         }
-        response.map_err(|e| match e {
-            EnhancePirRunError::ExitRequested => ClientError::Cancelled,
-            EnhancePirRunError::Failed(e) => ClientError::Transport(e.to_string()),
-        })
+        response.map_err(client_transport_error)
     }
 }
 impl EnhancePirSync {
@@ -153,16 +222,64 @@ impl EnhancePirSync {
     }
     fn acceptance(
         &self,
-        db: &WalletDatabase,
+        db: &impl RecoveryWallet,
         generation: &Manifest,
     ) -> Result<Acceptance, EnhancePirRunError> {
-        Ok(zakura_pir_enhance::wallet::acceptance(
-            db,
-            generation,
-            &self.network,
-            ClientResourceLimits::new(MAX_LOGICAL_ROWS),
-        )
-        .map_err(|e| SyncError::db(e.to_string()))??)
+        db.accept(self.network, generation)
+    }
+    /// Fetch routing without discarding an accepted session on a transient
+    /// refresh failure. A rejected row query forces this path past the normal
+    /// refresh timer; every candidate is checked against the scanned wallet.
+    async fn refresh_routing(
+        &mut self,
+        db: &impl RecoveryWallet,
+        route: &impl transport::Transport,
+        uncovered: bool,
+        force: bool,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<bool, EnhancePirRunError> {
+        if force {
+            self.pending_session = None;
+        }
+        let session_refresh_due = self.session.as_ref().is_some_and(|s| s.refresh_due());
+        if (force || uncovered || session_refresh_due)
+            && self.pending_session.is_none()
+            && (force || session_refresh_due || refresh_due(&self.db_path))
+        {
+            mark_refresh(&self.db_path);
+            self.pending_session = Some(
+                PendingClient::fetch(route, self.endpoint.as_deref().expect("enabled")).await?,
+            );
+        }
+        let Some(pending) = self.pending_session.as_ref() else {
+            return Ok(self.session.is_some());
+        };
+        match self.acceptance(db, pending.generation())? {
+            Acceptance::Accepted(acceptance) => {
+                if should_exit() {
+                    return Err(EnhancePirRunError::ExitRequested);
+                }
+                let pending = self.pending_session.take().expect("pending");
+                if let Some(session) = self.session.as_mut() {
+                    if !routing_is_current_or_newer(session.generation(), pending.generation()) {
+                        set_phase(&self.db_path, "retrying_later");
+                        return Ok(!force);
+                    }
+                    session.accept_routing(pending, &acceptance)?;
+                } else {
+                    self.session = Some(pending.accept(&acceptance)?);
+                }
+                Ok(true)
+            }
+            Acceptance::WaitingForScanning => {
+                set_phase(&self.db_path, "waiting_for_scanning");
+                Ok(false)
+            }
+            Acceptance::Mismatch => {
+                self.pending_session = None;
+                Err(SyncError::parse("snapshot anchor mismatch").into())
+            }
+        }
     }
     pub(super) async fn run(
         &mut self,
@@ -225,10 +342,20 @@ impl EnhancePirSync {
                 return Err(SyncError::parse("rediscovery block rejected").into());
             }
         }
-        let work = PreparedWork::new(
-            db.enhance_pir_work()
-                .map_err(|e| SyncError::db(e.to_string()))?,
-        );
+        self.run_queries(db, &RoutedTransport::new(should_exit), should_exit)
+            .await
+    }
+
+    async fn run_queries(
+        &mut self,
+        db: &mut impl RecoveryWallet,
+        route: &impl transport::Transport,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError> {
+        if should_exit() {
+            return Err(EnhancePirRunError::ExitRequested);
+        }
+        let work = db.work()?;
         if work.query_count() == 0 {
             return Ok(());
         }
@@ -259,78 +386,88 @@ impl EnhancePirSync {
                 "recovering"
             },
         );
-        let route = RoutedTransport::new(should_exit);
         // Refresh is opportunistic: it must not suppress already accepted coverage.
-        let refresh = async {
-            if uncovered && self.pending_session.is_none() && refresh_due(&self.db_path) {
-                mark_refresh(&self.db_path);
-                self.pending_session = Some(
-                    PendingClient::fetch(&route, self.endpoint.as_deref().expect("enabled"))
-                        .await?,
-                );
-            }
-            if let Some(pending) = &self.pending_session {
-                match self.acceptance(db, pending.generation())? {
-                    Acceptance::Accepted(acceptance) => {
-                        if should_exit() {
-                            return Err(EnhancePirRunError::ExitRequested);
-                        }
-                        let pending = self.pending_session.take().expect("pending");
-                        // A stale service replica must not replace usable coverage
-                        // with an older, smaller snapshot of the accepted chain.
-                        if self.session.as_ref().is_none_or(|current| {
-                            pending.generation().coverage.records
-                                > current.generation().coverage.records
-                        }) {
-                            self.session = Some(pending.accept(&acceptance)?);
-                        }
-                    }
-                    Acceptance::WaitingForScanning => {
-                        set_phase(&self.db_path, "waiting_for_scanning");
-                    }
-                    Acceptance::Mismatch => {
-                        self.pending_session = None;
-                        return Err(SyncError::parse("snapshot anchor mismatch").into());
-                    }
-                }
-            }
-            Ok(())
-        }
-        .await;
+        let refresh = self
+            .refresh_routing(db, route, uncovered, false, should_exit)
+            .await
+            .map(|_| ());
         if !retain_coverage_on_refresh_failure(refresh, self.session.is_some())? {
             self.pending_session = None;
             set_phase(&self.db_path, "retrying_later");
         }
-        let Some(session) = &mut self.session else {
+        if self.session.is_none() {
             return Ok(());
-        };
-        // Rejected before any network I/O when the batch exceeds the client's
-        // input limit, so an oversized batch costs nothing and defers the run.
-        let results = session.query_batch(&route, work.positions())?;
-        futures::pin_mut!(results);
-        while let Some(result) = results.next().await {
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
+        }
+        for attempt in 0..=1 {
+            // Re-read after a partial batch: successfully stored rows are no
+            // longer pending, and only the durable remainder is retried.
+            let work = db.work()?;
+            if work.query_count() == 0 {
+                break;
             }
-            let record = match result.record {
-                Err(ClientError::OutsideCoverage(_)) => continue,
-                result => result?,
-            };
-            for (request, record) in work.map_record(result.position, record) {
-                let result = with_wallet_db_write_lock("enhance_pir.apply", || {
-                    db.apply_ironwood_enhance_record(request, &record)
-                })
-                .map_err(|e| SyncError::db(e.to_string()))?;
-                if result == EnhancePirStoreResult::Rejected {
-                    return Err(SyncError::parse("PIR record failed wallet authentication").into());
+            // Rejected before any network I/O when the batch exceeds the
+            // client's input limit.
+            let stale_status = {
+                let session = self.session.as_mut().expect("checked above");
+                match session.query_batch(route, work.positions()) {
+                    Err(ClientError::HttpStatus(status)) if is_stale_routing_status(status) => {
+                        Some(status)
+                    }
+                    Err(error) => return Err(error.into()),
+                    Ok(results) => {
+                        futures::pin_mut!(results);
+                        let mut stale = None;
+                        while let Some(result) = results.next().await {
+                            if should_exit() {
+                                return Err(EnhancePirRunError::ExitRequested);
+                            }
+                            let record = match result.record {
+                                Err(ClientError::OutsideCoverage(_)) => continue,
+                                Err(ClientError::HttpStatus(status))
+                                    if is_stale_routing_status(status) =>
+                                {
+                                    stale = Some(status);
+                                    break;
+                                }
+                                result => result?,
+                            };
+                            for (request, record) in work.map_record(result.position, record) {
+                                let result = db.apply(request, &record)?;
+                                if result == EnhancePirStoreResult::Rejected {
+                                    return Err(SyncError::parse(
+                                        "PIR record failed wallet authentication",
+                                    )
+                                    .into());
+                                }
+                            }
+                        }
+                        stale
+                    }
                 }
+            };
+            let Some(status) = stale_status else {
+                break;
+            };
+            if attempt == 1 {
+                return Err(ClientError::HttpStatus(status).into());
+            }
+            log::info!(
+                "sync: Enhance PIR routing became stale (HTTP {status}); refreshing and retrying unfinished work"
+            );
+            if !self
+                .refresh_routing(db, route, true, true, should_exit)
+                .await?
+            {
+                return Ok(());
             }
         }
-        let remaining = PreparedWork::new(
-            db.enhance_pir_work()
-                .map_err(|e| SyncError::db(e.to_string()))?,
+        let remaining = db.work()?;
+        log::info!(
+            "sync: private recovery has {} active queries, {} rediscovery jobs, and {} suspended obligations",
+            remaining.query_count(),
+            remaining.rediscover.len(),
+            remaining.suspended
         );
-        log::info!("sync: private recovery has {} active queries, {} rediscovery jobs, and {} suspended obligations", remaining.query_count(), remaining.rediscover.len(), remaining.suspended);
         Ok(())
     }
 }
@@ -367,6 +504,7 @@ fn secure_endpoint_uri(url: &str) -> Result<http::Uri, SyncError> {
     Ok(uri)
 }
 
+/// A single deadline covers route acquisition, headers, and body on both routes.
 async fn routed_request(
     method: Method,
     url: &str,
@@ -375,6 +513,21 @@ async fn routed_request(
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
 ) -> Result<transport::ResponseBody, EnhancePirRunError> {
+    receive_response(
+        routed_response(method, url, body, should_exit, direct),
+        collector,
+        should_exit,
+    )
+    .await
+}
+
+async fn routed_response(
+    method: Method,
+    url: &str,
+    body: Vec<u8>,
+    should_exit: &impl Fn() -> bool,
+    direct: &DirectHttpsClient,
+) -> Result<http::Response<Incoming>, EnhancePirRunError> {
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
     }
@@ -403,7 +556,7 @@ async fn routed_request(
                         .http_get(
                             uri,
                             |builder| builder,
-                            |incoming| tor_body_limited(incoming, collector),
+                            |incoming| async { Ok(incoming) },
                             0,
                             |_| None,
                         )
@@ -418,7 +571,7 @@ async fn routed_request(
                                     .header(http::header::CONTENT_TYPE, "application/octet-stream")
                             },
                             Full::new(Bytes::from(body)),
-                            |incoming| tor_body_limited(incoming, collector),
+                            |incoming| async { Ok(incoming) },
                             0,
                             |_| None,
                         )
@@ -428,17 +581,9 @@ async fn routed_request(
             }
             .map_err(|error| SyncError::net(format!("Enhance PIR Tor request failed: {error}")))
         };
-        let response =
-            await_request_with_cancel(request, should_exit, "Enhance PIR Tor request timed out")
-                .await?;
-        if !response.status().is_success() {
-            return Err(SyncError::net(format!(
-                "Enhance PIR server returned HTTP {}",
-                response.status()
-            ))
-            .into());
-        }
-        return Ok(response.into_body());
+        // Returning Incoming from the Tor parser exposes headers without
+        // polling the body. A malformed error body cannot erase its status.
+        return Ok(request.await?);
     }
 
     let request = Request::builder()
@@ -447,23 +592,51 @@ async fn routed_request(
         .header(http::header::CONTENT_TYPE, "application/octet-stream")
         .body(Full::new(Bytes::from(body)))
         .map_err(|error| SyncError::parse(format!("build Enhance PIR request: {error}")))?;
-    let request = async {
-        let response = direct.request(request).await.map_err(|error| {
-            SyncError::net(format!("Enhance PIR HTTPS request failed: {error}"))
-        })?;
-        if !response.status().is_success() {
-            return Err(SyncError::net(format!(
-                "Enhance PIR server returned HTTP {}",
-                response.status()
-            )));
-        }
-        read_body_limited(response.status(), response.into_body(), collector).await
-    };
-    await_request_with_cancel(request, should_exit, "Enhance PIR HTTPS request timed out").await
+    let response = direct
+        .request(request)
+        .await
+        .map_err(|error| SyncError::net(format!("Enhance PIR HTTPS request failed: {error}")))?;
+    Ok(response)
 }
 
-async fn await_request_with_cancel<T>(
-    request: impl Future<Output = Result<T, SyncError>>,
+/// Keep the deadline outside both phases; error bodies are never consumed.
+async fn receive_response<B, E>(
+    headers: impl Future<Output = Result<http::Response<B>, E>>,
+    collector: BoundedBody,
+    should_exit: &impl Fn() -> bool,
+) -> Result<transport::ResponseBody, EnhancePirRunError>
+where
+    B: Body<Data = Bytes> + Unpin,
+    B::Error: std::fmt::Display,
+    E: Into<EnhancePirRunError>,
+{
+    await_request_with_cancel(
+        async {
+            let response = headers.await.map_err(Into::into)?;
+            collect_response(response, collector).await
+        },
+        should_exit,
+        "Enhance PIR request timed out",
+    )
+    .await
+}
+
+async fn collect_response<B>(
+    response: http::Response<B>,
+    collector: BoundedBody,
+) -> Result<transport::ResponseBody, EnhancePirRunError>
+where
+    B: Body<Data = Bytes> + Unpin,
+    B::Error: std::fmt::Display,
+{
+    if !response.status().is_success() {
+        return Err(EnhancePirRunError::HttpStatus(response.status().as_u16()));
+    }
+    Ok(read_body_limited(response.status(), response.into_body(), collector).await?)
+}
+
+async fn await_request_with_cancel<T, E: Into<EnhancePirRunError>>(
+    request: impl Future<Output = Result<T, E>>,
     should_exit: &impl Fn() -> bool,
     timeout_message: &'static str,
 ) -> Result<T, EnhancePirRunError> {
@@ -477,31 +650,20 @@ async fn await_request_with_cancel<T>(
         result = tokio::time::timeout(HTTP_TIMEOUT, &mut request) => {
             result
                 .map_err(|_| EnhancePirRunError::Failed(SyncError::net(timeout_message)))?
-                .map_err(EnhancePirRunError::Failed)
+                .map_err(Into::into)
         }
     }
 }
 
-async fn tor_body_limited(
-    mut body: Incoming,
-    mut bytes: BoundedBody,
-) -> Result<transport::ResponseBody, zcash_client_backend::tor::Error> {
-    while let Some(frame) = body.frame().await {
-        let frame = frame.map_err(zcash_client_backend::tor::http::HttpError::from)?;
-        if let Some(data) = frame.data_ref() {
-            bytes.extend(data).map_err(|error| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
-            })?;
-        }
-    }
-    Ok(bytes.finish())
-}
-
-async fn read_body_limited(
+async fn read_body_limited<B>(
     status: StatusCode,
-    mut body: Incoming,
+    mut body: B,
     mut bytes: BoundedBody,
-) -> Result<transport::ResponseBody, SyncError> {
+) -> Result<transport::ResponseBody, SyncError>
+where
+    B: Body<Data = Bytes> + Unpin,
+    B::Error: std::fmt::Display,
+{
     debug_assert!(status.is_success());
     while let Some(frame) = body.frame().await {
         let frame = frame
@@ -583,6 +745,30 @@ mod tests {
             body.extend(&self.0)?;
             Ok(body.finish())
         }
+    }
+
+    #[test]
+    fn routing_refresh_accepts_equal_revision_and_never_downgrades() {
+        let current = (37, 0);
+        assert!(current_or_newer_routing_revision(current, (38, 0)));
+        assert!(current_or_newer_routing_revision(current, (37, 1)));
+        assert!(current_or_newer_routing_revision(current, current));
+        assert!(!current_or_newer_routing_revision(current, (36, 0)));
+        assert!(!current_or_newer_routing_revision((37, 1), (37, 0)));
+    }
+
+    #[test]
+    fn routed_http_status_is_preserved_for_recovery() {
+        for status in [409, 410, 429, 502] {
+            assert!(matches!(
+                client_transport_error(EnhancePirRunError::HttpStatus(status)),
+                ClientError::HttpStatus(actual) if actual == status
+            ));
+        }
+        assert!(is_stale_routing_status(409));
+        assert!(is_stale_routing_status(410));
+        assert!(!is_stale_routing_status(429));
+        assert!(!is_stale_routing_status(502));
     }
 
     #[test]
@@ -682,3 +868,7 @@ mod tests {
         assert!(matches!(result, Err(ClientError::Json(_))));
     }
 }
+
+#[cfg(test)]
+#[path = "enhance_pir_tests.rs"]
+mod recovery_tests;
