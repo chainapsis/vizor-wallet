@@ -7709,6 +7709,182 @@ void main() {
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
+  for (final direction in SwapDirection.values) {
+    testWidgets(
+      'rejected POC ${direction.name} quotes reuse the first key after amount edits',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        final provider = _LowAmountQuoteSwapProvider();
+        var reservations = 0;
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(
+              initialLocation: '/swap',
+              routes: [_swapRoute(), _swapActivityRoute()],
+            ),
+            swapProvider: provider,
+            seedSwapActivityFixtures: false,
+            reserveSwapAddress:
+                ({required accountUuid, required direction}) async {
+                  reservations++;
+                  return SwapZecStagingAddress(
+                    address: 'u1poc$reservations',
+                    receivingIndex: BigInt.from(reservations),
+                  );
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+        );
+        container.read(swapStateProvider.notifier).selectDirection(direction);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('swap_amount_field')),
+          '0.001',
+        );
+        await _enterDestinationText(
+          tester,
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+        for (final amount in ['0.001', '0.002', '0.003']) {
+          await tester.enterText(
+            find.byKey(const ValueKey('swap_amount_field')),
+            amount,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('swap_quote_error_message')),
+            findsOneWidget,
+          );
+        }
+        expect(provider.requests, hasLength(3));
+        expect(reservations, 1);
+        expect(
+          provider.requests
+              .map((r) => direction.sendsZec ? r.refundAddress : r.destination)
+              .toSet(),
+          {'u1poc1'},
+        );
+      },
+    );
+  }
+
+  testWidgets('POC amount edits share an in-flight address reservation', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final provider = _LowAmountQuoteSwapProvider();
+    final pending = Completer<SwapZecStagingAddress>();
+    var reservations = 0;
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: provider,
+        seedSwapActivityFixtures: false,
+        reserveSwapAddress: ({required accountUuid, required direction}) {
+          reservations++;
+          return pending.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.001',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    final first = notifier.showReview();
+    await tester.pump();
+    notifier.updateAmount('0.002');
+    final second = notifier.showReview();
+    await tester.pump();
+    expect(reservations, 1);
+    pending.complete(
+      SwapZecStagingAddress(address: 'u1poc', receivingIndex: BigInt.zero),
+    );
+    await tester.pumpAndSettle();
+    await Future.wait([first, second]);
+    expect(provider.requests, hasLength(1));
+    expect(provider.requests.single.refundAddress, 'u1poc');
+  });
+
+  testWidgets('starting a POC swap consumes the cached receiving key', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var reservations = 0;
+    final purposes = <SwapDirection>[];
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          purposes.add(direction);
+          reservations++;
+          return SwapZecStagingAddress(
+            address: 'u1poc$reservations',
+            receivingIndex: BigInt.from(reservations),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRecipient,
+      'u1poc1',
+    );
+    expect(await notifier.startIntent(), isA<SwapStartedActivity>());
+    await tester.pumpAndSettle();
+    notifier.updateAmount('30');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(reservations, 2);
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRecipient,
+      'u1poc2',
+    );
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('0.1');
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(reservations, 3);
+    expect(purposes.last, SwapDirection.zecToExternal);
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRefundTo,
+      'u1poc3',
+    );
+  });
+
   testWidgets('pay quote failure uses payment-specific copy', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -9757,6 +9933,7 @@ Widget _routerHarness(
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
   ReserveOrchardAddress? loadShieldedAddress,
+  ReserveSwapAddress? reserveSwapAddress,
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
@@ -9803,6 +9980,7 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
+          reserveSwapAddress: reserveSwapAddress,
           reserveFreshOrchardAddress:
               loadShieldedAddress ??
               ({required accountUuid}) {

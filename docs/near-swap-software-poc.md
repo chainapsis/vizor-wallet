@@ -31,10 +31,20 @@ Do not reuse the installed app's wallet identity for this test.
 
 ## Wallet flow
 
-1. A quote obtains the live chain height. Issuance waits for scanning and memo
-   enhancement, recovers confirmed funding records, then reserves the next index.
-   Refunds and incoming payments use independent sequences. Quote retries retain
-   their reservation.
+1. The first quote obtains the live chain height without updating the wallet tip
+   or starting sync. A new reservation requires contiguous scanning within ten
+   blocks of the newer RPC/DB tip and no pending transaction enhancement. It
+   recovers confirmed funding records, then reserves the next index, watching
+   from the first unscanned block. This is a near-tip policy, not a guarantee
+   that an independently restored wallet has discovered allocations in the tail.
+   Refunds and incoming payments use independent sequences. Quote errors, amount
+   edits, and refreshes retain the same reservation for the current account and
+   direction, including while address preparation is in flight. Starting a swap,
+   requesting a quote for another account/direction, or restarting the app
+   requires a new reservation.
+   Existing reservations remain watched; errors never roll back a key that may
+   already have been sent to the provider. A retained address does not require
+   another sync readiness check for each quote.
 2. Outgoing fee estimation and funding use the same normal proposal pipeline with
    a binary recovery memo on ordinary internal Ironwood change. The proposal must
    include that memo in the transaction paying the deposit address. A zero-value

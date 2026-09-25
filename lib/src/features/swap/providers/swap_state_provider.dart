@@ -65,7 +65,7 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
-  SwapZecStagingAddress? _reviewStagingAddress;
+  Future<SwapZecStagingAddress>? _reviewStagingAddress;
   String? _reviewStagingAccount;
   SwapDirection? _reviewStagingDirection;
   var _pricingLoadGeneration = 0;
@@ -694,6 +694,31 @@ class SwapNotifier extends Notifier<SwapState> {
     }
   }
 
+  Future<SwapZecStagingAddress> _prepareReviewAddress(
+    String accountUuid,
+    SwapDirection direction,
+  ) async {
+    if (_reviewStagingAccount != accountUuid ||
+        _reviewStagingDirection != direction) {
+      _reviewStagingAddress = null;
+    }
+    _reviewStagingAccount = accountUuid;
+    _reviewStagingDirection = direction;
+    // Cache the reservation before awaiting it so edits during preparation do
+    // not allocate another key. The key remains watched even if a quote fails.
+    final pending = _reviewStagingAddress ??= ref
+        .read(swapZecStagingAddressServiceProvider)
+        .prepareForQuote(accountUuid: accountUuid, direction: direction);
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_reviewStagingAddress, pending)) {
+        _reviewStagingAddress = null;
+      }
+      rethrow;
+    }
+  }
+
   Future<void> showReview({bool preserveCurrentReview = false}) async {
     if (!state.canReviewQuote) return;
 
@@ -727,21 +752,16 @@ class SwapNotifier extends Notifier<SwapState> {
       if (!state.payMode) {
         await _persistComposerPreferences(preferences);
       }
-      var stagingAddress =
-          _reviewStagingAccount == accountUuid &&
-              _reviewStagingDirection == direction
-          ? _reviewStagingAddress
-          : null;
-      stagingAddress ??= await ref
-          .read(swapZecStagingAddressServiceProvider)
-          .prepareForQuote(accountUuid: accountUuid, direction: direction);
       if (generation != _quoteGeneration || !_isAccountActive(accountUuid)) {
         return;
       }
-      // A quote retry keeps its receiving key. A new composer operation reserves again.
-      _reviewStagingAddress = stagingAddress;
-      _reviewStagingAccount = accountUuid;
-      _reviewStagingDirection = direction;
+      final stagingAddress = await _prepareReviewAddress(
+        accountUuid,
+        direction,
+      );
+      if (generation != _quoteGeneration || !_isAccountActive(accountUuid)) {
+        return;
+      }
       final addressPlan = stagingAddress.toAddressPlan(
         direction: direction,
         externalAsset: externalAsset,
@@ -1722,7 +1742,8 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearReviewState() {
-    _reviewStagingAddress = null;
+    // Composer edits invalidate the quote, not its receiving key. A started
+    // swap or an account/direction change ends the reservation's reuse.
     _quoteGeneration++;
     state = state.copyWith(
       reviewVisible: false,

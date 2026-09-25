@@ -7,7 +7,7 @@ use zcash_client_backend::data_api::{
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{
-    consensus::{NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::MemoBytes,
 };
 
@@ -22,6 +22,27 @@ use super::{
 
 pub(crate) const ENABLED: bool = cfg!(feature = "swap-receiving-poc");
 const RECEIVE_LOOKAHEAD: u32 = 20;
+const MAX_RESERVATION_TIP_LAG: u64 = 10;
+
+/// Permit ordinary tip movement without treating a historical restore as ready.
+/// Memo enhancement must finish because confirmed funding records advance indices.
+fn reservation_scan_from(
+    scanned: Option<BlockHeight>,
+    known_tip: BlockHeight,
+    live_tip: u64,
+    pending_enhancement: bool,
+) -> Result<BlockHeight, String> {
+    let target = live_tip.max(u64::from(u32::from(known_tip)));
+    let scanned = scanned.ok_or("Finish wallet sync before requesting a swap address")?;
+    if scanned > known_tip
+        || target.saturating_sub(u64::from(u32::from(scanned))) > MAX_RESERVATION_TIP_LAG
+        || pending_enhancement
+    {
+        return Err("Finish wallet sync before requesting a swap address".into());
+    }
+    // Watch the unscanned tail as well as future blocks, including after reopen.
+    Ok(scanned + 1)
+}
 
 fn require_software_account(db: &WalletDatabase, account: AccountUuid) -> Result<(), String> {
     if !ENABLED {
@@ -58,16 +79,15 @@ pub(crate) fn reserve(
             return Err("Swap receiving POC requires an active Ironwood chain".into());
         }
         let scanned = db.block_fully_scanned().map_err(|e| e.to_string())?;
-        if u64::from(u32::from(tip)) != live_tip
-            || scanned.is_none_or(|block| block.block_height() < tip)
-            || db
-                .transaction_data_requests()
+        let scan_from = reservation_scan_from(
+            scanned.map(|block| block.block_height()),
+            tip,
+            live_tip,
+            db.transaction_data_requests()
                 .map_err(|e| e.to_string())?
                 .iter()
-                .any(|request| matches!(request, TransactionDataRequest::Enhancement(_)))
-        {
-            return Err("Finish wallet sync before requesting a swap address".into());
-        }
+                .any(|request| matches!(request, TransactionDataRequest::Enhancement(_))),
+        )?;
         db.recover_swap_refund_memos(account)
             .map_err(|e| e.to_string())?;
         let key = db
@@ -78,7 +98,7 @@ pub(crate) fn reserve(
                 } else {
                     Purpose::Receive
                 },
-                tip + 1,
+                scan_from,
             )
             .map_err(|e| e.to_string())?;
         let address = Address::Unified(
@@ -153,6 +173,26 @@ mod tests {
     use secrecy::SecretVec;
     use zcash_client_backend::data_api::WalletWrite;
     use zcash_protocol::consensus::BlockHeight;
+
+    #[test]
+    fn reservations_tolerate_tip_movement_but_require_recovery_progress() {
+        let height = BlockHeight::from_u32;
+        // A fresh RPC tip can be ahead of the DB without a quote changing the DB tip.
+        assert_eq!(
+            reservation_scan_from(Some(height(100)), height(100), 110, false).unwrap(),
+            height(101)
+        );
+        // Use the newer DB tip if the RPC response arrived after another sync update.
+        assert_eq!(
+            reservation_scan_from(Some(height(100)), height(110), 105, false).unwrap(),
+            height(101)
+        );
+        assert!(reservation_scan_from(Some(height(100)), height(100), 111, false).is_err());
+        assert!(reservation_scan_from(Some(height(100)), height(111), 100, false).is_err());
+        assert!(reservation_scan_from(None, height(100), 100, false).is_err());
+        assert!(reservation_scan_from(Some(height(100)), height(100), 100, true).is_err());
+        assert!(reservation_scan_from(Some(height(101)), height(100), 100, false).is_err());
+    }
 
     #[test]
     fn funding_memo_requires_reserved_refund_key_after_reopen() {
