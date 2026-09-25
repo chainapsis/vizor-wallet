@@ -105,6 +105,7 @@ class Backend implements GiftCardTrackingBackend {
 Future<PaymentLinkRecoveryRecord> seed(
   PaymentLinkRecoveryStore store, {
   String address = 'card',
+  DateTime? fundedAt,
 }) async {
   await store.saveDraft(
     link: VizorPaymentLink(
@@ -119,7 +120,11 @@ Future<PaymentLinkRecoveryRecord> seed(
     sourceAccountUuid: 'source',
     claimFeeReserveZatoshi: BigInt.from(10000),
   );
-  return store.markFunded(address: address, fundingTxids: _txid);
+  return store.markFunded(
+    address: address,
+    fundingTxids: _txid,
+    updatedAt: fundedAt,
+  );
 }
 
 void main() {
@@ -173,12 +178,7 @@ void main() {
   test(
     'unobserved funding reads as confirming only within the window',
     () async {
-      await seed(store);
-      await store.markFunded(
-        address: 'card',
-        fundingTxids: _txid,
-        updatedAt: clock,
-      );
+      await seed(store, fundedAt: clock);
       backend.reason = GiftCardUsageReason.fundingNotObserved;
       clock = clock.add(giftCardConfirmingWindow - const Duration(seconds: 1));
       await service.refresh();
@@ -186,6 +186,11 @@ void main() {
       expect(usage.status, GiftCardUsageStatus.unknown);
       expect(usage.reason, GiftCardUsageReason.awaitingConfirmation);
       clock = clock.add(const Duration(seconds: 1));
+      await service.refresh(force: true);
+      usage = (await store.load()).single.usage;
+      expect(usage.reason, GiftCardUsageReason.fundingNotObserved);
+      // Sharing (or re-copying) the card later must not restart the window.
+      await store.markShared(address: 'card', updatedAt: clock);
       await service.refresh(force: true);
       usage = (await store.load()).single.usage;
       expect(usage.reason, GiftCardUsageReason.fundingNotObserved);
@@ -197,6 +202,18 @@ void main() {
       );
     },
   );
+  test('cards without a funding timestamp never read as confirming', () async {
+    await seed(store, fundedAt: clock);
+    final json = jsonDecode(storage.value!);
+    json['records'][0].remove('fundedAt');
+    storage.value = jsonEncode(json);
+    backend.reason = GiftCardUsageReason.fundingNotObserved;
+    await service.refresh();
+    expect(
+      (await store.load()).single.usage.reason,
+      GiftCardUsageReason.fundingNotObserved,
+    );
+  });
   test(
     'legacy cards load unknown and gain a durable observer lazily',
     () async {

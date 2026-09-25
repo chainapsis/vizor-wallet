@@ -13,12 +13,12 @@ abstract interface class GiftCardTrackingBackend {
   void cancel();
 }
 
-/// How long after funding submission an unobserved card reads as confirming.
+/// How long after funding is recorded an unobserved card reads as confirming.
 ///
 /// Funding is observed only through the observer's own block scan, never by
 /// querying lightwalletd for the funding txid, so a card cannot see its funding
-/// transaction until it is mined and scanned. About eight target block times.
-const giftCardConfirmingWindow = Duration(minutes: 10);
+/// transaction until it is mined and scanned.
+const giftCardConfirmingWindow = Duration(minutes: 3);
 
 /// One owner serializes registration, scans and deletion. Durable card records
 /// are the registration intents; an interrupted import is repaired idempotently.
@@ -64,7 +64,9 @@ class GiftCardTrackingService {
     PaymentLinkRecoveryRecord card,
     GiftCardUsage usage,
   ) {
-    final elapsed = now().difference(card.updatedAt);
+    final fundedAt = card.fundedAt;
+    if (fundedAt == null) return usage;
+    final elapsed = now().difference(fundedAt);
     if (usage.reason != GiftCardUsageReason.fundingNotObserved ||
         card.state == PaymentLinkRecoveryState.draft ||
         elapsed.isNegative ||
