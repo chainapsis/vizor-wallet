@@ -41,13 +41,11 @@ Future<GiftCardUsageEvidence> inspectGiftCardUsage({
   required String accountUuid,
   required String fundingTxids,
   required BigInt expectedFundingZatoshi,
-  required String lightwalletdUrl,
 }) => RustLib.instance.api.crateApiGiftCardTrackingInspectGiftCardUsage(
   dbPath: dbPath,
   accountUuid: accountUuid,
   fundingTxids: fundingTxids,
   expectedFundingZatoshi: expectedFundingZatoshi,
-  lightwalletdUrl: lightwalletdUrl,
 );
 
 Future<void> removeGiftCardObserver({

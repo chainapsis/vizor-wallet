@@ -66,7 +66,6 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
                 account.clone(),
                 funding.clone(),
                 50_010_000,
-                LIGHTWALLETD_URL.into(),
             ))
             .unwrap()
     };
@@ -129,7 +128,6 @@ fn observer_reuses_empty_db_without_scanning_idle_gap() {
                 uuid.into(),
                 funding.into(),
                 10_010_000,
-                LIGHTWALLETD_URL.into(),
             ))
             .unwrap()
     };

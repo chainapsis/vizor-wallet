@@ -783,7 +783,6 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String fundingTxids,
     required BigInt expectedFundingZatoshi,
-    required String lightwalletdUrl,
   });
 
   bool crateApiVotingIsLastMoment({
@@ -6086,7 +6085,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String fundingTxids,
     required BigInt expectedFundingZatoshi,
-    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6096,7 +6094,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(fundingTxids, serializer);
           sse_encode_u_64(expectedFundingZatoshi, serializer);
-          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6109,13 +6106,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiGiftCardTrackingInspectGiftCardUsageConstMeta,
-        argValues: [
-          dbPath,
-          accountUuid,
-          fundingTxids,
-          expectedFundingZatoshi,
-          lightwalletdUrl,
-        ],
+        argValues: [dbPath, accountUuid, fundingTxids, expectedFundingZatoshi],
         apiImpl: this,
       ),
     );
@@ -6129,7 +6120,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "fundingTxids",
           "expectedFundingZatoshi",
-          "lightwalletdUrl",
         ],
       );
 
