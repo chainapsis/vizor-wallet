@@ -2096,6 +2096,9 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<(), String> {
+    use zakura_transaction_status::{
+        lightwalletd::LightwalletdSource, StatusObservation, StatusRequest,
+    };
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let candidates = super::migration::unbroadcast_migration_recovery_candidates(
         db_path,
@@ -2113,16 +2116,29 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
     validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
 
+    let never_exit = || false;
+    let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
+    let mut reader = sync_engine::status_pir::reader(db_path, network, &never_exit, public_source);
+
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
-        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+        let observation = reader
+            .observe(StatusRequest {
+                txid,
+                coverage: zakura_pir_status::LocalCoverageContext {
+                    earliest_possible_inclusion: None,
+                    required_through: Some(chain_tip_height),
+                },
+            })
+            .await;
+        match observation {
+            Ok(StatusObservation::NotFound) => {}
             Ok(_) => {
                 return Err(format!(
                     "Migration transaction {} is present in the mempool or chain",
                     candidate.txid_hex
                 ));
             }
-            Err(status) if status.code() == Code::NotFound => {}
             Err(status) => {
                 return Err(format!(
                     "Could not verify migration transaction {}: {status}",
@@ -2191,7 +2207,11 @@ async fn reconcile_scheduled_migration_txs_before_abandon(
         .collect::<Vec<_>>();
     for candidate in attempted_candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
-        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+        // This reconciliation needs remote signed bytes until authenticated local
+        // bytes are available; it is intentionally a payload-required exception.
+        match crate::wallet::transaction_data::payload::get_transaction_payload(&mut client, txid)
+            .await
+        {
             Ok(raw_tx) => {
                 decrypt_and_store_migration_tx(db_path, network, &raw_tx.data)?;
                 match candidate.kind {
@@ -6162,7 +6182,7 @@ pub(crate) struct ResubmitStats {
 /// sync loop's cancel / mode-change condition. It is consulted:
 ///
 ///   * Before iterating the candidate list at all (so a cancel
-///     arriving during `run_enhancement` aborts the resubmit pass
+///     arriving during `run_transaction_data_requests` aborts the resubmit pass
 ///     entirely without opening a single rebroadcast RPC).
 ///   * Before every individual candidate's first broadcast.
 ///   * Before the retry call for any candidate that failed on

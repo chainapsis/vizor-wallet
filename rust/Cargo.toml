@@ -7,6 +7,8 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -168,6 +170,7 @@ ledger-transport = "0.11.0"
 ledger-transport-hid = "0.11.0"
 
 [dev-dependencies]
+hyper = { version = "1", features = ["server", "http2"] }
 # Deterministic signatures for validator-rotation verification tests.
 ed25519-consensus = "2.1"
 tempfile = "3"
@@ -220,3 +223,12 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Pin the typed transaction request API stacked on wallet-libraries PR #36.
+# Keep the related SDK crates on one revision to preserve shared Rust types.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
