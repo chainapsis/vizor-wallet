@@ -13,6 +13,13 @@ abstract interface class GiftCardTrackingBackend {
   void cancel();
 }
 
+/// How long after funding submission an unobserved card reads as confirming.
+///
+/// Funding is observed only through the observer's own block scan, never by
+/// querying lightwalletd for the funding txid, so a card cannot see its funding
+/// transaction until it is mined and scanned. About eight target block times.
+const giftCardConfirmingWindow = Duration(minutes: 10);
+
 /// One owner serializes registration, scans and deletion. Durable card records
 /// are the registration intents; an interrupted import is repaired idempotently.
 class GiftCardTrackingService {
@@ -48,6 +55,32 @@ class GiftCardTrackingService {
     });
     _tail = result.then<void>((_) {}, onError: (_, _) {});
     return result;
+  }
+
+  /// Presents a recently funded card whose funding is not yet scanned as
+  /// confirming. After the window it stays unverified, which then signals a
+  /// funding transaction that did not confirm.
+  GiftCardUsage _confirmingWithinWindow(
+    PaymentLinkRecoveryRecord card,
+    GiftCardUsage usage,
+  ) {
+    final elapsed = now().difference(card.updatedAt);
+    if (usage.reason != GiftCardUsageReason.fundingNotObserved ||
+        card.state == PaymentLinkRecoveryState.draft ||
+        elapsed.isNegative ||
+        elapsed >= giftCardConfirmingWindow) {
+      return usage;
+    }
+    return GiftCardUsage(
+      status: usage.status,
+      reason: GiftCardUsageReason.awaitingConfirmation,
+      accountUuid: usage.accountUuid,
+      checkedAt: usage.checkedAt,
+      verifiedHeight: usage.verifiedHeight,
+      spentHeight: usage.spentHeight,
+      spendingTxids: usage.spendingTxids,
+      cleanupPending: usage.cleanupPending,
+    );
   }
 
   Future<void> register(PaymentLinkRecoveryRecord card) =>
@@ -175,7 +208,10 @@ class GiftCardTrackingService {
               if (!_valid(epoch) || network() != currentNetwork) return;
               late final GiftCardUsage observation;
               try {
-                observation = await backend.inspect(card);
+                observation = _confirmingWithinWindow(
+                  card,
+                  await backend.inspect(card),
+                );
                 GiftCardUsage.fromJson(observation.toJson());
               } catch (_) {
                 failedAddresses.add(card.link.address);

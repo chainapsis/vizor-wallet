@@ -171,6 +171,33 @@ void main() {
     },
   );
   test(
+    'unobserved funding reads as confirming only within the window',
+    () async {
+      await seed(store);
+      await store.markFunded(
+        address: 'card',
+        fundingTxids: _txid,
+        updatedAt: clock,
+      );
+      backend.reason = GiftCardUsageReason.fundingNotObserved;
+      clock = clock.add(giftCardConfirmingWindow - const Duration(seconds: 1));
+      await service.refresh();
+      var usage = (await store.load()).single.usage;
+      expect(usage.status, GiftCardUsageStatus.unknown);
+      expect(usage.reason, GiftCardUsageReason.awaitingConfirmation);
+      clock = clock.add(const Duration(seconds: 1));
+      await service.refresh(force: true);
+      usage = (await store.load()).single.usage;
+      expect(usage.reason, GiftCardUsageReason.fundingNotObserved);
+      backend.reason = null;
+      await service.refresh(force: true);
+      expect(
+        (await store.load()).single.usage.status,
+        GiftCardUsageStatus.unused,
+      );
+    },
+  );
+  test(
     'legacy cards load unknown and gain a durable observer lazily',
     () async {
       await seed(store);
