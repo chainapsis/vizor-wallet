@@ -1134,6 +1134,59 @@ Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
 Future<void> shutdownSigningReservations() =>
     RustLib.instance.api.crateApiSyncShutdownSigningReservations();
 
+/// Whether this binary enables the isolated software-wallet swap receiving POC.
+bool swapReceivingPocEnabled() =>
+    RustLib.instance.api.crateApiSyncSwapReceivingPocEnabled();
+
+Future<SwapReceivingAddress> reserveSwapReceivingAddress({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool refund,
+  required BigInt liveTip,
+}) => RustLib.instance.api.crateApiSyncReserveSwapReceivingAddress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  refund: refund,
+  liveTip: liveTip,
+);
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+Future<ProposalResult> proposeSwapFunding({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+  required BigInt refundIndex,
+}) => RustLib.instance.api.crateApiSyncProposeSwapFunding(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
+  refundIndex: refundIndex,
+);
+
+Future<BigInt> estimateSwapFundingFee({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+  required BigInt refundIndex,
+}) => RustLib.instance.api.crateApiSyncEstimateSwapFundingFee(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
+  refundIndex: refundIndex,
+);
+
 /// Flat address-validation result for the Dart side.
 ///
 /// `wrong_network` marks the one case where `is_valid` is false but the input
@@ -2549,6 +2602,25 @@ class SubtreeRoot {
           runtimeType == other.runtimeType &&
           completingBlockHeight == other.completingBlockHeight &&
           rootHash == other.rootHash;
+}
+
+/// A durably reserved address in the independent refund or incoming sequence.
+class SwapReceivingAddress {
+  final String address;
+  final BigInt index;
+
+  const SwapReceivingAddress({required this.address, required this.index});
+
+  @override
+  int get hashCode => address.hashCode ^ index.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SwapReceivingAddress &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          index == other.index;
 }
 
 class SyncProgress {

@@ -2825,6 +2825,10 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    with_wallet_db_write_lock("swap_receiving.prepare", || {
+        crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+    })
+    .map_err(SyncError::db)?;
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -3475,6 +3479,21 @@ async fn run_sync_impl(
                     if should_exit() {
                         return Ok(());
                     }
+                    with_wallet_db_write_lock("swap_receiving.complete", || {
+                        crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+                    })
+                    .map_err(SyncError::db)?;
+                    // Final enhancement can discover a funding memo after the
+                    // queue drained. Replay its key before declaring sync complete.
+                    if db
+                        .suggest_scan_ranges()
+                        .map_err(|e| SyncError::db(e.to_string()))?
+                        .iter()
+                        .any(is_pending_scan_range)
+                    {
+                        prefetch = None;
+                        continue;
+                    }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;
                 }
@@ -3964,6 +3983,11 @@ async fn run_sync_impl(
 
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+
+        with_wallet_db_write_lock("swap_receiving.recover", || {
+            crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+        })
+        .map_err(SyncError::db)?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a

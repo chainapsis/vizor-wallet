@@ -69,7 +69,6 @@ pub(crate) use pczt::{
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
-pub(crate) use send::propose_send;
 pub(crate) use send::{
     abandon_orchard_migration, advance_orchard_migration_preparation_for_run,
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
@@ -94,6 +93,7 @@ pub(crate) use send::{
     create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
     shield_transparent_balance,
 };
+pub(crate) use send::{estimate_fee_with_swap_refund, propose_send, propose_send_with_swap_refund};
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.

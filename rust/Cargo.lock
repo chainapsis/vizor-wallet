@@ -4617,6 +4617,7 @@ dependencies = [
  "zakura-primitives",
  "zakura-proofs",
  "zakura-sapling-crypto",
+ "zakura-swap-receiving",
  "zcash_address",
  "zcash_note_encryption",
  "zcash_protocol",
@@ -7814,9 +7815,7 @@ dependencies = [
 
 [[package]]
 name = "zakura-client-backend"
-version = "0.1.0-rc5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad892817774c836ab37239af03840b17368a4c5ed364f9ee868273bb0ddf0ada"
+version = "0.1.0-rc6"
 dependencies = [
  "arti-client",
  "async-trait",
@@ -7871,6 +7870,7 @@ dependencies = [
  "zakura-pczt",
  "zakura-primitives",
  "zakura-sapling-crypto",
+ "zakura-swap-receiving",
  "zcash_address",
  "zcash_encoding",
  "zcash_note_encryption",
@@ -7883,9 +7883,7 @@ dependencies = [
 
 [[package]]
 name = "zakura-client-sqlite"
-version = "0.1.0-rc5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4757a07d2fcc344aa2bbec9ba4d68d95d09ed9968b1d3032f0ca348487f251af"
+version = "0.1.0-rc6"
 dependencies = [
  "bip32",
  "bitflags 2.13.1",
@@ -7921,6 +7919,7 @@ dependencies = [
  "zakura-pczt",
  "zakura-primitives",
  "zakura-sapling-crypto",
+ "zakura-swap-receiving",
  "zcash_address",
  "zcash_encoding",
  "zcash_protocol",
@@ -8088,8 +8087,6 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4f816936d17f64f02008363aec6dc46ff1ede6d1e227d2037561c14763b52f2"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8242,6 +8239,21 @@ dependencies = [
  "once_cell",
  "subtle",
  "zakura-pasta-curves",
+]
+
+[[package]]
+name = "zakura-swap-receiving"
+version = "0.0.0"
+dependencies = [
+ "ff 0.14.0",
+ "hmac 0.12.1",
+ "sha2 0.10.9",
+ "zakura-keys",
+ "zakura-orchard",
+ "zakura-pasta-curves",
+ "zcash_address",
+ "zcash_protocol",
+ "zeroize",
 ]
 
 [[package]]

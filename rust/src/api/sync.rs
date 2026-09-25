@@ -2967,3 +2967,87 @@ pub fn get_payment_link_spend_evidence(
 pub fn shutdown_signing_reservations() -> Result<(), String> {
     wallet_sync::shutdown_signing_reservations()
 }
+
+/// Whether this binary enables the isolated software-wallet swap receiving POC.
+#[frb(sync)]
+pub fn swap_receiving_poc_enabled() -> bool {
+    crate::wallet::swap_receiving::ENABLED
+}
+
+/// A durably reserved address in the independent refund or incoming sequence.
+pub struct SwapReceivingAddress {
+    pub address: String,
+    pub index: u64,
+}
+
+pub fn reserve_swap_receiving_address(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    refund: bool,
+    live_tip: u64,
+) -> Result<SwapReceivingAddress, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let (address, index) = crate::wallet::swap_receiving::reserve(
+            &db_path,
+            network,
+            &account_uuid,
+            refund,
+            live_tip,
+        )?;
+        Ok(SwapReceivingAddress { address, index })
+    })
+}
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+pub fn propose_swap_funding(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::propose_send_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &deposit_address,
+            amount_zatoshi,
+            None,
+            Some(refund_index),
+        )?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+pub fn estimate_swap_funding_fee(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::estimate_fee_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &deposit_address,
+            amount_zatoshi,
+            None,
+            Some(refund_index),
+        )
+    })
+}

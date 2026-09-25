@@ -1203,6 +1203,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SupportedVersions dco_decode_supported_versions(dynamic raw);
 
   @protected
+  SwapReceivingAddress dco_decode_swap_receiving_address(dynamic raw);
+
+  @protected
   SyncProgress dco_decode_sync_progress(dynamic raw);
 
   @protected
@@ -2776,6 +2779,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SupportedVersions sse_decode_supported_versions(SseDeserializer deserializer);
+
+  @protected
+  SwapReceivingAddress sse_decode_swap_receiving_address(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SyncProgress sse_decode_sync_progress(SseDeserializer deserializer);
@@ -4676,6 +4684,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_supported_versions(
     SupportedVersions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_swap_receiving_address(
+    SwapReceivingAddress self,
     SseSerializer serializer,
   );
 

@@ -6,7 +6,12 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# Enable only for the isolated software-wallet POC build.
+swap-receiving-poc = []
+
 [dependencies]
+zakura-swap-receiving = { path = "../../wallet-libraries/zakura/swap-receiving" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -106,7 +111,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc5"
+version = "=0.1.0-rc6"
 features = [
     "orchard",
     "transparent-inputs",
@@ -115,12 +120,13 @@ features = [
     "tor",
     "sync",
     "pczt",
+    "experimental-swap-receiving",
 ]
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc5"
-features = ["orchard", "transparent-inputs", "unstable", "serde"]
+version = "=0.1.0-rc6"
+features = ["orchard", "transparent-inputs", "unstable", "serde", "experimental-swap-receiving"]
 
 [dependencies.zcash_voting]
 version = "=5.1.0"
@@ -211,3 +217,9 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Local POC dependencies. Keep these overrides local until the library changes ship.
+[patch.crates-io]
+zakura-client-backend = { path = "../../wallet-libraries/librustzcash/zcash_client_backend" }
+zakura-client-sqlite = { path = "../../wallet-libraries/librustzcash/zcash_client_sqlite" }
+zakura-pczt = { path = "../../wallet-libraries/librustzcash/pczt" }
