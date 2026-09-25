@@ -300,7 +300,14 @@ class _MobileTransactionStatusScreenState
       customTemplate: ref.read(zcashExplorerProvider),
     );
     if (launched || !mounted) return;
-    await Clipboard.setData(ClipboardData(text: widget.args.txidHex));
+    await Clipboard.setData(
+      ClipboardData(
+        text: zcashDisplayTxidHex(
+          widget.args.txidHex,
+          ZcashExplorerTxidOrder.protocol,
+        ),
+      ),
+    );
     if (!mounted) return;
     showAppToast(context, 'Transaction Hash Copied');
   }
@@ -681,7 +688,12 @@ class _MobileTransactionStatusScreenState
                           tx,
                           override: giftCard?.activityTimestamp,
                         ),
-                        txidText: truncatedTxid(widget.args.txidHex),
+                        txidText: truncatedTxid(
+                          zcashDisplayTxidHex(
+                            widget.args.txidHex,
+                            ZcashExplorerTxidOrder.protocol,
+                          ),
+                        ),
                         onOpenExplorer: () => unawaited(_openExplorer()),
                         isCardCreation:
                             giftCard?.kind == GiftCardActivityKind.created,

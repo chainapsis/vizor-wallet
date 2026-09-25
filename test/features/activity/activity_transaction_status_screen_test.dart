@@ -54,16 +54,27 @@ void main() {
         '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
     final protocolTxid = paymentLinkBroadcastTxidsToProtocolOrder(displayTxid);
     final launched = <String>[];
+    final copied = <String>[];
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'launch') {
         launched.add((call.arguments as Map)['url'] as String);
+        return false;
       }
       return true;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await _pumpScreen(
       tester,
       args: ActivityTransactionStatusArgs(
@@ -83,10 +94,12 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text(truncatedTxid(protocolTxid)));
+    expect(find.text(truncatedTxid(displayTxid)), findsOneWidget);
+    await tester.tap(find.text(truncatedTxid(displayTxid)));
     await tester.pump();
     expect(launched, hasLength(1));
     expect(Uri.parse(launched.single).path, '/tx/$displayTxid');
+    expect(copied, [displayTxid]);
   });
 
   for (final settings in [(false, false), (true, true)]) {
@@ -586,7 +599,15 @@ void main() {
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('u195091 ... 190591'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(find.text(truncatedTxid(_txidHex)), findsOneWidget);
+    expect(
+      find.text(
+        truncatedTxid(
+          'efcdab8967452301efcdab8967452301'
+          'efcdab8967452301efcdab8967452301',
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(

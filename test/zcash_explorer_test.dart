@@ -2,6 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
 
 void main() {
+  test('formats protocol-order txids for display and copying', () {
+    expect(
+      zcashDisplayTxidHex(
+        'd6e03b5276de779d532791a82a28da7fb6b60524bf5996f4d7629cd794682c01',
+        ZcashExplorerTxidOrder.protocol,
+      ),
+      '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6',
+    );
+  });
+
   test('builds mainnet transaction explorer URL from protocol-order txid', () {
     expect(
       zcashExplorerTransactionUri(

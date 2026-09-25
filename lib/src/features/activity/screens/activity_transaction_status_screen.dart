@@ -256,7 +256,10 @@ class _ActivityTransactionStatusScreenState
     if (launched || !mounted) return;
     copyTextWithToast(
       context,
-      text: widget.args.txidHex,
+      text: zcashDisplayTxidHex(
+        widget.args.txidHex,
+        ZcashExplorerTxidOrder.protocol,
+      ),
       toastMessage: 'Transaction hash copied',
     );
   }
@@ -401,7 +404,7 @@ class _ActivityTransactionStatusScreenState
         status: _receivedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: truncatedTxid(tx.txidHex),
+        txIdText: _truncatedDisplayTxid(tx.txidHex),
         fromRecipient: fromRecipient,
         unknownFromKind: hasFromAddress
             ? null
@@ -455,7 +458,7 @@ class _ActivityTransactionStatusScreenState
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
       timestampText: _timestampText(tx),
-      txIdText: truncatedTxid(tx.txidHex),
+      txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
       isShieldedRecipient:
           zcashAddressDisplayKind(recipientAddress) ==
@@ -487,7 +490,7 @@ class _ActivityTransactionStatusScreenState
         status: _shieldedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: truncatedTxid(tx.txidHex),
+        txIdText: _truncatedDisplayTxid(tx.txidHex),
         feeText: tx.fee > BigInt.zero
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
@@ -540,7 +543,7 @@ class _ActivityTransactionStatusScreenState
           ? _toggleMessageExpanded
           : null,
       timestampText: _timestampText(tx, override: giftCard.activityTimestamp),
-      txIdText: truncatedTxid(tx.txidHex),
+      txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(
         tx,
         privacyModeEnabled: privacyModeEnabled,
@@ -647,7 +650,7 @@ class _ActivityTransactionStatusScreenState
               ReviewListRow(label: 'Timestamp', value: _timestampText(tx)),
               ReviewListRow(
                 label: 'Tx ID',
-                value: truncatedTxid(widget.args.txidHex),
+                value: _truncatedDisplayTxid(widget.args.txidHex),
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
@@ -792,6 +795,10 @@ class _ActivityTransactionStatusScreenState
     );
   }
 }
+
+String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
+  zcashDisplayTxidHex(protocolTxid, ZcashExplorerTxidOrder.protocol),
+);
 
 /// Centered 420px content column for the received/shielding receipts.
 ///

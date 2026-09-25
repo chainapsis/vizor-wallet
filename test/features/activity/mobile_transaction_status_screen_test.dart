@@ -3,7 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show FontLoader, rootBundle, MethodChannel;
+    show FontLoader, rootBundle, MethodChannel, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -202,16 +202,27 @@ void main() {
         '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
     final protocolTxid = paymentLinkBroadcastTxidsToProtocolOrder(displayTxid);
     final launched = <String>[];
+    final copied = <String>[];
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'launch') {
         launched.add((call.arguments as Map)['url'] as String);
+        return false;
       }
       return true;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await tester.binding.setSurfaceSize(const Size(393, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -225,10 +236,12 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text(truncatedTxid(protocolTxid)));
+    expect(find.text(truncatedTxid(displayTxid)), findsOneWidget);
+    await tester.tap(find.text(truncatedTxid(displayTxid)));
     await tester.pump();
     expect(launched, hasLength(1));
     expect(Uri.parse(launched.single).path, '/tx/$displayTxid');
+    expect(copied, [displayTxid]);
   });
 
   testWidgets(
@@ -599,10 +612,7 @@ void main() {
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
-    expect(
-      find.text('${_txid.substring(0, 8)}...${_txid.substring(56)}'),
-      findsOneWidget,
-    );
+    expect(find.text('efcdab89...67452301'), findsOneWidget);
   });
 
   testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {
