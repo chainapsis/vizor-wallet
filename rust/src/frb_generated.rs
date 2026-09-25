@@ -4745,7 +4745,6 @@ fn wire__crate__api__gift_card_tracking__inspect_gift_card_usage_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_funding_txids = <String>::sse_decode(&mut deserializer);
             let api_expected_funding_zatoshi = <u64>::sse_decode(&mut deserializer);
-            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -4755,7 +4754,6 @@ fn wire__crate__api__gift_card_tracking__inspect_gift_card_usage_impl(
                             api_account_uuid,
                             api_funding_txids,
                             api_expected_funding_zatoshi,
-                            api_lightwalletd_url,
                         )
                         .await?;
                         Ok(output_ok)

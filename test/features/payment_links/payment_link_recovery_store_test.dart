@@ -29,6 +29,43 @@ void main() {
 
   group('PaymentLinkRecoveryStore', () {
     test(
+      'records the funding time once and keeps it across later updates',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final link = _link();
+        await store.saveDraft(
+          link: link,
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(20000),
+        );
+        final fundedAt = DateTime.utc(2026, 1, 1, 12);
+        await store.markFunded(
+          address: link.address,
+          fundingTxids: 'funding-txid',
+          updatedAt: fundedAt,
+        );
+        await store.markFunded(
+          address: link.address,
+          fundingTxids: 'funding-txid',
+          updatedAt: fundedAt.add(const Duration(minutes: 1)),
+        );
+        await store.markShared(
+          address: link.address,
+          updatedAt: fundedAt.add(const Duration(hours: 1)),
+        );
+        await store.markShared(
+          address: link.address,
+          updatedAt: fundedAt.add(const Duration(days: 1)),
+        );
+
+        final record = (await PaymentLinkRecoveryStore(storage).load()).single;
+        expect(record.fundedAt, fundedAt);
+        expect(record.updatedAt, fundedAt.add(const Duration(days: 1)));
+      },
+    );
+
+    test(
       'persists the secret before broadcast and records funding success',
       () async {
         final storage = _FakePaymentLinkRecoveryStorage();

@@ -60,6 +60,7 @@ class PaymentLinkRecoveryRecord {
     this.fundingTxids,
     this.preparedExpiryHeight,
     this.submittedAtHeight,
+    this.fundedAt,
     this.usage = const GiftCardUsage(),
     required this.claimFeeReserveZatoshi,
   });
@@ -79,6 +80,13 @@ class PaymentLinkRecoveryRecord {
   /// back still leaves a durable trace, and a draft without it provably never
   /// reached the network. `0` means the height was unknown at submission time.
   final int? submittedAtHeight;
+
+  /// When the funding transaction id was first recorded.
+  ///
+  /// Set once by [PaymentLinkRecoveryStore.markFunded]; later state changes,
+  /// such as marking the card shared, leave it unchanged. Null for records
+  /// written before this field existed.
+  final DateTime? fundedAt;
 
   /// Amount actually reserved for claiming when this card was funded.
   final BigInt claimFeeReserveZatoshi;
@@ -116,6 +124,7 @@ class PaymentLinkRecoveryRecord {
     Object? fundingTxids = _fieldNotProvided,
     Object? preparedExpiryHeight = _fieldNotProvided,
     Object? submittedAtHeight = _fieldNotProvided,
+    Object? fundedAt = _fieldNotProvided,
     GiftCardUsage? usage,
   }) {
     return PaymentLinkRecoveryRecord(
@@ -134,6 +143,9 @@ class PaymentLinkRecoveryRecord {
       submittedAtHeight: identical(submittedAtHeight, _fieldNotProvided)
           ? this.submittedAtHeight
           : submittedAtHeight as int?,
+      fundedAt: identical(fundedAt, _fieldNotProvided)
+          ? this.fundedAt
+          : fundedAt as DateTime?,
     );
   }
 }
@@ -263,11 +275,13 @@ class PaymentLinkRecoveryStore {
           'Payment link funding result does not match the prepared transaction.',
         );
       }
+      final timestamp = (updatedAt ?? DateTime.now()).toUtc();
       final updated = existing.copyWith(
         state: PaymentLinkRecoveryState.funded,
-        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+        updatedAt: timestamp,
         fundingTxids: submittedTxid,
         preparedExpiryHeight: null,
+        fundedAt: existing.fundedAt ?? timestamp,
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -845,6 +859,7 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'fundingTxids': record.fundingTxids,
     'preparedExpiryHeight': record.preparedExpiryHeight,
     'submittedAtHeight': record.submittedAtHeight,
+    'fundedAt': record.fundedAt?.toUtc().toIso8601String(),
     'claimFeeReserveZatoshi': record.claimFeeReserveZatoshi.toString(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
@@ -874,6 +889,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final preparedExpiryHeight = value['preparedExpiryHeight'];
   final submittedAtHeight = value['submittedAtHeight'];
   final updatedAtRaw = value['updatedAt'];
+  final fundedAtRaw = value['fundedAt'];
   if (linkRaw is! String ||
       (address != null && (address is! String || address.isEmpty)) ||
       (createdAtRaw != null && createdAtRaw is! String) ||
@@ -885,6 +901,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
           (preparedExpiryHeight is! int || preparedExpiryHeight <= 0)) ||
       (submittedAtHeight != null &&
           (submittedAtHeight is! int || submittedAtHeight < 0)) ||
+      (fundedAtRaw != null && fundedAtRaw is! String) ||
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record fields are invalid.',
@@ -897,6 +914,14 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   if (updatedAt == null) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record timestamp is invalid.',
+    );
+  }
+  final fundedAt = fundedAtRaw == null
+      ? null
+      : DateTime.tryParse(fundedAtRaw as String);
+  if (fundedAtRaw != null && fundedAt == null) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Recovery record funding timestamp is invalid.',
     );
   }
   if (createdAtRaw != null && createdAt == null) {
@@ -961,6 +986,7 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     fundingTxids: fundingTxids,
     preparedExpiryHeight: preparedExpiryHeight as int?,
     submittedAtHeight: submittedAtHeight as int?,
+    fundedAt: fundedAt?.toUtc(),
     updatedAt: updatedAt.toUtc(),
   );
 }
