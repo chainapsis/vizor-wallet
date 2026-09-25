@@ -13,7 +13,11 @@ use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
 use crate::wallet::keys;
-use tonic::Code;
+use crate::wallet::transaction_data::TransactionObservation;
+use zakura_transaction_status::{
+    lightwalletd::LightwalletdSource, DisabledSource, StatusMode, StatusReader, StatusRequest,
+};
+use zcash_primitives::transaction::TxId;
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -57,20 +61,23 @@ impl CLightwalletdTransactionObservation {
     }
 }
 
-fn transaction_observation_from_height(height: u64) -> CLightwalletdTransactionObservation {
-    match height {
-        0 => CLightwalletdTransactionObservation {
-            state: 1,
-            mined_height: 0,
-        },
-        u64::MAX => CLightwalletdTransactionObservation {
-            state: 3,
-            mined_height: 0,
-        },
-        mined_height => CLightwalletdTransactionObservation {
-            state: 2,
-            mined_height,
-        },
+impl From<TransactionObservation> for CLightwalletdTransactionObservation {
+    fn from(observation: TransactionObservation) -> Self {
+        match observation {
+            TransactionObservation::NotFound => Self::not_found(),
+            TransactionObservation::Mempool => Self {
+                state: 1,
+                mined_height: 0,
+            },
+            TransactionObservation::Forked => Self {
+                state: 3,
+                mined_height: 0,
+            },
+            TransactionObservation::Mined(height) => Self {
+                state: 2,
+                mined_height: u64::from(u32::from(height)),
+            },
+        }
     }
 }
 
@@ -224,8 +231,7 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
     }
 }
 
-/// Observe one transaction through tonic while preserving lightwalletd's
-/// NotFound status and height sentinels.
+/// Observe one transaction through tonic and return only status across the C ABI.
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_observe_transaction(
     lightwalletd_url: *const c_char,
@@ -244,8 +250,11 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         let Some(output) = (unsafe { output.as_mut() }) else {
             return 1;
         };
-        let transaction_id =
-            unsafe { std::slice::from_raw_parts(transaction_id, transaction_id_len) }.to_vec();
+        let transaction_id = TxId::from_bytes(
+            unsafe { std::slice::from_raw_parts(transaction_id, transaction_id_len) }
+                .try_into()
+                .expect("validated txid length"),
+        );
         let runtime = match lightwalletd_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
@@ -257,22 +266,39 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
             async {
-                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                    lightwalletd_url,
-                )
-                .await
-                .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
-                crate::wallet::sync_engine::get_transaction(&mut client, transaction_id).await
+                let cancelled =
+                    || cancellation.is_some_and(|token| token.cancelled.load(Ordering::Acquire));
+                let public_source = LightwalletdSource::new(
+                    || async {
+                        crate::wallet::sync_engine::open_background_direct_lwd_channel(
+                            lightwalletd_url,
+                        )
+                        .await
+                        .map_err(|_| zakura_transaction_status::StatusError::Unavailable)
+                    },
+                    &cancelled,
+                );
+                let mut reader = StatusReader::new(
+                    StatusMode::PublicLightwalletd,
+                    public_source,
+                    DisabledSource,
+                );
+                reader
+                    .observe(StatusRequest {
+                        txid: transaction_id,
+                        coverage: zakura_pir_status::LocalCoverageContext::default(),
+                    })
+                    .await
+                    .map(TransactionObservation::from)
             },
         )) {
             Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
             Ok(Ok(transaction)) => {
-                *output = transaction_observation_from_height(transaction.height);
+                *output = transaction.into();
                 0
             }
-            Ok(Err(error)) if error.code() == Code::NotFound => {
-                *output = CLightwalletdTransactionObservation::not_found();
-                0
+            Ok(Err(zakura_transaction_status::StatusError::Cancelled)) => {
+                LIGHTWALLETD_RESULT_CANCELLED
             }
             Ok(Err(error)) => {
                 log::error!("ffi: observe lightwalletd transaction: {error}");
@@ -288,6 +314,96 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
             2
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_status_pir_is_enabled(
+    network: *const c_char,
+    private_preference: bool,
+) -> bool {
+    let Some(network) = (unsafe { c_str_to_str(network) }) else {
+        return false;
+    };
+    let Some(network) = crate::wallet::network::WalletNetwork::from_str(network) else {
+        return false;
+    };
+    crate::wallet::sync_engine::status_pir::enabled_for_preference(network, private_preference)
+}
+
+/// Additive private status ABI; the public lightwalletd ABI remains unchanged.
+#[no_mangle]
+pub extern "C" fn zcash_status_pir_observe_transaction(
+    db_path: *const c_char,
+    transaction_id: *const u8,
+    transaction_id_len: usize,
+    output: *mut CLightwalletdTransactionObservation,
+    cancellation: *const CLightwalletdCancellation,
+) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        if transaction_id.is_null() || transaction_id_len != 32 {
+            return 1;
+        }
+        let Some(output) = (unsafe { output.as_mut() }) else {
+            return 1;
+        };
+        if !crate::wallet::sync_engine::status_pir::enabled_for_preference(
+            crate::wallet::network::WalletNetwork::Main,
+            true,
+        ) {
+            return 1;
+        }
+        let txid = TxId::from_bytes(
+            unsafe { std::slice::from_raw_parts(transaction_id, 32) }
+                .try_into()
+                .expect("validated txid length"),
+        );
+        let runtime = match lightwalletd_runtime() {
+            Ok(runtime) => runtime,
+            Err(_) => return 1,
+        };
+        let cancellation = unsafe { cancellation.as_ref() };
+        match runtime.block_on(await_lightwalletd_request_or_cancellation(
+            cancellation,
+            async {
+                let cancelled =
+                    || cancellation.is_some_and(|token| token.cancelled.load(Ordering::Acquire));
+                let private_source = crate::wallet::sync_engine::status_pir::Source::new(
+                    db_path,
+                    crate::wallet::network::WalletNetwork::Main,
+                    &cancelled,
+                    true,
+                );
+                let mut reader =
+                    StatusReader::new(StatusMode::PrivatePir, DisabledSource, private_source);
+                reader
+                    .observe(StatusRequest {
+                        txid,
+                        coverage: zakura_pir_status::LocalCoverageContext::default(),
+                    })
+                    .await
+                    .map(TransactionObservation::from)
+            },
+        )) {
+            Err(()) | Ok(Err(zakura_transaction_status::StatusError::Cancelled)) => {
+                LIGHTWALLETD_RESULT_CANCELLED
+            }
+            Ok(Ok(observation)) => {
+                *output = observation.into();
+                0
+            }
+            Ok(Err(error)) => {
+                log::warn!("ffi: private status lookup: {error}");
+                1
+            }
+        }
+    });
+    result.unwrap_or_else(|panic| {
+        log_panic("private status", panic);
+        2
+    })
 }
 
 /// Submit one transaction through tonic. The error message is copied into the
@@ -571,23 +687,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transaction_observation_maps_lightwalletd_height_sentinels() {
+    fn transaction_observation_preserves_c_abi_states() {
         assert_eq!(
-            transaction_observation_from_height(0),
+            CLightwalletdTransactionObservation::from(TransactionObservation::Mempool),
             CLightwalletdTransactionObservation {
                 state: 1,
                 mined_height: 0,
             }
         );
         assert_eq!(
-            transaction_observation_from_height(u64::MAX),
+            CLightwalletdTransactionObservation::from(TransactionObservation::Forked),
             CLightwalletdTransactionObservation {
                 state: 3,
                 mined_height: 0,
             }
         );
         assert_eq!(
-            transaction_observation_from_height(501),
+            CLightwalletdTransactionObservation::from(TransactionObservation::Mined(
+                zcash_protocol::consensus::BlockHeight::from_u32(501)
+            )),
             CLightwalletdTransactionObservation {
                 state: 2,
                 mined_height: 501,
@@ -598,7 +716,7 @@ mod tests {
     #[test]
     fn transaction_observation_represents_not_found_separately() {
         assert_eq!(
-            CLightwalletdTransactionObservation::not_found(),
+            CLightwalletdTransactionObservation::from(TransactionObservation::NotFound),
             CLightwalletdTransactionObservation {
                 state: 0,
                 mined_height: 0,

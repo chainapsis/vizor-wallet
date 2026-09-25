@@ -34,10 +34,9 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
-        WalletRead, WalletWrite,
+        wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletRead, WalletWrite,
     },
-    proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
+    proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
@@ -47,6 +46,8 @@ use crate::wallet::db::{
     open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::transaction_data::payload::get_transaction_payload;
+use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusRequest};
 
 use super::{block_source::MemoryBlockSource, lwd, SyncError, WalletDatabase};
 
@@ -75,37 +76,56 @@ pub(super) fn queue_stored_transactions(
         open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).map_err(SyncError::db)?;
     // query_type=1 is the SDK's Enhancement request. Status requests (0) and
     // dependency links already in the queue must be preserved.
-    let count = conn.execute(
-        "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
+    let count = conn
+        .execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
          SELECT txid, 1, NULL FROM transactions
          WHERE raw IS NOT NULL
            AND (txid IN rarray(?1) OR mined_height BETWEEN ?2 AND ?3)
          ON CONFLICT (txid, query_type) DO NOTHING",
-        rusqlite::params![hashes, heights.start(), heights.end()],
-    )
-    .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
+            rusqlite::params![hashes, heights.start(), heights.end()],
+        )
+        .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
     if count > 0 {
         log::info!("sync: queued {count} stored transaction(s) for scan-time enhancement");
     }
     Ok(())
 }
 
+fn store_transaction_observation(
+    db: &mut WalletDatabase,
+    txid: TxId,
+    observation: crate::wallet::transaction_data::TransactionObservation,
+) -> Result<(), SyncError> {
+    with_wallet_db_write_lock("sync_engine.enhance.set_transaction_status", || {
+        db.set_transaction_status(txid, observation.wallet_status())
+    })
+    .map_err(|e: zcash_client_sqlite::error::SqliteClientError| {
+        SyncError::db(format!("set_transaction_status: {e}"))
+    })
+}
+
 /// Services `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns `SyncError::Db`
 /// if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
-/// "txid not recognized" response is recorded via
-/// `set_transaction_status` so it doesn't get retried forever, while
+/// "txid not recognized" payload response retires only enhancement work, while
 /// transient network failures bubble up as `SyncError::Network` so the
 /// outer sync retry path can recover without deleting the request.
-pub(super) async fn run_enhancement(
+pub(super) async fn run_transaction_data_requests(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    should_exit: &impl Fn() -> bool,
+    should_exit: &(impl Fn() -> bool + Sync),
 ) -> Result<(), SyncError> {
+    let status_client = client.clone();
+    let public_source =
+        LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
+    let mut status_reader = super::status_pir::reader(db_path, network, should_exit, public_source);
     let mut failed_txids: HashSet<String> = HashSet::new();
+    let mut observed_statuses = HashSet::new();
+    let mut deferred_payload_error = None;
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
 
@@ -118,110 +138,115 @@ pub(super) async fn run_enhancement(
         if requests.is_empty() {
             break;
         }
+        let payload_requests: Vec<_> = requests
+            .iter()
+            .cloned()
+            .filter_map(TransactionDataRequest::into_public_enhancement_request)
+            .collect();
+        let status_requests: Vec<_> = requests
+            .iter()
+            .cloned()
+            .filter_map(TransactionDataRequest::into_status_request)
+            .collect();
         // If nothing in the queue is actionable (e.g. address-scoped
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(|request| match request {
-            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-            TransactionDataRequest::TransactionsInvolvingAddress(request) => {
-                request.block_range_end().is_some()
-            }
-        });
+        let actionable = !payload_requests.is_empty()
+            || !status_requests.is_empty()
+            || requests.iter().any(|request| match request {
+                TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                    request.block_range_end().is_some()
+                }
+                _ => false,
+            });
         if !actionable {
             break;
         }
 
-        for req in &requests {
+        for request in payload_requests {
             if should_exit() {
                 return Ok(());
             }
-            match req {
-                TransactionDataRequest::GetStatus(txid)
-                | TransactionDataRequest::Enhancement(txid) => {
-                    let txid_str = format!("{txid}");
-                    if failed_txids.contains(&txid_str) {
-                        continue;
-                    }
-
-                    match cancelable(
-                        lwd::get_transaction(client, txid.as_ref().to_vec()),
-                        should_exit,
-                    )
-                    .await
-                    {
-                        Ok(raw) => {
-                            let mined_height = mined_height_from_raw_height(raw.height)?;
-                            if !raw.data.is_empty() {
-                                match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                    Ok(tx) => {
-                                        if let Err(e) = with_wallet_db_write_lock(
-                                            "sync_engine.enhance.decrypt_and_store_transaction",
-                                            || {
-                                                decrypt_and_store_transaction(
-                                                    &network,
-                                                    db,
-                                                    &tx,
-                                                    mined_height,
-                                                )
-                                            },
-                                        ) {
-                                            log::error!(
-                                                "sync: decrypt_and_store_transaction failed: {e}"
-                                            );
-                                        }
-                                        if let Err(e) =
-                                            fill_missing_fee(client, db_path, &tx, should_exit)
-                                                .await
-                                        {
-                                            log::warn!(
-                                                "sync: fee enhancement failed for {txid_str}: {e}"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => log::warn!(
-                                        "sync: Transaction::read failed for {txid_str}: {e}"
-                                    ),
-                                }
-                            }
-                            if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                                let status = transaction_status_from_raw_height(raw.height)?;
-                                if let Err(e) = with_wallet_db_write_lock(
-                                    "sync_engine.enhance.set_transaction_status",
-                                    || db.set_transaction_status(*txid, status),
-                                ) {
-                                    log::error!("sync: set_transaction_status failed: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => match classify_get_transaction_error(&e) {
-                            GetTransactionErrorAction::MarkTxidNotRecognized => {
-                                log::warn!(
-                                    "sync: get_transaction did not recognize {txid_str}: {e}"
-                                );
-                                failed_txids.insert(txid_str);
-                                if let Err(e) = with_wallet_db_write_lock(
-                                    "sync_engine.enhance.set_transaction_status",
-                                    || {
-                                        db.set_transaction_status(
-                                            *txid,
-                                            TransactionStatus::TxidNotRecognized,
-                                        )
-                                    },
-                                ) {
-                                    log::error!("sync: set_transaction_status failed: {e}");
-                                }
-                            }
-                            GetTransactionErrorAction::RetryAsNetwork => {
-                                return Err(SyncError::net(format!(
-                                    "get_transaction failed for {txid_str}: {e}"
-                                )));
-                            }
-                        },
-                    }
-                }
-                TransactionDataRequest::TransactionsInvolvingAddress(_) => {}
+            let txid = request.txid();
+            let txid_str = format!("{txid}");
+            if failed_txids.contains(&txid_str) {
+                continue;
             }
+
+            match cancelable(get_transaction_payload(client, txid), should_exit).await {
+                Ok(raw) => match decode_enhancement_payload(&raw, txid) {
+                    Ok((tx, mined_height)) => {
+                        if let Err(e) = with_wallet_db_write_lock(
+                            "sync_engine.enhance.decrypt_and_store_transaction",
+                            || decrypt_and_store_transaction(&network, db, &tx, mined_height),
+                        ) {
+                            log::error!("sync: decrypt_and_store_transaction failed: {e}");
+                            failed_txids.insert(txid_str.clone());
+                            deferred_payload_error.get_or_insert_with(|| {
+                                SyncError::db(format!(
+                                    "decrypt_and_store_transaction failed for {txid_str}: {e}"
+                                ))
+                            });
+                        }
+                        if let Err(e) = fill_missing_fee(client, db_path, &tx, should_exit).await {
+                            log::warn!("sync: fee enhancement failed for {txid_str}: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("sync: invalid enhancement payload for {txid_str}: {e}");
+                        failed_txids.insert(txid_str);
+                        deferred_payload_error.get_or_insert(e);
+                    }
+                },
+                Err(e) => match classify_get_transaction_error(&e) {
+                    GetTransactionErrorAction::CompleteEnhancementNotFound => {
+                        log::warn!("sync: get_transaction did not recognize {txid_str}: {e}");
+                        failed_txids.insert(txid_str);
+                        if let Err(e) = with_wallet_db_write_lock(
+                            "sync_engine.enhance.notify_transaction_enhancement_not_found",
+                            || db.notify_transaction_enhancement_not_found(txid),
+                        ) {
+                            log::error!(
+                                "sync: notify_transaction_enhancement_not_found failed: {e}"
+                            );
+                            deferred_payload_error.get_or_insert_with(|| {
+                                SyncError::db(format!(
+                                    "notify_transaction_enhancement_not_found failed for {txid}: {e}"
+                                ))
+                            });
+                        }
+                    }
+                    GetTransactionErrorAction::RetryAsNetwork => {
+                        failed_txids.insert(txid_str.clone());
+                        deferred_payload_error.get_or_insert_with(|| {
+                            SyncError::net(format!("get_transaction failed for {txid_str}: {e}"))
+                        });
+                    }
+                },
+            }
+        }
+        for request in status_requests {
+            let txid = request.txid();
+            if observed_statuses.contains(&txid) {
+                continue;
+            }
+            let observation = match status_reader
+                .observe(StatusRequest {
+                    txid,
+                    coverage: zakura_pir_status::LocalCoverageContext::default(),
+                })
+                .await
+            {
+                Ok(observation) => observation.into(),
+                Err(zakura_transaction_status::StatusError::Cancelled) => return Ok(()),
+                Err(error) => return Err(SyncError::net(error.to_string())),
+            };
+            if should_exit() {
+                return Ok(());
+            }
+            store_transaction_observation(db, txid, observation)?;
+            observed_statuses.insert(txid);
         }
         let mut planned = super::address_history::plan(&requests);
         planned.retain(|group| !failed_addresses.contains(&group[0].address()));
@@ -306,7 +331,10 @@ pub(super) async fn run_enhancement(
             reads.resume(read);
         }
     }
-    Ok(())
+    if should_exit() {
+        return Ok(());
+    }
+    deferred_payload_error.map_or(Ok(()), Err)
 }
 
 /// Parse and store before allowing the caller to acknowledge an address range.
@@ -436,7 +464,7 @@ async fn fetch_transparent_prevout_values(
         }
 
         let parent_raw = match cancelable(
-            lwd::get_transaction(client, outpoint.hash().to_vec()),
+            get_transaction_payload(client, TxId::from_bytes(*outpoint.hash())),
             should_exit,
         )
         .await
@@ -549,13 +577,13 @@ fn persist_fee_if_missing(db_path: &str, tx: &Transaction, fee: Zatoshis) -> Res
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GetTransactionErrorAction {
-    MarkTxidNotRecognized,
+    CompleteEnhancementNotFound,
     RetryAsNetwork,
 }
 
 fn classify_get_transaction_error(status: &Status) -> GetTransactionErrorAction {
     match status.code() {
-        Code::NotFound => GetTransactionErrorAction::MarkTxidNotRecognized,
+        Code::NotFound => GetTransactionErrorAction::CompleteEnhancementNotFound,
         _ => GetTransactionErrorAction::RetryAsNetwork,
     }
 }
@@ -570,11 +598,17 @@ fn mined_height_from_raw_height(raw_height: u64) -> Result<Option<BlockHeight>, 
     }
 }
 
-fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStatus, SyncError> {
-    mined_height_from_raw_height(raw_height).map(|height| match height {
-        Some(height) => TransactionStatus::Mined(height),
-        None => TransactionStatus::NotInMainChain,
-    })
+fn decode_enhancement_payload(
+    raw: &RawTransaction,
+    expected_txid: TxId,
+) -> Result<(Transaction, Option<BlockHeight>), SyncError> {
+    let mined_height = mined_height_from_raw_height(raw.height)?;
+    let tx = Transaction::read(&raw.data[..], BranchId::Sapling)
+        .map_err(|e| SyncError::parse(format!("enhancement transaction: {e}")))?;
+    if tx.txid() != expected_txid {
+        return Err(SyncError::parse("enhancement transaction ID mismatch"));
+    }
+    Ok((tx, mined_height))
 }
 
 #[cfg(test)]
@@ -689,6 +723,196 @@ mod tests {
         (file, db, tx)
     }
 
+    #[test]
+    fn observation_does_not_hydrate_payload_or_fees() {
+        use crate::wallet::transaction_data::TransactionObservation;
+        let (file, mut db, tx) =
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute(
+            "UPDATE transactions SET raw = NULL, mined_height = NULL",
+            [],
+        )
+        .unwrap();
+        store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool).unwrap();
+        let row: (Option<Vec<u8>>, Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT raw, fee, confirmed_unmined_at_height FROM transactions WHERE txid = ?1",
+                rusqlite::params![tx.txid().as_ref()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (None, None, Some(110)));
+    }
+
+    #[test]
+    fn observation_cannot_retire_pending_payload_work() {
+        use crate::wallet::transaction_data::TransactionObservation;
+        let (file, mut db, tx) =
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute(
+            "UPDATE transactions SET raw = NULL, mined_height = NULL",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
+            rusqlite::params![tx.txid().as_ref()],
+        )
+        .unwrap();
+        for observation in [
+            TransactionObservation::NotFound,
+            TransactionObservation::Mempool,
+            TransactionObservation::Forked,
+            TransactionObservation::Mined(BlockHeight::from_u32(100)),
+        ] {
+            store_transaction_observation(&mut db, tx.txid(), observation).unwrap();
+            let requests = db.transaction_data_requests().unwrap();
+            assert!(requests.contains(&TransactionDataRequest::Enhancement(tx.txid())));
+        }
+        // Payload completion does not affect status persistence.
+        conn.execute("DELETE FROM tx_retrieval_queue WHERE query_type = 1", [])
+            .unwrap();
+        store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool).unwrap();
+    }
+
+    #[test]
+    fn payload_absence_and_status_observation_complete_independently() {
+        use crate::wallet::transaction_data::TransactionObservation;
+        for status_first in [false, true] {
+            let (file, mut db, tx) =
+                scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            let conn = rusqlite::Connection::open(file.path()).unwrap();
+            conn.execute(
+                "UPDATE transactions SET raw = NULL, mined_height = NULL",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
+                rusqlite::params![tx.txid().as_ref()],
+            )
+            .unwrap();
+            if status_first {
+                store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool)
+                    .unwrap();
+            }
+            db.notify_transaction_enhancement_not_found(tx.txid())
+                .unwrap();
+            let requests = db.transaction_data_requests().unwrap();
+            assert!(!requests.contains(&TransactionDataRequest::Enhancement(tx.txid())));
+            if !status_first {
+                assert!(requests.contains(&TransactionDataRequest::GetStatus(tx.txid())));
+                store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool)
+                    .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_payload_still_allows_status_observation_and_returns_retry_error() {
+        use bytes::Bytes;
+        use http_body_util::Full;
+        use hyper::service::service_fn;
+        use prost::Message;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (file, mut db, tx) =
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute(
+            "UPDATE transactions SET raw = NULL, mined_height = NULL",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
+            rusqlite::params![tx.txid().as_ref()],
+        )
+        .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let calls_for_server = calls.clone();
+        let (_, raw_bytes) = transparent_fee_test_tx_and_bytes();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let service = service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
+                let calls = calls_for_server.clone();
+                let raw_bytes = raw_bytes.clone();
+                async move {
+                    assert!(request.uri().path().ends_with("/GetTransaction"));
+                    let response = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                        hyper::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", "14")
+                            .header("grpc-message", "temporary failure")
+                            .body(Full::new(Bytes::new()))
+                            .unwrap()
+                    } else {
+                        let raw = RawTransaction {
+                            data: raw_bytes,
+                            height: 0,
+                        };
+                        let message = raw.encode_to_vec();
+                        let mut frame = vec![0];
+                        frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+                        frame.extend_from_slice(&message);
+                        hyper::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", "0")
+                            .body(Full::new(Bytes::from(frame)))
+                            .unwrap()
+                    };
+                    Ok::<_, std::convert::Infallible>(response)
+                }
+            });
+            hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+                .serve_connection(io, service)
+                .await
+                .unwrap();
+        });
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let mut client = CompactTxStreamerClient::new(channel);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run_transaction_data_requests(
+                &mut client,
+                &mut db,
+                file.path().to_str().unwrap(),
+                WalletNetwork::Regtest,
+                &|| false,
+            ),
+        )
+        .await
+        .expect("coordinator timed out");
+        server.abort();
+
+        assert!(
+            matches!(result, Err(SyncError::Network(message)) if message.contains("temporary failure"))
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::Enhancement(tx.txid())));
+        let observed: Option<i64> = conn
+            .query_row(
+                "SELECT confirmed_unmined_at_height FROM transactions WHERE txid = ?1",
+                rusqlite::params![tx.txid().as_ref()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(observed, Some(110));
+    }
+
     fn transparent_fee_test_tx_and_bytes() -> (Transaction, Vec<u8>) {
         let tx_bytes = hex::decode(
             "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
@@ -760,12 +984,12 @@ mod tests {
     }
 
     #[test]
-    fn get_transaction_not_found_marks_txid_not_recognized() {
+    fn get_transaction_not_found_completes_enhancement_only() {
         let status = Status::new(Code::NotFound, "txid not recognized");
 
         assert_eq!(
             classify_get_transaction_error(&status),
-            GetTransactionErrorAction::MarkTxidNotRecognized,
+            GetTransactionErrorAction::CompleteEnhancementNotFound,
         );
     }
 
@@ -895,32 +1119,31 @@ mod tests {
     }
 
     #[test]
-    fn raw_height_zero_and_fork_sentinel_are_not_main_chain() {
-        assert_eq!(
-            transaction_status_from_raw_height(0).unwrap(),
-            TransactionStatus::NotInMainChain,
-        );
-        assert_eq!(
-            transaction_status_from_raw_height(u64::MAX).unwrap(),
-            TransactionStatus::NotInMainChain,
-        );
-    }
-
-    #[test]
-    fn raw_height_nonzero_non_sentinel_is_mined() {
-        match transaction_status_from_raw_height(1_234_567).unwrap() {
-            TransactionStatus::Mined(height) => {
-                assert_eq!(u32::from(height), 1_234_567);
-            }
-            other => panic!("expected mined status, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn raw_height_out_of_u32_range_is_parse_error() {
         assert!(matches!(
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
+        ));
+    }
+
+    #[test]
+    fn enhancement_payload_requires_matching_identity_and_valid_height() {
+        let (tx, data) = transparent_fee_test_tx_and_bytes();
+        let raw = RawTransaction { data, height: 100 };
+        assert!(decode_enhancement_payload(&raw, tx.txid()).is_ok());
+        assert!(matches!(
+            decode_enhancement_payload(&raw, TxId::from_bytes([0; 32])),
+            Err(SyncError::Parse(_))
+        ));
+        assert!(matches!(
+            decode_enhancement_payload(
+                &RawTransaction {
+                    height: u32::MAX as u64 + 1,
+                    ..raw
+                },
+                tx.txid()
+            ),
+            Err(SyncError::Parse(_))
         ));
     }
 }

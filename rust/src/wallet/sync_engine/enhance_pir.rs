@@ -12,6 +12,7 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{
     future::Future,
+    sync::atomic::{AtomicU16, Ordering},
     time::{Duration, Instant},
 };
 use tonic::transport::Channel;
@@ -152,13 +153,21 @@ type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnecto
 /// `routed_request` re-checks the route per request, and `DirectRouteIo` polls
 /// the route lease on every read and write, so a pooled connection stays
 /// route-policed for its whole life.
-struct RoutedTransport<'a, F> {
+pub(super) struct RoutedTransport<'a, F> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
+    direct_only: bool,
+    status_session_error: AtomicU16,
 }
 
 impl<'a, F> RoutedTransport<'a, F> {
-    fn new(should_exit: &'a F) -> Self {
+    pub(super) fn new(should_exit: &'a F) -> Self {
+        Self::with_route(should_exit, false)
+    }
+    pub(super) fn new_direct(should_exit: &'a F) -> Self {
+        Self::with_route(should_exit, true)
+    }
+    fn with_route(should_exit: &'a F, direct_only: bool) -> Self {
         let connector = HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_only()
@@ -166,9 +175,89 @@ impl<'a, F> RoutedTransport<'a, F> {
             .wrap_connector(DirectRouteConnector::new());
         Self {
             should_exit,
+            direct_only,
+            status_session_error: AtomicU16::new(0),
             // Cheap: no connection is opened until the first request, and the
             // Tor route simply never uses it.
             direct: Client::builder(TokioExecutor::new()).build(connector),
+        }
+    }
+}
+
+impl<F> RoutedTransport<'_, F> {
+    pub(super) fn take_status_session_conflict(&self) -> bool {
+        matches!(
+            self.status_session_error.swap(0, Ordering::SeqCst),
+            409 | 410
+        )
+    }
+}
+
+impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for RoutedTransport<'_, F> {
+    async fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, zakura_pir_status::Error> {
+        self.status_request(Method::GET, url, Vec::new(), max_bytes)
+            .await
+    }
+
+    async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
+        self.status_request(Method::POST, url, body, max_bytes)
+            .await
+    }
+}
+
+impl<F: Fn() -> bool> RoutedTransport<'_, F> {
+    async fn status_request(
+        &self,
+        method: Method,
+        url: &str,
+        body: Vec<u8>,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
+        use zakura_pir_status::Error;
+        self.status_session_error.store(0, Ordering::SeqCst);
+        let request = async {
+            let response = routed_response(
+                method,
+                url,
+                body,
+                self.should_exit,
+                &self.direct,
+                self.direct_only,
+            )
+            .await
+            .map_err(|_| Error::Unavailable)?;
+            match response.status().as_u16() {
+                status @ (409 | 410) => {
+                    self.status_session_error.store(status, Ordering::SeqCst);
+                    return Err(Error::Unavailable);
+                }
+                _ if !response.status().is_success() => return Err(Error::Unavailable),
+                _ => {}
+            }
+            let mut incoming = response.into_body();
+            let mut bytes = Vec::new();
+            while let Some(frame) = incoming.frame().await {
+                let frame = frame.map_err(|_| Error::Unavailable)?;
+                if let Some(data) = frame.data_ref() {
+                    if data.len() > max_bytes.saturating_sub(bytes.len()) {
+                        return Err(Error::Malformed);
+                    }
+                    bytes.extend_from_slice(data);
+                }
+            }
+            Ok(bytes)
+        };
+        tokio::select! {
+            biased;
+            _ = super::watch_for_exit(self.should_exit) => Err(Error::Cancelled),
+            result = tokio::time::timeout(Duration::from_secs(20), request) => {
+                result.map_err(|_| Error::Timeout)?
+            }
         }
     }
 }
@@ -514,7 +603,7 @@ async fn routed_request(
     direct: &DirectHttpsClient,
 ) -> Result<transport::ResponseBody, EnhancePirRunError> {
     receive_response(
-        routed_response(method, url, body, should_exit, direct),
+        routed_response(method, url, body, should_exit, direct, false),
         collector,
         should_exit,
     )
@@ -527,12 +616,13 @@ async fn routed_response(
     body: Vec<u8>,
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
+    direct_only: bool,
 ) -> Result<http::Response<Incoming>, EnhancePirRunError> {
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
     }
     let uri = secure_endpoint_uri(url)?;
-    if crate::network_privacy::is_tor_desired() {
+    if !direct_only && crate::network_privacy::is_tor_desired() {
         let client = crate::network_privacy::tor_client_for_route(true, || should_exit())
             .await
             .map_err(|error| {

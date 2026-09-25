@@ -1901,6 +1901,8 @@ final class BackgroundMigrationPreparationManager {
       for transactionId in transactionIds {
         switch transactionObservation(
           endpoint: manifest.lightwalletdUrl,
+          dbPath: manifest.dbPath,
+          network: manifest.network,
           transactionIdHex: transactionId,
           cancellation: cancellation
         ) {
@@ -1991,6 +1993,8 @@ final class BackgroundMigrationPreparationManager {
 
   private func transactionObservation(
     endpoint: String,
+    dbPath: String,
+    network: String,
     transactionIdHex: String,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
@@ -2001,18 +2005,29 @@ final class BackgroundMigrationPreparationManager {
       return .failure(.malformedResponse)
     }
     let protocolOrder = Data(storedOrder.reversed())
+    let privatePreference = UserDefaults.standard.bool(
+      forKey: "flutter.zcash_enhance_pir_enabled"
+    )
+    let privateStatus = network.withCString {
+      zcash_status_pir_is_enabled($0, privatePreference)
+    }
     let first = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      dbPath: dbPath,
+      privateStatus: privateStatus,
       transactionId: protocolOrder,
       cancellation: cancellation
     )
-    guard protocolOrder != storedOrder,
+    guard !privateStatus,
+      protocolOrder != storedOrder,
       shouldTryStoredTransactionIdByteOrder(after: first)
     else {
       return first
     }
     let second = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      dbPath: dbPath,
+      privateStatus: privateStatus,
       transactionId: storedOrder,
       cancellation: cancellation
     )

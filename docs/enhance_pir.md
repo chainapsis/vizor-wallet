@@ -7,6 +7,22 @@ ordinary `GetTransaction(txid)` enhancement independently of whether private wor
 is active, suspended, or already finished. Mixed-pool transactions and the existing
 status/address-history paths retain their backend routing rules.
 
+## Transaction-data entrypoints
+
+The ordinary queue coordinator is `run_transaction_data_requests`. It handles
+payload enhancement and status observation separately. Status consumers use
+wallet-libraries `StatusReader` with Vizor's policy and transport sources;
+explicit payload consumers use `transaction_data::payload::get_transaction_payload`.
+`EnhancePirSync` retains its specialized private recovery records and scheduler.
+
+Status privacy is independent of Ironwood enhancement protection. The pinned
+backend still emits status requests for protected transactions. Public status
+uses `GetTransaction`, revealing the txid and transferring a full payload.
+The private Status PIR adapter is wired behind the existing preference and a
+separate release gate; the synthetic service cannot satisfy its release
+protocol. See [transaction status](get-status.md) for the current contract and
+qualification boundary.
+
 ## Shared client and build inputs
 
 Vizor supplies application policy and its existing direct/Tor transport. The
@@ -131,11 +147,12 @@ there is no separate `mobile-settings-recovery` fixture. Render with
 `scripts/figma-compare.sh widget --scenario <id> --theme dark`, adding
 `--form-factor mobile` for the mobile fixtures.
 
-The client is pinned to published `zakura-pir-enhance` `0.0.1-rc0`, with
-wallet backend and SQLite `0.1.0-rc6` and IPIR `0.1.0-rc.3`.
+The wallet backend, SQLite, PCZT, PIR enhancement, and status crates are
+temporarily pinned to one immutable wallet-libraries revision. The crate versions
+remain `0.1.0-rc6` for the wallet backend and SQLite and `0.0.1-rc0` for the
+PIR client; IPIR remains `0.1.0-rc.3`.
 Voting `5.1.1-rc.1` and YPIR `0.2.1` share Spiral `0.5.3-rc.1` with
-the Enhance v7 client. All of these dependencies resolve from crates.io;
-no local dependency overrides are required.
+the Enhance v7 client.
 
 Deterministic tests do not validate deployed end-to-end recovery. Live service
 smoke tests and heavy regtest/device suites remain separate acceptance steps.
