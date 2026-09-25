@@ -17,8 +17,7 @@ and mapping records to the original captured request identities:
 
 ```toml
 [dependencies.zakura-pir-enhance]
-git = "https://github.com/zakura-core/wallet-libraries.git"
-rev = "dd3e8fd05c022e284d4580f92287606ede522a2d"
+version = "=0.0.1-rc0"
 default-features = false
 features = ["wallet"]
 ```
@@ -132,11 +131,11 @@ there is no separate `mobile-settings-recovery` fixture. Render with
 `scripts/figma-compare.sh widget --scenario <id> --theme dark`, adding
 `--form-factor mobile` for the mobile fixtures.
 
-The client and wallet-library patches are pinned to shared revision
-`dd3e8fd05c022e284d4580f92287606ede522a2d`. This local checkout also patches
-`zcash_voting` and `valar-ypir` from `/tmp/crates-src` to align their Spiral
-dependency with the Enhance v7 client. Remove these local patches once
-compatible crate releases are available.
+The client is pinned to published `zakura-pir-enhance` `0.0.1-rc0`, with
+wallet backend and SQLite `0.1.0-rc6` and IPIR `0.1.0-rc.3`.
+Voting `5.1.1-rc.1` and YPIR `0.2.1` share Spiral `0.5.3-rc.1` with
+the Enhance v7 client. All of these dependencies resolve from crates.io;
+no local dependency overrides are required.
 
 Deterministic tests do not validate deployed end-to-end recovery. Live service
 smoke tests and heavy regtest/device suites remain separate acceptance steps.
