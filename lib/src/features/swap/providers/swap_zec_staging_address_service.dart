@@ -2,12 +2,46 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/receive_address_provider.dart';
+import '../../../core/storage/wallet_paths.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/sync_provider.dart';
+import '../../../rust/api/sync.dart' as rust_sync;
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 
 final swapZecStagingAddressServiceProvider =
     Provider<SwapZecStagingAddressService>((ref) {
       return SwapZecStagingAddressService(
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          if (!rust_sync.swapReceivingPocEnabled()) return null;
+          final liveTip = await ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .getLatestBlockHeight();
+          final dbPath = await getWalletDbPath();
+          final network = ref
+              .read(rpcEndpointFailoverProvider)
+              .current
+              .networkName;
+          await rust_sync.updateChainTip(
+            dbPath: dbPath,
+            network: network,
+            height: liveTip,
+          );
+          ref
+              .read(syncProvider.notifier)
+              .startSync(latestTipHeight: liveTip.toInt());
+          final address = await rust_sync.reserveSwapReceivingAddress(
+            dbPath: dbPath,
+            network: network,
+            liveTip: liveTip,
+            accountUuid: accountUuid,
+            refund: direction.sendsZec,
+          );
+          return SwapZecStagingAddress(
+            address: address.address,
+            receivingIndex: address.index,
+          );
+        },
         reserveFreshOrchardAddress: ({required accountUuid}) {
           return ref
               .read(receiveAddressServiceProvider)
@@ -19,10 +53,17 @@ final swapZecStagingAddressServiceProvider =
 typedef ReserveOrchardAddress =
     Future<String> Function({required String accountUuid});
 
+typedef ReserveSwapAddress =
+    Future<SwapZecStagingAddress?> Function({
+      required String accountUuid,
+      required SwapDirection direction,
+    });
+
 class SwapZecStagingAddress {
-  const SwapZecStagingAddress({required this.address});
+  const SwapZecStagingAddress({required this.address, this.receivingIndex});
 
   final String address;
+  final BigInt? receivingIndex;
 
   SwapAddressPlan toAddressPlan({
     required SwapDirection direction,
@@ -53,14 +94,24 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 class SwapZecStagingAddressService {
   const SwapZecStagingAddressService({
     required ReserveOrchardAddress reserveFreshOrchardAddress,
-  }) : _reserveFreshOrchardAddress = reserveFreshOrchardAddress;
+    ReserveSwapAddress? reserveSwapAddress,
+  }) : _reserveFreshOrchardAddress = reserveFreshOrchardAddress,
+       _reserveSwapAddress = reserveSwapAddress;
 
   final ReserveOrchardAddress _reserveFreshOrchardAddress;
+  final ReserveSwapAddress? _reserveSwapAddress;
 
   Future<SwapZecStagingAddress> prepareForQuote({
     required String accountUuid,
+    SwapDirection direction = SwapDirection.zecToExternal,
   }) async {
     try {
+      // An enabled POC fails closed on reservation errors, including hardware accounts.
+      final swapAddress = await _reserveSwapAddress?.call(
+        accountUuid: accountUuid,
+        direction: direction,
+      );
+      if (swapAddress != null) return swapAddress;
       final address = await _reserveFreshOrchardAddress(
         accountUuid: accountUuid,
       );

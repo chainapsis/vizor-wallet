@@ -65,6 +65,9 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
+  SwapZecStagingAddress? _reviewStagingAddress;
+  String? _reviewStagingAccount;
+  SwapDirection? _reviewStagingDirection;
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _payEntryGeneration = 0;
@@ -724,9 +727,21 @@ class SwapNotifier extends Notifier<SwapState> {
       if (!state.payMode) {
         await _persistComposerPreferences(preferences);
       }
-      final stagingAddress = await ref
+      var stagingAddress =
+          _reviewStagingAccount == accountUuid &&
+              _reviewStagingDirection == direction
+          ? _reviewStagingAddress
+          : null;
+      stagingAddress ??= await ref
           .read(swapZecStagingAddressServiceProvider)
-          .prepareForQuote(accountUuid: accountUuid);
+          .prepareForQuote(accountUuid: accountUuid, direction: direction);
+      if (generation != _quoteGeneration || !_isAccountActive(accountUuid)) {
+        return;
+      }
+      // A quote retry keeps its receiving key. A new composer operation reserves again.
+      _reviewStagingAddress = stagingAddress;
+      _reviewStagingAccount = accountUuid;
+      _reviewStagingDirection = direction;
       final addressPlan = stagingAddress.toAddressPlan(
         direction: direction,
         externalAsset: externalAsset,
@@ -751,7 +766,10 @@ class SwapNotifier extends Notifier<SwapState> {
 
       state = state.copyWith(
         reviewVisible: true,
-        reviewQuote: quote,
+        reviewQuote: SwapQuote.withSwapRefundIndex(
+          quote,
+          direction.sendsZec ? stagingAddress.receivingIndex : null,
+        ),
         reviewAddressPlan: addressPlan,
         reviewAccountUuid: accountUuid,
         quoteLoading: false,
@@ -883,6 +901,7 @@ class SwapNotifier extends Notifier<SwapState> {
       intent = intent.copyWith(nextAction: nextAction);
     }
     _quoteGeneration++;
+    _reviewStagingAddress = null;
     if (activeAccountIsHardware && quote.direction.sendsZec) {
       if (hardwareSignerKind == HardwareSignerKind.ledger) {
         // The provider intent already exists at this point. Persist it before
@@ -1703,6 +1722,7 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearReviewState() {
+    _reviewStagingAddress = null;
     _quoteGeneration++;
     state = state.copyWith(
       reviewVisible: false,
@@ -1715,6 +1735,7 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearAccountScopedTransientState() {
+    _reviewStagingAddress = null;
     _quoteGeneration++;
     _accountScopeGeneration++;
     _payEntryGeneration++;
