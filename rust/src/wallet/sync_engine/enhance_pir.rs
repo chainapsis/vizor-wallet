@@ -1,6 +1,14 @@
-//! Application policy and transport for shared private recovery.
+//! Single scheduler for routed transaction enhancement, plus the transport for
+//! shared private recovery.
+//!
+//! The wallet routes every payload obligation to exactly one transport in
+//! `transaction_enhancement_work()`. [`EnhancementSync`] services that one
+//! snapshot: private work through Enhance PIR and public work through
+//! lightwalletd. It never re-routes: a PIR failure, suspension, or
+//! cancellation cannot produce a public `GetTransaction` request.
 use super::{
-    block_source::MemoryBlockSource, lwd::DirectRouteConnector, SyncError, WalletDatabase,
+    block_source::MemoryBlockSource, enhance::PublicPayloads, lwd::DirectRouteConnector, SyncError,
+    WalletDatabase,
 };
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use bytes::Bytes;
@@ -20,9 +28,13 @@ use zakura_pir_enhance::transport::{self, BoundedBody, PendingClient};
 use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
 use zakura_pir_enhance::{ClientError, ClientResourceLimits, Manifest};
 use zcash_client_backend::{
-    data_api::enhance_pir::{
-        EnhancePirRead, EnhancePirRequest, EnhancePirStoreResult, EnhancePirWrite,
-        IronwoodEnhanceDiscoveryRequest, IronwoodEnhanceDiscoveryResult,
+    data_api::{
+        enhance_pir::{
+            EnhancePirRead, EnhancePirRequest, EnhancePirStoreResult, EnhancePirWork,
+            EnhancePirWrite, IronwoodEnhanceDiscoveryRequest, IronwoodEnhanceDiscoveryResult,
+            TransactionEnhancementWork,
+        },
+        PublicTransactionEnhancementRequest,
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -33,6 +45,9 @@ const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_LOGICAL_ROWS: u64 = 65_536;
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
+/// Servicing one route can create work on the other (a transparent flag or
+/// rediscovery can require LWD; a payload can queue parent transactions).
+const MAX_ROUTED_PASSES: usize = 3;
 
 fn routing_is_current_or_newer(current: &Manifest, candidate: &Manifest) -> bool {
     current_or_newer_routing_revision(
@@ -63,10 +78,39 @@ fn rediscovery_cover_start(height: BlockHeight) -> BlockHeight {
     )
 }
 
+/// One routed enhancement snapshot, split by transport.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct RoutedWork {
+    public: Vec<PublicTransactionEnhancementRequest>,
+    private: Vec<EnhancePirWork>,
+}
+
+impl RoutedWork {
+    fn new(work: impl IntoIterator<Item = TransactionEnhancementWork>) -> Self {
+        let mut routed = Self::default();
+        for work in work {
+            match work {
+                TransactionEnhancementWork::Public(request) => routed.public.push(request),
+                TransactionEnhancementWork::Private(work) => routed.private.push(work),
+            }
+        }
+        routed
+    }
+
+    fn prepared(&self) -> PreparedWork {
+        PreparedWork::new(self.private.iter().copied())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.public.is_empty() && self.private.is_empty()
+    }
+}
+
 /// Storage boundary for recovery scheduling. The production adapter retains
 /// wallet anchor validation, record authentication, and serialized writes.
-trait RecoveryWallet {
-    fn work(&self) -> Result<PreparedWork, EnhancePirRunError>;
+pub(super) trait RecoveryWallet {
+    /// Reads the wallet's single routed snapshot; never a second routing source.
+    fn work(&self) -> Result<RoutedWork, EnhancePirRunError>;
     fn accept(
         &self,
         network: WalletNetwork,
@@ -80,9 +124,9 @@ trait RecoveryWallet {
 }
 
 impl RecoveryWallet for WalletDatabase {
-    fn work(&self) -> Result<PreparedWork, EnhancePirRunError> {
-        Ok(PreparedWork::new(
-            self.enhance_pir_work()
+    fn work(&self) -> Result<RoutedWork, EnhancePirRunError> {
+        Ok(RoutedWork::new(
+            self.transaction_enhancement_work()
                 .map_err(|e| SyncError::db(e.to_string()))?,
         ))
     }
@@ -111,7 +155,123 @@ impl RecoveryWallet for WalletDatabase {
     }
 }
 
-pub(super) struct EnhancePirSync {
+/// Work outside Enhance PIR that a routed pass dispatches. Production uses
+/// lightwalletd; scheduler tests substitute a recording fake.
+pub(super) trait EnhancementEffects<W> {
+    /// Obtains the compact block for `request` and applies reconstruction.
+    async fn rediscover(
+        &mut self,
+        db: &mut W,
+        request: IronwoodEnhanceDiscoveryRequest,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError>;
+
+    /// Retrieves routed public payloads. Failures are retained for the caller;
+    /// they never change routing.
+    async fn public(
+        &mut self,
+        db: &mut W,
+        requests: &[PublicTransactionEnhancementRequest],
+        should_exit: &impl Fn() -> bool,
+    );
+}
+
+/// Production effects: cached or downloaded compact blocks and lightwalletd payloads.
+pub(super) struct LwdEffects<'a> {
+    network: WalletNetwork,
+    db_path: &'a str,
+    lwd: &'a mut CompactTxStreamerClient<Channel>,
+    cached: Option<&'a MemoryBlockSource>,
+    public: PublicPayloads,
+}
+
+impl<'a> LwdEffects<'a> {
+    pub(super) fn new(
+        network: WalletNetwork,
+        db_path: &'a str,
+        lwd: &'a mut CompactTxStreamerClient<Channel>,
+        cached: Option<&'a MemoryBlockSource>,
+    ) -> Self {
+        Self {
+            network,
+            db_path,
+            lwd,
+            cached,
+            public: PublicPayloads::default(),
+        }
+    }
+
+    /// Reports the first retryable public payload failure from this run.
+    pub(super) fn finish(self) -> Result<(), SyncError> {
+        self.public.finish()
+    }
+}
+
+impl EnhancementEffects<WalletDatabase> for LwdEffects<'_> {
+    async fn rediscover(
+        &mut self,
+        db: &mut WalletDatabase,
+        request: IronwoodEnhanceDiscoveryRequest,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError> {
+        let downloaded;
+        let block = if let Some(block) = self
+            .cached
+            .and_then(|source| source.block_at(request.height))
+        {
+            block
+        } else {
+            // Fetch a trailing cover range rather than one isolated block.
+            // Accepted limitation: the requested height remains the range endpoint,
+            // so an informed lightwalletd can still infer the height of interest.
+            downloaded = await_request_with_cancel(
+                super::lwd::download_blocks(
+                    self.lwd,
+                    rediscovery_cover_start(request.height),
+                    request.height,
+                    self.network,
+                ),
+                should_exit,
+                "rediscovery download timed out",
+            )
+            .await?;
+            downloaded
+                .block_at(request.height)
+                .ok_or_else(|| SyncError::parse("rediscovery block missing"))?
+        };
+        if should_exit() {
+            return Err(EnhancePirRunError::ExitRequested);
+        }
+        let result = with_wallet_db_write_lock("enhance_pir.rediscover", || {
+            db.rebuild_ironwood_enhancement(request, block)
+        })
+        .map_err(|e| SyncError::db(e.to_string()))?;
+        if matches!(result, IronwoodEnhanceDiscoveryResult::Rejected) {
+            return Err(SyncError::parse("rediscovery block rejected").into());
+        }
+        Ok(())
+    }
+
+    async fn public(
+        &mut self,
+        db: &mut WalletDatabase,
+        requests: &[PublicTransactionEnhancementRequest],
+        should_exit: &impl Fn() -> bool,
+    ) {
+        self.public
+            .run(
+                self.lwd,
+                db,
+                self.db_path,
+                self.network,
+                requests,
+                should_exit,
+            )
+            .await;
+    }
+}
+
+pub(super) struct EnhancementSync {
     network: WalletNetwork,
     db_path: String,
     endpoint: Option<String>,
@@ -286,7 +446,7 @@ impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
         response.map_err(client_transport_error)
     }
 }
-impl EnhancePirSync {
+impl EnhancementSync {
     pub(super) fn new(network: WalletNetwork, enabled: bool, db_path: &str) -> Self {
         Self {
             network,
@@ -370,24 +530,65 @@ impl EnhancePirSync {
             }
         }
     }
-    pub(super) async fn run(
+    /// Services one routed snapshot in bounded passes: rediscovery, private
+    /// queries, a reread, then routed public payloads. Passes repeat only while
+    /// the durable snapshot changes. Private failures defer PIR for this sync
+    /// session and never dispatch public work; only a routed public request
+    /// reaches lightwalletd. Cancellation stops before the next dispatch.
+    pub(super) async fn run<W: RecoveryWallet, E: EnhancementEffects<W>>(
         &mut self,
-        db: &mut WalletDatabase,
-        lwd: &mut CompactTxStreamerClient<Channel>,
-        cached: Option<&MemoryBlockSource>,
+        db: &mut W,
+        route: &impl transport::Transport,
+        effects: &mut E,
         should_exit: &impl Fn() -> bool,
     ) -> Result<(), EnhancePirRunError> {
+        let mut previous = None;
+        for _ in 0..MAX_ROUTED_PASSES {
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
+            let work = db.work()?;
+            if work.is_empty() || previous.as_ref() == Some(&work) {
+                break;
+            }
+            if self.enabled() && !self.deferred && !work.private.is_empty() {
+                match self
+                    .run_private(db, route, effects, &work, should_exit)
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(EnhancePirRunError::ExitRequested) => {
+                        return Err(EnhancePirRunError::ExitRequested)
+                    }
+                    Err(error) => self.defer_after(error),
+                }
+            }
+            // Applying a record can atomically move a transaction to LWD, and
+            // rediscovery can resolve a mixed shape; dispatch that in this pass.
+            let routed = db.work()?;
+            if should_exit() {
+                return Err(EnhancePirRunError::ExitRequested);
+            }
+            if !routed.public.is_empty() {
+                effects.public(db, &routed.public, should_exit).await;
+            }
+            previous = Some(work);
+        }
         if should_exit() {
             return Err(EnhancePirRunError::ExitRequested);
         }
-        if !self.enabled() || self.deferred {
-            return Ok(());
-        }
-        let work = PreparedWork::new(
-            db.enhance_pir_work()
-                .map_err(|e| SyncError::db(e.to_string()))?,
-        );
-        for request in work.rediscover {
+        Ok(())
+    }
+
+    async fn run_private<W: RecoveryWallet, E: EnhancementEffects<W>>(
+        &mut self,
+        db: &mut W,
+        route: &impl transport::Transport,
+        effects: &mut E,
+        work: &RoutedWork,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError> {
+        for request in work.prepared().rediscover {
             // Partial reconstruction can leave active jobs at the same height.
             // Retry those on the next foreground poll, not every scan batch.
             if self.attempted_discovery.contains(&request) {
@@ -397,42 +598,22 @@ impl EnhancePirSync {
             if should_exit() {
                 return Err(EnhancePirRunError::ExitRequested);
             }
-            let downloaded;
-            let block =
-                if let Some(block) = cached.and_then(|source| source.block_at(request.height)) {
-                    block
-                } else {
-                    // Fetch a trailing cover range rather than one isolated block.
-                    // Accepted limitation: the requested height remains the range endpoint,
-                    // so an informed lightwalletd can still infer the height of interest.
-                    downloaded = await_request_with_cancel(
-                        super::lwd::download_blocks(
-                            lwd,
-                            rediscovery_cover_start(request.height),
-                            request.height,
-                            self.network,
-                        ),
-                        should_exit,
-                        "rediscovery download timed out",
-                    )
-                    .await?;
-                    downloaded
-                        .block_at(request.height)
-                        .ok_or_else(|| SyncError::parse("rediscovery block missing"))?
-                };
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-            let result = with_wallet_db_write_lock("enhance_pir.rediscover", || {
-                db.rebuild_ironwood_enhancement(request, block)
-            })
-            .map_err(|e| SyncError::db(e.to_string()))?;
-            if matches!(result, IronwoodEnhanceDiscoveryResult::Rejected) {
-                return Err(SyncError::parse("rediscovery block rejected").into());
-            }
+            effects.rediscover(db, request, should_exit).await?;
         }
-        self.run_queries(db, &RoutedTransport::new(should_exit), should_exit)
-            .await
+        self.run_queries(db, route, should_exit).await
+    }
+
+    /// An ordinary PIR failure defers retries until a new full-sync session.
+    fn defer_after(&mut self, error: EnhancePirRunError) {
+        self.defer();
+        match error {
+            EnhancePirRunError::HttpStatus(status) => log::warn!(
+                "sync: private Ironwood enhancement returned HTTP {status}; queued work will retry on a later sync"
+            ),
+            error => log::warn!(
+                "sync: private Ironwood enhancement failed; queued work will retry on a later sync: {error:?}"
+            ),
+        }
     }
 
     async fn run_queries(
@@ -444,7 +625,7 @@ impl EnhancePirSync {
         if should_exit() {
             return Err(EnhancePirRunError::ExitRequested);
         }
-        let work = db.work()?;
+        let work = db.work()?.prepared();
         if work.query_count() == 0 {
             return Ok(());
         }
@@ -490,7 +671,7 @@ impl EnhancePirSync {
         for attempt in 0..=1 {
             // Re-read after a partial batch: successfully stored rows are no
             // longer pending, and only the durable remainder is retried.
-            let work = db.work()?;
+            let work = db.work()?.prepared();
             if work.query_count() == 0 {
                 break;
             }
@@ -550,7 +731,7 @@ impl EnhancePirSync {
                 return Ok(());
             }
         }
-        let remaining = db.work()?;
+        let remaining = db.work()?.prepared();
         log::info!(
             "sync: private recovery has {} active queries, {} rediscovery jobs, and {} suspended obligations",
             remaining.query_count(),
@@ -896,10 +1077,10 @@ mod tests {
 
     #[test]
     fn only_mainnet_is_enabled() {
-        assert!(EnhancePirSync::new(WalletNetwork::Main, true, "test").enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Main, false, "test").enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Test, true, "test").enabled());
-        assert!(!EnhancePirSync::new(WalletNetwork::Regtest, true, "test").enabled());
+        assert!(EnhancementSync::new(WalletNetwork::Main, true, "test").enabled());
+        assert!(!EnhancementSync::new(WalletNetwork::Main, false, "test").enabled());
+        assert!(!EnhancementSync::new(WalletNetwork::Test, true, "test").enabled());
+        assert!(!EnhancementSync::new(WalletNetwork::Regtest, true, "test").enabled());
     }
 
     #[test]

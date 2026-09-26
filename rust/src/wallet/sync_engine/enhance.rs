@@ -13,15 +13,16 @@
 //!     the wallet imports or derives a new t-address and has to
 //!     backfill its activity).
 //!
-//! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module services the non-private
-//! portions of the queue against lightwalletd via gRPC (`GetTransaction`,
-//! `TransactionsInvolvingAddress`) and writes the results back into
-//! `db` using `decrypt_and_store_transaction` and
-//! `set_transaction_status`. The loop retries up to three times
-//! because servicing one request can legally populate new requests
-//! (e.g. a newly-decrypted transaction may reveal additional parent
-//! transactions to enhance).
+//! Librustzcash signals these gaps through two snapshots. Payload retrieval is
+//! routed by `transaction_enhancement_work()` and scheduled by
+//! `enhance_pir::EnhancementSync`, which hands only routed public requests to
+//! [`PublicPayloads`] (`GetTransaction` + `decrypt_and_store_transaction`).
+//! Status observation and transparent-address history come from
+//! `transaction_data_requests()` and are serviced by
+//! [`run_transaction_data_requests`], which ignores payload requests so that no
+//! second routing decision can dispatch them. Both loops are bounded because
+//! servicing one request can legally populate new requests (e.g. a
+//! newly-decrypted transaction may reveal additional parent transactions).
 
 use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
@@ -34,7 +35,8 @@ use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletRead, WalletWrite,
+        wallet::decrypt_and_store_transaction, PublicTransactionEnhancementRequest,
+        TransactionDataRequest, WalletRead, WalletWrite,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
@@ -105,74 +107,40 @@ fn store_transaction_observation(
     })
 }
 
-/// Services `db.transaction_data_requests()` against lightwalletd until
-/// the queue is empty or no request is actionable. Returns `SyncError::Db`
-/// if `db.transaction_data_requests()` itself fails.
-/// Per-request failures are split by semantics: an explicit
-/// "txid not recognized" payload response retires only enhancement work, while
-/// transient network failures bubble up as `SyncError::Network` so the
-/// outer sync retry path can recover without deleting the request.
-pub(super) async fn run_transaction_data_requests(
-    client: &mut CompactTxStreamerClient<Channel>,
-    db: &mut WalletDatabase,
-    db_path: &str,
-    network: WalletNetwork,
-    should_exit: &(impl Fn() -> bool + Sync),
-) -> Result<(), SyncError> {
-    let status_client = client.clone();
-    let public_source =
-        LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
-    let mut status_reader = super::status_pir::reader(db_path, network, should_exit, public_source);
-    let mut failed_txids: HashSet<String> = HashSet::new();
-    let mut observed_statuses = HashSet::new();
-    let mut deferred_payload_error = None;
-    // Retry a failed address on a later invocation, not in all three queue passes.
-    let mut failed_addresses = HashSet::new();
+/// Retrieves routed public payloads over lightwalletd for one sync pass.
+///
+/// Callers pass only [`PublicTransactionEnhancementRequest`]s taken from the
+/// wallet's routed enhancement snapshot; this type never selects work itself.
+/// An explicit "txid not recognized" response retires only enhancement work.
+/// Other failures leave the request durable, skip that transaction for the
+/// rest of the pass, and are reported by [`Self::finish`] as a retryable error.
+#[derive(Default)]
+pub(super) struct PublicPayloads {
+    failed: HashSet<TxId>,
+    deferred_error: Option<SyncError>,
+}
 
-    backfill_stored_fees(client, db, db_path, should_exit).await?;
-
-    for _ in 0..3 {
-        let requests = db
-            .transaction_data_requests()
-            .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
-        if requests.is_empty() {
-            break;
-        }
-        let payload_requests: Vec<_> = requests
-            .iter()
-            .cloned()
-            .filter_map(TransactionDataRequest::into_public_enhancement_request)
-            .collect();
-        let status_requests: Vec<_> = requests
-            .iter()
-            .cloned()
-            .filter_map(TransactionDataRequest::into_status_request)
-            .collect();
-        // If nothing in the queue is actionable (e.g. address-scoped
-        // requests without an `end` height, which we can't service
-        // without synthesizing a range), break rather than looping
-        // forever on the same inert queue.
-        let actionable = !payload_requests.is_empty()
-            || !status_requests.is_empty()
-            || requests.iter().any(|request| match request {
-                TransactionDataRequest::TransactionsInvolvingAddress(request) => {
-                    request.block_range_end().is_some()
-                }
-                _ => false,
-            });
-        if !actionable {
-            break;
-        }
-
-        for request in payload_requests {
+impl PublicPayloads {
+    /// Dispatches each request not already failed in this pass, stopping
+    /// before the next dispatch once `should_exit` is set.
+    pub(super) async fn run(
+        &mut self,
+        client: &mut CompactTxStreamerClient<Channel>,
+        db: &mut WalletDatabase,
+        db_path: &str,
+        network: WalletNetwork,
+        requests: &[PublicTransactionEnhancementRequest],
+        should_exit: &impl Fn() -> bool,
+    ) {
+        for request in requests {
             if should_exit() {
-                return Ok(());
+                return;
             }
             let txid = request.txid();
-            let txid_str = format!("{txid}");
-            if failed_txids.contains(&txid_str) {
+            if self.failed.contains(&txid) {
                 continue;
             }
+            let txid_str = format!("{txid}");
 
             match cancelable(get_transaction_payload(client, txid), should_exit).await {
                 Ok(raw) => match decode_enhancement_payload(&raw, txid) {
@@ -182,8 +150,8 @@ pub(super) async fn run_transaction_data_requests(
                             || decrypt_and_store_transaction(&network, db, &tx, mined_height),
                         ) {
                             log::error!("sync: decrypt_and_store_transaction failed: {e}");
-                            failed_txids.insert(txid_str.clone());
-                            deferred_payload_error.get_or_insert_with(|| {
+                            self.failed.insert(txid);
+                            self.deferred_error.get_or_insert_with(|| {
                                 SyncError::db(format!(
                                     "decrypt_and_store_transaction failed for {txid_str}: {e}"
                                 ))
@@ -195,14 +163,14 @@ pub(super) async fn run_transaction_data_requests(
                     }
                     Err(e) => {
                         log::warn!("sync: invalid enhancement payload for {txid_str}: {e}");
-                        failed_txids.insert(txid_str);
-                        deferred_payload_error.get_or_insert(e);
+                        self.failed.insert(txid);
+                        self.deferred_error.get_or_insert(e);
                     }
                 },
                 Err(e) => match classify_get_transaction_error(&e) {
                     GetTransactionErrorAction::CompleteEnhancementNotFound => {
                         log::warn!("sync: get_transaction did not recognize {txid_str}: {e}");
-                        failed_txids.insert(txid_str);
+                        self.failed.insert(txid);
                         if let Err(e) = with_wallet_db_write_lock(
                             "sync_engine.enhance.notify_transaction_enhancement_not_found",
                             || db.notify_transaction_enhancement_not_found(txid),
@@ -210,7 +178,7 @@ pub(super) async fn run_transaction_data_requests(
                             log::error!(
                                 "sync: notify_transaction_enhancement_not_found failed: {e}"
                             );
-                            deferred_payload_error.get_or_insert_with(|| {
+                            self.deferred_error.get_or_insert_with(|| {
                                 SyncError::db(format!(
                                     "notify_transaction_enhancement_not_found failed for {txid}: {e}"
                                 ))
@@ -218,19 +186,73 @@ pub(super) async fn run_transaction_data_requests(
                         }
                     }
                     GetTransactionErrorAction::RetryAsNetwork => {
-                        failed_txids.insert(txid_str.clone());
-                        deferred_payload_error.get_or_insert_with(|| {
+                        self.failed.insert(txid);
+                        self.deferred_error.get_or_insert_with(|| {
                             SyncError::net(format!("get_transaction failed for {txid_str}: {e}"))
                         });
                     }
                 },
             }
         }
+    }
+
+    /// Reports the first retryable payload failure of this pass, if any.
+    pub(super) fn finish(self) -> Result<(), SyncError> {
+        self.deferred_error.map_or(Ok(()), Err)
+    }
+}
+
+/// Services status observation and transparent-address history from
+/// `db.transaction_data_requests()` until no such request is actionable.
+/// Payload ([`TransactionDataRequest::Enhancement`]) requests are ignored:
+/// they are routed and dispatched only by the enhancement scheduler.
+/// Returns `SyncError::Db` if `db.transaction_data_requests()` itself fails;
+/// status transport failures bubble up as `SyncError::Network`.
+pub(super) async fn run_transaction_data_requests(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    should_exit: &(impl Fn() -> bool + Sync),
+) -> Result<(), SyncError> {
+    let status_client = client.clone();
+    let public_source =
+        LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
+    let mut status_reader = super::status_pir::reader(db_path, network, should_exit, public_source);
+    let mut observed_statuses = HashSet::new();
+    // Retry a failed address on a later invocation, not in all three queue passes.
+    let mut failed_addresses = HashSet::new();
+
+    backfill_stored_fees(client, db, db_path, should_exit).await?;
+
+    for _ in 0..3 {
+        let requests = db
+            .transaction_data_requests()
+            .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
+        let status_requests: Vec<_> = requests
+            .iter()
+            .cloned()
+            .filter_map(TransactionDataRequest::into_status_request)
+            .filter(|request| !observed_statuses.contains(&request.txid()))
+            .collect();
+        // Payload requests never make this pass actionable. Nor do
+        // address-scoped requests without an `end` height, which we can't
+        // service without synthesizing a range; break rather than looping
+        // forever on the same inert queue.
+        let actionable = !status_requests.is_empty()
+            || requests.iter().any(|request| match request {
+                TransactionDataRequest::TransactionsInvolvingAddress(request) => {
+                    request.block_range_end().is_some()
+                        && !failed_addresses.contains(&request.address())
+                }
+                _ => false,
+            });
+        if !actionable {
+            break;
+        }
+
         for request in status_requests {
             let txid = request.txid();
-            if observed_statuses.contains(&txid) {
-                continue;
-            }
             let observation = match status_reader
                 .observe(StatusRequest {
                     txid,
@@ -331,10 +353,7 @@ pub(super) async fn run_transaction_data_requests(
             reads.resume(read);
         }
     }
-    if should_exit() {
-        return Ok(());
-    }
-    deferred_payload_error.map_or(Ok(()), Err)
+    Ok(())
 }
 
 /// Parse and store before allowing the caller to acknowledge an address range.
@@ -811,7 +830,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_payload_still_allows_status_observation_and_returns_retry_error() {
+    async fn failed_payload_is_retryable_and_status_pass_never_dispatches_payloads() {
         use bytes::Bytes;
         use http_body_util::Full;
         use hyper::service::service_fn;
@@ -881,22 +900,43 @@ mod tests {
             .await
             .unwrap();
         let mut client = CompactTxStreamerClient::new(channel);
-        let result = tokio::time::timeout(
+        let db_path = file.path().to_str().unwrap();
+        let routed = [TransactionDataRequest::Enhancement(tx.txid())
+            .into_public_enhancement_request()
+            .unwrap()];
+        let mut payloads = PublicPayloads::default();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            payloads.run(
+                &mut client,
+                &mut db,
+                db_path,
+                WalletNetwork::Regtest,
+                &routed,
+                &|| false,
+            ),
+        )
+        .await
+        .expect("payload dispatch timed out");
+        // The status pass never dispatches payload work, even though the
+        // failed payload request remains queued.
+        let status = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             run_transaction_data_requests(
                 &mut client,
                 &mut db,
-                file.path().to_str().unwrap(),
+                db_path,
                 WalletNetwork::Regtest,
                 &|| false,
             ),
         )
         .await
-        .expect("coordinator timed out");
+        .expect("status pass timed out");
         server.abort();
 
+        assert!(status.is_ok());
         assert!(
-            matches!(result, Err(SyncError::Network(message)) if message.contains("temporary failure"))
+            matches!(payloads.finish(), Err(SyncError::Network(message)) if message.contains("temporary failure"))
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert!(db

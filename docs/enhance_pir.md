@@ -9,11 +9,32 @@ status/address-history paths retain their backend routing rules.
 
 ## Transaction-data entrypoints
 
-The ordinary queue coordinator is `run_transaction_data_requests`. It handles
-payload enhancement and status observation separately. Status consumers use
-wallet-libraries `StatusReader` with Vizor's policy and transport sources;
-explicit payload consumers use `transaction_data::payload::get_transaction_payload`.
-`EnhancePirSync` retains its specialized private recovery records and scheduler.
+Payload retrieval has one scheduler. wallet-libraries
+`transaction_enhancement_work()` routes every pending payload obligation, from one
+database snapshot, to exactly one transport, and `EnhancementSync` services that
+snapshot without making a second routing decision:
+
+| Mode | Transaction route | Emitted as | Transport |
+| --- | --- | --- | --- |
+| Standard | any | `Public` | `GetTransaction(txid)` |
+| PrivateIronwood | protected Ironwood-only | `Private` (query, rediscovery, suspension) | Enhance PIR by position |
+| PrivateIronwood | unclassified, mixed-pool, or LWD-required | `Public` | `GetTransaction(txid)` |
+
+Each `run_optional_enhancement` call makes bounded passes: rediscovery and
+private queries (while PIR is enabled and not deferred), then a reread, then the
+routed public requests. The reread lets an authenticated transparent flag or a
+rediscovered mixed shape reach lightwalletd in the same run. Passes stop once
+the snapshot stops changing. A PIR failure defers private work for the
+session; it never creates or dispatches a public request, and public-only
+snapshots never contact the PIR service.
+
+`run_transaction_data_requests` services only status observation and
+transparent-address history. It ignores `Enhancement` requests. After each scan
+batch it runs before the scheduler, because address history can queue parent
+payloads. Status consumers use wallet-libraries `StatusReader` with Vizor's
+policy and transport sources. Status routing is independent of enhancement
+routing. `PublicPayloads` services routed public payloads through
+`transaction_data::payload::get_transaction_payload`.
 
 Status privacy is independent of Ironwood enhancement protection. The pinned
 backend still emits status requests for protected transactions. Public status
@@ -107,7 +128,7 @@ including metadata backfill and rediscovery obligations. Previously disclosed
 transaction IDs cannot be made private retroactively.
 
 `get_enhance_recovery_status` returns flat query, rediscovery, and suspension counts
-from durable work, plus current-wallet transient service state. It is internal
+from the routed private work (zero in Standard mode, where everything is public), plus current-wallet transient service state. It is internal
 polling data, not a user-facing surface: the client reads it every foreground poll
 to decide whether outstanding obligations justify restarting sync at an unchanged
 chain tip. Neither settings layout renders these counts. Queue depth is dominated by
@@ -167,8 +188,9 @@ Timing and query counts remain observable; Vizor does not add cover traffic.
   callbacks check their own lease before pausing managers; releasing an expired
   lease wakes its drain waiter without cancelling an admitted broadcast. Each
   transition uses a distinct scoped lease, including retries.
-- Ordinary enhancement runs before completion even without a new scan batch,
-  covering newly exposed fallback work and disabling private recovery at the tip.
+- The routed scheduler and status pass run before completion even without a new
+  scan batch, covering newly exposed fallback work and disabling private recovery
+  at the tip.
 - `scripts/test-ios-migration-outbox-gate.sh` exercises lease retirement and late
   callbacks alongside the existing broadcast/drain tests. Provider tests execute
   the real setting transition with a controlled native channel.
