@@ -7,8 +7,8 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
-zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
+zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -224,11 +224,11 @@ opt-level = 3
 [profile.dev.package."*"]
 opt-level = 3
 
-# Pin the typed transaction request API stacked on wallet-libraries PR #36.
+# Pin the unified enhancement routing API from wallet-libraries feat/unified-enhancement-routing.
 # Keep the related SDK crates on one revision to preserve shared Rust types.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e153ad393ac4bfb12ac1e06a57a31f631fb9ce3e" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "226ad011e7d8e442b06eae4e3cbcc0acffabe51d" }

@@ -1,15 +1,34 @@
 //! Exercises the production scheduler with the real v7 client and a scripted
 //! service. Storage is faked here: wallet record authentication has its own tests.
+use super::super::{
+    scheduler::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS},
+    transport::{receive_response, HTTP_TIMEOUT},
+};
 use super::*;
 use base64::Engine;
+use bytes::Bytes;
+use futures::StreamExt;
+use http_body_util::Full;
 use sha2::{Digest, Sha256};
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
+    rc::Rc,
+    time::Duration,
 };
-use zakura_pir_enhance::{types::*, AcceptedAnchor, GenerationAcceptance};
-use zcash_client_backend::data_api::enhance_pir::{EnhancePirWork, IronwoodEnhanceRequestId};
-use zcash_primitives::transaction::TxId;
+use zakura_pir_enhance::{
+    transport::{BoundedBody, PendingClient},
+    types::*,
+    AcceptedAnchor, ClientError, ClientResourceLimits, GenerationAcceptance,
+};
+use zcash_client_backend::data_api::{
+    enhance_pir::{
+        EnhancePirRequest, EnhancePirSuspension, EnhancePirWork, IronwoodEnhanceRequestId,
+    },
+    PublicTransactionEnhancementRequest, TransactionDataRequest,
+};
+use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::consensus::BlockHeight;
 
 struct Service {
     manifest: RefCell<Manifest>,
@@ -163,36 +182,69 @@ enum Anchor {
     Waiting,
     Mismatch,
 }
+const PROTECTED: TxId = TxId::from_bytes([7; 32]);
+const ORDINARY: TxId = TxId::from_bytes([8; 32]);
+
+fn public_request(txid: TxId) -> PublicTransactionEnhancementRequest {
+    TransactionDataRequest::Enhancement(txid)
+        .into_public_enhancement_request()
+        .unwrap()
+}
+
+/// Routes like the wallet: a transaction is public or private, never both.
 struct Wallet {
     pending: Vec<EnhancePirRequest>,
+    /// Rediscovery and suspensions, which are private but not queryable.
+    other: Vec<EnhancePirWork>,
+    public: Vec<TxId>,
     applied: Vec<u64>,
     reads: Cell<usize>,
     refreshed_anchor: Anchor,
+    /// An authenticated positive transparent flag at this position.
+    transparent_at: Option<u64>,
+    /// Cancellation requested while a record is being applied.
+    cancel_on_apply: Option<Rc<Cell<bool>>>,
 }
 impl Wallet {
     fn new(positions: &[u64]) -> Self {
         Self {
-            pending: positions
-                .iter()
-                .map(|&p| {
-                    EnhancePirRequest::new(
-                        p.into(),
-                        IronwoodEnhanceRequestId::new(TxId::from_bytes([7; 32]), p as u32),
-                    )
-                })
-                .collect(),
+            pending: positions.iter().map(|&p| request(p)).collect(),
+            other: vec![],
+            public: vec![],
             applied: vec![],
             reads: Cell::new(0),
             refreshed_anchor: Anchor::Accepted,
+            transparent_at: None,
+            cancel_on_apply: None,
         }
     }
 }
+fn request(position: u64) -> EnhancePirRequest {
+    EnhancePirRequest::new(
+        position.into(),
+        IronwoodEnhanceRequestId::new(PROTECTED, position as u32),
+    )
+}
 impl RecoveryWallet for Wallet {
-    fn work(&self) -> Result<PreparedWork, EnhancePirRunError> {
+    fn work(&self) -> Result<RoutedWork, EnhancePirRunError> {
         self.reads.set(self.reads.get() + 1);
-        Ok(PreparedWork::new(
-            self.pending.iter().copied().map(EnhancePirWork::Query),
-        ))
+        let work = RoutedWork {
+            public: self.public.iter().copied().map(public_request).collect(),
+            private: self
+                .pending
+                .iter()
+                .copied()
+                .map(EnhancePirWork::Query)
+                .chain(self.other.iter().copied())
+                .collect(),
+        };
+        for txid in &self.public {
+            assert!(
+                !self.pending.iter().any(|r| r.request_id().txid() == *txid),
+                "fake routed {txid} to both transports"
+            );
+        }
+        Ok(work)
     }
     fn accept(&self, _: WalletNetwork, m: &Manifest) -> Result<Acceptance, EnhancePirRunError> {
         if m.generation > 1 {
@@ -220,15 +272,182 @@ impl RecoveryWallet for Wallet {
             self.pending.contains(&request),
             "replayed an already committed request"
         );
-        self.pending.retain(|r| *r != request);
+        if let Some(cancel) = &self.cancel_on_apply {
+            cancel.set(true);
+        }
         self.applied.push(u64::from(request.position()));
+        if self.transparent_at == Some(u64::from(request.position())) {
+            // The whole transaction atomically moves to ordinary enhancement.
+            let txid = request.request_id().txid();
+            self.pending.retain(|r| r.request_id().txid() != txid);
+            self.public.push(txid);
+            return Ok(EnhancePirStoreResult::LwdRequired);
+        }
+        self.pending.retain(|r| *r != request);
         Ok(EnhancePirStoreResult::Stored)
     }
 }
-fn sync() -> EnhancePirSync {
-    let mut sync = EnhancePirSync::new(WalletNetwork::Main, true, "scripted-pir-wallet");
+fn sync() -> RoutedPayloadEnhancement {
+    let mut sync = RoutedPayloadEnhancement::new(WalletNetwork::Main, true, "scripted-pir-wallet");
     sync.endpoint = Some("https://example.test".into());
     sync
+}
+
+/// Records lightwalletd-side dispatch instead of performing it.
+#[derive(Default)]
+struct Effects {
+    public: Vec<Vec<TxId>>,
+    rediscovered: Vec<IronwoodEnhanceDiscoveryRequest>,
+    /// Rediscovery resolves a mixed shape, requiring LWD for this transaction.
+    lwd_after_rediscovery: Option<TxId>,
+    /// Payload retrieval succeeds and retires the public work.
+    complete_public: bool,
+}
+impl EnhancementEffects<Wallet> for Effects {
+    async fn rediscover(
+        &mut self,
+        db: &mut Wallet,
+        request: IronwoodEnhanceDiscoveryRequest,
+        _: &impl Fn() -> bool,
+    ) -> Result<(), EnhancePirRunError> {
+        self.rediscovered.push(request);
+        db.other
+            .retain(|work| *work != EnhancePirWork::Rediscover(request));
+        db.public.extend(self.lwd_after_rediscovery);
+        Ok(())
+    }
+    async fn public(
+        &mut self,
+        db: &mut Wallet,
+        requests: &[PublicTransactionEnhancementRequest],
+        _: &impl Fn() -> bool,
+    ) {
+        self.public
+            .push(requests.iter().map(|request| request.txid()).collect());
+        if self.complete_public {
+            db.public.clear();
+        }
+    }
+}
+
+fn rediscovery() -> IronwoodEnhanceDiscoveryRequest {
+    IronwoodEnhanceDiscoveryRequest {
+        height: BlockHeight::from_u32(3428200),
+        block_hash: BlockHash([9; 32]),
+    }
+}
+
+#[tokio::test]
+async fn public_only_work_never_initializes_pir() {
+    for enabled in [true, false] {
+        let service = Service::new([]);
+        let mut wallet = Wallet::new(&[]);
+        wallet.public = vec![ORDINARY];
+        let mut effects = Effects {
+            complete_public: true,
+            ..Default::default()
+        };
+        let mut sync = if enabled {
+            sync()
+        } else {
+            RoutedPayloadEnhancement::new(WalletNetwork::Main, false, "scripted-pir-wallet")
+        };
+        sync.run(&mut wallet, &service, &mut effects, &|| false)
+            .await
+            .unwrap();
+        assert_eq!(effects.public, [vec![ORDINARY]]);
+        assert_eq!(service.init_count.get(), 0);
+        assert!(service.posts.borrow().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn pir_failure_never_falls_back_to_public_transport() {
+    let service = Service::new([Some(503)]);
+    let mut wallet = Wallet::new(&[0]);
+    wallet.public = vec![ORDINARY];
+    let mut effects = Effects::default();
+    let mut sync = sync();
+    sync.run(&mut wallet, &service, &mut effects, &|| false)
+        .await
+        .unwrap();
+    assert!(sync.deferred, "a PIR failure defers private retries");
+    assert_eq!(wallet.pending.len(), 1, "protected work stays private");
+    assert_eq!(
+        effects.public,
+        [vec![ORDINARY]],
+        "only already-routed work reaches LWD, once per unchanged snapshot"
+    );
+    assert_eq!(service.posts.borrow().len(), 1);
+}
+
+#[tokio::test]
+async fn authenticated_transparent_flag_reroutes_after_snapshot_reread() {
+    let service = Service::new([]);
+    let mut wallet = Wallet::new(&[0]);
+    wallet.transparent_at = Some(0);
+    let mut effects = Effects {
+        complete_public: true,
+        ..Default::default()
+    };
+    sync()
+        .run(&mut wallet, &service, &mut effects, &|| false)
+        .await
+        .unwrap();
+    assert_eq!(wallet.applied, [0]);
+    assert_eq!(effects.public, [vec![PROTECTED]]);
+    assert!(wallet.pending.is_empty() && wallet.public.is_empty());
+}
+
+#[tokio::test]
+async fn suspended_work_stays_private_and_needs_no_network() {
+    let service = Service::new([]);
+    let mut wallet = Wallet::new(&[]);
+    wallet.other = vec![EnhancePirWork::Suspended(
+        EnhancePirSuspension::OutgoingNotRecoverable(request(5)),
+    )];
+    let mut effects = Effects::default();
+    sync()
+        .run(&mut wallet, &service, &mut effects, &|| false)
+        .await
+        .unwrap();
+    assert!(effects.public.is_empty());
+    assert_eq!(service.init_count.get(), 0);
+    assert_eq!(wallet.other.len(), 1);
+}
+
+#[tokio::test]
+async fn rediscovery_can_change_the_route_before_the_public_dispatch() {
+    let service = Service::new([]);
+    let mut wallet = Wallet::new(&[]);
+    wallet.other = vec![EnhancePirWork::Rediscover(rediscovery())];
+    let mut effects = Effects {
+        lwd_after_rediscovery: Some(PROTECTED),
+        complete_public: true,
+        ..Default::default()
+    };
+    sync()
+        .run(&mut wallet, &service, &mut effects, &|| false)
+        .await
+        .unwrap();
+    assert_eq!(effects.rediscovered, [rediscovery()]);
+    assert_eq!(effects.public, [vec![PROTECTED]]);
+    assert_eq!(service.init_count.get(), 0);
+}
+
+#[tokio::test]
+async fn cancellation_during_private_work_prevents_the_public_dispatch() {
+    let service = Service::new([]);
+    let cancelled = Rc::new(Cell::new(false));
+    let mut wallet = Wallet::new(&[0]);
+    wallet.public = vec![ORDINARY];
+    wallet.cancel_on_apply = Some(cancelled.clone());
+    let mut effects = Effects::default();
+    let result = sync()
+        .run(&mut wallet, &service, &mut effects, &|| cancelled.get())
+        .await;
+    assert!(matches!(result, Err(EnhancePirRunError::ExitRequested)));
+    assert!(effects.public.is_empty());
 }
 
 #[tokio::test]

@@ -1,5 +1,5 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::{enhance_pir::RoutedTransport, WalletDatabase};
+use super::{enhancement::RoutedTransport, WalletDatabase};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -30,6 +30,14 @@ fn now_ms() -> Result<u64, LookupError> {
         .map_err(|_| LookupError::Malformed)?;
     u64::try_from(elapsed.as_millis()).map_err(|_| LookupError::Malformed)
 }
+
+/// The session clock. An unreadable clock reads as far future, which fails
+/// every manifest freshness check rather than accepting stale routing.
+fn session_now_ms() -> u64 {
+    now_ms().unwrap_or(u64::MAX)
+}
+
+type SessionClient = StatusPirClient<fn() -> u64>;
 
 fn mainnet_genesis() -> [u8; 32] {
     let mut bytes: [u8; 32] = hex::decode(MAINNET_GENESIS_DISPLAY)
@@ -188,7 +196,7 @@ fn accepted_anchor(
 /// One accepted generation and reusable PIR setup for a batch of status work.
 pub(crate) struct Session<'a, F> {
     route: RoutedTransport<'a, F>,
-    client: tokio::sync::Mutex<StatusPirClient>,
+    client: tokio::sync::Mutex<SessionClient>,
     endpoint: String,
     db_path: &'a str,
     network: WalletNetwork,
@@ -196,14 +204,14 @@ pub(crate) struct Session<'a, F> {
 }
 
 impl<F: Fn() -> bool + Sync> Session<'_, F> {
-    async fn refresh(&self) -> Result<StatusPirClient, LookupError> {
+    async fn refresh(&self) -> Result<SessionClient, LookupError> {
         if (self.should_exit)() {
             return Err(LookupError::Cancelled);
         }
         initialize(&self.route, &self.endpoint, self.db_path, self.network).await
     }
 
-    fn check_anchor(&self, client: &StatusPirClient) -> Result<(), LookupError> {
+    fn check_anchor(&self, client: &SessionClient) -> Result<(), LookupError> {
         let db = crate::wallet::db::open_wallet_db_readonly_with_timeout(
             self.db_path,
             self.network,
@@ -223,11 +231,7 @@ impl<F: Fn() -> bool + Sync> Session<'_, F> {
         let mut retried = false;
         let observation = loop {
             self.check_anchor(&client)?;
-            let result = client
-                .observe(&self.route, txid.as_ref(), coverage, || {
-                    now_ms().unwrap_or(u64::MAX)
-                })
-                .await;
+            let result = client.observe(&self.route, txid.as_ref(), coverage).await;
             let conflict = matches!(&result, Err(Error::Unavailable))
                 && self.route.take_status_session_conflict();
             match result {
@@ -258,9 +262,9 @@ async fn initialize<F: Fn() -> bool + Sync>(
     endpoint: &str,
     db_path: &str,
     network: WalletNetwork,
-) -> Result<StatusPirClient, LookupError> {
+) -> Result<SessionClient, LookupError> {
     for attempt in 0..2 {
-        let pending = PendingClient::fetch(route, endpoint, || now_ms().unwrap_or(u64::MAX))
+        let pending = PendingClient::fetch(route, endpoint, session_now_ms as fn() -> u64)
             .await
             .map_err(classify)?;
         let anchor = {
@@ -272,7 +276,7 @@ async fn initialize<F: Fn() -> bool + Sync>(
             .map_err(|_| LookupError::Unavailable)?;
             accepted_anchor(&db, pending.manifest())?
         };
-        let result = pending.accept(route, &anchor, now_ms()?).await;
+        let result = pending.accept(route, &anchor).await;
         let conflict =
             matches!(&result, Err(Error::Unavailable)) && route.take_status_session_conflict();
         if conflict && attempt == 0 {
