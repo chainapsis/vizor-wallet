@@ -1,5 +1,5 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::{enhancement::RoutedTransport, WalletDatabase};
+use super::{super::WalletDatabase, transport::RoutedTransport, DEFAULT_MAINNET_ENDPOINT};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +18,6 @@ use zcash_protocol::consensus::BlockHeight;
 const MAINNET_GENESIS_DISPLAY: &str =
     "00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08";
 const ENDPOINT_ENV: &str = "VIZOR_STATUS_PIR_URL";
-const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 fn status_endpoint() -> String {
     std::env::var(ENDPOINT_ENV).unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.into())
@@ -63,7 +62,7 @@ fn classify(error: Error) -> LookupError {
 
 /// The existing private-enhancement preference selects status privacy only
 /// after the independently qualified release gate is enabled.
-pub(crate) fn enabled(network: WalletNetwork) -> bool {
+fn enabled(network: WalletNetwork) -> bool {
     enabled_for_preference(network, crate::api::sync::enhance_pir_enabled())
 }
 
@@ -222,7 +221,7 @@ impl<F: Fn() -> bool + Sync> Session<'_, F> {
         Ok(())
     }
 
-    pub(crate) async fn observe(
+    async fn observe(
         &self,
         txid: TxId,
         coverage: LocalCoverageContext,
@@ -289,7 +288,7 @@ async fn initialize<F: Fn() -> bool + Sync>(
 
 /// Use a read-only DB connection for status callers outside the sync engine.
 /// No database write lock is held during the network request.
-pub(crate) async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
+async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
     db_path: &'a str,
     network: WalletNetwork,
     should_exit: &'a F,

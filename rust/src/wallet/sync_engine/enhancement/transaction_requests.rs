@@ -90,8 +90,7 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
     let status_client = client.clone();
     let public_source =
         LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
-    let mut status_reader =
-        super::super::status_pir::reader(db_path, network, should_exit, public_source);
+    let mut status_reader = super::status_pir::reader(db_path, network, should_exit, public_source);
     let mut observed_statuses = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();

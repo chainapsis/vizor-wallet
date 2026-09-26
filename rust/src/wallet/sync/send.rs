@@ -2118,7 +2118,8 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 
     let never_exit = || false;
     let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
-    let mut reader = sync_engine::status_pir::reader(db_path, network, &never_exit, public_source);
+    let mut reader =
+        sync_engine::enhancement::status_pir::reader(db_path, network, &never_exit, public_source);
 
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;

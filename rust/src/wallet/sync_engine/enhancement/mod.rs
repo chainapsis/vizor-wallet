@@ -10,13 +10,23 @@
 //!
 //! Auxiliary requests run before routed payload enhancement because transparent
 //! history can discover transactions whose parent payloads then need routing.
+//!
+//! `status_pir` selects the status source for that snapshot: private status
+//! PIR when the release gate and preference allow it, otherwise public
+//! lightwalletd. Callers outside the sync engine (iOS read-only FFI, migration
+//! reconciliation) reach it through this module as well.
 
 mod fees;
 mod private_pir;
 mod public_payload;
 mod scheduler;
+pub(crate) mod status_pir;
 mod transaction_requests;
 mod transport;
+
+/// Default mainnet endpoint shared by payload and status PIR. Each lane keeps
+/// its own env-var override.
+pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 pub(super) use private_pir::{begin_session, phase, EnhancePirRunError, RoutedPayloadEnhancement};
 pub(super) use public_payload::queue_stored_transactions;

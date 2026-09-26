@@ -47,12 +47,11 @@ use {
 
 mod address_history;
 mod block_source;
-mod enhancement;
+pub(crate) mod enhancement;
 mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
-pub(crate) mod status_pir;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;

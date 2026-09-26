@@ -8,6 +8,7 @@ use super::{
     super::SyncError,
     scheduler::{EnhancementEffects, RecoveryWallet, RoutedWork},
     transport::client_protocol_error,
+    DEFAULT_MAINNET_ENDPOINT,
 };
 use crate::wallet::network::WalletNetwork;
 use futures::StreamExt;
@@ -19,7 +20,6 @@ use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirStoreResult, IronwoodEnhanceDiscoveryRequest,
 };
 use zcash_protocol::consensus::BlockHeight;
-const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
 const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
