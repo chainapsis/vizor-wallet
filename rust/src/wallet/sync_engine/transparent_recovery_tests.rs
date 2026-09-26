@@ -574,7 +574,7 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
         ..Default::default()
     }]);
     with_wallet_db_write_lock("test.scan_enhancement", || {
-        enhance::queue_stored_transactions(path, &blocks)
+        enhancement::queue_stored_transactions(path, &blocks)
     })
     .unwrap();
     assert!(db.transaction_data_requests().unwrap().iter().any(|request|

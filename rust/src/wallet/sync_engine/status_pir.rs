@@ -1,5 +1,5 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::{enhance_pir::RoutedTransport, WalletDatabase};
+use super::{enhancement::RoutedTransport, WalletDatabase};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};

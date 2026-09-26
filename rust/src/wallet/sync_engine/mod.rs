@@ -47,8 +47,7 @@ use {
 
 mod address_history;
 mod block_source;
-mod enhance;
-mod enhance_pir;
+mod enhancement;
 mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
@@ -58,8 +57,10 @@ mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
-use enhance::run_transaction_data_requests;
-use enhance_pir::{EnhancePirRunError, EnhancementSync, LwdEffects, RoutedTransport};
+use enhancement::{
+    queue_stored_transactions, run_auxiliary_transaction_requests, run_routed_payload_enhancement,
+    RoutedPayloadEnhancement,
+};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -1947,32 +1948,6 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
-/// Runs the single routed enhancement scheduler. Private enhancement failures
-/// are deferred until a new full-sync session so compact synchronization does
-/// not depend on the separate service. Public payload failures are returned as
-/// retryable errors after the bounded run. `Ok(true)` means cancellation or a
-/// mode handoff won and the caller must stop.
-async fn run_optional_enhancement(
-    enhancement: &mut EnhancementSync,
-    db: &mut WalletDatabase,
-    client: &mut CompactTxStreamerClient<Channel>,
-    cached: Option<&block_source::MemoryBlockSource>,
-    db_path: &str,
-    network: WalletNetwork,
-    should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    let mut effects = LwdEffects::new(network, db_path, client, cached);
-    let route = RoutedTransport::new(should_exit);
-    match Box::pin(enhancement.run(db, &route, &mut effects, should_exit)).await {
-        Ok(()) => effects.finish().map(|()| false),
-        Err(EnhancePirRunError::ExitRequested) => Ok(true),
-        Err(EnhancePirRunError::HttpStatus(status)) => Err(SyncError::net(format!(
-            "transaction enhancement returned HTTP {status}"
-        ))),
-        Err(EnhancePirRunError::Failed(error)) => Err(error),
-    }
-}
-
 fn needs_completion_enhancement_pass(enhancement_after_scan: bool) -> bool {
     !enhancement_after_scan
 }
@@ -2856,8 +2831,8 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
-    enhance_pir::begin_session(db_data_path);
-    let mut enhancement = EnhancementSync::new(
+    enhancement::begin_session(db_data_path);
+    let mut enhancement = RoutedPayloadEnhancement::new(
         network,
         crate::api::sync::enhance_pir_enabled(),
         db_data_path,
@@ -3223,7 +3198,7 @@ async fn run_sync_impl(
     // Retry enhancement work left by an interrupted/older sync before scanning.
     // Best-effort: a retryable public failure must not block compact sync; the
     // work stays durable and later passes retry it.
-    match run_optional_enhancement(
+    match run_routed_payload_enhancement(
         &mut enhancement,
         &mut db,
         &mut client,
@@ -3538,7 +3513,7 @@ async fn run_sync_impl(
                         .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
                         .is_empty()
                     {
-                        run_transaction_data_requests(
+                        run_auxiliary_transaction_requests(
                             &mut client,
                             &mut db,
                             db_data_path,
@@ -3547,7 +3522,7 @@ async fn run_sync_impl(
                         )
                         .await?;
                     }
-                    if run_optional_enhancement(
+                    if run_routed_payload_enhancement(
                         &mut enhancement,
                         &mut db,
                         &mut client,
@@ -3737,7 +3712,7 @@ async fn run_sync_impl(
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
-            enhance::queue_stored_transactions(db_data_path, &block_source)?;
+            queue_stored_transactions(db_data_path, &block_source)?;
             if let Some(incoming_checkpoint_heights) = &incoming_orchard_checkpoint_heights {
                 let retained =
                     crate::wallet::sync::retain_migration_anchor_checkpoints_before_scan(
@@ -4051,15 +4026,21 @@ async fn run_sync_impl(
 
         // Status and transparent history first: address history can queue
         // payload work for parent transactions, which the scheduler then routes.
-        run_transaction_data_requests(&mut client, &mut db, db_data_path, network, &should_exit)
-            .await?;
+        run_auxiliary_transaction_requests(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            &should_exit,
+        )
+        .await?;
 
         // Service the routed payload snapshot. Protected Ironwood transactions
         // are completed privately by position and never fall back to
         // GetTransaction(txid); everything else is retrieved from lightwalletd.
         // The scheduler boxes its transport-heavy future so Hyper/Tor connector
         // state does not inflate the already-large sync future exported through FRB.
-        if run_optional_enhancement(
+        if run_routed_payload_enhancement(
             &mut enhancement,
             &mut db,
             &mut client,
@@ -4094,7 +4075,7 @@ async fn run_sync_impl(
         //
         // Pre-flight guard matches the one at the startup resubmit
         // call site — if cancel or mode-change landed during
-        // `run_transaction_data_requests` (which can spend a second or two on a
+        // `run_auxiliary_transaction_requests` (which can spend a second or two on a
         // transparent-address scan), bail before opening a single
         // new `send_transaction` RPC. The helper also consults the
         // same closure between candidates and before each retry so
@@ -4347,9 +4328,15 @@ async fn run_sync_impl(
     // queues once at completion so disabling private recovery takes effect
     // without waiting for another block to arrive.
     if needs_completion_enhancement_pass(enhancement_after_scan) {
-        run_transaction_data_requests(&mut client, &mut db, db_data_path, network, &should_exit)
-            .await?;
-        if run_optional_enhancement(
+        run_auxiliary_transaction_requests(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            &should_exit,
+        )
+        .await?;
+        if run_routed_payload_enhancement(
             &mut enhancement,
             &mut db,
             &mut client,
@@ -4522,7 +4509,7 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) = run_transaction_data_requests(
+            if let Err(error) = run_auxiliary_transaction_requests(
                 &mut client,
                 &mut db,
                 db_data_path,
@@ -6246,6 +6233,6 @@ pub(crate) fn enhance_recovery_status(
         queries: work.query_count() as u32,
         rediscovery: work.rediscover.len() as u32,
         suspended: work.suspended as u32,
-        service_state: enhance_pir::phase(path),
+        service_state: enhancement::phase(path),
     })
 }

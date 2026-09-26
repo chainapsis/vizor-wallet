@@ -1,19 +1,34 @@
 //! Exercises the production scheduler with the real v7 client and a scripted
 //! service. Storage is faked here: wallet record authentication has its own tests.
+use super::super::{
+    scheduler::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS},
+    transport::{receive_response, HTTP_TIMEOUT},
+};
 use super::*;
 use base64::Engine;
+use bytes::Bytes;
+use futures::StreamExt;
+use http_body_util::Full;
 use sha2::{Digest, Sha256};
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
     rc::Rc,
+    time::Duration,
 };
-use zakura_pir_enhance::{types::*, AcceptedAnchor, GenerationAcceptance};
+use zakura_pir_enhance::{
+    transport::{BoundedBody, PendingClient},
+    types::*,
+    AcceptedAnchor, ClientError, ClientResourceLimits, GenerationAcceptance,
+};
 use zcash_client_backend::data_api::{
-    enhance_pir::{EnhancePirSuspension, IronwoodEnhanceRequestId},
-    TransactionDataRequest,
+    enhance_pir::{
+        EnhancePirRequest, EnhancePirSuspension, EnhancePirWork, IronwoodEnhanceRequestId,
+    },
+    PublicTransactionEnhancementRequest, TransactionDataRequest,
 };
 use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::consensus::BlockHeight;
 
 struct Service {
     manifest: RefCell<Manifest>,
@@ -272,8 +287,8 @@ impl RecoveryWallet for Wallet {
         Ok(EnhancePirStoreResult::Stored)
     }
 }
-fn sync() -> EnhancementSync {
-    let mut sync = EnhancementSync::new(WalletNetwork::Main, true, "scripted-pir-wallet");
+fn sync() -> RoutedPayloadEnhancement {
+    let mut sync = RoutedPayloadEnhancement::new(WalletNetwork::Main, true, "scripted-pir-wallet");
     sync.endpoint = Some("https://example.test".into());
     sync
 }
@@ -335,7 +350,7 @@ async fn public_only_work_never_initializes_pir() {
         let mut sync = if enabled {
             sync()
         } else {
-            EnhancementSync::new(WalletNetwork::Main, false, "scripted-pir-wallet")
+            RoutedPayloadEnhancement::new(WalletNetwork::Main, false, "scripted-pir-wallet")
         };
         sync.run(&mut wallet, &service, &mut effects, &|| false)
             .await
@@ -347,7 +362,7 @@ async fn public_only_work_never_initializes_pir() {
 }
 
 #[tokio::test]
-async fn private_failure_defers_pir_and_never_dispatches_protected_work_publicly() {
+async fn pir_failure_never_falls_back_to_public_transport() {
     let service = Service::new([Some(503)]);
     let mut wallet = Wallet::new(&[0]);
     wallet.public = vec![ORDINARY];
@@ -367,7 +382,7 @@ async fn private_failure_defers_pir_and_never_dispatches_protected_work_publicly
 }
 
 #[tokio::test]
-async fn transparent_flag_is_reread_and_dispatched_publicly_in_the_same_run() {
+async fn authenticated_transparent_flag_reroutes_after_snapshot_reread() {
     let service = Service::new([]);
     let mut wallet = Wallet::new(&[0]);
     wallet.transparent_at = Some(0);

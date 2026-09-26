@@ -6181,9 +6181,9 @@ pub(crate) struct ResubmitStats {
 /// The helper takes a `should_exit` closure that reflects the
 /// sync loop's cancel / mode-change condition. It is consulted:
 ///
-///   * Before iterating the candidate list at all (so a cancel
-///     arriving during `run_transaction_data_requests` aborts the resubmit pass
-///     entirely without opening a single rebroadcast RPC).
+///   * Before iterating the candidate list at all (so a cancel arriving during
+///     `run_auxiliary_transaction_requests` aborts the resubmit pass entirely
+///     without opening a single rebroadcast RPC).
 ///   * Before every individual candidate's first broadcast.
 ///   * Before the retry call for any candidate that failed on
 ///     its first attempt.
