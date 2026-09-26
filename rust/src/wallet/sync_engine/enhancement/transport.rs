@@ -1,28 +1,37 @@
 //! Shared cancellation-aware HTTPS transport for Enhance PIR and Status PIR.
 
+#[path = "transport/cancellation.rs"]
+mod cancellation;
+#[path = "transport/payload.rs"]
+mod payload;
+#[path = "transport/status.rs"]
+mod status;
+
+pub(super) use cancellation::cancelable;
+pub(super) use payload::client_protocol_error;
+
 use bytes::Bytes;
 use http::{Method, Request, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::{
-    future::Future,
-    sync::atomic::{AtomicU16, Ordering},
-    time::Duration,
-};
-use zakura_pir_enhance::{
-    transport::{self, BoundedBody},
-    ClientError,
-};
+use std::{future::Future, sync::atomic::AtomicU16, time::Duration};
+use zakura_pir_enhance::transport::{self, BoundedBody};
 
 use super::{
     super::{lwd::DirectRouteConnector, SyncError},
-    private_pir::{client_transport_error, EnhancePirRunError},
+    payload::private_pir::EnhancePirRunError,
 };
 
 pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
+
+#[derive(Clone, Copy)]
+enum RoutePolicy {
+    WalletPreference,
+    ForceDirect,
+}
 
 /// One transport per `run`, reused by every request it makes.
 ///
@@ -39,18 +48,18 @@ type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnecto
 pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
-    direct_only: bool,
+    route_policy: RoutePolicy,
     status_session_error: AtomicU16,
 }
 
 impl<'a, F> RoutedTransport<'a, F> {
     pub(in crate::wallet::sync_engine) fn new(should_exit: &'a F) -> Self {
-        Self::with_route(should_exit, false)
+        Self::with_route(should_exit, RoutePolicy::WalletPreference)
     }
     pub(in crate::wallet::sync_engine) fn new_direct(should_exit: &'a F) -> Self {
-        Self::with_route(should_exit, true)
+        Self::with_route(should_exit, RoutePolicy::ForceDirect)
     }
-    fn with_route(should_exit: &'a F, direct_only: bool) -> Self {
+    fn with_route(should_exit: &'a F, route_policy: RoutePolicy) -> Self {
         let connector = HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_only()
@@ -58,119 +67,13 @@ impl<'a, F> RoutedTransport<'a, F> {
             .wrap_connector(DirectRouteConnector::new());
         Self {
             should_exit,
-            direct_only,
+            route_policy,
             status_session_error: AtomicU16::new(0),
             // Cheap: no connection is opened until the first request, and the
             // Tor route simply never uses it.
             direct: Client::builder(TokioExecutor::new()).build(connector),
         }
     }
-}
-
-impl<F> RoutedTransport<'_, F> {
-    pub(in crate::wallet::sync_engine) fn take_status_session_conflict(&self) -> bool {
-        matches!(
-            self.status_session_error.swap(0, Ordering::SeqCst),
-            409 | 410
-        )
-    }
-}
-
-impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for RoutedTransport<'_, F> {
-    async fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, zakura_pir_status::Error> {
-        self.status_request(Method::GET, url, Vec::new(), max_bytes)
-            .await
-    }
-
-    async fn post(
-        &self,
-        url: &str,
-        body: Vec<u8>,
-        max_bytes: usize,
-    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
-        self.status_request(Method::POST, url, body, max_bytes)
-            .await
-    }
-}
-
-impl<F: Fn() -> bool> RoutedTransport<'_, F> {
-    async fn status_request(
-        &self,
-        method: Method,
-        url: &str,
-        body: Vec<u8>,
-        max_bytes: usize,
-    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
-        use zakura_pir_status::Error;
-        self.status_session_error.store(0, Ordering::SeqCst);
-        let request = async {
-            let response = routed_response(
-                method,
-                url,
-                body,
-                self.should_exit,
-                &self.direct,
-                self.direct_only,
-            )
-            .await
-            .map_err(|_| Error::Unavailable)?;
-            match response.status().as_u16() {
-                status @ (409 | 410) => {
-                    self.status_session_error.store(status, Ordering::SeqCst);
-                    return Err(Error::Unavailable);
-                }
-                _ if !response.status().is_success() => return Err(Error::Unavailable),
-                _ => {}
-            }
-            let mut incoming = response.into_body();
-            let mut bytes = Vec::new();
-            while let Some(frame) = incoming.frame().await {
-                let frame = frame.map_err(|_| Error::Unavailable)?;
-                if let Some(data) = frame.data_ref() {
-                    if data.len() > max_bytes.saturating_sub(bytes.len()) {
-                        return Err(Error::Malformed);
-                    }
-                    bytes.extend_from_slice(data);
-                }
-            }
-            Ok(bytes)
-        };
-        tokio::select! {
-            biased;
-            _ = super::super::watch_for_exit(self.should_exit) => Err(Error::Cancelled),
-            result = tokio::time::timeout(Duration::from_secs(20), request) => {
-                result.map_err(|_| Error::Timeout)?
-            }
-        }
-    }
-}
-
-impl<F: Fn() -> bool> transport::Transport for RoutedTransport<'_, F> {
-    async fn execute(
-        &self,
-        request: transport::Request,
-    ) -> Result<transport::ResponseBody, ClientError> {
-        let collector = request.response_body();
-        let response = routed_request(
-            match request.method {
-                transport::Method::Get => Method::GET,
-                transport::Method::Post => Method::POST,
-            },
-            &request.url,
-            request.body,
-            collector,
-            self.should_exit,
-            &self.direct,
-        )
-        .await;
-        if (self.should_exit)() {
-            return Err(ClientError::Cancelled);
-        }
-        response.map_err(client_transport_error)
-    }
-}
-pub(super) fn client_protocol_error(error: ClientError) -> SyncError {
-    SyncError::parse(format!("Enhance PIR: {error}"))
 }
 
 /// Validated before route selection, so a plaintext endpoint is rejected on
@@ -196,7 +99,14 @@ async fn routed_request(
     direct: &DirectHttpsClient,
 ) -> Result<transport::ResponseBody, EnhancePirRunError> {
     receive_response(
-        routed_response(method, url, body, should_exit, direct, false),
+        routed_response(
+            method,
+            url,
+            body,
+            should_exit,
+            direct,
+            RoutePolicy::WalletPreference,
+        ),
         collector,
         should_exit,
     )
@@ -209,13 +119,15 @@ async fn routed_response(
     body: Vec<u8>,
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
-    direct_only: bool,
+    route_policy: RoutePolicy,
 ) -> Result<http::Response<Incoming>, EnhancePirRunError> {
     if should_exit() {
         return Err(EnhancePirRunError::ExitRequested);
     }
     let uri = secure_endpoint_uri(url)?;
-    if !direct_only && crate::network_privacy::is_tor_desired() {
+    if matches!(route_policy, RoutePolicy::WalletPreference)
+        && crate::network_privacy::is_tor_desired()
+    {
         let client = crate::network_privacy::tor_client_for_route(true, || should_exit())
             .await
             .map_err(|error| {

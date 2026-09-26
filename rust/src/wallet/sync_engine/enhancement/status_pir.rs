@@ -1,5 +1,5 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::{super::WalletDatabase, transport::RoutedTransport, DEFAULT_MAINNET_ENDPOINT};
+use super::super::{super::WalletDatabase, transport::RoutedTransport, DEFAULT_MAINNET_ENDPOINT};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -80,7 +80,7 @@ pub(crate) fn reader<'a, F, P>(
     network: WalletNetwork,
     should_exit: &'a F,
     public_source: P,
-) -> StatusReader<P, Source<'a, F>>
+) -> StatusReader<P, PrivateStatusSource<'a, F>>
 where
     F: Fn() -> bool + Sync,
     P: StatusSource,
@@ -93,20 +93,26 @@ where
     StatusReader::new(
         mode,
         public_source,
-        Source::new(db_path, network, should_exit, false),
+        PrivateStatusSource::new(db_path, network, should_exit, false),
     )
 }
 
 /// App-owned private source for the wallet-libraries status reader. Opening is
 /// lazy, so no PIR request occurs when public status is selected.
-pub(crate) struct Source<'a, F> {
+pub(crate) struct PrivateStatusSource<'a, F> {
     db_path: &'a str,
     network: WalletNetwork,
     should_exit: &'a F,
-    direct_only: bool,
+    route_policy: StatusRoutePolicy,
 }
 
-impl<'a, F: Fn() -> bool + Sync> Source<'a, F> {
+#[derive(Clone, Copy)]
+enum StatusRoutePolicy {
+    WalletPreference,
+    ForceDirect,
+}
+
+impl<'a, F: Fn() -> bool + Sync> PrivateStatusSource<'a, F> {
     pub(crate) fn new(
         db_path: &'a str,
         network: WalletNetwork,
@@ -117,7 +123,11 @@ impl<'a, F: Fn() -> bool + Sync> Source<'a, F> {
             db_path,
             network,
             should_exit,
-            direct_only,
+            route_policy: if direct_only {
+                StatusRoutePolicy::ForceDirect
+            } else {
+                StatusRoutePolicy::WalletPreference
+            },
         }
     }
 }
@@ -135,24 +145,24 @@ fn status_error(error: LookupError) -> StatusError {
     }
 }
 
-impl<'a, F: Fn() -> bool + Sync> StatusSource for Source<'a, F> {
-    type Session = Session<'a, F>;
+impl<'a, F: Fn() -> bool + Sync> StatusSource for PrivateStatusSource<'a, F> {
+    type Session = PrivateStatusSession<'a, F>;
 
     async fn open(self) -> Result<Self::Session, StatusError> {
         begin_from_db_path(
             self.db_path,
             self.network,
             self.should_exit,
-            self.direct_only,
+            self.route_policy,
         )
         .await
         .map_err(status_error)
     }
 }
 
-impl<F: Fn() -> bool + Sync> StatusSession for Session<'_, F> {
+impl<F: Fn() -> bool + Sync> StatusSession for PrivateStatusSession<'_, F> {
     async fn observe(&mut self, request: StatusRequest) -> Result<StatusObservation, StatusError> {
-        let observation = Session::observe(self, request.txid, request.coverage)
+        let observation = PrivateStatusSession::observe(self, request.txid, request.coverage)
             .await
             .map_err(status_error)?;
         Ok(match observation {
@@ -193,7 +203,7 @@ fn accepted_anchor(
 }
 
 /// One accepted generation and reusable PIR setup for a batch of status work.
-pub(crate) struct Session<'a, F> {
+pub(crate) struct PrivateStatusSession<'a, F> {
     route: RoutedTransport<'a, F>,
     client: tokio::sync::Mutex<SessionClient>,
     endpoint: String,
@@ -202,7 +212,7 @@ pub(crate) struct Session<'a, F> {
     should_exit: &'a F,
 }
 
-impl<F: Fn() -> bool + Sync> Session<'_, F> {
+impl<F: Fn() -> bool + Sync> PrivateStatusSession<'_, F> {
     async fn refresh(&self) -> Result<SessionClient, LookupError> {
         if (self.should_exit)() {
             return Err(LookupError::Cancelled);
@@ -292,19 +302,18 @@ async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
     db_path: &'a str,
     network: WalletNetwork,
     should_exit: &'a F,
-    direct_only: bool,
-) -> Result<Session<'a, F>, LookupError> {
+    route_policy: StatusRoutePolicy,
+) -> Result<PrivateStatusSession<'a, F>, LookupError> {
     if should_exit() {
         return Err(LookupError::Cancelled);
     }
     let endpoint = status_endpoint();
-    let route = if direct_only {
-        RoutedTransport::new_direct(should_exit)
-    } else {
-        RoutedTransport::new(should_exit)
+    let route = match route_policy {
+        StatusRoutePolicy::WalletPreference => RoutedTransport::new(should_exit),
+        StatusRoutePolicy::ForceDirect => RoutedTransport::new_direct(should_exit),
     };
     let client = initialize(&route, &endpoint, db_path, network).await?;
-    Ok(Session {
+    Ok(PrivateStatusSession {
         route,
         client: tokio::sync::Mutex::new(client),
         endpoint,

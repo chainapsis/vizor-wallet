@@ -1,10 +1,8 @@
 //! Exercises the production scheduler with the real v7 client and a scripted
 //! service. Storage is faked here: wallet record authentication has its own tests.
-use super::super::{
-    scheduler::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS},
-    transport::{receive_response, HTTP_TIMEOUT},
-};
+use super::super::super::transport::{receive_response, HTTP_TIMEOUT};
 use super::*;
+use super::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS};
 use base64::Engine;
 use bytes::Bytes;
 use futures::StreamExt;
@@ -371,7 +369,10 @@ async fn pir_failure_never_falls_back_to_public_transport() {
     sync.run(&mut wallet, &service, &mut effects, &|| false)
         .await
         .unwrap();
-    assert!(sync.deferred, "a PIR failure defers private retries");
+    assert!(
+        sync.private_failed_for_sync,
+        "a PIR failure defers private retries"
+    );
     assert_eq!(wallet.pending.len(), 1, "protected work stays private");
     assert_eq!(
         effects.public,
@@ -468,7 +469,14 @@ async fn stale_routing_refreshes_equal_coverage_and_retries_only_unfinished_work
             1,
             "unchanged material should be reused"
         );
-        assert_eq!(sync.session.as_ref().unwrap().generation().generation, 2);
+        assert_eq!(
+            sync.accepted_routing
+                .as_ref()
+                .unwrap()
+                .generation()
+                .generation,
+            2
+        );
         assert!(wallet.reads.get() >= 3);
         let posts = service.posts.borrow();
         assert_ne!(
@@ -518,7 +526,14 @@ async fn cancellation_during_refresh_prevents_rebinding_and_retry() {
     ));
     assert_eq!(service.posts.borrow().len(), 1);
     assert_eq!(wallet.pending.len(), 1);
-    assert_eq!(sync.session.as_ref().unwrap().generation().generation, 1);
+    assert_eq!(
+        sync.accepted_routing
+            .as_ref()
+            .unwrap()
+            .generation()
+            .generation,
+        1
+    );
 }
 
 #[tokio::test]

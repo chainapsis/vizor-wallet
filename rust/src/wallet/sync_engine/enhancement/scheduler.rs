@@ -22,10 +22,12 @@ use zcash_client_backend::{
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::{
-    super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
+    super::{
+        super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
+        transport::await_request_with_cancel,
+    },
     private_pir::{rediscovery_cover_start, EnhancePirRunError, RoutedPayloadEnhancement},
-    public_payload::PublicPayloadExecutor,
-    transport::await_request_with_cancel,
+    public_lwd::PublicPayloadExecutor,
 };
 
 /// Servicing one route can create work on the other.
@@ -179,7 +181,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
             // Accepted limitation: the requested height remains the range endpoint,
             // so an informed lightwalletd can still infer the height of interest.
             downloaded = await_request_with_cancel(
-                super::super::lwd::download_blocks(
+                crate::wallet::sync_engine::lwd::download_blocks(
                     self.lwd,
                     rediscovery_cover_start(request.height),
                     request.height,

@@ -17,8 +17,8 @@ use crate::wallet::{
 };
 
 use super::{
-    super::{SyncError, WalletDatabase},
-    public_payload::cancelable,
+    super::super::{SyncError, WalletDatabase},
+    super::transport::cancelable,
 };
 
 /// Backfills fees for stored transactions whose status requests are dormant
@@ -78,7 +78,7 @@ pub(super) fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<Tx
         .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
 }
 
-pub(super) async fn fill_missing_fee(
+pub(in crate::wallet::sync_engine::enhancement) async fn fill_missing_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,

@@ -5,14 +5,12 @@
 //! sibling scheduler owns transport selection; this module never converts a
 //! private failure or suspension into public transaction-ID retrieval.
 use super::{
-    super::SyncError,
-    scheduler::{EnhancementEffects, RecoveryWallet, RoutedWork},
-    transport::client_protocol_error,
-    DEFAULT_MAINNET_ENDPOINT,
+    super::{super::SyncError, transport::client_protocol_error, DEFAULT_MAINNET_ENDPOINT},
+    coordinator::{EnhancementEffects, RecoveryWallet, RoutedWork},
+    diagnostics::{mark_routing_refresh, routing_refresh_due, set_phase, RecoveryPhase},
 };
 use crate::wallet::network::WalletNetwork;
 use futures::StreamExt;
-use std::time::{Duration, Instant};
 use zakura_pir_enhance::transport::{self, PendingClient};
 use zakura_pir_enhance::wallet::Acceptance;
 use zakura_pir_enhance::{ClientError, Manifest};
@@ -34,7 +32,9 @@ fn current_or_newer_routing_revision(current: (u64, u64), candidate: (u64, u64))
     candidate.0 >= current.0 && candidate.1 >= current.1
 }
 
-pub(super) fn client_transport_error(error: EnhancePirRunError) -> ClientError {
+pub(in crate::wallet::sync_engine::enhancement) fn client_transport_error(
+    error: EnhancePirRunError,
+) -> ClientError {
     match error {
         EnhancePirRunError::ExitRequested => ClientError::Cancelled,
         EnhancePirRunError::HttpStatus(status) => ClientError::HttpStatus(status),
@@ -56,10 +56,10 @@ pub(in crate::wallet::sync_engine) struct RoutedPayloadEnhancement {
     network: WalletNetwork,
     db_path: String,
     pub(super) endpoint: Option<String>,
-    pending_session: Option<PendingClient>,
-    pub(super) session: Option<transport::Client>,
-    pub(super) deferred: bool,
-    attempted_discovery: Vec<IronwoodEnhanceDiscoveryRequest>,
+    pending_routing: Option<PendingClient>,
+    pub(super) accepted_routing: Option<transport::Client>,
+    pub(super) private_failed_for_sync: bool,
+    rediscovery_attempts: Vec<IronwoodEnhanceDiscoveryRequest>,
 }
 #[derive(Debug)]
 pub(in crate::wallet::sync_engine) enum EnhancePirRunError {
@@ -94,21 +94,21 @@ impl RoutedPayloadEnhancement {
                     .or_else(|_| std::env::var(LEGACY_ENDPOINT_ENV))
                     .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.into())
             }),
-            pending_session: None,
-            session: None,
-            deferred: false,
-            attempted_discovery: Vec::new(),
+            pending_routing: None,
+            accepted_routing: None,
+            private_failed_for_sync: false,
+            rediscovery_attempts: Vec::new(),
         }
     }
     pub(in crate::wallet::sync_engine) fn enabled(&self) -> bool {
         self.endpoint.is_some()
     }
     pub(super) fn private_work_enabled(&self) -> bool {
-        self.enabled() && !self.deferred
+        self.enabled() && !self.private_failed_for_sync
     }
     pub(in crate::wallet::sync_engine) fn defer(&mut self) {
-        self.deferred = true;
-        set_phase(&self.db_path, "retrying_later");
+        self.private_failed_for_sync = true;
+        set_phase(&self.db_path, RecoveryPhase::RetryingLater);
     }
     fn acceptance(
         &self,
@@ -129,44 +129,50 @@ impl RoutedPayloadEnhancement {
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, EnhancePirRunError> {
         if force {
-            self.pending_session = None;
+            self.pending_routing = None;
         }
-        let session_refresh_due = self.session.as_ref().is_some_and(|s| s.refresh_due());
+        let session_refresh_due = self
+            .accepted_routing
+            .as_ref()
+            .is_some_and(|routing| routing.refresh_due());
         if (force || uncovered || session_refresh_due)
-            && self.pending_session.is_none()
-            && (force || session_refresh_due || refresh_due(&self.db_path))
+            && self.pending_routing.is_none()
+            && (force || session_refresh_due || routing_refresh_due(&self.db_path))
         {
-            mark_refresh(&self.db_path);
-            self.pending_session = Some(
+            mark_routing_refresh(&self.db_path);
+            self.pending_routing = Some(
                 PendingClient::fetch(route, self.endpoint.as_deref().expect("enabled")).await?,
             );
         }
-        let Some(pending) = self.pending_session.as_ref() else {
-            return Ok(self.session.is_some());
+        let Some(pending) = self.pending_routing.as_ref() else {
+            return Ok(self.accepted_routing.is_some());
         };
         match self.acceptance(db, pending.generation())? {
             Acceptance::Accepted(acceptance) => {
                 if should_exit() {
                     return Err(EnhancePirRunError::ExitRequested);
                 }
-                let pending = self.pending_session.take().expect("pending");
-                if let Some(session) = self.session.as_mut() {
-                    if !routing_is_current_or_newer(session.generation(), pending.generation()) {
-                        set_phase(&self.db_path, "retrying_later");
+                let pending = self.pending_routing.take().expect("pending routing");
+                if let Some(accepted_routing) = self.accepted_routing.as_mut() {
+                    if !routing_is_current_or_newer(
+                        accepted_routing.generation(),
+                        pending.generation(),
+                    ) {
+                        set_phase(&self.db_path, RecoveryPhase::RetryingLater);
                         return Ok(!force);
                     }
-                    session.accept_routing(pending, &acceptance)?;
+                    accepted_routing.accept_routing(pending, &acceptance)?;
                 } else {
-                    self.session = Some(pending.accept(&acceptance)?);
+                    self.accepted_routing = Some(pending.accept(&acceptance)?);
                 }
                 Ok(true)
             }
             Acceptance::WaitingForScanning => {
-                set_phase(&self.db_path, "waiting_for_scanning");
+                set_phase(&self.db_path, RecoveryPhase::WaitingForScanning);
                 Ok(false)
             }
             Acceptance::Mismatch => {
-                self.pending_session = None;
+                self.pending_routing = None;
                 Err(SyncError::parse("snapshot anchor mismatch").into())
             }
         }
@@ -182,10 +188,10 @@ impl RoutedPayloadEnhancement {
         for request in work.prepared().rediscover {
             // Partial reconstruction can leave active jobs at the same height.
             // Retry those on the next foreground poll, not every scan batch.
-            if self.attempted_discovery.contains(&request) {
+            if self.rediscovery_attempts.contains(&request) {
                 continue;
             }
-            self.attempted_discovery.push(request);
+            self.rediscovery_attempts.push(request);
             if should_exit() {
                 return Err(EnhancePirRunError::ExitRequested);
             }
@@ -221,30 +227,30 @@ impl RoutedPayloadEnhancement {
             return Ok(());
         }
         // Always revalidate after scans and rewinds, including cached coverage.
-        if let Some(session) = &self.session {
-            match self.acceptance(db, session.generation())? {
+        if let Some(accepted_routing) = &self.accepted_routing {
+            match self.acceptance(db, accepted_routing.generation())? {
                 Acceptance::Accepted(_) => {}
                 Acceptance::WaitingForScanning => {
-                    set_phase(&self.db_path, "waiting_for_scanning");
+                    set_phase(&self.db_path, RecoveryPhase::WaitingForScanning);
                     return Ok(());
                 }
                 Acceptance::Mismatch => {
-                    self.session = None;
-                    self.pending_session = None;
+                    self.accepted_routing = None;
+                    self.pending_routing = None;
                     return Err(SyncError::parse("snapshot anchor mismatch").into());
                 }
             }
         }
-        let uncovered = self.session.as_ref().is_none_or(|session| {
+        let uncovered = self.accepted_routing.as_ref().is_none_or(|routing| {
             work.positions()
-                .any(|p| p >= session.generation().coverage.records)
+                .any(|position| position >= routing.generation().coverage.records)
         });
         set_phase(
             &self.db_path,
             if uncovered {
-                "waiting_for_snapshot"
+                RecoveryPhase::WaitingForSnapshot
             } else {
-                "recovering"
+                RecoveryPhase::Recovering
             },
         );
         // Refresh is opportunistic: it must not suppress already accepted coverage.
@@ -252,11 +258,11 @@ impl RoutedPayloadEnhancement {
             .refresh_routing(db, route, uncovered, false, should_exit)
             .await
             .map(|_| ());
-        if !retain_coverage_on_refresh_failure(refresh, self.session.is_some())? {
-            self.pending_session = None;
-            set_phase(&self.db_path, "retrying_later");
+        if !retain_coverage_on_refresh_failure(refresh, self.accepted_routing.is_some())? {
+            self.pending_routing = None;
+            set_phase(&self.db_path, RecoveryPhase::RetryingLater);
         }
-        if self.session.is_none() {
+        if self.accepted_routing.is_none() {
             return Ok(());
         }
         for attempt in 0..=1 {
@@ -269,8 +275,8 @@ impl RoutedPayloadEnhancement {
             // Rejected before any network I/O when the batch exceeds the
             // client's input limit.
             let stale_status = {
-                let session = self.session.as_mut().expect("checked above");
-                match session.query_batch(route, work.positions()) {
+                let accepted_routing = self.accepted_routing.as_mut().expect("checked above");
+                match accepted_routing.query_batch(route, work.positions()) {
                     Err(ClientError::HttpStatus(status)) if is_stale_routing_status(status) => {
                         Some(status)
                     }
@@ -348,61 +354,12 @@ fn retain_coverage_on_refresh_failure(
     }
 }
 
-#[derive(Default)]
-struct ServiceState {
-    path: String,
-    phase: String,
-    last_refresh: Option<Instant>,
-}
-static SERVICE: std::sync::Mutex<Option<ServiceState>> = std::sync::Mutex::new(None);
-pub(in crate::wallet::sync_engine) fn begin_session(path: &str) {
-    let mut state = SERVICE.lock().unwrap_or_else(|e| e.into_inner());
-    if state.as_ref().is_none_or(|s| s.path != path) {
-        *state = Some(ServiceState {
-            path: path.into(),
-            ..Default::default()
-        });
-    }
-    state.as_mut().unwrap().phase.clear();
-}
-fn set_phase(path: &str, phase: &str) {
-    let mut state = SERVICE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(state) = state.as_mut().filter(|s| s.path == path) {
-        state.phase = phase.into();
-    }
-}
-fn refresh_due(path: &str) -> bool {
-    SERVICE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .filter(|s| s.path == path)
-        .and_then(|s| s.last_refresh)
-        .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
-}
-fn mark_refresh(path: &str) {
-    if let Some(state) = SERVICE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_mut()
-        .filter(|s| s.path == path)
-    {
-        state.last_refresh = Some(Instant::now());
-    }
-}
-pub(in crate::wallet::sync_engine) fn phase(path: &str) -> String {
-    SERVICE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .filter(|s| s.path == path)
-        .map(|s| s.phase.clone())
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::transport::{await_request_with_cancel, secure_endpoint_uri};
+    use super::super::super::transport::{await_request_with_cancel, secure_endpoint_uri};
+    use super::super::diagnostics::{
+        begin_session, mark_routing_refresh, phase, routing_refresh_due,
+    };
     use super::*;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -501,12 +458,12 @@ mod tests {
     #[test]
     fn refresh_is_rate_limited_across_foreground_sessions() {
         begin_session("refresh-test");
-        assert!(refresh_due("refresh-test"));
-        mark_refresh("refresh-test");
+        assert!(routing_refresh_due("refresh-test"));
+        mark_routing_refresh("refresh-test");
         begin_session("refresh-test");
-        assert!(!refresh_due("refresh-test"));
+        assert!(!routing_refresh_due("refresh-test"));
         begin_session("new-wallet");
-        assert!(refresh_due("new-wallet"));
+        assert!(routing_refresh_due("new-wallet"));
         assert_eq!(phase("refresh-test"), "");
     }
 

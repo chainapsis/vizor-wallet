@@ -1,5 +1,7 @@
 //! Transaction enhancement orchestration.
 //!
+//! See `enhancement/README.md` for the complete data-flow guide.
+//!
 //! Wallet data comes from two deliberately separate snapshots:
 //!
 //! - `transaction_data_requests()` contains status observation and transparent
@@ -10,34 +12,50 @@
 //!
 //! Auxiliary requests run before routed payload enhancement because transparent
 //! history can discover transactions whose parent payloads then need routing.
+//! A normal post-scan checkpoint therefore has this black-box order:
+//!
+//! 1. backfill fees and observe status,
+//! 2. ingest and acknowledge transparent-address history,
+//! 3. rediscover private payload positions and execute private PIR,
+//! 4. reread durable routing, then fetch only explicitly public payloads.
+//!
+//! Every network lane is cancellation-aware and leaves unfinished obligations
+//! durable. Diagnostic recovery phases are advisory; they never select a route
+//! or authorize a privacy downgrade.
 //!
 //! `status_pir` selects the status source for that snapshot: private status
 //! PIR when the release gate and preference allow it, otherwise public
 //! lightwalletd. Callers outside the sync engine (iOS read-only FFI, migration
 //! reconciliation) reach it through this module as well.
 
-mod fees;
-mod private_pir;
-mod public_payload;
-mod scheduler;
-pub(crate) mod status_pir;
-mod transaction_requests;
+mod auxiliary;
+mod payload;
+mod status;
 mod transport;
+
+/// Compatibility surface for status callers outside the sync engine.
+///
+/// New implementation code should depend on the semantically named types in
+/// `status`; this shim keeps the existing crate-visible path stable.
+pub(crate) mod status_pir {
+    pub(crate) use super::status::{enabled_for_preference, reader, PrivateStatusSource as Source};
+}
 
 /// Default mainnet endpoint shared by payload and status PIR. Each lane keeps
 /// its own env-var override.
 pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
-pub(super) use private_pir::{begin_session, phase, EnhancePirRunError, RoutedPayloadEnhancement};
-pub(super) use public_payload::queue_stored_transactions;
-pub(super) use transaction_requests::run_auxiliary_transaction_requests;
+pub(super) use auxiliary::run_auxiliary_transaction_requests;
+pub(super) use payload::{
+    begin_session, phase, queue_stored_transactions, EnhancePirRunError, RoutedPayloadEnhancement,
+};
 pub(super) use transport::RoutedTransport;
 
 use tonic::transport::Channel;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, WalletDatabase};
-use scheduler::ProductionEnhancementEffects;
+use payload::ProductionEnhancementEffects;
 
 /// Runs the single routed payload scheduler for one sync checkpoint.
 ///

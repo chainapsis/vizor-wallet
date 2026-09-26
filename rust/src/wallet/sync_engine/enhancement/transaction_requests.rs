@@ -30,49 +30,41 @@ use futures::{FutureExt, StreamExt};
 
 use tonic::transport::Channel;
 use zcash_client_backend::{
-    data_api::{
-        wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletRead, WalletWrite,
-    },
+    data_api::{TransactionDataRequest, WalletRead, WalletWrite},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::consensus::BranchId;
 
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusRequest};
 
-use super::super::{lwd, SyncError, WalletDatabase};
+use super::super::super::{lwd, SyncError, WalletDatabase};
 
 use super::{
     fees::{backfill_stored_fees, fill_missing_fee},
-    public_payload::mined_height_from_raw_height,
+    status::persist_status_observation,
+    transparent_history::store_address_transaction,
 };
 
 #[cfg(test)]
 use {
-    super::super::block_source::MemoryBlockSource,
-    super::{fees::*, public_payload::*},
+    super::super::super::block_source::MemoryBlockSource,
+    super::{
+        super::{payload::public_lwd::*, payload::queue::*},
+        fees::*,
+        status::persist_status_observation as store_transaction_observation,
+    },
     crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
     std::collections::BTreeMap,
     tonic::{Code, Status},
     transparent::bundle::OutPoint,
     zcash_client_backend::proto::service::RawTransaction,
-    zcash_protocol::{consensus::BlockHeight, value::Zatoshis},
+    zcash_primitives::transaction::{Transaction, TxId},
+    zcash_protocol::{
+        consensus::{BlockHeight, BranchId},
+        value::Zatoshis,
+    },
 };
-
-fn store_transaction_observation(
-    db: &mut WalletDatabase,
-    txid: TxId,
-    observation: crate::wallet::transaction_data::TransactionObservation,
-) -> Result<(), SyncError> {
-    with_wallet_db_write_lock("sync_engine.enhance.set_transaction_status", || {
-        db.set_transaction_status(txid, observation.wallet_status())
-    })
-    .map_err(|e: zcash_client_sqlite::error::SqliteClientError| {
-        SyncError::db(format!("set_transaction_status: {e}"))
-    })
-}
 
 /// Services status observation and transparent-address history from
 /// `db.transaction_data_requests()` until no such request is actionable.
@@ -90,7 +82,8 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
     let status_client = client.clone();
     let public_source =
         LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
-    let mut status_reader = super::status_pir::reader(db_path, network, should_exit, public_source);
+    let mut status_reader =
+        super::super::status::reader(db_path, network, should_exit, public_source);
     let mut observed_statuses = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
@@ -139,13 +132,13 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
             if should_exit() {
                 return Ok(());
             }
-            store_transaction_observation(db, txid, observation)?;
+            persist_status_observation(db, txid, observation)?;
             observed_statuses.insert(txid);
         }
-        let mut planned = super::super::address_history::plan(&requests);
+        let mut planned = super::super::super::address_history::plan(&requests);
         planned.retain(|group| !failed_addresses.contains(&group[0].address()));
         let download_client = client.clone();
-        let open: super::super::address_history::OpenHistory = Box::new(move |req| {
+        let open: super::super::super::address_history::OpenHistory = Box::new(move |req| {
             let mut client = download_client.clone();
             async move {
                 let address =
@@ -170,11 +163,11 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
             }
             .boxed()
         });
-        let mut reads = super::super::address_history::HistoryReads::new(planned, open);
+        let mut reads = super::super::super::address_history::HistoryReads::new(planned, open);
         loop {
             let event = tokio::select! {
                 biased;
-                _ = super::super::watch_for_exit(should_exit) => return Ok(()),
+                _ = super::super::super::watch_for_exit(should_exit) => return Ok(()),
                 event = reads.next() => event,
             };
             let Some((mut read, result)) = event else {
@@ -196,7 +189,7 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
                     };
                     let fee_result = tokio::select! {
                         biased;
-                        _ = super::super::watch_for_exit(should_exit) => return Ok(()),
+                        _ = super::super::super::watch_for_exit(should_exit) => return Ok(()),
                         result = fill_missing_fee(client, db_path, &tx, should_exit) => result,
                     };
                     if let Err(error) = fee_result {
@@ -226,23 +219,6 @@ pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
         }
     }
     Ok(())
-}
-
-/// Parse and store before allowing the caller to acknowledge an address range.
-fn store_address_transaction(
-    network: &WalletNetwork,
-    db: &mut WalletDatabase,
-    bytes: &[u8],
-    raw_height: u64,
-) -> Result<Transaction, SyncError> {
-    let mined_height = mined_height_from_raw_height(raw_height)?;
-    let tx = Transaction::read(bytes, BranchId::Sapling)
-        .map_err(|e| SyncError::parse(format!("Transaction::read (addr): {e}")))?;
-    with_wallet_db_write_lock("sync_engine.enhance.decrypt_and_store_transaction", || {
-        decrypt_and_store_transaction(network, db, &tx, mined_height)
-    })
-    .map_err(|e| SyncError::db(format!("decrypt_and_store_transaction (addr): {e}")))?;
-    Ok(tx)
 }
 
 #[cfg(test)]
