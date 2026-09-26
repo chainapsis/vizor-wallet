@@ -231,7 +231,10 @@ class _FakeWalletMutationSyncNotifier extends FakeSyncNotifier {
   }
 
   @override
-  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+  void resumeAfterWalletMutation(
+    WalletMutationSyncPause pause, {
+    bool forceRestart = false,
+  }) {
     resumeCount += 1;
   }
 

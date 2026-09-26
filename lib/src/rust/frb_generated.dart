@@ -1271,6 +1271,11 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<void> crateApiSyncShutdownSigningReservations();
+  Future<EnhanceRecoveryStatus> crateApiSyncGetEnhanceRecoveryStatus({
+    required String dbPath,
+    required String network,
+  });
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled});
 
   Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
     required String dbPath,
@@ -9443,6 +9448,69 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "shutdown_signing_reservations",
         argNames: [],
+      );
+
+  Future<EnhanceRecoveryStatus> crateApiSyncGetEnhanceRecoveryStatus({
+    required String dbPath,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 225,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_enhance_recovery_status,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetEnhanceRecoveryStatusConstMeta,
+        argValues: [dbPath, network],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetEnhanceRecoveryStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_enhance_recovery_status",
+        argNames: ["dbPath", "network"],
+      );
+
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 226,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSyncSetEnhancePirEnabledConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncSetEnhancePirEnabledConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_enhance_pir_enabled",
+        argNames: ["enabled"],
       );
 
   @override
@@ -22353,6 +22421,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.conflictedTxids, serializer);
     sse_encode_list_String(self.localClaimTxids, serializer);
     sse_encode_u_64(self.verifiedHeight, serializer);
+  }
+
+  EnhanceRecoveryStatus dco_decode_enhance_recovery_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return EnhanceRecoveryStatus(
+      queries: dco_decode_u_32(arr[0]),
+      rediscovery: dco_decode_u_32(arr[1]),
+      suspended: dco_decode_u_32(arr[2]),
+      serviceState: dco_decode_String(arr[3]),
+    );
+  }
+
+  EnhanceRecoveryStatus sse_decode_enhance_recovery_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_queries = sse_decode_u_32(deserializer);
+    var var_rediscovery = sse_decode_u_32(deserializer);
+    var var_suspended = sse_decode_u_32(deserializer);
+    var var_serviceState = sse_decode_String(deserializer);
+    return EnhanceRecoveryStatus(
+      queries: var_queries,
+      rediscovery: var_rediscovery,
+      suspended: var_suspended,
+      serviceState: var_serviceState,
+    );
+  }
+
+  void sse_encode_enhance_recovery_status(
+    EnhanceRecoveryStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.queries, serializer);
+    sse_encode_u_32(self.rediscovery, serializer);
+    sse_encode_u_32(self.suspended, serializer);
+    sse_encode_String(self.serviceState, serializer);
   }
 
   @protected

@@ -12,6 +12,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
+static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -37,6 +38,16 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
     *ACTIVE_SYNC_ACCOUNT
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = account_uuid;
+}
+
+/// Enable private Ironwood transaction enhancement for future sync work.
+#[frb(sync)]
+pub fn set_enhance_pir_enabled(enabled: bool) {
+    ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub(crate) fn enhance_pir_enabled() -> bool {
+    ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
 // ======================== Full Sync ========================
@@ -2966,4 +2977,19 @@ pub fn get_payment_link_spend_evidence(
 /// Durable signed or submitted transactions are retained for recovery.
 pub fn shutdown_signing_reservations() -> Result<(), String> {
     wallet_sync::shutdown_signing_reservations()
+}
+
+/// Durable pending work, including obligations that cannot currently be retried.
+pub struct EnhanceRecoveryStatus {
+    pub queries: u32,
+    pub rediscovery: u32,
+    pub suspended: u32,
+    pub service_state: String,
+}
+pub fn get_enhance_recovery_status(
+    db_path: String,
+    network: String,
+) -> Result<EnhanceRecoveryStatus, String> {
+    let network = keys::parse_network(&network)?;
+    sync_engine::enhance_recovery_status(&db_path, network)
 }

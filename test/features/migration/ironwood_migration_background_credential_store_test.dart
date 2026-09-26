@@ -439,6 +439,46 @@ void main() {
   );
 
   test(
+    'a failed one-shot scoped lease is released by the next resume',
+    () async {
+      const channel = MethodChannel('test/background_migration/one_shot_lease');
+      final active = <String>{};
+      var failResumes = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            final lease = (call.arguments as Map)['leaseId'] as String;
+            if (call.method == 'quiesce') active.add(lease);
+            if (call.method == 'resume') {
+              if (failResumes) throw PlatformException(code: 'lost_reply');
+              active.remove(lease);
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+        resumeRetryDelays: const [Duration.zero],
+      );
+      // The zone is one-shot: nothing re-enters it to retry its own lease.
+      await expectLater(
+        IronwoodMigrationBackgroundLifecycle.runWithNewQuiescenceLease(() async {
+          await lifecycle.quiesce();
+          await lifecycle.resumeAfterMutation();
+        }),
+        throwsStateError,
+      );
+      expect(active, hasLength(1));
+      failResumes = false;
+      await lifecycle.resumeAfterMutation();
+      expect(active, isEmpty);
+    },
+  );
+
+  test(
     'overlapping unscoped iOS resumes reserve different leases before awaiting',
     () async {
       const channel = MethodChannel(

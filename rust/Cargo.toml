@@ -7,6 +7,8 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
+zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -106,7 +108,7 @@ version = "0.10.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc5"
+version = "=0.1.0-rc6"
 features = [
     "orchard",
     "transparent-inputs",
@@ -119,11 +121,11 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc5"
+version = "=0.1.0-rc6"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.1.0"
+version = "=5.1.1-rc.1"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -154,6 +156,11 @@ package = "ur-registry"
 default-features = false
 features = ["std"]
 
+[dependencies.zakura-pir-enhance]
+version = "=0.0.1-rc0"
+default-features = false
+features = ["wallet"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
@@ -162,6 +169,7 @@ ledger-transport = "0.11.0"
 ledger-transport-hid = "0.11.0"
 
 [dev-dependencies]
+hyper = { version = "1", features = ["server", "http2"] }
 # Deterministic signatures for validator-rotation verification tests.
 ed25519-consensus = "2.1"
 tempfile = "3"
@@ -177,8 +185,11 @@ anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
 
 [dev-dependencies.zcash_voting]
-version = "=5.1.0"
+version = "=5.1.1-rc.1"
 features = ["test-fixtures"]
+
+[dev-dependencies.ipir-sp]
+version = "=0.1.0-rc.3"
 
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.2"
@@ -211,3 +222,12 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Pin the unified enhancement routing API from wallet-libraries.
+# Keep the related SDK crates on one revision to preserve shared Rust types.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "adb19b457f78f4a694f65f4156a74be7e37eb2bd" }

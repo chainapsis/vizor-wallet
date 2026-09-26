@@ -77,19 +77,23 @@ const _ledgerAccountState = AccountState(
   activeAddress: 'u1settingsaddress',
 );
 
-AppBootstrapState _bootstrap([AccountState accountState = _accountState]) =>
-    AppBootstrapState(
-      initialLocation: '/settings',
-      initialAccountState: accountState,
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.dark,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-    );
+AppBootstrapState _bootstrap({
+  AccountState accountState = _accountState,
+  String network = 'main',
+  bool enhancePirEnabled = false,
+}) => AppBootstrapState(
+  initialLocation: '/settings',
+  initialAccountState: accountState,
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
+  themeMode: ThemeMode.dark,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enhancePirEnabled,
+);
 
 /// Skips the secure-storage write so theme selection works without a
 /// platform channel in widget tests.
@@ -154,6 +158,8 @@ Widget _app({
   bool withTabBar = false,
   double textScale = 1,
   GoRouter? router,
+  String network = 'main',
+  bool enhancePirEnabled = false,
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -187,7 +193,13 @@ Widget _app({
       : MaterialApp.router(routerConfig: router, builder: themedBuilder);
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(
+          accountState: accountState,
+          network: network,
+          enhancePirEnabled: enhancePirEnabled,
+        ),
+      ),
       if (networkPrivacyState != null)
         networkPrivacyProvider.overrideWith(
           () => _FakeNetworkPrivacyNotifier(
@@ -295,6 +307,17 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets('mobile private recovery is labelled experimental', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(enhancePirEnabled: true));
+    await tester.pump();
+    final note = find.textContaining('Experimental.');
+    await tester.scrollUntilVisible(note, 200);
+    expect(note, findsOneWidget);
+    expect(find.textContaining('suspended'), findsNothing);
+  });
+
   testWidgets('Settings always opens coinholder voting', (tester) async {
     await tester.pumpWidget(_routedApp());
     await tester.pumpAndSettle();
@@ -367,10 +390,9 @@ void main() {
               isNull,
               reason: 'Do not truncate prereleases',
             );
-            expect(
-              tester.getTopLeft(footer).dy,
-              greaterThan(tester.getBottomLeft(find.text('Theme')).dy),
-            );
+            // Ordering against the last card above the footer is asserted
+            // below. Rows further up (Theme) are unmounted by the scroll
+            // once the privacy section carries its full set of toggles.
             expect(
               tester.getBottomLeft(footer).dy,
               lessThanOrEqualTo(
@@ -451,7 +473,13 @@ void main() {
     );
     expect(find.text('Privacy'), findsOneWidget);
     expect(find.text('Use Tor'), findsOneWidget);
-    expect(find.text('Off'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_settings_tor_row')),
+        matching: find.text('Off'),
+      ),
+      findsOneWidget,
+    );
     expect(
       tester
           .widget<Text>(
@@ -516,6 +544,18 @@ void main() {
       tester.getCenter(torThumb).dx,
       greaterThan(tester.getCenter(torTrack).dx),
     );
+
+    final pirThumb = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_toggle_thumb'),
+    );
+    final pirTrack = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_toggle'),
+    );
+    await tester.scrollUntilVisible(pirThumb, 200);
+    expect(find.text('Advanced'), findsNothing);
+    expect(find.text('Private Ironwood recovery'), findsOneWidget);
+    expect(tester.getSize(pirThumb), tester.getSize(torThumb));
+    expect(tester.getSize(pirTrack), tester.getSize(torTrack));
   });
 
   testWidgets('a connected Tor route names the iOS migration exception', (
@@ -553,6 +593,19 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = previousPlatformOverride;
     }
+  });
+
+  testWidgets('private Ironwood recovery is hidden off mainnet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(network: 'regtest', enhancePirEnabled: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Private Ironwood recovery'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
   });
 
   testWidgets('a connected Tor route omits the iOS exception on Android', (
