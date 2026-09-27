@@ -4,7 +4,6 @@
 //! PIR is selected, initialization or observation failure is inconclusive and
 //! must not fall back to a public transaction-ID request.
 
-#[path = "../status_pir.rs"]
-mod private_pir;
+mod status_private_pir;
 
-pub(crate) use private_pir::{enabled_for_preference, reader, PrivateStatusSource};
+pub(crate) use status_private_pir::{enabled_for_preference, reader, PrivateStatusSource};

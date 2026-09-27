@@ -26,7 +26,9 @@ use super::{
         super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
         transport::await_request_with_cancel,
     },
-    private_pir::{rediscovery_cover_start, EnhancePirRunError, RoutedPayloadEnhancement},
+    enhancement_private_pir::{
+        rediscovery_cover_start, EnhancePirRunError, RoutedPayloadEnhancement,
+    },
     public_lwd::PublicPayloadExecutor,
 };
 

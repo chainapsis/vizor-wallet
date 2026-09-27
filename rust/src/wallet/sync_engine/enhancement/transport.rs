@@ -21,7 +21,7 @@ use zakura_pir_enhance::transport::{self, BoundedBody};
 
 use super::{
     super::{lwd::DirectRouteConnector, SyncError},
-    payload::private_pir::EnhancePirRunError,
+    payload::enhancement_private_pir::EnhancePirRunError,
 };
 
 pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);

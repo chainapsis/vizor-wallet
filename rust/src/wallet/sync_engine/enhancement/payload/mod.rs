@@ -9,14 +9,14 @@
 #[path = "../scheduler.rs"]
 mod coordinator;
 mod diagnostics;
-#[path = "../private_pir.rs"]
-pub(super) mod private_pir;
+#[path = "../enhancement_private_pir.rs"]
+pub(super) mod enhancement_private_pir;
 #[path = "../public_payload.rs"]
 pub(super) mod public_lwd;
 pub(super) mod queue;
 
 pub(in crate::wallet::sync_engine) use diagnostics::{begin_session, phase};
-pub(in crate::wallet::sync_engine) use private_pir::{
+pub(in crate::wallet::sync_engine) use enhancement_private_pir::{
     EnhancePirRunError, RoutedPayloadEnhancement,
 };
 pub(in crate::wallet::sync_engine) use queue::queue_stored_transactions;

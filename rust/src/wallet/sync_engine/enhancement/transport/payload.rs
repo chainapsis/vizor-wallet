@@ -9,7 +9,7 @@ use zakura_pir_enhance::{
 use crate::wallet::sync_engine::SyncError;
 
 use super::{routed_request, RoutedTransport};
-use crate::wallet::sync_engine::enhancement::payload::private_pir::client_transport_error;
+use crate::wallet::sync_engine::enhancement::payload::enhancement_private_pir::client_transport_error;
 
 impl<F: Fn() -> bool> Transport for RoutedTransport<'_, F> {
     async fn execute(
