@@ -1791,6 +1791,85 @@ pub(crate) struct ResubmittableTx {
     pub expiry_height: u32,
 }
 
+// Correlated to `t` in transactions. Positions survive a rewind that clears
+// mined_height; even position zero proves this transaction was scanned as mined.
+const MINED_NOTE_EVIDENCE: &str = "(
+    EXISTS (SELECT 1 FROM sapling_received_notes n
+            WHERE n.transaction_id = t.id_tx AND n.commitment_tree_position IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM orchard_received_notes n
+               WHERE n.transaction_id = t.id_tx AND n.commitment_tree_position IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM ironwood_received_notes n
+               WHERE n.transaction_id = t.id_tx AND n.commitment_tree_position IS NOT NULL)
+)";
+
+fn resubmission_candidate_sql(columns: &str) -> String {
+    format!(
+        "SELECT DISTINCT {columns} FROM v_transactions v
+         WHERE v.mined_height IS NULL
+           AND (v.expiry_height = 0 OR v.expiry_height > ?1)
+           AND v.account_balance_delta < 0 AND v.raw IS NOT NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM transactions t
+               JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
+               WHERE t.txid = v.txid AND {MINED_NOTE_EVIDENCE}
+           )"
+    )
+}
+
+/// Complete a conclusive non-mined status observation for the rewind recovery
+/// case. The caller holds the wallet write lock. Rechecking evidence, recording
+/// the observation, and completing only status work share one write transaction.
+/// Returns false when the normal backend status policy should handle the txid.
+pub(crate) fn resolve_recovered_nonmined_status(
+    conn: &mut rusqlite::Connection,
+    txid: &[u8],
+) -> Result<bool, String> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| format!("Recovery status transaction: {e}"))?;
+    let guarded: bool = tx
+        .query_row(
+            &format!(
+                "SELECT EXISTS (
+            SELECT 1 FROM transactions t
+            JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
+            WHERE t.txid = ?1 AND t.mined_height IS NULL AND {MINED_NOTE_EVIDENCE}
+              AND EXISTS (SELECT 1 FROM v_transactions v WHERE v.txid = t.txid
+                          AND v.account_balance_delta < 0 AND v.raw IS NOT NULL)
+        )"
+            ),
+            [txid],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Recovery status evidence: {e}"))?;
+    if !guarded {
+        return Ok(false);
+    }
+    // Match the pinned backend's chain_tip_height: scan ranges are end-exclusive.
+    let range_end: Option<u32> = tx
+        .query_row("SELECT MAX(block_range_end) FROM scan_queue", [], |row| {
+            row.get(0)
+        })
+        .map_err(|e| format!("Recovery status chain tip: {e}"))?;
+    let tip = range_end
+        .filter(|end| *end > 0)
+        .ok_or("Recovery status requires a known chain tip")?
+        - 1;
+    tx.execute(
+        "UPDATE transactions SET confirmed_unmined_at_height = ?2 WHERE txid = ?1",
+        rusqlite::params![txid, tip],
+    )
+    .map_err(|e| format!("Recovery status observation: {e}"))?;
+    tx.execute(
+        "DELETE FROM tx_retrieval_queue WHERE txid = ?1 AND query_type = 0",
+        [txid],
+    )
+    .map_err(|e| format!("Recovery status completion: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Recovery status commit: {e}"))?;
+    Ok(true)
+}
+
 /// Returns whether the base transaction table contains anything the full
 /// account-aware resubmission query could accept.
 ///
@@ -1846,6 +1925,8 @@ fn should_skip_resubmission_view(conn: &rusqlite::Connection, current_height: u3
 ///     the wallet originated. Inbound transactions the sync loop
 ///     merely discovered on-chain (via `get_transaction` enhance
 ///     calls) should never be "resubmitted".
+///   * Pending status work plus a positioned received note suppresses relay
+///     until the previously mined transaction has a conclusive status.
 ///   * `raw IS NOT NULL` — we actually have the serialized bytes to
 ///     broadcast. Defense-in-depth on top of the delta filter.
 ///
@@ -1858,20 +1939,18 @@ pub(crate) fn get_resubmittable_txs(
     db_path: &str,
     current_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
-    let conn = open_readonly_conn(db_path)?;
+    let mut connection = open_readonly_conn(db_path)?;
+    let conn = connection
+        .transaction()
+        .map_err(|e| format!("Read transaction error: {e}"))?;
     if should_skip_resubmission_view(&conn, current_height) {
         return Ok(Vec::new());
     }
 
     let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT txid, raw, expiry_height \
-             FROM v_transactions \
-             WHERE mined_height IS NULL \
-               AND (expiry_height = 0 OR expiry_height > ?1) \
-               AND account_balance_delta < 0 \
-               AND raw IS NOT NULL",
-        )
+        .prepare(&resubmission_candidate_sql(
+            "v.txid, v.raw, v.expiry_height",
+        ))
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
@@ -1907,20 +1986,16 @@ pub(crate) fn get_resubmittable_txs_excluding(
         return get_resubmittable_txs(db_path, current_height);
     }
 
-    let conn = open_readonly_conn(db_path)?;
+    let mut connection = open_readonly_conn(db_path)?;
+    let conn = connection
+        .transaction()
+        .map_err(|e| format!("Read transaction error: {e}"))?;
     if should_skip_resubmission_view(&conn, current_height) {
         return Ok(Vec::new());
     }
     let candidate_metadata = {
         let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT txid, expiry_height \
-                 FROM v_transactions \
-                 WHERE mined_height IS NULL \
-                   AND (expiry_height = 0 OR expiry_height > ?1) \
-                   AND account_balance_delta < 0 \
-                   AND raw IS NOT NULL",
-            )
+            .prepare(&resubmission_candidate_sql("v.txid, v.expiry_height"))
             .map_err(|e| format!("SQL error: {e}"))?;
         let rows = stmt
             .query_map([current_height], |row| {
@@ -1954,6 +2029,10 @@ pub(crate) fn get_resubmittable_txs_excluding(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "transactions/resubmission_tests.rs"]
+mod resubmission_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2003,16 +2082,25 @@ mod tests {
     /// `v_transactions` table and return its `NamedTempFile`
     /// handle. Tests keep the handle alive for the duration of the
     /// test so the file isn't auto-deleted under them.
-    fn fresh_db() -> NamedTempFile {
+    pub(super) fn fresh_db() -> NamedTempFile {
         let file = NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
             "CREATE TABLE transactions (
-                 txid BLOB PRIMARY KEY,
+                 id_tx INTEGER PRIMARY KEY,
+                 txid BLOB UNIQUE,
+                 confirmed_unmined_at_height INTEGER,
                  raw BLOB,
                  mined_height INTEGER,
                  expiry_height INTEGER
              );
+             CREATE TABLE tx_retrieval_queue (txid BLOB, query_type INTEGER,
+                 PRIMARY KEY (txid, query_type));
+             CREATE TABLE scan_queue (block_range_end INTEGER);
+             INSERT INTO scan_queue VALUES (900001);
+             CREATE TABLE sapling_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
+             CREATE TABLE orchard_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
+             CREATE TABLE ironwood_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
              CREATE TABLE v_transactions (
                  txid BLOB NOT NULL,
                  raw BLOB,
@@ -2054,7 +2142,7 @@ mod tests {
     }
 
     /// Insert one synthetic row into `v_transactions`.
-    fn insert_row(
+    pub(super) fn insert_row(
         db: &NamedTempFile,
         txid: &[u8],
         raw: Option<&[u8]>,
@@ -2081,7 +2169,7 @@ mod tests {
         .unwrap();
     }
 
-    fn fake_txid(byte: u8) -> [u8; 32] {
+    pub(super) fn fake_txid(byte: u8) -> [u8; 32] {
         [byte; 32]
     }
 
@@ -2235,7 +2323,7 @@ mod tests {
         assert_eq!(rows[0].info.display_pool, "ironwood");
     }
 
-    fn fake_raw() -> Vec<u8> {
+    pub(super) fn fake_raw() -> Vec<u8> {
         vec![0xDE, 0xAD, 0xBE, 0xEF]
     }
 
