@@ -1152,6 +1152,24 @@ Future<SwapReceivingAddress> reserveSwapReceivingAddress({
   liveTip: liveTip,
 );
 
+/// Persists the compact scanning deadline for an existing local swap operation.
+/// Only supported provider statuses may call this; transport errors preserve state.
+Future<void> observeSwapReceivingOperation({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String operationId,
+  required String address,
+  required bool terminal,
+}) => RustLib.instance.api.crateApiSyncObserveSwapReceivingOperation(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  operationId: operationId,
+  address: address,
+  terminal: terminal,
+);
+
 /// Same software send lifecycle, with an authenticated refund record on change.
 Future<ProposalResult> proposeSwapFunding({
   required String dbPath,

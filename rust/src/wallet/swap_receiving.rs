@@ -20,7 +20,7 @@ use super::{
     network::WalletNetwork,
 };
 
-/// Compile-time opt-in for an isolated recovery build. Services use SSH loopback tunnels.
+/// Compile-time opt-in for an isolated recovery build. Services use public HTTPS endpoints.
 pub(crate) fn private_recovery_enabled() -> bool {
     ENABLED && option_env!("VIZOR_SWAP_PRIVATE_RECOVERY") == Some("1")
 }
@@ -118,7 +118,7 @@ pub(crate) fn reserve(
 }
 
 /// Called under the wallet write lock before planning more scan work.
-/// Every key stays active in milestone one, including after a terminal API status.
+/// Private restore derives keys for PIR; local operation records bound compact scanning.
 pub(crate) fn maintain_recovery(
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -160,6 +160,47 @@ pub(crate) fn maintain_recovery(
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Apply a provider status to the registered local address. Older ordinary wallet
+/// addresses are ignored. Address matching also migrates existing activity records
+/// without depending on a newly added index field in secure storage.
+pub(crate) fn observe_operation(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    operation: &str,
+    address: &str,
+    terminal: bool,
+) -> Result<(), String> {
+    if !private_recovery_enabled() {
+        return Ok(());
+    }
+    with_wallet_db_write_lock("swap_receiving.operation", || {
+        let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
+        let account = parse_account_uuid(account_uuid)?;
+        require_software_account(&db, account)?;
+        let Some(Address::Unified(address)) = Address::decode(&network, address) else {
+            return Ok(());
+        };
+        let Some(receiver) = address.orchard() else {
+            return Ok(());
+        };
+        let Some(key) = db
+            .get_swap_receiving_keys(account)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|key| key.receiver() == *receiver)
+        else {
+            return Ok(());
+        };
+        let height = db
+            .chain_height()
+            .map_err(|e| e.to_string())?
+            .ok_or("Sync before tracking a swap")?;
+        db.observe_swap_operation(account, key.key_id(), operation, terminal, height)
+            .map_err(|e| e.to_string())
+    })
 }
 
 /// Funding uses the reserved key and a normal internal memo, never a payout OVK.

@@ -2,7 +2,7 @@
 //! All chain acceptance and note mutation stays in the wallet library.
 use super::{SyncError, WalletDatabase};
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
-use futures::{Future, FutureExt, StreamExt};
+use futures::{Future, StreamExt};
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use receiver_directory::Receiver;
 use receiver_pir::{http::HttpClient, AcceptedCoverage};
@@ -21,46 +21,63 @@ use zcash_client_sqlite::wallet::swap_receiving::{PaymentApplication, PendingPay
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
-// This build only talks to explicit local SSH tunnels. Never follow service redirects.
-const RECEIVER_ORIGIN: &str = "http://127.0.0.1:18380";
-const ENHANCE_ORIGIN: &str = "http://127.0.0.1:18280";
+// Use explicit HTTPS origins and never follow service redirects.
+const RECEIVER_ORIGIN: &str = "https://161-35-182-172.sslip.io";
+const ENHANCE_ORIGIN: &str = "https://enhance-pir.valargroup.dev";
+fn allowed_enhance_route(url: &url::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("enhance-pir.valargroup.dev")
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+}
 struct Http(reqwest::Client);
 impl Transport for Http {
     async fn execute(&self, request: Request) -> Result<ResponseBody, ClientError> {
-        let mut body = request.response_body();
-        let method = match request.method {
-            Method::Get => reqwest::Method::GET,
-            Method::Post => reqwest::Method::POST,
+        let started = std::time::Instant::now();
+        let sent = request.body.len();
+        let kind = match request.method {
+            Method::Get => "get",
+            Method::Post => "post",
         };
-        // Manifest-provided session URLs must stay inside the selected tunnel too.
-        let url =
-            url::Url::parse(&request.url).map_err(|e| ClientError::Transport(e.to_string()))?;
-        if url.scheme() != "http"
-            || url.host_str() != Some("127.0.0.1")
-            || url.port() != Some(18280)
-        {
-            return Err(ClientError::Transport(
-                "Enhance route escaped the POC tunnel".into(),
-            ));
+        let mut received = 0usize;
+        let result = async {
+            let mut body = request.response_body();
+            let method = match request.method {
+                Method::Get => reqwest::Method::GET,
+                Method::Post => reqwest::Method::POST,
+            };
+            // Manifest-provided session URLs must stay on the selected HTTPS origin.
+            let url =
+                url::Url::parse(&request.url).map_err(|e| ClientError::Transport(e.to_string()))?;
+            if !allowed_enhance_route(&url) {
+                return Err(ClientError::Transport(
+                    "Enhance route escaped the selected HTTPS origin".into(),
+                ));
+            }
+            let mut response = self
+                .0
+                .request(method, url)
+                .body(request.body)
+                .send()
+                .await
+                .map_err(|e| ClientError::Transport(e.to_string()))?;
+            if !response.status().is_success() {
+                return Err(ClientError::HttpStatus(response.status().as_u16()));
+            }
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|e| ClientError::Transport(e.to_string()))?
+            {
+                received += chunk.len();
+                body.extend(&chunk)?;
+            }
+            Ok(body.finish())
         }
-        let mut response = self
-            .0
-            .request(method, url)
-            .body(request.body)
-            .send()
-            .await
-            .map_err(|e| ClientError::Transport(e.to_string()))?;
-        if !response.status().is_success() {
-            return Err(ClientError::HttpStatus(response.status().as_u16()));
-        }
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| ClientError::Transport(e.to_string()))?
-        {
-            body.extend(&chunk)?;
-        }
-        Ok(body.finish())
+        .await;
+        log::info!("pir_http component=enhance kind={} sent_bytes={} received_bytes={} elapsed_us={} ok={}", kind, sent, received, started.elapsed().as_micros(), result.is_ok());
+        result
     }
 }
 fn error(e: impl std::fmt::Display) -> String {
@@ -80,12 +97,21 @@ pub(super) async fn run(
     }
     if crate::network_privacy::is_tor_desired() {
         return Err(SyncError::net(
-            "Private swap POC SSH tunnels require Tor off",
+            "Private swap POC direct HTTPS transport requires Tor off",
         ));
     }
     // A Tor toggle or cancellation drops the entire phase, including pending HTTP reads.
     let lease = crate::network_privacy::DirectRouteLease::new();
-    let phase = run_inner(db, network).map(|r| r.map_err(std::io::Error::other));
+    let started = std::time::Instant::now();
+    let phase = async {
+        let result = run_inner(db, network).await;
+        log::info!(
+            "pir_metric component=recovery stage=total elapsed_us={} ok={}",
+            started.elapsed().as_micros(),
+            result.is_ok()
+        );
+        result.map_err(std::io::Error::other)
+    };
     futures::pin_mut!(phase);
     let routed = futures::future::poll_fn(|cx| lease.poll(cx, |cx| phase.as_mut().poll(cx)));
     tokio::select! {
@@ -94,6 +120,52 @@ pub(super) async fn run(
         result=routed=>result.map_err(|e|SyncError::net(format!("Private swap recovery pending: {e}"))),
     }
 }
+fn discovery_work(
+    db: &mut WalletDatabase,
+    through: ChainAnchor,
+) -> Result<
+    Vec<(
+        zcash_client_sqlite::AccountUuid,
+        zcash_client_sqlite::wallet::swap_receiving::RegisteredKey,
+    )>,
+    String,
+> {
+    let mut work = Vec::new();
+    for account in db.get_account_ids().map_err(error)? {
+        let details = db
+            .get_account(account)
+            .map_err(error)?
+            .ok_or("Account disappeared")?;
+        if !matches!(details.source(), AccountSource::Derived { .. })
+            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
+        {
+            continue;
+        }
+        for key in db.get_swap_receiving_keys(account).map_err(error)? {
+            let target = with_wallet_db_write_lock("swap_private.target", || {
+                db.prepare_swap_recovery_target(account, key.key_id(), through)
+                    .map_err(error)
+            })?;
+            if let Some(target) = target {
+                // Closeout requires a directory check even if local scanning found
+                // the receipt. Its saved target does not move with the chain tip.
+                if db
+                    .swap_directory_check(account, key.key_id())
+                    .map_err(error)?
+                    .is_none_or(|checked| checked.height < target.height)
+                    || !db
+                        .pending_swap_payments(account, key.key_id())
+                        .map_err(error)?
+                        .is_empty()
+                {
+                    work.push((account, key));
+                }
+            }
+        }
+    }
+    Ok(work)
+}
+
 async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<(), String> {
     let Some(tip) = db.block_fully_scanned().map_err(error)? else {
         return Ok(());
@@ -105,6 +177,20 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         height: tip.block_height(),
         hash: tip.block_hash().0,
     };
+    let prepared = PreparedWork::new(
+        db.transaction_enhancement_work()
+            .map_err(error)?
+            .into_iter()
+            .filter_map(|w| match w {
+                TransactionEnhancementWork::Private(w) => Some(w),
+                _ => None,
+            }),
+    );
+    let batches = prepared.batches_by_tx_and_row();
+    if batches.is_empty() && discovery_work(db, through)?.is_empty() {
+        log::info!("swap_private: recovery covered locally; no PIR requests");
+        return Ok(());
+    }
     let http = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -129,16 +215,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         Acceptance::Mismatch => return Err("Enhance anchor differs from the accepted chain".into()),
     };
     let mut enhance = pending.accept(&acceptance).map_err(error)?;
-    let prepared = PreparedWork::new(
-        db.transaction_enhancement_work()
-            .map_err(error)?
-            .into_iter()
-            .filter_map(|w| match w {
-                TransactionEnhancementWork::Private(w) => Some(w),
-                _ => None,
-            }),
-    );
-    for requests in prepared.batches_by_tx_and_row().into_values() {
+    for requests in batches.into_values() {
         let reply = enhance
             .query_row_requests(&transport, &requests)
             .await
@@ -152,8 +229,11 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
     with_wallet_db_write_lock("swap_private.memos", || {
         crate::wallet::swap_receiving::maintain_recovery(db, network)
     })?;
-    if !prepared.rediscover.is_empty() || prepared.suspended > 0 {
-        log::warn!("swap_private: outgoing enhancement still needs local context; keeping it private and pending");
+    // Outgoing rediscovery needs local compact context, not another PIR request.
+    // Keep its durable queue without retrying it on the network every block.
+    let mut work = discovery_work(db, through)?;
+    if work.is_empty() {
+        return Ok(());
     }
     let advertised = HttpClient::fetch_manifest(RECEIVER_ORIGIN, &http)
         .await
@@ -185,27 +265,21 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         height,
         hash: hash.0,
     };
-    let mut work = Vec::new();
-    for account in db.get_account_ids().map_err(error)? {
-        let details = db
-            .get_account(account)
+    let mut unchecked = Vec::new();
+    for (account, key) in work.drain(..) {
+        if db
+            .swap_recovery_target(account, key.key_id())
             .map_err(error)?
-            .ok_or("Account disappeared")?;
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
-        {
-            continue;
-        }
-        for key in db.get_swap_receiving_keys(account).map_err(error)? {
-            if db
+            .is_some_and(|target| target.height <= height)
+            && db
                 .swap_directory_check(account, key.key_id())
                 .map_err(error)?
                 != Some(anchor)
-            {
-                work.push((account, key));
-            }
+        {
+            unchecked.push((account, key));
         }
     }
+    let work = unchecked;
     if work.is_empty() {
         return Ok(());
     }
@@ -213,15 +287,25 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         return Err("Directory witness publication is stale; refresh the test service".into());
     }
     // Download the same proof file before any receiver lookups, including when no key matches.
+    log::info!(
+        "pir_metric component=recovery stage=work receivers={}",
+        work.len()
+    );
     let witnesses = client.witnesses().await.map_err(error)?;
     let mut applied = 0;
     for (account, key) in work {
         let receiver =
             Receiver::from_bytes(key.receiver().to_raw_address_bytes()).map_err(error)?;
+        let lookup_started = std::time::Instant::now();
         let payments = client
             .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
             .await
             .map_err(error)?;
+        log::info!(
+            "pir_metric component=receiver stage=lookup elapsed_us={} payments={}",
+            lookup_started.elapsed().as_micros(),
+            payments.len()
+        );
         for payment in payments {
             // Persist only authenticated full ciphertext. A failed stage is retried from its durable queue.
             let stream = enhance
@@ -249,6 +333,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
                     record.enc_ciphertext_suffix(),
                 ),
             };
+            let apply_started = std::time::Instant::now();
             let raw_path = witnesses
                 .path(candidate.position, payment.cmx)
                 .map_err(error)?;
@@ -272,6 +357,10 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
             if result != PaymentApplication::Applied {
                 return Err(format!("Payment remains queued: {result:?}"));
             }
+            log::info!(
+                "pir_metric component=recovery stage=validate_insert elapsed_us={}",
+                apply_started.elapsed().as_micros()
+            );
             applied += 1;
         }
         with_wallet_db_write_lock("swap_private.checked", || {
@@ -294,6 +383,24 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
 mod tests {
     use super::*;
     use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
+    #[test]
+    fn enhance_routes_remain_on_the_public_tls_origin() {
+        assert!(allowed_enhance_route(
+            &url::Url::parse("https://enhance-pir.valargroup.dev/v1/enhance/init").unwrap()
+        ));
+        for route in [
+            "http://enhance-pir.valargroup.dev/v1/enhance/init",
+            "https://enhance-pir.valargroup.dev:8443/v1/enhance/init",
+            "https://enhance-pir.valargroup.dev.example.com/v1/enhance/init",
+            "https://user@enhance-pir.valargroup.dev/v1/enhance/init",
+            "http://127.0.0.1:18280/v1/enhance/init",
+        ] {
+            assert!(
+                !allowed_enhance_route(&url::Url::parse(route).unwrap()),
+                "{route}"
+            );
+        }
+    }
     /// Uses only a public zero-OVK chain fixture and independently checked RPC anchors.
     #[tokio::test]
     #[ignore = "requires the isolated PIR services and VIZOR_SWAP_PUBLIC_ANCHORS"]

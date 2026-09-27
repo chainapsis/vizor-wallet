@@ -1,10 +1,99 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
+  test('only supported NEAR statuses change the receiving watch', () {
+    expect(
+      swapScanningTerminalStatus(
+        null,
+        localStatus: SwapIntentStatus.awaitingDeposit,
+      ),
+      false,
+    );
+    expect(
+      swapScanningTerminalStatus(
+        null,
+        localStatus: SwapIntentStatus.awaitingExternalDeposit,
+      ),
+      false,
+    );
+    expect(
+      swapScanningTerminalStatus(
+        'UNKNOWN',
+        localStatus: SwapIntentStatus.awaitingDeposit,
+      ),
+      isNull,
+    );
+    expect(
+      swapScanningTerminalStatus(null, localStatus: SwapIntentStatus.expired),
+      isNull,
+    );
+    for (final status in ['SUCCESS', 'REFUNDED', 'FAILED']) {
+      expect(swapScanningTerminalStatus(status), true);
+    }
+    for (final status in [
+      'PENDING_DEPOSIT',
+      'KNOWN_DEPOSIT_TX',
+      'PROCESSING',
+      'INCOMPLETE_DEPOSIT',
+    ]) {
+      expect(swapScanningTerminalStatus(status), false);
+    }
+    for (final status in [null, 'expired', 'UNKNOWN', 'HTTP 500']) {
+      expect(swapScanningTerminalStatus(status), isNull);
+    }
+  });
+
+  test(
+    'replays persisted terminal records and drains lifecycle writes before reset',
+    () async {
+      final lifecycle = LedgerOperationLifecycle();
+      final writing = Completer<void>();
+      final release = Completer<void>();
+      final store = _MemorySwapActivityStore();
+      final saved = _intent(
+        id: 'done',
+        depositAddress: 'deposit',
+        status: SwapIntentStatus.complete,
+      ).copyWith(providerStatusRaw: 'SUCCESS');
+      store.savedRecords = [SwapIntentRecord.fromIntent(saved)];
+      var calls = 0;
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: _StatusSwapProvider({}),
+        lifecycle: lifecycle,
+        onIntentsPersisted: (account, intents) async {
+          expect(account, 'account-1');
+          expect(intents.single.providerStatusRaw, 'SUCCESS');
+          calls++;
+          writing.complete();
+          await release.future;
+        },
+      );
+      final load = tracker.loadIntents(accountUuid: 'account-1');
+      await writing.future;
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, false);
+      await expectLater(
+        tracker.loadIntents(accountUuid: 'account-1'),
+        throwsStateError,
+      );
+      release.complete();
+      expect(await load, hasLength(1));
+      await drain;
+      expect(calls, 1);
+      expect(drained, true);
+      lifecycle.resume();
+    },
+  );
+
   test('refreshes every open activity for the active account', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({

@@ -2211,6 +2211,23 @@ where
     tokio::try_join!(blocks, chain_state)
 }
 
+/// Logs inclusive phase durations; download prefetch can overlap scanning.
+struct SyncPhaseTimer(&'static str, std::time::Instant);
+impl SyncPhaseTimer {
+    fn new(stage: &'static str) -> Self {
+        Self(stage, std::time::Instant::now())
+    }
+}
+impl Drop for SyncPhaseTimer {
+    fn drop(&mut self) {
+        log::info!(
+            "sync_metric stage={} elapsed_us={}",
+            self.0,
+            self.1.elapsed().as_micros()
+        );
+    }
+}
+
 /// Downloads one compact-block batch and its preceding chain state in
 /// parallel. If independently served responses do not form one sequence, the
 /// tree state is fetched again by the first block's exact predecessor hash.
@@ -2220,6 +2237,7 @@ async fn download_scan_batch(
     end: BlockHeight,
     network: WalletNetwork,
 ) -> Result<ScanBatch, SyncError> {
+    let _metric = SyncPhaseTimer::new("download_batch");
     let mut tree_state_client = client.clone();
     let use_empty_state = should_use_empty_chain_state(&network, start)?;
     let tree_state = async move {
@@ -2708,6 +2726,14 @@ async fn run_payment_link_claim_sync_once(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
             ));
+        };
+        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+            let (_, boundary) = db
+                .get_swap_scan_window(start)
+                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
+            boundary.map_or(end, |boundary| end.min(boundary))
+        } else {
+            end
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
 
@@ -3473,7 +3499,8 @@ async fn run_sync_impl(
                     // A previous attempt may have scanned its final batch before
                     // cancellation or an enhancement failure. Drain its durable
                     // requests even when no further blocks need scanning.
-                    run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+                    run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
+                        .await?;
                     if should_exit() {
                         return Ok(());
                     }
@@ -3551,6 +3578,14 @@ async fn run_sync_impl(
             );
             break;
         };
+        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+            let (_, boundary) = db
+                .get_swap_scan_window(start)
+                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
+            boundary.map_or(end, |boundary| end.min(boundary))
+        } else {
+            end
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);
         let current_pct = progress_display_mode.percentage(
@@ -3597,11 +3632,13 @@ async fn run_sync_impl(
 
         // Download blocks and their preceding frontier together, or consume a
         // matching tuple that the previous iteration prefetched.
+        let download_wait = SyncPhaseTimer::new("download_wait");
         let batch =
             resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
                 download_scan_batch(&mut client, start, end - 1, network)
             })
             .await?;
+        drop(download_wait);
         let Some((block_source, from_state)) = batch else {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
@@ -3668,6 +3705,7 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
+        let scan_metric = SyncPhaseTimer::new("scan_and_store");
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
@@ -3761,6 +3799,7 @@ async fn run_sync_impl(
             })
         });
 
+        drop(scan_metric);
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
         // nearest checkpoint) and restart the scan loop. librustzcash's

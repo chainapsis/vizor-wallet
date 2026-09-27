@@ -107,6 +107,7 @@ pub(super) async fn run_enhancement(
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
+    let _metric = super::SyncPhaseTimer::new("ordinary_enhancement");
     let mut failed_txids: HashSet<String> = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();

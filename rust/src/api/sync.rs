@@ -3000,6 +3000,29 @@ pub fn reserve_swap_receiving_address(
     })
 }
 
+/// Persists the compact scanning deadline for an existing local swap operation.
+/// Only supported provider statuses may call this; transport errors preserve state.
+pub fn observe_swap_receiving_operation(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    operation_id: String,
+    address: String,
+    terminal: bool,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        crate::wallet::swap_receiving::observe_operation(
+            &db_path,
+            network,
+            &account_uuid,
+            &operation_id,
+            &address,
+            terminal,
+        )
+    })
+}
+
 /// Same software send lifecycle, with an authenticated refund record on change.
 pub fn propose_swap_funding(
     db_path: String,

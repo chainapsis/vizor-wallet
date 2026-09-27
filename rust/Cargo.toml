@@ -11,11 +11,12 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 swap-receiving-poc = []
 
 [dependencies]
-receiver-pir = { path = "../../wallet-pir/receiver/crates/receiver-pir", features = ["http"] }
-receiver-directory = { path = "../../wallet-pir/receiver/crates/receiver-directory" }
-zakura-pir-enhance = { path = "../../wallet-libraries-pir/zakura/pir-enhance", features = ["wallet"] }
+# These experimental receiver and swap crates are not published on crates.io.
+receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "207053dc02453d43ebfd3ba60c758f99f848c509", features = ["http"] }
+receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "207053dc02453d43ebfd3ba60c758f99f848c509" }
+zakura-pir-enhance = { version = "=0.0.1-rc0", features = ["wallet", "native-reinspiring"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-zakura-swap-receiving = { path = "../../wallet-libraries-pir/zakura/swap-receiving" }
+zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ef692e00b2c9b2f703528e4d7415ee1e9c06fbbf" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -222,13 +223,16 @@ opt-level = 3
 [profile.dev.package."*"]
 opt-level = 3
 
-# Local POC dependencies. Keep these overrides local until the library changes ship.
+# Experimental wallet changes share one exact source revision.
 [patch.crates-io]
-zakura-client-backend = { path = "../../wallet-libraries-pir/librustzcash/zcash_client_backend" }
-zakura-client-sqlite = { path = "../../wallet-libraries-pir/librustzcash/zcash_client_sqlite" }
-zakura-pczt = { path = "../../wallet-libraries-pir/librustzcash/pczt" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ef692e00b2c9b2f703528e4d7415ee1e9c06fbbf" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ef692e00b2c9b2f703528e4d7415ee1e9c06fbbf" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ef692e00b2c9b2f703528e4d7415ee1e9c06fbbf" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "ef692e00b2c9b2f703528e4d7415ee1e9c06fbbf" }
 
 # POC compatibility with the math version already used by Vizor voting.
+# Cargo cannot patch a Git dependency with another revision of the same URL.
+# scripts/prepare-swap-pir-compat.sh verifies this checkout at the pinned commit.
 [patch."https://github.com/valargroup/ipir-sp.git"]
 ipir-sp = { path = "../../ipir-sp-compat/ipir-sp" }
 reinspiring = { path = "../../ipir-sp-compat/reinspiring" }
