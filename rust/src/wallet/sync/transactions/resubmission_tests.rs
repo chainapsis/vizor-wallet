@@ -318,6 +318,87 @@ async fn resubmit_rpc_guard_and_fail_closed() {
     server.abort();
 }
 
+/// A status observation resolved on the queue-drain path (no pending scan
+/// ranges, so no post-batch pass follows) must still put the released
+/// transaction on the wire in the same sync.
+#[tokio::test]
+async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
+    use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+    use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let service = CountingLightwalletd::default();
+    let requests = service.0.clone();
+    let incoming = futures::stream::unfold(listener, |listener| async {
+        Some((listener.accept().await.map(|(socket, _)| socket), listener))
+    });
+    let server = tokio::spawn(
+        tonic::transport::Server::builder()
+            .add_service(service)
+            .serve_with_incoming(incoming),
+    );
+    let channel = tonic::transport::Endpoint::from_shared(url.clone())
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut client = CompactTxStreamerClient::new(channel);
+    let db = fresh_db();
+    let path = db.path().to_str().unwrap();
+    let mut conn = rusqlite::Connection::open(path).unwrap();
+    let tx = TransactionData::<Authorized>::from_parts(
+        TxVersion::V5,
+        BranchId::Nu5,
+        0,
+        BlockHeight::from_u32(1_000_000),
+        None,
+        None,
+        None,
+        None,
+    )
+    .freeze()
+    .unwrap();
+    let mut raw = Vec::new();
+    tx.write(&mut raw).unwrap();
+    let txid = tx.txid().as_ref().to_vec();
+    insert_row(&db, &txid, Some(&raw), None, Some(1_000_000), -1);
+    queue_status(&conn, &txid, 0);
+    add_recovery_evidence(&conn, &txid, "orchard", Some(0));
+
+    macro_rules! resubmit {
+        ($released:expr, $allow:expr) => {
+            crate::wallet::sync_engine::resubmit_released_transactions(
+                $released,
+                $allow,
+                &[],
+                path,
+                &url,
+                &mut client,
+                900_000,
+                || false,
+            )
+        };
+    }
+    // Still guarded: nothing released, nothing broadcast.
+    assert!(resubmit!(false, true).await.unwrap().is_none());
+    assert!(requests.lock().unwrap().is_empty());
+
+    // Enhancement resolves the final status observation, releasing the guard.
+    assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
+    assert!(
+        resubmit!(true, false).await.unwrap().is_none(),
+        "a sync that disallows resubmission never broadcasts"
+    );
+    assert!(requests.lock().unwrap().is_empty());
+
+    let stats = resubmit!(true, true).await.unwrap().expect("a pass ran");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(*requests.lock().unwrap(), vec![raw]);
+    server.abort();
+}
+
 #[test]
 fn resubmit_guard_matches_pinned_backend_schema() {
     let file = NamedTempFile::new().unwrap();

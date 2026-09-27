@@ -463,6 +463,41 @@ fn recovery_resubmit_exclusions(
         .map_err(SyncError::db)
 }
 
+/// Enhancement can resolve the last status observation holding back a
+/// previously mined transaction's resubmission. A path that completes without
+/// reaching the post-batch pass broadcasts it here, rather than leaving it for
+/// a later block that may be past its expiry. `ranges` are the current scan
+/// ranges, which keep the usual rewind-recovery exclusions in force. Returns
+/// `None` when no pass ran.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn resubmit_released_transactions(
+    released: bool,
+    allow_resubmit: bool,
+    ranges: &[ScanRange],
+    db_path: &str,
+    lightwalletd_url: &str,
+    client: &mut CompactTxStreamerClient<Channel>,
+    tip_height: u64,
+    should_exit: impl Fn() -> bool,
+) -> Result<Option<crate::wallet::sync::ResubmitStats>, SyncError> {
+    if !released || !allow_resubmit || should_exit() {
+        return Ok(None);
+    }
+    let tip = block_height_from_u64(tip_height, "released resubmission tip")?;
+    let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
+    Ok(Some(
+        crate::wallet::sync::resubmit_pending_transactions(
+            db_path,
+            lightwalletd_url,
+            client,
+            u32::from(tip),
+            &exclusions,
+            should_exit,
+        )
+        .await,
+    ))
+}
+
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
     ranges
         .iter()
@@ -3469,8 +3504,37 @@ async fn run_sync_impl(
                         .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
                         .is_empty()
                     {
-                        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
-                            .await?;
+                        let released = run_enhancement(
+                            &mut client,
+                            &mut db,
+                            db_data_path,
+                            network,
+                            &should_exit,
+                        )
+                        .await?;
+                        // This path completes without a post-batch pass, so a
+                        // transaction released by a final status observation is
+                        // broadcast now against the validated tip.
+                        let ranges = if released {
+                            db.suggest_scan_ranges()
+                                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+                        } else {
+                            Vec::new()
+                        };
+                        resubmit_released_transactions(
+                            released,
+                            allow_resubmit,
+                            &ranges,
+                            db_data_path,
+                            lightwalletd_url,
+                            &mut client,
+                            current_tip_height,
+                            || {
+                                cancel.load(Ordering::Relaxed)
+                                    || desired_mode.load(Ordering::SeqCst) != running_mode
+                            },
+                        )
+                        .await?;
                     }
                     if should_exit() {
                         return Ok(());

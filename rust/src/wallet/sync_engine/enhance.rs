@@ -127,13 +127,18 @@ fn resolve_recovery_status(
 /// `set_transaction_status` so it doesn't get retried forever, while
 /// transient network failures bubble up as `SyncError::Network` so the
 /// outer sync retry path can recover without deleting the request.
+///
+/// Returns whether a recovery status observation was resolved. That removes
+/// the guard holding a previously mined transaction back from resubmission, so
+/// a caller that will not reach the post-batch resubmit pass must run one.
 pub(super) async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-) -> Result<(), SyncError> {
+) -> Result<bool, SyncError> {
+    let mut released_resubmission = false;
     let mut failed_txids: HashSet<String> = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
@@ -168,6 +173,7 @@ pub(super) async fn run_enhancement(
 
                     let lookup = lwd::get_transaction(client, txid.as_ref().to_vec()).await;
                     if resolve_recovery_status(db_path, req, &lookup)? {
+                        released_resubmission = true;
                         continue;
                     }
                     match lookup {
@@ -274,14 +280,14 @@ pub(super) async fn run_enhancement(
         loop {
             let event = tokio::select! {
                 biased;
-                _ = super::watch_for_exit(should_exit) => return Ok(()),
+                _ = super::watch_for_exit(should_exit) => return Ok(released_resubmission),
                 event = reads.next() => event,
             };
             let Some((mut read, result)) = event else {
                 break;
             };
             if should_exit() {
-                return Ok(());
+                return Ok(released_resubmission);
             }
             let req = read.request().clone();
             match result? {
@@ -296,7 +302,7 @@ pub(super) async fn run_enhancement(
                     };
                     let fee_result = tokio::select! {
                         biased;
-                        _ = super::watch_for_exit(should_exit) => return Ok(()),
+                        _ = super::watch_for_exit(should_exit) => return Ok(released_resubmission),
                         result = fill_missing_fee(client, db_path, &tx) => result,
                     };
                     if let Err(error) = fee_result {
@@ -325,7 +331,7 @@ pub(super) async fn run_enhancement(
             reads.resume(read);
         }
     }
-    Ok(())
+    Ok(released_resubmission)
 }
 
 /// Parse and store before allowing the caller to acknowledge an address range.
