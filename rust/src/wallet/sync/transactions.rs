@@ -214,18 +214,11 @@ pub(crate) fn get_transaction_data_requests(
     let db = open_wallet_db_for_read(db_path, network)?;
     let requests = db.transaction_data_requests().map_err(|e| format!("{e}"))?;
 
-    Ok(requests
+    let mut result: Vec<_> = requests
         .into_iter()
         .map(|r| match r {
             TransactionDataRequest::GetStatus(txid) => TxDataRequest {
                 request_type: "get_status".into(),
-                txid: Some(format!("{txid}")),
-                address: None,
-                block_range_start: None,
-                block_range_end: None,
-            },
-            TransactionDataRequest::Enhancement(txid) => TxDataRequest {
-                request_type: "enhancement".into(),
                 txid: Some(format!("{txid}")),
                 address: None,
                 block_range_start: None,
@@ -243,7 +236,23 @@ pub(crate) fn get_transaction_data_requests(
                 }
             }
         })
-        .collect())
+        .collect();
+    use zcash_client_backend::data_api::enhance_pir::{EnhancePirRead, TransactionEnhancementWork};
+    for work in db
+        .transaction_enhancement_work()
+        .map_err(|e| e.to_string())?
+    {
+        if let TransactionEnhancementWork::Public(request) = work {
+            result.push(TxDataRequest {
+                request_type: "enhancement".into(),
+                txid: Some(request.txid().to_string()),
+                address: None,
+                block_range_start: None,
+                block_range_end: None,
+            });
+        }
+    }
+    Ok(result)
 }
 
 /// Returns unmined transactions that the wallet previously discovered in a

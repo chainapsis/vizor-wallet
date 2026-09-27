@@ -7,7 +7,12 @@ use std::{
 };
 
 use voting_crypto_deps::rand::rngs::OsRng;
+use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
+
+fn enhancement_mode() -> EnhancementMode {
+    EnhancementMode::Standard
+}
 
 use crate::wallet::network::WalletNetwork;
 
@@ -51,7 +56,8 @@ pub(crate) fn open_wallet_db_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_enhancement_mode(enhancement_mode()))
 }
 
 pub(crate) fn open_wallet_db_for_read_with_timeout(
@@ -62,7 +68,8 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, false)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_enhancement_mode(enhancement_mode()))
 }
 
 pub(crate) fn open_wallet_db_readonly_with_timeout(
@@ -71,7 +78,8 @@ pub(crate) fn open_wallet_db_readonly_with_timeout(
     timeout: Duration,
 ) -> Result<WalletDatabase, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(timeout))?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_enhancement_mode(enhancement_mode()))
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(

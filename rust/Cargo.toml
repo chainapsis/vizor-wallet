@@ -11,7 +11,11 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 swap-receiving-poc = []
 
 [dependencies]
-zakura-swap-receiving = { path = "../../wallet-libraries/zakura/swap-receiving" }
+receiver-pir = { path = "../../wallet-pir/receiver/crates/receiver-pir", features = ["http"] }
+receiver-directory = { path = "../../wallet-pir/receiver/crates/receiver-directory" }
+zakura-pir-enhance = { path = "../../wallet-libraries-pir/zakura/pir-enhance", features = ["wallet"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+zakura-swap-receiving = { path = "../../wallet-libraries-pir/zakura/swap-receiving" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -220,6 +224,17 @@ opt-level = 3
 
 # Local POC dependencies. Keep these overrides local until the library changes ship.
 [patch.crates-io]
-zakura-client-backend = { path = "../../wallet-libraries/librustzcash/zcash_client_backend" }
-zakura-client-sqlite = { path = "../../wallet-libraries/librustzcash/zcash_client_sqlite" }
-zakura-pczt = { path = "../../wallet-libraries/librustzcash/pczt" }
+zakura-client-backend = { path = "../../wallet-libraries-pir/librustzcash/zcash_client_backend" }
+zakura-client-sqlite = { path = "../../wallet-libraries-pir/librustzcash/zcash_client_sqlite" }
+zakura-pczt = { path = "../../wallet-libraries-pir/librustzcash/pczt" }
+
+# POC compatibility with the math version already used by Vizor voting.
+[patch."https://github.com/valargroup/ipir-sp.git"]
+ipir-sp = { path = "../../ipir-sp-compat/ipir-sp" }
+reinspiring = { path = "../../ipir-sp-compat/reinspiring" }
+inspiring = { path = "../../ipir-sp-compat/inspiring" }
+simplepir-kernel = { path = "../../ipir-sp-compat/simplepir-kernel" }
+
+[profile.dev.package.valar-spiral-rs]
+opt-level = 3
+overflow-checks = false

@@ -2,7 +2,7 @@
 
 use zakura_swap_receiving::{KeyId, Purpose, RefundMemo};
 use zcash_client_backend::data_api::{
-    Account as _, AccountSource, TransactionDataRequest, WalletRead,
+    enhance_pir::EnhancePirRead, Account as _, AccountSource, WalletRead,
 };
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::address::{Address, UnifiedAddress};
@@ -83,10 +83,11 @@ pub(crate) fn reserve(
             scanned.map(|block| block.block_height()),
             tip,
             live_tip,
-            db.transaction_data_requests()
-                .map_err(|e| e.to_string())?
-                .iter()
-                .any(|request| matches!(request, TransactionDataRequest::Enhancement(_))),
+            scanned.is_some()
+                && !db
+                    .transaction_enhancement_work()
+                    .map_err(|e| e.to_string())?
+                    .is_empty(),
         )?;
         db.recover_swap_refund_memos(account)
             .map_err(|e| e.to_string())?;
@@ -252,8 +253,7 @@ mod tests {
         let keys = db.get_swap_receiving_keys(account).unwrap();
         assert_eq!(keys.len(), RECEIVE_LOOKAHEAD as usize);
         assert!(keys.iter().all(|key| !key.advances_allocation()));
-        assert!(reserve(path, network, &uuid, true, 110)
-            .unwrap_err()
-            .contains("Finish wallet sync"));
+        let error = reserve(path, network, &uuid, true, 110).unwrap_err();
+        assert!(error.contains("Finish wallet sync"), "{error}");
     }
 }
