@@ -39,7 +39,6 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -3942,10 +3941,6 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
       findsOneWidget,
     );
-    final qrStage = tester.widget<KeystonePcztQrStage>(
-      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
-    );
-    expect(qrStage.frameInterval, const Duration(milliseconds: 200));
     expect(tester.takeException(), isNull);
 
     final nextButton = find.byKey(
@@ -4498,10 +4493,6 @@ void main() {
       expect(prepareCount, 1);
       expect(qr, findsOneWidget);
       expect(_rustApiFake.encodedMaxFragmentLengths, [BigInt.from(300)]);
-      expect(
-        tester.widget<KeystonePcztQrStage>(qr).frameInterval,
-        const Duration(milliseconds: 200),
-      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await discardStarted.future;

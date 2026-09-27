@@ -23,7 +23,6 @@ class KeystoneSigningModal extends StatelessWidget {
     required this.onPrimary,
     required this.secondaryLabel,
     required this.onSecondary,
-    this.qrSize = _desktopPcztQrSize,
     super.key,
   });
 
@@ -37,7 +36,6 @@ class KeystoneSigningModal extends StatelessWidget {
   final VoidCallback? onPrimary;
   final String? secondaryLabel;
   final VoidCallback? onSecondary;
-  final double qrSize;
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +109,7 @@ class KeystoneSigningModal extends StatelessWidget {
                     },
                     urParts: urParts,
                     error: error,
-                    size: qrSize,
+                    size: _desktopPcztQrSize,
                   ),
                 ),
                 if (instruction != null && instruction.isNotEmpty) ...[
