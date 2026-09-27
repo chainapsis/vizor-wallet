@@ -5,6 +5,7 @@ use zcash_client_backend::data_api::status::TransactionStatusMode;
 use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::WalletDatabase;
 
 /// Resolves the install preference once so status and payload retrieval cannot
 /// observe different values during the same operation.
@@ -20,7 +21,9 @@ impl EnhancementPolicy {
 
     pub(crate) fn for_preference(network: WalletNetwork, private_preference: bool) -> Self {
         Self {
-            private: network == WalletNetwork::Main && private_preference,
+            private: network == WalletNetwork::Main
+                && private_preference
+                && !cfg!(ironwood_masquerade),
         }
     }
 
@@ -43,18 +46,33 @@ impl EnhancementPolicy {
             EnhancementMode::Standard
         }
     }
+
+    pub(crate) fn configure_db(self, db: &mut WalletDatabase) {
+        db.set_enhancement_mode(self.payload_mode());
+        db.set_status_mode(self.status_mode());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn private_preference_selects_private_status_and_payload_on_mainnet() {
         let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
         assert!(policy.is_private());
         assert_eq!(policy.status_mode(), TransactionStatusMode::Private);
         assert_eq!(policy.payload_mode(), EnhancementMode::PrivateIronwood);
+    }
+
+    #[cfg(ironwood_masquerade)]
+    #[test]
+    fn private_preference_is_unavailable_in_masquerade_builds() {
+        let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
+        assert!(!policy.is_private());
+        assert_eq!(policy.status_mode(), TransactionStatusMode::Public);
+        assert_eq!(policy.payload_mode(), EnhancementMode::Standard);
     }
 
     #[test]

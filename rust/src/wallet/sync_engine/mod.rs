@@ -2828,7 +2828,6 @@ async fn run_sync_impl(
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
     let mut enhancement = EnhancementSession::new(network, db_data_path);
-    enhancement.configure_db(&mut db);
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -6137,7 +6136,7 @@ pub(crate) fn enhance_recovery_status(
 ) -> Result<crate::api::sync::EnhanceRecoveryStatus, String> {
     use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
     let mut db = open_wallet_db_readonly_with_timeout(path, network, READ_DB_BUSY_TIMEOUT)?;
-    db.set_enhancement_mode(EnhancementPolicy::current(network).payload_mode());
+    EnhancementPolicy::current(network).configure_db(&mut db);
     use zcash_client_backend::data_api::enhance_pir::TransactionEnhancementWork;
     let work = zakura_pir_enhance::wallet::PreparedWork::new(
         db.transaction_enhancement_work()

@@ -24,8 +24,9 @@
 //! or authorize a privacy downgrade.
 //!
 //! The configured status mode selects private status PIR for mainnet private
-//! preference, otherwise authorized public lightwalletd. Work variants carry that decision. Callers outside the sync engine (iOS read-only FFI, migration
-//! reconciliation) reach it through this module as well.
+//! preference, otherwise authorized public lightwalletd. Work variants carry
+//! that decision. Callers outside the sync engine (iOS read-only FFI,
+//! migration reconciliation) resolve the same policy through this module.
 
 mod auxiliary;
 mod payload;
@@ -72,11 +73,6 @@ impl EnhancementSession {
         }
     }
 
-    pub(super) fn configure_db(&self, db: &mut WalletDatabase) {
-        db.set_enhancement_mode(self.policy.payload_mode());
-        db.set_status_mode(self.policy.status_mode());
-    }
-
     /// Runs status and auxiliary metadata first, then drains the routed payload
     /// snapshot that those lanes may have populated.
     pub(super) async fn run_checkpoint(
@@ -86,6 +82,7 @@ impl EnhancementSession {
         cached: Option<&MemoryBlockSource>,
         should_exit: &(impl Fn() -> bool + Sync),
     ) -> Result<bool, SyncError> {
+        self.policy.configure_db(db);
         backfill_stored_fees(client, db, &self.db_path, should_exit).await?;
 
         // The public source reuses the caller-owned lightwalletd channel, while
@@ -145,6 +142,7 @@ impl EnhancementSession {
         cached: Option<&MemoryBlockSource>,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
+        self.policy.configure_db(db);
         let mut effects =
             ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached);
         let route = RoutedTransport::new(should_exit);

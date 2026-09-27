@@ -21,10 +21,10 @@ sync_engine
     v
 +------------------------- enhancement facade --------------------------+
 |                                                                       |
-|  auxiliary metadata                    routed payload recovery         |
+|  status + auxiliary metadata           routed payload recovery         |
 |  +----------------------+             +----------------------------+  |
-|  | fee backfill         |             | private Enhance PIR        |  |
-|  | status observation   |             | public lightwalletd        |  |
+|  | status observation   |             | private Enhance PIR        |  |
+|  | fee backfill         |             | public lightwalletd        |  |
 |  | transparent history  |             | scan-time queue seeding    |  |
 |  +----------+-----------+             +-------------+--------------+  |
 |             |                                           |              |
@@ -301,7 +301,6 @@ cancellation                  stop before the next network dispatch
 The sync engine should use only the parent facade:
 
 - `EnhancementSession::new`
-- `EnhancementSession::configure_db`
 - `EnhancementSession::run_checkpoint`
 - `EnhancementSession::run_payload_recovery`
 - `queue_stored_transactions`

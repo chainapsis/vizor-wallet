@@ -134,7 +134,7 @@ impl HistoryPass {
 
 /// Parses and stores one streamed transaction before its address range may be
 /// acknowledged. A failure therefore leaves the durable range retryable.
-pub(in crate::wallet::sync_engine::enhancement) fn store_address_transaction(
+fn store_address_transaction(
     network: &WalletNetwork,
     db: &mut WalletDatabase,
     bytes: &[u8],

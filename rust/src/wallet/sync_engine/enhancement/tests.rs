@@ -268,6 +268,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn payload_only_recovery_configures_the_wallet_mode() {
+        use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        let mut db =
+            crate::wallet::db::open_wallet_db_with_timeout(db_path, network, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None).unwrap();
+        let channel = tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy();
+        let mut client = CompactTxStreamerClient::new(channel);
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let mut enhancement = EnhancementSession::new(network, db_path);
+
+        assert!(!enhancement
+            .run_payload_recovery(&mut db, &mut client, None, &|| false)
+            .await
+            .unwrap());
+        assert!(db.transaction_enhancement_work().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn checkpoint_observes_status_before_retryable_payload_failure() {
         use bytes::Bytes;
         use http_body_util::Full;
@@ -342,7 +365,6 @@ mod tests {
         let should_exit = || false;
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut enhancement = EnhancementSession::new(WalletNetwork::Regtest, db_path);
-        enhancement.configure_db(&mut db);
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             enhancement.run_checkpoint(&mut db, &mut client, None, &should_exit),
