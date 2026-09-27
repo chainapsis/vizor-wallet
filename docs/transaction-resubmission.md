@@ -21,8 +21,9 @@ spend links also exist before mining, and the backend removes nullifier block
 locators during rewind, so neither is sufficient to infer past mining.
 
 After final status recovery, immediate resubmission requires the refreshed tip
-height and hash to match the stored tip. Equal height without a stored hash skips
-the pass. An advanced tip queues scanning before resubmission and resets progress
+height and hash to match the stored tip. Equal height without a stored hash
+requeues status work for eligible previously mined transactions before skipping
+the pass, preserving suppression across subsequent sync runs. An advanced tip queues scanning before resubmission and resets progress
 totals to the newly queued work, including when the prior queue was empty.
 
 These guards do not restrict the initial broadcast of a new transaction.

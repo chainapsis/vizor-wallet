@@ -216,6 +216,35 @@ fn resubmit_evidence_is_transaction_scoped_and_deduplicated() {
 }
 
 #[test]
+fn resubmit_requeue_only_defers_previously_mined_candidates() {
+    let file = fresh_db();
+    let conn = rusqlite::Connection::open(file.path()).unwrap();
+    for (id, expiry) in [(1, 1_000_000), (2, 1_000_000), (3, 900_000)] {
+        let txid = fake_txid(id);
+        insert_row(&file, &txid, Some(&fake_raw()), None, Some(expiry), -1);
+        if id != 2 {
+            add_recovery_evidence(&conn, &txid, "sapling", Some(0));
+        }
+        queue_status(&conn, &txid, 1);
+    }
+    assert_eq!(requeue_recovered_status_work(&conn, 900_000).unwrap(), 1);
+    assert_eq!(requeue_recovered_status_work(&conn, 900_000).unwrap(), 0);
+    assert_eq!(
+        get_resubmittable_txs(file.path().to_str().unwrap(), 900_000).unwrap()[0].txid_bytes,
+        fake_txid(2)
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM tx_retrieval_queue WHERE query_type = 1",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        3
+    );
+}
+
+#[test]
 fn resubmit_status_resolution_preserves_payload_and_releases_guard() {
     for pool in ["sapling", "orchard", "ironwood"] {
         let db = fresh_db();
@@ -622,18 +651,53 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
         height: 999_999,
         hash: vec![0x22; 32],
     });
+    conn.execute_batch(
+        "CREATE TRIGGER reject_status_requeue BEFORE INSERT ON tx_retrieval_queue
+        WHEN NEW.query_type = 0 BEGIN SELECT RAISE(ABORT, 'injected requeue failure'); END;",
+    )
+    .unwrap();
+    assert!(resubmit!(true, true, || false).await.is_err());
+    assert!(requests.lock().unwrap().is_empty());
+    conn.execute("DROP TRIGGER reject_status_requeue", [])
+        .unwrap();
+    calls.lock().unwrap().clear();
     assert!(matches!(
         resubmit!(true, true, || false).await.unwrap(),
         ReleasedResubmission::Skipped
     ));
     assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
     assert!(requests.lock().unwrap().is_empty());
+    // The next startup pass must still suppress this transaction even though
+    // status resolution preceded the unverified tip and no scan ranges remain.
+    let stats = crate::wallet::sync::resubmit_pending_transactions(
+        path,
+        &url,
+        &mut client,
+        999_999,
+        &HashSet::new(),
+        || false,
+    )
+    .await;
+    assert_eq!(stats.attempted, 0);
+    assert!(requests.lock().unwrap().is_empty());
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM tx_retrieval_queue WHERE txid = ?1 AND query_type = 0",
+            [&txid],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        1
+    );
     conn.execute(
         "INSERT INTO blocks (height, hash, time, sapling_tree)
         VALUES (999999, ?1, 0, X'000000')",
         [vec![0x11; 32]],
     )
     .unwrap();
+
+    // Once identity is available, a conclusive status can release the guard.
+    assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
 
     // Enhancement started at the last valid height, 999999. A block mined
     // during the drain must make expiry == refreshed tip ineligible immediately.

@@ -1802,6 +1802,26 @@ fn resubmission_candidate_sql(columns: &str) -> String {
     )
 }
 
+/// Restore durable suppression when status resolved but tip identity did not.
+/// The caller holds the wallet write lock. This single statement requeues only
+/// currently eligible transactions with prior mined evidence, preserving payload
+/// work and leaving genuinely unmined transactions alone.
+pub(crate) fn requeue_recovered_status_work(
+    conn: &rusqlite::Connection,
+    current_height: u32,
+) -> Result<usize, String> {
+    conn.execute(
+        &format!(
+            "INSERT INTO tx_retrieval_queue (txid, query_type)
+             {} AND EXISTS (SELECT 1 FROM transactions t
+                            WHERE t.txid = v.txid AND {MINED_TRANSACTION_EVIDENCE})",
+            resubmission_candidate_sql("v.txid, 0")
+        ),
+        [current_height],
+    )
+    .map_err(|e| format!("Recovery status requeue: {e}"))
+}
+
 /// Complete a conclusive non-mined status observation for the rewind recovery
 /// case. The caller holds the wallet write lock. Rechecking evidence, recording
 /// the observation, and completing only status work share one write transaction.

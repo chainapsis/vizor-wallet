@@ -498,7 +498,8 @@ pub(crate) enum ReleasedResubmission {
 /// prior validation baseline, never the expiry filter. Refresh/validation
 /// failures do not fall back to that stale height, and an advanced tip is
 /// returned for scanning rather than broadcast against. Equal height without
-/// a stored hash cannot rule out a reorg and skips this immediate pass.
+/// a stored hash cannot rule out a reorg: requeue status work to protect later
+/// startup passes as well as skipping this immediate pass.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resubmit_released_transactions(
     released: bool,
@@ -554,6 +555,11 @@ pub(crate) async fn resubmit_released_transactions(
             return Ok(ReleasedResubmission::TipAdvanced(fresh_tip.height));
         }
         RefreshedTipRelation::UnchangedUnverified => {
+            with_wallet_db_write_lock("sync_engine.requeue_unverified_recovery_status", || {
+                let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
+                crate::wallet::sync::requeue_recovered_status_work(&conn, u32::from(tip))
+            })
+            .map_err(SyncError::db)?;
             return Ok(ReleasedResubmission::Skipped);
         }
         RefreshedTipRelation::Unchanged => {}
