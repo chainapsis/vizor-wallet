@@ -47,6 +47,7 @@ enum NativeLightwalletdError: Error, Equatable {
   case invalidHTTPStatus(Int)
   case grpcStatus(String)
   case grpcStatusUnavailable
+  case coverageIncomplete
   case malformedResponse
   case missingHeight
   case missingSendResponse
@@ -191,6 +192,8 @@ enum NativeLightwalletdClient {
     endpoint: String,
     dbPath: String,
     privateStatus: Bool,
+    network: String,
+    requiredThrough: UInt32,
     transactionId: Data,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
@@ -212,13 +215,19 @@ enum NativeLightwalletdClient {
     let code = transactionId.withUnsafeBytes { transactionPointer in
       if privateStatus {
         return dbPath.withCString { dbPathPointer in
-          zcash_status_pir_observe_transaction(
-            dbPathPointer,
-            transactionPointer.bindMemory(to: UInt8.self).baseAddress,
-            UInt(transactionId.count),
-            &nativeObservation,
-            cancellation.lightwalletdCancellationHandle
-          )
+          network.withCString { networkPointer in
+            zcash_status_pir_observe_transaction_v2(
+              dbPathPointer,
+              transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+              UInt(transactionId.count),
+              networkPointer,
+              privateStatus,
+              true,
+              requiredThrough,
+              &nativeObservation,
+              cancellation.lightwalletdCancellationHandle
+            )
+          }
         }
       }
       return endpoint.withCString { endpointPointer in
@@ -236,6 +245,7 @@ enum NativeLightwalletdClient {
     else {
       return .failure(.cancelled)
     }
+    if code == ZCASH_STATUS_RESULT_INCONCLUSIVE { return .failure(.coverageIncomplete) }
     guard code == 0 else {
       let source = privateStatus ? "Status PIR" : "lightwalletd"
       return .failure(.transport("Rust \(source) transaction lookup failed (code \(code))"))

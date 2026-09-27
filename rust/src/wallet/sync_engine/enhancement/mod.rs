@@ -2,10 +2,10 @@
 //!
 //! See `enhancement/README.md` for the complete data-flow guide.
 //!
-//! Wallet data comes from two deliberately separate snapshots:
+//! Wallet data comes from three separate snapshots:
 //!
-//! - `transaction_data_requests()` contains status observation and transparent
-//!   address history. It carries no payload requests.
+//! - `transaction_status_work()` routes each status obligation to public or private transport.
+//! - `transaction_data_requests()` contains only transparent address history.
 //! - `transaction_enhancement_work()` is the single routing authority for
 //!   payload retrieval. It assigns every obligation to either private Enhance
 //!   PIR or public lightwalletd transport, never both.
@@ -23,9 +23,8 @@
 //! durable. Diagnostic recovery phases are advisory; they never select a route
 //! or authorize a privacy downgrade.
 //!
-//! `status_pir` selects the status source for that snapshot: private status
-//! PIR when the release gate and preference allow it, otherwise public
-//! lightwalletd. Callers outside the sync engine (iOS read-only FFI, migration
+//! The configured status mode selects private status PIR for mainnet private
+//! preference, otherwise authorized public lightwalletd. Work variants carry that decision. Callers outside the sync engine (iOS read-only FFI, migration
 //! reconciliation) reach it through this module as well.
 
 mod auxiliary;
@@ -43,7 +42,7 @@ pub(crate) use policy::EnhancementPolicy;
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
-use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, WalletDatabase};
@@ -75,6 +74,7 @@ impl EnhancementSession {
 
     pub(super) fn configure_db(&self, db: &mut WalletDatabase) {
         db.set_enhancement_mode(self.policy.payload_mode());
+        db.set_status_mode(self.policy.status_mode());
     }
 
     /// Runs status and auxiliary metadata first, then drains the routed payload
@@ -92,25 +92,23 @@ impl EnhancementSession {
         // `status::reader` constructs the private source from wallet context.
         // Both remain lazy: only the source selected by policy is opened.
         let public_source = status::lightwalletd_source(client.clone(), should_exit);
-        let mut status_reader = status::reader(
-            &self.db_path,
-            self.network,
-            self.policy,
-            should_exit,
-            public_source,
-        );
-        let mut observed_statuses = HashSet::new();
+        let mut status_reader =
+            status::reader(&self.db_path, self.network, should_exit, public_source);
+        let mut attempted_statuses = HashSet::new();
         let mut history = HistoryPass::default();
 
         for _ in 0..MAX_CHECKPOINT_PASSES {
             let requests = db
                 .transaction_data_requests()
                 .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
+            let status_work = db
+                .transaction_status_work()
+                .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
             let status_actionable = status::run_requests(
                 &mut status_reader,
                 db,
-                &requests,
-                &mut observed_statuses,
+                &status_work,
+                &mut attempted_statuses,
                 should_exit,
             )
             .await?;

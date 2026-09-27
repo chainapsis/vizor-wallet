@@ -1904,16 +1904,18 @@ final class BackgroundMigrationPreparationManager {
           dbPath: manifest.dbPath,
           network: manifest.network,
           transactionIdHex: transactionId,
+          requiredThrough: tip,
           cancellation: cancellation
         ) {
         case .success(let observation):
           observations.append(observation)
         case .failure(.cancelled):
           return .cancelled
+        case .failure(.coverageIncomplete):
+          // No observation was made. Retry this wave without failing background work.
+          queryFailed = true
         case .failure(let error):
-          print(
-            "[BGPreparation] tx query failed txid=\(transactionId) error=\(error)"
-          )
+          print("[BGPreparation] transaction status query failed error=\(error)")
           queryFailed = true
         }
         if queryFailed { break }
@@ -1996,12 +1998,14 @@ final class BackgroundMigrationPreparationManager {
     dbPath: String,
     network: String,
     transactionIdHex: String,
+    requiredThrough: UInt64,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
     NativeLightwalletdTransactionObservation,
     NativeLightwalletdError
   > {
-    guard let storedOrder = Self.transactionIdData(transactionIdHex) else {
+    guard let requiredThrough = UInt32(exactly: requiredThrough),
+      let storedOrder = Self.transactionIdData(transactionIdHex) else {
       return .failure(.malformedResponse)
     }
     let protocolOrder = Data(storedOrder.reversed())
@@ -2015,6 +2019,8 @@ final class BackgroundMigrationPreparationManager {
       endpoint: endpoint,
       dbPath: dbPath,
       privateStatus: privateStatus,
+      network: network,
+      requiredThrough: requiredThrough,
       transactionId: protocolOrder,
       cancellation: cancellation
     )
@@ -2028,6 +2034,8 @@ final class BackgroundMigrationPreparationManager {
       endpoint: endpoint,
       dbPath: dbPath,
       privateStatus: privateStatus,
+      network: network,
+      requiredThrough: requiredThrough,
       transactionId: storedOrder,
       cancellation: cancellation
     )

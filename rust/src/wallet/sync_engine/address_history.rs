@@ -25,7 +25,8 @@ pub(super) fn plan(
 ) -> VecDeque<VecDeque<TransactionsInvolvingAddress>> {
     let mut addresses = BTreeMap::new();
     for request in requests {
-        if let TransactionDataRequest::TransactionsInvolvingAddress(req) = request {
+        {
+            let TransactionDataRequest::TransactionsInvolvingAddress(req) = request;
             if req
                 .block_range_end()
                 .is_some_and(|end| end > req.block_range_start())
@@ -100,10 +101,7 @@ fn with_range(
             req.request_at(),
             req.tx_status_filter().clone(),
             req.output_status_filter().clone(),
-        )
-    else {
-        unreachable!()
-    };
+        );
     req
 }
 
@@ -233,7 +231,8 @@ mod tests {
     #[test]
     fn address_history_preserves_filters_and_bounds_long_ranges() {
         let mut filtered = request(1, 100, 110);
-        if let TransactionDataRequest::TransactionsInvolvingAddress(req) = &mut filtered {
+        {
+            let TransactionDataRequest::TransactionsInvolvingAddress(req) = &mut filtered;
             let TransactionDataRequest::TransactionsInvolvingAddress(other) =
                 TransactionDataRequest::transactions_involving_address(
                     req.address(),
@@ -242,10 +241,7 @@ mod tests {
                     None,
                     TransactionStatusFilter::All,
                     OutputStatusFilter::All,
-                )
-            else {
-                unreachable!()
-            };
+                );
             *req = other;
         }
         let plans = plan(&[request(1, 100, 110), filtered]);

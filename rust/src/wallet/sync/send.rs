@@ -2096,9 +2096,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    use zakura_transaction_status::{
-        lightwalletd::LightwalletdSource, StatusObservation, StatusRequest,
-    };
+    use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusObservation};
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let candidates = super::migration::unbroadcast_migration_recovery_candidates(
         db_path,
@@ -2119,24 +2117,21 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     let never_exit = || false;
     let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
     let policy = sync_engine::enhancement::EnhancementPolicy::current(network);
-    let mut reader = sync_engine::enhancement::status::reader(
-        db_path,
-        network,
-        policy,
-        &never_exit,
-        public_source,
-    );
+    let mut reader =
+        sync_engine::enhancement::status::reader(db_path, network, &never_exit, public_source);
 
+    use zcash_client_backend::data_api::status::TransactionStatusRead;
+    let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
+    status_db.set_status_mode(policy.status_mode());
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
         let observation = reader
-            .observe(StatusRequest {
-                txid,
-                coverage: zakura_pir_status::LocalCoverageContext {
-                    earliest_possible_inclusion: None,
-                    required_through: Some(chain_tip_height),
-                },
-            })
+            .observe(
+                status_db
+                    .transaction_status_work_for(txid)
+                    .map_err(|e| e.to_string())?,
+                Some(chain_tip_height),
+            )
             .await;
         match observation {
             Ok(StatusObservation::NotFound) => {}
@@ -2145,6 +2140,9 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
                     "Migration transaction {} is present in the mempool or chain",
                     candidate.txid_hex
                 ));
+            }
+            Err(zakura_transaction_status::StatusError::CoverageIncomplete) => {
+                return Err("Migration recovery is pending sufficient private status coverage; the run is unchanged".into());
             }
             Err(status) => {
                 return Err(format!(

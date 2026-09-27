@@ -56,12 +56,12 @@ their package or the parent session facade.
 
 ## The two wallet snapshots
 
-Two database snapshots serve different purposes and must not be mixed.
+Three database snapshots serve different purposes and must not be mixed.
 
 ```text
+transaction_status_work() → Public / Private status lane
+
 transaction_data_requests()
-    |
-    +-- GetStatus ------------------------> auxiliary status lane
     |
     `-- TransactionsInvolvingAddress ----> transparent-history lane
         (no payload variant: payload work exists only in the snapshot below)
@@ -308,4 +308,13 @@ The sync engine should use only the parent facade:
 - `phase`
 
 iOS read-only FFI and migration reconciliation use the explicit `status`
-facade plus the same `EnhancementPolicy`; there is no legacy status shim.
+facade plus the same `EnhancementPolicy`. The old native status symbol fails
+closed; callers use the versioned ABI with explicit network and coverage context.
+
+Status work is read separately from transparent discovery. The returned variant is
+the dispatch authority. Private work carries the wallet's conservative inclusion
+evidence; the checkpoint supplies its decision height. Incomplete coverage leaves
+the obligation pending and is attempted at most once per checkpoint, without
+public fallback. Foreground, migration recovery, and the versioned native ABI use
+the same routing contract. Mainnet private preference enables private status;
+there is no separate release gate.

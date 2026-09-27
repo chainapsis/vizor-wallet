@@ -71,6 +71,24 @@ fn failed_run_creation_deletes_run_only_after_unlock_succeeds() {
     assert_eq!(error, "reconciliation failed");
 }
 
+// Outbox-only fixtures need the wallet metadata used by the atomic creation-evidence write.
+fn create_creation_evidence_fixture(conn: &rusqlite::Connection) {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS transactions (
+             id_tx INTEGER PRIMARY KEY,
+             txid BLOB NOT NULL UNIQUE,
+             target_height INTEGER,
+             min_observed_height INTEGER NOT NULL,
+             raw BLOB,
+             mined_height INTEGER
+         );
+         CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
+         INSERT INTO scan_queue (block_range_end) SELECT 101
+         WHERE NOT EXISTS (SELECT 1 FROM scan_queue);",
+    )
+    .unwrap();
+}
+
 fn create_outbox_test_run(
     db_path: &str,
     run_id: &str,
@@ -79,6 +97,7 @@ fn create_outbox_test_run(
 ) -> Vec<String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -143,6 +162,39 @@ fn create_outbox_test_run(
         .collect();
     insert_pending_txs(db_path, run_id, pending, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
     txids
+}
+
+#[test]
+fn outbox_creation_evidence_rolls_back_when_pending_insert_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("wallet.db").to_string_lossy().into_owned();
+    create_outbox_test_run(&db_path, "atomic-evidence", &[10], &[None]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(&format!(
+        "DELETE FROM {PENDING_TXS_TABLE};
+         DELETE FROM transactions;
+         CREATE TRIGGER reject_pending BEFORE INSERT ON {PENDING_TXS_TABLE}
+         BEGIN SELECT RAISE(ABORT, 'test outbox failure'); END;"
+    ))
+    .unwrap();
+    drop(conn);
+
+    let error = insert_pending_txs(
+        &db_path,
+        "atomic-evidence",
+        vec![rebase_fixture_pending(0, 10, 101)],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap_err();
+    assert!(error.contains("test outbox failure"), "{error}");
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r
+            .get::<_, u32>(0))
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -294,17 +346,10 @@ fn stop_candidates_include_broadcasted_rows_missing_local_raw() {
     mark_pending_broadcasted(&db_path, "run-unstored", stored_txid).unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE transactions (
-             txid BLOB PRIMARY KEY,
-             raw BLOB
-         );",
-    )
-    .unwrap();
     let mut stored_blob = hex::decode(stored_txid).unwrap();
     stored_blob.reverse();
     conn.execute(
-        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        "UPDATE transactions SET raw = ?2 WHERE txid = ?1",
         params![stored_blob, vec![1_u8, 2, 3]],
     )
     .unwrap();
@@ -1415,6 +1460,18 @@ fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
         )
         .unwrap();
     assert_eq!(status, "needs_resign");
+    let evidence: (u32, u32) = conn
+        .query_row(
+            "SELECT target_height, min_observed_height FROM transactions LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        evidence,
+        (101, 100),
+        "rescheduling must preserve the original creation bound"
+    );
     assert_eq!(
         run_phase(&db_path, "run-1").unwrap(),
         PHASE_READY_TO_MIGRATE
@@ -2352,6 +2409,7 @@ fn create_signed_children_rebase_fixture(
 ) {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     let schedule = parts
         .iter()
         .map(
@@ -4742,6 +4800,7 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -4858,6 +4917,7 @@ fn regtest_fast_policy_survives_pending_transaction_materialization() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -4924,6 +4984,7 @@ fn approved_schedule_part_index_disambiguates_equal_values() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -5107,6 +5168,7 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -5489,6 +5551,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     let selected_note = PreparedOrchardNoteRef {
         txid_hex: "11".repeat(32),
         output_index: 0,
@@ -5825,6 +5888,7 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -5902,20 +5966,10 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
 
     // Once local raw is present, the same past-expiry broadcasted row resigns.
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    conn.execute_batch(
-        // `mined_height` stays NULL: the row is stored but not mined, and the
-        // chain-identity fallback query still needs the column to exist.
-        "CREATE TABLE transactions (
-             txid BLOB PRIMARY KEY,
-             raw BLOB,
-             mined_height INTEGER
-         );",
-    )
-    .unwrap();
     let mut txid_blob = hex::decode(&txid_hex).unwrap();
     txid_blob.reverse();
     conn.execute(
-        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        "UPDATE transactions SET raw = ?2 WHERE txid = ?1",
         params![txid_blob, vec![9_u8, 8, 7, 6]],
     )
     .unwrap();
@@ -6059,6 +6113,7 @@ fn replacement_signed_children_require_recovery_origin() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -6099,6 +6154,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     let part_count = MIGRATION_KEYSTONE_BATCH_MAX_PARTS + 2;
     let batch_limit = MIGRATION_KEYSTONE_BATCH_MAX_PARTS as usize;
     let schedule_json = (0..part_count)
@@ -6393,6 +6449,7 @@ fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -6481,6 +6538,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    create_creation_evidence_fixture(&conn);
     let notes = [0u32, 1].map(|index| PreparedOrchardNoteRef {
         txid_hex: format!("{:02x}", 0x17 + index).repeat(32),
         output_index: index,
@@ -10148,18 +10206,10 @@ fn invalid_outbox_schedule_rolls_back_accepted_transition() {
 }
 
 fn insert_test_mined_txid(conn: &rusqlite::Connection, txid_hex: &str, mined_height: u32) {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS transactions (
-             txid BLOB PRIMARY KEY,
-             mined_height INTEGER
-         )",
-        [],
-    )
-    .unwrap();
     let mut txid_blob = hex::decode(txid_hex).unwrap();
     txid_blob.reverse();
     conn.execute(
-        "INSERT OR REPLACE INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+        "UPDATE transactions SET mined_height = ?2 WHERE txid = ?1",
         params![txid_blob, mined_height],
     )
     .unwrap();

@@ -19,8 +19,9 @@
 //! `transaction_data_requests()`. The parent session services both snapshots in
 //! a fixed order and keeps their completion independent.
 
+use zcash_client_backend::data_api::status::{TransactionStatusMode, TransactionStatusRead};
 use zcash_client_backend::{
-    data_api::{TransactionDataRequest, WalletRead, WalletWrite},
+    data_api::{WalletRead, WalletWrite},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
 
@@ -173,6 +174,7 @@ mod tests {
             SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap();
+        db.set_status_mode(TransactionStatusMode::Public);
         db.set_enhancement_mode(
             zcash_client_backend::data_api::enhance_pir::EnhancementMode::Standard,
         );
@@ -256,9 +258,9 @@ mod tests {
             db.notify_transaction_enhancement_not_found(tx.txid())
                 .unwrap();
             assert!(!has_public_payload_work(&db, tx.txid()));
-            let requests = db.transaction_data_requests().unwrap();
+            let requests = db.transaction_status_work().unwrap();
             if !status_first {
-                assert!(requests.contains(&TransactionDataRequest::GetStatus(tx.txid())));
+                assert!(requests.iter().any(|work| work.txid() == tx.txid()));
                 store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool)
                     .unwrap();
             }
@@ -468,9 +470,10 @@ mod tests {
         let txid = tx.txid();
 
         assert!(!db
-            .transaction_data_requests()
+            .transaction_status_work()
             .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
+            .iter()
+            .any(|work| work.txid() == txid));
         assert_eq!(
             stored_transaction_ids_missing_fee(file.path().to_str().unwrap()).unwrap(),
             vec![txid]
@@ -596,5 +599,132 @@ mod tests {
             ),
             Err(SyncError::Parse(_))
         ));
+    }
+    struct FakeStatusSource {
+        opens: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        requests: std::sync::Arc<std::sync::Mutex<Vec<zakura_transaction_status::StatusRequest>>>,
+        response: Result<
+            zakura_transaction_status::StatusObservation,
+            zakura_transaction_status::StatusError,
+        >,
+    }
+    impl zakura_transaction_status::StatusSource for FakeStatusSource {
+        type Session = Self;
+        async fn open(self) -> Result<Self, zakura_transaction_status::StatusError> {
+            self.opens.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self)
+        }
+    }
+    impl zakura_transaction_status::StatusSession for FakeStatusSource {
+        async fn observe(
+            &mut self,
+            request: zakura_transaction_status::StatusRequest,
+        ) -> Result<
+            zakura_transaction_status::StatusObservation,
+            zakura_transaction_status::StatusError,
+        > {
+            self.requests.lock().unwrap().push(request);
+            self.response
+        }
+    }
+    fn status_source(
+        response: Result<
+            zakura_transaction_status::StatusObservation,
+            zakura_transaction_status::StatusError,
+        >,
+    ) -> FakeStatusSource {
+        FakeStatusSource {
+            opens: Default::default(),
+            requests: Default::default(),
+            response,
+        }
+    }
+
+    #[tokio::test]
+    async fn incomplete_private_status_is_deferred_once_per_checkpoint_without_public_fallback() {
+        use zakura_transaction_status::{StatusError, StatusObservation};
+        let (file, mut db, tx) =
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+        rusqlite::Connection::open(file.path())
+            .unwrap()
+            .execute(
+                "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
+                rusqlite::params![tx.txid().as_ref()],
+            )
+            .unwrap();
+        db.set_status_mode(TransactionStatusMode::Private);
+        let work = vec![db.transaction_status_work_for(tx.txid()).unwrap()];
+        let public = status_source(Ok(StatusObservation::NotFound));
+        let public_opens = public.opens.clone();
+        let private = status_source(Err(StatusError::CoverageIncomplete));
+        let requests = private.requests.clone();
+        let mut reader = super::super::status::RoutedStatusReader::new(public, private);
+        let mut attempted = std::collections::HashSet::new();
+        assert!(super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &work,
+            &mut attempted,
+            &|| false
+        )
+        .await
+        .unwrap());
+        assert!(!super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &work,
+            &mut attempted,
+            &|| false
+        )
+        .await
+        .unwrap());
+        assert_eq!(public_opens.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].coverage.earliest_possible_inclusion, None);
+        assert_eq!(requests[0].coverage.required_through, Some(110));
+        assert!(has_public_payload_work(&db, tx.txid()));
+        // An inconclusive lookup cannot replace a previously mined observation with absence.
+        assert_eq!(
+            db.get_tx_height(tx.txid()).unwrap(),
+            Some(BlockHeight::from_u32(100))
+        );
+    }
+
+    #[tokio::test]
+    async fn status_work_variant_selects_source_and_preserves_coverage_context() {
+        use zakura_transaction_status::StatusObservation;
+        use zcash_client_backend::data_api::status::{
+            PrivateTransactionStatusRequest, PublicTransactionStatusRequest, TransactionStatusWork,
+        };
+        let public = status_source(Ok(StatusObservation::Mempool));
+        let private = status_source(Ok(StatusObservation::Mined(BlockHeight::from_u32(100))));
+        let public_requests = public.requests.clone();
+        let private_requests = private.requests.clone();
+        let mut reader = super::super::status::RoutedStatusReader::new(public, private);
+        let txid = TxId::from_bytes([42; 32]);
+        let work = TransactionStatusWork::Private(PrivateTransactionStatusRequest::new(
+            txid,
+            Some(BlockHeight::from_u32(80)),
+        ));
+        assert_eq!(
+            reader.observe(work, Some(110)).await,
+            Ok(StatusObservation::Mined(BlockHeight::from_u32(100)))
+        );
+        assert!(public_requests.lock().unwrap().is_empty());
+        let request = private_requests.lock().unwrap()[0];
+        assert_eq!(request.coverage.earliest_possible_inclusion, Some(80));
+        assert_eq!(request.coverage.required_through, Some(110));
+        assert_eq!(
+            reader
+                .observe(
+                    TransactionStatusWork::Public(PublicTransactionStatusRequest::new(txid)),
+                    None
+                )
+                .await,
+            Ok(StatusObservation::Mempool)
+        );
+        assert_eq!(public_requests.lock().unwrap().len(), 1);
+        assert_eq!(private_requests.lock().unwrap().len(), 1);
     }
 }
