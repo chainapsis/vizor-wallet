@@ -649,7 +649,10 @@ mod tests {
             (Err(Status::deadline_exceeded("timeout")), false, false),
             (Err(Status::unknown("inconclusive")), false, false),
         ] {
-            for status_request in [false, true] {
+            for (status_request, no_change) in [false, true]
+                .into_iter()
+                .flat_map(|status| [(status, false), (status, true)])
+            {
                 let file = tempfile::NamedTempFile::new().unwrap();
                 let path = file.path().to_str().unwrap();
                 let conn = rusqlite::Connection::open(path).unwrap();
@@ -665,11 +668,20 @@ mod tests {
                     CREATE TABLE scan_queue (block_range_end INTEGER);
                     INSERT INTO scan_queue VALUES (900001);
                     INSERT INTO ironwood_received_notes VALUES (1, 0);").unwrap();
+                crate::wallet::db::ensure_mined_transaction_history(&conn).unwrap();
                 conn.execute(
                     "INSERT INTO transactions VALUES (1, ?1, NULL, NULL, X'01')",
                     [txid.as_ref()],
                 )
                 .unwrap();
+                if no_change {
+                    conn.execute_batch(
+                        "DELETE FROM ironwood_received_notes;
+                        UPDATE transactions SET mined_height = 800000;
+                        UPDATE transactions SET mined_height = NULL;",
+                    )
+                    .unwrap();
+                }
                 conn.execute(
                     "INSERT INTO tx_retrieval_queue VALUES (?1, 0, NULL), (?1, 1, 17)",
                     [txid.as_ref()],

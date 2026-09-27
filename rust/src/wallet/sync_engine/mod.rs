@@ -275,6 +275,17 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
     }
 }
 
+/// Restart work-based progress before scanning ranges queued at completion.
+fn reset_promoted_scan_progress(
+    ranges: &[ScanRange],
+    initial_total: &mut u64,
+    prev_remaining: &mut u64,
+) {
+    let pending = pending_scan_blocks(ranges);
+    *initial_total = pending;
+    *prev_remaining = pending;
+}
+
 fn chain_window_percentage(window_start_height: u64, tip_height: u64, scanned_height: u64) -> f64 {
     if tip_height <= window_start_height {
         return 1.0;
@@ -466,7 +477,8 @@ fn recovery_resubmit_exclusions(
 /// What [`resubmit_released_transactions`] did.
 #[derive(Debug)]
 pub(crate) enum ReleasedResubmission {
-    /// Nothing was released, resubmission is disabled, or the sync is exiting.
+    /// Nothing was released, resubmission is disabled, the sync is exiting,
+    /// or the refreshed tip's identity could not be verified.
     Skipped,
     /// The tip was confirmed unchanged and a resubmit pass ran.
     Resubmitted,
@@ -485,7 +497,8 @@ pub(crate) enum ReleasedResubmission {
 /// and validate the remote tip after enhancement; `tip_height` is only the
 /// prior validation baseline, never the expiry filter. Refresh/validation
 /// failures do not fall back to that stale height, and an advanced tip is
-/// returned for scanning rather than broadcast against.
+/// returned for scanning rather than broadcast against. Equal height without
+/// a stored hash cannot rule out a reorg and skips this immediate pass.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resubmit_released_transactions(
     released: bool,
@@ -540,9 +553,12 @@ pub(crate) async fn resubmit_released_transactions(
             })?;
             return Ok(ReleasedResubmission::TipAdvanced(fresh_tip.height));
         }
-        RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {}
+        RefreshedTipRelation::UnchangedUnverified => {
+            return Ok(ReleasedResubmission::Skipped);
+        }
+        RefreshedTipRelation::Unchanged => {}
     }
-    // The tip is unchanged, so the scanned state already reflects every block
+    // The tip's height and hash match, so the scanned state reflects every block
     // that could have mined the transaction; it supplies the expiry boundary.
     let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
     crate::wallet::sync::resubmit_pending_transactions(
@@ -3598,6 +3614,18 @@ async fn run_sync_impl(
                         .await?;
                         if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
                             current_tip_height = fresh_height;
+                            let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
+                                SyncError::db(format!(
+                                    "suggest_scan_ranges after tip promotion: {e}"
+                                ))
+                            })?;
+                            reset_promoted_scan_progress(
+                                &promoted_ranges,
+                                &mut initial_total,
+                                &mut prev_remaining,
+                            );
+                            progress_display_mode = ProgressDisplayMode::Work;
+                            queued_ranges = Some(promoted_ranges);
                             completion_tip_validation_required = true;
                             continue;
                         }
@@ -5403,6 +5431,27 @@ mod tests {
             RecoveryStrategy::RetryWithBackoff,
         );
         assert!(error.to_string().starts_with("network:"));
+    }
+
+    #[test]
+    fn promoted_scan_work_starts_incomplete_and_advances_across_batches() {
+        let ranges = [ScanRange::from_parts(
+            block_height(1_000)..block_height(1_300),
+            ScanPriority::Historic,
+        )];
+        let (mut total, mut remaining) = (0, 0);
+        reset_promoted_scan_progress(&ranges, &mut total, &mut remaining);
+        let mode = ProgressDisplayMode::Work;
+        assert_eq!(mode.percentage(total, remaining, 999, 1_299), 0.0);
+        for batch in 1..=3 {
+            let target = mode.target_percentage_after_blocks(total, remaining, 0, 0, 100);
+            remaining -= 100;
+            let actual = mode.percentage(total, remaining, 0, 0);
+            assert_eq!(target, actual);
+            assert!((actual - batch as f64 / 3.0).abs() < 1e-9);
+        }
+        reset_promoted_scan_progress(&[], &mut total, &mut remaining);
+        assert_eq!(mode.percentage(total, remaining, 0, 0), 1.0);
     }
 
     #[test]

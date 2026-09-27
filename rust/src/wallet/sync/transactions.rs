@@ -250,7 +250,8 @@ pub(crate) fn get_transaction_data_requests(
 /// compact block and that a pending scan range could still restore as mined.
 /// A shielded note only receives a commitment-tree position when it is scanned
 /// as mined; truncation retains that position even after it clears the
-/// transaction's mined height.
+/// transaction's mined height. A local history record also preserves mined
+/// evidence for transactions without received notes.
 pub(crate) fn get_unmined_txids_with_mined_output_evidence(
     db_path: &str,
     pending_ranges: &[Range<BlockHeight>],
@@ -261,28 +262,11 @@ pub(crate) fn get_unmined_txids_with_mined_output_evidence(
 
     let conn = open_readonly_conn(db_path)?;
     let mut stmt = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT DISTINCT t.txid, t.min_observed_height, t.expiry_height
              FROM transactions t
-             WHERE t.mined_height IS NULL
-               AND (
-                 EXISTS (
-                   SELECT 1 FROM sapling_received_notes n
-                   WHERE n.transaction_id = t.id_tx
-                     AND n.commitment_tree_position IS NOT NULL
-                 )
-                 OR EXISTS (
-                   SELECT 1 FROM orchard_received_notes n
-                   WHERE n.transaction_id = t.id_tx
-                     AND n.commitment_tree_position IS NOT NULL
-                 )
-                 OR EXISTS (
-                   SELECT 1 FROM ironwood_received_notes n
-                   WHERE n.transaction_id = t.id_tx
-                     AND n.commitment_tree_position IS NOT NULL
-                 )
-               )",
-        )
+             WHERE t.mined_height IS NULL AND {MINED_TRANSACTION_EVIDENCE}"
+        ))
         .map_err(|e| format!("SQL error: {e}"))?;
     let rows = stmt
         .query_map([], |row| {
@@ -1793,8 +1777,10 @@ pub(crate) struct ResubmittableTx {
 
 // Correlated to `t` in transactions. Positions survive a rewind that clears
 // mined_height; even position zero proves this transaction was scanned as mined.
-const MINED_NOTE_EVIDENCE: &str = "(
-    EXISTS (SELECT 1 FROM sapling_received_notes n
+// The history trigger also retains mined evidence for transactions without change.
+const MINED_TRANSACTION_EVIDENCE: &str = "(
+    EXISTS (SELECT 1 FROM vizor_mined_transactions m WHERE m.txid = t.txid)
+    OR EXISTS (SELECT 1 FROM sapling_received_notes n
             WHERE n.transaction_id = t.id_tx AND n.commitment_tree_position IS NOT NULL)
     OR EXISTS (SELECT 1 FROM orchard_received_notes n
                WHERE n.transaction_id = t.id_tx AND n.commitment_tree_position IS NOT NULL)
@@ -1811,7 +1797,7 @@ fn resubmission_candidate_sql(columns: &str) -> String {
            AND NOT EXISTS (
                SELECT 1 FROM transactions t
                JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
-               WHERE t.txid = v.txid AND {MINED_NOTE_EVIDENCE}
+               WHERE t.txid = v.txid AND {MINED_TRANSACTION_EVIDENCE}
            )"
     )
 }
@@ -1833,7 +1819,7 @@ pub(crate) fn resolve_recovered_nonmined_status(
                 "SELECT EXISTS (
             SELECT 1 FROM transactions t
             JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
-            WHERE t.txid = ?1 AND t.mined_height IS NULL AND {MINED_NOTE_EVIDENCE}
+            WHERE t.txid = ?1 AND t.mined_height IS NULL AND {MINED_TRANSACTION_EVIDENCE}
               AND EXISTS (SELECT 1 FROM v_transactions v WHERE v.txid = t.txid
                           AND v.account_balance_delta < 0 AND v.raw IS NOT NULL)
         )"
@@ -1925,7 +1911,7 @@ fn should_skip_resubmission_view(conn: &rusqlite::Connection, current_height: u3
 ///     the wallet originated. Inbound transactions the sync loop
 ///     merely discovered on-chain (via `get_transaction` enhance
 ///     calls) should never be "resubmitted".
-///   * Pending status work plus a positioned received note suppresses relay
+///   * Pending status work plus durable mined evidence suppresses relay
 ///     until the previously mined transaction has a conclusive status.
 ///   * `raw IS NOT NULL` — we actually have the serialized bytes to
 ///     broadcast. Defense-in-depth on top of the delta filter.
@@ -2110,6 +2096,7 @@ mod tests {
              );",
         )
         .unwrap();
+        crate::wallet::db::ensure_mined_transaction_history(&conn).unwrap();
         file
     }
 
@@ -2138,6 +2125,7 @@ mod tests {
              );",
         )
         .unwrap();
+        crate::wallet::db::ensure_mined_transaction_history(&conn).unwrap();
         file
     }
 
@@ -5643,6 +5631,8 @@ mod tests {
         let (db, txid) = (fresh_db(), fake_txid(0x08));
         insert_row(&db, &txid, Some(&fake_raw()), None, Some(1_000_100), -5_000);
         let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute("DROP TRIGGER vizor_preserve_mined_transaction", [])
+            .unwrap();
         conn.execute("ALTER TABLE transactions DROP COLUMN mined_height", [])
             .unwrap();
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();

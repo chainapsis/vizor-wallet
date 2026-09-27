@@ -111,6 +111,88 @@ fn resubmit_status_guard_matrix() {
 }
 
 #[test]
+fn resubmit_no_change_mined_history_survives_backend_rewind() {
+    let file = NamedTempFile::new().unwrap();
+    let path = file.path().to_str().unwrap();
+    let txid = fake_txid(0x91);
+    populate_recovery_wallet(path, &txid, &fake_raw());
+    let mut wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
+    let mut conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "DELETE FROM orchard_received_notes WHERE transaction_id = 11",
+        [],
+    )
+    .unwrap();
+    wallet
+        .update_chain_tip(BlockHeight::from_u32(900_000))
+        .unwrap();
+    // The funding note and spend link are present even before this send mines.
+    assert_resubmit_count(&file, 1);
+    let pending = [BlockHeight::from_u32(800_000)..BlockHeight::from_u32(900_001)];
+    assert!(get_unmined_txids_with_mined_output_evidence(path, &pending)
+        .unwrap()
+        .is_empty());
+    wallet
+        .set_transaction_status(
+            zcash_primitives::transaction::TxId::from_bytes(txid),
+            zcash_client_backend::data_api::TransactionStatus::Mined(BlockHeight::from_u32(
+                800_001,
+            )),
+        )
+        .unwrap();
+    // Real backend truncation clears the mined height but preserves our evidence.
+    conn.execute(
+        "INSERT INTO blocks (height, hash, time, sapling_tree)
+         VALUES (800000, zeroblob(32), 0, X'000000')",
+        [],
+    )
+    .unwrap();
+    wallet
+        .truncate_to_height(BlockHeight::from_u32(800_000))
+        .unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT mined_height FROM transactions WHERE id_tx = 11",
+            [],
+            |r| r.get::<_, Option<u32>>(0)
+        )
+        .unwrap(),
+        None
+    );
+    conn.execute(
+        "INSERT OR IGNORE INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 0), (?1, 1)",
+        [txid],
+    )
+    .unwrap();
+    assert_resubmit_count(&file, 0);
+    assert_eq!(
+        get_unmined_txids_with_mined_output_evidence(path, &pending).unwrap(),
+        HashSet::from([txid.to_vec()])
+    );
+    // Reopening does not lose the guard. A conclusive result releases status only.
+    drop(wallet);
+    let mut wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
+    wallet
+        .update_chain_tip(BlockHeight::from_u32(900_000))
+        .unwrap();
+    assert_resubmit_count(&file, 0);
+    assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
+    assert_resubmit_count(&file, 1);
+    assert_eq!(
+        conn.query_row(
+            "SELECT query_type FROM tx_retrieval_queue WHERE txid = ?1",
+            [txid],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    assert!(get_unmined_txids_with_mined_output_evidence(path, &[])
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn resubmit_evidence_is_transaction_scoped_and_deduplicated() {
     let db = fresh_db();
     let txid = fake_txid(0x81);
@@ -198,6 +280,7 @@ fn resubmit_resolution_errors_roll_back_and_retain_guard() {
 #[test]
 fn resubmit_guard_schema_errors_fail_closed() {
     for table in [
+        "vizor_mined_transactions",
         "tx_retrieval_queue",
         "sapling_received_notes",
         "orchard_received_notes",
@@ -362,7 +445,22 @@ async fn resubmit_rpc_guard_and_fail_closed() {
         let txid = tx.txid().as_ref().to_vec();
         insert_row(&db, &txid, Some(&raw), None, Some(1_000_000), -1);
         queue_status(&conn, &txid, 0);
-        add_recovery_evidence(&conn, &txid, "ironwood", Some(0));
+        if lock_time == 0 {
+            // No received change note: only the durable mined-history record
+            // can suppress this transaction's SendTransaction RPC.
+            conn.execute(
+                "UPDATE transactions SET mined_height = 800001 WHERE txid = ?1",
+                [&txid],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE transactions SET mined_height = NULL WHERE txid = ?1",
+                [&txid],
+            )
+            .unwrap();
+        } else {
+            add_recovery_evidence(&conn, &txid, "ironwood", Some(0));
+        }
         txids.push(txid);
         raws.push(raw);
     }
@@ -515,6 +613,28 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     );
 
     use zcash_client_backend::proto::service::BlockId;
+    // Equal heights cannot rule out a same-height reorg when the wallet has
+    // no stored tip hash. The released, unexpired candidate must stay private.
+    conn.execute("DELETE FROM blocks WHERE height = 999999", [])
+        .unwrap();
+    assert_eq!(get_resubmittable_txs(path, 999_999).unwrap().len(), 1);
+    *tip_response.lock().unwrap() = Ok(BlockId {
+        height: 999_999,
+        hash: vec![0x22; 32],
+    });
+    assert!(matches!(
+        resubmit!(true, true, || false).await.unwrap(),
+        ReleasedResubmission::Skipped
+    ));
+    assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+    assert!(requests.lock().unwrap().is_empty());
+    conn.execute(
+        "INSERT INTO blocks (height, hash, time, sapling_tree)
+        VALUES (999999, ?1, 0, X'000000')",
+        [vec![0x11; 32]],
+    )
+    .unwrap();
+
     // Enhancement started at the last valid height, 999999. A block mined
     // during the drain must make expiry == refreshed tip ineligible immediately.
     for (height, expected_sends) in [(1_000_000, 0), (1_000_001, 0), (999_999, 1)] {
