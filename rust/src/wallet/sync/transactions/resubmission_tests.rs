@@ -2,6 +2,54 @@ use super::tests::{fake_raw, fake_txid, fresh_db, insert_row};
 use super::*;
 use tempfile::NamedTempFile;
 
+fn populate_recovery_wallet(path: &str, txid: &[u8], raw: &[u8]) {
+    // Exercise a real migrated view with an outgoing transaction spending a
+    // funding note and returning change. These are synthetic SQL note contents;
+    // this test verifies persisted recovery state, not note cryptography.
+    crate::wallet::keys::init_db_and_create_account(
+        path,
+        WalletNetwork::Test,
+        &secrecy::SecretVec::new(vec![7; 32]),
+        Some(800_000),
+        "Recovery test",
+    )
+    .unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let account: i64 = conn
+        .query_row("SELECT id FROM accounts", [], |r| r.get(0))
+        .unwrap();
+    let funding = fake_txid(0x80);
+    conn.execute(
+        "INSERT INTO transactions (id_tx, txid, mined_height, min_observed_height, expiry_height)
+        VALUES (10, ?1, 800000, 800000, 1000000)",
+        [funding],
+    )
+    .unwrap();
+    conn.execute("INSERT INTO transactions (id_tx, txid, raw, mined_height, min_observed_height, expiry_height)
+        VALUES (11, ?1, ?2, NULL, 800001, 1000000)", rusqlite::params![txid, raw]).unwrap();
+    for (id, value) in [(10, 1000), (11, 100)] {
+        conn.execute(
+            "INSERT INTO orchard_received_notes
+            (id, transaction_id, action_index, account_id, diversifier, value, rho, rseed,
+             is_change, commitment_tree_position, recipient_key_scope, note_version)
+            VALUES (?1, ?1, 0, ?2, zeroblob(11), ?3, zeroblob(32), zeroblob(32), 1, ?1, 1, 2)",
+            rusqlite::params![id, account, value],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO orchard_received_note_spends (orchard_received_note_id, transaction_id)
+        VALUES (10, 11)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 0), (?1, 1)",
+        [txid],
+    )
+    .unwrap();
+}
+
 fn add_recovery_evidence(
     conn: &rusqlite::Connection,
     txid: &[u8],
@@ -389,14 +437,6 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
         .await
         .unwrap();
     let mut client = CompactTxStreamerClient::new(channel);
-    let db = fresh_db();
-    let path = db.path().to_str().unwrap();
-    let mut conn = rusqlite::Connection::open(path).unwrap();
-    conn.execute("CREATE TABLE blocks (height INTEGER, hash BLOB)", [])
-        .unwrap();
-    conn.execute("INSERT INTO blocks VALUES (999999, ?1)", [vec![0x11; 32]])
-        .unwrap();
-    let wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
     let tx = TransactionData::<Authorized>::from_parts(
         TxVersion::V5,
         BranchId::Nu5,
@@ -412,9 +452,29 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     let mut raw = Vec::new();
     tx.write(&mut raw).unwrap();
     let txid = tx.txid().as_ref().to_vec();
-    insert_row(&db, &txid, Some(&raw), None, Some(1_000_000), -1);
-    queue_status(&conn, &txid, 0);
-    add_recovery_evidence(&conn, &txid, "orchard", Some(0));
+    let db = NamedTempFile::new().unwrap();
+    let path = db.path().to_str().unwrap();
+    populate_recovery_wallet(path, &txid, &raw);
+    let mut conn = rusqlite::Connection::open(path).unwrap();
+    let mut wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
+    wallet
+        .update_chain_tip(BlockHeight::from_u32(999_999))
+        .unwrap();
+    conn.execute(
+        "INSERT INTO blocks (height, hash, time, sapling_tree)
+        VALUES (999999, ?1, 0, X'000000')",
+        [vec![0x11; 32]],
+    )
+    .unwrap();
+    // Model a fully scanned wallet at the old tip before enhancement drains.
+    conn.execute_batch(
+        "DELETE FROM scan_queue;
+        INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+        VALUES (800000, 1000000, 10);",
+    )
+    .unwrap();
+    use crate::wallet::sync_engine::ReleasedResubmission;
+    let mut validated_tip = 999_999;
 
     macro_rules! resubmit {
         ($released:expr, $allow:expr, $exit:expr) => {
@@ -425,20 +485,26 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
                 path,
                 &url,
                 &mut client,
-                &wallet,
-                999_999,
+                &mut wallet,
+                validated_tip,
                 $exit,
             )
         };
     }
     // Still guarded: nothing released, nothing broadcast.
-    assert!(resubmit!(false, true, || false).await.unwrap().is_none());
+    assert!(matches!(
+        resubmit!(false, true, || false).await.unwrap(),
+        ReleasedResubmission::Skipped
+    ));
     assert!(requests.lock().unwrap().is_empty());
 
     // Enhancement resolves the final status observation, releasing the guard.
     assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
     assert!(
-        resubmit!(true, false, || false).await.unwrap().is_none(),
+        matches!(
+            resubmit!(true, false, || false).await.unwrap(),
+            ReleasedResubmission::Skipped
+        ),
         "a sync that disallows resubmission never broadcasts"
     );
     assert!(requests.lock().unwrap().is_empty());
@@ -452,17 +518,30 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     // Enhancement started at the last valid height, 999999. A block mined
     // during the drain must make expiry == refreshed tip ineligible immediately.
     for (height, expected_sends) in [(1_000_000, 0), (1_000_001, 0), (999_999, 1)] {
+        conn.execute_batch(
+            "DELETE FROM scan_queue;
+            INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+            VALUES (800000, 1000000, 10);",
+        )
+        .unwrap();
         *tip_response.lock().unwrap() = Ok(BlockId {
             height,
             hash: vec![0x11; 32],
         });
         calls.lock().unwrap().clear();
         requests.lock().unwrap().clear();
-        let stats = resubmit!(true, true, || false)
-            .await
-            .unwrap()
-            .expect("a pass ran");
-        assert_eq!(stats.succeeded, expected_sends, "refreshed height {height}");
+        let outcome = resubmit!(true, true, || false).await.unwrap();
+        match outcome {
+            ReleasedResubmission::TipAdvanced(actual) if height > 999_999 => {
+                assert_eq!(actual, height);
+                assert_eq!(
+                    wallet.chain_height().unwrap(),
+                    Some(BlockHeight::from_u32(height as u32))
+                );
+            }
+            ReleasedResubmission::Resubmitted if height == 999_999 => {}
+            unexpected => panic!("unexpected outcome at height {height}: {unexpected:?}"),
+        }
         assert_eq!(requests.lock().unwrap().len(), expected_sends as usize);
         if expected_sends == 0 {
             assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
@@ -505,13 +584,101 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
         hash: vec![0x11; 32],
     });
     calls.lock().unwrap().clear();
-    assert!(resubmit!(true, true, || true).await.unwrap().is_none());
+    assert!(matches!(
+        resubmit!(true, true, || true).await.unwrap(),
+        ReleasedResubmission::Skipped
+    ));
     assert!(calls.lock().unwrap().is_empty());
     // Cancellation or mode-change during the refresh prevents the following send.
-    assert!(resubmit!(true, true, || !calls.lock().unwrap().is_empty())
-        .await
-        .unwrap()
-        .is_none());
+    assert!(matches!(
+        resubmit!(true, true, || !calls.lock().unwrap().is_empty())
+            .await
+            .unwrap(),
+        ReleasedResubmission::Skipped
+    ));
+    assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+    assert!(requests.lock().unwrap().is_empty());
+    // Unlike the expiry boundary above, this transaction is still valid at
+    // the new tip. A block arriving during enhancement could have mined it:
+    // promotion must queue scanning without revealing it via SendTransaction.
+    validated_tip = 999_998;
+    conn.execute_batch(
+        "UPDATE blocks SET height = 999998;
+        DELETE FROM scan_queue;
+        INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+        VALUES (800000, 999999, 10);",
+    )
+    .unwrap();
+    assert!(wallet.suggest_scan_ranges().unwrap().is_empty());
+    assert_eq!(
+        get_resubmittable_txs(path, 999_999).unwrap().len(),
+        1,
+        "expiry alone must not suppress this candidate"
+    );
+    *tip_response.lock().unwrap() = Ok(BlockId {
+        height: 999_999,
+        hash: vec![0x11; 32],
+    });
+    calls.lock().unwrap().clear();
+
+    // A failed promotion must not broadcast or leave partially updated scan work.
+    conn.execute_batch(
+        "CREATE TRIGGER reject_tip_promotion BEFORE INSERT ON scan_queue
+        BEGIN SELECT RAISE(ABORT, 'injected promotion failure'); END;",
+    )
+    .unwrap();
+    assert!(resubmit!(true, true, || false).await.is_err());
+    assert_eq!(
+        wallet.chain_height().unwrap(),
+        Some(BlockHeight::from_u32(999_998))
+    );
+    assert!(wallet.suggest_scan_ranges().unwrap().is_empty());
+    assert!(requests.lock().unwrap().is_empty());
+    conn.execute("DROP TRIGGER reject_tip_promotion", [])
+        .unwrap();
+    calls.lock().unwrap().clear();
+
+    assert!(matches!(
+        resubmit!(true, true, || false).await.unwrap(),
+        ReleasedResubmission::TipAdvanced(999_999)
+    ));
+    assert_eq!(
+        wallet.chain_height().unwrap(),
+        Some(BlockHeight::from_u32(999_999))
+    );
+    let pending = wallet.suggest_scan_ranges().unwrap();
+    assert!(
+        pending.iter().any(|range| range
+            .block_range()
+            .contains(&BlockHeight::from_u32(999_999))),
+        "the newly observed block must be scheduled for scanning"
+    );
+    assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+    assert!(requests.lock().unwrap().is_empty());
+
+    // Model scan persistence discovering the transaction in that new block.
+    // A following resubmit pass must see its restored mined state and send nothing.
+    wallet
+        .set_transaction_status(
+            tx.txid(),
+            zcash_client_backend::data_api::TransactionStatus::Mined(BlockHeight::from_u32(
+                999_999,
+            )),
+        )
+        .unwrap();
+    conn.execute_batch(
+        "UPDATE blocks SET height = 999999;
+        DELETE FROM scan_queue;
+        INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+        VALUES (800000, 1000000, 10);",
+    )
+    .unwrap();
+    validated_tip = 999_999;
+    calls.lock().unwrap().clear();
+    match resubmit!(true, true, || false).await.unwrap() {
+        ReleasedResubmission::Resubmitted => {}
+        unexpected => panic!("unexpected post-scan outcome: {unexpected:?}"),
+    }
     assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
     assert!(requests.lock().unwrap().is_empty());
     server.abort();
@@ -533,51 +700,8 @@ fn resubmit_guard_matches_pinned_backend_schema() {
     drop(stmt);
     assert!(!resolve_recovered_nonmined_status(&mut conn, &fake_txid(0x81)).unwrap());
 
-    // Exercise a real migrated view with an outgoing transaction spending a
-    // funding note and returning change. These are synthetic SQL note contents;
-    // this test verifies persisted recovery state, not note cryptography.
-    crate::wallet::keys::init_db_and_create_account(
-        path,
-        WalletNetwork::Test,
-        &secrecy::SecretVec::new(vec![7; 32]),
-        Some(800_000),
-        "Recovery test",
-    )
-    .unwrap();
-    let account: i64 = conn
-        .query_row("SELECT id FROM accounts", [], |r| r.get(0))
-        .unwrap();
-    let funding = fake_txid(0x80);
     let txid = fake_txid(0x81);
-    conn.execute(
-        "INSERT INTO transactions (id_tx, txid, mined_height, min_observed_height, expiry_height)
-        VALUES (10, ?1, 800000, 800000, 1000000)",
-        [funding],
-    )
-    .unwrap();
-    conn.execute("INSERT INTO transactions (id_tx, txid, raw, mined_height, min_observed_height, expiry_height)
-        VALUES (11, ?1, X'01', NULL, 800001, 1000000)", [txid]).unwrap();
-    for (id, value) in [(10, 1000), (11, 100)] {
-        conn.execute(
-            "INSERT INTO orchard_received_notes
-            (id, transaction_id, action_index, account_id, diversifier, value, rho, rseed,
-             is_change, commitment_tree_position, recipient_key_scope, note_version)
-            VALUES (?1, ?1, 0, ?2, zeroblob(11), ?3, zeroblob(32), zeroblob(32), 1, ?1, 1, 2)",
-            rusqlite::params![id, account, value],
-        )
-        .unwrap();
-    }
-    conn.execute(
-        "INSERT INTO orchard_received_note_spends (orchard_received_note_id, transaction_id)
-        VALUES (10, 11)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 0), (?1, 1)",
-        [txid],
-    )
-    .unwrap();
+    populate_recovery_wallet(path, &txid, &[1]);
     let mut wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
     wallet
         .update_chain_tip(BlockHeight::from_u32(900_000))

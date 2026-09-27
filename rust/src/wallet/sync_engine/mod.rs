@@ -463,14 +463,29 @@ fn recovery_resubmit_exclusions(
         .map_err(SyncError::db)
 }
 
+/// What [`resubmit_released_transactions`] did.
+#[derive(Debug)]
+pub(crate) enum ReleasedResubmission {
+    /// Nothing was released, resubmission is disabled, or the sync is exiting.
+    Skipped,
+    /// The tip was confirmed unchanged and a resubmit pass ran.
+    Resubmitted,
+    /// The chain advanced to this height. Nothing was broadcast: a new block
+    /// may have mined the released transaction, and only scanning it can
+    /// restore that mined height. The wallet tip has been promoted; the caller
+    /// must resume scanning; the post-batch pass then resubmits against the scanned state.
+    TipAdvanced(u64),
+}
+
 /// Enhancement can resolve the last status observation holding back a
 /// previously mined transaction's resubmission. A path that completes without
 /// reaching the post-batch pass broadcasts it here, rather than leaving it for
 /// a later block that may be past its expiry. `ranges` are the current scan
-/// ranges, which keep the usual rewind-recovery exclusions in force. Returns
-/// `None` when no pass ran. Refresh and validate the remote tip after enhancement;
-/// `tip_height` is only the prior validation baseline, never the expiry filter.
-/// Refresh/validation failures do not fall back to that stale height.
+/// ranges, which keep the usual rewind-recovery exclusions in force. Refresh
+/// and validate the remote tip after enhancement; `tip_height` is only the
+/// prior validation baseline, never the expiry filter. Refresh/validation
+/// failures do not fall back to that stale height, and an advanced tip is
+/// returned for scanning rather than broadcast against.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resubmit_released_transactions(
     released: bool,
@@ -479,16 +494,16 @@ pub(crate) async fn resubmit_released_transactions(
     db_path: &str,
     lightwalletd_url: &str,
     client: &mut CompactTxStreamerClient<Channel>,
-    db: &WalletDatabase,
+    db: &mut WalletDatabase,
     tip_height: u64,
     should_exit: impl Fn() -> bool,
-) -> Result<Option<crate::wallet::sync::ResubmitStats>, SyncError> {
+) -> Result<ReleasedResubmission, SyncError> {
     if !released || !allow_resubmit || should_exit() {
-        return Ok(None);
+        return Ok(ReleasedResubmission::Skipped);
     }
     let fresh_tip = get_latest_block(client).await;
     let Some(fresh_tip) = tip_rpc_result_unless_exiting(fresh_tip, should_exit()) else {
-        return Ok(None);
+        return Ok(ReleasedResubmission::Skipped);
     };
     let fresh_tip = fresh_tip?;
     let tip = block_height_from_u64(fresh_tip.height, "released resubmission tip")?;
@@ -502,7 +517,7 @@ pub(crate) async fn resubmit_released_transactions(
     )
     .await;
     let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
-        return Ok(None);
+        return Ok(ReleasedResubmission::Skipped);
     };
     match relation? {
         RefreshedTipRelation::ServerBehind => {
@@ -514,24 +529,32 @@ pub(crate) async fn resubmit_released_transactions(
                 "released resubmission tip proved a reorg",
             ));
         }
-        RefreshedTipRelation::Unchanged
-        | RefreshedTipRelation::UnchangedUnverified
-        | RefreshedTipRelation::Advanced => {}
+        RefreshedTipRelation::Advanced => {
+            with_wallet_db_write_lock("sync_engine.update_chain_tip.released_resubmission", || {
+                db.update_chain_tip(tip)
+            })
+            .map_err(|e| {
+                SyncError::db(format!(
+                    "released resubmission update_chain_tip({tip}): {e}"
+                ))
+            })?;
+            return Ok(ReleasedResubmission::TipAdvanced(fresh_tip.height));
+        }
+        RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {}
     }
-    // This observation supplies the expiry boundary only. The normal sync
-    // reconciliation remains responsible for advancing or rewinding wallet state.
+    // The tip is unchanged, so the scanned state already reflects every block
+    // that could have mined the transaction; it supplies the expiry boundary.
     let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
-    Ok(Some(
-        crate::wallet::sync::resubmit_pending_transactions(
-            db_path,
-            lightwalletd_url,
-            client,
-            u32::from(tip),
-            &exclusions,
-            should_exit,
-        )
-        .await,
-    ))
+    crate::wallet::sync::resubmit_pending_transactions(
+        db_path,
+        lightwalletd_url,
+        client,
+        u32::from(tip),
+        &exclusions,
+        should_exit,
+    )
+    .await;
+    Ok(ReleasedResubmission::Resubmitted)
 }
 
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
@@ -3550,21 +3573,22 @@ async fn run_sync_impl(
                         .await?;
                         // This path completes without a post-batch pass, so a
                         // transaction released by a final status observation is
-                        // broadcast now against the validated tip.
+                        // broadcast now against the validated tip. If the chain
+                        // advanced, scan first: a new block may have mined it.
                         let ranges = if released {
                             db.suggest_scan_ranges()
                                 .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
                         } else {
                             Vec::new()
                         };
-                        resubmit_released_transactions(
+                        let outcome = resubmit_released_transactions(
                             released,
                             allow_resubmit,
                             &ranges,
                             db_data_path,
                             lightwalletd_url,
                             &mut client,
-                            &db,
+                            &mut db,
                             current_tip_height,
                             || {
                                 cancel.load(Ordering::Relaxed)
@@ -3572,6 +3596,11 @@ async fn run_sync_impl(
                             },
                         )
                         .await?;
+                        if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
+                            current_tip_height = fresh_height;
+                            completion_tip_validation_required = true;
+                            continue;
+                        }
                     }
                     if should_exit() {
                         return Ok(());
