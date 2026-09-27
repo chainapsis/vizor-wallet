@@ -474,6 +474,26 @@ fn recovery_resubmit_exclusions(
         .map_err(SyncError::db)
 }
 
+/// Both completion and post-batch resubmission use this handoff. Keep the
+/// durable status rows on every outcome except a verified unchanged tip.
+pub(crate) fn complete_verified_recovery_statuses(
+    db_path: &str,
+    ready: &HashSet<Vec<u8>>,
+    relation: RefreshedTipRelation,
+) -> Result<(), SyncError> {
+    if ready.is_empty() || relation != RefreshedTipRelation::Unchanged {
+        return Ok(());
+    }
+    with_wallet_db_write_lock("sync_engine.complete_verified_recovery_statuses", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
+        for txid in ready {
+            crate::wallet::sync::resolve_recovered_nonmined_status(&mut conn, txid)?;
+        }
+        Ok::<(), String>(())
+    })
+    .map_err(SyncError::db)
+}
+
 /// What [`resubmit_released_transactions`] did.
 #[derive(Debug)]
 pub(crate) enum ReleasedResubmission {
@@ -489,20 +509,20 @@ pub(crate) enum ReleasedResubmission {
     TipAdvanced(u64),
 }
 
-/// Enhancement can resolve the last status observation holding back a
-/// previously mined transaction's resubmission. A path that completes without
-/// reaching the post-batch pass broadcasts it here, rather than leaving it for
-/// a later block that may be past its expiry. `ranges` are the current scan
+/// Enhancement can observe a conclusive non-mined status for a previously
+/// mined transaction while retaining its status guard until tip validation.
+/// A path that completes without a post-batch pass broadcasts it here rather
+/// than leaving it for a later block that may be past its expiry. `ranges` are the current scan
 /// ranges, which keep the usual rewind-recovery exclusions in force. Refresh
 /// and validate the remote tip after enhancement; `tip_height` is only the
 /// prior validation baseline, never the expiry filter. Refresh/validation
 /// failures do not fall back to that stale height, and an advanced tip is
 /// returned for scanning rather than broadcast against. Equal height without
-/// a stored hash cannot rule out a reorg: requeue status work to protect later
-/// startup passes as well as skipping this immediate pass.
+/// a stored hash cannot rule out a reorg. Status work stays pending until tip
+/// identity is verified, including refresh errors and cancellation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resubmit_released_transactions(
-    released: bool,
+    ready: &HashSet<Vec<u8>>,
     allow_resubmit: bool,
     ranges: &[ScanRange],
     db_path: &str,
@@ -512,7 +532,7 @@ pub(crate) async fn resubmit_released_transactions(
     tip_height: u64,
     should_exit: impl Fn() -> bool,
 ) -> Result<ReleasedResubmission, SyncError> {
-    if !released || !allow_resubmit || should_exit() {
+    if ready.is_empty() || !allow_resubmit || should_exit() {
         return Ok(ReleasedResubmission::Skipped);
     }
     let fresh_tip = get_latest_block(client).await;
@@ -555,15 +575,11 @@ pub(crate) async fn resubmit_released_transactions(
             return Ok(ReleasedResubmission::TipAdvanced(fresh_tip.height));
         }
         RefreshedTipRelation::UnchangedUnverified => {
-            with_wallet_db_write_lock("sync_engine.requeue_unverified_recovery_status", || {
-                let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
-                crate::wallet::sync::requeue_recovered_status_work(&conn, u32::from(tip))
-            })
-            .map_err(SyncError::db)?;
             return Ok(ReleasedResubmission::Skipped);
         }
         RefreshedTipRelation::Unchanged => {}
     }
+    complete_verified_recovery_statuses(db_path, ready, RefreshedTipRelation::Unchanged)?;
     // The tip's height and hash match, so the scanned state reflects every block
     // that could have mined the transaction; it supplies the expiry boundary.
     let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
@@ -2073,7 +2089,7 @@ fn tip_rpc_result_unless_exiting<T>(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RefreshedTipRelation {
+pub(crate) enum RefreshedTipRelation {
     Unchanged,
     UnchangedUnverified,
     Advanced,
@@ -3597,14 +3613,14 @@ async fn run_sync_impl(
                         // transaction released by a final status observation is
                         // broadcast now against the validated tip. If the chain
                         // advanced, scan first: a new block may have mined it.
-                        let ranges = if released {
+                        let ranges = if !released.is_empty() {
                             db.suggest_scan_ranges()
                                 .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
                         } else {
                             Vec::new()
                         };
                         let outcome = resubmit_released_transactions(
-                            released,
+                            &released,
                             allow_resubmit,
                             &ranges,
                             db_data_path,
@@ -4127,7 +4143,8 @@ async fn run_sync_impl(
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+        let ready =
+            run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -4272,6 +4289,7 @@ async fn run_sync_impl(
                 // above only when its DB update succeeded; lower or
                 // divergent responses cannot reach this broadcast path.
                 if allow_resubmit {
+                    complete_verified_recovery_statuses(db_data_path, &ready, relation)?;
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         lightwalletd_url,

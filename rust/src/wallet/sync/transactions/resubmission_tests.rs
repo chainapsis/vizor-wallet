@@ -68,7 +68,7 @@ fn add_recovery_evidence(
 
 fn queue_status(conn: &rusqlite::Connection, txid: &[u8], kind: i64) {
     conn.execute(
-        "INSERT INTO tx_retrieval_queue VALUES (?1, ?2)",
+        "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, ?2)",
         rusqlite::params![txid, kind],
     )
     .unwrap();
@@ -213,35 +213,6 @@ fn resubmit_evidence_is_transaction_scoped_and_deduplicated() {
     assert_resubmit_count(&db, 1);
     add_recovery_evidence(&conn, &txid, "sapling", Some(0));
     assert_resubmit_count(&db, 0);
-}
-
-#[test]
-fn resubmit_requeue_only_defers_previously_mined_candidates() {
-    let file = fresh_db();
-    let conn = rusqlite::Connection::open(file.path()).unwrap();
-    for (id, expiry) in [(1, 1_000_000), (2, 1_000_000), (3, 900_000)] {
-        let txid = fake_txid(id);
-        insert_row(&file, &txid, Some(&fake_raw()), None, Some(expiry), -1);
-        if id != 2 {
-            add_recovery_evidence(&conn, &txid, "sapling", Some(0));
-        }
-        queue_status(&conn, &txid, 1);
-    }
-    assert_eq!(requeue_recovered_status_work(&conn, 900_000).unwrap(), 1);
-    assert_eq!(requeue_recovered_status_work(&conn, 900_000).unwrap(), 0);
-    assert_eq!(
-        get_resubmittable_txs(file.path().to_str().unwrap(), 900_000).unwrap()[0].txid_bytes,
-        fake_txid(2)
-    );
-    assert_eq!(
-        conn.query_row(
-            "SELECT COUNT(*) FROM tx_retrieval_queue WHERE query_type = 1",
-            [],
-            |r| r.get::<_, i64>(0)
-        )
-        .unwrap(),
-        3
-    );
 }
 
 #[test]
@@ -453,7 +424,7 @@ async fn resubmit_rpc_guard_and_fail_closed() {
     let mut client = CompactTxStreamerClient::new(channel);
     let db = fresh_db();
     let path = db.path().to_str().unwrap();
-    let mut conn = rusqlite::Connection::open(path).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
     let mut txids = Vec::new();
     let mut raws = Vec::new();
     for lock_time in [0, 1] {
@@ -506,8 +477,34 @@ async fn resubmit_rpc_guard_and_fail_closed() {
         assert_eq!(stats.attempted, 0);
         assert!(requests.lock().unwrap().is_empty());
     }
-    // One resolved transaction and one still protected: only the former goes on wire.
-    assert!(resolve_recovered_nonmined_status(&mut conn, &txids[0]).unwrap());
+    // The ordinary post-batch pass uses the same verified handoff. A status
+    // observation alone cannot release either guarded transaction on a new or
+    // unverified chain. Unrelated pending status work must never be completed.
+    use crate::wallet::sync_engine::{complete_verified_recovery_statuses, RefreshedTipRelation};
+    let ready = HashSet::from([txids[0].clone()]);
+    for relation in [
+        RefreshedTipRelation::UnchangedUnverified,
+        RefreshedTipRelation::Advanced,
+        RefreshedTipRelation::Reorg,
+        RefreshedTipRelation::ServerBehind,
+    ] {
+        complete_verified_recovery_statuses(path, &ready, relation).unwrap();
+        let stats = crate::wallet::sync::resubmit_pending_transactions(
+            path,
+            &url,
+            &mut client,
+            900_000,
+            &HashSet::new(),
+            || false,
+        )
+        .await;
+        assert_eq!(stats.attempted, 0);
+        assert!(requests.lock().unwrap().is_empty());
+    }
+    complete_verified_recovery_statuses(path, &HashSet::new(), RefreshedTipRelation::Unchanged)
+        .unwrap();
+    assert!(has_recovered_status_work(&conn, &txids[0]).unwrap());
+    complete_verified_recovery_statuses(path, &ready, RefreshedTipRelation::Unchanged).unwrap();
     let stats = crate::wallet::sync::resubmit_pending_transactions(
         path,
         &url,
@@ -582,7 +579,7 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     let db = NamedTempFile::new().unwrap();
     let path = db.path().to_str().unwrap();
     populate_recovery_wallet(path, &txid, &raw);
-    let mut conn = rusqlite::Connection::open(path).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
     let mut wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
     wallet
         .update_chain_tip(BlockHeight::from_u32(999_999))
@@ -606,7 +603,11 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     macro_rules! resubmit {
         ($released:expr, $allow:expr, $exit:expr) => {
             crate::wallet::sync_engine::resubmit_released_transactions(
-                $released,
+                &if $released {
+                    HashSet::from([txid.clone()])
+                } else {
+                    HashSet::new()
+                },
                 $allow,
                 &[],
                 path,
@@ -625,8 +626,8 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     ));
     assert!(requests.lock().unwrap().is_empty());
 
-    // Enhancement resolves the final status observation, releasing the guard.
-    assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
+    // Enhancement observes a conclusive status but retains the durable guard.
+    assert!(has_recovered_status_work(&conn, &txid).unwrap());
     assert!(
         matches!(
             resubmit!(true, false, || false).await.unwrap(),
@@ -646,21 +647,11 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     // no stored tip hash. The released, unexpired candidate must stay private.
     conn.execute("DELETE FROM blocks WHERE height = 999999", [])
         .unwrap();
-    assert_eq!(get_resubmittable_txs(path, 999_999).unwrap().len(), 1);
+    assert!(get_resubmittable_txs(path, 999_999).unwrap().is_empty());
     *tip_response.lock().unwrap() = Ok(BlockId {
         height: 999_999,
         hash: vec![0x22; 32],
     });
-    conn.execute_batch(
-        "CREATE TRIGGER reject_status_requeue BEFORE INSERT ON tx_retrieval_queue
-        WHEN NEW.query_type = 0 BEGIN SELECT RAISE(ABORT, 'injected requeue failure'); END;",
-    )
-    .unwrap();
-    assert!(resubmit!(true, true, || false).await.is_err());
-    assert!(requests.lock().unwrap().is_empty());
-    conn.execute("DROP TRIGGER reject_status_requeue", [])
-        .unwrap();
-    calls.lock().unwrap().clear();
     assert!(matches!(
         resubmit!(true, true, || false).await.unwrap(),
         ReleasedResubmission::Skipped
@@ -696,8 +687,21 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     )
     .unwrap();
 
-    // Once identity is available, a conclusive status can release the guard.
-    assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
+    // A failed completion leaves suppression durable despite a verified tip.
+    *tip_response.lock().unwrap() = Ok(BlockId {
+        height: 999_999,
+        hash: vec![0x11; 32],
+    });
+    conn.execute_batch(
+        "CREATE TRIGGER reject_status_completion BEFORE DELETE ON tx_retrieval_queue
+        BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END;",
+    )
+    .unwrap();
+    assert!(resubmit!(true, true, || false).await.is_err());
+    assert!(requests.lock().unwrap().is_empty());
+    assert!(has_recovered_status_work(&conn, &txid).unwrap());
+    conn.execute("DROP TRIGGER reject_status_completion", [])
+        .unwrap();
 
     // Enhancement started at the last valid height, 999999. A block mined
     // during the drain must make expiry == refreshed tip ineligible immediately.
@@ -735,6 +739,7 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
         }
     }
 
+    queue_status(&conn, &txid, 0);
     // No stale-tip fallback for unavailable, lagging, divergent or malformed tips.
     for response in [
         Err(tonic::Status::unavailable("tip lookup failed")),
@@ -761,6 +766,20 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
         assert!(resubmit!(true, true, || false).await.is_err());
         assert!(requests.lock().unwrap().is_empty());
         assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+        let stats = crate::wallet::sync::resubmit_pending_transactions(
+            path,
+            &url,
+            &mut client,
+            999_999,
+            &HashSet::new(),
+            || false,
+        )
+        .await;
+        assert_eq!(
+            stats.attempted, 0,
+            "a retry must retain suppression after tip failure"
+        );
+        assert!(requests.lock().unwrap().is_empty());
     }
 
     *tip_response.lock().unwrap() = Ok(BlockId {
@@ -782,6 +801,20 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     ));
     assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
     assert!(requests.lock().unwrap().is_empty());
+    let stats = crate::wallet::sync::resubmit_pending_transactions(
+        path,
+        &url,
+        &mut client,
+        999_999,
+        &HashSet::new(),
+        || false,
+    )
+    .await;
+    assert_eq!(
+        stats.attempted, 0,
+        "the next sync must retain suppression after cancellation"
+    );
+    assert!(requests.lock().unwrap().is_empty());
     // Unlike the expiry boundary above, this transaction is still valid at
     // the new tip. A block arriving during enhancement could have mined it:
     // promotion must queue scanning without revealing it via SendTransaction.
@@ -794,11 +827,17 @@ async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     )
     .unwrap();
     assert!(wallet.suggest_scan_ranges().unwrap().is_empty());
+    conn.execute(
+        "DELETE FROM tx_retrieval_queue WHERE txid = ?1 AND query_type = 0",
+        [&txid],
+    )
+    .unwrap();
     assert_eq!(
         get_resubmittable_txs(path, 999_999).unwrap().len(),
         1,
         "expiry alone must not suppress this candidate"
     );
+    queue_status(&conn, &txid, 0);
     *tip_response.lock().unwrap() = Ok(BlockId {
         height: 999_999,
         hash: vec![0x11; 32],

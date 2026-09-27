@@ -3,8 +3,11 @@
 Automatic resubmission excludes a previously mined transaction while status work
 (`tx_retrieval_queue.query_type = 0`) remains pending. Candidate selection checks
 this atomically in SQL. Payload work (`query_type = 1`) does not activate the
-guard. Failed or inconclusive status retrieval retains status work; a conclusive
-non-mined result completes it and permits the normal resubmission policy.
+guard. Failed or inconclusive status retrieval retains status work. Enhancement
+returns the txids with conclusive non-mined observations without deleting their
+status rows. Both post-batch and queue-drain resubmission complete only those
+requests after validating an unchanged tip identity. Errors, cancellation, and
+callers that do not reach resubmission leave the guard intact.
 
 Durable evidence consists of a positioned received note or an entry in
 `vizor_mined_transactions`. The latter covers sends without change, including
@@ -22,8 +25,8 @@ locators during rewind, so neither is sufficient to infer past mining.
 
 After final status recovery, immediate resubmission requires the refreshed tip
 height and hash to match the stored tip. Equal height without a stored hash
-requeues status work for eligible previously mined transactions before skipping
-the pass, preserving suppression across subsequent sync runs. An advanced tip queues scanning before resubmission and resets progress
+retains status work and skips the immediate pass, preserving suppression across
+subsequent sync runs. An advanced tip queues scanning before resubmission and resets progress
 totals to the newly queued work, including when the prior queue was empty.
 
 These guards do not restrict the initial broadcast of a new transaction.

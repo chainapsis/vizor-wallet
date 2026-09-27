@@ -1802,29 +1802,32 @@ fn resubmission_candidate_sql(columns: &str) -> String {
     )
 }
 
-/// Restore durable suppression when status resolved but tip identity did not.
-/// The caller holds the wallet write lock. This single statement requeues only
-/// currently eligible transactions with prior mined evidence, preserving payload
-/// work and leaving genuinely unmined transactions alone.
-pub(crate) fn requeue_recovered_status_work(
+/// Whether a status request protects an outbound transaction with prior mined evidence.
+/// This read does not retire the guard; callers retain it until tip validation.
+pub(crate) fn has_recovered_status_work(
     conn: &rusqlite::Connection,
-    current_height: u32,
-) -> Result<usize, String> {
-    conn.execute(
+    txid: &[u8],
+) -> Result<bool, String> {
+    conn.query_row(
         &format!(
-            "INSERT INTO tx_retrieval_queue (txid, query_type)
-             {} AND EXISTS (SELECT 1 FROM transactions t
-                            WHERE t.txid = v.txid AND {MINED_TRANSACTION_EVIDENCE})",
-            resubmission_candidate_sql("v.txid, 0")
+            "SELECT EXISTS (
+            SELECT 1 FROM transactions t
+            JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
+            WHERE t.txid = ?1 AND t.mined_height IS NULL AND {MINED_TRANSACTION_EVIDENCE}
+              AND EXISTS (SELECT 1 FROM v_transactions v WHERE v.txid = t.txid
+                          AND v.account_balance_delta < 0 AND v.raw IS NOT NULL)
+        )"
         ),
-        [current_height],
+        [txid],
+        |row| row.get(0),
     )
-    .map_err(|e| format!("Recovery status requeue: {e}"))
+    .map_err(|e| format!("Recovery status evidence: {e}"))
 }
 
 /// Complete a conclusive non-mined status observation for the rewind recovery
-/// case. The caller holds the wallet write lock. Rechecking evidence, recording
-/// the observation, and completing only status work share one write transaction.
+/// case after tip identity validation. The caller holds the wallet write lock.
+/// Rechecking evidence, recording the observation, and completing only status
+/// work share one write transaction.
 /// Returns false when the normal backend status policy should handle the txid.
 pub(crate) fn resolve_recovered_nonmined_status(
     conn: &mut rusqlite::Connection,
@@ -1833,22 +1836,7 @@ pub(crate) fn resolve_recovered_nonmined_status(
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| format!("Recovery status transaction: {e}"))?;
-    let guarded: bool = tx
-        .query_row(
-            &format!(
-                "SELECT EXISTS (
-            SELECT 1 FROM transactions t
-            JOIN tx_retrieval_queue q ON q.txid = t.txid AND q.query_type = 0
-            WHERE t.txid = ?1 AND t.mined_height IS NULL AND {MINED_TRANSACTION_EVIDENCE}
-              AND EXISTS (SELECT 1 FROM v_transactions v WHERE v.txid = t.txid
-                          AND v.account_balance_delta < 0 AND v.raw IS NOT NULL)
-        )"
-            ),
-            [txid],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Recovery status evidence: {e}"))?;
-    if !guarded {
+    if !has_recovered_status_work(&tx, txid)? {
         return Ok(false);
     }
     // Match the pinned backend's chain_tip_height: scan ranges are end-exclusive.

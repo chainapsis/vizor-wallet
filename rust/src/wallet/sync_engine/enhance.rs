@@ -44,7 +44,8 @@ use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{
-    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+    SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
 
@@ -91,9 +92,9 @@ pub(super) fn queue_stored_transactions(
     Ok(())
 }
 
-/// Only status observations may retire the recovery guard. Payload requests
-/// remain independent, even when both requests refer to the same transaction.
-fn resolve_recovery_status(
+/// Recognize a conclusive status observation without retiring its durable guard.
+/// Payload work is independent; tip validation must precede status completion.
+fn conclusive_recovery_status(
     db_path: &str,
     req: &TransactionDataRequest,
     lookup: &Result<zcash_client_backend::proto::service::RawTransaction, Status>,
@@ -112,11 +113,9 @@ fn resolve_recovery_status(
         // observations go through the backend to restore mined_height.
         _ => return Ok(false),
     }
-    with_wallet_db_write_lock("enhance.resolve_recovery_status", || {
-        let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
-        crate::wallet::sync::resolve_recovered_nonmined_status(&mut conn, txid.as_ref())
-    })
-    .map_err(SyncError::db)
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    crate::wallet::sync::has_recovered_status_work(&conn, txid.as_ref()).map_err(SyncError::db)
 }
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
@@ -128,17 +127,17 @@ fn resolve_recovery_status(
 /// transient network failures bubble up as `SyncError::Network` so the
 /// outer sync retry path can recover without deleting the request.
 ///
-/// Returns whether a recovery status observation was resolved. That removes
-/// the guard holding a previously mined transaction back from resubmission, so
-/// a caller that will not reach the post-batch resubmit pass must run one.
+/// Returns transactions with conclusive non-mined status observations. Their
+/// status rows remain pending until the caller validates tip identity. Errors,
+/// cancellation, and callers that do not resubmit therefore retain suppression.
 pub(super) async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    let mut released_resubmission = false;
+) -> Result<HashSet<Vec<u8>>, SyncError> {
+    let mut ready_resubmission = HashSet::new();
     let mut failed_txids: HashSet<String> = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
@@ -167,13 +166,16 @@ pub(super) async fn run_enhancement(
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
-                    if failed_txids.contains(&txid_str) {
+                    if failed_txids.contains(&txid_str)
+                        || (matches!(req, TransactionDataRequest::GetStatus(_))
+                            && ready_resubmission.contains(txid.as_ref().as_slice()))
+                    {
                         continue;
                     }
 
                     let lookup = lwd::get_transaction(client, txid.as_ref().to_vec()).await;
-                    if resolve_recovery_status(db_path, req, &lookup)? {
-                        released_resubmission = true;
+                    if conclusive_recovery_status(db_path, req, &lookup)? {
+                        ready_resubmission.insert(txid.as_ref().to_vec());
                         continue;
                     }
                     match lookup {
@@ -280,14 +282,14 @@ pub(super) async fn run_enhancement(
         loop {
             let event = tokio::select! {
                 biased;
-                _ = super::watch_for_exit(should_exit) => return Ok(released_resubmission),
+                _ = super::watch_for_exit(should_exit) => return Ok(ready_resubmission),
                 event = reads.next() => event,
             };
             let Some((mut read, result)) = event else {
                 break;
             };
             if should_exit() {
-                return Ok(released_resubmission);
+                return Ok(ready_resubmission);
             }
             let req = read.request().clone();
             match result? {
@@ -302,7 +304,7 @@ pub(super) async fn run_enhancement(
                     };
                     let fee_result = tokio::select! {
                         biased;
-                        _ = super::watch_for_exit(should_exit) => return Ok(released_resubmission),
+                        _ = super::watch_for_exit(should_exit) => return Ok(ready_resubmission),
                         result = fill_missing_fee(client, db_path, &tx) => result,
                     };
                     if let Err(error) = fee_result {
@@ -331,7 +333,7 @@ pub(super) async fn run_enhancement(
             reads.resume(read);
         }
     }
-    Ok(released_resubmission)
+    Ok(ready_resubmission)
 }
 
 /// Parse and store before allowing the caller to acknowledge an address range.
@@ -692,7 +694,7 @@ mod tests {
                 } else {
                     TransactionDataRequest::Enhancement(txid)
                 };
-                let result = resolve_recovery_status(path, &req, &lookup);
+                let result = conclusive_recovery_status(path, &req, &lookup);
                 if invalid && status_request {
                     assert!(result.is_err());
                 } else {
@@ -705,7 +707,10 @@ mod tests {
                         |r| r.get(0),
                     )
                     .unwrap();
-                assert_eq!(remaining, i64::from(!(resolved && status_request)));
+                assert_eq!(
+                    remaining, 1,
+                    "tip validation must precede status completion"
+                );
                 let dependency: i64 = conn.query_row("SELECT dependent_transaction_id FROM tx_retrieval_queue WHERE query_type = 1", [], |r| r.get(0)).unwrap();
                 assert_eq!(dependency, 17);
             }
