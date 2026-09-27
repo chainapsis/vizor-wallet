@@ -468,7 +468,9 @@ fn recovery_resubmit_exclusions(
 /// reaching the post-batch pass broadcasts it here, rather than leaving it for
 /// a later block that may be past its expiry. `ranges` are the current scan
 /// ranges, which keep the usual rewind-recovery exclusions in force. Returns
-/// `None` when no pass ran.
+/// `None` when no pass ran. Refresh and validate the remote tip after enhancement;
+/// `tip_height` is only the prior validation baseline, never the expiry filter.
+/// Refresh/validation failures do not fall back to that stale height.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resubmit_released_transactions(
     released: bool,
@@ -477,13 +479,47 @@ pub(crate) async fn resubmit_released_transactions(
     db_path: &str,
     lightwalletd_url: &str,
     client: &mut CompactTxStreamerClient<Channel>,
+    db: &WalletDatabase,
     tip_height: u64,
     should_exit: impl Fn() -> bool,
 ) -> Result<Option<crate::wallet::sync::ResubmitStats>, SyncError> {
     if !released || !allow_resubmit || should_exit() {
         return Ok(None);
     }
-    let tip = block_height_from_u64(tip_height, "released resubmission tip")?;
+    let fresh_tip = get_latest_block(client).await;
+    let Some(fresh_tip) = tip_rpc_result_unless_exiting(fresh_tip, should_exit()) else {
+        return Ok(None);
+    };
+    let fresh_tip = fresh_tip?;
+    let tip = block_height_from_u64(fresh_tip.height, "released resubmission tip")?;
+    let stored_hash = stored_hash_for_refreshed_tip(db, tip_height, fresh_tip.height)?;
+    let relation = classify_refreshed_tip_with_fallback(
+        client,
+        tip_height,
+        stored_hash,
+        fresh_tip.height,
+        &fresh_tip.hash,
+    )
+    .await;
+    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+        return Ok(None);
+    };
+    match relation? {
+        RefreshedTipRelation::ServerBehind => {
+            return Err(lagging_lightwalletd_tip(tip_height, fresh_tip.height));
+        }
+        RefreshedTipRelation::Reorg => {
+            return Err(SyncError::continuity(
+                fresh_tip.height,
+                "released resubmission tip proved a reorg",
+            ));
+        }
+        RefreshedTipRelation::Unchanged
+        | RefreshedTipRelation::UnchangedUnverified
+        | RefreshedTipRelation::Advanced => {}
+    }
+    // This observation supplies the expiry boundary only. The normal sync
+    // reconciliation remains responsible for advancing or rewinding wallet state.
     let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
     Ok(Some(
         crate::wallet::sync::resubmit_pending_transactions(
@@ -3528,6 +3564,7 @@ async fn run_sync_impl(
                             db_data_path,
                             lightwalletd_url,
                             &mut client,
+                            &db,
                             current_tip_height,
                             || {
                                 cancel.load(Ordering::Relaxed)

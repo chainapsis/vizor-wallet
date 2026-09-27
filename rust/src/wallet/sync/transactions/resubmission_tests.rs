@@ -177,8 +177,29 @@ fn resubmit_guard_schema_errors_fail_closed() {
     }
 }
 
-#[derive(Clone, Default)]
-struct CountingLightwalletd(std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>);
+#[derive(Clone)]
+struct CountingLightwalletd(
+    std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    std::sync::Arc<
+        std::sync::Mutex<Result<zcash_client_backend::proto::service::BlockId, tonic::Status>>,
+    >,
+    std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
+);
+
+impl Default for CountingLightwalletd {
+    fn default() -> Self {
+        Self(
+            Default::default(),
+            std::sync::Arc::new(std::sync::Mutex::new(Ok(
+                zcash_client_backend::proto::service::BlockId {
+                    height: 900_000,
+                    hash: vec![0x11; 32],
+                },
+            ))),
+            Default::default(),
+        )
+    }
+}
 
 impl tonic::server::NamedService for CountingLightwalletd {
     const NAME: &'static str = "cash.z.wallet.sdk.rpc.CompactTxStreamer";
@@ -200,19 +221,40 @@ impl tower_service::Service<http::Request<tonic::body::Body>> for CountingLightw
         use http_body_util::BodyExt;
         use prost::Message;
         let requests = self.0.clone();
+        let tip = self.1.clone();
+        let calls = self.2.clone();
         Box::pin(async move {
-            assert!(req.uri().path().ends_with("/SendTransaction"));
-            let body = req.into_body().collect().await.unwrap().to_bytes();
-            let raw =
-                zcash_client_backend::proto::service::RawTransaction::decode(&body[5..]).unwrap();
-            requests.lock().unwrap().push(raw.data);
-            // An empty protobuf is SendResponse { error_code: 0, error_message: "" }.
+            let message = if req.uri().path().ends_with("/GetLatestBlock") {
+                calls.lock().unwrap().push("tip");
+                match tip.lock().unwrap().clone() {
+                    Ok(tip) => tip.encode_to_vec(),
+                    Err(error) => {
+                        return Ok(http::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", (error.code() as u32).to_string())
+                            .body(tonic::body::Body::empty())
+                            .unwrap())
+                    }
+                }
+            } else {
+                assert!(req.uri().path().ends_with("/SendTransaction"));
+                calls.lock().unwrap().push("send");
+                let body = req.into_body().collect().await.unwrap().to_bytes();
+                let raw = zcash_client_backend::proto::service::RawTransaction::decode(&body[5..])
+                    .unwrap();
+                requests.lock().unwrap().push(raw.data);
+                // Empty protobuf: SendResponse { error_code: 0, error_message: "" }.
+                Vec::new()
+            };
+            let mut framed = vec![0];
+            framed.extend_from_slice(&(message.len() as u32).to_be_bytes());
+            framed.extend_from_slice(&message);
             let mut trailers = http::HeaderMap::new();
             trailers.insert("grpc-status", http::HeaderValue::from_static("0"));
             let frames = futures::stream::iter([
-                Ok::<_, std::convert::Infallible>(hyper::body::Frame::data(
-                    bytes::Bytes::from_static(&[0, 0, 0, 0, 0]),
-                )),
+                Ok::<_, std::convert::Infallible>(hyper::body::Frame::data(bytes::Bytes::from(
+                    framed,
+                ))),
                 Ok(hyper::body::Frame::trailers(trailers)),
             ]);
             Ok(http::Response::builder()
@@ -322,7 +364,7 @@ async fn resubmit_rpc_guard_and_fail_closed() {
 /// ranges, so no post-batch pass follows) must still put the released
 /// transaction on the wire in the same sync.
 #[tokio::test]
-async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
+async fn released_status_resubmission_refreshes_tip_before_expiry_filter() {
     use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
     use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -331,6 +373,8 @@ async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
     let url = format!("http://{}", listener.local_addr().unwrap());
     let service = CountingLightwalletd::default();
     let requests = service.0.clone();
+    let tip_response = service.1.clone();
+    let calls = service.2.clone();
     let incoming = futures::stream::unfold(listener, |listener| async {
         Some((listener.accept().await.map(|(socket, _)| socket), listener))
     });
@@ -348,6 +392,11 @@ async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
     let db = fresh_db();
     let path = db.path().to_str().unwrap();
     let mut conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute("CREATE TABLE blocks (height INTEGER, hash BLOB)", [])
+        .unwrap();
+    conn.execute("INSERT INTO blocks VALUES (999999, ?1)", [vec![0x11; 32]])
+        .unwrap();
+    let wallet = open_wallet_db(path, WalletNetwork::Test).unwrap();
     let tx = TransactionData::<Authorized>::from_parts(
         TxVersion::V5,
         BranchId::Nu5,
@@ -368,7 +417,7 @@ async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
     add_recovery_evidence(&conn, &txid, "orchard", Some(0));
 
     macro_rules! resubmit {
-        ($released:expr, $allow:expr) => {
+        ($released:expr, $allow:expr, $exit:expr) => {
             crate::wallet::sync_engine::resubmit_released_transactions(
                 $released,
                 $allow,
@@ -376,26 +425,95 @@ async fn released_status_guard_is_resubmitted_without_a_post_batch_pass() {
                 path,
                 &url,
                 &mut client,
-                900_000,
-                || false,
+                &wallet,
+                999_999,
+                $exit,
             )
         };
     }
     // Still guarded: nothing released, nothing broadcast.
-    assert!(resubmit!(false, true).await.unwrap().is_none());
+    assert!(resubmit!(false, true, || false).await.unwrap().is_none());
     assert!(requests.lock().unwrap().is_empty());
 
     // Enhancement resolves the final status observation, releasing the guard.
     assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
     assert!(
-        resubmit!(true, false).await.unwrap().is_none(),
+        resubmit!(true, false, || false).await.unwrap().is_none(),
         "a sync that disallows resubmission never broadcasts"
     );
     assert!(requests.lock().unwrap().is_empty());
 
-    let stats = resubmit!(true, true).await.unwrap().expect("a pass ran");
-    assert_eq!(stats.succeeded, 1);
-    assert_eq!(*requests.lock().unwrap(), vec![raw]);
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "disabled passes do not fetch a tip"
+    );
+
+    use zcash_client_backend::proto::service::BlockId;
+    // Enhancement started at the last valid height, 999999. A block mined
+    // during the drain must make expiry == refreshed tip ineligible immediately.
+    for (height, expected_sends) in [(1_000_000, 0), (1_000_001, 0), (999_999, 1)] {
+        *tip_response.lock().unwrap() = Ok(BlockId {
+            height,
+            hash: vec![0x11; 32],
+        });
+        calls.lock().unwrap().clear();
+        requests.lock().unwrap().clear();
+        let stats = resubmit!(true, true, || false)
+            .await
+            .unwrap()
+            .expect("a pass ran");
+        assert_eq!(stats.succeeded, expected_sends, "refreshed height {height}");
+        assert_eq!(requests.lock().unwrap().len(), expected_sends as usize);
+        if expected_sends == 0 {
+            assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+        } else {
+            assert_eq!(*requests.lock().unwrap(), vec![raw.clone()]);
+            assert_eq!(*calls.lock().unwrap(), vec!["tip", "send"]);
+        }
+    }
+
+    // No stale-tip fallback for unavailable, lagging, divergent or malformed tips.
+    for response in [
+        Err(tonic::Status::unavailable("tip lookup failed")),
+        Ok(BlockId {
+            height: 999_998,
+            hash: vec![0x11; 32],
+        }),
+        Ok(BlockId {
+            height: 999_999,
+            hash: vec![0x22; 32],
+        }),
+        Ok(BlockId {
+            height: 999_999,
+            hash: vec![0x11; 31],
+        }),
+        Ok(BlockId {
+            height: u32::MAX as u64 + 1,
+            hash: vec![0x11; 32],
+        }),
+    ] {
+        *tip_response.lock().unwrap() = response;
+        calls.lock().unwrap().clear();
+        requests.lock().unwrap().clear();
+        assert!(resubmit!(true, true, || false).await.is_err());
+        assert!(requests.lock().unwrap().is_empty());
+        assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+    }
+
+    *tip_response.lock().unwrap() = Ok(BlockId {
+        height: 999_999,
+        hash: vec![0x11; 32],
+    });
+    calls.lock().unwrap().clear();
+    assert!(resubmit!(true, true, || true).await.unwrap().is_none());
+    assert!(calls.lock().unwrap().is_empty());
+    // Cancellation or mode-change during the refresh prevents the following send.
+    assert!(resubmit!(true, true, || !calls.lock().unwrap().is_empty())
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(*calls.lock().unwrap(), vec!["tip"]);
+    assert!(requests.lock().unwrap().is_empty());
     server.abort();
 }
 
