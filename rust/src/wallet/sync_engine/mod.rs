@@ -54,6 +54,7 @@ mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+mod swap_private;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
@@ -2674,6 +2675,10 @@ async fn run_payment_link_claim_sync_once(
                     ));
                 }
                 RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
+                    swap_private::run(&mut db, network, &should_exit).await?;
+                    if should_exit() {
+                        return Ok(());
+                    }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     if allow_resubmit {
                         let exclusions =
@@ -3486,6 +3491,10 @@ async fn run_sync_impl(
                     {
                         prefetch = None;
                         continue;
+                    }
+                    swap_private::run(&mut db, network, &should_exit).await?;
+                    if should_exit() {
+                        return Ok(());
                     }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;

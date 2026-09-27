@@ -1,8 +1,8 @@
 # Swap receiving software-wallet POC
 
 This build exercises derived refund and incoming keys through normal Vizor scanning,
-transaction enhancement, restore, and software spending. Receiver-directory PIR,
-key retirement, and Keystone are later milestones. All registered keys stay active
+transaction enhancement, restore, and software spending. The next test build adds [private recovery](near-swap-private-recovery-poc.md).
+Key retirement and Keystone remain later milestones. All registered keys stay active
 in this POC, including after NEAR reports a terminal state.
 
 ## Build

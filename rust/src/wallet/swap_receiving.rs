@@ -20,6 +20,11 @@ use super::{
     network::WalletNetwork,
 };
 
+/// Compile-time opt-in for an isolated recovery build. Services use SSH loopback tunnels.
+pub(crate) fn private_recovery_enabled() -> bool {
+    ENABLED && option_env!("VIZOR_SWAP_PRIVATE_RECOVERY") == Some("1")
+}
+
 pub(crate) const ENABLED: bool = cfg!(feature = "swap-receiving-poc");
 const RECEIVE_LOOKAHEAD: u32 = 20;
 const MAX_RESERVATION_TIP_LAG: u64 = 10;
@@ -133,6 +138,18 @@ pub(crate) fn maintain_recovery(
             || super::keys::hardware_signer_kind(details.source()).is_some()
         {
             continue;
+        }
+        if private_recovery_enabled() {
+            db.enable_private_swap_recovery(account)
+                .map_err(|e| e.to_string())?;
+            // Discover keys after the ordinary restore so the POC exercises directory recovery.
+            let scanned = db
+                .block_fully_scanned()
+                .map_err(|e| e.to_string())?
+                .map(|b| b.block_height());
+            if scanned.is_none() || scanned != db.chain_height().map_err(|e| e.to_string())? {
+                continue;
+            }
         }
         db.recover_swap_refund_memos(account)
             .map_err(|e| e.to_string())?;
@@ -251,7 +268,14 @@ mod tests {
         db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
         maintain_recovery(&mut db, network).unwrap();
         let keys = db.get_swap_receiving_keys(account).unwrap();
-        assert_eq!(keys.len(), RECEIVE_LOOKAHEAD as usize);
+        assert_eq!(
+            keys.len(),
+            if private_recovery_enabled() {
+                0
+            } else {
+                RECEIVE_LOOKAHEAD as usize
+            }
+        );
         assert!(keys.iter().all(|key| !key.advances_allocation()));
         let error = reserve(path, network, &uuid, true, 110).unwrap_err();
         assert!(error.contains("Finish wallet sync"), "{error}");

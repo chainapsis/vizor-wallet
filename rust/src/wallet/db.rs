@@ -11,7 +11,11 @@ use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
 
 fn enhancement_mode() -> EnhancementMode {
-    EnhancementMode::Standard
+    if super::swap_receiving::private_recovery_enabled() {
+        EnhancementMode::PrivateIronwood
+    } else {
+        EnhancementMode::Standard
+    }
 }
 
 use crate::wallet::network::WalletNetwork;
