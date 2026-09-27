@@ -1933,19 +1933,27 @@ void main() {
     ]);
   });
 
-  testWidgets('failed Pay activity skips the unused full-history fee lookup', (
+  testWidgets('refunded Pay activity shows refund once and skips fee lookup', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
     const depositDisplayOrder =
         'ccdd00112233445566778899aabbccddeeff00112233445566778899aabbeeff';
     final requests = <({String accountUuid, String walletTxid})>[];
-    final payIntent = _persistedIntent(
-      id: 'pay-failed-no-fee-content',
-      txHash: null,
-      originChainTxHash: depositDisplayOrder,
-      status: SwapIntentStatus.failed,
-    ).copyWith(payMode: true);
+    final payIntent =
+        _persistedIntent(
+          id: 'pay-failed-no-fee-content',
+          txHash: null,
+          originChainTxHash: depositDisplayOrder,
+          status: SwapIntentStatus.failed,
+        ).copyWith(
+          payMode: true,
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '1.5000 ZEC',
+            refundedAmountText: '1.4999 ZEC',
+            recordedRefundFeeText: '0.0001 ZEC',
+          ),
+        );
 
     await tester.pumpWidget(
       _routerHarness(
@@ -1967,9 +1975,70 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('pay_activity_status_content')),
-      findsNothing,
+      findsOneWidget,
     );
+    expect(find.text('Payment refunded'), findsOneWidget);
+    expect(find.text('Refunded'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_status_amount_row')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_status_recipient_row')),
+      findsOneWidget,
+    );
+    expect(find.text('Recipient gets'), findsNothing);
+    expect(find.text('New address'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsOneWidget);
+    expect(find.text('1.4999 ZEC'), findsOneWidget);
+    expect(find.text('Refund fee'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Rate'), findsNothing);
     expect(requests, isEmpty);
+  });
+
+  testWidgets('failed Pay activity keeps the Pay amount and recipient', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final payIntent =
+        _persistedIntent(
+          id: 'pay-failed-without-refund',
+          txHash: null,
+          status: SwapIntentStatus.failed,
+        ).copyWith(
+          payMode: true,
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '1.5000 ZEC',
+            refundedAmountText: '0 ZEC',
+          ),
+        );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation:
+              '/activity/swap/pay-failed-without-refund?from=activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [payIntent]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pay_activity_status_content')),
+      findsOneWidget,
+    );
+    expect(find.text('Payment failed'), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay_status_amount_row')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pay_status_recipient_row')),
+      findsOneWidget,
+    );
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsNothing);
   });
 
   testWidgets('status details render address book labels with addresses', (
@@ -5962,7 +6031,7 @@ void main() {
     await _openActivityDetail(tester, 'swap-refund');
 
     expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
-    expect(find.text('Swap failed'), findsWidgets);
+    expect(find.text('Swap refunded'), findsOneWidget);
     expect(find.text('Funds refunded'), findsNothing);
     expect(find.text('Refund complete'), findsNothing);
     expect(
@@ -6313,7 +6382,7 @@ void main() {
     expect(find.text('Guaranteed minimum'), findsNothing);
   });
 
-  testWidgets('failed swap with a recorded refund shows the actual refund', (
+  testWidgets('failed provider status with a refund displays as refunded', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -6324,6 +6393,7 @@ void main() {
           stagingAddress: 'u1failed-recipient',
         ).copyWith(
           status: SwapIntentStatus.failed,
+          providerStatusRaw: 'FAILED',
           oneClickRefundTo: '0xusdc-refund-address',
           totalFeesText: '0.01794 USDC',
           providerRefundInfo: const SwapProviderRefundInfo(
@@ -6348,6 +6418,13 @@ void main() {
     await tester.pumpAndSettle();
     await _openActivityDetail(tester, 'failed-refunded-deposit');
 
+    expect(find.text('Swap refunded'), findsOneWidget);
+    expect(find.text('Refunded'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+    expect(find.text('Deposit amount'), findsOneWidget);
+    expect(find.text('Expected to receive'), findsOneWidget);
+    expect(find.textContaining('Refund to:'), findsOneWidget);
+    expect(find.text('Refund to'), findsNothing);
     expect(find.text('Refunded amount'), findsOneWidget);
     expect(find.text('2.2976 USDC'), findsOneWidget);
     expect(find.text('Refund fee'), findsOneWidget);

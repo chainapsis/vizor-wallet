@@ -1,6 +1,6 @@
 import '../../address_book/models/address_book_contact.dart';
 
-enum SwapStatusBadgeKind { liveQuote, completed, warning, failed }
+enum SwapStatusBadgeKind { liveQuote, completed, refunded, warning, failed }
 
 enum SwapStatusTab { progress, details }
 

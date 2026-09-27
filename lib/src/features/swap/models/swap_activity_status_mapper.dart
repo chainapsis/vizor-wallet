@@ -20,7 +20,7 @@ class SwapActivityAccountDetail {
   final String? profilePictureId;
 }
 
-enum PayActivityStatusPhase { inProgress, completed }
+enum PayActivityStatusPhase { inProgress, completed, failed, refunded }
 
 /// Shared Pay status data backed by values whose meaning is known at the
 /// activity boundary. Provider/app fees are deliberately not repurposed as the
@@ -33,6 +33,9 @@ class PayActivityStatusPresentation {
     required this.txIdText,
     required this.convertedFromText,
     required this.transactionFeeText,
+    this.refundAddress,
+    this.refundedAmountText,
+    this.refundFeeText,
     this.txIdUri,
   });
 
@@ -42,15 +45,22 @@ class PayActivityStatusPresentation {
   final Uri? txIdUri;
   final String convertedFromText;
   final String transactionFeeText;
+  final String? refundAddress;
+  final String? refundedAmountText;
+  final String? refundFeeText;
 
   String get title => switch (phase) {
     PayActivityStatusPhase.inProgress => 'Pay in progress...',
     PayActivityStatusPhase.completed => 'Paid successfully',
+    PayActivityStatusPhase.failed => 'Payment failed',
+    PayActivityStatusPhase.refunded => 'Payment refunded',
   };
 
   String get statusLabel => switch (phase) {
     PayActivityStatusPhase.inProgress => 'In progress',
     PayActivityStatusPhase.completed => 'Completed',
+    PayActivityStatusPhase.failed => 'Failed',
+    PayActivityStatusPhase.refunded => 'Refunded',
   };
 }
 
@@ -187,11 +197,20 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
         ? _payIntentShowsPaidCopy(intent)
               ? 'You paid'
               : 'You pay'
+        : intent.status == SwapIntentStatus.refunded
+        ? 'Deposit amount'
         : "You're paying",
     receiveLabel: payMode
-        ? intent.status == SwapIntentStatus.complete
-              ? 'Recipient received'
-              : 'Recipient gets'
+        ? switch (intent.status) {
+            SwapIntentStatus.complete => 'Recipient received',
+            SwapIntentStatus.failed ||
+            SwapIntentStatus.refunded ||
+            SwapIntentStatus.expired ||
+            SwapIntentStatus.incompleteDeposit => 'Amount',
+            _ => 'Recipient gets',
+          }
+        : intent.status == SwapIntentStatus.refunded
+        ? 'Expected to receive'
         : "You're receiving",
     payDetailText: payDetailText,
     payDetailCopyText: payDetailCopyText,
@@ -227,7 +246,7 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
   final phase = payActivityStatusPhaseFor(intent.status);
   if (phase == null) return null;
 
-  final timestamp = phase == PayActivityStatusPhase.completed
+  final timestamp = phase != PayActivityStatusPhase.inProgress
       ? intent.completedAt ?? intent.updatedAt ?? intent.createdAt
       : intent.createdAt ?? intent.updatedAt;
   final depositAddress = _firstNonEmpty([intent.depositAddress]);
@@ -255,21 +274,33 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
             confirmedDepositFeeZatoshi > BigInt.zero
         ? ZecAmount.fromZatoshi(confirmedDepositFeeZatoshi).fee.toString()
         : 'Not reported',
+    refundAddress:
+        phase == PayActivityStatusPhase.failed ||
+            phase == PayActivityStatusPhase.refunded
+        ? intent.oneClickRefundTo?.trim()
+        : null,
+    refundedAmountText:
+        phase == PayActivityStatusPhase.refunded &&
+            intent.providerRefundInfo?.hasRecordedRefund == true
+        ? intent.providerRefundInfo!.refundedAmountText
+        : null,
+    refundFeeText: phase == PayActivityStatusPhase.refunded
+        ? intent.providerRefundInfo?.recordedRefundFeeText
+        : null,
   );
 }
 
 PayActivityStatusPhase? payActivityStatusPhaseFor(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => PayActivityStatusPhase.completed,
+    SwapIntentStatus.failed => PayActivityStatusPhase.failed,
+    SwapIntentStatus.refunded => PayActivityStatusPhase.refunded,
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit ||
     SwapIntentStatus.depositObserved ||
     SwapIntentStatus.processing ||
     SwapIntentStatus.providerStatusUnknown => PayActivityStatusPhase.inProgress,
-    SwapIntentStatus.incompleteDeposit ||
-    SwapIntentStatus.refunded ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.failed => null,
+    SwapIntentStatus.incompleteDeposit || SwapIntentStatus.expired => null,
   };
 }
 
@@ -278,16 +309,16 @@ String _swapActivityStatusTitle(SwapIntent intent) {
     return switch (intent.status) {
       SwapIntentStatus.complete => 'Payment complete',
       SwapIntentStatus.incompleteDeposit => 'Incomplete payment',
-      SwapIntentStatus.failed ||
-      SwapIntentStatus.refunded ||
-      SwapIntentStatus.expired => 'Payment failed',
+      SwapIntentStatus.refunded => 'Payment refunded',
+      SwapIntentStatus.failed || SwapIntentStatus.expired => 'Payment failed',
       _ => 'Payment in progress',
     };
   }
   return switch (intent.status) {
     SwapIntentStatus.complete => 'Swap completed',
     SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
-    SwapIntentStatus.failed || SwapIntentStatus.refunded => 'Swap failed',
+    SwapIntentStatus.refunded => 'Swap refunded',
+    SwapIntentStatus.failed => 'Swap failed',
     _ => 'Swap in progress...',
   };
 }
@@ -295,9 +326,9 @@ String _swapActivityStatusTitle(SwapIntent intent) {
 SwapStatusBadgeKind _swapActivityStatusBadgeKind(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => SwapStatusBadgeKind.completed,
+    SwapIntentStatus.refunded => SwapStatusBadgeKind.refunded,
     SwapIntentStatus.incompleteDeposit => SwapStatusBadgeKind.warning,
     SwapIntentStatus.failed ||
-    SwapIntentStatus.refunded ||
     SwapIntentStatus.expired => SwapStatusBadgeKind.failed,
     _ => SwapStatusBadgeKind.liveQuote,
   };
@@ -437,7 +468,9 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       : null;
   final terminal = intent.status.isTerminal;
   final failed =
-      _swapActivityStatusBadgeKind(intent.status) == SwapStatusBadgeKind.failed;
+      intent.status == SwapIntentStatus.failed ||
+      intent.status == SwapIntentStatus.refunded ||
+      intent.status == SwapIntentStatus.expired;
   final sendsZec = intent.direction != SwapDirection.externalToZec;
   final payMode = intent.payMode && sendsZec;
   final sourceTxLabel = payMode
@@ -502,7 +535,11 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           copyable: true,
           copyText: destinationChainTxHash,
         ),
-      if (failed && refundAddress != null && refundAddress.isNotEmpty)
+      if (failed &&
+          refundAddress != null &&
+          refundAddress.isNotEmpty &&
+          (intent.status != SwapIntentStatus.refunded ||
+              kAppFormFactor == AppFormFactor.mobile))
         ..._addressDetailRows(
           label: 'Refund to',
           address: refundAddress,
@@ -661,11 +698,12 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   ]);
   final recordedRefundFee = _recordedRefundFeeText(intent.providerRefundInfo);
   return [
-    SwapStatusDetailRowData(
-      label: paid ? 'You paid' : 'You pay',
-      value: intent.sellAmount,
-    ),
-    if (payRateText != null)
+    if (!failed)
+      SwapStatusDetailRowData(
+        label: paid ? 'You paid' : 'You pay',
+        value: intent.sellAmount,
+      ),
+    if (!failed && payRateText != null)
       SwapStatusDetailRowData(label: 'Rate', value: payRateText),
     if (!failed && feeText != null)
       SwapStatusDetailRowData(
@@ -673,6 +711,11 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
         value: feeText,
         help: true,
         helpTooltip: terminal ? swapTotalFeesTooltip : swapFeeTooltip,
+      ),
+    if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
+      SwapStatusDetailRowData(
+        label: 'Refunded amount',
+        value: intent.providerRefundInfo!.refundedAmountText!,
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),

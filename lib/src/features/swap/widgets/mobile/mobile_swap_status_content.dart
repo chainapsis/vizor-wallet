@@ -13,7 +13,7 @@ import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_activity_status_mapper.dart'
-    show SwapActivityStatusPresentation;
+    show PayActivityStatusPhase, SwapActivityStatusPresentation;
 import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_status_presentation.dart';
 import '../swap_asset_icon.dart';
@@ -469,6 +469,11 @@ class _MobileStatusChipRow extends StatelessWidget {
         'Completed',
         colors.text.positiveStrong,
       ),
+      SwapStatusBadgeKind.refunded => (
+        AppIcons.uturnUp,
+        'Refunded',
+        colors.text.positiveStrong,
+      ),
       SwapStatusBadgeKind.failed => (
         AppIcons.cross,
         'Failed',
@@ -584,6 +589,35 @@ class _MobilePaymentDetails extends StatelessWidget {
             help: true,
             helpTooltip: kTxFeeHelpTooltip,
           );
+    final terminalOutcome =
+        payStatus?.phase == PayActivityStatusPhase.failed ||
+        payStatus?.phase == PayActivityStatusPhase.refunded;
+    final outcomeRows = <SwapStatusDetailRowData>[
+      if (payStatus?.phase == PayActivityStatusPhase.failed)
+        SwapStatusDetailRowData(
+          label: 'Source amount',
+          value: payStatus!.convertedFromText,
+        ),
+      if (payStatus?.phase == PayActivityStatusPhase.refunded &&
+          payStatus?.refundedAmountText?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refunded amount',
+          value: payStatus!.refundedAmountText!,
+        ),
+      if (terminalOutcome && payStatus?.refundAddress?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refund to',
+          value: compactSwapAddress(payStatus!.refundAddress!),
+          copyable: true,
+          copyText: payStatus.refundAddress,
+        ),
+      if (payStatus?.phase == PayActivityStatusPhase.refunded &&
+          payStatus?.refundFeeText?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refund fee',
+          value: payStatus!.refundFeeText!,
+        ),
+    ];
     return Column(
       key: const ValueKey('mobile_pay_status_details'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -609,20 +643,25 @@ class _MobilePaymentDetails extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Container(height: 1, color: context.colors.border.regular),
         const SizedBox(height: AppSpacing.sm),
-        _MobileFinalDetailRow(
-          row: convertedFrom,
-          paymentMode: true,
-          trailingIcon: AppIcons.shieldKeyhole,
-          actionIconSize: 20,
-          actionIconColor: context.colors.icon.accent,
-        ),
-        if (displayFee != null)
+        if (terminalOutcome)
+          for (final row in outcomeRows)
+            _MobileFinalDetailRow(row: row, paymentMode: true)
+        else ...[
           _MobileFinalDetailRow(
-            row: displayFee,
+            row: convertedFrom,
             paymentMode: true,
+            trailingIcon: AppIcons.shieldKeyhole,
             actionIconSize: 20,
-            actionIconColor: context.colors.icon.muted,
+            actionIconColor: context.colors.icon.accent,
           ),
+          if (displayFee != null)
+            _MobileFinalDetailRow(
+              row: displayFee,
+              paymentMode: true,
+              actionIconSize: 20,
+              actionIconColor: context.colors.icon.muted,
+            ),
+        ],
       ],
     );
   }

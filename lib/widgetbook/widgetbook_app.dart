@@ -950,6 +950,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Completed',
                       builder: buildPayCompletedUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Failed / refunded',
+                      builder: buildPayFailedOrRefundedUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

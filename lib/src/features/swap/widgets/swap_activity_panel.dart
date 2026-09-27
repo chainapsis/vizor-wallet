@@ -915,7 +915,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     final shouldLoadPayDeposit =
         intent.payMode &&
         intent.direction == SwapDirection.zecToExternal &&
-        payActivityStatusPhaseFor(intent.status) != null &&
+        (payActivityStatusPhaseFor(intent.status) ==
+                PayActivityStatusPhase.inProgress ||
+            payActivityStatusPhaseFor(intent.status) ==
+                PayActivityStatusPhase.completed) &&
         recipientAddress != null &&
         recipientAddress.isNotEmpty &&
         depositTxid != null &&
@@ -979,9 +982,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 asset: presentation.receiveAsset,
                 amountText: trimSwapAmountText(presentation.receiveAmountText),
                 fiatText: presentation.receiveFiatText,
-                label: payStatus.phase == PayActivityStatusPhase.completed
-                    ? 'You paid'
-                    : "You're paying",
+                label: switch (payStatus.phase) {
+                  PayActivityStatusPhase.completed => 'You paid',
+                  PayActivityStatusPhase.failed ||
+                  PayActivityStatusPhase.refunded => 'Amount',
+                  PayActivityStatusPhase.inProgress => "You're paying",
+                },
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,

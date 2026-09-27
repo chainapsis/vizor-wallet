@@ -15,6 +15,8 @@ import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
+import '../src/features/swap/models/swap_activity_status_mapper.dart';
+import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
@@ -705,7 +707,159 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
 }
 
 Widget buildSwapStatusFailedUseCase(BuildContext context) {
+  final scenario = context.knobs.object.dropdown<_SwapFailureScenario>(
+    label: 'Outcome',
+    options: _SwapFailureScenario.values,
+    initialOption: _SwapFailureScenario.failedNoRefund,
+    labelBuilder: (scenario) => scenario.label,
+  );
+  return _SwapFailureBranchesPreview(scenario: scenario);
+}
+
+// The Figma capture keeps its fixed fixture; Widgetbook's knob previews the
+// live mapper branches without changing the comparison scenario.
+Widget buildSwapStatusFailedCaptureUseCase(BuildContext context) {
   return const _SwapStatusFailedUseCase();
+}
+
+enum _SwapFailureScenario {
+  failedNoRefund('Failed · no refund'),
+  refundedWithAmount('Refunded · amount recorded'),
+  refundedWithoutAmount('Refunded · amount missing');
+
+  const _SwapFailureScenario(this.label);
+
+  final String label;
+}
+
+class _SwapFailureBranchesPreview extends StatefulWidget {
+  const _SwapFailureBranchesPreview({required this.scenario});
+
+  final _SwapFailureScenario scenario;
+
+  @override
+  State<_SwapFailureBranchesPreview> createState() =>
+      _SwapFailureBranchesPreviewState();
+}
+
+class _SwapFailureBranchesPreviewState
+    extends State<_SwapFailureBranchesPreview> {
+  bool _modalOpen = false;
+
+  @override
+  void didUpdateWidget(covariant _SwapFailureBranchesPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scenario != widget.scenario) _modalOpen = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final intent = _swapFailureIntent(widget.scenario);
+    final presentation = swapActivityStatusPresentationForIntent(
+      const SwapState(
+        direction: SwapDirection.externalToZec,
+        amountText: '',
+        receiveAmountText: '',
+        destinationText: '',
+        externalAsset: SwapAsset.usdc,
+        reviewVisible: false,
+        intents: [],
+      ),
+      intent,
+    );
+    final recoveryInfo = swapDepositRecoveryInfoFor(intent);
+    final showRefundHelp =
+        intent.status == SwapIntentStatus.failed &&
+        intent.providerRefundInfo?.hasRecordedRefund != true &&
+        recoveryInfo != null;
+
+    return _SwapStatusPageFrame(
+      backLabel: 'Activity',
+      overlay: _modalOpen && showRefundHelp
+          ? AppPaneModalOverlay(
+              onDismiss: () => setState(() => _modalOpen = false),
+              child: SwapLateDepositModal(info: recoveryInfo, failedSwap: true),
+            )
+          : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SwapStatusPageContent(
+            title: presentation.title,
+            payAsset: presentation.payAsset,
+            receiveAsset: presentation.receiveAsset,
+            payAmountText: presentation.payAmountText,
+            receiveAmountText: presentation.receiveAmountText,
+            payLabel: presentation.payLabel,
+            receiveLabel: presentation.receiveLabel,
+            payDetailText: presentation.payDetailText,
+            receiveDetailText: presentation.receiveDetailText,
+            payDetailCopyText: presentation.payDetailCopyText,
+            receiveDetailCopyText: presentation.receiveDetailCopyText,
+            statusLabel: presentation.statusLabel,
+            badgeKind: presentation.badgeKind,
+            progressIndex: presentation.progressIndex,
+            steps: presentation.steps,
+            details: presentation.details,
+            paymentMode: presentation.paymentMode,
+            showTabs: presentation.showTabs,
+            onCopy: (_) {},
+          ),
+          if (showRefundHelp) ...[
+            const SizedBox(height: AppSpacing.sm),
+            SwapLateDepositPrompt(
+              failedSwap: true,
+              onTap: () => setState(() => _modalOpen = true),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+SwapIntent _swapFailureIntent(_SwapFailureScenario scenario) {
+  final refundedWithoutAmount =
+      scenario == _SwapFailureScenario.refundedWithoutAmount;
+  final hasRefund = scenario == _SwapFailureScenario.refundedWithAmount;
+  final rawStatus = refundedWithoutAmount
+      ? SwapIntentStatus.refunded
+      : SwapIntentStatus.failed;
+  final intent = SwapIntent(
+    id: 'widgetbook-swap-failure',
+    pair: 'USDC -> ZEC',
+    sellAmount: '2.3 USDC',
+    receiveEstimate: '0.0115 ZEC',
+    provider: 'NEAR Intents',
+    status: rawStatus,
+    nextAction: refundedWithoutAmount
+        ? 'Refund sent to your refund address'
+        : 'Swap failed',
+    providerStatusRaw: refundedWithoutAmount ? 'REFUNDED' : 'FAILED',
+    direction: SwapDirection.externalToZec,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: _recoveryInfo.depositAddress,
+    depositTxHash: '0x9f1c000000000000000000000000000000003b7e',
+    oneClickRefundTo: '0x123kjhc000000000000000000004x98g20',
+    providerRefundInfo: SwapProviderRefundInfo(
+      depositedAmountText: '2.3 USDC',
+      refundedAmountText: hasRefund
+          ? '2.2976 USDC'
+          : refundedWithoutAmount
+          ? null
+          : '0 USDC',
+      recordedRefundFeeText: hasRefund ? '0.0024 USDC' : null,
+    ),
+    fiatValueBasis: SwapFiatValueBasis(
+      sellUsdUnitPrice: 1,
+      receiveUsdUnitPrice: 200,
+      capturedAt: DateTime.utc(2026, 5, 20, 13, 20),
+    ),
+    depositDeadline: DateTime.utc(2026, 5, 20, 13, 20),
+    createdAt: DateTime.utc(2026, 5, 20, 11, 20),
+    completedAt: DateTime.utc(2026, 5, 20, 13, 20),
+  );
+  return swapIntentsFromRecords([SwapIntentRecord.fromIntent(intent)]).single;
 }
 
 class _SwapStatusFailedUseCase extends StatefulWidget {
