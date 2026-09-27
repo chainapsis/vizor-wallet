@@ -11,7 +11,7 @@ status/address-history paths retain their backend routing rules.
 
 Payload retrieval has one scheduler. wallet-libraries
 `transaction_enhancement_work()` routes every pending payload obligation, from one
-database snapshot, to exactly one transport, and `EnhancementSync` services that
+database snapshot, to exactly one transport, and `EnhancementSession` services that
 snapshot without making a second routing decision:
 
 | Mode | Transaction route | Emitted as | Transport |
@@ -20,7 +20,7 @@ snapshot without making a second routing decision:
 | PrivateIronwood | protected Ironwood-only | `Private` (query, rediscovery, suspension) | Enhance PIR by position |
 | PrivateIronwood | unclassified, mixed-pool, or LWD-required | `Public` | `GetTransaction(txid)` |
 
-Each `run_optional_enhancement` call makes bounded passes: rediscovery and
+Each payload-coordinator run makes bounded passes: rediscovery and
 private queries (while PIR is enabled and not deferred), then a reread, then the
 routed public requests. The reread lets an authenticated transparent flag or a
 rediscovered mixed shape reach lightwalletd in the same run. Passes stop once
@@ -28,22 +28,20 @@ the snapshot stops changing. A PIR failure defers private work for the
 session; it never creates or dispatches a public request, and public-only
 snapshots never contact the PIR service.
 
-`run_auxiliary_transaction_requests` services status observation and
-transparent-address history; `transaction_data_requests()` no longer carries a
-payload variant, so no second routing decision is possible. After each scan
-batch it runs before the scheduler, because address history can queue parent
-payloads. Status consumers use wallet-libraries `StatusReader` with Vizor's
-policy and transport sources. Status routing is independent of enhancement
-routing. `PublicPayloads` services routed public payloads through
-`transaction_data::payload::get_transaction_payload`.
+`EnhancementSession::run_checkpoint` services fees, status observation, and
+transparent-address history before the routed payload coordinator;
+`transaction_data_requests()` carries no payload variant, so no second routing
+decision is possible. Address history can queue payload work, which the same
+checkpoint then drains. Status consumers use wallet-libraries `StatusReader`
+with Vizor's policy and transport sources. `PublicPayloadExecutor` services
+routed public payloads through `transaction_data::payload::get_transaction_payload`.
 
-Status privacy is independent of Ironwood enhancement protection. The pinned
-backend still emits status requests for protected transactions. Public status
-uses `GetTransaction`, revealing the txid and transferring a full payload.
-The private Status PIR adapter is wired behind the existing preference and a
-separate release gate; the synthetic service cannot satisfy its release
-protocol. See [transaction status](get-status.md) for the current contract and
-qualification boundary.
+Status observations and payload obligations remain independently durable, but
+their public/private source policy comes from the same mainnet preference.
+The pinned backend still emits status requests for protected transactions.
+Public status uses `GetTransaction`, revealing the txid and transferring a full
+payload; private Status PIR never falls back to that path. See
+[transaction status](get-status.md) for the status contract.
 
 ## Shared client and build inputs
 

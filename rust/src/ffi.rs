@@ -327,10 +327,11 @@ pub extern "C" fn zcash_status_pir_is_enabled(
     let Some(network) = crate::wallet::network::WalletNetwork::from_str(network) else {
         return false;
     };
-    crate::wallet::sync_engine::enhancement::status_pir::enabled_for_preference(
+    crate::wallet::sync_engine::enhancement::EnhancementPolicy::for_preference(
         network,
         private_preference,
     )
+    .is_private()
 }
 
 /// Additive private status ABI; the public lightwalletd ABI remains unchanged.
@@ -352,10 +353,12 @@ pub extern "C" fn zcash_status_pir_observe_transaction(
         let Some(output) = (unsafe { output.as_mut() }) else {
             return 1;
         };
-        if !crate::wallet::sync_engine::enhancement::status_pir::enabled_for_preference(
+        if !crate::wallet::sync_engine::enhancement::EnhancementPolicy::for_preference(
             crate::wallet::network::WalletNetwork::Main,
             true,
-        ) {
+        )
+        .is_private()
+        {
             return 1;
         }
         let txid = TxId::from_bytes(
@@ -374,7 +377,7 @@ pub extern "C" fn zcash_status_pir_observe_transaction(
                 let cancelled =
                     || cancellation.is_some_and(|token| token.cancelled.load(Ordering::Acquire));
                 let private_source =
-                    crate::wallet::sync_engine::enhancement::status_pir::Source::new(
+                    crate::wallet::sync_engine::enhancement::status::PrivateStatusSource::new(
                         db_path,
                         crate::wallet::network::WalletNetwork::Main,
                         &cancelled,

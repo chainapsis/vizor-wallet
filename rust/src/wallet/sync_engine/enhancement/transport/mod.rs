@@ -1,14 +1,12 @@
 //! Shared cancellation-aware HTTPS transport for Enhance PIR and Status PIR.
 
-#[path = "transport/cancellation.rs"]
 mod cancellation;
-#[path = "transport/payload.rs"]
-mod payload;
-#[path = "transport/status.rs"]
-mod status;
+mod enhance_pir;
+mod status_pir;
 
 pub(super) use cancellation::cancelable;
-pub(super) use payload::client_protocol_error;
+pub(super) use enhance_pir::client_protocol_error;
+pub(crate) use status_pir::StatusPirTransport;
 
 use bytes::Bytes;
 use http::{Method, Request, StatusCode};
@@ -16,16 +14,26 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::{future::Future, sync::atomic::AtomicU16, time::Duration};
+use std::{future::Future, time::Duration};
 use zakura_pir_enhance::transport::{self, BoundedBody};
 
-use super::{
-    super::{lwd::DirectRouteConnector, SyncError},
-    payload::enhancement_private_pir::EnhancePirRunError,
-};
+use super::super::{lwd::DirectRouteConnector, SyncError};
 
 pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
+
+#[derive(Debug)]
+pub(super) enum RoutedHttpError {
+    Cancelled,
+    HttpStatus(u16),
+    Failed(SyncError),
+}
+
+impl From<SyncError> for RoutedHttpError {
+    fn from(error: SyncError) -> Self {
+        Self::Failed(error)
+    }
+}
 
 #[derive(Clone, Copy)]
 enum RoutePolicy {
@@ -49,7 +57,6 @@ pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
     route_policy: RoutePolicy,
-    status_session_error: AtomicU16,
 }
 
 impl<'a, F> RoutedTransport<'a, F> {
@@ -68,7 +75,6 @@ impl<'a, F> RoutedTransport<'a, F> {
         Self {
             should_exit,
             route_policy,
-            status_session_error: AtomicU16::new(0),
             // Cheap: no connection is opened until the first request, and the
             // Tor route simply never uses it.
             direct: Client::builder(TokioExecutor::new()).build(connector),
@@ -82,9 +88,9 @@ impl<'a, F> RoutedTransport<'a, F> {
 pub(super) fn secure_endpoint_uri(url: &str) -> Result<http::Uri, SyncError> {
     let uri = url
         .parse::<http::Uri>()
-        .map_err(|error| SyncError::parse(format!("invalid Enhance PIR URL: {error}")))?;
+        .map_err(|error| SyncError::parse(format!("invalid private-service URL: {error}")))?;
     if uri.scheme_str() != Some("https") {
-        return Err(SyncError::parse("Enhance PIR transport requires HTTPS"));
+        return Err(SyncError::parse("private-service transport requires HTTPS"));
     }
     Ok(uri)
 }
@@ -97,7 +103,7 @@ async fn routed_request(
     collector: BoundedBody,
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
-) -> Result<transport::ResponseBody, EnhancePirRunError> {
+) -> Result<transport::ResponseBody, RoutedHttpError> {
     receive_response(
         routed_response(
             method,
@@ -120,9 +126,9 @@ async fn routed_response(
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
     route_policy: RoutePolicy,
-) -> Result<http::Response<Incoming>, EnhancePirRunError> {
+) -> Result<http::Response<Incoming>, RoutedHttpError> {
     if should_exit() {
-        return Err(EnhancePirRunError::ExitRequested);
+        return Err(RoutedHttpError::Cancelled);
     }
     let uri = secure_endpoint_uri(url)?;
     if matches!(route_policy, RoutePolicy::WalletPreference)
@@ -132,16 +138,16 @@ async fn routed_response(
             .await
             .map_err(|error| {
                 if should_exit() {
-                    EnhancePirRunError::ExitRequested
+                    RoutedHttpError::Cancelled
                 } else {
-                    EnhancePirRunError::Failed(SyncError::net(format!(
-                        "network privacy blocked Enhance PIR: {error}"
+                    RoutedHttpError::Failed(SyncError::net(format!(
+                        "network privacy blocked private-service request: {error}"
                     )))
                 }
             })?
             .ok_or_else(|| {
-                EnhancePirRunError::Failed(SyncError::net(
-                    "Tor route changed before Enhance PIR request",
+                RoutedHttpError::Failed(SyncError::net(
+                    "Tor route changed before private-service request",
                 ))
             })?;
         let request = async {
@@ -172,9 +178,9 @@ async fn routed_response(
                         )
                         .await
                 }
-                _ => unreachable!("Enhance PIR uses GET and POST only"),
+                _ => unreachable!("private services use GET and POST only"),
             }
-            .map_err(|error| SyncError::net(format!("Enhance PIR Tor request failed: {error}")))
+            .map_err(|error| SyncError::net(format!("private-service Tor request failed: {error}")))
         };
         // Returning Incoming from the Tor parser exposes headers without
         // polling the body. A malformed error body cannot erase its status.
@@ -186,11 +192,10 @@ async fn routed_response(
         .uri(uri)
         .header(http::header::CONTENT_TYPE, "application/octet-stream")
         .body(Full::new(Bytes::from(body)))
-        .map_err(|error| SyncError::parse(format!("build Enhance PIR request: {error}")))?;
-    let response = direct
-        .request(request)
-        .await
-        .map_err(|error| SyncError::net(format!("Enhance PIR HTTPS request failed: {error}")))?;
+        .map_err(|error| SyncError::parse(format!("build private-service request: {error}")))?;
+    let response = direct.request(request).await.map_err(|error| {
+        SyncError::net(format!("private-service HTTPS request failed: {error}"))
+    })?;
     Ok(response)
 }
 
@@ -199,11 +204,11 @@ pub(super) async fn receive_response<B, E>(
     headers: impl Future<Output = Result<http::Response<B>, E>>,
     collector: BoundedBody,
     should_exit: &impl Fn() -> bool,
-) -> Result<transport::ResponseBody, EnhancePirRunError>
+) -> Result<transport::ResponseBody, RoutedHttpError>
 where
     B: Body<Data = Bytes> + Unpin,
     B::Error: std::fmt::Display,
-    E: Into<EnhancePirRunError>,
+    E: Into<RoutedHttpError>,
 {
     await_request_with_cancel(
         async {
@@ -219,32 +224,32 @@ where
 async fn collect_response<B>(
     response: http::Response<B>,
     collector: BoundedBody,
-) -> Result<transport::ResponseBody, EnhancePirRunError>
+) -> Result<transport::ResponseBody, RoutedHttpError>
 where
     B: Body<Data = Bytes> + Unpin,
     B::Error: std::fmt::Display,
 {
     if !response.status().is_success() {
-        return Err(EnhancePirRunError::HttpStatus(response.status().as_u16()));
+        return Err(RoutedHttpError::HttpStatus(response.status().as_u16()));
     }
     Ok(read_body_limited(response.status(), response.into_body(), collector).await?)
 }
 
-pub(super) async fn await_request_with_cancel<T, E: Into<EnhancePirRunError>>(
+pub(super) async fn await_request_with_cancel<T, E: Into<RoutedHttpError>>(
     request: impl Future<Output = Result<T, E>>,
     should_exit: &impl Fn() -> bool,
     timeout_message: &'static str,
-) -> Result<T, EnhancePirRunError> {
+) -> Result<T, RoutedHttpError> {
     if should_exit() {
-        return Err(EnhancePirRunError::ExitRequested);
+        return Err(RoutedHttpError::Cancelled);
     }
     tokio::pin!(request);
     tokio::select! {
         biased;
-        _ = super::super::watch_for_exit(should_exit) => Err(EnhancePirRunError::ExitRequested),
+        _ = super::super::watch_for_exit(should_exit) => Err(RoutedHttpError::Cancelled),
         result = tokio::time::timeout(HTTP_TIMEOUT, &mut request) => {
             result
-                .map_err(|_| EnhancePirRunError::Failed(SyncError::net(timeout_message)))?
+                .map_err(|_| RoutedHttpError::Failed(SyncError::net(timeout_message)))?
                 .map_err(Into::into)
         }
     }
@@ -261,8 +266,9 @@ where
 {
     debug_assert!(status.is_success());
     while let Some(frame) = body.frame().await {
-        let frame = frame
-            .map_err(|error| SyncError::net(format!("read Enhance PIR response body: {error}")))?;
+        let frame = frame.map_err(|error| {
+            SyncError::net(format!("read private-service response body: {error}"))
+        })?;
         if let Some(data) = frame.data_ref() {
             bytes.extend(data).map_err(client_protocol_error)?;
         }

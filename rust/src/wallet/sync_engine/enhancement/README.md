@@ -42,16 +42,17 @@ The facade is `mod.rs`. Its implementation is grouped into four packages:
 
 ```text
 enhancement/
-|-- auxiliary/       status persistence, transparent history, fees
-|-- payload/         payload coordinator, private PIR, public retrieval
-|-- status/          status-source policy and private Status PIR
+|-- auxiliary/       transparent history and fee completion
+|-- payload/         coordinator, public retrieval, private Enhance PIR
+|-- status/          coordinator, public source, private Status PIR, persistence
 |-- transport/       routed HTTPS core and protocol adapters
+|-- policy.rs        one immutable status/payload source decision
+|-- tests.rs         cross-flow checkpoint and request-lifecycle tests
 `-- mod.rs           sync-engine-facing entry points and phase order
 ```
 
-Some implementation files remain at the enhancement root and are mounted as
-private package children with `#[path = ...]`. Callers should follow the package
-API rather than depend on those source-file locations.
+The filesystem matches the module graph. Implementations stay private behind
+their package or the parent session facade.
 
 ## The two wallet snapshots
 
@@ -100,7 +101,7 @@ queue stored payloads before scan
 scan_cached_blocks
     |
     v
-+---------------- auxiliary pass ----------------+
++--------------- enhancement checkpoint ---------+
 | 1. backfill missing fees                        |
 | 2. observe transaction status                   |
 | 3. stream transparent-address history           |
@@ -119,9 +120,9 @@ scan_cached_blocks
 +-------------------------------------------------+
 ```
 
-The auxiliary and payload coordinators each use bounded passes. Residual durable
-work is intentionally left for a later checkpoint instead of allowing an
-unbounded loop.
+`EnhancementSession::run_checkpoint` owns this ordering. Metadata and status
+passes are bounded, as is the payload coordinator. Residual durable work is
+left for a later checkpoint instead of allowing an unbounded loop.
 
 ## Routed payload recovery
 
@@ -200,10 +201,10 @@ Status source selection happens once when the reader is constructed.
           +------------+-------------+
           |                          |
           v                          v
-private release gate enabled     otherwise
+shared private mode          shared public mode
           |                          |
           v                          v
-private Status PIR             public lightwalletd
+private Status PIR          public lightwalletd
           |                          |
           +------------+-------------+
                        |
@@ -297,15 +298,14 @@ cancellation                  stop before the next network dispatch
 
 ## Stable entry points
 
-The sync engine should use only the facade exports:
+The sync engine should use only the parent facade:
 
-- `run_auxiliary_transaction_requests`
-- `run_routed_payload_enhancement`
+- `EnhancementSession::new`
+- `EnhancementSession::configure_db`
+- `EnhancementSession::run_checkpoint`
+- `EnhancementSession::run_payload_recovery`
 - `queue_stored_transactions`
-- `RoutedPayloadEnhancement`
-- `begin_session`
 - `phase`
 
-`status_pir` in `mod.rs` is a compatibility shim for the iOS read-only FFI and
-migration reconciliation. New enhancement implementation code should use the
-semantic `status` package names.
+iOS read-only FFI and migration reconciliation use the explicit `status`
+facade plus the same `EnhancementPolicy`; there is no legacy status shim.

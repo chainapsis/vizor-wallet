@@ -1,8 +1,9 @@
 //! Exercises the production scheduler with the real v7 client and a scripted
 //! service. Storage is faked here: wallet record authentication has its own tests.
-use super::super::super::transport::{receive_response, HTTP_TIMEOUT};
-use super::*;
-use super::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS};
+use super::super::transport::{receive_response, RoutedHttpError, HTTP_TIMEOUT};
+use super::coordinator::{EnhancementEffects, RecoveryWallet, RoutedWork, MAX_LOGICAL_ROWS};
+use super::{EnhancePirRunError, RoutedPayloadEnhancement};
+use crate::wallet::{network::WalletNetwork, sync_engine::SyncError};
 use base64::Engine;
 use bytes::Bytes;
 use futures::StreamExt;
@@ -15,13 +16,15 @@ use std::{
     time::Duration,
 };
 use zakura_pir_enhance::{
-    transport::{BoundedBody, PendingClient},
+    transport::{self, BoundedBody, PendingClient},
     types::*,
+    wallet::Acceptance,
     AcceptedAnchor, ClientError, ClientResourceLimits, GenerationAcceptance,
 };
 use zcash_client_backend::data_api::{
     enhance_pir::{
-        EnhancePirRequest, EnhancePirSuspension, EnhancePirWork, IronwoodEnhanceRequestId,
+        EnhancePirRequest, EnhancePirStoreResult, EnhancePirSuspension, EnhancePirWork,
+        IronwoodEnhanceDiscoveryRequest, IronwoodEnhanceRequestId,
     },
     PublicTransactionEnhancementRequest,
 };
@@ -588,7 +591,7 @@ async fn error_status_does_not_read_truncated_or_stalled_body() {
                 &|| false,
             )
             .await;
-            assert!(matches!(result, Err(EnhancePirRunError::HttpStatus(s)) if s == status));
+            assert!(matches!(result, Err(RoutedHttpError::HttpStatus(s)) if s == status));
             assert!(!polled.get());
             assert_eq!(tokio::time::Instant::now(), started);
         }
@@ -610,7 +613,7 @@ async fn headers_and_body_share_one_deadline() {
     let started = tokio::time::Instant::now();
     assert!(matches!(
         receive_response(request, collector, &|| false).await,
-        Err(EnhancePirRunError::Failed(_))
+        Err(RoutedHttpError::Failed(_))
     ));
     assert_eq!(tokio::time::Instant::now() - started, HTTP_TIMEOUT);
 }
@@ -628,7 +631,7 @@ async fn cancellation_wins_over_an_available_error_status() {
             &|| true,
         )
         .await,
-        Err(EnhancePirRunError::ExitRequested)
+        Err(RoutedHttpError::Cancelled)
     ));
 }
 
@@ -688,6 +691,6 @@ async fn cancellation_interrupts_a_stalled_success_body() {
         cancelled.set(true);
     };
     let (result, ()) = tokio::join!(request, cancel);
-    assert!(matches!(result, Err(EnhancePirRunError::ExitRequested)));
+    assert!(matches!(result, Err(RoutedHttpError::Cancelled)));
     assert!(tokio::time::Instant::now() - started < HTTP_TIMEOUT);
 }

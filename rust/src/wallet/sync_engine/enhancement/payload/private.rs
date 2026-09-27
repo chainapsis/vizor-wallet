@@ -5,7 +5,11 @@
 //! sibling scheduler owns transport selection; this module never converts a
 //! private failure or suspension into public transaction-ID retrieval.
 use super::{
-    super::{super::SyncError, transport::client_protocol_error, DEFAULT_MAINNET_ENDPOINT},
+    super::{
+        super::SyncError,
+        transport::{client_protocol_error, RoutedHttpError},
+        DEFAULT_MAINNET_ENDPOINT,
+    },
     coordinator::{EnhancementEffects, RecoveryWallet, RoutedWork},
     diagnostics::{mark_routing_refresh, routing_refresh_due, set_phase, RecoveryPhase},
 };
@@ -32,9 +36,8 @@ fn current_or_newer_routing_revision(current: (u64, u64), candidate: (u64, u64))
     candidate.0 >= current.0 && candidate.1 >= current.1
 }
 
-pub(in crate::wallet::sync_engine::enhancement) fn client_transport_error(
-    error: EnhancePirRunError,
-) -> ClientError {
+#[cfg(test)]
+fn client_transport_error(error: EnhancePirRunError) -> ClientError {
     match error {
         EnhancePirRunError::ExitRequested => ClientError::Cancelled,
         EnhancePirRunError::HttpStatus(status) => ClientError::HttpStatus(status),
@@ -70,6 +73,15 @@ pub(in crate::wallet::sync_engine) enum EnhancePirRunError {
 impl From<SyncError> for EnhancePirRunError {
     fn from(e: SyncError) -> Self {
         Self::Failed(e)
+    }
+}
+impl From<RoutedHttpError> for EnhancePirRunError {
+    fn from(error: RoutedHttpError) -> Self {
+        match error {
+            RoutedHttpError::Cancelled => Self::ExitRequested,
+            RoutedHttpError::HttpStatus(status) => Self::HttpStatus(status),
+            RoutedHttpError::Failed(error) => Self::Failed(error),
+        }
     }
 }
 impl From<ClientError> for EnhancePirRunError {
@@ -484,7 +496,7 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(EnhancePirRunError::ExitRequested)));
+        assert!(matches!(result, Err(RoutedHttpError::Cancelled)));
         cancelling.await.unwrap();
     }
 

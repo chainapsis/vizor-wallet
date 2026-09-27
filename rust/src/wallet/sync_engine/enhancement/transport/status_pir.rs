@@ -2,27 +2,47 @@
 
 use http::Method;
 use http_body_util::BodyExt;
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::atomic::{AtomicU16, Ordering},
+    time::Duration,
+};
 
 use super::{routed_response, RoutedTransport};
 
 const STATUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-impl<F> RoutedTransport<'_, F> {
+/// Status-specific adapter state layered over the protocol-neutral HTTP route.
+pub(crate) struct StatusPirTransport<'a, F> {
+    route: RoutedTransport<'a, F>,
+    session_error: AtomicU16,
+}
+
+impl<'a, F> StatusPirTransport<'a, F> {
+    pub(crate) fn new(should_exit: &'a F) -> Self {
+        Self {
+            route: RoutedTransport::new(should_exit),
+            session_error: AtomicU16::new(0),
+        }
+    }
+
+    pub(crate) fn new_direct(should_exit: &'a F) -> Self {
+        Self {
+            route: RoutedTransport::new_direct(should_exit),
+            session_error: AtomicU16::new(0),
+        }
+    }
+
     /// Returns and clears a 409/410 observed by the status adapter.
     ///
     /// The upstream status transport error vocabulary collapses HTTP failures
     /// to `Unavailable`; this adapter-local marker preserves only the typed
     /// distinction needed for one session refresh.
     pub(in crate::wallet::sync_engine) fn take_status_session_conflict(&self) -> bool {
-        matches!(
-            self.status_session_error.swap(0, Ordering::SeqCst),
-            409 | 410
-        )
+        matches!(self.session_error.swap(0, Ordering::SeqCst), 409 | 410)
     }
 }
 
-impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for RoutedTransport<'_, F> {
+impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for StatusPirTransport<'_, F> {
     async fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, zakura_pir_status::Error> {
         self.status_request(Method::GET, url, Vec::new(), max_bytes)
             .await
@@ -39,7 +59,7 @@ impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for RoutedT
     }
 }
 
-impl<F: Fn() -> bool> RoutedTransport<'_, F> {
+impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
     async fn status_request(
         &self,
         method: Method,
@@ -49,21 +69,21 @@ impl<F: Fn() -> bool> RoutedTransport<'_, F> {
     ) -> Result<Vec<u8>, zakura_pir_status::Error> {
         use zakura_pir_status::Error;
 
-        self.status_session_error.store(0, Ordering::SeqCst);
+        self.session_error.store(0, Ordering::SeqCst);
         let request = async {
             let response = routed_response(
                 method,
                 url,
                 body,
-                self.should_exit,
-                &self.direct,
-                self.route_policy,
+                self.route.should_exit,
+                &self.route.direct,
+                self.route.route_policy,
             )
             .await
             .map_err(|_| Error::Unavailable)?;
             match response.status().as_u16() {
                 status @ (409 | 410) => {
-                    self.status_session_error.store(status, Ordering::SeqCst);
+                    self.session_error.store(status, Ordering::SeqCst);
                     return Err(Error::Unavailable);
                 }
                 _ if !response.status().is_success() => return Err(Error::Unavailable),
@@ -86,7 +106,7 @@ impl<F: Fn() -> bool> RoutedTransport<'_, F> {
 
         tokio::select! {
             biased;
-            _ = crate::wallet::sync_engine::watch_for_exit(self.should_exit) => {
+            _ = crate::wallet::sync_engine::watch_for_exit(self.route.should_exit) => {
                 Err(Error::Cancelled)
             },
             result = tokio::time::timeout(STATUS_REQUEST_TIMEOUT, request) => {

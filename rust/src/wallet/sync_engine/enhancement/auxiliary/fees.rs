@@ -23,7 +23,7 @@ use super::{
 
 /// Backfills fees for stored transactions whose status requests are dormant
 /// while their mined heights are known.
-pub(super) async fn backfill_stored_fees(
+pub(in crate::wallet::sync_engine::enhancement) async fn backfill_stored_fees(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &WalletDatabase,
     db_path: &str,
@@ -50,7 +50,9 @@ pub(super) async fn backfill_stored_fees(
     Ok(())
 }
 
-pub(super) fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncError> {
+pub(in crate::wallet::sync_engine::enhancement) fn stored_transaction_ids_missing_fee(
+    db_path: &str,
+) -> Result<Vec<TxId>, SyncError> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| SyncError::db(format!("open wallet DB for fee scan: {e}")))?;
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
@@ -179,7 +181,10 @@ async fn fetch_transparent_prevout_values(
     Ok(prevout_values)
 }
 
-pub(super) fn should_fill_missing_fee(db_path: &str, tx: &Transaction) -> Result<bool, SyncError> {
+pub(in crate::wallet::sync_engine::enhancement) fn should_fill_missing_fee(
+    db_path: &str,
+    tx: &Transaction,
+) -> Result<bool, SyncError> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| SyncError::db(format!("open wallet DB for fee lookup: {e}")))?;
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
@@ -207,11 +212,11 @@ pub(super) fn should_fill_missing_fee(db_path: &str, tx: &Transaction) -> Result
     Ok(fillable_rows > 0)
 }
 
-pub(super) fn is_null_outpoint(outpoint: &OutPoint) -> bool {
+pub(in crate::wallet::sync_engine::enhancement) fn is_null_outpoint(outpoint: &OutPoint) -> bool {
     outpoint.hash() == &[0u8; 32] && outpoint.n() == u32::MAX
 }
 
-pub(super) fn fee_from_prevout_values(
+pub(in crate::wallet::sync_engine::enhancement) fn fee_from_prevout_values(
     tx: &Transaction,
     prevout_values: &BTreeMap<OutPoint, Zatoshis>,
 ) -> Result<Option<Zatoshis>, BalanceError> {
@@ -220,7 +225,7 @@ pub(super) fn fee_from_prevout_values(
     })
 }
 
-pub(super) fn persist_fee_if_missing(
+pub(in crate::wallet::sync_engine::enhancement) fn persist_fee_if_missing(
     db_path: &str,
     tx: &Transaction,
     fee: Zatoshis,

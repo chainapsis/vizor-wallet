@@ -26,10 +26,8 @@ use super::{
         super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
         transport::await_request_with_cancel,
     },
-    enhancement_private_pir::{
-        rediscovery_cover_start, EnhancePirRunError, RoutedPayloadEnhancement,
-    },
-    public_lwd::PublicPayloadExecutor,
+    private::{rediscovery_cover_start, EnhancePirRunError, RoutedPayloadEnhancement},
+    public::PublicPayloadExecutor,
 };
 
 /// Servicing one route can create work on the other.
@@ -280,7 +278,3 @@ impl RoutedPayloadEnhancement {
         Ok(())
     }
 }
-
-#[cfg(test)]
-#[path = "scheduler_tests.rs"]
-mod tests;

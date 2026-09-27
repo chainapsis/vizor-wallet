@@ -2118,8 +2118,14 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 
     let never_exit = || false;
     let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
-    let mut reader =
-        sync_engine::enhancement::status_pir::reader(db_path, network, &never_exit, public_source);
+    let policy = sync_engine::enhancement::EnhancementPolicy::current(network);
+    let mut reader = sync_engine::enhancement::status::reader(
+        db_path,
+        network,
+        policy,
+        &never_exit,
+        public_source,
+    );
 
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
@@ -6183,7 +6189,7 @@ pub(crate) struct ResubmitStats {
 /// sync loop's cancel / mode-change condition. It is consulted:
 ///
 ///   * Before iterating the candidate list at all (so a cancel arriving during
-///     `run_auxiliary_transaction_requests` aborts the resubmit pass entirely
+///     the enhancement checkpoint aborts the resubmit pass entirely
 ///     without opening a single rebroadcast RPC).
 ///   * Before every individual candidate's first broadcast.
 ///   * Before the retry call for any candidate that failed on

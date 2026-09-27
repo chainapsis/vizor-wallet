@@ -16,7 +16,7 @@ use crate::wallet::{
 /// `NotFound`; source-specific validation must be complete before calling this
 /// function. `Mempool` and `Forked` intentionally map to the wallet's common
 /// not-in-main-chain state.
-pub(super) fn persist_status_observation(
+pub(in crate::wallet::sync_engine::enhancement) fn persist_status_observation(
     db: &mut WalletDatabase,
     txid: TxId,
     observation: TransactionObservation,

@@ -14,44 +14,28 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps through two disjoint snapshots. Payload
-//! retrieval is exposed only by `transaction_enhancement_work()`, which routes
-//! each obligation, and is scheduled by `enhancement::RoutedPayloadEnhancement`,
-//! which hands only routed public requests to [`PublicPayloadExecutor`]
-//! (`GetTransaction` + `decrypt_and_store_transaction`). Status observation and
-//! transparent-address history come from `transaction_data_requests()`, which
-//! carries no payload variant, and are serviced by
-//! [`run_auxiliary_transaction_requests`]. Both loops are bounded because
-//! servicing one request can legally populate new requests (e.g. a
-//! newly-decrypted transaction may reveal additional parent transactions).
+//! retrieval is exposed only by `transaction_enhancement_work()`, while status
+//! observation and transparent-address history come from
+//! `transaction_data_requests()`. The parent session services both snapshots in
+//! a fixed order and keeps their completion independent.
 
-use std::collections::HashSet;
-
-use futures::{FutureExt, StreamExt};
-
-use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{TransactionDataRequest, WalletRead, WalletWrite},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
 
-use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
-use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusRequest};
 
-use super::super::super::{lwd, SyncError, WalletDatabase};
+use super::super::{SyncError, WalletDatabase};
 
-use super::{
-    fees::{backfill_stored_fees, fill_missing_fee},
-    status::persist_status_observation,
-    transparent_history::store_address_transaction,
-};
+use super::EnhancementSession;
 
 #[cfg(test)]
 use {
-    super::super::super::block_source::MemoryBlockSource,
+    super::super::block_source::MemoryBlockSource,
     super::{
-        super::{payload::public_lwd::*, payload::queue::*},
-        fees::*,
+        auxiliary::fees::*,
+        payload::{public::*, queue::*},
         status::persist_status_observation as store_transaction_observation,
     },
     crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
@@ -78,161 +62,6 @@ fn has_public_payload_work(db: &WalletDatabase, txid: TxId) -> bool {
         .contains(&TransactionEnhancementWork::Public(
             PublicTransactionEnhancementRequest::new(txid),
         ))
-}
-
-/// Services status observation and transparent-address history from
-/// `db.transaction_data_requests()` until no such request is actionable.
-/// That snapshot carries no payload requests: payload work is exposed only by
-/// `transaction_enhancement_work()` and dispatched by the enhancement scheduler.
-/// Returns `SyncError::Db` if `db.transaction_data_requests()` itself fails;
-/// status transport failures bubble up as `SyncError::Network`.
-pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
-    client: &mut CompactTxStreamerClient<Channel>,
-    db: &mut WalletDatabase,
-    db_path: &str,
-    network: WalletNetwork,
-    should_exit: &(impl Fn() -> bool + Sync),
-) -> Result<(), SyncError> {
-    let status_client = client.clone();
-    let public_source =
-        LightwalletdSource::new(move || async move { Ok(status_client) }, should_exit);
-    let mut status_reader =
-        super::super::status::reader(db_path, network, should_exit, public_source);
-    let mut observed_statuses = HashSet::new();
-    // Retry a failed address on a later invocation, not in all three queue passes.
-    let mut failed_addresses = HashSet::new();
-
-    backfill_stored_fees(client, db, db_path, should_exit).await?;
-
-    for _ in 0..3 {
-        let requests = db
-            .transaction_data_requests()
-            .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
-        let status_requests: Vec<_> = requests
-            .iter()
-            .cloned()
-            .filter_map(TransactionDataRequest::into_status_request)
-            .filter(|request| !observed_statuses.contains(&request.txid()))
-            .collect();
-        // Payload requests never make this pass actionable. Nor do
-        // address-scoped requests without an `end` height, which we can't
-        // service without synthesizing a range; break rather than looping
-        // forever on the same inert queue.
-        let actionable = !status_requests.is_empty()
-            || requests.iter().any(|request| match request {
-                TransactionDataRequest::TransactionsInvolvingAddress(request) => {
-                    request.block_range_end().is_some()
-                        && !failed_addresses.contains(&request.address())
-                }
-                _ => false,
-            });
-        if !actionable {
-            break;
-        }
-
-        for request in status_requests {
-            let txid = request.txid();
-            let observation = match status_reader
-                .observe(StatusRequest {
-                    txid,
-                    coverage: zakura_pir_status::LocalCoverageContext::default(),
-                })
-                .await
-            {
-                Ok(observation) => observation.into(),
-                Err(zakura_transaction_status::StatusError::Cancelled) => return Ok(()),
-                Err(error) => return Err(SyncError::net(error.to_string())),
-            };
-            if should_exit() {
-                return Ok(());
-            }
-            persist_status_observation(db, txid, observation)?;
-            observed_statuses.insert(txid);
-        }
-        let mut planned = super::super::super::address_history::plan(&requests);
-        planned.retain(|group| !failed_addresses.contains(&group[0].address()));
-        let download_client = client.clone();
-        let open: super::super::super::address_history::OpenHistory = Box::new(move |req| {
-            let mut client = download_client.clone();
-            async move {
-                let address =
-                    zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
-                let stream = lwd::get_taddress_txids(
-                    &mut client,
-                    address,
-                    u64::from(u32::from(req.block_range_start())),
-                    u64::from(u32::from(req.block_range_end().unwrap())) - 1,
-                )
-                .await?;
-                Ok(
-                    futures::stream::try_unfold(stream, |mut stream| async move {
-                        Ok(
-                            lwd::next_stream_message(&mut stream, "get_taddress_txids stream")
-                                .await?
-                                .map(|raw| (raw, stream)),
-                        )
-                    })
-                    .boxed(),
-                )
-            }
-            .boxed()
-        });
-        let mut reads = super::super::super::address_history::HistoryReads::new(planned, open);
-        loop {
-            let event = tokio::select! {
-                biased;
-                _ = super::super::super::watch_for_exit(should_exit) => return Ok(()),
-                event = reads.next() => event,
-            };
-            let Some((mut read, result)) = event else {
-                break;
-            };
-            if should_exit() {
-                return Ok(());
-            }
-            let req = read.request().clone();
-            match result? {
-                Some(raw) => {
-                    let tx = match store_address_transaction(&network, db, &raw.data, raw.height) {
-                        Ok(tx) => tx,
-                        Err(error) => {
-                            log::warn!("sync: address transaction processing failed; leaving range unchecked for retry: {error}");
-                            failed_addresses.insert(req.address());
-                            continue;
-                        }
-                    };
-                    let fee_result = tokio::select! {
-                        biased;
-                        _ = super::super::super::watch_for_exit(should_exit) => return Ok(()),
-                        result = fill_missing_fee(client, db_path, &tx, should_exit) => result,
-                    };
-                    if let Err(error) = fee_result {
-                        log::warn!(
-                            "sync: fee enhancement (addr) failed for {}: {error}",
-                            tx.txid()
-                        );
-                    }
-                }
-                None => {
-                    if let Err(error) =
-                        with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
-                            db.notify_address_checked(
-                                req.clone(),
-                                req.block_range_end().unwrap() - 1,
-                            )
-                        })
-                    {
-                        log::warn!("sync: address completion write failed; retrying on a later sync: {error}");
-                        failed_addresses.insert(req.address());
-                        continue;
-                    }
-                    read.finish_range();
-                }
-            }
-            reads.resume(read);
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -338,12 +167,15 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let db = crate::wallet::db::open_wallet_db_with_timeout(
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             db_path,
             WalletNetwork::Regtest,
             SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap();
+        db.set_enhancement_mode(
+            zcash_client_backend::data_api::enhance_pir::EnhancementMode::Standard,
+        );
         (file, db, tx)
     }
 
@@ -434,7 +266,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_payload_is_retryable_and_status_pass_never_dispatches_payloads() {
+    async fn checkpoint_observes_status_before_retryable_payload_failure() {
         use bytes::Bytes;
         use http_body_util::Full;
         use hyper::service::service_fn;
@@ -469,13 +301,6 @@ mod tests {
                 async move {
                     assert!(request.uri().path().ends_with("/GetTransaction"));
                     let response = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                        hyper::Response::builder()
-                            .header("content-type", "application/grpc")
-                            .header("grpc-status", "14")
-                            .header("grpc-message", "temporary failure")
-                            .body(Full::new(Bytes::new()))
-                            .unwrap()
-                    } else {
                         let raw = RawTransaction {
                             data: raw_bytes,
                             height: 0,
@@ -488,6 +313,13 @@ mod tests {
                             .header("content-type", "application/grpc")
                             .header("grpc-status", "0")
                             .body(Full::new(Bytes::from(frame)))
+                            .unwrap()
+                    } else {
+                        hyper::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", "14")
+                            .header("grpc-message", "temporary failure")
+                            .body(Full::new(Bytes::new()))
                             .unwrap()
                     };
                     Ok::<_, std::convert::Infallible>(response)
@@ -505,41 +337,20 @@ mod tests {
             .unwrap();
         let mut client = CompactTxStreamerClient::new(channel);
         let db_path = file.path().to_str().unwrap();
-        let routed =
-            [zcash_client_backend::data_api::PublicTransactionEnhancementRequest::new(tx.txid())];
-        let mut payloads = PublicPayloadExecutor::default();
-        tokio::time::timeout(
+        let should_exit = || false;
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let mut enhancement = EnhancementSession::new(WalletNetwork::Regtest, db_path);
+        enhancement.configure_db(&mut db);
+        let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            payloads.run(
-                &mut client,
-                &mut db,
-                db_path,
-                WalletNetwork::Regtest,
-                &routed,
-                &|| false,
-            ),
+            enhancement.run_checkpoint(&mut db, &mut client, None, &should_exit),
         )
         .await
-        .expect("payload dispatch timed out");
-        // The status pass never dispatches payload work, even though the
-        // failed payload request remains queued.
-        let status = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            run_auxiliary_transaction_requests(
-                &mut client,
-                &mut db,
-                db_path,
-                WalletNetwork::Regtest,
-                &|| false,
-            ),
-        )
-        .await
-        .expect("status pass timed out");
+        .expect("enhancement checkpoint timed out");
         server.abort();
 
-        assert!(status.is_ok());
         assert!(
-            matches!(payloads.finish(), Err(SyncError::Network(message)) if message.contains("temporary failure"))
+            matches!(result, Err(SyncError::Network(message)) if message.contains("temporary failure"))
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert!(has_public_payload_work(&db, tx.txid()));

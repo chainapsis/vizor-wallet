@@ -8,12 +8,12 @@ Vizor returns one internal `TransactionObservation` type from either source:
 `NotFound`, `Mempool`, `Mined(height)`, or `Forked`. It never returns transaction
 bytes to status callers. The wallet-libraries public source accepts a typed
 `TxId`, a lazily opened lightwalletd client, and a cancellation predicate.
-The private path is separately guarded by the existing private enhancement
-preference and the `VIZOR_STATUS_PIR_RELEASE_READY=1` build/runtime gate. The
-private endpoint defaults to the existing Enhance PIR origin and can be
-overridden with `VIZOR_STATUS_PIR_URL`. Without that release
-gate, the existing public behavior remains active. When the gate is active, a
-private failure never falls back to a public txid lookup.
+The private path uses the same effective mainnet preference as private payload
+enhancement. Vizor resolves that preference once per operation and gives both
+status and payload handling the same immutable policy. The private endpoint
+defaults to the existing Enhance PIR origin and can be overridden with
+`VIZOR_STATUS_PIR_URL`. A private failure never falls back to a public txid
+lookup.
 
 The public adapter calls lightwalletd
 `GetTransaction`. That RPC discloses the txid and downloads the full raw

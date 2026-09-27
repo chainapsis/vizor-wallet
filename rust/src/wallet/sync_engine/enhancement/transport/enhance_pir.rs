@@ -8,8 +8,7 @@ use zakura_pir_enhance::{
 
 use crate::wallet::sync_engine::SyncError;
 
-use super::{routed_request, RoutedTransport};
-use crate::wallet::sync_engine::enhancement::payload::enhancement_private_pir::client_transport_error;
+use super::{routed_request, RoutedHttpError, RoutedTransport};
 
 impl<F: Fn() -> bool> Transport for RoutedTransport<'_, F> {
     async fn execute(
@@ -32,7 +31,11 @@ impl<F: Fn() -> bool> Transport for RoutedTransport<'_, F> {
         if (self.should_exit)() {
             return Err(ClientError::Cancelled);
         }
-        response.map_err(client_transport_error)
+        response.map_err(|error| match error {
+            RoutedHttpError::Cancelled => ClientError::Cancelled,
+            RoutedHttpError::HttpStatus(status) => ClientError::HttpStatus(status),
+            RoutedHttpError::Failed(error) => ClientError::Transport(error.to_string()),
+        })
     }
 }
 

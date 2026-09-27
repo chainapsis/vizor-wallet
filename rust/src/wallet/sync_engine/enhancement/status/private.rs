@@ -1,5 +1,7 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::super::{super::WalletDatabase, transport::RoutedTransport, DEFAULT_MAINNET_ENDPOINT};
+use super::super::{
+    super::WalletDatabase, transport::StatusPirTransport, DEFAULT_MAINNET_ENDPOINT,
+};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,8 +10,7 @@ use zakura_pir_status::{
     AcceptedAnchor, Error, LocalCoverageContext, Observation,
 };
 use zakura_transaction_status::{
-    StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest, StatusSession,
-    StatusSource,
+    StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::TxId;
@@ -58,43 +59,6 @@ fn classify(error: Error) -> LookupError {
         Error::Malformed => LookupError::Malformed,
         Error::Unavailable | Error::Pir => LookupError::Unavailable,
     }
-}
-
-/// The existing private-enhancement preference selects status privacy only
-/// after the independently qualified release gate is enabled.
-fn enabled(network: WalletNetwork) -> bool {
-    enabled_for_preference(network, crate::api::sync::enhance_pir_enabled())
-}
-
-pub(crate) fn enabled_for_preference(network: WalletNetwork, preference: bool) -> bool {
-    network == WalletNetwork::Main
-        && preference
-        && (option_env!("VIZOR_STATUS_PIR_RELEASE_READY") == Some("1")
-            || std::env::var("VIZOR_STATUS_PIR_RELEASE_READY").is_ok_and(|value| value == "1"))
-}
-
-/// Assemble the app's policy once for foreground and read-only callers.
-/// The public source is lazy; selecting private status never opens it.
-pub(crate) fn reader<'a, F, P>(
-    db_path: &'a str,
-    network: WalletNetwork,
-    should_exit: &'a F,
-    public_source: P,
-) -> StatusReader<P, PrivateStatusSource<'a, F>>
-where
-    F: Fn() -> bool + Sync,
-    P: StatusSource,
-{
-    let mode = if enabled(network) {
-        StatusMode::PrivatePir
-    } else {
-        StatusMode::PublicLightwalletd
-    };
-    StatusReader::new(
-        mode,
-        public_source,
-        PrivateStatusSource::new(db_path, network, should_exit, false),
-    )
 }
 
 /// App-owned private source for the wallet-libraries status reader. Opening is
@@ -204,7 +168,7 @@ fn accepted_anchor(
 
 /// One accepted generation and reusable PIR setup for a batch of status work.
 pub(crate) struct PrivateStatusSession<'a, F> {
-    route: RoutedTransport<'a, F>,
+    route: StatusPirTransport<'a, F>,
     client: tokio::sync::Mutex<SessionClient>,
     endpoint: String,
     db_path: &'a str,
@@ -267,7 +231,7 @@ impl<F: Fn() -> bool + Sync> PrivateStatusSession<'_, F> {
 }
 
 async fn initialize<F: Fn() -> bool + Sync>(
-    route: &RoutedTransport<'_, F>,
+    route: &StatusPirTransport<'_, F>,
     endpoint: &str,
     db_path: &str,
     network: WalletNetwork,
@@ -309,8 +273,8 @@ async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
     }
     let endpoint = status_endpoint();
     let route = match route_policy {
-        StatusRoutePolicy::WalletPreference => RoutedTransport::new(should_exit),
-        StatusRoutePolicy::ForceDirect => RoutedTransport::new_direct(should_exit),
+        StatusRoutePolicy::WalletPreference => StatusPirTransport::new(should_exit),
+        StatusRoutePolicy::ForceDirect => StatusPirTransport::new_direct(should_exit),
     };
     let client = initialize(&route, &endpoint, db_path, network).await?;
     Ok(PrivateStatusSession {
@@ -332,13 +296,6 @@ mod tests {
         let mut display = mainnet_genesis();
         display.reverse();
         assert_eq!(hex::encode(display), MAINNET_GENESIS_DISPLAY);
-    }
-
-    #[test]
-    fn private_selection_requires_preference_and_mainnet() {
-        assert!(!enabled_for_preference(WalletNetwork::Main, false));
-        assert!(!enabled_for_preference(WalletNetwork::Test, true));
-        assert!(!enabled_for_preference(WalletNetwork::Regtest, true));
     }
 
     #[test]
