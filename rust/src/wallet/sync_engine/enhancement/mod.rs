@@ -5,7 +5,7 @@
 //! Wallet data comes from two deliberately separate snapshots:
 //!
 //! - `transaction_data_requests()` contains status observation and transparent
-//!   address history. Its public payload variants are deliberately ignored here.
+//!   address history. It carries no payload requests.
 //! - `transaction_enhancement_work()` is the single routing authority for
 //!   payload retrieval. It assigns every obligation to either private Enhance
 //!   PIR or public lightwalletd transport, never both.

@@ -2,8 +2,21 @@ use super::*;
 use zcash_client_backend::data_api::{
     wallet::decrypt_and_store_transaction, TransactionDataRequest,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BranchId;
+
+/// Whether the wallet's routed payload snapshot holds a public request for `txid`.
+fn has_public_payload_work(db: &WalletDatabase, txid: TxId) -> bool {
+    use zcash_client_backend::data_api::{
+        enhance_pir::{EnhancePirRead, TransactionEnhancementWork},
+        PublicTransactionEnhancementRequest,
+    };
+    db.transaction_enhancement_work()
+        .unwrap()
+        .contains(&TransactionEnhancementWork::Public(
+            PublicTransactionEnhancementRequest::new(txid),
+        ))
+}
 
 #[path = "transparent_recovery_regtest.rs"]
 mod regtest;
@@ -70,16 +83,15 @@ fn pre_sapling_external_and_internal_outputs_survive_retry_and_track_external_sp
         let batches = vec![downloaded(&uuid, &tx, 100)];
         store_transparent_outputs(&mut db, &batches).unwrap();
         store_transparent_outputs(&mut db, &batches).unwrap();
-        assert!(db.transaction_data_requests().unwrap().iter().any(
-            |request| matches!(request, TransactionDataRequest::Enhancement(id) if id == &tx.txid())
-        ));
+        assert!(has_public_payload_work(&db, tx.txid()));
         // The real enhancement handler feeds the full transaction here.
         decrypt_and_store_transaction(&network, &mut db, &tx, Some(BlockHeight::from_u32(100)))
             .unwrap();
         store_transparent_outputs(&mut db, &batches).unwrap();
-        assert!(!db.transaction_data_requests().unwrap().iter().any(
-            |request| matches!(request, TransactionDataRequest::Enhancement(id) if id == &tx.txid())
-        ), "known transaction bytes must not be fetched again");
+        assert!(
+            !has_public_payload_work(&db, tx.txid()),
+            "known transaction bytes must not be fetched again"
+        );
         let spend_tip = tip + 1;
         db.update_chain_tip(spend_tip).unwrap();
         let request = db
@@ -564,8 +576,7 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     store_transparent_outputs(&mut db, &[downloaded(&reimported, &funding, 2_000_001)]).unwrap();
     decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
     assert_eq!(sent_amount(&reimported), 0);
-    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(!has_public_payload_work(&db, payment.txid()));
 
     let blocks = super::block_source::MemoryBlockSource::new(vec![CompactBlock {
         height: 2_000_010,
@@ -577,11 +588,9 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
         enhancement::queue_stored_transactions(path, &blocks)
     })
     .unwrap();
-    assert!(db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(has_public_payload_work(&db, payment.txid()));
     // The existing enhancement handler performs this operation after scanning.
     decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
     assert_eq!(sent_amount(&reimported), 900_000);
-    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(!has_public_payload_work(&db, payment.txid()));
 }

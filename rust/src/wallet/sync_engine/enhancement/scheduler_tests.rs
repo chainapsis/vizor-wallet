@@ -23,7 +23,7 @@ use zcash_client_backend::data_api::{
     enhance_pir::{
         EnhancePirRequest, EnhancePirSuspension, EnhancePirWork, IronwoodEnhanceRequestId,
     },
-    PublicTransactionEnhancementRequest, TransactionDataRequest,
+    PublicTransactionEnhancementRequest,
 };
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::BlockHeight;
@@ -184,9 +184,7 @@ const PROTECTED: TxId = TxId::from_bytes([7; 32]);
 const ORDINARY: TxId = TxId::from_bytes([8; 32]);
 
 fn public_request(txid: TxId) -> PublicTransactionEnhancementRequest {
-    TransactionDataRequest::Enhancement(txid)
-        .into_public_enhancement_request()
-        .unwrap()
+    PublicTransactionEnhancementRequest::new(txid)
 }
 
 /// Routes like the wallet: a transaction is public or private, never both.

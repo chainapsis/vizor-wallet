@@ -198,7 +198,7 @@ pub(crate) fn get_wallet_balances(
 // ======================== Transaction Enhancement Requests ========================
 
 pub(crate) struct TxDataRequest {
-    pub request_type: String, // "get_status", "enhancement", "address_txids"
+    pub request_type: String, // "get_status", "address_txids"
     pub txid: Option<String>,
     pub address: Option<String>,
     pub block_range_start: Option<u64>,
@@ -219,13 +219,6 @@ pub(crate) fn get_transaction_data_requests(
         .map(|r| match r {
             TransactionDataRequest::GetStatus(txid) => TxDataRequest {
                 request_type: "get_status".into(),
-                txid: Some(format!("{txid}")),
-                address: None,
-                block_range_start: None,
-                block_range_end: None,
-            },
-            TransactionDataRequest::Enhancement(txid) => TxDataRequest {
-                request_type: "enhancement".into(),
                 txid: Some(format!("{txid}")),
                 address: None,
                 block_range_start: None,

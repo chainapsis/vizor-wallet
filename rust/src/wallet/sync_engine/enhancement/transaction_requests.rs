@@ -13,14 +13,14 @@
 //!     the wallet imports or derives a new t-address and has to
 //!     backfill its activity).
 //!
-//! Librustzcash signals these gaps through two snapshots. Payload retrieval is
-//! routed by `transaction_enhancement_work()` and scheduled by
-//! `enhancement::RoutedPayloadEnhancement`, which hands only routed public requests to
-//! [`PublicPayloadExecutor`] (`GetTransaction` + `decrypt_and_store_transaction`).
-//! Status observation and transparent-address history come from
-//! `transaction_data_requests()` and are serviced by
-//! [`run_auxiliary_transaction_requests`], which ignores payload requests so that no
-//! second routing decision can dispatch them. Both loops are bounded because
+//! Librustzcash signals these gaps through two disjoint snapshots. Payload
+//! retrieval is exposed only by `transaction_enhancement_work()`, which routes
+//! each obligation, and is scheduled by `enhancement::RoutedPayloadEnhancement`,
+//! which hands only routed public requests to [`PublicPayloadExecutor`]
+//! (`GetTransaction` + `decrypt_and_store_transaction`). Status observation and
+//! transparent-address history come from `transaction_data_requests()`, which
+//! carries no payload variant, and are serviced by
+//! [`run_auxiliary_transaction_requests`]. Both loops are bounded because
 //! servicing one request can legally populate new requests (e.g. a
 //! newly-decrypted transaction may reveal additional parent transactions).
 
@@ -66,10 +66,24 @@ use {
     },
 };
 
+/// Whether the wallet's routed payload snapshot holds a public request for `txid`.
+#[cfg(test)]
+fn has_public_payload_work(db: &WalletDatabase, txid: TxId) -> bool {
+    use zcash_client_backend::data_api::{
+        enhance_pir::{EnhancePirRead, TransactionEnhancementWork},
+        PublicTransactionEnhancementRequest,
+    };
+    db.transaction_enhancement_work()
+        .unwrap()
+        .contains(&TransactionEnhancementWork::Public(
+            PublicTransactionEnhancementRequest::new(txid),
+        ))
+}
+
 /// Services status observation and transparent-address history from
 /// `db.transaction_data_requests()` until no such request is actionable.
-/// Payload ([`TransactionDataRequest::Enhancement`]) requests are ignored:
-/// they are routed and dispatched only by the enhancement scheduler.
+/// That snapshot carries no payload requests: payload work is exposed only by
+/// `transaction_enhancement_work()` and dispatched by the enhancement scheduler.
 /// Returns `SyncError::Db` if `db.transaction_data_requests()` itself fails;
 /// status transport failures bubble up as `SyncError::Network`.
 pub(in crate::wallet::sync_engine) async fn run_auxiliary_transaction_requests(
@@ -378,8 +392,7 @@ mod tests {
             TransactionObservation::Mined(BlockHeight::from_u32(100)),
         ] {
             store_transaction_observation(&mut db, tx.txid(), observation).unwrap();
-            let requests = db.transaction_data_requests().unwrap();
-            assert!(requests.contains(&TransactionDataRequest::Enhancement(tx.txid())));
+            assert!(has_public_payload_work(&db, tx.txid()));
         }
         // Payload completion does not affect status persistence.
         conn.execute("DELETE FROM tx_retrieval_queue WHERE query_type = 1", [])
@@ -410,8 +423,8 @@ mod tests {
             }
             db.notify_transaction_enhancement_not_found(tx.txid())
                 .unwrap();
+            assert!(!has_public_payload_work(&db, tx.txid()));
             let requests = db.transaction_data_requests().unwrap();
-            assert!(!requests.contains(&TransactionDataRequest::Enhancement(tx.txid())));
             if !status_first {
                 assert!(requests.contains(&TransactionDataRequest::GetStatus(tx.txid())));
                 store_transaction_observation(&mut db, tx.txid(), TransactionObservation::Mempool)
@@ -492,9 +505,8 @@ mod tests {
             .unwrap();
         let mut client = CompactTxStreamerClient::new(channel);
         let db_path = file.path().to_str().unwrap();
-        let routed = [TransactionDataRequest::Enhancement(tx.txid())
-            .into_public_enhancement_request()
-            .unwrap()];
+        let routed =
+            [zcash_client_backend::data_api::PublicTransactionEnhancementRequest::new(tx.txid())];
         let mut payloads = PublicPayloadExecutor::default();
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -530,10 +542,7 @@ mod tests {
             matches!(payloads.finish(), Err(SyncError::Network(message)) if message.contains("temporary failure"))
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
-        assert!(db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::Enhancement(tx.txid())));
+        assert!(has_public_payload_work(&db, tx.txid()));
         let observed: Option<i64> = conn
             .query_row(
                 "SELECT confirmed_unmined_at_height FROM transactions WHERE txid = ?1",

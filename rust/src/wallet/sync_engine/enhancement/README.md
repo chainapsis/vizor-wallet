@@ -62,9 +62,8 @@ transaction_data_requests()
     |
     +-- GetStatus ------------------------> auxiliary status lane
     |
-    +-- TransactionsInvolvingAddress ----> transparent-history lane
-    |
-    `-- Enhancement ----------------------> ignored by auxiliary lane
+    `-- TransactionsInvolvingAddress ----> transparent-history lane
+        (no payload variant: payload work exists only in the snapshot below)
 
 
 transaction_enhancement_work()

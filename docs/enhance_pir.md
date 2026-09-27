@@ -28,8 +28,9 @@ the snapshot stops changing. A PIR failure defers private work for the
 session; it never creates or dispatches a public request, and public-only
 snapshots never contact the PIR service.
 
-`run_transaction_data_requests` services only status observation and
-transparent-address history. It ignores `Enhancement` requests. After each scan
+`run_auxiliary_transaction_requests` services status observation and
+transparent-address history; `transaction_data_requests()` no longer carries a
+payload variant, so no second routing decision is possible. After each scan
 batch it runs before the scheduler, because address history can queue parent
 payloads. Status consumers use wallet-libraries `StatusReader` with Vizor's
 policy and transport sources. Status routing is independent of enhancement
