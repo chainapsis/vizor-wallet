@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -974,6 +975,20 @@ Future<BigInt> getExportBirthdayHeight({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+/// Header time of block `height`, answered without any network request:
+/// the scanned block's time, or on mainnet an estimate from the compiled-in
+/// block-time table. `None` means no local answer exists (off mainnet, before
+/// the block is scanned); callers may then fall back to [`get_block_time`].
+Future<BigInt?> getLocalBlockTime({
+  required String dbPath,
+  required String network,
+  required BigInt height,
+}) => RustLib.instance.api.crateApiSyncGetLocalBlockTime(
+  dbPath: dbPath,
+  network: network,
+  height: height,
 );
 
 Future<BigInt> getBlockTime({

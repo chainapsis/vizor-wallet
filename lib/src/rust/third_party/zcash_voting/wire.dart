@@ -4,7 +4,9 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
 import 'share_policy.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`, `DelegateAndVoteBatchWire`, `DelegationPirPrecomputeResultView`, `DelegationRecoveryView`, `DraftVote`, `PendingShareRoundView`, `RecoverableCommitmentBundle`, `RoundRecoveryStateView`, `RoundStepOutcomeView`, `ShareDelegationRecordView`, `ShareWorkflowRecoveryView`, `SignedVoteBatchView`, `SignedVoteCommitmentView`, `SignedVoteCommitmentsView`, `VoteCommitmentBatchWire`, `VoteCommitmentWire`, `VoteRecord`, `VoteRecoveryView`, `VoteShareWire`, `VotingHotkeyTargetV1`, `VotingNoteRefView`, `VotingNoteSelectionResultView`

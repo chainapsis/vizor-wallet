@@ -2653,6 +2653,21 @@ pub fn get_export_birthday_height(
     })
 }
 
+/// Header time of block `height`, answered without any network request:
+/// the scanned block's time, or on mainnet an estimate from the compiled-in
+/// block-time table. `None` means no local answer exists (off mainnet, before
+/// the block is scanned); callers may then fall back to [`get_block_time`].
+pub fn get_local_block_time(
+    db_path: String,
+    network: String,
+    height: u64,
+) -> Result<Option<u64>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_local_block_time(&db_path, network, height)
+    })
+}
+
 pub fn get_block_time(lightwalletd_url: String, height: u64) -> Result<u64, String> {
     catch(|| fetch_block_time(&lightwalletd_url, height))
 }
