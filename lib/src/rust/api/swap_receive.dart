@@ -8,18 +8,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `network`
 
-/// Resumes a draft or reserves the lowest eligible index and verifies it through PIR.
+/// Resumes a draft or reserves the lowest eligible index and verifies its history and recent tail.
 /// Does not start or restart ordinary wallet sync.
 Future<ReceiveReservation> prepareReceiveReservation({
   required String dbPath,
   required String networkName,
   required String accountUuid,
   required BigInt liveTip,
+  required String lightwalletdUrl,
 }) => RustLib.instance.api.crateApiSwapReceivePrepareReceiveReservation(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
   liveTip: liveTip,
+  lightwalletdUrl: lightwalletdUrl,
 );
 
 /// Persists an unknown outcome and scan watch before sending a provider quote request.
@@ -117,10 +119,12 @@ Future<int> reapReceiveReservations({
   required String dbPath,
   required String networkName,
   required String accountUuid,
+  required String lightwalletdUrl,
 }) => RustLib.instance.api.crateApiSwapReceiveReapReceiveReservations(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
+  lightwalletdUrl: lightwalletdUrl,
 );
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -149,7 +153,7 @@ class ReceiveQuoteStatusRequest {
           depositMemo == other.depositMemo;
 }
 
-/// An account-scoped durable receive draft; its address has passed current PIR verification.
+/// An account-scoped durable receive draft; its address has complete canonical discovery coverage.
 class ReceiveReservation {
   final PlatformInt64 id;
   final BigInt index;

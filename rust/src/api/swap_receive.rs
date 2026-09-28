@@ -2,7 +2,7 @@
 use crate::wallet::{keys, network::WalletNetwork, swap_receiving::receive};
 use zcash_keys::address::{Address, UnifiedAddress};
 
-/// An account-scoped durable receive draft; its address has passed current PIR verification.
+/// An account-scoped durable receive draft; its address has complete canonical discovery coverage.
 pub struct ReceiveReservation {
     pub id: i64,
     pub index: u64,
@@ -22,16 +22,24 @@ fn network(path: &str, value: &str) -> Result<WalletNetwork, String> {
     Ok(network)
 }
 
-/// Resumes a draft or reserves the lowest eligible index and verifies it through PIR.
+/// Resumes a draft or reserves the lowest eligible index and verifies its history and recent tail.
 /// Does not start or restart ordinary wallet sync.
 pub async fn prepare_receive_reservation(
     db_path: String,
     network_name: String,
     account_uuid: String,
     live_tip: u64,
+    lightwalletd_url: String,
 ) -> Result<ReceiveReservation, String> {
     let network = network(&db_path, &network_name)?;
-    let r = receive::prepare(&db_path, network, &account_uuid, live_tip).await?;
+    let r = receive::prepare(
+        &db_path,
+        network,
+        &account_uuid,
+        live_tip,
+        &lightwalletd_url,
+    )
+    .await?;
     let address = Address::Unified(
         UnifiedAddress::from_receivers(Some(r.key.receiver()), None, None)
             .ok_or("Invalid receive address")?,
@@ -178,6 +186,13 @@ pub async fn reap_receive_reservations(
     db_path: String,
     network_name: String,
     account_uuid: String,
+    lightwalletd_url: String,
 ) -> Result<u32, String> {
-    receive::reap(&db_path, network(&db_path, &network_name)?, &account_uuid).await
+    receive::reap(
+        &db_path,
+        network(&db_path, &network_name)?,
+        &account_uuid,
+        &lightwalletd_url,
+    )
+    .await
 }

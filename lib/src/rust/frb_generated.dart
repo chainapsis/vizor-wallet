@@ -1120,6 +1120,7 @@ abstract class RustLibApi extends BaseApi {
     required String networkName,
     required String accountUuid,
     required BigInt liveTip,
+    required String lightwalletdUrl,
   });
 
   Future<String> crateApiVotingPrepareVotingParticipation({
@@ -1171,6 +1172,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String networkName,
     required String accountUuid,
+    required String lightwalletdUrl,
   });
 
   Future<List<ReceiveQuoteStatusRequest>> crateApiSwapReceiveReceiveQuotesDue({
@@ -8410,6 +8412,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String networkName,
     required String accountUuid,
     required BigInt liveTip,
+    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8419,6 +8422,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(networkName, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_u_64(liveTip, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8431,7 +8435,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSwapReceivePrepareReceiveReservationConstMeta,
-        argValues: [dbPath, networkName, accountUuid, liveTip],
+        argValues: [dbPath, networkName, accountUuid, liveTip, lightwalletdUrl],
         apiImpl: this,
       ),
     );
@@ -8440,7 +8444,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSwapReceivePrepareReceiveReservationConstMeta =>
       const TaskConstMeta(
         debugName: "prepare_receive_reservation",
-        argNames: ["dbPath", "networkName", "accountUuid", "liveTip"],
+        argNames: [
+          "dbPath",
+          "networkName",
+          "accountUuid",
+          "liveTip",
+          "lightwalletdUrl",
+        ],
       );
 
   @override
@@ -8754,6 +8764,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String networkName,
     required String accountUuid,
+    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8762,6 +8773,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(networkName, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8774,7 +8786,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSwapReceiveReapReceiveReservationsConstMeta,
-        argValues: [dbPath, networkName, accountUuid],
+        argValues: [dbPath, networkName, accountUuid, lightwalletdUrl],
         apiImpl: this,
       ),
     );
@@ -8783,7 +8795,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSwapReceiveReapReceiveReservationsConstMeta =>
       const TaskConstMeta(
         debugName: "reap_receive_reservations",
-        argNames: ["dbPath", "networkName", "accountUuid"],
+        argNames: ["dbPath", "networkName", "accountUuid", "lightwalletdUrl"],
       );
 
   @override

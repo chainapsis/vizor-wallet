@@ -6756,6 +6756,7 @@ fn wire__crate__api__swap_receive__prepare_receive_reservation_impl(
             let api_network_name = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_live_tip = <u64>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -6765,6 +6766,7 @@ fn wire__crate__api__swap_receive__prepare_receive_reservation_impl(
                             api_network_name,
                             api_account_uuid,
                             api_live_tip,
+                            api_lightwalletd_url,
                         )
                         .await?;
                         Ok(output_ok)
@@ -7061,6 +7063,7 @@ fn wire__crate__api__swap_receive__reap_receive_reservations_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network_name = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -7069,6 +7072,7 @@ fn wire__crate__api__swap_receive__reap_receive_reservations_impl(
                             api_db_path,
                             api_network_name,
                             api_account_uuid,
+                            api_lightwalletd_url,
                         )
                         .await?;
                         Ok(output_ok)

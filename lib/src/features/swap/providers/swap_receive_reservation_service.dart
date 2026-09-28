@@ -50,6 +50,7 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
         path,
         ref.read(rpcEndpointFailoverProvider).current.networkName,
         account,
+        ref.read(rpcEndpointFailoverProvider).current.lightwalletdUrl,
       );
     },
   );
@@ -72,10 +73,16 @@ abstract interface class ReceiveReservationStore {
 }
 
 class RustReceiveReservationStore implements ReceiveReservationStore {
-  const RustReceiveReservationStore(this.path, this.network, this.account);
+  const RustReceiveReservationStore(
+    this.path,
+    this.network,
+    this.account,
+    this.lightwalletdUrl,
+  );
   final String path;
   final String network;
   final String account;
+  final String lightwalletdUrl;
 
   @override
   Future<api.ReceiveReservation> prepare(BigInt tip) =>
@@ -84,6 +91,7 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
         networkName: network,
         accountUuid: account,
         liveTip: tip,
+        lightwalletdUrl: lightwalletdUrl,
       );
   @override
   Future<void> begin(PlatformInt64 reservation, String request) =>
@@ -156,6 +164,7 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
   @override
   Future<void> reap() async {
     await api.reapReceiveReservations(
+      lightwalletdUrl: lightwalletdUrl,
       dbPath: path,
       networkName: network,
       accountUuid: account,

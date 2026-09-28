@@ -30,6 +30,7 @@ pub(crate) async fn prepare(
     network: WalletNetwork,
     uuid: &str,
     live_tip: u64,
+    lightwalletd_url: &str,
 ) -> Result<ReceiveReservation, String> {
     if !private_recovery_enabled() {
         return Err("Incoming address recycling requires private recovery".into());
@@ -57,7 +58,7 @@ pub(crate) async fn prepare(
         db.prepare_swap_receive_reservation(account, now()?, birthday.max(activation))
             .map_err(|e| e.to_string())
     })?;
-    check(path, network, uuid, reservation.id).await?;
+    check(path, network, uuid, reservation.id, lightwalletd_url, true).await?;
     Ok(reservation)
 }
 
@@ -66,6 +67,8 @@ async fn check(
     network: WalletNetwork,
     uuid: &str,
     id: i64,
+    lightwalletd_url: &str,
+    reuse: bool,
 ) -> Result<zakura_swap_receiving::lifecycle::ChainAnchor, String> {
     use futures::Future;
     if network != WalletNetwork::Main {
@@ -76,7 +79,7 @@ async fn check(
     }
     let lease = crate::network_privacy::DirectRouteLease::new();
     let phase = async {
-        check_inner(path, network, uuid, id)
+        check_inner(path, network, uuid, id, lightwalletd_url, reuse)
             .await
             .map_err(std::io::Error::other)
     };
@@ -91,21 +94,27 @@ async fn check_inner(
     network: WalletNetwork,
     uuid: &str,
     id: i64,
+    lightwalletd_url: &str,
+    reuse: bool,
 ) -> Result<zakura_swap_receiving::lifecycle::ChainAnchor, String> {
     use receiver_directory::Receiver;
     use std::{num::NonZeroU32, time::Duration};
-    let (account, key, target) = with_db(path, network, uuid, |db, account| {
+    let (account, key, verified) = with_db(path, network, uuid, |db, account| {
         let key = db
             .swap_receive_reservation(account, id)
             .map_err(|e| e.to_string())?
             .key;
-        let target = db
-            .block_fully_scanned()
-            .map_err(|e| e.to_string())?
-            .ok_or("Finish wallet sync before requesting a swap address")?
-            .block_height();
-        Ok((account, key, target))
+        let verified = if reuse {
+            db.verified_swap_receive_reservation(account, id)
+                .map_err(|e| e.to_string())?
+        } else {
+            None
+        };
+        Ok((account, key, verified))
     })?;
+    if let Some(verified) = verified {
+        return Ok(verified);
+    }
     let http = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -115,9 +124,9 @@ async fn check_inner(
     let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT)?;
     let (client, accepted, anchor) =
         super::super::sync_engine::swap_private::receiver_client(&mut db, network, http).await?;
-    if anchor.height < target {
-        return Err("SWAP_RECEIVE_COVERAGE: Receive-address verification is waiting for PIR coverage. Try again shortly.".into());
-    }
+    // Avoid a receiver query while the publication is too stale to verify safely.
+    db.swap_receive_verification_tail(account, id, anchor)
+        .map_err(|e| e.to_string())?;
     let payments = client
         .lookup(
             Receiver::from_bytes(key.receiver().to_raw_address_bytes())
@@ -127,19 +136,44 @@ async fn check_inner(
         )
         .await
         .map_err(|e| e.to_string())?;
-    with_wallet_db_write_lock("swap_receive.check", || {
-        if !payments.is_empty() {
+    if !payments.is_empty() {
+        with_wallet_db_write_lock("swap_receive.found", || {
             db.request_swap_receive_recheck(account, key.key_id(), anchor)
-                .map_err(|e| e.to_string())?;
-            return Err("SWAP_RECEIVE_RECOVERY: A payment was found at this address. Finish receive recovery before requesting another quote.".into());
+                .map_err(|e| e.to_string())
+        })?;
+        return Err("SWAP_RECEIVE_RECOVERY: A payment was found at this address. Finish receive recovery before requesting another quote.".into());
+    }
+    let tail = db
+        .swap_receive_verification_tail(account, id, anchor)
+        .map_err(|e| e.to_string())?;
+    let blocks = if let Some(tail) = tail {
+        super::super::sync_engine::download_swap_verification_tail(lightwalletd_url, network, tail)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        Vec::new()
+    };
+    with_wallet_db_write_lock("swap_receive.check", || {
+        if !db
+            .verify_swap_receive_history(account, id, anchor, &blocks)
+            .map_err(|e| e.to_string())?
+        {
+            return Err("SWAP_RECEIVE_RECOVERY: A recent payment was found. Finish receive recovery before requesting another quote.".into());
         }
-        db.mark_swap_directory_checked(account, key.key_id(), anchor)
-            .map_err(|e| e.to_string())?;
-        Ok(anchor)
+        db.verified_swap_receive_reservation(account, id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                "SWAP_RECEIVE_COVERAGE: Receive-address coverage changed. Try again shortly.".into()
+            })
     })
 }
 
-pub(crate) async fn reap(path: &str, network: WalletNetwork, uuid: &str) -> Result<u32, String> {
+pub(crate) async fn reap(
+    path: &str,
+    network: WalletNetwork,
+    uuid: &str,
+    lightwalletd_url: &str,
+) -> Result<u32, String> {
     with_db(path, network, uuid, |db, account| {
         db.close_received_swap_reservations(account, now()?)
             .map_err(|e| e.to_string())
@@ -150,8 +184,9 @@ pub(crate) async fn reap(path: &str, network: WalletNetwork, uuid: &str) -> Resu
     })?;
     let mut reclaimed = 0;
     for id in candidates {
-        // Each attempt retains its state if either service is unavailable or behind.
-        match check(path, network, uuid, id).await {
+        // Reclamation always obtains a fresh directory result. Cached draft checks
+        // cannot release an old reservation. Failures retain the reservation.
+        match check(path, network, uuid, id, lightwalletd_url, false).await {
             Ok(anchor) => {
                 if with_db(path, network, uuid, |db, account| {
                     db.reclaim_swap_receive_reservation(account, id, now()?, anchor)

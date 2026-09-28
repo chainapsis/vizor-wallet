@@ -40,6 +40,10 @@ impl MemoryBlockSource {
         Self { blocks }
     }
 
+    pub(super) fn into_blocks(self) -> Vec<CompactBlock> {
+        self.blocks
+    }
+
     pub(super) fn height_range(&self) -> Option<std::ops::RangeInclusive<u64>> {
         Some(self.blocks.first()?.height..=self.blocks.last()?.height)
     }

@@ -180,7 +180,9 @@ The existing status refresh loop also checks reservations absent from the activi
 UI. An unpaid slot can be reclaimed after 48 hours from creation and from every
 accepted quote's deposit deadline. Every attempt must have a fresh successful
 provider check, with no pending or unknown funded operation. Reclamation then
-requires a complete empty receiver PIR lookup covering the wallet's accepted tip.
+requires a fresh complete empty receiver PIR lookup plus verified per-address
+coverage through the wallet's accepted tip. The publication may lag by at most
+five blocks only when those missing blocks have also been checked with this key.
 Provider errors, unknown quote outcomes, incomplete PIR coverage, or a payment
 retain the reservation. Cleanup runs while the app is active and before requesting
 another address; it does not need an operating-system service.
@@ -197,7 +199,21 @@ The seed-recovery gap is 50, and issuance may not exceed 50 slots after the high
 canonical receipt (indices 0 through 49 before the first receipt). Provider deposit
 status and local issuance do not advance that boundary. This bound is enforced
 before a draft is resumed as well as before a new reservation is created. Every
-address is checked through PIR before quoting, with no sync restart. Missing old
+address must have complete verified history before quoting, with no sync restart.
+An existing draft reuses its durable empty-address check when continuous per-key
+scanning covers the tail. That evidence is independent of PIR closeout checkpoints
+and survives quote edits and restart. A newly checked or reclaimed address can use
+a publication up to five blocks behind if its local scan ranges cover the gap.
+Otherwise the wallet downloads and checks all missing compact blocks with that
+key, bounded to five blocks. This uses the same trusted lightwalletd source as
+normal compact scanning. It checks canonical hashes, predecessor links and action
+counts before accepting the result. A discovered payment permanently excludes
+the address and queues private recovery without crediting balance prematurely.
+
+Quote issuance rechecks used markers and coverage atomically. Rewinds invalidate
+affected address checks. Missing blocks, malformed responses or coverage holes
+hold the reservation. These address checks do not relax full seed recovery or
+fixed retirement targets, and do not add permanent scanning keys. Missing old
 outgoing enhancement metadata no longer blocks incoming address preparation;
 refund allocation still waits for unresolved internal funding memos.
 

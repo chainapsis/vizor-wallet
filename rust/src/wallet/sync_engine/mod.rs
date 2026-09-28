@@ -59,6 +59,25 @@ mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
+/// Fetches a bounded verification tail without modifying the normal sync queue.
+/// The library validates canonical identities, counts, ownership, and coverage.
+pub(crate) async fn download_swap_verification_tail(
+    endpoint: &str,
+    network: WalletNetwork,
+    range: std::ops::Range<BlockHeight>,
+) -> Result<Vec<zcash_client_backend::proto::compact_formats::CompactBlock>, SyncError> {
+    if range.is_empty()
+        || range.end - range.start
+            > zcash_client_sqlite::wallet::swap_receiving::RECEIVE_VERIFICATION_MAX_LAG
+    {
+        return Err(SyncError::other("Invalid receive verification tail"));
+    }
+    let mut client = lwd::open_lwd_channel(endpoint).await?;
+    Ok(lwd::download_blocks(&mut client, range.start, range.end - 1, network)
+        .await?
+        .into_blocks())
+}
+
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
