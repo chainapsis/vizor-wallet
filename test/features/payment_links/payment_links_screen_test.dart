@@ -3687,6 +3687,37 @@ void main() {
     expect(batch.fundCalls, 1);
   });
 
+  for (final inFlight in [false, true]) {
+    testWidgets('leaving the route discards an unsent group '
+        '(${inFlight ? 'quote in flight' : 'quote ready'})', (tester) async {
+      final operations = FakePaymentLinkOperations();
+      final batch = _FakeDesktopBatchOperations(operations)
+        ..prepareGate = inFlight ? Completer<void>() : null;
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        batchOperations: batch,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_batch_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_bulk_amount')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(batch.preparedCounts, [2]);
+
+      // A sidebar route change disposes the screen; the group's card secrets
+      // must not stay in secure storage.
+      await tester.pumpWidget(const SizedBox());
+      batch.prepareGate?.complete();
+      await tester.pump();
+      expect(batch.abandoned, ['batch-test']);
+    });
+  }
+
   testWidgets('an account switch mid-funding keeps the group save retry', (
     tester,
   ) async {
@@ -3746,6 +3777,8 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   final FakePaymentLinkOperations operations;
   final List<int> preparedCounts = [];
   final List<PaymentLinkPresentation> preparedPresentations = [];
+  final List<String> abandoned = [];
+  Completer<void>? prepareGate;
   int fundCalls = 0;
   int metadataRetries = 0;
   Completer<void>? fundGate;
@@ -3762,6 +3795,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   }) async {
     preparedCounts.add(count);
     preparedPresentations.add(presentation);
+    await prepareGate?.future;
     return PaymentLinkBatchDraft(
       id: 'batch-test',
       links: links,
@@ -3775,7 +3809,8 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   }
 
   @override
-  Future<void> abandonUnsubmittedBatch(String batchId) async {}
+  Future<void> abandonUnsubmittedBatch(String batchId) async =>
+      abandoned.add(batchId);
 
   @override
   Future<PaymentLinkBatchFundingResult> fundBatch(

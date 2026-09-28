@@ -215,6 +215,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
+    _batchOperations = ref.read(paymentLinkBatchOperationsProvider);
     _paymentLinkIntake = ref.read(paymentLinkIntakeProvider.notifier);
     // Both form factors open on the Gift Card home (the cards list once any
     // exist, the create/redeem landing otherwise). Only a link that is
@@ -250,6 +251,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   void dispose() {
     _fundingQuoteDebounce?.cancel();
     _batchQuoteDebounce?.cancel();
+    // Leaving the route drops an unsent group's secrets like leaving the flow.
+    _clearPreparedBatch();
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {

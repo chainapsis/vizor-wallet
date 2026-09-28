@@ -30,6 +30,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
   bool _canEstimateCardFee(SyncState? sync, String accountUuid);
   HardwareSignerKind? _signerFor(String? accountUuid);
 
+  // Captured once so cleanup still works after the screen is disposed.
+  late final PaymentLinkBatchOperations _batchOperations;
   int _batchCount = 2;
   int _batchPreparationGeneration = 0;
   Timer? _batchQuoteDebounce;
@@ -79,14 +81,13 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       :final draft,
     ) when _batchSubmission is _BatchNotSent) {
       unawaited(
-        ref
-            .read(paymentLinkBatchOperationsProvider)
-            .abandonUnsubmittedBatch(draft.id)
-            .catchError((Object error) {
-              log(
-                'PaymentLinksScreen: could not discard unsubmitted batch: $error',
-              );
-            }),
+        _batchOperations.abandonUnsubmittedBatch(draft.id).catchError((
+          Object error,
+        ) {
+          log(
+            'PaymentLinksScreen: could not discard unsubmitted batch: $error',
+          );
+        }),
       );
     }
     _batchQuote = const _BatchQuoteEmpty();
@@ -232,25 +233,21 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     }
     setState(() => _batchQuote = const _BatchQuotePreparing());
     try {
-      final draft = await ref
-          .read(paymentLinkBatchOperationsProvider)
-          .prepareBatch(
-            count: _batchCount,
-            amountZatoshi: amount,
-            sourceAccountUuid: accountUuid,
-            presentation: _batchPresentation(amount),
-            artworkIds: _batchMixedArtworks
-                ?.take(_batchCount)
-                .map((artwork) => artwork.protocolId)
-                .toList(),
-          );
+      final draft = await _batchOperations.prepareBatch(
+        count: _batchCount,
+        amountZatoshi: amount,
+        sourceAccountUuid: accountUuid,
+        presentation: _batchPresentation(amount),
+        artworkIds: _batchMixedArtworks
+            ?.take(_batchCount)
+            .map((artwork) => artwork.protocolId)
+            .toList(),
+      );
       if (!mounted ||
           generation != _batchPreparationGeneration ||
           _page != PaymentLinksLocalPage.bulk ||
           ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
-        await ref
-            .read(paymentLinkBatchOperationsProvider)
-            .abandonUnsubmittedBatch(draft.id);
+        await _batchOperations.abandonUnsubmittedBatch(draft.id);
         return;
       }
       final spendable = ref.read(syncProvider).value?.spendableBalance;
@@ -295,9 +292,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     });
     if (hardware) return;
     try {
-      final result = await ref
-          .read(paymentLinkBatchOperationsProvider)
-          .fundBatch(draft);
+      final result = await _batchOperations.fundBatch(draft);
       if (!mounted) return;
       await _loadRecoveries(showError: false);
       if (!mounted) return;
@@ -389,12 +384,10 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     final result = submission.result;
     setState(() => _batchSubmission = _BatchUnsaved(result, saving: true));
     try {
-      await ref
-          .read(paymentLinkBatchOperationsProvider)
-          .retryBatchFundingMetadata(
-            batchId: result.draft.id,
-            fundingTxids: result.txids,
-          );
+      await _batchOperations.retryBatchFundingMetadata(
+        batchId: result.draft.id,
+        fundingTxids: result.txids,
+      );
       await _loadRecoveries(showError: false);
       if (!mounted) return;
       _showCreatedBatch(result.draft);
@@ -444,9 +437,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     if (!uncertain && retained.isNotEmpty) {
       // A failed preparation leaves the drafts for a retry; leaving drops them.
       try {
-        await ref
-            .read(paymentLinkBatchOperationsProvider)
-            .abandonUnsubmittedBatch(draft.id);
+        await _batchOperations.abandonUnsubmittedBatch(draft.id);
       } catch (error) {
         log('PaymentLinksScreen: could not discard unsubmitted batch: $error');
       }
