@@ -110,11 +110,12 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
     ),
   );
 
+  // No right padding: the card list keeps it as its scrollbar's gutter.
   Widget _split(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(
       AppSpacing.s,
       AppSpacing.xs,
-      AppSpacing.s,
+      0,
       AppSpacing.sm,
     ),
     child: Row(
@@ -220,6 +221,7 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
 
   Widget _cardList(BuildContext context, {required bool scrollable}) {
     final colors = context.colors;
+    final inset = EdgeInsets.only(right: scrollable ? AppSpacing.s : 0);
     // The status ends at the trailing edge, so a changing label grows toward
     // the title and keeps its one-line height.
     final heading = Wrap(
@@ -243,9 +245,12 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          heading,
+          Padding(padding: inset, child: heading),
           const SizedBox(height: AppSpacing.sm),
-          _PendingLine(kind: pendingKind),
+          Padding(
+            padding: inset,
+            child: _PendingLine(kind: pendingKind),
+          ),
         ],
       );
     }
@@ -275,7 +280,7 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
       mainAxisSize: scrollable ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        heading,
+        Padding(padding: inset, child: heading),
         const SizedBox(height: AppSpacing.sm),
         if (scrollable)
           Expanded(child: _ScrollingCardList(rows: rows))
@@ -344,10 +349,16 @@ class _ScrollingCardListState extends State<_ScrollingCardList> {
             ).createShader(rect),
             child: list,
           ),
+          // The rows stop short of the right padding, and the 6px thumb sits
+          // in the middle of it rather than over the row actions.
           child: AppPaneScrollbar(
+            crossAxisMargin: 3,
             builder: (context, controller) => ListView(
               controller: controller,
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              padding: const EdgeInsets.only(
+                right: AppSpacing.s,
+                bottom: AppSpacing.xs,
+              ),
               children: widget.rows,
             ),
           ),
