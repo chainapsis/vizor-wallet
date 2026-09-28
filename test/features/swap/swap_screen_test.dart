@@ -4341,6 +4341,12 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
     expect(find.text('Slippage'), findsOneWidget);
+    expect(
+      find.text(
+        "Sets the maximum rate change you'll accept. Network fees are separate.",
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const ValueKey('swap_slippage_200bps')));
     await tester.pumpAndSettle();
@@ -4398,9 +4404,8 @@ void main() {
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    // Card top padding (24) + title line (24) + 16 gap + three 40dp preset
-    // rows with 8dp gaps (3×40 + 3×8 = 144) puts the custom row 208dp down.
-    expect(customCardTop - slippageModalTop, 208);
+    // The explainer occupies three lines and a 16dp gap before the presets.
+    expect(customCardTop - slippageModalTop, 296);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
       40,
