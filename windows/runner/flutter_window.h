@@ -43,6 +43,8 @@ class FlutterWindow : public Win32Window {
       payment_uri_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       password_input_source_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      caps_lock_channel_;
   std::vector<std::string> pending_payment_uris_;
   bool payment_uri_dart_ready_ = false;
 

@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'src/core/input/caps_lock_monitor.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
@@ -284,6 +285,7 @@ Future<void> runZcashWalletApp() async {
   } else {
     app = await buildBootstrappedZcashWalletApp(
       overrides: [
+        capsLockMonitoringEnabledProvider.overrideWithValue(true),
         appPasswordInputSourceProvider.overrideWith((ref) {
           final service = AppPasswordInputSource.production();
           ref.onDispose(service.dispose);

@@ -11,6 +11,9 @@ namespace {
 FlMethodChannel* payment_channel = nullptr;
 FlMethodCallHandler payment_handler = nullptr;
 gpointer payment_handler_data = nullptr;
+FlMethodChannel* caps_channel = nullptr;
+FlMethodCallHandler caps_handler = nullptr;
+gpointer caps_handler_data = nullptr;
 
 void Record(const char* event, gchar** arguments = nullptr) {
   FILE* file = fopen(g_getenv("VIZOR_TEST_EVENTS"), "a");
@@ -61,6 +64,11 @@ gboolean Control(gpointer data) {
     FlMethodCall ready{"ready"};
     payment_handler(payment_channel, &ready, payment_handler_data);
     Record("payment-ready");
+  }
+  if (strcmp(command, "caps-state") == 0) {
+    g_assert_nonnull(caps_channel);
+    FlMethodCall call{"getCapsLockState"};
+    caps_handler(caps_channel, &call, caps_handler_data);
   }
   if (strcmp(command, "close") == 0) {
     gtk_window_close(window);
@@ -139,6 +147,13 @@ void fl_method_response_free(FlMethodResponse* response) {
   delete response;
 }
 FlValue* fl_value_new_list() { return new FlValue(); }
+FlValue* fl_value_new_null() { return new FlValue(); }
+FlValue* fl_value_new_bool(gboolean value) {
+  auto* result = new FlValue();
+  result->is_bool = true;
+  result->boolean = value;
+  return result;
+}
 FlValue* fl_value_new_string(const gchar* value) {
   return new FlValue{{value}};
 }
@@ -161,31 +176,53 @@ static void RecordUris(FlValue* value) {
     Record("payment-uri", arguments);
   }
 }
+static void RecordCaps(const char* event, FlValue* value) {
+  const char* state = value != nullptr && value->is_bool
+                          ? (value->boolean ? "true" : "false") : "null";
+  gchar* arguments[] = {const_cast<gchar*>(state), nullptr};
+  Record(event, arguments);
+}
 void fl_method_call_respond(FlMethodCall* call, FlMethodResponse* response,
                             GError**) {
   if (strcmp(call->name, "takePendingUris") == 0) RecordUris(response->value);
+  if (strcmp(call->name, "getCapsLockState") == 0) RecordCaps("caps-state", response->value);
 }
 FlStandardMethodCodec* fl_standard_method_codec_new() {
   return G_OBJECT(g_object_new(G_TYPE_OBJECT, nullptr));
 }
 FlEngine* fl_view_get_engine(FlView* view) { return G_OBJECT(view); }
 GObject* fl_engine_get_binary_messenger(FlEngine* engine) { return engine; }
-FlMethodChannel* fl_method_channel_new(GObject*, const gchar*, GObject*) {
-  payment_channel = G_OBJECT(g_object_new(G_TYPE_OBJECT, nullptr));
-  g_object_add_weak_pointer(payment_channel,
-                             reinterpret_cast<gpointer*>(&payment_channel));
-  return payment_channel;
+FlMethodChannel* fl_method_channel_new(GObject*, const gchar* name, GObject*) {
+  auto* channel = G_OBJECT(g_object_new(G_TYPE_OBJECT, nullptr));
+  if (strcmp(name, "com.zcash.wallet/payment_uri") == 0) {
+    payment_channel = channel;
+    g_object_add_weak_pointer(channel, reinterpret_cast<gpointer*>(&payment_channel));
+  } else {
+    g_assert_cmpstr(name, ==, "com.zcash.wallet/caps_lock");
+    caps_channel = channel;
+    g_object_add_weak_pointer(channel, reinterpret_cast<gpointer*>(&caps_channel));
+  }
+  return channel;
 }
 void fl_method_channel_set_method_call_handler(
-    FlMethodChannel*, FlMethodCallHandler handler, gpointer data, GDestroyNotify) {
-  payment_handler = handler;
-  payment_handler_data = data;
+    FlMethodChannel* channel, FlMethodCallHandler handler, gpointer data, GDestroyNotify) {
+  if (channel == payment_channel) {
+    payment_handler = handler;
+    payment_handler_data = data;
+  } else {
+    caps_handler = handler;
+    caps_handler_data = data;
+  }
 }
 void fl_method_channel_invoke_method(FlMethodChannel*, const gchar* method,
                                       FlValue* value, GCancellable*,
                                       GAsyncReadyCallback, gpointer) {
-  g_assert_cmpstr(method, ==, "onUris");
-  RecordUris(value);
+  if (strcmp(method, "onStateChanged") == 0) {
+    RecordCaps("caps-changed", value);
+  } else {
+    g_assert_cmpstr(method, ==, "onUris");
+    RecordUris(value);
+  }
 }
 
 extern "C" gint __real_gtk_dialog_run(GtkDialog* dialog);

@@ -444,6 +444,28 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(),
       flutter_controller_->view()->GetNativeWindow());
 
+  caps_lock_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/caps_lock",
+          &flutter::StandardMethodCodec::GetInstance());
+  const HWND keyboard_view = flutter_controller_->view()->GetNativeWindow();
+  caps_lock_channel_->SetMethodCallHandler(
+      [keyboard_view](const auto& call, auto result) {
+        if (call.method_name() != "getCapsLockState") {
+          result->NotImplemented();
+          return;
+        }
+        if (::GetForegroundWindow() != ::GetAncestor(keyboard_view, GA_ROOT)) {
+          result->Success();
+          return;
+        }
+        // Runs on the UI/message thread. The low bit is the lock state;
+        // the high bit (or GetAsyncKeyState) only describes key presses.
+        result->Success(flutter::EncodableValue(
+            (::GetKeyState(VK_CAPITAL) & 0x0001) != 0));
+      });
+
   camera_permission_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
@@ -526,7 +548,7 @@ void FlutterWindow::OnDestroy() {
   auto controller = std::move(flutter_controller_);
   for (auto* channel : {&camera_permission_channel_, &device_owner_auth_channel_,
                         &velopack_update_channel_, &payment_uri_channel_,
-                        &password_input_source_channel_}) {
+                        &password_input_source_channel_, &caps_lock_channel_}) {
     if (*channel) {
       (*channel)->SetMethodCallHandler(nullptr);
       channel->reset();

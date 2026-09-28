@@ -45,6 +45,57 @@ private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
 }
 
 /// App-password convenience only. Never enables sources or changes key handling.
+/// Reads the OS lock flag without changing keyboard layout or lock state.
+final class CapsLockChannel {
+  private let channel: FlutterMethodChannel
+  private weak var window: NSWindow?
+  private var monitor: Any?
+  private var observers: [NSObjectProtocol] = []
+
+  init(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    self.window = window
+    channel = FlutterMethodChannel(name: "com.zcash.wallet/caps_lock", binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "getCapsLockState" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result(self?.currentState())
+    }
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+      self?.publish()
+      return event
+    }
+    let center = NotificationCenter.default
+    for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+      observers.append(center.addObserver(forName: name, object: window, queue: .main) {
+        [weak self] _ in self?.publish()
+      })
+    }
+    observers.append(center.addObserver(
+      forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.publish() })
+    observers.append(center.addObserver(
+      forName: NSApplication.willResignActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.channel.invokeMethod("onStateChanged", arguments: nil) })
+  }
+
+  private func currentState() -> Bool? {
+    guard NSApp.isActive, window?.isKeyWindow == true else { return nil }
+    return NSEvent.modifierFlags.contains(.capsLock)
+  }
+
+  private func publish() {
+    channel.invokeMethod("onStateChanged", arguments: currentState())
+  }
+
+  deinit {
+    channel.setMethodCallHandler(nil)
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+  }
+}
+
 final class PasswordInputSourceChannel {
   private static var channel: FlutterMethodChannel?
 
@@ -1127,6 +1178,7 @@ class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
   private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+  private var capsLockChannel: CapsLockChannel?
   private var ledgerBleHandler: LedgerMobileHandler?
   private var ledgerBleMethodChannel: FlutterMethodChannel?
   private var ledgerBleDiscoveryChannel: FlutterEventChannel?
@@ -1148,6 +1200,9 @@ class MainFlutterWindow: NSWindow {
     installVizorWindowToolbarObservers()
     applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
+    capsLockChannel = CapsLockChannel(
+      window: self, messenger: flutterViewController.engine.binaryMessenger
+    )
     PasswordInputSourceChannel.register(
       window: self,
       messenger: flutterViewController.engine.binaryMessenger

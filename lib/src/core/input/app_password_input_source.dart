@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../layout/app_form_factor.dart';
+import 'caps_lock_warning.dart';
 
 /// Disabled outside the production bootstrap (including Widgetbook/tests).
 final appPasswordInputSourceProvider = Provider<AppPasswordInputSource>((ref) {
@@ -375,6 +376,6 @@ class _AppPasswordInputState extends ConsumerState<AppPasswordInput>
       _cancelRestore();
       return KeyEventResult.ignored;
     },
-    child: widget.child,
+    child: CapsLockWarning(child: widget.child),
   );
 }

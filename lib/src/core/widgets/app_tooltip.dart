@@ -24,14 +24,29 @@ class AppTooltip extends StatelessWidget {
   final bool excludeFromSemantics;
   final Widget child;
 
-  @override
-  Widget build(BuildContext context) {
+  static TextStyle textStyleOf(BuildContext context) {
     final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
-    final textStyle = AppTypography.bodySmall.copyWith(
-      color: isDark ? colors.text.accent : colors.text.inverse,
+    return AppTypography.bodySmall.copyWith(
+      color: context.appTheme == AppThemeData.dark
+          ? colors.text.accent
+          : colors.text.inverse,
       letterSpacing: 0,
     );
+  }
+
+  static BoxDecoration decorationOf(BuildContext context) {
+    final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
+    return BoxDecoration(
+      color: isDark ? colors.surface.tooltip : colors.background.inverse,
+      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      border: isDark ? Border.all(color: colors.border.regular) : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = textStyleOf(context);
 
     return Tooltip(
       message: message,
@@ -49,11 +64,7 @@ class AppTooltip extends StatelessWidget {
         horizontal: AppSpacing.s,
         vertical: AppSpacing.xs,
       ),
-      decoration: BoxDecoration(
-        color: isDark ? colors.surface.tooltip : colors.background.inverse,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-        border: isDark ? Border.all(color: colors.border.regular) : null,
-      ),
+      decoration: decorationOf(context),
       child: child,
     );
   }

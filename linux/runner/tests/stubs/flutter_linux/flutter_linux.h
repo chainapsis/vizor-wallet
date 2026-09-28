@@ -27,7 +27,11 @@ void fl_view_set_background_color(FlView* view, const GdkRGBA* color);
 using FlEngine = GObject;
 using FlStandardMethodCodec = GObject;
 using FlMethodChannel = GObject;
-struct FlValue { std::vector<std::string> strings; };
+struct FlValue {
+  std::vector<std::string> strings;
+  bool boolean = false;
+  bool is_bool = false;
+};
 struct FlMethodCall { const gchar* name; };
 struct FlMethodResponse { FlValue* value; };
 using FlMethodCallHandler = void (*)(FlMethodChannel*, FlMethodCall*, gpointer);
@@ -38,6 +42,8 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(FlValue, fl_value_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FlMethodResponse, fl_method_response_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FlStandardMethodCodec, g_object_unref)
 FlValue* fl_value_new_list();
+FlValue* fl_value_new_null();
+FlValue* fl_value_new_bool(gboolean value);
 FlValue* fl_value_new_string(const gchar* value);
 void fl_value_append_take(FlValue* list, FlValue* value);
 const gchar* fl_method_call_get_name(FlMethodCall* call);
