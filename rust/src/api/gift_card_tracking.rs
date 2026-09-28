@@ -67,11 +67,8 @@ pub async fn inspect_gift_card_usage(
     };
     if evidence.reason.as_deref() == Some("fundingNotObserved") {
         evidence.reason = Some(
-            tracking::shared_funding_lookup(
+            tracking::cancellable_lookup(
                 epoch,
-                &lightwalletd_url,
-                &funding_txids,
-                evidence.verified_height,
                 crate::wallet::sync_engine::gift_card_funding_reason(
                     &lightwalletd_url,
                     &funding_txids,
