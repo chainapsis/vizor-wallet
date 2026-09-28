@@ -30,12 +30,17 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.onFundingBroadcast,
     this.presentation,
     this.batch,
+    this.onBatchRefused,
     super.key,
   });
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
   final PaymentLinkBatchDraft? batch;
+
+  /// A group whose proposal no longer matches its quote, or that its signer
+  /// cannot sign, returns here instead of offering a retry.
+  final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final Future<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink,
@@ -168,6 +173,14 @@ class _PaymentLinkLedgerSigningOverlayState
       await _present(result);
     } catch (error, stack) {
       log('GiftCardLedger: $error\n$stack');
+      final refused = widget.onBatchRefused;
+      if (refused != null &&
+          _active &&
+          _draft == null &&
+          isPaymentLinkBatchRefusal(error)) {
+        await refused(error);
+        return;
+      }
       if (!_active && !_checkpointed) {
         unawaited(
           _discardAfterWork().catchError(

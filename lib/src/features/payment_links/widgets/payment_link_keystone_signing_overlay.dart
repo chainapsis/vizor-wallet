@@ -29,6 +29,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onFundingBroadcast,
     this.presentation,
     this.batch,
+    this.onBatchRefused,
     super.key,
   });
 
@@ -36,6 +37,10 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
   final PaymentLinkBatchDraft? batch;
+
+  /// A group whose proposal no longer matches its quote, or that its signer
+  /// cannot sign, returns here instead of offering a retry.
+  final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final FutureOr<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
@@ -155,6 +160,14 @@ class _PaymentLinkKeystoneSigningOverlayState
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
       if (_cancelled) return;
+      final refused = widget.onBatchRefused;
+      if (refused != null &&
+          mounted &&
+          _draft == null &&
+          isPaymentLinkBatchRefusal(error)) {
+        await refused(error);
+        return;
+      }
       try {
         await _discardDraft();
       } catch (cleanupError) {

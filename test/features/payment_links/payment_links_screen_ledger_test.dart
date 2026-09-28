@@ -196,9 +196,19 @@ class _LedgerBatchOperations implements PaymentLinkBatchOperations {
       createdAt: ledgerGiftLink.createdAt,
       presentation: presentation,
     );
+    final first = VizorPaymentLink(
+      label: ledgerGiftLink.label,
+      network: ledgerGiftLink.network,
+      address: ledgerGiftLink.address,
+      amountZatoshi: amountZatoshi,
+      mnemonic: ledgerGiftLink.mnemonic,
+      birthdayHeight: ledgerGiftLink.birthdayHeight,
+      createdAt: ledgerGiftLink.createdAt,
+      presentation: presentation,
+    );
     return PaymentLinkBatchDraft(
       id: 'ledger-screen-batch',
-      links: [ledgerGiftLink, second],
+      links: [first, second],
       quote: PaymentLinkBatchQuote(
         sourceAccountUuid: sourceAccountUuid,
         count: count,

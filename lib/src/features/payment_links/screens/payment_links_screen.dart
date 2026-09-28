@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -209,6 +210,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   // readiness is unknown, not pending.
   bool _fundingProgressChecked = false;
   final Set<String> _exportingBatchIds = {};
+  bool _checkingBatchStatus = false;
   List<PaymentLinkRecoveryRecord>? _exportConfirmMembers;
 
   @override
@@ -250,9 +252,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   @override
   void dispose() {
     _fundingQuoteDebounce?.cancel();
-    _batchQuoteDebounce?.cancel();
-    // Leaving the route drops an unsent group's secrets like leaving the flow.
-    _clearPreparedBatch();
+    _disposeBatchCreation();
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
@@ -435,6 +435,25 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     await _consumePendingPaymentLink();
   }
 
+  /// Whether the open group's records are loaded, in any account.
+  bool get _openBatchLoaded =>
+      _selectedBatchId != null &&
+      _recoveries.any((record) => record.batchId == _selectedBatchId);
+
+  /// Recovery removes a group only once it is known to hold no funds.
+  void _leaveVanishedBatch() {
+    if (!mounted ||
+        _page != PaymentLinksLocalPage.batchDetail ||
+        _openBatchLoaded) {
+      return;
+    }
+    setState(() {
+      _selectedBatchId = null;
+      _page = PaymentLinksLocalPage.home;
+    });
+    _showError('This group wasn’t funded. Create it again.');
+  }
+
   @override
   Future<void> _loadRecoveries({bool showError = true}) async {
     try {
@@ -443,7 +462,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           .loadCreatedLinkRecoveries();
       if (!mounted) return;
       final visible = records.toList()..sort(compareCreatedPaymentLinks);
+      final hadOpenBatch = _openBatchLoaded;
       setState(() => _recoveries = visible);
+      if (hadOpenBatch) _leaveVanishedBatch();
       unawaited(_refreshFundingProgress(records: visible));
     } catch (_) {
       if (mounted && showError) {
@@ -482,6 +503,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       };
       final readyFundingExpired =
           _readyLink != null && expiredAddresses.contains(_readyLink!.address);
+      final hadOpenBatch = _openBatchLoaded;
       final mergedUpdates = {
         for (final entry in updates.entries)
           entry.key:
@@ -500,12 +522,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         };
         if (readyFundingExpired) {
           _readyLink = null;
-          _page = PaymentLinksLocalPage.home;
+          if (_page == PaymentLinksLocalPage.ready) {
+            _page = PaymentLinksLocalPage.home;
+          }
         }
       });
       if (readyFundingExpired) {
         _showError('Gift card funding expired. Create it again.');
       }
+      if (hadOpenBatch) _leaveVanishedBatch();
     } catch (_) {
       // Keep the last known progress. A later foreground sync or timer tick
       // retries this read without hiding an already-ready link.
@@ -1486,17 +1511,25 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
     );
     unawaited(_refreshFundingProgress());
-    if (result.status == 'broadcasted_storage_failed' ||
-        result.status == 'broadcast_unknown') {
-      showAppToast(
-        context,
-        result.message ??
-            (result.status == 'broadcast_unknown'
-                ? 'Funding is still being verified. Vizor will keep checking it.'
-                : 'Funding was sent, but local transaction storage needs to sync.'),
-        iconName: AppIcons.warning,
-      );
+    _warnUnsettledHardwareFunding(result);
+  }
+
+  /// A hardware funding the network may hold that is not settled locally yet.
+  @override
+  void _warnUnsettledHardwareFunding(PaymentLinkHardwareFundingResult result) {
+    if (!mounted ||
+        (result.status != 'broadcasted_storage_failed' &&
+            result.status != 'broadcast_unknown')) {
+      return;
     }
+    showAppToast(
+      context,
+      result.message ??
+          (result.status == 'broadcast_unknown'
+              ? 'Funding is still being verified. Vizor will keep checking it.'
+              : 'Funding was sent, but local transaction storage needs to sync.'),
+      iconName: AppIcons.warning,
+    );
   }
 
   Future<void> _copyPaymentLink(VizorPaymentLink link) async {
@@ -2705,6 +2738,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         : PaymentLinkBatchPendingKind.confirming;
   }
 
+  Future<void> _checkBatchStatus() async {
+    setState(() => _checkingBatchStatus = true);
+    try {
+      // Reloading reconciles an ambiguous batch, then refreshes its progress.
+      await _loadRecoveries();
+    } finally {
+      if (mounted) setState(() => _checkingBatchStatus = false);
+    }
+  }
+
   void _openBatchDetail(String batchId) {
     _selectedBatchId = batchId;
     _showPage(PaymentLinksLocalPage.batchDetail);
@@ -2717,6 +2760,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _visibleRecoveries.where((record) => record.batchId == id).toList()
           ..sort((a, b) => (a.batchIndex ?? 0).compareTo(b.batchIndex ?? 0));
     if (members.isEmpty) {
+      // Not loaded at all (a failed reload): show the list until it is.
+      if (_initialCardsLoaded && !_openBatchLoaded) return _buildHome();
       return PaymentLinkPane(
         backLabel: 'Gift Cards',
         onBack: () => _showPage(PaymentLinksLocalPage.home),
@@ -2810,8 +2855,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onExport: ready && !_exportingBatchIds.contains(id)
           ? () => _requestBatchExport(members)
           : null,
-      // Reloading reconciles an ambiguous batch, then refreshes its progress.
-      onCheckStatus: () => unawaited(_loadRecoveries()),
+      onCheckStatus: _checkingBatchStatus
+          ? null
+          : () => unawaited(_checkBatchStatus()),
       pendingKind: _batchPendingKind(members),
       usageActivity: PaymentLinkBatchUsageActivity(
         checking: tracking.checking,
@@ -2964,6 +3010,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     setState(() {
       _shareQrRecord = record;
       _shareQrData = shareData;
+      _justCreatedBatchId = null;
       _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;

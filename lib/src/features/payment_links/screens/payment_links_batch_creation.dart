@@ -29,12 +29,16 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
   Future<void> _refreshFundingProgress();
   bool _canEstimateCardFee(SyncState? sync, String accountUuid);
   HardwareSignerKind? _signerFor(String? accountUuid);
+  void _warnUnsettledHardwareFunding(PaymentLinkHardwareFundingResult result);
 
   // Captured once so cleanup still works after the screen is disposed.
   late final PaymentLinkBatchOperations _batchOperations;
   int _batchCount = 2;
   int _batchPreparationGeneration = 0;
   Timer? _batchQuoteDebounce;
+  // Review and Create share one button, so the second press of a double-click
+  // on Review must not fund the group unreviewed.
+  Timer? _batchCreateArming;
   _BatchQuote _batchQuote = const _BatchQuoteEmpty();
   _BatchSubmission _batchSubmission = const _BatchNotSent();
   bool _batchReviewing = false;
@@ -91,6 +95,33 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       );
     }
     _batchQuote = const _BatchQuoteEmpty();
+  }
+
+  /// A quote prepared before the ZEC price loaded, now that it has.
+  bool get _batchFiatSnapshotStale {
+    final quote = _batchQuote;
+    return quote is _BatchQuoteReady &&
+        ref.read(swapFeatureEnabledProvider) &&
+        quote.draft.links.first.presentation?.fiatSnapshot == null &&
+        ref.read(zecHomeMarketDataStateProvider).displayData?.usdPrice != null;
+  }
+
+  /// Leaving the route drops the secrets of a group nothing was sent for.
+  void _disposeBatchCreation() {
+    _batchQuoteDebounce?.cancel();
+    _batchCreateArming?.cancel();
+    _clearPreparedBatch();
+    // A hardware preparation that failed leaves its drafts for a retry. The
+    // store refuses to remove anything that reached a signer.
+    if (_batchSubmission case _BatchSending(:final hardwareDraft?)) {
+      unawaited(
+        _batchOperations.abandonUnsubmittedBatch(hardwareDraft.id).catchError((
+          Object error,
+        ) {
+          log('PaymentLinksScreen: hardware batch cleanup deferred: $error');
+        }),
+      );
+    }
   }
 
   void _startBulkCreate() {
@@ -298,7 +329,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       if (!mounted) return;
       _applyBatchFundingResult(result);
     } on PaymentLinkBatchQuoteChanged {
-      _requoteBatch('The network fee changed. Review the new total.');
+      _requoteBatch(_kBatchFeeChangedText);
     } on PaymentLinkBatchPreSubmissionFailure {
       _requoteBatch('No cards were funded. Review the amount and try again.');
     } on PaymentLinkBatchRejected catch (rejected) {
@@ -405,6 +436,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       PaymentLinkHardwareFundingResult result,
     ) => _completeHardwareBatch(draft, result);
     Future<void> onCancel() => _cancelHardwareBatch(draft);
+    Future<void> onRefused(Object refusal) =>
+        _cancelHardwareBatch(draft, refusal: refusal);
     if (_signerFor(accountUuid) == HardwareSignerKind.ledger) {
       return PaymentLinkLedgerSigningOverlay(
         key: ValueKey('ledger-batch-${draft.id}'),
@@ -412,6 +445,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
         sourceAccountUuid: accountUuid,
         batch: draft,
         onCancel: onCancel,
+        onBatchRefused: onRefused,
         onFundingBroadcast: onBroadcast,
       );
     }
@@ -421,11 +455,15 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       sourceAccountUuid: accountUuid,
       batch: draft,
       onCancel: onCancel,
+      onBatchRefused: onRefused,
       onFundingBroadcast: onBroadcast,
     );
   }
 
-  Future<void> _cancelHardwareBatch(PaymentLinkBatchDraft draft) async {
+  Future<void> _cancelHardwareBatch(
+    PaymentLinkBatchDraft draft, {
+    Object? refusal,
+  }) async {
     if (!mounted || _hardwareBatchSigning != draft) return;
     final recoveries = await ref.read(paymentLinkRecoveryStoreProvider).load();
     final retained = recoveries.where((record) => record.batchId == draft.id);
@@ -444,14 +482,20 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     }
     if (!mounted || _hardwareBatchSigning != draft) return;
     setState(() {
-      _batchQuote = const _BatchQuoteEmpty();
+      _batchQuote = refusal is PaymentLinkBatchRejected
+          ? _BatchQuoteFailed(refusal.message)
+          : const _BatchQuoteEmpty();
       _batchSubmission = uncertain
           ? const _BatchUncertain()
           : const _BatchNotSent();
       _operationInProgress = false;
     });
+    if (refusal is PaymentLinkBatchQuoteChanged) {
+      _showError(_kBatchFeeChangedText);
+    }
     await _loadRecoveries(showError: false);
     if (!uncertain &&
+        refusal is! PaymentLinkBatchRejected &&
         mounted &&
         _page == PaymentLinksLocalPage.bulk &&
         _batchReviewing) {
@@ -476,6 +520,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
         fundingMetadataSaved: funding.fundingMetadataSaved,
       ),
     );
+    _warnUnsettledHardwareFunding(funding);
     unawaited(_refreshFundingProgress());
   }
 
@@ -539,17 +584,24 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       onReview: canProceed
           ? () {
               setState(() => _batchReviewing = true);
-              if (_batchPresentationDirty) {
+              _batchCreateArming?.cancel();
+              _batchCreateArming = Timer(kDoubleTapTimeout, () {});
+              if (_batchPresentationDirty || _batchFiatSnapshotStale) {
                 _clearPreparedBatch();
                 _batchPresentationDirty = false;
                 unawaited(_prepareBatch());
               }
             }
           : null,
-      onEdit: () => setState(() => _batchReviewing = false),
+      onEdit: _batchLocked
+          ? null
+          : () => setState(() => _batchReviewing = false),
       onCreate: switch (submission) {
         _BatchUnsaved(saving: false) => _retryBatchFundingMetadata,
-        _BatchNotSent() when canProceed => _createFundedBatch,
+        _BatchNotSent() when canProceed => () {
+          if (_batchCreateArming?.isActive ?? false) return;
+          unawaited(_createFundedBatch());
+        },
         _ => null,
       },
       onBack: () => _showPage(PaymentLinksLocalPage.home),
@@ -559,6 +611,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     );
   }
 }
+
+const _kBatchFeeChangedText = 'The network fee changed. Review the new total.';
 
 const _kBatchOverBalanceText =
     'Reduce the amount or number of cards to fit your available balance.';

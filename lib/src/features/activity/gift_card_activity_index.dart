@@ -89,28 +89,18 @@ class GiftCardActivityIndex {
       }
     }
     for (final entry in batchRecordsByTxid.entries) {
-      final members = entry.value;
-      final first = members.first;
+      final first = entry.value.first;
+      // The transaction funded every card, even after some records are gone.
+      final count = BigInt.from(first.batchCount ?? entry.value.length);
       final amountPerCard = first.link.amountZatoshi;
       createdMetadata[entry.key] = GiftCardActivityMetadata(
         kind: GiftCardActivityKind.created,
-        amountZatoshi: members.fold<BigInt>(
-          BigInt.zero,
-          (total, record) => total + record.link.amountZatoshi,
-        ),
+        amountZatoshi: amountPerCard * count,
         artworkId: first.link.presentation?.artworkId,
         message: first.link.presentation?.message,
-        claimFeeReserveZatoshi: members.fold<BigInt>(
-          BigInt.zero,
-          (total, record) => total + record.claimFeeReserveZatoshi,
-        ),
-        batchCount: members.length,
-        amountPerCardZatoshi:
-            members.every(
-              (record) => record.link.amountZatoshi == amountPerCard,
-            )
-            ? amountPerCard
-            : null,
+        claimFeeReserveZatoshi: first.claimFeeReserveZatoshi * count,
+        batchCount: count.toInt(),
+        amountPerCardZatoshi: amountPerCard,
         stableId: 'gift-card-batch:${first.batchId}',
       );
     }

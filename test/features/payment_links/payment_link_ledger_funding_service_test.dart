@@ -86,6 +86,47 @@ void main() {
   );
 
   test(
+    'a checkpointed group recovery already funded still finishes its outbox',
+    () async {
+      final h = LedgerGiftHarness();
+      final batch = _testLedgerBatch();
+      final draft = await h.service.prepareBatch(batch);
+      await h.service.prove(accountUuid: 'account-1', draft: draft);
+      await h.operations.checkpoint(
+        operationId: h.service.operationId('account-1', batch.id),
+        accountUuid: 'account-1',
+        kind: LedgerSignedOperationKind.giftCard,
+        externalRef: batch.id,
+        pcztWithProofsBytes: [2],
+        pcztWithSignaturesBytes: [3],
+      );
+      // The broadcast landed but its result was lost, and the reconciler
+      // funded the group from the chain before the outbox was retried.
+      await h.recovery.markBatchSubmissionStarted(
+        batchId: batch.id,
+        chainHeight: ledgerGiftChainHeight,
+      );
+      await h.recovery.markBatchFunded(
+        batchId: batch.id,
+        fundingTxids: 'gift-txid',
+      );
+
+      final result = await h.service.resume(
+        accountUuid: 'account-1',
+        address: batch.id,
+      );
+
+      expect(result.fundingMetadataSaved, isTrue);
+      expect(h.operations.broadcasts, 1);
+      expect(h.operations.acks, 1);
+      expect(
+        (await h.recovery.load()).map((record) => record.state),
+        everyElement(PaymentLinkRecoveryState.funded),
+      );
+    },
+  );
+
+  test(
     'funding persistence precedes acknowledgement and destructive drain',
     () async {
       final h = LedgerGiftHarness();

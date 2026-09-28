@@ -70,7 +70,9 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   final ValueChanged<String> onMessageChanged;
   final ValueChanged<PaymentLinkCardArtwork> onArtworkChanged;
   final VoidCallback? onReview;
-  final VoidCallback onEdit;
+
+  /// Null once something was sent: the group can no longer be edited.
+  final VoidCallback? onEdit;
   final VoidCallback? onCreate;
   final VoidCallback onBack;
   final VoidCallback? onRetry;
@@ -81,8 +83,8 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PaymentLinkPane(
-      backLabel: reviewing ? 'Edit cards' : 'Gift Cards',
-      onBack: reviewing ? onEdit : onBack,
+      backLabel: reviewing && onEdit != null ? 'Edit cards' : 'Gift Cards',
+      onBack: reviewing ? onEdit ?? onBack : onBack,
       actions: _primaryAction(context),
       // Top-anchored at a fixed start, never centred: content can grow
       // downward while typing, but nothing above it moves.
@@ -187,7 +189,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   Widget _primaryAction(BuildContext context) {
     final String label;
     if (submitting) {
-      label = 'Creating…';
+      label = retrySaving ? 'Saving…' : 'Creating…';
     } else if (retrySaving) {
       label = 'Try saving again';
     } else {

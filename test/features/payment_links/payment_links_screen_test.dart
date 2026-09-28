@@ -3657,6 +3657,44 @@ void main() {
     expect(find.text('Create 2 cards'), findsOneWidget);
   });
 
+  testWidgets('a double-click on Review does not fund the group unreviewed', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    // Review and Create share one button; the second click lands on Create.
+    final primary = find.byKey(
+      const ValueKey('payment_link_bulk_primary_button'),
+    );
+    await tester.tap(primary);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 0);
+    expect(find.text('Create 2 cards'), findsOneWidget);
+
+    await tester.pump(kDoubleTapTimeout);
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 1);
+  });
+
   testWidgets('a group saved on retry can be left like any other', (
     tester,
   ) async {
