@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "utils.h"
+
 namespace {
 using flutter::EncodableMap;
 using flutter::EncodableValue;
@@ -18,8 +20,7 @@ using Microsoft::WRL::ComPtr;
 std::string GuidString(REFGUID guid) {
   wchar_t value[40] = {};
   if (!StringFromGUID2(guid, value, 40)) return {};
-  std::wstring wide(value);
-  return std::string(wide.begin(), wide.end());
+  return Utf8FromUtf16(value);
 }
 
 std::string Text(const EncodableMap& map, const char* key) {
@@ -62,8 +63,7 @@ std::string LayoutId(HKL layout) {
   wchar_t id[KL_NAMELENGTH] = {};
   if (device == 0 || device == language || (device & 0xf000) == 0xe000) {
     swprintf_s(id, L"%08lX", (device & 0xf000) == 0xe000 ? value : static_cast<DWORD>(language));
-    const std::wstring wide(id);
-    return std::string(wide.begin(), wide.end());
+    return Utf8FromUtf16(id);
   }
   if ((device & 0xf000) != 0xf000) return {};
   HKEY layouts = nullptr;
@@ -80,10 +80,10 @@ std::string LayoutId(HKL layout) {
     DWORD bytes = sizeof(alternate);
     if (RegGetValueW(layouts, id, L"Layout Id", RRF_RT_REG_SZ, nullptr,
         alternate, &bytes) != ERROR_SUCCESS ||
-        wcstoul(alternate, nullptr, 16) != (device & 0x0fff)) continue;
+        wcstoul(alternate, nullptr, 16) !=
+            static_cast<unsigned long>(device & 0x0fff)) continue;
     if (!match.empty()) { match.clear(); break; }
-    const std::wstring wide(id);
-    match = std::string(wide.begin(), wide.end());
+    match = Utf8FromUtf16(id);
   }
   RegCloseKey(layouts);
   return match;
@@ -105,8 +105,7 @@ std::optional<EncodableMap> Capture(HWND view, ITfInputProcessorProfileMgr* mana
   if (profile.dwProfileType == TF_PROFILETYPE_KEYBOARDLAYOUT) {
     wchar_t klid[KL_NAMELENGTH] = {};
     if (!GetKeyboardLayoutNameW(klid)) return std::nullopt;
-    const std::wstring wide(klid);
-    const std::string canonical(wide.begin(), wide.end());
+    const std::string canonical = Utf8FromUtf16(klid);
     if (LayoutId(profile.hkl) != canonical) return std::nullopt;
     value[EncodableValue("layout")] = EncodableValue(canonical);
   } else if (profile.dwProfileType != TF_PROFILETYPE_INPUTPROCESSOR) {
