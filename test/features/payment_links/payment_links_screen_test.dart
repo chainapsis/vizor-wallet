@@ -3725,6 +3725,45 @@ void main() {
     expect(batch.fundCalls, 1);
   });
 
+  testWidgets('funding does not report the group cost as missing ZEC', (
+    tester,
+  ) async {
+    SyncState synced(int spendable) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      percentage: 1,
+      displayTargetPercentage: 1,
+      spendableBalance: BigInt.from(spendable),
+      displaySpendableBalance: BigInt.from(spendable),
+    );
+    final syncNotifier = FakeSyncNotifier(synced(14223000000));
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundingMetadataSaved = false
+      ..fundGate = Completer<void>();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      syncNotifier: syncNotifier,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pump();
+
+    // The funding spends the wallet's notes and its change is still pending.
+    syncNotifier.emit(synced(0));
+    await tester.pump();
+    expect(find.text('Creating…'), findsOneWidget);
+    expect(find.text('Additional ZEC needed'), findsNothing);
+
+    batch.fundGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Try saving again'), findsOneWidget);
+    expect(find.text('Additional ZEC needed'), findsNothing);
+  });
+
   for (final inFlight in [false, true]) {
     testWidgets('leaving the route discards an unsent group '
         '(${inFlight ? 'quote in flight' : 'quote ready'})', (tester) async {

@@ -528,14 +528,20 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     final sync = ref.watch(syncProvider).value;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final signer = _signerFor(accountUuid);
-    final spendable =
-        accountUuid != null &&
-            sync?.accountUuid == accountUuid &&
-            sync?.hasBalanceData == true
-        ? sync!.spendableBalance
-        : null;
     final batchQuote = _batchQuote;
     final submission = _batchSubmission;
+    // Once Create is pressed the funding spends the quoted notes, so the live
+    // balance would report the group's own cost as a shortfall.
+    final spendable = switch ((submission, batchQuote)) {
+      (_BatchNotSent(), _)
+          when accountUuid != null &&
+              sync?.accountUuid == accountUuid &&
+              sync?.hasBalanceData == true =>
+        sync!.spendableBalance,
+      (_BatchNotSent(), _) => null,
+      (_, _BatchQuoteReady(spendable: final quoted)) => quoted,
+      _ => null,
+    };
     final quote = switch ((submission, batchQuote)) {
       (_BatchUnsaved(:final result), _) => result.draft.quote,
       (_, _BatchQuoteReady(:final draft)) => draft.quote,
