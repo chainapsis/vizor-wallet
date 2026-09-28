@@ -73,12 +73,15 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
 
   bool get _showsRetry =>
       status == AddressQrCameraStatus.denied ||
+      status == AddressQrCameraStatus.restricted ||
       status == AddressQrCameraStatus.unavailable;
 
   String get _title {
     switch (status) {
       case AddressQrCameraStatus.denied:
         return "You've denied camera access";
+      case AddressQrCameraStatus.restricted:
+        return 'Camera access is restricted';
       case AddressQrCameraStatus.unavailable:
         return 'Camera unavailable';
       case AddressQrCameraStatus.requesting:
@@ -93,6 +96,9 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
       case AddressQrCameraStatus.denied:
         return 'Request again, or enable manually\n'
             'in the System settings.';
+      case AddressQrCameraStatus.restricted:
+        return 'Screen Time or device management\n'
+            'is blocking the camera.';
       case AddressQrCameraStatus.unavailable:
         return unavailableDescription ??
             'Keystone import uses camera QR scanning only.\n'
@@ -105,9 +111,8 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
     }
   }
 
-  String get _retryLabel => status == AddressQrCameraStatus.unavailable
-      ? 'Try again'
-      : 'Request again';
+  String get _retryLabel =>
+      status == AddressQrCameraStatus.denied ? 'Request again' : 'Try again';
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +153,9 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
                     child: _KeystonePermissionMessage(
                       title: _title,
                       description: _description,
-                      denied: status == AddressQrCameraStatus.denied,
+                      denied:
+                          status == AddressQrCameraStatus.denied ||
+                          status == AddressQrCameraStatus.restricted,
                       action: _showsRetry
                           ? AppButton(
                               key: const ValueKey(

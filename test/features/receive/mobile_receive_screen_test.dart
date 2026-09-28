@@ -43,9 +43,23 @@ const _accountState = AccountState(
   activeAddress: _shielded,
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+const _keystoneAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Keystone Vault',
+      order: 0,
+      isHardware: true,
+      hardwareSignerKind: HardwareSignerKind.keystone,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: _shielded,
+);
+
+AppBootstrapState _bootstrap(AccountState accountState) => AppBootstrapState(
   initialLocation: '/receive',
-  initialAccountState: _accountState,
+  initialAccountState: accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
@@ -97,6 +111,7 @@ Future<void> _pumpReceive(
   WidgetTester tester,
   _FakeReceiveAddressService service, {
   List<Override> extraOverrides = const [],
+  AccountState accountState = _accountState,
 }) async {
   // The test-only Ahem font renders every glyph as a full-width square,
   // so the longest share label needs ~520px here; real fonts fit a
@@ -104,17 +119,20 @@ Future<void> _pumpReceive(
   tester.view.physicalSize = const Size(520, 932);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_app(service, extraOverrides: extraOverrides));
+  await tester.pumpWidget(
+    _app(service, extraOverrides: extraOverrides, accountState: accountState),
+  );
   await _settle(tester);
 }
 
 Widget _app(
   _FakeReceiveAddressService service, {
   List<Override> extraOverrides = const [],
+  AccountState accountState = _accountState,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(_bootstrap(accountState)),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       receiveAddressServiceProvider.overrideWithValue(service),
       ...extraOverrides,
@@ -402,6 +420,32 @@ void main() {
 
     expect(find.text('Share shielded address'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
+  });
+
+  testWidgets('draws a scan-first QR for Keystone accounts', (tester) async {
+    await _pumpReceive(
+      tester,
+      _FakeReceiveAddressService(),
+      accountState: _keystoneAccountState,
+    );
+
+    expect(
+      tester
+          .widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface))
+          .scanOptimized,
+      isTrue,
+    );
+  });
+
+  testWidgets('keeps the dot QR for software accounts', (tester) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    expect(
+      tester
+          .widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface))
+          .scanOptimized,
+      isFalse,
+    );
   });
 
   testWidgets('renew requests a fresh shielded address', (tester) async {

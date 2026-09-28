@@ -39,6 +39,12 @@ Widget buildMobileKeystoneScanDeniedUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileKeystoneScanRestrictedUseCase(BuildContext context) {
+  return const _MobileKeystoneModalScanFrame(
+    status: AddressQrCameraStatus.restricted,
+  );
+}
+
 Widget buildMobileKeystoneScanActiveUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
     status: AddressQrCameraStatus.active,

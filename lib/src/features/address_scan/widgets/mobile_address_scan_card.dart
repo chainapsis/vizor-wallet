@@ -95,6 +95,7 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
     with WidgetsBindingObserver {
   late final MobileScannerController _controller;
   late final bool _ownsController;
+  late final CameraRestrictionProbe _restriction;
   bool _restartCameraOnResume = false;
 
   @override
@@ -107,7 +108,13 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
           formats: QrScanner.formats,
           detectionSpeed: QrScanner.detectionSpeed,
         );
+    _restriction = CameraRestrictionProbe(_controller)
+      ..addListener(_handleRestrictionChanged);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _handleRestrictionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -121,6 +128,7 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _restriction.dispose();
     if (_ownsController) unawaited(_controller.dispose());
     super.dispose();
   }
@@ -128,7 +136,9 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
   AddressQrCameraStatus _cameraAccessStatus(MobileScannerState state) {
     if (!QrScanner.isAvailable) return AddressQrCameraStatus.unavailable;
     if (state.error?.errorCode == MobileScannerErrorCode.permissionDenied) {
-      return AddressQrCameraStatus.denied;
+      return _restriction.restricted
+          ? AddressQrCameraStatus.restricted
+          : AddressQrCameraStatus.denied;
     }
     if (state.error != null && !state.isRunning) {
       return AddressQrCameraStatus.unavailable;
@@ -221,9 +231,9 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
 ///   surface, with a dashed 256px viewfinder, a caption, a torch toggle
 ///   top-left and a close top-right (plus a blurred "Loading…" veil while the
 ///   camera spins up);
-/// - **permission** (requesting / denied / unavailable): a short card with the
-///   `_Modal Type` title, a camera-icon message and a Cancel button — and, when
-///   denied/unavailable, a "Request again" action.
+/// - **permission** (requesting / denied / restricted / unavailable): a short
+///   card with the `_Modal Type` title, a camera-icon message and a Cancel
+///   button — and, when denied/restricted/unavailable, a retry action.
 ///
 /// The camera preview is mounted in every state (kept offstage until access is
 /// granted) so the single [MobileScannerController] keeps running and the
@@ -682,13 +692,19 @@ class _ScanPermissionCard extends StatelessWidget {
             child: const Text('Request again'),
           ),
         );
+      case AddressQrCameraStatus.restricted:
       case AddressQrCameraStatus.unavailable:
+        final restricted = status == AddressQrCameraStatus.restricted;
         return _ScanCameraMessage(
           iconName: AppIcons.cameraDenied,
-          title: 'Camera unavailable',
-          description:
-              unavailableDescription ??
-              'Address QR scanning needs a camera on this device.',
+          title: restricted
+              ? 'Camera access is restricted'
+              : 'Camera unavailable',
+          description: restricted
+              ? 'Screen Time or device management\n'
+                    'is blocking the camera.'
+              : unavailableDescription ??
+                    'Address QR scanning needs a camera on this device.',
           // A runtime open failure (camera busy / in use by another app) is
           // recoverable, so surface the same retry the desktop modal offers
           // instead of forcing a full close + reopen.

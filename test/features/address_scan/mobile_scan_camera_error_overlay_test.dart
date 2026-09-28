@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -29,6 +30,17 @@ Widget _app(
       ),
     ),
   );
+}
+
+void _mockCameraAuthorization(String status) {
+  const channel = MethodChannel('com.zcash.wallet/camera_permission');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(
+    channel,
+    (call) async => call.method == 'authorizationStatus' ? status : null,
+  );
+  addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
 }
 
 void main() {
@@ -112,4 +124,47 @@ void main() {
 
     expect(opens, 1);
   });
+
+  testWidgets(
+    'restricted access replaces the settings action with an explanation',
+    (tester) async {
+      _mockCameraAuthorization('restricted');
+      final controller = MobileScannerController(autoStart: false);
+      addTearDown(controller.dispose);
+      var opens = 0;
+
+      await tester.pumpWidget(
+        _app(
+          controller,
+          onOpenSettings: () async {
+            opens++;
+          },
+        ),
+      );
+      await tester.pump();
+
+      controller.value = controller.value.copyWith(
+        isInitialized: true,
+        error: const MobileScannerException(
+          errorCode: MobileScannerErrorCode.permissionDenied,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.text(
+          'Screen Time or device management is blocking the camera on this '
+          'device.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Camera access is off'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_scan_open_settings_button')),
+        findsNothing,
+      );
+      expect(opens, 0);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }
