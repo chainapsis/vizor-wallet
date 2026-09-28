@@ -85,27 +85,34 @@ class GiftCardTrackingService {
     );
   }
 
-  Future<void> register(PaymentLinkRecoveryRecord card) =>
-      _enqueue((epoch) async {
-        final records = await store.load();
-        if (!_valid(epoch)) return;
-        final current = records
-            .where((c) => c.link.hasSameCanonicalPayload(card.link))
-            .firstOrNull;
-        if (current == null ||
-            current.link.network != network() ||
-            current.usage.cleaned ||
-            current.usage.cleanupPending) {
-          return;
-        }
-        final uuid = await backend.register(current);
-        if (!_valid(epoch)) return;
-        await store.updateUsage(
-          expected: current,
-          usage: current.usage.withAccount(uuid),
-        );
-        _lastSync = null;
-      });
+  Future<void> register(PaymentLinkRecoveryRecord card) => registerAll([card]);
+
+  /// Registers [cards] and records their observer accounts in one store
+  /// write, as a newly funded group does.
+  Future<void> registerAll(List<PaymentLinkRecoveryRecord> cards) => _enqueue((
+    epoch,
+  ) async {
+    final records = await store.load();
+    if (!_valid(epoch)) return;
+    final accounts =
+        <({PaymentLinkRecoveryRecord expected, GiftCardUsage usage})>[];
+    for (final card in cards) {
+      final current = records
+          .where((c) => c.link.hasSameCanonicalPayload(card.link))
+          .firstOrNull;
+      if (current == null ||
+          current.link.network != network() ||
+          current.usage.cleaned ||
+          current.usage.cleanupPending) {
+        continue;
+      }
+      final uuid = await backend.register(current);
+      if (!_valid(epoch)) return;
+      accounts.add((expected: current, usage: current.usage.withAccount(uuid)));
+    }
+    await store.updateUsages(accounts);
+    _lastSync = null;
+  });
 
   Future<void> refresh({bool force = false}) {
     final existing = _refresh;
@@ -134,6 +141,10 @@ class GiftCardTrackingService {
             final knownAccounts = (await backend.accounts(
               currentNetwork,
             )).toSet();
+            // Collected so a large group costs one store write, not one per
+            // card; each secure-store write re-encrypts every record.
+            final accounts =
+                <({PaymentLinkRecoveryRecord expected, GiftCardUsage usage})>[];
             for (final card in cards) {
               if (!_valid(epoch) || network() != currentNetwork) return;
               // Recover deletion after a crash without recreating the removed account.
@@ -164,12 +175,16 @@ class GiftCardTrackingService {
               }
               if (!_valid(epoch)) return;
               if (card.usage.accountUuid != uuid) {
-                final saved = await store.updateUsage(
+                accounts.add((
                   expected: card,
                   usage: card.usage.withAccount(uuid),
-                );
-                if (!saved) canCleanOrphans = false;
+                ));
               }
+            }
+            if (!_valid(epoch)) return;
+            if (accounts.isNotEmpty) {
+              final saved = await store.updateUsages(accounts);
+              if (saved.length != accounts.length) canCleanOrphans = false;
             }
             if (!_valid(epoch)) return;
             final retained = (await store.load())
@@ -206,6 +221,8 @@ class GiftCardTrackingService {
               await backend.sync(currentNetwork);
             }
             if (!_valid(epoch) || network() != currentNetwork) return;
+            final observations =
+                <({PaymentLinkRecoveryRecord expected, GiftCardUsage usage})>[];
             for (final card in cards) {
               if (!_valid(epoch) || network() != currentNetwork) return;
               late final GiftCardUsage observation;
@@ -226,12 +243,14 @@ class GiftCardTrackingService {
                   card.usage.status != GiftCardUsageStatus.unknown) {
                 continue;
               }
-              final saved = await store.updateUsage(
-                expected: card,
-                usage: observation,
-              );
+              observations.add((expected: card, usage: observation));
+            }
+            if (!_valid(epoch) || network() != currentNetwork) return;
+            final saved = await store.updateUsages(observations);
+            for (final (expected: card, usage: observation) in observations) {
               if (!_valid(epoch)) return;
-              if (saved && observation.cleanupPending) {
+              if (saved.contains(card.link.address) &&
+                  observation.cleanupPending) {
                 try {
                   await backend.remove(
                     currentNetwork,
