@@ -1,4 +1,5 @@
 import 'ledger_pairing_capture.dart';
+import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
@@ -65,6 +66,37 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'caps-lock-unlock',
+    description: 'Unlock screen with Caps Lock warning',
+    builder: buildCapsLockUnlockCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-set-password',
+    description: 'Set password screen with Caps Lock warning',
+    builder: buildCapsLockSetPasswordCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-confirm-password',
+    description: 'Set password confirmation field with Caps Lock warning',
+    builder: buildCapsLockConfirmPasswordCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-settings',
+    description: 'Change password access gate with Caps Lock warning',
+    builder: buildCapsLockSettingsCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-remove-account',
+    description: 'Account removal modal with Caps Lock warning',
+    builder: buildCapsLockRemoveAccountCapture,
+    allowFocus: true,
+  ),
+
   FigmaCompareScenario(
     id: 'ledger-recovery-picker-permission',
     description: 'Ledger onboarding: permission recovery',
