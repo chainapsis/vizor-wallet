@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,7 +84,7 @@ void main() {
         await minePaymentLinkRegtestBlocks(10);
       }
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 15)));
 }
 
 Future<void> _fundAndMeasureBatch(
@@ -155,7 +154,10 @@ Future<void> _fundAndMeasureBatch(
   expect(recoveries.map((record) => record.fundingTxids).toSet(), {
     result.txids,
   });
-  final raw = await _readRegtestTransaction(result.txids);
+  final raw = await paymentLinkZcashdRpc<Map<String, Object?>>(
+    'getrawtransaction',
+    [result.txids, 1],
+  );
   final orchardActions =
       (raw['orchard'] as Map<String, Object?>)['actions'] as List<Object?>;
   final ironwoodActions =
@@ -212,35 +214,4 @@ Future<void> _fundAndMeasureBatch(
     'sender history: ${lastHistory.map((tx) => '${tx.txidHex}:${tx.txKind}:'
         '${tx.displayAmount}:height=${tx.minedHeight}').join(', ')}',
   );
-}
-
-Future<Map<String, Object?>> _readRegtestTransaction(String txid) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse('http://127.0.0.1:18232'));
-    request.headers
-      ..set(
-        HttpHeaders.authorizationHeader,
-        'Basic ${base64Encode(utf8.encode('zcash:zcash'))}',
-      )
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'gift-card-batch',
-        'method': 'getrawtransaction',
-        'params': [txid, 1],
-      }),
-    );
-    final response = await request.close();
-    final body =
-        jsonDecode(await utf8.decoder.bind(response).join())
-            as Map<String, Object?>;
-    if (response.statusCode != HttpStatus.ok || body['error'] != null) {
-      throw StateError('Could not inspect the regtest batch transaction.');
-    }
-    return body['result']! as Map<String, Object?>;
-  } finally {
-    client.close(force: true);
-  }
 }
