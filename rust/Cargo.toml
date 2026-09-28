@@ -16,7 +16,7 @@ receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "20
 receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "207053dc02453d43ebfd3ba60c758f99f848c509" }
 zakura-pir-enhance = { version = "=0.0.1-rc0", features = ["wallet", "native-reinspiring"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e97e0d2bfdd52af4c27115ca1f90cca76686045b" }
+zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "b392d5874e9a349524360e461b4e01ac66be08b1" }
 zcash_note_encryption = "0.4"
 flutter_rust_bridge = "=2.11.1"
 
@@ -225,10 +225,10 @@ opt-level = 3
 
 # Experimental wallet changes share one exact source revision.
 [patch.crates-io]
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e97e0d2bfdd52af4c27115ca1f90cca76686045b" }
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e97e0d2bfdd52af4c27115ca1f90cca76686045b" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e97e0d2bfdd52af4c27115ca1f90cca76686045b" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e97e0d2bfdd52af4c27115ca1f90cca76686045b" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "b392d5874e9a349524360e461b4e01ac66be08b1" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "b392d5874e9a349524360e461b4e01ac66be08b1" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "b392d5874e9a349524360e461b4e01ac66be08b1" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "b392d5874e9a349524360e461b4e01ac66be08b1" }
 
 # POC compatibility with the math version already used by Vizor voting.
 # Cargo cannot patch a Git dependency with another revision of the same URL.
