@@ -241,7 +241,7 @@ Future<void> _payRequestLink(WidgetTester tester, String uri) async {
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () => tester.any(find.text('Review Payment')),
     description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );

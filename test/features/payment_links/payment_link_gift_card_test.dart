@@ -153,7 +153,7 @@ void main() {
       expect(field.keyboardType, TextInputType.multiline);
       expect(field.cursorOpacityAnimates, isTrue);
       expect(field.cursorWidth, greaterThan(0));
-      expect(field.decoration?.hintText, 'Start typing...');
+      expect(field.decoration?.hintText, 'Start typing…');
       expect(
         find.descendant(
           of: find.byType(PaymentLinkGiftCard),
@@ -237,7 +237,7 @@ void main() {
       await tester.pump();
       expect(
         tester.widget<TextField>(editor).decoration?.hintText,
-        'Start typing...',
+        'Start typing…',
       );
 
       controller.text = '👨‍👩‍👧‍👦';

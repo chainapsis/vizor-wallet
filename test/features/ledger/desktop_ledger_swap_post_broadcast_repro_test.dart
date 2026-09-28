@@ -89,7 +89,7 @@ void main() {
           ledgerFailureGuidance(error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
               : ledgerFailureGuidance(error)?.pairingRecovery == true
-              ? 'Couldn’t complete the request'
+              ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
               : ledgerFailureGuidance(error)?.message ??
@@ -376,6 +376,45 @@ void main() {
       expect(operations.broadcastCalls, 1);
       expect(operations.acceptedSubmissions, 1);
       expect(persistenceCalls, 2);
+    },
+  );
+
+  testWidgets(
+    'desktop Ledger swap status 0x6a80 asks for a new request without a retry',
+    (tester) async {
+      final operations = _StatefulOperationService();
+      var signerCalls = 0;
+
+      await _pumpOverlay(
+        tester,
+        intent: _intent(payMode: false),
+        operations: operations,
+        signing: _HardwareSigningService(),
+        sign: (_, _) async {
+          signerCalls++;
+          throw StateError(
+            'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+          );
+        },
+        persist: (_, _) async {},
+        onCompleted: (_) async {},
+      );
+      await _pumpUntil(
+        tester,
+        () =>
+            find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+      );
+
+      expect(find.text('Ledger signing failed'), findsOneWidget);
+      expect(find.textContaining('rejected on your Ledger'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+        findsNothing,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(signerCalls, 1);
+      expect(operations.checkpointCalls, 0);
+      expect(operations.broadcastCalls, 0);
     },
   );
 

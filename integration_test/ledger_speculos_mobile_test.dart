@@ -174,9 +174,8 @@ Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
 
   final signaturesByBundle = <int, LedgerVotingSignature>{};
   for (var bundleIndex = 0; bundleIndex < 2; bundleIndex++) {
-    final pczt = await rust_sync.redactPcztForSigner(
-      pcztBytes: fixture.votingBundlePczts[bundleIndex],
-    );
+    // Already redacted by the SDK hardware signing-request path.
+    final pczt = fixture.votingBundlePczts[bundleIndex];
     final signatures = container.read(ledgerVotingPcztSignerProvider)(
       fixture.accountUuid,
       pczt,
@@ -352,7 +351,7 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(exported!.ufvk, fixture.ufvk);
   expect(exported.seedFingerprint, fixture.seedFingerprint);
   expect(exported.accountIndex, fixture.accountIndex);
-  expect(exported.appVersion, '3.9.3');
+  expect(exported.appVersion, '3.9.4');
   expect(exported.transport, LedgerConnectionTransport.bluetooth);
   expect(exported.device?.id, 'speculos');
   expect(firstAccountImport.name, 'Speculos Ledger');
@@ -500,7 +499,7 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
               }) async => fixture.pcztBytes,
           redactPczt: rust_sync.redactPcztForSigner,
           addProofs: rust_sync.addProofsToPczt,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
       GoRoute(
@@ -616,7 +615,7 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
           addProofs:
               ({required pcztBytes, spendParamsPath, outputParamsPath}) async =>
                   pcztBytes,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
     ],
@@ -713,7 +712,7 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
               },
           redactPczt: rust_sync.redactPcztForSigner,
           addProofs: rust_sync.addProofsToPczt,
-          discardProposal: () async {},
+          discardProposal: () async => true,
         ),
       ),
       GoRoute(

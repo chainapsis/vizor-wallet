@@ -222,8 +222,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     });
 
     final colors = context.colors;
-    final accountName =
-        ref.watch(accountProvider).value?.activeAccount?.name ?? '';
+    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
+    final accountName = activeAccount?.name ?? '';
+    final scanOptimizedQr = activeAccount?.isKeystone ?? false;
     final poolLabel = _isShielded ? 'shielded' : 'transparent';
 
     return Scaffold(
@@ -277,6 +278,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                 type: type,
                                 address: _addressFor(type),
                                 renewing: _renewing,
+                                scanOptimizedQr: scanOptimizedQr,
                                 onRenew: () =>
                                     unawaited(_renewShieldedAddress()),
                               ),
@@ -422,6 +424,7 @@ class _ReceiveQrPage extends StatelessWidget {
     required this.type,
     required this.address,
     required this.renewing,
+    required this.scanOptimizedQr,
     required this.onRenew,
     super.key,
   });
@@ -429,6 +432,7 @@ class _ReceiveQrPage extends StatelessWidget {
   final ReceiveAddressType type;
   final String address;
   final bool renewing;
+  final bool scanOptimizedQr;
   final VoidCallback onRenew;
 
   bool get _isShielded => type == ReceiveAddressType.shielded;
@@ -451,6 +455,7 @@ class _ReceiveQrPage extends StatelessWidget {
               paddingY: _MobileReceiveMetrics.qrPaddingY,
               type: type,
               badgeSize: _MobileReceiveMetrics.qrBadgeSize,
+              scanOptimized: scanOptimizedQr,
             ),
           ),
           if (_isShielded)

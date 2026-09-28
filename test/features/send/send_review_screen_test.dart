@@ -824,37 +824,38 @@ void main() {
     expect(find.textContaining('previous transaction'), findsNothing);
   });
 
-  testWidgets('verify modal shows own-account header without tx count', (
-    tester,
-  ) async {
-    rustApi
-      ..unifiedAddress = _longAddress
-      ..previousTransactionCount = 4;
-    await _setDesktopViewport(tester);
-    await tester.pumpWidget(
-      _harness(
-        _reviewArgs(addressType: 'unified'),
-        addressBookRepository: _FakeAddressBookRepository(),
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'verify modal labels a legacy own-account address without tx count',
+    (tester) async {
+      rustApi
+        ..legacyAddresses = [_longAddress]
+        ..previousTransactionCount = 4;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          addressBookRepository: _FakeAddressBookRepository(),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Show full address'));
-    await tester.pumpAndSettle();
-    await _flushRealAsync(tester);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Show full address'));
+      await tester.pumpAndSettle();
+      await _flushRealAsync(tester);
+      await tester.pumpAndSettle();
 
-    expect(find.byType(VerifyAddressModal), findsOneWidget);
-    expect(find.text('Unknown shielded address'), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byType(VerifyAddressModal),
-        matching: find.text('Account 1'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.textContaining('previous transaction'), findsNothing);
-  });
+      expect(find.byType(VerifyAddressModal), findsOneWidget);
+      expect(find.text('Unknown shielded address'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(VerifyAddressModal),
+          matching: find.text('Account 1'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('previous transaction'), findsNothing);
+    },
+  );
 
   testWidgets(
     'transparent own-account address resolves to the account header',
@@ -1240,9 +1241,7 @@ void main() {
           final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
           expect(
             find.text(
-              pairingInvalid
-                  ? 'Pair your Ledger again'
-                  : 'Couldn’t complete the request',
+              pairingInvalid ? 'Pair your Ledger again' : 'Request failed',
             ),
             findsOneWidget,
           );
@@ -1298,7 +1297,7 @@ void main() {
           ledgerSigner: (pcztBytes) async {
             signingRequests.add([...pcztBytes]);
             if (signingRequests.length == 1) {
-              throw StateError('Ledger rejected the test PCZT');
+              throw StateError(_deviceRejected);
             }
             return _fakeSignatureBytes;
           },
@@ -1356,6 +1355,77 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Try again'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Ledger memo refused by an older app asks for an update and a retry',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(ledgerMemoHashUnsupportedError);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
+
+      // After updating the app, a retry reads the new version.
+      await tester.tap(find.text('Try again'));
+      await _flushRealAsync(tester);
+      expect(signerCalls, 2);
+    },
+  );
+
+  testWidgets(
+    'Ledger status 0x6a80 asks for a new transaction without blaming the user',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(
+              'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Request not accepted'), findsOneWidget);
+      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(find.textContaining('rejected on your Ledger'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+        findsNothing,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Create new transaction'), findsOneWidget);
+      expect(signerCalls, 1);
     },
   );
 
@@ -1442,7 +1512,7 @@ void main() {
         ledgerSigner: (_) async {
           signerCalls++;
           if (signerCalls == 2) {
-            throw StateError('Ledger request rejected on device');
+            throw StateError(_deviceRejected);
           }
           return [9, 1];
         },
@@ -1601,7 +1671,7 @@ void main() {
         ),
         ledgerSigner: (_) async {
           signerCalls++;
-          throw StateError('6985 rejected');
+          throw StateError(_deviceRejected);
         },
         ledgerCanceller: () => cancellation.future,
       ),
@@ -2876,6 +2946,7 @@ class _RustApiFake implements RustLibApi {
   Completer<void>? discardCompleter;
   Object? discardError;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
+  List<String> legacyAddresses = [];
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
   void reset() {
@@ -2897,6 +2968,7 @@ class _RustApiFake implements RustLibApi {
     discardCompleter = null;
     discardError = null;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
+    legacyAddresses = [];
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
 
@@ -2937,6 +3009,20 @@ class _RustApiFake implements RustLibApi {
   }) async {
     return previousTransactionCount;
   }
+
+  @override
+  Future<List<String>> crateApiWalletGetReceiveAddressAliases({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => [
+    ...legacyAddresses,
+    await crateApiWalletGetUnifiedAddress(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+    ),
+  ];
 
   @override
   Future<String> crateApiWalletGetUnifiedAddress({
@@ -3113,3 +3199,6 @@ class _FallbackRoute extends RpcEndpointFailoverNotifier {
     fallbackCandidates: const [],
   );
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

@@ -101,7 +101,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
           LedgerPairingStage.failed =>
             c.pairingInvalid
                 ? 'Your Ledger no longer recognizes this Bluetooth pairing.'
-                : c.requestFailure.message,
+                : c.failureMessage,
         };
         return MobileLedgerSheetContent(
           title: title,
@@ -203,7 +203,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
                   LedgerPairingStage.mismatch => 'Choose another Ledger',
                   LedgerPairingStage.devices => 'Search again',
                   LedgerPairingStage.failed when !c.pairingInvalid =>
-                    'Try again',
+                    c.failureRetryable ? 'Try again' : 'Choose another Ledger',
                   _ => 'Find my Ledger',
                 },
                 onPressed: c.invalidated

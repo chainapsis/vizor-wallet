@@ -427,7 +427,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
       waitingDescription:
           '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
       waitingIcon: AppIcons.time,
-      waitingStatusLabel: 'Wait 5:00 to claim',
+      waitingStatusLabel: 'Wait 1:15 to claim',
     ),
   );
 }
@@ -637,7 +637,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                     ),
                     amountText: '0.75 ZEC',
                     dateText: 'August 4',
-                    statusText: 'Receiving...',
+                    statusText: 'Receiving…',
                     showLoader: true,
                   ),
                 ],

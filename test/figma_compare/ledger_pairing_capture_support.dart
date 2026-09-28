@@ -203,9 +203,7 @@ void runLedgerRequestFailureCaptures({
           await tester.pumpAndSettle();
           expect(
             find.text(
-              kind == 'declined'
-                  ? 'Request declined'
-                  : 'Couldn’t complete the request',
+              kind == 'declined' ? 'Request declined' : 'Request failed',
             ),
             findsOneWidget,
           );

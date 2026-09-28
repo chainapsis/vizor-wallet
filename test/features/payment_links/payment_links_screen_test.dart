@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_archive_header.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -12,29 +11,33 @@ import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
-import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_archive_header.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
-import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
-import '../../support/payment_links_screen_support.dart';
+import '../../support/gift_card_privacy_checks.dart';
 import '../../support/leading_decimal_input.dart';
+import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  registerGiftCardPrivacyChecks(mobile: false);
   testWidgets(
     'desktop previews a pasted card while checking and ignores a late result after back',
     (tester) async {
@@ -66,7 +69,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('payment_link_claim_button')));
       await tester.pump();
-      expect(find.text('Preparing...'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
       expect(operations.claimedSessions, isEmpty);
       await tester.tap(find.byType(AppBackLink));
       await tester.pumpAndSettle();
@@ -198,8 +201,8 @@ void main() {
         );
         await tester.tap(copy);
         await tester.pump();
-        expect(find.text('Copying...'), findsOneWidget);
-        expect(find.text('Saving...'), findsNothing);
+        expect(find.text('Copying…'), findsOneWidget);
+        expect(find.text('Saving…'), findsNothing);
         expect(tester.widget<AppButton>(save).onPressed, isNotNull);
         await tester.tap(save);
         await tester.pump();
@@ -214,11 +217,11 @@ void main() {
         });
         await tester.pump();
         expect(saver.savedImages, hasLength(1));
-        expect(find.text('Saving...'), findsOneWidget);
+        expect(find.text('Saving…'), findsOneWidget);
         copyGate.complete();
         await tester.pumpAndSettle();
         expect(find.text('Copy link'), findsOneWidget);
-        expect(find.text('Saving...'), findsOneWidget);
+        expect(find.text('Saving…'), findsOneWidget);
         expect(tester.widget<AppButton>(copy).onPressed, isNotNull);
         expect(tester.widget<AppButton>(save).onPressed, isNull);
         await tester.tap(save, warnIfMissed: false);
@@ -1033,7 +1036,7 @@ void main() {
       const ValueKey('payment_link_message_editor'),
     );
     expect(messageEditor, findsNothing);
-    expect(find.text('Start typing...'), findsOneWidget);
+    expect(find.text('Start typing…'), findsOneWidget);
     expect(
       tester
           .widget<PaymentLinkCardFlip>(find.byType(PaymentLinkCardFlip))
@@ -1041,7 +1044,7 @@ void main() {
       isFalse,
     );
 
-    await tester.tap(find.text('Start typing...'));
+    await tester.tap(find.text('Start typing…'));
     await tester.pump();
     expect(
       tester
@@ -1354,14 +1357,14 @@ void main() {
     );
     await pumpPaymentLinksScreen(tester, operations: operations);
 
-    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.text('Preparing…'), findsOneWidget);
     expect(find.bySemanticsLabel('Copy gift card link'), findsNothing);
 
     operations.fundingConfirmationCount = 1;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing...'), findsNothing);
+    expect(find.text('Preparing…'), findsNothing);
     expect(find.bySemanticsLabel('Copy gift card link'), findsOneWidget);
   });
 
@@ -1372,14 +1375,14 @@ void main() {
     );
     await pumpPaymentLinksScreen(tester, operations: operations);
 
-    expect(find.text('Preparing...'), findsOneWidget);
+    expect(find.text('Preparing…'), findsOneWidget);
 
     operations.expireFundingOnInspect = true;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
     expect(operations.records, isEmpty);
-    expect(find.text('Preparing...'), findsNothing);
+    expect(find.text('Preparing…'), findsNothing);
   });
 
   testWidgets('makes the link available after funding is accepted', (
@@ -1472,13 +1475,13 @@ void main() {
     expect(find.text('The link doesn’t look legit.'), findsNothing);
   });
 
-  testWidgets('waits for six confirmations before exposing the claim action', (
+  testWidgets('waits for confirmations before exposing the claim action', (
     tester,
   ) async {
     final operations = FakePaymentLinkOperations(
       claimable: false,
       waitingForFundingConfirmations: true,
-      fundingConfirmationCount: 2,
+      fundingConfirmationCount: 1,
     );
     final clipboard = FakePaymentLinkClipboard(
       text: incomingLink.toUri().toString(),
@@ -1498,13 +1501,13 @@ void main() {
       find.text('Your gift will be ready to claim shortly.'),
       findsOneWidget,
     );
-    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
     expect(find.text('Claim the gift card'), findsNothing);
 
     operations
       ..claimable = true
       ..waitingForFundingConfirmations = false
-      ..fundingConfirmationCount = 6;
+      ..fundingConfirmationCount = kPaymentLinkClaimConfirmationTarget;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
@@ -1611,7 +1614,7 @@ void main() {
                     .widget<PaymentLinkCardSelectorRail>(
                       find.byType(PaymentLinkCardSelectorRail),
                     )
-                    .selected
+                    .selected!
                     .index >
                 PaymentLinkCardArtwork.ruby.index
             ? -100
@@ -1642,7 +1645,7 @@ void main() {
         find.byKey(const ValueKey('payment_link_amount_continue_button')),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Start typing...'));
+      await tester.tap(find.text('Start typing…'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_message_editor')),
@@ -1708,7 +1711,7 @@ void main() {
           .widget<PaymentLinkCardSelectorRail>(
             find.byType(PaymentLinkCardSelectorRail),
           )
-          .selected;
+          .selected!;
       expect(PaymentLinkCardArtwork.values, contains(artwork));
       expectArtwork(artwork);
 
@@ -1732,7 +1735,7 @@ void main() {
           .widget<PaymentLinkCardSelectorRail>(
             find.byType(PaymentLinkCardSelectorRail),
           )
-          .selected;
+          .selected!;
       expect(PaymentLinkCardArtwork.values, contains(newArtwork));
       expectArtwork(newArtwork);
     },
@@ -1752,7 +1755,7 @@ void main() {
                   .widget<PaymentLinkCardSelectorRail>(
                     find.byType(PaymentLinkCardSelectorRail),
                   )
-                  .selected
+                  .selected!
                   .index >
               PaymentLinkCardArtwork.ruby.index
           ? -100
@@ -1783,7 +1786,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_continue_button')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Start typing...'));
+    await tester.tap(find.text('Start typing…'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_message_editor')),
@@ -2615,7 +2618,7 @@ void main() {
       incomingLink.toUri().toString(),
     ]);
     expect(find.text('Gift claim submitted'), findsOneWidget);
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
   });
 
   testWidgets('defers an incoming Gift Card while another card is being made', (
@@ -2895,7 +2898,7 @@ void main() {
     await tester.tap(find.text('Claim the gift card'));
     await tester.pump();
 
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
     expect(find.text('Received'), findsWidgets);
     expect(find.text('You’ve received\na gift card!'), findsNothing);
     final receivedRow = find.byKey(
@@ -2921,7 +2924,7 @@ void main() {
     claimCompleter.complete(broadcastedClaimResult);
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
     expect(find.text('Gift claim submitted'), findsOneWidget);
 
     operations.receivedClaimStatuses[incomingLink.address] =
@@ -2929,7 +2932,7 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receiving...'), findsNothing);
+    expect(find.text('Receiving…'), findsNothing);
     expect(find.text('Received'), findsWidgets);
     expect(
       find.descendant(
@@ -2964,7 +2967,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(operations.receivedRecords.single.claimTxids, 'claim-txid');
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -2972,7 +2975,7 @@ void main() {
     await tester.tap(find.text('Received').first);
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_link_received_u1paymentlinkaddress')),
       findsOneWidget,
@@ -3161,11 +3164,11 @@ void main() {
     await tester.tap(find.text('Claim the gift card'));
     await tester.pump();
 
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
     claimCompleter.completeError(StateError('claim failed'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receiving...'), findsNothing);
+    expect(find.text('Receiving…'), findsNothing);
     expect(find.text('Check status'), findsOneWidget);
     expect(find.textContaining('Gift card claim failed.'), findsOneWidget);
   });
@@ -3412,14 +3415,14 @@ void main() {
         receivedRecords: [PaymentLinkReceivedRecord.fromLink(incomingLink)],
         claimable: false,
         waitingForFundingConfirmations: true,
-        fundingConfirmationCount: 2,
+        fundingConfirmationCount: 1,
       );
       await pumpPaymentLinksScreen(tester, operations: operations);
       await tester.tap(find.text('Received'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claim'));
       await tester.pumpAndSettle();
-      expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+      expect(find.text('Wait 1:15 to claim'), findsOneWidget);
 
       operations.waitingForFundingConfirmations = false;
       await tester.pump(const Duration(seconds: 10));
@@ -3446,13 +3449,535 @@ void main() {
   testWidgets('shows an interrupted funding draft without reclaim controls', (
     tester,
   ) async {
-    final operations = FakePaymentLinkOperations(records: [draftRecovery]);
+    final interrupted = draftRecovery.copyWith(
+      state: PaymentLinkRecoveryState.draft,
+      updatedAt: draftRecovery.updatedAt,
+      submittedAtHeight: 3000000,
+    );
+    final operations = FakePaymentLinkOperations(records: [interrupted]);
     await pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('Funding incomplete'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
     expect(find.text('Reclaim'), findsNothing);
   });
+
+  testWidgets('does not show a draft that never started funding', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(records: [draftRecovery]);
+    await pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('Funding incomplete'), findsNothing);
+    expect(find.text('No Gift Cards yet'), findsOneWidget);
+  });
+
+  testWidgets('does not show an unsubmitted bulk quote as created cards', (
+    tester,
+  ) async {
+    final links = [incomingLink, secondIncomingLink];
+    final operations = FakePaymentLinkOperations(
+      records: [
+        for (var index = 0; index < links.length; index++)
+          PaymentLinkRecoveryRecord(
+            link: links[index],
+            sourceAccountUuid: 'account-1',
+            state: PaymentLinkRecoveryState.draft,
+            updatedAt: DateTime.utc(2026, 9, 23),
+            claimFeeReserveZatoshi: BigInt.from(10000),
+            batchId: 'unsubmitted-quote',
+            batchIndex: index + 1,
+            batchCount: links.length,
+          ),
+      ],
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+
+    expect(find.text('Funding incomplete'), findsNothing);
+    expect(find.text('Payment status pending'), findsNothing);
+    expect(find.text('No Gift Cards yet'), findsOneWidget);
+  });
+
+  testWidgets('keeps a batch visible when one member may have been submitted', (
+    tester,
+  ) async {
+    final links = [incomingLink, secondIncomingLink];
+    final records = [
+      for (var index = 0; index < links.length; index++)
+        PaymentLinkRecoveryRecord(
+          link: links[index],
+          sourceAccountUuid: 'account-1',
+          state: PaymentLinkRecoveryState.draft,
+          updatedAt: DateTime.utc(2026, 9, 23),
+          submittedAtHeight: index == 0 ? 3000000 : null,
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          batchId: 'uncertain-batch',
+          batchIndex: index + 1,
+          batchCount: links.length,
+        ),
+    ];
+    final operations = FakePaymentLinkOperations(records: records);
+    await pumpPaymentLinksScreen(tester, operations: operations);
+
+    final row = find.byKey(
+      const ValueKey('payment_link_batch_uncertain-batch'),
+    );
+    expect(row, findsOneWidget);
+    expect(find.textContaining('Payment status pending'), findsOneWidget);
+
+    // Only a reload reconciles an ambiguous batch; progress checks cannot.
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    final loads = operations.createdLoadCalls;
+    await tester.tap(find.text('Check status'));
+    await tester.pumpAndSettle();
+    expect(operations.createdLoadCalls, loads + 1);
+  });
+
+  testWidgets('desktop creates two cards through one batch and groups them', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Create cards for a group'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_bulk_preset_50')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts, [2]);
+    expect(
+      find.byKey(const ValueKey('payment_link_bulk_available')),
+      findsOneWidget,
+    );
+    expect(find.text('0.2005 ZEC'), findsOneWidget);
+    await tester.tap(find.text('Review 2 cards'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 1);
+    expect(operations.createdAmounts, isEmpty);
+    expect(find.text('Save all links as CSV'), findsOneWidget);
+    expect(find.byType(PaymentLinkBatchMemberRow), findsNWidgets(2));
+    await tester.tap(find.byType(AppBackLink).last);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_batch_batch-test')),
+      findsOneWidget,
+    );
+    // No card has been claimed yet.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_batch_batch-test')),
+        matching: find.text('Ready to share'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_batch_batch-test')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PaymentLinkBatchMemberRow), findsNWidgets(2));
+    expect(find.text('Save all links as CSV'), findsOneWidget);
+    await tester.tap(find.text('Save all links as CSV'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save gift card links'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Show QR code for card 01'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save QR code'), findsOneWidget);
+    await tester.tap(find.byType(AppBackLink).last);
+    await tester.pumpAndSettle();
+    expect(find.byType(PaymentLinkBatchMemberRow), findsNWidgets(2));
+  });
+
+  testWidgets('bulk quote waits for sync and survives a sync that keeps '
+      'the balance', (tester) async {
+    SyncState synced({required bool syncing, required int spendable}) =>
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: syncing,
+          isSyncComplete: !syncing,
+          percentage: syncing ? 0.7 : 1,
+          displayTargetPercentage: syncing ? 0.7 : 1,
+          spendableBalance: BigInt.from(spendable),
+          displaySpendableBalance: BigInt.from(spendable),
+        );
+    final syncNotifier = FakeSyncNotifier(
+      synced(syncing: true, spendable: 14223000000),
+    );
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      syncNotifier: syncNotifier,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    // Syncing: the fee is pending, not an error, and nothing is prepared.
+    expect(batch.preparedCounts, isEmpty);
+    expect(find.text('Waiting for sync'), findsOneWidget);
+    expect(find.byKey(const ValueKey('payment_link_bulk_error')), findsNothing);
+
+    syncNotifier.emit(synced(syncing: false, spendable: 14223000000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(batch.preparedCounts, [2]);
+
+    // A new block syncs without changing the balance: keep the quote.
+    syncNotifier.emit(synced(syncing: true, spendable: 14223000000));
+    await tester.pump();
+    syncNotifier.emit(synced(syncing: false, spendable: 14223000000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(batch.preparedCounts, [2]);
+
+    // The balance changed: quote again.
+    syncNotifier.emit(synced(syncing: true, spendable: 14223000000));
+    await tester.pump();
+    syncNotifier.emit(synced(syncing: false, spendable: 13000000000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(batch.preparedCounts, [2, 2]);
+  });
+
+  testWidgets('bulk review saves the final shared message', (tester) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(batch.preparedPresentations.single.message, isEmpty);
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_message')),
+      'For the team',
+    );
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts, [2]);
+    await tester.tap(find.text('Review 2 cards'));
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts, [2, 2]);
+    expect(batch.preparedPresentations.last.message, 'For the team');
+    expect(find.text('Create 2 cards'), findsOneWidget);
+  });
+
+  testWidgets('a double-click on Review does not fund the group unreviewed', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    // Review and Create share one button; the second click lands on Create.
+    final primary = find.byKey(
+      const ValueKey('payment_link_bulk_primary_button'),
+    );
+    await tester.tap(primary);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 0);
+    expect(find.text('Create 2 cards'), findsOneWidget);
+
+    await tester.pump(kDoubleTapTimeout);
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 1);
+  });
+
+  testWidgets('a group saved on retry can be left like any other', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundingMetadataSaved = false;
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+    expect(find.text('Try saving again'), findsOneWidget);
+
+    await tester.tap(find.text('Try saving again'));
+    await tester.pumpAndSettle();
+    expect(batch.metadataRetries, 1);
+    expect(find.byType(PaymentLinkBatchDetailDesktopView), findsOneWidget);
+
+    await tester.tap(find.byType(AppBackLink).last);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_batch_batch-test')),
+      findsOneWidget,
+    );
+    expect(batch.fundCalls, 1);
+  });
+
+  testWidgets('funding does not report the group cost as missing ZEC', (
+    tester,
+  ) async {
+    SyncState synced(int spendable) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      percentage: 1,
+      displayTargetPercentage: 1,
+      spendableBalance: BigInt.from(spendable),
+      displaySpendableBalance: BigInt.from(spendable),
+    );
+    final syncNotifier = FakeSyncNotifier(synced(14223000000));
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundingMetadataSaved = false
+      ..fundGate = Completer<void>();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      syncNotifier: syncNotifier,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pump();
+
+    // The funding spends the wallet's notes and its change is still pending.
+    syncNotifier.emit(synced(0));
+    await tester.pump();
+    expect(find.text('Creating…'), findsOneWidget);
+    expect(find.text('Additional ZEC needed'), findsNothing);
+
+    batch.fundGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Try saving again'), findsOneWidget);
+    expect(find.text('Additional ZEC needed'), findsNothing);
+  });
+
+  for (final inFlight in [false, true]) {
+    testWidgets('leaving the route discards an unsent group '
+        '(${inFlight ? 'quote in flight' : 'quote ready'})', (tester) async {
+      final operations = FakePaymentLinkOperations();
+      final batch = _FakeDesktopBatchOperations(operations)
+        ..prepareGate = inFlight ? Completer<void>() : null;
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        batchOperations: batch,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_batch_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_bulk_amount')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(batch.preparedCounts, [2]);
+
+      // A sidebar route change disposes the screen; the group's card secrets
+      // must not stay in secure storage.
+      await tester.pumpWidget(const SizedBox());
+      batch.prepareGate?.complete();
+      await tester.pump();
+      expect(batch.abandoned, ['batch-test']);
+    });
+  }
+
+  testWidgets('an account switch mid-funding keeps the group save retry', (
+    tester,
+  ) async {
+    final accountNotifier = SwitchablePaymentLinkAccountNotifier();
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundingMetadataSaved = false
+      ..fundGate = Completer<void>();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      accountNotifier: accountNotifier,
+      bootstrap: twoAccountBootstrap,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pump();
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    batch.fundGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Try saving again'), findsOneWidget);
+    await tester.tap(find.text('Try saving again'));
+    await tester.pumpAndSettle();
+
+    expect(batch.metadataRetries, 1);
+    expect(
+      find.text(
+        'Cards were created under the previous account. '
+        'Switch back to view them.',
+      ),
+      findsOneWidget,
+    );
+  });
+}
+
+Future<void> _reviewTwoCards(WidgetTester tester) async {
+  await tester.tap(
+    find.byKey(const ValueKey('payment_link_create_batch_button')),
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_bulk_amount')),
+    '0.1',
+  );
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Review 2 cards'));
+  await tester.pumpAndSettle();
+}
+
+class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
+  _FakeDesktopBatchOperations(this.operations);
+
+  final FakePaymentLinkOperations operations;
+  final List<int> preparedCounts = [];
+  final List<PaymentLinkPresentation> preparedPresentations = [];
+  final List<String> abandoned = [];
+  Completer<void>? prepareGate;
+  int fundCalls = 0;
+  int metadataRetries = 0;
+  Completer<void>? fundGate;
+  bool fundingMetadataSaved = true;
+  final links = batchTestLinks;
+
+  @override
+  Future<PaymentLinkBatchDraft> prepareBatch({
+    required int count,
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    required PaymentLinkPresentation presentation,
+    List<String>? artworkIds,
+  }) async {
+    preparedCounts.add(count);
+    preparedPresentations.add(presentation);
+    await prepareGate?.future;
+    return PaymentLinkBatchDraft(
+      id: 'batch-test',
+      links: links,
+      quote: PaymentLinkBatchQuote(
+        sourceAccountUuid: sourceAccountUuid,
+        count: count,
+        recipientAmountZatoshi: amountZatoshi,
+        fundingFeeZatoshi: BigInt.from(30000),
+      ),
+    );
+  }
+
+  @override
+  Future<void> abandonUnsubmittedBatch(String batchId) async =>
+      abandoned.add(batchId);
+
+  @override
+  Future<PaymentLinkBatchFundingResult> fundBatch(
+    PaymentLinkBatchDraft draft,
+  ) async {
+    fundCalls++;
+    await fundGate?.future;
+    operations.records.addAll([
+      for (var index = 0; index < links.length; index++)
+        PaymentLinkRecoveryRecord(
+          link: links[index],
+          sourceAccountUuid: 'account-1',
+          state: fundingMetadataSaved
+              ? PaymentLinkRecoveryState.funded
+              : PaymentLinkRecoveryState.draft,
+          updatedAt: DateTime.utc(2026, 8, 6),
+          fundingTxids: 'funding-txid',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          batchId: draft.id,
+          batchIndex: index + 1,
+          batchCount: links.length,
+        ),
+    ]);
+    return PaymentLinkBatchFundingResult(
+      draft: draft,
+      txids: 'funding-txid',
+      broadcastAccepted: true,
+      fundingMetadataSaved: fundingMetadataSaved,
+    );
+  }
+
+  @override
+  Future<void> retryBatchFundingMetadata({
+    required String batchId,
+    required String fundingTxids,
+  }) async {
+    metadataRetries++;
+    for (final (index, record) in operations.records.indexed) {
+      if (record.batchId != batchId) continue;
+      operations.records[index] = record.copyWith(
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: record.updatedAt,
+      );
+    }
+  }
 }
 
 class _PendingCardPrice implements ZecMarketDataSource {

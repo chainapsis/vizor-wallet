@@ -88,6 +88,11 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
   });
 });
 
+/// Only valid inside a transport callback: [LedgerConnectionService] runs app
+/// readiness before invoking one, which is what publishes the version.
+String? _readyAppVersion(Ref ref) =>
+    ref.read(ledgerAppReadinessStateProvider).version;
+
 final ledgerPcztSupportValidatorProvider = Provider<LedgerPcztSupportValidator>(
   (_) =>
       (pcztBytes) =>
@@ -127,6 +132,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
+            appVersion: _readyAppVersion(ref),
           )).signedPczt!,
           bluetooth: (mobile) async {
             return ref.read(ledgerMobileSigningStatusGateProvider).run(
@@ -138,6 +144,9 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       accountUuid: accountUuid,
                       pcztBytes: pcztBytes,
                       network: networkName,
+                      memoHashSupported: ledgerSupportsMemoHash(
+                        _readyAppVersion(ref),
+                      ),
                     );
                 check();
                 final responses = await _exchangeWithProgress(
@@ -207,6 +216,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
             accountUuid: accountUuid,
             pcztBytes: pcztBytes,
             network: networkName,
+            appVersion: _readyAppVersion(ref),
           )).signatures,
           bluetooth: (mobile) => ref
               .read(ledgerMobileSigningStatusGateProvider)
@@ -219,6 +229,9 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
                   accountUuid: accountUuid,
                   pcztBytes: pcztBytes,
                   networkName: networkName,
+                  memoHashSupported: ledgerSupportsMemoHash(
+                    _readyAppVersion(ref),
+                  ),
                 ),
               ),
         );
@@ -248,6 +261,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String networkName,
+  required bool memoHashSupported,
 }) async {
   check();
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
@@ -255,6 +269,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
+    memoHashSupported: memoHashSupported,
   );
   check();
   final responses = await _exchangeWithProgress(
@@ -296,6 +311,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
+  required String? appVersion,
   required LedgerSigningProgressReporter progress,
 }) async {
   rust_ledger.LedgerSigningEvent? result;
@@ -305,6 +321,9 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     pcztBytes: pcztBytes,
     network: network,
     compact: compact,
+    memoHashSupported: ledgerSupportsMemoHash(appVersion),
+    // USB signing opens a new session; Rust holds it to this version.
+    appVersion: appVersion,
   )) {
     if (event.error case final error?) {
       throw StateError(error);

@@ -96,7 +96,8 @@ package, without launching the wallet app.
 
 Automated tests use fake method channels, fake Ledger responses and local wallet
 DBs. Physical macOS USB/BLE and mobile BLE verification still requires a device
-running Ledger Zcash 3.9.3 or newer:
+running Ledger Zcash 3.9.4 or newer, which new accounts need (3.9.3 still signs
+for accounts connected earlier):
 consecutive approvals, rejection/cancellation, reconnect, invalid pairing and
 TEX two-transaction execution. Automated coverage is not evidence of firmware or
 real-network compatibility.

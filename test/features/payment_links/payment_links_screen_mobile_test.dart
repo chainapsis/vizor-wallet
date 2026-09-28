@@ -7,27 +7,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:go_router/go_router.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
-import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
-import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
-import '../../support/payment_links_screen_support.dart';
+import '../../support/gift_card_privacy_checks.dart';
 import '../../support/leading_decimal_input.dart';
+import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  registerGiftCardPrivacyChecks(mobile: true);
   final haptics = <String>[];
   const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
   setUp(() {
@@ -204,7 +206,7 @@ void main() {
           await tester.tap(find.text('Claim gift'));
           await tester.pump();
         }
-        expect(find.text('Preparing...'), findsOneWidget);
+        expect(find.text('Preparing…'), findsOneWidget);
         final button = find.byKey(
           const ValueKey('payment_link_mobile_claim_button'),
         );
@@ -224,7 +226,7 @@ void main() {
         await tester.pumpAndSettle();
         if (outcome == 'ready') {
           expect(operations.claimedSessions, hasLength(1));
-          expect(find.text('Claiming...'), findsOneWidget);
+          expect(find.text('Claiming…'), findsOneWidget);
         } else {
           expect(operations.claimedSessions, isEmpty);
         }
@@ -277,7 +279,7 @@ void main() {
         expect(tester.widget<AppButton>(confirm).onPressed, isNotNull);
         await tester.tap(confirm);
         await tester.pump();
-        expect(find.text('Preparing...'), findsOneWidget);
+        expect(find.text('Preparing…'), findsOneWidget);
         expect(tester.widget<AppButton>(confirm).onPressed, isNull);
         expect(operations.preparedLinks, hasLength(1));
         expect(operations.claimedSessions, isEmpty);
@@ -294,7 +296,7 @@ void main() {
             operations.claimedSessions.single.destinationAddress,
             'u1account-2address',
           );
-          expect(find.text('Claiming...'), findsOneWidget);
+          expect(find.text('Claiming…'), findsOneWidget);
         } else {
           expect(operations.claimedSessions, isEmpty);
           expect(accounts.switchedAccounts, isEmpty);
@@ -518,8 +520,8 @@ void main() {
     final copy = find.byKey(const ValueKey('payment_link_share_copy_button'));
     await tester.tap(copy);
     await tester.pump();
-    expect(find.text('Copying...'), findsOneWidget);
-    expect(find.text('Sharing...'), findsNothing);
+    expect(find.text('Copying…'), findsOneWidget);
+    expect(find.text('Sharing…'), findsNothing);
     expect(
       tester
           .widget<AppButton>(find.widgetWithText(AppButton, 'Share card'))
@@ -535,13 +537,13 @@ void main() {
     });
     await tester.pump();
     expect(images, hasLength(1));
-    expect(find.text('Sharing...'), findsOneWidget);
+    expect(find.text('Sharing…'), findsOneWidget);
     copyGate.complete();
     await tester.pumpAndSettle();
     expect(find.text('Copy link'), findsOneWidget);
-    expect(find.text('Sharing...'), findsOneWidget);
+    expect(find.text('Sharing…'), findsOneWidget);
     expect(tester.widget<AppButton>(copy).onPressed, isNotNull);
-    await tester.tap(find.text('Sharing...'), warnIfMissed: false);
+    await tester.tap(find.text('Sharing…'), warnIfMissed: false);
     await tester.pump();
     expect(images, hasLength(1));
     shareGate.complete(false);
@@ -1328,7 +1330,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(accounts.current.activeAccountUuid, 'account-2');
-      expect(find.text('Preparing...'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
       expect(operations.claimedSessions, isEmpty);
       expect(operations.discardedClaimAddresses, isEmpty);
       // Preparation owns the destination; another tap or system Back cannot
@@ -1336,15 +1338,15 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_link_claim_account_account-1')),
       );
-      await tester.tap(find.text('Preparing...'));
+      await tester.tap(find.text('Preparing…'));
       await tester.binding.handlePopRoute();
       await tester.pump();
-      expect(find.text('Preparing...'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
       expect(accounts.switchedAccounts, ['account-2']);
 
       prepare.complete();
       await tester.pumpAndSettle();
-      expect(find.text('Claiming...'), findsOneWidget);
+      expect(find.text('Claiming…'), findsOneWidget);
       expect(haptics, isEmpty);
       final submitted = operations.claimedSessions.single;
       expect(submitted.destinationAccountUuid, 'account-2');
@@ -1592,7 +1594,7 @@ void main() {
         router.routerDelegate.currentConfiguration.uri.path,
         '/payment-links',
       );
-      expect(find.text('Claiming...'), findsOneWidget);
+      expect(find.text('Claiming…'), findsOneWidget);
       expect(haptics, isEmpty);
 
       await tester.tap(
@@ -1787,7 +1789,7 @@ void main() {
       expect(pngSize.getUint32(4), 810);
       expect(origin!.isEmpty, isFalse);
       expect(operations.sharedLinks, isEmpty);
-      await tester.tap(find.text('Sharing...'));
+      await tester.tap(find.text('Sharing…'));
       await tester.pump();
       expect(images, hasLength(1));
 
@@ -1850,7 +1852,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
   });
 }
 

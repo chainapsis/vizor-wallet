@@ -71,6 +71,7 @@ class PaymentLinkPane extends StatelessWidget {
     this.scrollController,
     this.showTopScrollFade = false,
     this.showBottomActionFade = true,
+    this.actionFadeEndFraction = 1,
     super.key,
   });
 
@@ -81,12 +82,14 @@ class PaymentLinkPane extends StatelessWidget {
   final ScrollController? scrollController;
   final bool showTopScrollFade;
   final bool showBottomActionFade;
+  final double actionFadeEndFraction;
 
   @override
   Widget build(BuildContext context) {
     return AppPaneFloatingBar(
       visible: actions != null,
       fadeVisible: showBottomActionFade,
+      fadeEndFraction: actionFadeEndFraction,
       overlayWidth: 420,
       bar: actions ?? const SizedBox.shrink(),
       builder: (context, bottomReserve) => Stack(
@@ -683,6 +686,60 @@ class PaymentLinkActionFocusRing extends StatelessWidget {
             : null,
       ),
       child: child,
+    );
+  }
+}
+
+/// Whether text is scaled to 150% or more, where two-column layouts stack.
+bool paymentLinkUsesLargeText(BuildContext context) =>
+    MediaQuery.textScalerOf(context).scale(14) >= 21;
+
+/// A small ghost icon action with hover fill and a keyboard focus ring.
+class PaymentLinkIconAction extends StatelessWidget {
+  const PaymentLinkIconAction({
+    required this.icon,
+    required this.semanticLabel,
+    required this.onPressed,
+    this.size = 24,
+    super.key,
+  });
+
+  final String icon;
+  final String semanticLabel;
+  final VoidCallback? onPressed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return PaymentLinkAction(
+      semanticLabel: semanticLabel,
+      onPressed: onPressed,
+      builder: (context, hovered, focused) => PaymentLinkActionFocusRing(
+        focused: focused,
+        borderRadius: AppRadii.xSmall,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: hovered
+                ? context.colors.button.ghost.bgHover
+                : context.colors.background.ground.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: Center(
+            child: AppIcon(
+              icon,
+              size: 16,
+              color: enabled
+                  ? context.colors.icon.regular
+                  : context.colors.icon.disabled,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

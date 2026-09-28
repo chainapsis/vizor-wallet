@@ -69,11 +69,12 @@ App-name/version queries now have a 10-second deadline on Android and Apple.
 Opening-app approval and transaction review do not use this short deadline.
 Timeout/cancellation invalidates the old request and retires its native session;
 new requests remain excluded until teardown completes. Android also quarantines
-failed disconnects across Activity recreation. Apple uses the pinned BLE 1.0.1
-source in `third_party/ledger_ble_transport`, patched to abort the physical link
-and resolve a pending exchange on disconnect. A late response cannot publish a
-cancelled result. Dart clears cancelled connection metadata and resets native
-state before reconnecting. SDK raw APDU logging is disabled.
+failed disconnects across Activity recreation. Apple uses the pinned
+[Chainapsis BLE fork](https://github.com/chainapsis/hw-transport-ios-ble/tree/75764d86c292ade766f2e9e9d46f061722af9ab8), based on upstream main,
+patched to abort the physical link and resolve a pending exchange on disconnect.
+A late response cannot publish a cancelled result. Dart clears cancelled
+connection metadata and resets native state before reconnecting. SDK raw APDU
+logging is disabled.
 
 Physical-device verification still required:
 

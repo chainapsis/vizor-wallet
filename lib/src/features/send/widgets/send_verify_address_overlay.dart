@@ -40,7 +40,7 @@ final _previousTransactionCountForAddressProvider = FutureProvider.autoDispose
       try {
         final network = ref.watch(rpcEndpointProvider).networkName;
         final dbPath = await getWalletDbPath();
-        return rust_sync.getPreviousTransactionCountForAddress(
+        return await rust_sync.getPreviousTransactionCountForAddress(
           dbPath: dbPath,
           network: network,
           accountUuid: request.accountUuid,

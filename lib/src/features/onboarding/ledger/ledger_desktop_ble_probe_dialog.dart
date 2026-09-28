@@ -198,16 +198,22 @@ class _LedgerDesktopBleConnectDialogState
 
   void _handleError(int generation, Object error) {
     if (!mounted || generation != _generation) return;
-    final message =
-        ledgerFailureGuidance(error)?.message ??
-        switch (error) {
-          UnsupportedError() =>
-            'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-          _ =>
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.viewingKey,
+    );
+    final message = switch (error) {
+      UnsupportedError() =>
+        'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
+      _
+          when LedgerRequestFailure.fromError(error) ==
+              LedgerRequestFailure.declined =>
+        'The viewing-key request was rejected on your Ledger.',
+      _ =>
+        guidance?.message ??
             'Vizor could not connect to this Ledger over Bluetooth. Try again.',
-        };
-    _bluetoothRecovery =
-        ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
+    };
+    _bluetoothRecovery = guidance?.bluetoothRecovery ?? false;
     _fail(message);
   }
 

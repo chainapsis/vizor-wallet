@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fixtures/orchard_receive_address.dart';
 
 /// A price the test can move after the request was created.
 class _PriceNotifier extends Notifier<double?> {
@@ -442,11 +443,81 @@ void main() {
     expect(_findRenewShieldedAddressButton(), findsOneWidget);
   });
 
+  testWidgets('draws a scan-first QR for Keystone accounts in any theme', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        bootstrap: _hardwareBootstrap,
+        themeData: AppThemeData.dark,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final surface = find.byType(ReceiveQrSurface);
+    expect(tester.widget<ReceiveQrSurface>(surface).scanOptimized, isTrue);
+    final decoration =
+        tester
+                .widget<Container>(
+                  find
+                      .descendant(of: surface, matching: find.byType(Container))
+                      .first,
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(decoration.color, AppThemeData.dark.colors.surface.qrCode);
+  });
+
+  for (final (label, bootstrap) in [
+    ('software', _bootstrap),
+    ('Ledger', _ledgerBootstrap),
+  ]) {
+    testWidgets('keeps the dot QR for $label accounts', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      await tester.pumpWidget(_receiveHarness(bootstrap: bootstrap));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface))
+            .scanOptimized,
+        isFalse,
+      );
+    });
+  }
+
   testWidgets('renews shielded address for hardware accounts', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
     });
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
 
     late _RecordingReceiveAddressService service;
     await tester.pumpWidget(
@@ -465,6 +536,15 @@ void main() {
     await tester.pump();
 
     expect(service.renewedAccountUuid, 'account-1');
+    expect(
+      tester.widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface)).address,
+      orchardReceiveAddress,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('receive_copy_shielded_address_button')),
+    );
+    await tester.pump();
+    expect(copied, [orchardReceiveAddress]);
   });
 
   testWidgets('uses Keystone shielded help copy for hardware accounts', (
@@ -1355,10 +1435,34 @@ final _hardwareBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final _ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/receive',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger Vault',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: _shieldedAddress,
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
-const _renewedShieldedAddress =
-    'u1testrenewedshieldedaddress0000000000000000000000000000000000000000000';
+const _renewedShieldedAddress = orchardReceiveAddress;
 const _transparentAddress =
     't1testtransparentaddress111111111111111111111111111111111111';
 const _freshTransparentAddress =

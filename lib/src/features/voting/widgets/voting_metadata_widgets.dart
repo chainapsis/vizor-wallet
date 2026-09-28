@@ -9,6 +9,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
+import 'voting_auto_advance_indicator.dart';
 
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
@@ -58,22 +59,26 @@ class VotingForumLinkButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppButton(
-      onPressed: () {
-        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
-      },
-      variant: AppButtonVariant.ghost,
-      size: size,
-      contentPadding:
-          contentPadding ??
-          (mobilePollList
-              ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
-              : null),
-      leading: mobilePollList ? null : const AppIcon(AppIcons.link),
-      trailing: mobilePollList ? const AppIcon(AppIcons.link) : null,
-      child: Text(
-        label,
-        style: mobilePollList ? AppTypography.labelLarge : null,
+    return IntrinsicWidth(
+      child: AppButton(
+        growWithContent: true,
+        constrainContent: true,
+        onPressed: () {
+          unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+        },
+        variant: AppButtonVariant.ghost,
+        size: size,
+        contentPadding:
+            contentPadding ??
+            (mobilePollList
+                ? const EdgeInsets.symmetric(horizontal: AppSpacing.xs)
+                : null),
+        leading: mobilePollList ? null : const AppIcon(AppIcons.link),
+        trailing: mobilePollList ? const AppIcon(AppIcons.link) : null,
+        child: Text(
+          label,
+          style: mobilePollList ? AppTypography.labelLarge : null,
+        ),
       ),
     );
   }
@@ -99,61 +104,35 @@ class VotingProposalMetadataRow extends StatelessWidget {
     if (zipBadges.isEmpty && forumUri == null && trailing == null) {
       return const SizedBox.shrink();
     }
-    if (trailing != null) {
-      final metadata = [
-        for (final badge in zipBadges) VotingMetadataBadge(badge),
-        if (forumUri != null)
-          VotingForumLinkButton(uri: forumUri!, label: forumLabel),
-      ];
-      if (metadata.isEmpty) {
-        return Align(alignment: Alignment.centerRight, child: trailing);
-      }
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xxs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: metadata,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          trailing,
-        ],
-      );
-    }
-    if (forumUri == null) {
-      return Wrap(
-        spacing: AppSpacing.xs,
-        runSpacing: AppSpacing.xxs,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [for (final badge in zipBadges) VotingMetadataBadge(badge)],
-      );
-    }
-    if (zipBadges.isEmpty) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: VotingForumLinkButton(uri: forumUri!, label: forumLabel),
-      );
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xxs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              for (final badge in zipBadges) VotingMetadataBadge(badge),
-            ],
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        VotingForumLinkButton(uri: forumUri!, label: forumLabel),
-      ],
+    final badges = Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xxs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [for (final badge in zipBadges) VotingMetadataBadge(badge)],
+    );
+    final link = forumUri == null
+        ? null
+        : VotingForumLinkButton(uri: forumUri!, label: forumLabel);
+    final metadata = trailing == null
+        ? [if (zipBadges.isNotEmpty) badges, ?link]
+        : [
+            if (zipBadges.isNotEmpty || link != null)
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xxs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [if (zipBadges.isNotEmpty) badges, ?link],
+              ),
+            trailing,
+          ];
+    return OverflowBar(
+      spacing: AppSpacing.xs,
+      overflowSpacing: AppSpacing.xxs,
+      alignment: zipBadges.isEmpty && trailing == null
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.spaceBetween,
+      overflowAlignment: OverflowBarAlignment.start,
+      children: metadata,
     );
   }
 }
@@ -162,6 +141,7 @@ class VotingProposalCard extends StatelessWidget {
   const VotingProposalCard({
     required this.proposal,
     this.selectedChoice,
+    this.advancing = false,
     this.fallbackForumUri,
     this.enabled = true,
     this.readOnly = false,
@@ -173,6 +153,7 @@ class VotingProposalCard extends StatelessWidget {
   });
 
   final VotingProposalView proposal;
+  final bool advancing;
   final int? selectedChoice;
   final Uri? fallbackForumUri;
   final bool enabled;
@@ -202,6 +183,7 @@ class VotingProposalCard extends StatelessWidget {
       return _MobileVotingProposalCard(
         proposal: proposal,
         selectedChoice: selectedChoice,
+        advancing: advancing,
         forumUri: forumUri,
         enabled: enabled,
         readOnly: readOnly,
@@ -287,6 +269,7 @@ class VotingProposalCard extends StatelessWidget {
               ),
               option: option,
               selected: selectedChoice == option.index,
+              advancing: advancing && selectedChoice == option.index,
               enabled: enabled,
               readOnly: readOnly,
               onDisabledTap: onDisabledOptionTap,
@@ -321,6 +304,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
   const _MobileVotingProposalCard({
     required this.proposal,
     required this.selectedChoice,
+    required this.advancing,
     required this.forumUri,
     required this.enabled,
     required this.readOnly,
@@ -331,6 +315,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
   });
 
   final VotingProposalView proposal;
+  final bool advancing;
   final int? selectedChoice;
   final Uri? forumUri;
   final bool enabled;
@@ -397,6 +382,7 @@ class _MobileVotingProposalCard extends StatelessWidget {
               ),
               option: options[index],
               selected: selectedChoice == options[index].index,
+              advancing: advancing && selectedChoice == options[index].index,
               enabled: enabled,
               readOnly: readOnly,
               onDisabledTap: onDisabledOptionTap,
@@ -434,13 +420,18 @@ class MobileVotingProposalMetadataRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metadataLabels = [...zipBadges, ?statusLabel];
-    return SizedBox(
-      height: forumUri == null ? 21 : 24,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: forumUri == null ? 21 : 24),
+      child: OverflowBar(
+        spacing: AppSpacing.xs,
+        overflowSpacing: AppSpacing.xxs,
+        alignment: metadataLabels.isEmpty
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.spaceBetween,
+        overflowAlignment: OverflowBarAlignment.start,
         children: [
-          Expanded(
-            child: Text.rich(
+          if (metadataLabels.isNotEmpty)
+            Text.rich(
               TextSpan(
                 children: [
                   for (
@@ -448,8 +439,7 @@ class MobileVotingProposalMetadataRow extends StatelessWidget {
                     index < metadataLabels.length;
                     index++
                   ) ...[
-                    if (index > 0)
-                      const WidgetSpan(child: SizedBox(width: AppSpacing.xs)),
+                    if (index > 0) const TextSpan(text: '  '),
                     TextSpan(
                       text: metadataLabels[index],
                       style: AppTypography.labelLarge.copyWith(
@@ -463,10 +453,7 @@ class MobileVotingProposalMetadataRow extends StatelessWidget {
                   ],
                 ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
           if (forumUri != null)
             VotingForumLinkButton(uri: forumUri!, size: AppButtonSize.small),
         ],
@@ -480,6 +467,7 @@ class _MobileVotingProposalOption extends StatelessWidget {
     super.key,
     required this.option,
     required this.selected,
+    this.advancing = false,
     required this.enabled,
     required this.readOnly,
     required this.onDisabledTap,
@@ -488,6 +476,7 @@ class _MobileVotingProposalOption extends StatelessWidget {
 
   final VotingOptionView option;
   final bool selected;
+  final bool advancing;
   final bool enabled;
   final bool readOnly;
   final VoidCallback? onDisabledTap;
@@ -547,7 +536,11 @@ class _MobileVotingProposalOption extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs),
                     SizedBox.square(
                       dimension: 20,
-                      child: selected
+                      child: advancing
+                          ? VotingAutoAdvanceIndicator(
+                              color: colors.icon.accent,
+                            )
+                          : selected
                           ? AppIcon(
                               AppIcons.checkCircle,
                               key: const ValueKey(
@@ -583,6 +576,7 @@ class _VotingProposalOptionRow extends StatelessWidget {
     super.key,
     required this.option,
     required this.selected,
+    this.advancing = false,
     required this.enabled,
     required this.readOnly,
     required this.onDisabledTap,
@@ -591,6 +585,7 @@ class _VotingProposalOptionRow extends StatelessWidget {
 
   final VotingOptionView option;
   final bool selected;
+  final bool advancing;
   final bool enabled;
   final bool readOnly;
   final VoidCallback? onDisabledTap;
@@ -669,6 +664,10 @@ class _VotingProposalOptionRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (advancing) ...[
+              const SizedBox(width: AppSpacing.xs),
+              VotingAutoAdvanceIndicator(color: palette.text),
+            ],
             if (trailingLabel != null) ...[
               const SizedBox(width: AppSpacing.sm),
               Text(

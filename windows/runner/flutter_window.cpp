@@ -17,6 +17,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "payment_uri_handoff.h"
+#include "password_input_source.h"
 #include "single_instance.h"
 #include "utils.h"
 #include "velopack_update.h"
@@ -321,6 +322,7 @@ void CompleteVerification(SharedMethodResult result,
 void VerifyDeviceOwner(
     HWND window,
     std::wstring reason,
+    std::weak_ptr<int> lifetime,
     MethodResultPtr result) {
   if (window == nullptr) {
     result->Error("unavailable", "Windows device authentication is unavailable.");
@@ -364,8 +366,13 @@ void VerifyDeviceOwner(
 
   auto shared_result = std::make_shared<MethodResultPtr>(std::move(result));
   auto completed = wrl::Callback<VerificationCompletedHandler>(
-      [shared_result, window](VerificationOperation* completed_operation,
+      [shared_result, window, lifetime](VerificationOperation* completed_operation,
                               AsyncStatus status) -> HRESULT {
+        // The messenger safely drops replies after engine shutdown, but a late
+        // completion must not open a password prompt for a destroyed HWND.
+        if (lifetime.expired()) {
+          return S_OK;
+        }
         if (status == Completed) {
           VerificationResult verification_result =
               credentials_ui::UserConsentVerificationResult_Canceled;
@@ -409,9 +416,15 @@ FlutterWindow::FlutterWindow(
       pending_payment_uris_(std::move(initial_payment_uris)),
       activation_message_(activation_message) {}
 
-FlutterWindow::~FlutterWindow() {}
+FlutterWindow::~FlutterWindow() {
+  // WM_QUIT (including window_manager.destroy) need not send WM_DESTROY.
+  // Run derived cleanup while all channel members still exist.
+  Destroy();
+}
 
 bool FlutterWindow::OnCreate() {
+  destroying_ = false;
+  auth_lifetime_ = std::make_shared<int>(0);
   if (!Win32Window::OnCreate()) {
     return false;
   }
@@ -427,6 +440,31 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  password_input_source_channel_ = CreatePasswordInputSourceChannel(
+      flutter_controller_->engine()->messenger(),
+      flutter_controller_->view()->GetNativeWindow());
+
+  caps_lock_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/caps_lock",
+          &flutter::StandardMethodCodec::GetInstance());
+  const HWND keyboard_view = flutter_controller_->view()->GetNativeWindow();
+  caps_lock_channel_->SetMethodCallHandler(
+      [keyboard_view](const auto& call, auto result) {
+        if (call.method_name() != "getCapsLockState") {
+          result->NotImplemented();
+          return;
+        }
+        if (::GetForegroundWindow() != ::GetAncestor(keyboard_view, GA_ROOT)) {
+          result->Success();
+          return;
+        }
+        // Runs on the UI/message thread. The low bit is the lock state;
+        // the high bit (or GetAsyncKeyState) only describes key presses.
+        result->Success(flutter::EncodableValue(
+            (::GetKeyState(VK_CAPITAL) & 0x0001) != 0));
+      });
 
   camera_permission_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -456,6 +494,7 @@ bool FlutterWindow::OnCreate() {
           return;
         }
         VerifyDeviceOwner(GetHandle(), StringArg(call.arguments(), "reason"),
+                          auth_lifetime_,
                           std::move(result));
       });
   velopack_update_channel_ =
@@ -483,7 +522,9 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    if (!destroying_) {
+      this->Show();
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -495,13 +536,26 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
-  if (flutter_controller_) {
-    camera_permission_channel_.reset();
-    device_owner_auth_channel_.reset();
-    velopack_update_channel_.reset();
-    payment_uri_channel_.reset();
-    flutter_controller_ = nullptr;
+  if (destroying_) {
+    return;
   }
+  destroying_ = true;
+  auth_lifetime_.reset();
+  payment_uri_dart_ready_ = false;
+
+  // Detach first: controller destruction pumps native messages after its view
+  // has gone away. Keep the messenger alive until handlers are unregistered.
+  auto controller = std::move(flutter_controller_);
+  for (auto* channel : {&camera_permission_channel_, &device_owner_auth_channel_,
+                        &velopack_update_channel_, &payment_uri_channel_,
+                        &password_input_source_channel_, &caps_lock_channel_}) {
+    if (*channel) {
+      (*channel)->SetMethodCallHandler(nullptr);
+      channel->reset();
+    }
+  }
+  pending_payment_uris_.clear();
+  controller.reset();
 
   Win32Window::OnDestroy();
 }
@@ -510,6 +564,19 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Lifecycle messages must reach the owner even if a plugin would consume
+  // them. During teardown, neither activation nor a forwarded URI may reopen
+  // the window or invoke Dart through a dying messenger.
+  if (message == WM_DESTROY || message == WM_NCDESTROY) {
+    return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  }
+  if (destroying_) {
+    if ((activation_message_ != 0 && message == activation_message_) ||
+        message == WM_COPYDATA || message == WM_CLOSE) {
+      return 0;
+    }
+    return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  }
   if (activation_message_ != 0 && message == activation_message_) {
     PresentPrimaryWindow(hwnd);
     return kSingleInstanceActivationAcknowledged;
@@ -537,7 +604,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 
   switch (message) {
     case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
+      if (flutter_controller_) {
+        flutter_controller_->engine()->ReloadSystemFonts();
+      }
       break;
   }
 

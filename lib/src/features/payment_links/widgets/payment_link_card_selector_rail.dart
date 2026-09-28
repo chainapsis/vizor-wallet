@@ -48,7 +48,9 @@ class PaymentLinkCardSelectorRail extends StatefulWidget {
   ///
   /// Pass [PaymentLinkCardArtwork.values] to expose all exported designs.
   final List<PaymentLinkCardArtwork> artworks;
-  final PaymentLinkCardArtwork selected;
+
+  /// Null when a choice outside the rail is active, such as mixed designs.
+  final PaymentLinkCardArtwork? selected;
   final ValueChanged<PaymentLinkCardArtwork> onSelected;
   final double width;
   final double height;
@@ -85,9 +87,7 @@ class _PaymentLinkCardSelectorRailState
   void initState() {
     super.initState();
     _controller = ScrollController(
-      initialScrollOffset:
-          (_loopOriginForMode + widget.artworks.indexOf(widget.selected)) *
-          _itemStride,
+      initialScrollOffset: (_loopOriginForMode + _selectedIndex) * _itemStride,
     );
   }
 
@@ -98,9 +98,10 @@ class _PaymentLinkCardSelectorRailState
     final itemWidthChanged =
         oldWidget.itemWidth != widget.itemWidth ||
         oldWidget.loop != widget.loop;
+    // Clearing the selection leaves the rail where it is.
     if (!artworksChanged &&
         !itemWidthChanged &&
-        oldWidget.selected == widget.selected) {
+        (oldWidget.selected == widget.selected || widget.selected == null)) {
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -126,6 +127,11 @@ class _PaymentLinkCardSelectorRailState
 
   int get _loopOriginForMode => widget.loop ? _loopOrigin : 0;
 
+  int get _selectedIndex => switch (widget.selected) {
+    final selected? => widget.artworks.indexOf(selected),
+    null => 0,
+  };
+
   void _normalizeLoopOffset() {
     if (!widget.loop ||
         !mounted ||
@@ -140,7 +146,10 @@ class _PaymentLinkCardSelectorRailState
     }
   }
 
-  double _scrollOffsetFor(PaymentLinkCardArtwork artwork) {
+  double _scrollOffsetFor(PaymentLinkCardArtwork? artwork) {
+    if (artwork == null) {
+      return _controller.hasClients ? _controller.offset : 0;
+    }
     final index = widget.artworks.indexOf(artwork);
     if (index < 0) return 0;
     if (!widget.loop) return _scrollOffsetForIndex(index);
@@ -210,7 +219,7 @@ class _PaymentLinkCardSelectorRailState
   @override
   Widget build(BuildContext context) {
     assert(
-      widget.artworks.contains(widget.selected),
+      widget.selected == null || widget.artworks.contains(widget.selected),
       'selected must be included in artworks.',
     );
     assert(

@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
+import 'fakes/fake_password_input_source.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -20,9 +23,20 @@ void main() {
       await _setDesktopViewport(tester);
       final security = _RecordingSecurityNotifier(configured: false);
       final import = _RecordingLedgerImport();
+      final platform = FakePlatform();
+      final store = FakeStore();
+      final inputSource = AppPasswordInputSource(
+        enabled: true,
+        platform: platform,
+        store: store,
+      );
 
       await tester.pumpWidget(
-        _harness(security: security, import: import.call),
+        _harness(
+          security: security,
+          import: import.call,
+          inputSource: inputSource,
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -50,6 +64,8 @@ void main() {
         find.byKey(const ValueKey('customise_account_name_field')),
         findsOneWidget,
       );
+      expect(store.value, isNull);
+      platform.current = {'platform': 'macos', 'id': 'different.at.commit'};
       await tester.enterText(
         find.byKey(const ValueKey('customise_account_name_field')),
         'Ledger savings',
@@ -62,6 +78,7 @@ void main() {
       expect(find.byKey(const ValueKey('ledger_first_account_home')), findsOne);
       expect(security.preparedPassword, 'Password1!');
       expect(security.commitCount, 1);
+      expect(jsonDecode(store.value!)['source'], source);
       expect(security.rollbackCount, 0);
       expect(import.calls, 1);
       expect(import.name, 'Ledger savings');
@@ -111,9 +128,12 @@ const _account = LedgerDeviceAccount(
 Widget _harness({
   required _RecordingSecurityNotifier security,
   required LedgerAccountImporter import,
+  AppPasswordInputSource? inputSource,
 }) {
   return ProviderScope(
     overrides: [
+      if (inputSource != null)
+        appPasswordInputSourceProvider.overrideWithValue(inputSource),
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       appSecurityProvider.overrideWith(() => security),
       ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),

@@ -86,8 +86,24 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
-    retain_stored_proposal_lock_until_expiry, stored_proposal_lock,
+    retain_stored_proposal_lock_until_expiry, stored_proposal_lock, StoredOvkPolicy,
+    StoredProposal,
 };
+
+/// PCZT creation always uses the sender's OVK, so a proposal that requires
+/// `Discard` must not reach it. Releases the consumed proposal's input lock.
+fn reject_discard_ovk_proposal(stored: &StoredProposal) -> Result<(), String> {
+    if stored.ovk_policy != StoredOvkPolicy::Discard {
+        return Ok(());
+    }
+    let error = "Gift Card claim proposals cannot be signed as a PCZT".to_string();
+    match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+        Ok(()) => Err(error),
+        Err(cleanup_error) => Err(format!(
+            "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+        )),
+    }
+}
 
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
@@ -494,6 +510,7 @@ pub async fn create_pczt_from_proposal(
         send_flow_id,
         "Proposal not found (expired or already consumed)",
     )?;
+    reject_discard_ovk_proposal(&stored)?;
 
     let proposal_lock = match stored_proposal_lock(stored.proposal_id, &stored.send_flow_id) {
         Ok(lock) => lock,
@@ -612,6 +629,7 @@ pub async fn create_tex_pczts_from_proposal(
         send_flow_id,
         "Proposal not found (expired or already consumed)",
     )?;
+    reject_discard_ovk_proposal(&stored)?;
     if stored.proposal.steps().len() != 2 {
         let _ = finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true);
         return Err("Keystone TEX signing requires exactly two proposal steps".to_string());
@@ -1850,6 +1868,25 @@ async fn store_and_broadcast_pczts_inner(
     })
 }
 
+/// A compact signature response that could not be applied.
+#[derive(Debug)]
+pub(crate) enum SpendAuthSignatureError {
+    /// A signature failed verification against its action's `rk`, so a key
+    /// other than this account's produced it.
+    Mismatch(String),
+    /// The response is malformed, incomplete, or targets the wrong actions.
+    Invalid(String),
+}
+
+impl From<SpendAuthSignatureError> for String {
+    fn from(error: SpendAuthSignatureError) -> Self {
+        match error {
+            SpendAuthSignatureError::Mismatch(message)
+            | SpendAuthSignatureError::Invalid(message) => message,
+        }
+    }
+}
+
 /// Applies externally-produced Orchard-protocol spend-authorization
 /// signatures to a parsed PCZT.
 ///
@@ -1860,31 +1897,50 @@ async fn store_and_broadcast_pczts_inner(
 fn apply_compact_orchard_spend_auth_signatures(
     pczt: pczt::Pczt,
     sigs: &[pczt::roles::signer::SpendAuthSignature],
-) -> Result<pczt::Pczt, String> {
+) -> Result<pczt::Pczt, SpendAuthSignatureError> {
     use pczt::roles::signer::Signer;
 
-    let mut signer = Signer::new(pczt).map_err(|e| format!("Create PCZT signer: {e:?}"))?;
+    let mut signer = Signer::new(pczt)
+        .map_err(|e| SpendAuthSignatureError::Invalid(format!("Create PCZT signer: {e:?}")))?;
     let mut seen_sigs = std::collections::HashSet::new();
     for action_sig in sigs {
         if !seen_sigs.insert((action_sig.value_pool(), action_sig.action_index())) {
-            return Err(format!(
+            return Err(SpendAuthSignatureError::Invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         signer
             .apply_orchard_spend_auth_signature(action_sig)
             .map_err(|e| {
-                format!(
+                let message = format!(
                     "Apply {:?} signature at action {}: {e:?}",
                     action_sig.value_pool(),
                     action_sig.action_index()
-                )
+                );
+                if is_invalid_external_signature(&e) {
+                    SpendAuthSignatureError::Mismatch(message)
+                } else {
+                    SpendAuthSignatureError::Invalid(message)
+                }
             })?;
     }
 
     Ok(signer.finish())
+}
+
+/// Only a signature that fails verification against the action's `rk` means
+/// another key signed; a malformed action is an invalid response.
+fn is_invalid_external_signature(error: &pczt::roles::signer::Error) -> bool {
+    use orchard::pczt::SignerError::InvalidExternalSignature;
+    use pczt::roles::signer::Error;
+
+    matches!(
+        error,
+        Error::OrchardSign(InvalidExternalSignature)
+            | Error::IronwoodSign(InvalidExternalSignature)
+    )
 }
 
 /// Verifies a compact signature response against the wallet's unredacted,
@@ -1909,8 +1965,18 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     base_pczt_bytes: &[u8],
     sigs: &[pczt::roles::signer::SpendAuthSignature],
 ) -> Result<(), String> {
+    check_orchard_spend_auth_signatures(base_pczt_bytes, sigs).map_err(String::from)
+}
+
+/// [`preflight_orchard_spend_auth_signatures`] that keeps a key mismatch
+/// distinguishable from a malformed response.
+pub(crate) fn check_orchard_spend_auth_signatures(
+    base_pczt_bytes: &[u8],
+    sigs: &[pczt::roles::signer::SpendAuthSignature],
+) -> Result<(), SpendAuthSignatureError> {
+    let invalid = SpendAuthSignatureError::Invalid;
     let pczt = pczt::Pczt::parse(base_pczt_bytes)
-        .map_err(|e| format!("Parse base PCZT for signature preflight: {e:?}"))?;
+        .map_err(|e| invalid(format!("Parse base PCZT for signature preflight: {e:?}")))?;
 
     let required = unsigned_orchard_action_locations(&pczt);
 
@@ -1918,26 +1984,26 @@ pub(crate) fn preflight_orchard_spend_auth_signatures(
     for action_sig in sigs {
         let location = (action_sig.value_pool(), action_sig.action_index());
         if !provided.insert(location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Duplicate compact signature for pool {:?} action {}",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
         if !required.contains(&location) {
-            return Err(format!(
+            return Err(invalid(format!(
                 "Unexpected compact signature for pool {:?} action {}; the action is absent or already authorized",
                 action_sig.value_pool(),
                 action_sig.action_index()
-            ));
+            )));
         }
     }
 
     if provided.len() != required.len() {
-        return Err(format!(
+        return Err(invalid(format!(
             "Missing {} required compact spend-authorization signature(s)",
             required.len() - provided.len()
-        ));
+        )));
     }
 
     apply_compact_orchard_spend_auth_signatures(pczt, sigs).map(|_| ())
@@ -2776,12 +2842,14 @@ mod tests {
         // The functions under test live at the module file scope, which is two
         // levels up from this nested test module.
         use super::super::{
-            apply_sigs_and_extract, ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
+            apply_sigs_and_extract, check_orchard_spend_auth_signatures,
+            ensure_signed_pczt_matches_base, ensure_tex_pczt_dependency,
             expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_signed_pczt,
             extract_transaction_from_pczt, ironwood_orchard_proving_key,
             preflight_orchard_spend_auth_signatures, prepare_compact_signed_pczts,
             prepare_pczt_for_keystone_batch, redact_pczt_for_signer,
             set_orchard_anchor_and_witnesses, txid_from_io_finalized_pczt, validate_signed_pczts,
+            SpendAuthSignatureError,
         };
         use orchard::tree::MerkleHashOrchard;
         use pczt::roles::signer::SpendAuthSignature;
@@ -3233,6 +3301,61 @@ mod tests {
             let invalid = preflight_orchard_spend_auth_signatures(&deferred_bytes, &[invalid])
                 .expect_err("an invalid signature must fail cryptographic verification");
             assert!(invalid.contains("Apply Orchard signature"));
+
+            // Only a failed verification reads as a key mismatch.
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                invalid_bytes,
+            );
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]),
+                Err(SpendAuthSignatureError::Mismatch(_))
+            ));
+            assert!(matches!(
+                check_orchard_spend_auth_signatures(&deferred_bytes, &[]),
+                Err(SpendAuthSignatureError::Invalid(_))
+            ));
+        }
+
+        #[test]
+        fn only_an_invalid_external_signature_reads_as_a_key_mismatch() {
+            let (deferred_bytes, valid, spend_index) = build_deferred_base_and_valid_sig();
+
+            let mut forged_bytes = *valid.signature();
+            forged_bytes[0] ^= 1;
+            let forged = SpendAuthSignature::from_parts(
+                orchard::ValuePool::Orchard,
+                spend_index,
+                forged_bytes,
+            );
+            match check_orchard_spend_auth_signatures(&deferred_bytes, &[forged]) {
+                Err(SpendAuthSignatureError::Mismatch(message)) => {
+                    assert!(message.contains("InvalidExternalSignature"), "{message}");
+                }
+                other => panic!("expected a key mismatch, got {other:?}"),
+            }
+
+            // Corrupt the spent note's nullifier so the Signer's consistency
+            // check fails before any signature is verified.
+            let nullifier = *pczt::Pczt::parse(&deferred_bytes)
+                .unwrap()
+                .orchard()
+                .actions()[spend_index]
+                .spend()
+                .nullifier();
+            let offset = deferred_bytes
+                .windows(nullifier.len())
+                .position(|window| window == nullifier)
+                .expect("serialized PCZT contains the spend nullifier");
+            let mut malformed_bytes = deferred_bytes.clone();
+            malformed_bytes[offset] ^= 1;
+            match check_orchard_spend_auth_signatures(&malformed_bytes, &[valid]) {
+                Err(SpendAuthSignatureError::Invalid(message)) => {
+                    assert!(message.contains("OrchardVerify"), "{message}");
+                }
+                other => panic!("expected an invalid response, got {other:?}"),
+            }
         }
 
         #[test]
@@ -3576,5 +3699,102 @@ mod tests {
                     "base-side signature must verify under the compact request's sighash and rk",
                 );
         }
+    }
+
+    #[tokio::test]
+    async fn gift_card_claim_proposal_is_rejected_before_pczt_and_releases_lock() {
+        use super::super::{proposal_locks, StoredProposalLock, PROPOSAL_STORE};
+        use ::transparent::bundle::{OutPoint, TxOut};
+        use std::collections::BTreeMap;
+        use zcash_client_backend::{
+            data_api::wallet::ConfirmationsPolicy,
+            fees::TransactionBalance,
+            proposal::Proposal,
+            wallet::{LockOwner, WalletTransparentOutput},
+            zip321::{Payment, TransactionRequest},
+        };
+        use zcash_keys::address::Address;
+        use zcash_protocol::{value::Zatoshis, PoolType};
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("claim.db");
+        let path = path.to_str().unwrap().to_owned();
+        crate::wallet::keys::ensure_db_initialized(&path, WalletNetwork::Test).unwrap();
+        let address = TransparentAddress::PublicKeyHash([7; 20]);
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([9; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(100_000), address.script().into()),
+            Some(BlockHeight::from_u32(1)),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let payment = Payment::new(
+            Address::Transparent(address).to_zcash_address(&WalletNetwork::Test),
+            Some(Zatoshis::const_from_u64(90_000)),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        // Proposal contents are irrelevant: rejection happens before any build.
+        let proposal = Proposal::single_step(
+            TransactionRequest::new(vec![payment]).unwrap(),
+            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
+            vec![utxo],
+            None,
+            BlockHeight::from_u32(1),
+            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
+            super::super::send::ConservativeZip317FeeRule,
+            BlockHeight::from_u32(2).into(),
+            ConfirmationsPolicy::default(),
+            false,
+            false,
+        )
+        .unwrap();
+        let id = 9_100_001u64;
+        let flow = "gift-claim-flow";
+        let owner = LockOwner::new([41; 32]);
+        proposal_locks::persist(&path, owner, &[], BlockHeight::from_u32(100)).unwrap();
+        {
+            let mut store = PROPOSAL_STORE.lock().unwrap();
+            store.locks.insert(
+                id,
+                StoredProposalLock {
+                    proposal: proposal.clone(),
+                    network: WalletNetwork::Test,
+                    db_path: path.clone(),
+                    owner,
+                    send_flow_id: flow.to_string(),
+                },
+            );
+            store.proposals.insert(
+                id,
+                StoredProposal {
+                    proposal_id: id,
+                    proposal,
+                    proposed_tx_version: None,
+                    network: WalletNetwork::Test,
+                    account_id: crate::wallet::keys::parse_account_uuid(
+                        "550e8400-e29b-41d4-a716-446655440000",
+                    )
+                    .unwrap(),
+                    send_flow_id: flow.to_string(),
+                    ovk_policy: StoredOvkPolicy::Discard,
+                },
+            );
+        }
+
+        let error =
+            create_pczt_from_proposal(&path, "http://127.0.0.1:1", WalletNetwork::Test, id, flow)
+                .await
+                .unwrap_err();
+
+        assert!(error.contains("cannot be signed as a PCZT"), "{error}");
+        let store = PROPOSAL_STORE.lock().unwrap();
+        assert!(!store.proposals.contains_key(&id));
+        assert!(!store.locks.contains_key(&id));
     }
 }

@@ -9,6 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
@@ -1048,6 +1049,78 @@ void main() {
         'This signed QR is from another round. Go back, scan the current '
         'request with Keystone, then scan its new signed QR.',
       );
+    },
+  );
+
+  testWidgets(
+    'desktop immediate migration uses the shared signing QR display',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrapFor(activeAccountIsHardware: true),
+            ),
+            syncProvider.overrideWith(
+              () => _FakeSyncNotifier(_syncedSyncState),
+            ),
+            swapFeatureEnabledProvider.overrideWithValue(true),
+            ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+              const IronwoodHomeMigrationCtaState.hidden(),
+            ),
+          ],
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: MaterialApp.router(
+              routerConfig: GoRouter(
+                initialLocation: '/migration/immediate/keystone/sign',
+                routes: [
+                  GoRoute(
+                    path: '/migration/immediate/keystone/sign',
+                    builder: (_, _) =>
+                        IronwoodMigrationKeystoneImmediateSignScreen(
+                          approvedPlan: _immediatePlan(),
+                          previewRequest:
+                              rust_sync.KeystoneMigrationSigningRequest(
+                                requestId: 'preview-request',
+                                messages: [
+                                  rust_sync.KeystoneMigrationMessage(
+                                    id: 'preview-transaction',
+                                    redactedPczt: Uint8List.fromList([1]),
+                                    expectedSignatureCount: 1,
+                                  ),
+                                ],
+                                signingBatchLimit: 1,
+                              ),
+                          previewUrParts: const [
+                            'UR:ZCASH-SIGN-BATCH/FIRST',
+                            'UR:ZCASH-SIGN-BATCH/SECOND',
+                          ],
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final qr = find.byType(PrettyQrView);
+      expect(tester.getSize(qr), const Size.square(264));
+      QrImage frame() =>
+          // ignore: invalid_use_of_protected_member
+          tester.widget<PrettyQrView>(qr).qrImage;
+      final first = frame();
+      await tester.pump(const Duration(milliseconds: 199));
+      expect(frame(), same(first));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(frame(), isNot(same(first)));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 

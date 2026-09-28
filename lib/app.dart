@@ -8,8 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'src/core/input/caps_lock_monitor.dart';
+import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
+import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
@@ -216,6 +219,25 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   );
 }
 
+/// Shared production configuration for immediate and Linux keyring startup.
+/// Preview/test builders remain opted out of native input monitoring.
+Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
+  Future<AppBootstrapState> Function() loadBootstrap = loadAppBootstrap,
+}) async {
+  final bootstrap = await loadBootstrap();
+  return BootstrappedZcashWalletApp(
+    initialBootstrap: bootstrap,
+    overrides: [
+      capsLockMonitoringEnabledProvider.overrideWithValue(true),
+      appPasswordInputSourceProvider.overrideWith((ref) {
+        final service = AppPasswordInputSource.production();
+        ref.onDispose(service.dispose);
+        return service;
+      }),
+    ],
+  );
+}
+
 Widget buildZcashWalletApp({
   required AppBootstrapState bootstrap,
   List<Override> overrides = const [],
@@ -276,17 +298,19 @@ class _BootstrappedZcashWalletAppState
 Future<void> runZcashWalletApp() async {
   log('runtime: starting');
   await initializeZcashWalletRuntime();
-  final Widget app;
-  if (Platform.isLinux) {
-    app = LinuxKeyringStartupHost(loadApp: buildBootstrappedZcashWalletApp);
-  } else {
-    app = await buildBootstrappedZcashWalletApp();
-  }
+  final Widget app = Platform.isLinux
+      ? LinuxKeyringStartupHost(loadApp: buildProductionZcashWalletApp)
+      : await buildProductionZcashWalletApp();
   log('runtime: launching app');
   runApp(
     SigningShutdownHost(
       desktop: isDesktopLayoutPlatform,
       coordinator: SigningShutdownCoordinator(
+        onExitStarted: () {
+          appShutdownSignal.begin();
+          rust_sync.cancelFullSync();
+          rust_sync.stopMempoolObserver();
+        },
         releaseReservations: rust_sync.shutdownSigningReservations,
         onError: (error, _) =>
             log('Shutdown reservation cleanup deferred: $error'),
@@ -635,7 +659,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             routePath: '/onboarding/ledger/birthday',
             routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
-          ledgerOnContinue: (password) async {
+          ledgerOnContinue: (password, inputSource) async {
             if (!context.mounted) return;
             context.go(
               '/onboarding/ledger/customise-account',
@@ -643,6 +667,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 account: args.account,
                 birthdayHeight: args.birthdayHeight,
                 pendingPassword: password,
+                passwordInputSource: inputSource,
               ),
             );
           },
@@ -692,6 +717,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 );
 
             final pendingPassword = args.pendingPassword;
+            final inputSourceService = ref.read(appPasswordInputSourceProvider);
             if (pendingPassword == null) {
               await importAccount();
               if (!context.mounted) return;
@@ -710,6 +736,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 await importAccount();
                 securityNotifier.commitPasswordSetup();
                 passwordCommitted = true;
+                unawaited(
+                  inputSourceService.remember(args.passwordInputSource),
+                );
                 if (!context.mounted) return;
                 context.go('/home');
               });
@@ -2175,6 +2204,9 @@ class _WindowsUpdatePromptHostState
                   ).animate(animation);
                   return FadeTransition(
                     opacity: animation,
+                    // Keep semantics attached through zero-opacity frames
+                    // when a dismissed update prompt is shown again.
+                    alwaysIncludeSemantics: true,
                     child: SlideTransition(position: position, child: child),
                   );
                 },

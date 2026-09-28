@@ -1389,6 +1389,19 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<List<String>> crateApiWalletGetReceiveAddressAliases({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => [
+    await crateApiWalletGetUnifiedAddress(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+    ),
+  ];
+
+  @override
   Future<String> crateApiWalletGetUnifiedAddress({
     required String dbPath,
     required String network,

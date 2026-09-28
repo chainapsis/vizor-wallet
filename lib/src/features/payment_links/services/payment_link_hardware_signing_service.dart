@@ -42,6 +42,10 @@ class PaymentLinkFundingSurfaceRegistry {
 }
 
 abstract interface class PaymentLinkHardwareSigningService {
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  );
+
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -91,6 +95,7 @@ class PaymentLinkHardwarePcztDraft {
     required this.feeZatoshi,
     required this.proposalId,
     required this.sendFlowId,
+    this.batch,
   });
 
   final VizorPaymentLink link;
@@ -99,6 +104,12 @@ class PaymentLinkHardwarePcztDraft {
   final BigInt feeZatoshi;
   final BigInt proposalId;
   final String sendFlowId;
+  final PaymentLinkBatchDraft? batch;
+
+  String get recoveryRef => batch?.id ?? link.address;
+
+  /// Every card this PCZT funds.
+  List<VizorPaymentLink> get links => batch?.links ?? [link];
 }
 
 class PaymentLinkHardwareFundingResult {
@@ -128,6 +139,50 @@ class RustPaymentLinkHardwareSigningService
   final PaymentLinkRecoveryStore _recoveryStore;
 
   @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) async {
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    if (batch.links.any((link) => link.network != endpoint.networkName)) {
+      throw StateError('The Gift Card network changed.');
+    }
+    try {
+      return await _createPczt(
+        accountUuid: batch.quote.sourceAccountUuid,
+        links: batch.links,
+        batch: batch,
+        propose: (dbPath, sendFlowId) async {
+          final proposal = await rust_sync.proposePaymentLinkBatch(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: batch.quote.sourceAccountUuid,
+            sendFlowId: sendFlowId,
+            addresses: [for (final link in batch.links) link.address],
+            amountZatoshi: paymentLinkFundingAmountZatoshi(
+              batch.quote.recipientAmountZatoshi,
+            ),
+          );
+          return proposal;
+        },
+        checkProposal: (proposal) {
+          if (proposal.feeZatoshi != batch.quote.fundingFeeZatoshi) {
+            throw const PaymentLinkBatchQuoteChanged();
+          }
+        },
+        // The group's drafts belong to its quote, so a retry can reuse them.
+        // Leaving the signer abandons them.
+        removeDrafts: null,
+      );
+    } catch (error) {
+      // A signer limit found at signing reads like the software path's.
+      if (PaymentLinkBatchRejected.from(error) case final rejected?) {
+        throw rejected;
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -138,31 +193,56 @@ class RustPaymentLinkHardwareSigningService
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
-    _surfaces.open(link.address);
+    return _createPczt(
+      accountUuid: sourceAccountUuid,
+      links: [link],
+      propose: (dbPath, sendFlowId) => rust_sync.proposeSend(
+        dbPath: dbPath,
+        network: _ref.read(rpcEndpointFailoverProvider).current.networkName,
+        accountUuid: sourceAccountUuid,
+        sendFlowId: sendFlowId,
+        toAddress: link.address,
+        amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+      ),
+      removeDrafts: () =>
+          _recoveryStore.removeUnsubmittedDraft(address: link.address),
+    );
+  }
+
+  /// Proposes funding for [links] and turns it into an unsigned PCZT. A
+  /// proposal that never became a PCZT is discarded, and any failure runs
+  /// [removeDrafts] on the still-unsubmitted drafts.
+  Future<PaymentLinkHardwarePcztDraft> _createPczt({
+    required String accountUuid,
+    required List<VizorPaymentLink> links,
+    required Future<rust_sync.ProposalResult> Function(
+      String dbPath,
+      String sendFlowId,
+    )
+    propose,
+    required Future<void> Function()? removeDrafts,
+    void Function(rust_sync.ProposalResult proposal)? checkProposal,
+    PaymentLinkBatchDraft? batch,
+  }) async {
     final sendFlowId =
         'payment-link-hw-${DateTime.now().microsecondsSinceEpoch}';
-
+    for (final link in links) {
+      _surfaces.open(link.address);
+    }
     try {
       return await _ref
           .read(syncProvider.notifier)
           .runWithAuthoritativeSpendable(
-            accountUuid: sourceAccountUuid,
+            accountUuid: accountUuid,
             operation: () async {
               final dbPath = await getWalletDbPath();
               final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
               BigInt? proposalId;
-              var proposalConsumed = false;
-
+              var consumed = false;
               try {
-                final proposal = await rust_sync.proposeSend(
-                  dbPath: dbPath,
-                  network: endpoint.networkName,
-                  accountUuid: sourceAccountUuid,
-                  sendFlowId: sendFlowId,
-                  toAddress: link.address,
-                  amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-                );
+                final proposal = await propose(dbPath, sendFlowId);
                 proposalId = proposal.proposalId;
+                checkProposal?.call(proposal);
                 final pcztBytes = await rust_sync.createPcztFromProposal(
                   dbPath: dbPath,
                   lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -170,9 +250,10 @@ class RustPaymentLinkHardwareSigningService
                   proposalId: proposal.proposalId,
                   sendFlowId: sendFlowId,
                 );
-                proposalConsumed = true;
+                consumed = true;
                 return PaymentLinkHardwarePcztDraft(
-                  link: link,
+                  link: links.first,
+                  batch: batch,
                   pcztBytes: pcztBytes,
                   needsSaplingParams: proposal.needsSaplingParams,
                   feeZatoshi: proposal.feeZatoshi,
@@ -180,7 +261,7 @@ class RustPaymentLinkHardwareSigningService
                   sendFlowId: sendFlowId,
                 );
               } finally {
-                if (proposalId != null && !proposalConsumed) {
+                if (proposalId != null && !consumed) {
                   try {
                     await rust_sync.discardProposal(
                       proposalId: proposalId,
@@ -198,14 +279,16 @@ class RustPaymentLinkHardwareSigningService
           );
     } catch (error, stackTrace) {
       try {
-        await _recoveryStore.removeUnsubmittedDraft(address: link.address);
+        await removeDrafts?.call();
       } catch (cleanupError) {
         log(
           'PaymentLinkHardwareSigning: failed PCZT draft cleanup '
-          'address=${link.address} error=$cleanupError',
+          'flow=$sendFlowId error=$cleanupError',
         );
       }
-      _surfaces.close(link.address);
+      for (final link in links) {
+        _surfaces.close(link.address);
+      }
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
@@ -267,11 +350,20 @@ class RustPaymentLinkHardwareSigningService
     final preparedExpiryHeight = rust_sync.getPcztExpiryHeight(
       pcztBytes: pcztWithProofs,
     );
-    await _recoveryStore.markPrepared(
-      address: draft.link.address,
-      fundingTxid: preparedTxid,
-      expiryHeight: preparedExpiryHeight,
-    );
+    if (draft.batch case final batch?) {
+      await _recoveryStore.markBatchPrepared(
+        batchId: batch.id,
+        fundingTxid: preparedTxid,
+        expiryHeight: preparedExpiryHeight,
+      );
+      unawaited(_paymentLinkService.registerBatchObservers(batch));
+    } else {
+      await _recoveryStore.markPrepared(
+        address: draft.link.address,
+        fundingTxid: preparedTxid,
+        expiryHeight: preparedExpiryHeight,
+      );
+    }
     return pcztWithProofs;
   }
 
@@ -281,7 +373,13 @@ class RustPaymentLinkHardwareSigningService
   }) async {
     await _discardProposal(draft);
     try {
-      await _recoveryStore.removeUnbroadcastDraft(address: draft.link.address);
+      if (draft.batch case final batch?) {
+        await _recoveryStore.removeUnbroadcastBatch(batch.id);
+      } else {
+        await _recoveryStore.removeUnbroadcastDraft(
+          address: draft.link.address,
+        );
+      }
     } catch (error) {
       log(
         'PaymentLinkHardwareSigning: canceled funding cleanup failed '
@@ -289,7 +387,9 @@ class RustPaymentLinkHardwareSigningService
       );
     } finally {
       // Recovery removes the draft later if this cleanup failed.
-      _surfaces.close(draft.link.address);
+      for (final link in draft.links) {
+        _surfaces.close(link.address);
+      }
     }
   }
 
@@ -331,10 +431,18 @@ class RustPaymentLinkHardwareSigningService
     try {
       // The durable marker lands before the broadcast: a draft without it
       // provably never reached the network. A missing draft aborts here.
-      await _recoveryStore.markSubmissionStarted(
-        address: draft.link.address,
-        chainHeight: _ref.read(syncProvider).value?.chainTipHeight ?? 0,
-      );
+      final chainHeight = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
+      if (draft.batch case final batch?) {
+        await _recoveryStore.markBatchSubmissionStarted(
+          batchId: batch.id,
+          chainHeight: chainHeight,
+        );
+      } else {
+        await _recoveryStore.markSubmissionStarted(
+          address: draft.link.address,
+          chainHeight: chainHeight,
+        );
+      }
       // Rust broadcasts before it stores, so from here on a throw can no
       // longer prove the network did not accept the transaction.
       await onSubmissionStarted?.call();
@@ -351,7 +459,9 @@ class RustPaymentLinkHardwareSigningService
             outputParamsPath: outputParamsPath,
           );
     } finally {
-      _surfaces.close(draft.link.address);
+      for (final link in draft.links) {
+        _surfaces.close(link.address);
+      }
     }
     final result = rust_sync.ExtractAndBroadcastPcztResult(
       txid: stored.txids
@@ -367,19 +477,40 @@ class RustPaymentLinkHardwareSigningService
       txids: result.txid,
     );
     var fundingMetadataSaved = false;
-    if (fundingAccepted) {
-      final funding = await PaymentLinkFundingRecovery(_recoveryStore).complete(
-        transaction: result,
-        address: draft.link.address,
-        fundingTxids: (broadcast) => broadcast.txid,
-      );
-      if (!funding.fundingMetadataSaved) {
-        log(
-          'PaymentLinkHardwareSigning: funding was submitted but recovery '
-          'metadata could not be saved after retry: '
-          '${funding.recoveryError}\n${funding.recoveryStackTrace}',
-        );
+    if (fundingAccepted &&
+        !isPaymentLinkFundingBroadcastAccepted(result.status)) {
+      // Rust stores the transaction after this broadcast, so it may be on
+      // neither the network nor the wallet. The cards stay drafts for the
+      // reconciler, which their prepared txid lets settle; nothing to retry.
+      try {
+        if (draft.batch case final batch?) {
+          await _recoveryStore.markBatchSubmitted(
+            batchId: batch.id,
+            fundingTxids: result.txid,
+          );
+        } else {
+          await _recoveryStore.markSubmitted(
+            address: draft.link.address,
+            fundingTxids: result.txid,
+          );
+        }
+      } catch (error) {
+        log('PaymentLinkHardwareSigning: submission write failed: $error');
       }
+      fundingMetadataSaved = true;
+    } else if (fundingAccepted) {
+      final recovery = PaymentLinkFundingRecovery(_recoveryStore);
+      final funding = draft.batch == null
+          ? await recovery.complete(
+              transaction: result,
+              address: draft.link.address,
+              fundingTxids: (broadcast) => broadcast.txid,
+            )
+          : await recovery.completeBatch(
+              transaction: result,
+              batchId: draft.batch!.id,
+              fundingTxids: result.txid,
+            );
       fundingMetadataSaved = funding.fundingMetadataSaved;
     }
     try {

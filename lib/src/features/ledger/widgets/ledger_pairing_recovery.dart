@@ -98,7 +98,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
       LedgerPairingStage.failed =>
         c.pairingInvalid
             ? 'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'
-            : c.requestFailure.message,
+            : c.failureMessage,
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? 'Keep your Ledger nearby and unlocked.'
@@ -320,7 +320,8 @@ class LedgerPairingRecovery extends ConsumerWidget {
               LedgerPairingStage.ready => 'Continue signing',
               LedgerPairingStage.mismatch => 'Choose another Ledger',
               LedgerPairingStage.devices => 'Search again',
-              LedgerPairingStage.failed when !c.pairingInvalid => 'Try again',
+              LedgerPairingStage.failed when !c.pairingInvalid =>
+                c.failureRetryable ? 'Try again' : 'Choose another Ledger',
               _ => 'Find my Ledger',
             }),
           ),

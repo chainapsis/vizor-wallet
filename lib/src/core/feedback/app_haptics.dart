@@ -25,6 +25,9 @@ abstract final class AppHaptics {
   /// Copying sensitive values — a light confirmation tap.
   static Future<void> copy() => HapticFeedback.lightImpact();
 
+  /// Completing the last unanswered ballot item — one light confirmation tap.
+  static Future<void> votingAnswersComplete() => HapticFeedback.lightImpact();
+
   /// Send success confirmation — native custom haptic where available:
   /// 30ms pulse, then 40ms full-intensity pulse after a 60ms delay.
   static Future<void> sendSuccess() async {

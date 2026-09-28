@@ -12,6 +12,27 @@
 #include "utils.h"
 #include "velopack_uninstall.h"
 
+namespace {
+
+// Declared before the Flutter window so plugins and engine are destroyed while
+// their COM apartment still exists, including the window-creation failure path.
+class ScopedWinRT {
+ public:
+  ScopedWinRT() : initialized_(SUCCEEDED(::RoInitialize(RO_INIT_SINGLETHREADED))) {}
+  ~ScopedWinRT() {
+    if (initialized_) {
+      ::RoUninitialize();
+    }
+  }
+  ScopedWinRT(const ScopedWinRT&) = delete;
+  ScopedWinRT& operator=(const ScopedWinRT&) = delete;
+
+ private:
+  bool initialized_;
+};
+
+}  // namespace
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   RunVelopackHooks();
@@ -69,8 +90,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   // Initialize WinRT/COM, so that it is available for use in the library and/or
   // plugins.
-  const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
-  const bool ro_initialized = SUCCEEDED(ro_init);
+  ScopedWinRT winrt;
   // Conditional: don't steal the zcash: handler from another wallet/channel on
   // every launch. Install/update hooks (RunVelopackHooks) still claim it.
   RegisterZcashProtocolHandlerIfUnclaimed();
@@ -88,14 +108,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
-  ::MSG msg;
-  while (::GetMessage(&msg, nullptr, 0, 0)) {
+  ::MSG msg{};
+  BOOL message_result;
+  while ((message_result = ::GetMessage(&msg, nullptr, 0, 0)) > 0) {
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }
 
-  if (ro_initialized) {
-    ::RoUninitialize();
-  }
-  return EXIT_SUCCESS;
+  return message_result == -1 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

@@ -15,7 +15,15 @@ import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../domain/address_scan_payload.dart';
 
-enum AddressQrCameraStatus { requesting, denied, active, loading, unavailable }
+/// [restricted] is an iOS Screen Time/MDM block that Settings cannot lift.
+enum AddressQrCameraStatus {
+  requesting,
+  denied,
+  restricted,
+  active,
+  loading,
+  unavailable,
+}
 
 class AddressQrScanModal extends StatefulWidget {
   const AddressQrScanModal({

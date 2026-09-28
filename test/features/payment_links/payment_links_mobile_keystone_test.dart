@@ -86,7 +86,7 @@ void main() {
 
       await _walkToApproveAndCreate(tester);
 
-      // The review CTA must not be left spinning on "Creating..." — the
+      // The review CTA must not be left spinning on "Creating…" — the
       // Keystone round trip owns the surface from here.
       expect(
         find.byKey(
@@ -514,6 +514,11 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
 
 class _FakePaymentLinkHardwareSigningService
     implements PaymentLinkHardwareSigningService {
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) => throw UnimplementedError();
+
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
   final discardedDrafts = <BigInt>[];

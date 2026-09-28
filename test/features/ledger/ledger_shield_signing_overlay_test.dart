@@ -108,7 +108,7 @@ void main() {
           ledgerFailureGuidance(error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
               : ledgerFailureGuidance(error)?.pairingRecovery == true
-              ? 'Couldn’t complete the request'
+              ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
               : ledgerFailureGuidance(error)?.message ??
@@ -291,6 +291,91 @@ void main() {
     );
     expect(operations.broadcasts, hasLength(1));
   });
+  testWidgets('status 0x6a80 asks for a new request without blaming the user', (
+    tester,
+  ) async {
+    final operations = _FakeLedgerSignedOperationService();
+    var signatures = 0;
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async {
+          signatures++;
+          throw StateError(
+            'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+          );
+        },
+        onComplete: () => fail('must not complete'),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+    );
+
+    expect(find.text('Ledger signing failed'), findsOneWidget);
+    expect(find.textContaining('rejected on your Ledger'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
+      findsNothing,
+    );
+    expect(find.text('Try again'), findsNothing);
+    expect(signatures, 1);
+    expect(operations.checkpoints, isEmpty);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+  testWidgets(
+    'status 0x6a80 after a broadcast round does not claim nothing was sent',
+    (tester) async {
+      final operations = _FakeLedgerSignedOperationService();
+      var signatures = 0;
+      var reads = 0;
+      await tester.pumpWidget(
+        _harness(
+          operationService: operations,
+          sync: _FakeSyncNotifier(),
+          ledgerSigner: (_) async {
+            if (++signatures == 2) {
+              throw StateError(
+                'ledger_status_6a80: Ledger rejected the PCZT data or key path',
+              );
+            }
+            return [7, 8, 9];
+          },
+          onComplete: () => fail('must not complete'),
+          progressReader:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => LedgerShieldingProgress(
+                inputCount: reads++ == 0 ? 11 : 1,
+                inputLimit: 10,
+                belowThreshold: false,
+              ),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find
+            .textContaining('earlier approvals in this session')
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      expect(signatures, 2);
+      expect(operations.broadcasts, hasLength(1));
+      expect(find.text(kLedgerHostRequestRejectedMessage), findsNothing);
+      expect(find.textContaining('Nothing was sent'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
   testWidgets(
     'cancelling a rejected second round preserves the first broadcast',
     (tester) async {
@@ -303,7 +388,7 @@ void main() {
           operationService: operations,
           sync: _FakeSyncNotifier(),
           ledgerSigner: (_) async {
-            if (++signatures == 2) throw StateError('rejected');
+            if (++signatures == 2) throw StateError(_deviceRejected);
             return [7, 8, 9];
           },
           onComplete: () => fail('must not complete'),
@@ -638,3 +723,6 @@ Future<void> _pumpUntil(WidgetTester tester, bool Function() done) async {
     await tester.pump(const Duration(milliseconds: 10));
   }
 }
+
+const _deviceRejected =
+    'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';

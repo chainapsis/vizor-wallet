@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -251,6 +251,38 @@ Future<AddressValidationResult> validateAddress({
   network: network,
 );
 
+/// Quotes the complete batch, including its actual destination addresses.
+Future<BigInt> estimatePaymentLinkBatchFee({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<String> addresses,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkBatchFee(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  addresses: addresses,
+  amountZatoshi: amountZatoshi,
+);
+
+/// Proposes a Gift Card batch only if it fits in one funding transaction.
+Future<ProposalResult> proposePaymentLinkBatch({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required List<String> addresses,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncProposePaymentLinkBatch(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  addresses: addresses,
+  amountZatoshi: amountZatoshi,
+);
+
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 Future<ProposalResult> proposeSend({
   required String dbPath,
@@ -300,6 +332,38 @@ Future<SendMaxEstimateResult> estimateSendMax({
   accountUuid: accountUuid,
   toAddress: toAddress,
   memo: memo,
+);
+
+/// Propose a Gift Card claim from its temporary wallet. Uses the claim
+/// confirmation policy and discards the outgoing viewing key, so the link's
+/// seed cannot recover the recipient address.
+Future<ProposalResult> proposePaymentLinkClaim({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String toAddress,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncProposePaymentLinkClaim(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  toAddress: toAddress,
+  amountZatoshi: amountZatoshi,
+);
+
+/// Estimate the maximum Gift Card claim under the claim confirmation policy.
+Future<SendMaxEstimateResult> estimatePaymentLinkClaimMax({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+}) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkClaimMax(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  toAddress: toAddress,
 );
 
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
@@ -2651,15 +2715,21 @@ class TransactionDetailOutput {
   final String? address;
   final BigInt amountZatoshi;
   final String pool;
+  final bool usesOrchardReceiver;
 
   const TransactionDetailOutput({
     this.address,
     required this.amountZatoshi,
     required this.pool,
+    required this.usesOrchardReceiver,
   });
 
   @override
-  int get hashCode => address.hashCode ^ amountZatoshi.hashCode ^ pool.hashCode;
+  int get hashCode =>
+      address.hashCode ^
+      amountZatoshi.hashCode ^
+      pool.hashCode ^
+      usesOrchardReceiver.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2668,7 +2738,8 @@ class TransactionDetailOutput {
           runtimeType == other.runtimeType &&
           address == other.address &&
           amountZatoshi == other.amountZatoshi &&
-          pool == other.pool;
+          pool == other.pool &&
+          usesOrchardReceiver == other.usesOrchardReceiver;
 }
 
 class TransactionInfo {

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
+import '../ledger_error_codes.dart';
 import 'ledger_device_request.dart';
+import 'ledger_failure_guidance.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -88,6 +90,8 @@ class LedgerAppReadinessException implements Exception {
   final LedgerAppReadinessFailure failure;
   final String message;
   final bool canReconnect;
+
+  /// The transport or device error this failure was classified from.
   final Object? cause;
 
   @override
@@ -264,44 +268,54 @@ class LedgerAppReadinessService {
         cause: error,
       );
     }
-    final raw = '$error'.toLowerCase();
-    if (raw.contains('ledger_linux_usb_access')) {
-      return const LedgerAppReadinessException(
-        LedgerAppReadinessFailure.unavailable,
+    final kind = classifyLedgerError(error);
+    final message = switch (kind) {
+      LedgerFailureKind.usbPermission =>
         'Connect and unlock your Ledger over USB. If it is connected, install '
-        'the Ledger udev rules on Linux, then unplug and reconnect it.',
-      );
-    }
-    if (raw.contains('rejected') ||
-        raw.contains('denied') ||
-        raw.contains('6985')) {
-      return const LedgerAppReadinessException(
-        LedgerAppReadinessFailure.rejected,
+            'the Ledger udev rules on Linux, then unplug and reconnect it.',
+      LedgerFailureKind.userRejected =>
         'The request was rejected on your Ledger. Try again when ready.',
-      );
-    }
-    if (raw.contains('locked') || raw.contains('5515')) {
-      return const LedgerAppReadinessException(
-        LedgerAppReadinessFailure.locked,
-        'Unlock your Ledger, then try again.',
-      );
-    }
-    if (raw.contains('disconnect') ||
-        raw.contains('no ledger') ||
-        raw.contains('not found') ||
-        raw.contains('no device') ||
-        raw.contains('hid')) {
-      return const LedgerAppReadinessException(
-        LedgerAppReadinessFailure.disconnected,
+      LedgerFailureKind.cancelled => 'Ledger operation was cancelled.',
+      LedgerFailureKind.deviceLocked => 'Unlock your Ledger, then try again.',
+      LedgerFailureKind.transportLost =>
         'Reconnect and unlock your Ledger, then try again.',
-      );
-    }
-    return const LedgerAppReadinessException(
-      LedgerAppReadinessFailure.unavailable,
-      'Vizor could not prepare the Ledger Zcash app. Try again.',
+      _ =>
+        ledgerFailureGuidance(error)?.message ??
+            'Vizor could not prepare the Ledger Zcash app. Try again.',
+    };
+    return LedgerAppReadinessException(
+      ledgerReadinessFailureFor(kind),
+      message,
+      cause: error,
     );
   }
 }
+
+/// Automatic mode tries the next transport only after `disconnected` or
+/// `unavailable`. A refused request, a busy or stuck app, and signatures from
+/// other keys fail the same way over any transport, so they never fall back.
+LedgerAppReadinessFailure ledgerReadinessFailureFor(LedgerFailureKind kind) =>
+    switch (kind) {
+      LedgerFailureKind.userRejected ||
+      LedgerFailureKind.cancelled ||
+      LedgerFailureKind.hostRequestRejected ||
+      LedgerFailureKind.signatureMismatch => LedgerAppReadinessFailure.rejected,
+      LedgerFailureKind.deviceBusy ||
+      LedgerFailureKind.appWrongState => LedgerAppReadinessFailure.busy,
+      LedgerFailureKind.deviceLocked => LedgerAppReadinessFailure.locked,
+      LedgerFailureKind.transportLost => LedgerAppReadinessFailure.disconnected,
+      LedgerFailureKind.appUpdateRequired =>
+        LedgerAppReadinessFailure.unsupportedVersion,
+      LedgerFailureKind.usbPermission ||
+      LedgerFailureKind.pinNotSet ||
+      LedgerFailureKind.appNotInstalled ||
+      LedgerFailureKind.wrongApp ||
+      LedgerFailureKind.deviceInternalError ||
+      LedgerFailureKind.unknownStatus ||
+      LedgerFailureKind.capacityExceeded ||
+      LedgerFailureKind.saplingUnsupported ||
+      LedgerFailureKind.other => LedgerAppReadinessFailure.unavailable,
+    };
 
 class _RustLedgerAppReadinessDevice implements LedgerAppReadinessDevice {
   const _RustLedgerAppReadinessDevice();

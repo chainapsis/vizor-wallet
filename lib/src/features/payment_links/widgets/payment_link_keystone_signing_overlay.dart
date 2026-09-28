@@ -28,12 +28,19 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.batch,
+    this.onBatchRefused,
     super.key,
   });
 
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkBatchDraft? batch;
+
+  /// A group whose proposal no longer matches its quote, or that its signer
+  /// cannot sign, returns here instead of offering a retry.
+  final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final FutureOr<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
@@ -96,11 +103,13 @@ class _PaymentLinkKeystoneSigningOverlayState
     try {
       final service = ref.read(paymentLinkHardwareSigningServiceProvider);
       _signingService = service;
-      final creation = service.createFundingPczt(
-        amountZatoshi: widget.amountZatoshi,
-        sourceAccountUuid: widget.sourceAccountUuid,
-        presentation: widget.presentation,
-      );
+      final creation = widget.batch == null
+          ? service.createFundingPczt(
+              amountZatoshi: widget.amountZatoshi,
+              sourceAccountUuid: widget.sourceAccountUuid,
+              presentation: widget.presentation,
+            )
+          : service.createBatchFundingPczt(widget.batch!);
       _draftCreation = creation;
       final draft = await creation;
       _draft = draft;
@@ -151,6 +160,14 @@ class _PaymentLinkKeystoneSigningOverlayState
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
       if (_cancelled) return;
+      final refused = widget.onBatchRefused;
+      if (refused != null &&
+          mounted &&
+          _draft == null &&
+          isPaymentLinkBatchRefusal(error)) {
+        await refused(error);
+        return;
+      }
       try {
         await _discardDraft();
       } catch (cleanupError) {
@@ -524,8 +541,8 @@ class _PaymentLinkKeystoneSigningOverlayState
                   'Follow the steps on your device.',
               scanCaption:
                   'Scan the QR code on your Keystone to finish creating',
-              readingSignatureLabel: 'Reading signature...',
-              finalizingSignatureLabel: 'Creating your gift card...',
+              readingSignatureLabel: 'Reading signature…',
+              finalizingSignatureLabel: 'Creating your gift card…',
               keyPrefix: 'payment_link_keystone_sign',
               logTag: 'PaymentLinkKeystoneSigning',
               expectedSignedUrType: 'zcash-batch-sig-result',

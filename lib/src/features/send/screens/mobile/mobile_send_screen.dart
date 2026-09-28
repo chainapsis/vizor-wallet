@@ -366,6 +366,10 @@ class MobileSendReviewScreen extends StatelessWidget {
 }
 
 const _kMobileSendRecipientLineHeight = 17.0;
+
+/// The memo error is the one message here that does not fit on a line at
+/// phone width, so its slot holds two.
+const _kMobileSendMemoErrorHeight = _kMobileSendRecipientLineHeight * 2;
 const _kMobileSendAddressActionHeight = 36.0;
 const _kMobileSendAddressActionSlotWidth = 96.0;
 const _kMobileSendAddressPasteWidth = 76.0;
@@ -598,9 +602,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _contactPictureId = widget.initialContactPictureId;
     final initialMemo = widget.initialMemo;
     if (initialMemo != null) {
-      final memo = widget.preserveInitialMemoWhitespace
-          ? initialMemo
-          : initialMemo.trim();
+      final memo = initialMemo;
       if (memo.isNotEmpty) {
         _memo = memo;
         _preserveMemoWhitespace = widget.preserveInitialMemoWhitespace;
@@ -2763,19 +2765,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             AppSpacing.sm,
             AppSpacing.s,
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              key: const ValueKey('mobile_send_review_button'),
-              expand: true,
-              constrainContent: true,
-              onPressed: _amountReady ? _continueToReview : null,
-              child: Text(
-                _amountCtaLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppButton(
+                key: const ValueKey('mobile_send_review_button'),
+                expand: true,
+                constrainContent: true,
+                onPressed: _amountReady ? _continueToReview : null,
+                child: Text(
+                  _amountCtaLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ],
@@ -4069,12 +4073,13 @@ class _MemoSheetState extends State<_MemoSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
+    final error = overLimit ? 'Message is too long' : null;
     final labelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
       fontWeight: FontWeight.w400,
     );
     final primaryIsClear = _showClearMemo;
-    final primaryDisabled = overLimit && !primaryIsClear;
+    final primaryDisabled = error != null && !primaryIsClear;
 
     return MobileModalScaffold(
       title: 'Add Memo',
@@ -4121,12 +4126,15 @@ class _MemoSheetState extends State<_MemoSheet> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   SizedBox(
-                    height: _kMobileSendRecipientLineHeight,
+                    height: _kMobileSendMemoErrorHeight,
                     child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: overLimit
+                      // Top, so a one-line message keeps the position it had
+                      // before this slot grew.
+                      alignment: Alignment.topLeft,
+                      child: error != null
                           ? Text(
-                              'Message is too long',
+                              error,
+                              maxLines: 2,
                               style: labelStyle.copyWith(
                                 color: colors.text.destructive,
                               ),
@@ -4247,7 +4255,9 @@ class _MemoTextAreaState extends State<_MemoTextArea> {
     final focused = widget.focusNode.hasFocus;
 
     return Container(
-      height: 148,
+      // The memo error slot below holds two lines, and the sheet keeps its
+      // height: the second line comes from here. This area scrolls.
+      height: 148 - _kMobileSendRecipientLineHeight,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),

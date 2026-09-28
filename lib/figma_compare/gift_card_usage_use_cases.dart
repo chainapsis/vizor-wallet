@@ -94,36 +94,26 @@ Widget _list({bool mobile = false, bool checking = false}) {
           showLinkActions: true,
           onCopyLink: _noop,
           onShowQr: _noop,
-          usageStatus: GiftCardUsageStatusView(address: address, inline: true),
+          usageStatus: GiftCardUsageStatusView(
+            address: address,
+            inline: true,
+            hideStableLabel: true,
+          ),
         );
-  final sections = mobile
-      ? [
-          PaymentLinkCardsSection(
-            label: 'Pending',
-            cards: ['awaiting', 'unknown'].map(row).toList(),
-          ),
-          PaymentLinkCardsSection(
-            label: 'Unused',
-            cards: ['unused', 'failed'].map(row).toList(),
-          ),
-          PaymentLinkCardsSection(
-            label: 'Used',
-            cards: ['detected', 'used'].map(row).toList(),
-          ),
-        ]
-      : [
-          PaymentLinkCardsSection(
-            label: 'Pending',
-            cards: [
-              'awaiting',
-              'unknown',
-              'unused',
-              'detected',
-              'used',
-              'failed',
-            ].map(row).toList(),
-          ),
-        ];
+  final sections = [
+    PaymentLinkCardsSection(
+      label: 'Pending',
+      cards: ['awaiting', 'unknown'].map(row).toList(),
+    ),
+    PaymentLinkCardsSection(
+      label: 'Unused',
+      cards: ['unused', 'failed'].map(row).toList(),
+    ),
+    PaymentLinkCardsSection(
+      label: 'Used',
+      cards: ['detected', 'used'].map(row).toList(),
+    ),
+  ];
   return _fixture(
     mobile
         ? PaymentLinkCardsMobileView(

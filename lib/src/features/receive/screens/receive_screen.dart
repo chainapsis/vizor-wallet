@@ -512,6 +512,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         : _isLoadingTransparent;
     final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
     final infoDialogType = _infoDialogType;
+    final scanOptimizedQr =
+        ref.watch(accountProvider).value?.activeAccount?.isKeystone ?? false;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final requestDraft = _requestDraft;
     final requestView = requestDraft?.resolve(zecUsdUnitPrice: zecUsdUnitPrice);
@@ -534,6 +536,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               errorText: selectedErrorText,
               isLoading: isLoadingSelectedAddress,
               isRenewingShielded: _isRenewingShielded,
+              scanOptimizedQr: scanOptimizedQr,
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
@@ -597,6 +600,7 @@ class _ReceivePane extends StatelessWidget {
     required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
+    required this.scanOptimizedQr,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
@@ -609,6 +613,7 @@ class _ReceivePane extends StatelessWidget {
   final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
+  final bool scanOptimizedQr;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
@@ -633,6 +638,7 @@ class _ReceivePane extends StatelessWidget {
             errorText: errorText,
             isLoading: isLoading,
             isRenewingShielded: isRenewingShielded,
+            scanOptimizedQr: scanOptimizedQr,
             onTypeChanged: onTypeChanged,
             onRenewShielded: onRenewShielded,
             onCopy: onCopy,
@@ -652,6 +658,7 @@ class _ReceiveContentLayout extends StatelessWidget {
     required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
+    required this.scanOptimizedQr,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
@@ -679,6 +686,7 @@ class _ReceiveContentLayout extends StatelessWidget {
   final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
+  final bool scanOptimizedQr;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
@@ -754,6 +762,7 @@ class _ReceiveContentLayout extends StatelessWidget {
                                       type: selectedType,
                                       address: address,
                                       renewing: isRenewingShielded,
+                                      scanOptimizedQr: scanOptimizedQr,
                                       onTypeChanged: onTypeChanged,
                                       onRenew: onRenewShielded,
                                       onShowHelp: onShowHelp,
@@ -843,6 +852,7 @@ class _ReceiveQrBlock extends StatelessWidget {
     required this.type,
     required this.address,
     required this.renewing,
+    required this.scanOptimizedQr,
     required this.onTypeChanged,
     required this.onRenew,
     required this.onShowHelp,
@@ -864,6 +874,7 @@ class _ReceiveQrBlock extends StatelessWidget {
   final ReceiveAddressType type;
   final String address;
   final bool renewing;
+  final bool scanOptimizedQr;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenew;
   final VoidCallback onShowHelp;
@@ -903,6 +914,7 @@ class _ReceiveQrBlock extends StatelessWidget {
                           paddingX: _qrPaddingX,
                           paddingY: _qrPaddingY,
                           type: type,
+                          scanOptimized: scanOptimizedQr,
                         ),
                       ),
                       if (_isShielded)

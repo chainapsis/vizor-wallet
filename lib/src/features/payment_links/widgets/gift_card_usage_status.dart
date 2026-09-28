@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
@@ -103,8 +105,8 @@ class GiftCardUsageStatusView extends ConsumerWidget {
               ? '. Update failed'
               : ''}'
           '${usage.explanation == null ? '' : '. ${usage.explanation}'}';
-      final visibleLabel = hideStableLabel &&
-              usage.status != GiftCardUsageStatus.unknown
+      final visibleLabel =
+          hideStableLabel && usage.status != GiftCardUsageStatus.unknown
           ? checking
                 ? 'Checking…'
                 : failed
@@ -115,12 +117,11 @@ class GiftCardUsageStatusView extends ConsumerWidget {
       final style = AppTypography.bodyMedium.copyWith(
         color: context.colors.text.secondary,
       );
-      if (visibleLabel == null && date != null) {
-        return Semantics(
-          label: '$date. $description',
-          excludeSemantics: true,
-          child: Text(date, style: style),
-        );
+      if (visibleLabel == null) {
+        // The section heading already announces the usage state.
+        return date == null
+            ? const SizedBox.shrink()
+            : Text(date, style: style);
       }
       final status = AppTooltip(
         message: description,
@@ -153,7 +154,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
               ],
               Flexible(
                 child: Text(
-                  visibleLabel ?? label,
+                  visibleLabel,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: dateText == null ? TextAlign.end : TextAlign.start,
@@ -186,9 +187,9 @@ class GiftCardUsageStatusView extends ConsumerWidget {
 
           final indicatorWidth = checking || failed ? 16 + AppSpacing.xxs : 0;
           final fits =
-                  widthOf(date) +
+              widthOf(date) +
                   widthOf(' · ') +
-                  widthOf(visibleLabel ?? label) +
+                  widthOf(visibleLabel) +
                   indicatorWidth <=
               constraints.maxWidth;
           if (fits) {

@@ -17,6 +17,7 @@ import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
@@ -403,7 +404,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage,
-            onRetry: _retry,
+            onRetry: _jobRetry(job),
             onClear: _clearError,
           );
         }
@@ -430,7 +431,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
         errorMessage: job?.errorMessage ?? _messageFromError(error),
-        onRetry: _retry,
+        onRetry: _jobRetry(job),
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
             : null,
@@ -581,7 +582,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
           terminalDelegationNotice: state.terminalDelegationNotice,
-          onRetry: _retry,
+          onRetry: _jobRetry(job),
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
               : null,
@@ -681,6 +682,11 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     return messages.isEmpty ? null : messages.last;
   }
 
+  VoidCallback? _jobRetry(VotingSubmissionJobState? job) {
+    // Resending a request the Ledger refused would fail the same way forever.
+    return (job?.retryable ?? true) ? _retry : null;
+  }
+
   void _retry() {
     // A retry starts the submission over, so the high-water mark from the
     // attempt that failed must not hold the new one forward.
@@ -757,9 +763,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
     final colors = context.colors;
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
+      shape: appModalShape(BorderRadius.circular(AppRadii.medium)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Padding(
@@ -1086,11 +1090,12 @@ class VotingStatusContent extends StatelessWidget {
                         variant: AppButtonVariant.secondary,
                         child: const Text('Clear'),
                       ),
-                    AppButton(
-                      onPressed: onRetry,
-                      variant: AppButtonVariant.primary,
-                      child: const Text('Retry'),
-                    ),
+                    if (onRetry != null)
+                      AppButton(
+                        onPressed: onRetry,
+                        variant: AppButtonVariant.primary,
+                        child: const Text('Retry'),
+                      ),
                   ],
                 ),
               ],

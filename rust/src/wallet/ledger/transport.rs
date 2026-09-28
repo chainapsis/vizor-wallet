@@ -19,11 +19,19 @@ use super::{
     OperationContext,
 };
 
+/// Leads USB HID failures, so callers treat them as a lost connection
+/// without reading free-form text.
+const TRANSPORT_PREFIX: &str = "ledger_transport: ";
+
+fn hid_transport_error(message: String) -> String {
+    format!("{TRANSPORT_PREFIX}{message}")
+}
+
 fn hid_connection_error(message: &str) -> String {
     if cfg!(target_os = "linux") {
         format!("ledger_linux_usb_access: {message} Check the Ledger udev rules and reconnect the device.")
     } else {
-        message.to_string()
+        hid_transport_error(message.to_string())
     }
 }
 
@@ -140,7 +148,8 @@ impl LedgerTransport {
         #[cfg(not(debug_assertions))]
         let _ = purpose;
 
-        let hid = HidApi::new().map_err(|e| format!("Initialize Ledger HID: {e}"))?;
+        let hid = HidApi::new()
+            .map_err(|e| hid_transport_error(format!("Initialize Ledger HID: {e}")))?;
         let device_info = hid
             .device_list()
             .find(|device| {
@@ -361,7 +370,7 @@ impl LedgerTransport {
             };
             let written = device
                 .write(&packet)
-                .map_err(|e| format!("Write Ledger HID packet: {e}"))?;
+                .map_err(|e| hid_transport_error(format!("Write Ledger HID packet: {e}")))?;
             if written != packet.len() {
                 return Err(
                     "Ledger HID request was only partially written; reconnect and retry".into(),
@@ -394,7 +403,7 @@ impl LedgerTransport {
             };
             let read = device
                 .read_timeout(&mut packet, poll_millis)
-                .map_err(|e| format!("Read Ledger HID packet: {e}"))?;
+                .map_err(|e| hid_transport_error(format!("Read Ledger HID packet: {e}")))?;
             if read == 0 {
                 continue;
             }
@@ -499,11 +508,6 @@ impl SpeculosClient {
             signing_url.ok_or_else(missing_config)?,
             SPECULOS_SIGNING_API_URL,
         )?;
-        if ufvk.address == signing.address {
-            return Err(format!(
-                "Speculos UFVK and signing endpoints must be different fresh instances; configure distinct ports in {SPECULOS_UFVK_API_URL} and {SPECULOS_SIGNING_API_URL}"
-            ));
-        }
 
         Ok(Some(match purpose {
             TransportPurpose::Device | TransportPurpose::Ufvk => ufvk,
@@ -848,6 +852,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hid_failures_carry_a_stable_prefix() {
+        assert_eq!(
+            hid_transport_error("Read Ledger HID packet: device disconnected".into()),
+            "ledger_transport: Read Ledger HID packet: device disconnected"
+        );
+        let missing = hid_connection_error("No Ledger device found.");
+        if cfg!(target_os = "linux") {
+            assert!(missing.starts_with("ledger_linux_usb_access: No Ledger device found."));
+        } else {
+            assert_eq!(missing, "ledger_transport: No Ledger device found.");
+        }
+    }
+
+    #[test]
     fn usb_models_support_interface_variants_and_legacy_ids() {
         for (legacy, prefix, expected) in [
             (0x0000, 0x00, "blue"),
@@ -1138,7 +1156,7 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[test]
-    fn speculos_config_routes_readiness_and_ufvk_separately_from_signing() {
+    fn speculos_config_accepts_shared_or_separate_endpoints() {
         let ufvk_url = "http://127.0.0.1:5004";
         let signing_url = "http://127.0.0.1:5005";
         let device = SpeculosClient::from_config(
@@ -1173,13 +1191,11 @@ mod tests {
                 .unwrap_err()
                 .contains("requires both")
         );
-        assert!(SpeculosClient::from_config(
-            TransportPurpose::Signing,
-            Some(ufvk_url),
-            Some(ufvk_url),
-        )
-        .unwrap_err()
-        .contains("must be different"));
+        let shared =
+            SpeculosClient::from_config(TransportPurpose::Signing, Some(ufvk_url), Some(ufvk_url))
+                .unwrap()
+                .unwrap();
+        assert_eq!(shared.address, ufvk.address);
     }
 
     #[cfg(debug_assertions)]

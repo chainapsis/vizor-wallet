@@ -20,6 +20,16 @@ bundle exec fastlane mac release
 6. stable release면 flavor별 Sparkle appcast/delta 생성
 7. 산출물을 `dist/macos` 아래에 준비
 
+Flutter 3.47부터 최소 지원 버전은 macOS 12입니다. `Podfile`과 Xcode의
+deployment target을 함께 유지해야 합니다. stable release 검증은 현재 DMG의
+Sparkle `minimumSystemVersion`이 빌드한 앱의 `LSMinimumSystemVersion`과
+일치하는지도 확인합니다. 이 값이 빠지거나 다르면 업로드 전에 중단합니다.
+검증 테스트: `ruby scripts/test_sparkle_compatibility.rb`.
+
+Rust Cargokit의 CocoaPods script phase와 정적 링크 설정을 유지하기 위해
+SwiftPM은 `pubspec.yaml`의 프로젝트 설정으로 비활성화되어 있습니다.
+SwiftPM 전환은 Rust 플러그인의 빌드·링크 경로와 함께 별도로 진행합니다.
+
 GitHub Release 생성, asset 업로드, draft publish는 deployment repo의
 `Release` workflow가 담당합니다.
 

@@ -88,7 +88,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               AppButton(
                 onPressed: busy ? null : onCheck,
-                child: Text(busy ? 'Checking...' : 'Check status'),
+                child: Text(busy ? 'Checking…' : 'Check status'),
               ),
             ],
           ],

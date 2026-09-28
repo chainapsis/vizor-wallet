@@ -49,8 +49,6 @@ mod address_history;
 mod block_source;
 mod claim_roots;
 mod enhance;
-mod gift_card_funding;
-pub(crate) use gift_card_funding::gift_card_funding_reason;
 mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
@@ -276,6 +274,17 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
     }
 }
 
+/// Restart work-based progress before scanning ranges queued at completion.
+fn reset_promoted_scan_progress(
+    ranges: &[ScanRange],
+    initial_total: &mut u64,
+    prev_remaining: &mut u64,
+) {
+    let pending = pending_scan_blocks(ranges);
+    *initial_total = pending;
+    *prev_remaining = pending;
+}
+
 fn chain_window_percentage(window_start_height: u64, tip_height: u64, scanned_height: u64) -> f64 {
     if tip_height <= window_start_height {
         return 1.0;
@@ -462,6 +471,127 @@ fn recovery_resubmit_exclusions(
         .collect::<Vec<_>>();
     crate::wallet::sync::get_unmined_txids_with_mined_output_evidence(db_path, &pending_ranges)
         .map_err(SyncError::db)
+}
+
+/// Both completion and post-batch resubmission use this handoff. Keep the
+/// durable status rows on every outcome except a verified unchanged tip.
+pub(crate) fn complete_verified_recovery_statuses(
+    db_path: &str,
+    ready: &HashSet<Vec<u8>>,
+    relation: RefreshedTipRelation,
+) -> Result<(), SyncError> {
+    if ready.is_empty() || relation != RefreshedTipRelation::Unchanged {
+        return Ok(());
+    }
+    with_wallet_db_write_lock("sync_engine.complete_verified_recovery_statuses", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
+        for txid in ready {
+            crate::wallet::sync::resolve_recovered_nonmined_status(&mut conn, txid)?;
+        }
+        Ok::<(), String>(())
+    })
+    .map_err(SyncError::db)
+}
+
+/// What [`resubmit_released_transactions`] did.
+#[derive(Debug)]
+pub(crate) enum ReleasedResubmission {
+    /// Nothing was released, resubmission is disabled, the sync is exiting,
+    /// or the refreshed tip's identity could not be verified.
+    Skipped,
+    /// The tip was confirmed unchanged and a resubmit pass ran.
+    Resubmitted,
+    /// The chain advanced to this height. Nothing was broadcast: a new block
+    /// may have mined the released transaction, and only scanning it can
+    /// restore that mined height. The wallet tip has been promoted; the caller
+    /// must resume scanning; the post-batch pass then resubmits against the scanned state.
+    TipAdvanced(u64),
+}
+
+/// Enhancement can observe a conclusive non-mined status for a previously
+/// mined transaction while retaining its status guard until tip validation.
+/// A path that completes without a post-batch pass broadcasts it here rather
+/// than leaving it for a later block that may be past its expiry. `ranges` are the current scan
+/// ranges, which keep the usual rewind-recovery exclusions in force. Refresh
+/// and validate the remote tip after enhancement; `tip_height` is only the
+/// prior validation baseline, never the expiry filter. Refresh/validation
+/// failures do not fall back to that stale height, and an advanced tip is
+/// returned for scanning rather than broadcast against. Equal height without
+/// a stored hash cannot rule out a reorg. Status work stays pending until tip
+/// identity is verified, including refresh errors and cancellation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn resubmit_released_transactions(
+    ready: &HashSet<Vec<u8>>,
+    allow_resubmit: bool,
+    ranges: &[ScanRange],
+    db_path: &str,
+    lightwalletd_url: &str,
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    tip_height: u64,
+    should_exit: impl Fn() -> bool,
+) -> Result<ReleasedResubmission, SyncError> {
+    if ready.is_empty() || !allow_resubmit || should_exit() {
+        return Ok(ReleasedResubmission::Skipped);
+    }
+    let fresh_tip = get_latest_block(client).await;
+    let Some(fresh_tip) = tip_rpc_result_unless_exiting(fresh_tip, should_exit()) else {
+        return Ok(ReleasedResubmission::Skipped);
+    };
+    let fresh_tip = fresh_tip?;
+    let tip = block_height_from_u64(fresh_tip.height, "released resubmission tip")?;
+    let stored_hash = stored_hash_for_refreshed_tip(db, tip_height, fresh_tip.height)?;
+    let relation = classify_refreshed_tip_with_fallback(
+        client,
+        tip_height,
+        stored_hash,
+        fresh_tip.height,
+        &fresh_tip.hash,
+    )
+    .await;
+    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+        return Ok(ReleasedResubmission::Skipped);
+    };
+    match relation? {
+        RefreshedTipRelation::ServerBehind => {
+            return Err(lagging_lightwalletd_tip(tip_height, fresh_tip.height));
+        }
+        RefreshedTipRelation::Reorg => {
+            return Err(SyncError::continuity(
+                fresh_tip.height,
+                "released resubmission tip proved a reorg",
+            ));
+        }
+        RefreshedTipRelation::Advanced => {
+            with_wallet_db_write_lock("sync_engine.update_chain_tip.released_resubmission", || {
+                db.update_chain_tip(tip)
+            })
+            .map_err(|e| {
+                SyncError::db(format!(
+                    "released resubmission update_chain_tip({tip}): {e}"
+                ))
+            })?;
+            return Ok(ReleasedResubmission::TipAdvanced(fresh_tip.height));
+        }
+        RefreshedTipRelation::UnchangedUnverified => {
+            return Ok(ReleasedResubmission::Skipped);
+        }
+        RefreshedTipRelation::Unchanged => {}
+    }
+    complete_verified_recovery_statuses(db_path, ready, RefreshedTipRelation::Unchanged)?;
+    // The tip's height and hash match, so the scanned state reflects every block
+    // that could have mined the transaction; it supplies the expiry boundary.
+    let exclusions = recovery_resubmit_exclusions(db_path, ranges)?;
+    crate::wallet::sync::resubmit_pending_transactions(
+        db_path,
+        lightwalletd_url,
+        client,
+        u32::from(tip),
+        &exclusions,
+        should_exit,
+    )
+    .await;
+    Ok(ReleasedResubmission::Resubmitted)
 }
 
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
@@ -1958,7 +2088,7 @@ fn tip_rpc_result_unless_exiting<T>(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RefreshedTipRelation {
+pub(crate) enum RefreshedTipRelation {
     Unchanged,
     UnchangedUnverified,
     Advanced,
@@ -2415,6 +2545,10 @@ pub async fn run_sync_inner(
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
+        // A queued FRB start may clear the per-run cancel flag after exit began.
+        if crate::wallet::sync::proposal_locks::is_shutting_down() {
+            return Ok(());
+        }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
             log::warn!(
@@ -2427,7 +2561,8 @@ pub async fn run_sync_inner(
             );
             for _ in 0..delay_secs {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if cancel.load(Ordering::Relaxed)
+                if crate::wallet::sync::proposal_locks::is_shutting_down()
+                    || cancel.load(Ordering::Relaxed)
                     || desired_mode.load(Ordering::SeqCst) != running_mode
                 {
                     log::warn!(
@@ -2798,6 +2933,9 @@ async fn run_sync_impl(
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
+    if crate::wallet::sync::proposal_locks::is_shutting_down() {
+        return Ok(());
+    }
     let active_account_uuid = current_active_sync_account(active_account_target);
     let mut migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
@@ -2825,8 +2963,11 @@ async fn run_sync_impl(
     .map_err(SyncError::db)?;
 
     // Declared before the channel open so a stopped session leaves the Tor wait.
-    let should_exit =
-        || cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode;
+    let should_exit = || {
+        crate::wallet::sync::proposal_locks::is_shutting_down()
+            || cancel.load(Ordering::Relaxed)
+            || desired_mode.load(Ordering::SeqCst) != running_mode
+    };
 
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
     let mut client = open_lwd_channel_with_cancel(lightwalletd_url, should_exit).await?;
@@ -2925,7 +3066,7 @@ async fn run_sync_impl(
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(SyncError::db)?;
 
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+    if should_exit() {
         log::info!(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
             elapsed(),
@@ -3478,8 +3619,56 @@ async fn run_sync_impl(
                         .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
                         .is_empty()
                     {
-                        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit)
-                            .await?;
+                        let released = run_enhancement(
+                            &mut client,
+                            &mut db,
+                            db_data_path,
+                            network,
+                            &should_exit,
+                        )
+                        .await?;
+                        // This path completes without a post-batch pass, so a
+                        // transaction released by a final status observation is
+                        // broadcast now against the validated tip. If the chain
+                        // advanced, scan first: a new block may have mined it.
+                        let ranges = if !released.is_empty() {
+                            db.suggest_scan_ranges()
+                                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+                        } else {
+                            Vec::new()
+                        };
+                        let outcome = resubmit_released_transactions(
+                            &released,
+                            allow_resubmit,
+                            &ranges,
+                            db_data_path,
+                            lightwalletd_url,
+                            &mut client,
+                            &mut db,
+                            current_tip_height,
+                            || {
+                                cancel.load(Ordering::Relaxed)
+                                    || desired_mode.load(Ordering::SeqCst) != running_mode
+                            },
+                        )
+                        .await?;
+                        if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
+                            current_tip_height = fresh_height;
+                            let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
+                                SyncError::db(format!(
+                                    "suggest_scan_ranges after tip promotion: {e}"
+                                ))
+                            })?;
+                            reset_promoted_scan_progress(
+                                &promoted_ranges,
+                                &mut initial_total,
+                                &mut prev_remaining,
+                            );
+                            progress_display_mode = ProgressDisplayMode::Work;
+                            queued_ranges = Some(promoted_ranges);
+                            completion_tip_validation_required = true;
+                            continue;
+                        }
                     }
                     if should_exit() {
                         return Ok(());
@@ -3957,7 +4146,7 @@ async fn run_sync_impl(
             }
         }
 
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after scan", elapsed());
             return Ok(());
         }
@@ -3972,7 +4161,8 @@ async fn run_sync_impl(
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+        let ready =
+            run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -4005,7 +4195,7 @@ async fn run_sync_impl(
         // log and skip the pass rather than falling back to the
         // stale height (the whole point of the refresh is to avoid
         // rebroadcasting against a stale expiry window).
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
                 elapsed(),
@@ -4117,6 +4307,7 @@ async fn run_sync_impl(
                 // above only when its DB update succeeded; lower or
                 // divergent responses cannot reach this broadcast path.
                 if allow_resubmit {
+                    complete_verified_recovery_statuses(db_data_path, &ready, relation)?;
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         lightwalletd_url,
@@ -4140,7 +4331,7 @@ async fn run_sync_impl(
                 );
             }
         }
-        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        if should_exit() {
             log::info!("[{}] sync: exiting after post-batch pass", elapsed());
             return Ok(());
         }
@@ -4551,7 +4742,7 @@ mod tests {
         let register = |birthday| {
             let phrase = keys::generate_mnemonic();
             let seed = keys::mnemonic_to_seed(&phrase).unwrap();
-            let address = keys::derive_software_address(network, &seed, 0).unwrap();
+            let address = keys::derive_gift_address(network, &seed, 0).unwrap();
             keys::register_gift_card_observer(path, network, phrase.as_bytes(), &address, birthday)
                 .unwrap()
         };
@@ -5282,6 +5473,27 @@ mod tests {
             RecoveryStrategy::RetryWithBackoff,
         );
         assert!(error.to_string().starts_with("network:"));
+    }
+
+    #[test]
+    fn promoted_scan_work_starts_incomplete_and_advances_across_batches() {
+        let ranges = [ScanRange::from_parts(
+            block_height(1_000)..block_height(1_300),
+            ScanPriority::Historic,
+        )];
+        let (mut total, mut remaining) = (0, 0);
+        reset_promoted_scan_progress(&ranges, &mut total, &mut remaining);
+        let mode = ProgressDisplayMode::Work;
+        assert_eq!(mode.percentage(total, remaining, 999, 1_299), 0.0);
+        for batch in 1..=3 {
+            let target = mode.target_percentage_after_blocks(total, remaining, 0, 0, 100);
+            remaining -= 100;
+            let actual = mode.percentage(total, remaining, 0, 0);
+            assert_eq!(target, actual);
+            assert!((actual - batch as f64 / 3.0).abs() < 1e-9);
+        }
+        reset_promoted_scan_progress(&[], &mut total, &mut remaining);
+        assert_eq!(mode.percentage(total, remaining, 0, 0), 1.0);
     }
 
     #[test]

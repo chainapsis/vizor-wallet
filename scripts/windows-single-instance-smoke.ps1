@@ -9,6 +9,8 @@ Build an isolated executable before running this destructive smoke test:
     -Channel win-x64-single-instance-smoke `
     -OutputDir build\velopack\single-instance-smoke
 
+Use win-arm64-single-instance-smoke as the channel on ARM64 hosts.
+
 The PackTitle sets the executable's VERSIONINFO ProductName, which determines
 the Windows application-support directory used by the wallet database and
 flutter_secure_storage. Changing only VIZOR_WINDOWS_STORAGE_PREFIX does not

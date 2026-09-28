@@ -92,13 +92,10 @@ class ReceiveAddressService {
 
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     final accountNotifier = _ref.read(accountProvider.notifier);
-    final addressRequest = accountNotifier.isHardwareAccount(accountUuid)
-        ? ReceiveAddressRequest.orchard
-        : ReceiveAddressRequest.shielded;
 
     final address = await _nextAvailableAddress(
       accountUuid: accountUuid,
-      addressRequest: addressRequest,
+      addressRequest: ReceiveAddressRequest.shielded,
     );
 
     accountNotifier.updateActiveAddressForAccount(accountUuid, address);

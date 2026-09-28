@@ -59,6 +59,10 @@ class LedgerPairingSession extends ConsumerStatefulWidget {
 class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   LedgerPairingStage _stage = LedgerPairingStage.failed;
   LedgerRequestFailure requestFailure = LedgerRequestFailure.other;
+  // Pairing verifies by exporting the viewing key; a refused export fails the
+  // same way on every retry, so the recovery must not offer one.
+  bool failureRetryable = true;
+  String? _nonRetryableMessage;
   late bool pairingInvalid = widget.pairingInvalid;
   bool _sameSavedDevice = false;
   LedgerBleDevice? selectedDevice;
@@ -209,6 +213,12 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       pairingInvalid = ledgerFailureGuidance(error)?.pairingInvalid == true;
       _accessRecovery = ledgerFailureGuidance(error)?.bluetoothRecovery == true;
       requestFailure = LedgerRequestFailure.fromError(error);
+      final guidance = ledgerFailureGuidance(
+        error,
+        requestKind: LedgerRequestKind.viewingKey,
+      );
+      failureRetryable = guidance?.retryable ?? true;
+      _nonRetryableMessage = failureRetryable ? null : guidance!.message;
       _error = null;
     });
     _observePairingEvidence();
@@ -392,6 +402,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   }
 
   LedgerPairingStage get stage => _stage;
+  String get failureMessage => _nonRetryableMessage ?? requestFailure.message;
   bool get busy => _busy;
   bool get invalidated => _invalidated;
   bool get accessRecovery => _accessRecovery;

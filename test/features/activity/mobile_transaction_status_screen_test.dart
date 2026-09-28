@@ -1,31 +1,30 @@
 @Tags(['mobile'])
 library;
 
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
-import 'package:zcash_wallet/src/core/formatting/address_display.dart';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart'
-    show FontLoader, rootBundle, MethodChannel;
+    show FontLoader, rootBundle, MethodChannel, SystemChannels;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
-import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -203,16 +202,27 @@ void main() {
         '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
     final protocolTxid = paymentLinkBroadcastTxidsToProtocolOrder(displayTxid);
     final launched = <String>[];
+    final copied = <String>[];
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'launch') {
         launched.add((call.arguments as Map)['url'] as String);
+        return false;
       }
       return true;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await tester.binding.setSurfaceSize(const Size(393, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -226,10 +236,12 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text(truncatedTxid(protocolTxid)));
+    expect(find.text(truncatedTxid(displayTxid)), findsOneWidget);
+    await tester.tap(find.text(truncatedTxid(displayTxid)));
     await tester.pump();
     expect(launched, hasLength(1));
     expect(Uri.parse(launched.single).path, '/tx/$displayTxid');
+    expect(copied, [displayTxid]);
   });
 
   testWidgets(
@@ -249,7 +261,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Redeeming a card...'), findsOneWidget);
-      expect(find.text('Redeeming...'), findsOneWidget);
+      expect(find.text('Redeeming…'), findsOneWidget);
       expect(
         find.ancestor(
           of: find.byWidgetPredicate(
@@ -353,6 +365,22 @@ void main() {
           find.text(r'$142.23'),
           settings.$1 && !settings.$2 ? findsOneWidget : findsNothing,
         );
+        if (settings.$2) {
+          final card = find.byType(PaymentLinkGiftCard);
+          expect(tester.widget<PaymentLinkGiftCard>(card).amountText, '******');
+          expect(
+            find.descendant(of: card, matching: find.text('ZEC')),
+            findsOneWidget,
+          );
+          expect(find.text('0.001'), findsNothing);
+          const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
+          if (captureDir.isNotEmpty) {
+            await expectLater(
+              card,
+              matchesGoldenFile('$captureDir/mobile-private-detail.png'),
+            );
+          }
+        }
         if (!settings.$2) {
           expect(find.text('0.00035 ZEC'), findsOneWidget);
           await tester.tap(find.text('0.00035 ZEC'));
@@ -444,7 +472,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('Redeeming...'), findsOneWidget);
+      expect(find.text('Redeeming…'), findsOneWidget);
       currentIndex = index(_giftCard(kind: GiftCardActivityKind.redeemed));
       ProviderScope.containerOf(
         tester.element(find.byType(MobileTransactionStatusScreen)),
@@ -584,10 +612,7 @@ void main() {
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.00015 ZEC'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
-    expect(
-      find.text('${_txid.substring(0, 8)}...${_txid.substring(56)}'),
-      findsOneWidget,
-    );
+    expect(find.text('efcdab89...67452301'), findsOneWidget);
   });
 
   testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {
@@ -725,6 +750,7 @@ void main() {
           sourcePool: 'transparent',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _receivingShieldedAddress,
               amountZatoshi: BigInt.from(12312000000),
               pool: 'shielded',

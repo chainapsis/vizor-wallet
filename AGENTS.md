@@ -21,9 +21,9 @@ fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mob
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
 
-# After changing Rust API files (rust/src/api/*.rs):
-# MUST run from project root, not rust/
-flutter_rust_bridge_codegen generate
+# After changing Rust API files (rust/src/api/*.rs). Use the wrapper;
+# bare flutter_rust_bridge_codegen fails on rustc's expanded `super let`.
+scripts/generate-rust-bridge.sh
 
 # Clear app from iOS simulator (keychain + state + uninstall)
 ./clear-app.sh
@@ -224,6 +224,13 @@ operating-system chrome and presentation-only background layers.
 Hardware-wallet PCZT QR codes prioritize scan reliability over Figma parity.
 Use black-on-white square modules with an explicit quiet zone. Do not apply
 decorative QR treatments to codes that Keystone devices need to scan.
+
+The receive-address QR of a Keystone account is one of those codes: the device
+scans it to verify rotating addresses. `ReceiveQrSurface(scanOptimized: true)`
+draws it black-on-white with square modules in every theme and keeps the pool
+badge. Its quiet zone is the white card's padding rather than modules inside
+the bitmap; a Keystone device scans it at the current geometry. Software and
+Ledger accounts keep the decorative dot style.
 
 ## UI Copy Conventions
 
@@ -675,8 +682,16 @@ or the first broadcast attempt. Wallet-owned PCZTs carry the reservation owner;
 strip that metadata from device signer views. Ledger checkpoint insertion and
 reservation transfer must commit in the same SQLite transaction. Keystone marks
 retention before the first network submission, including TEX's first round.
-Normal app exit closes the proposal gate, drains accepted DB creators, and
-releases only unsubmitted reservations; backgrounding does not end the session.
+Normal app exit closes the proposal gate, requests sync cancellation, and hides
+its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+acquire the wallet write lock and drain accepted DB creators, then releases only
+unsubmitted reservations without waiting on SQLite contention. Once the budget
+expires, it starts no further cleanup; unfinished work is left for startup
+recovery. It does not interrupt an active DB operation. Dart bounds its cleanup
+wait at 300ms. On macOS, the exit-only `desktop_exit` channel orders the window
+out synchronously and suppresses last-window auto-quit while Dart is preparing
+its exit reply; ordinary window visibility still uses `window_manager`.
+Backgrounding or hiding a window by itself does not end the session.
 Before the first balance read after restart, the DB migration gate recovers
 abandoned process-scoped reservations without network access. Legacy retained,
 signed, and ambiguous-broadcast reservations keep their expiry-based recovery.
@@ -951,6 +966,9 @@ edge in `MobileBottomSafeArea`
 
 ## Testing
 
+- Keep small Rust internal tests in the source file's `#[cfg(test)] mod tests`.
+- When fixtures or scenarios obscure the implementation, split into `<module>/tests.rs`; do not split by line count alone.
+- Put public-API integration tests in `rust/tests/`; do not widen production visibility for test placement.
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
 - Dart unit tests: `fvm flutter test` (mobile-tagged tests auto-skip).
   Mobile-UI tests:

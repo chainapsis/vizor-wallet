@@ -520,7 +520,7 @@ mod ledger_ironwood_fixture_tests {
         let output_path = env::var("VIZOR_LEDGER_FIXTURE_PATH")
             .map_err(|_| "VIZOR_LEDGER_FIXTURE_PATH must name the temporary PCZT file")?;
 
-        let encoded_ufvk = Zeroizing::new(crate::wallet::ledger::get_ufvk(0)?);
+        let encoded_ufvk = Zeroizing::new(crate::wallet::ledger::get_ufvk(0, None)?);
         let ufvk = zcash_keys::keys::UnifiedFullViewingKey::decode(
             &WalletNetwork::Main,
             encoded_ufvk.as_str(),

@@ -39,6 +39,12 @@ Widget buildMobileKeystoneScanDeniedUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileKeystoneScanRestrictedUseCase(BuildContext context) {
+  return const _MobileKeystoneModalScanFrame(
+    status: AddressQrCameraStatus.restricted,
+  );
+}
+
 Widget buildMobileKeystoneScanActiveUseCase(BuildContext context) {
   return const _MobileKeystoneModalScanFrame(
     status: AddressQrCameraStatus.active,
@@ -69,7 +75,6 @@ Widget buildMobileKeystonePcztQrOptimizedUseCase(BuildContext context) {
       error: null,
       size: 280,
       scanOptimized: true,
-      frameInterval: const Duration(milliseconds: 100),
     ),
   );
 }

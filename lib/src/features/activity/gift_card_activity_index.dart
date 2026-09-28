@@ -23,6 +23,8 @@ class GiftCardActivityMetadata {
     this.displayPool,
     this.fiatSnapshot,
     this.claimFeeReserveZatoshi,
+    this.batchCount,
+    this.amountPerCardZatoshi,
   }) : assert(
          kind != GiftCardActivityKind.created || claimFeeReserveZatoshi != null,
        );
@@ -37,6 +39,8 @@ class GiftCardActivityMetadata {
   final String? displayPool;
   final PaymentLinkFiatSnapshot? fiatSnapshot;
   final BigInt? claimFeeReserveZatoshi;
+  final int? batchCount;
+  final BigInt? amountPerCardZatoshi;
 
   BigInt detailFeeZatoshi(BigInt transactionFee) {
     if (kind == GiftCardActivityKind.redeemed) return transactionFee;
@@ -66,9 +70,14 @@ class GiftCardActivityIndex {
   }) {
     final createdMetadata = <String, GiftCardActivityMetadata>{};
     final redeemedMetadata = <String, GiftCardActivityMetadata>{};
+    final batchRecordsByTxid = <String, List<PaymentLinkRecoveryRecord>>{};
     for (final record in createdRecords) {
       if (record.sourceAccountUuid != accountUuid) continue;
       for (final txid in _splitTxids(record.fundingTxids)) {
+        if (record.batchId != null) {
+          (batchRecordsByTxid[txid] ??= []).add(record);
+          continue;
+        }
         createdMetadata[txid] = GiftCardActivityMetadata(
           kind: GiftCardActivityKind.created,
           amountZatoshi: record.link.amountZatoshi,
@@ -78,6 +87,22 @@ class GiftCardActivityIndex {
           claimFeeReserveZatoshi: record.claimFeeReserveZatoshi,
         );
       }
+    }
+    for (final entry in batchRecordsByTxid.entries) {
+      final first = entry.value.first;
+      // The transaction funded every card, even after some records are gone.
+      final count = BigInt.from(first.batchCount ?? entry.value.length);
+      final amountPerCard = first.link.amountZatoshi;
+      createdMetadata[entry.key] = GiftCardActivityMetadata(
+        kind: GiftCardActivityKind.created,
+        amountZatoshi: amountPerCard * count,
+        artworkId: first.link.presentation?.artworkId,
+        message: first.link.presentation?.message,
+        claimFeeReserveZatoshi: first.claimFeeReserveZatoshi * count,
+        batchCount: count.toInt(),
+        amountPerCardZatoshi: amountPerCard,
+        stableId: 'gift-card-batch:${first.batchId}',
+      );
     }
     for (final record in receivedRecords) {
       if (record.destinationAccountUuid != accountUuid) continue;

@@ -9,6 +9,7 @@ import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
+import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
@@ -790,8 +791,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
     unawaited(ref.read(chainUpgradeStatusProvider.future));
+    final shutdown = ref.read(appShutdownSignalProvider);
+    shutdown.addListener(_stopForAppExit);
+    ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
+        if (shutdown.isShuttingDown) return;
         _isInForeground = true;
         unawaited(_refreshBalanceAfterResume());
         _checkAndSync();
@@ -1021,9 +1026,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _startPolling();
   }
 
+  bool get _isShuttingDown =>
+      ref.read(appShutdownSignalProvider).isShuttingDown;
+
+  /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
+  /// sends. Generation changes also reject preflight completions already queued.
+  void _stopForAppExit() {
+    ++_syncGen;
+    ++_sensitiveStateEpoch;
+    ++_progressEventVersion;
+    ++_balanceReadVersion;
+    _syncStartDeferred = false;
+    _deferredSyncLatestTipHeight = null;
+    _isSyncing = false;
+    _stopPolling();
+    rust_sync.cancelFullSync();
+    _syncSub?.cancel();
+    _syncSub = null;
+    _stopMempoolObserver();
+  }
+
   /// Fire-and-forget: sets up FRB stream and returns immediately.
   /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
   void startSync({int? latestTipHeight}) {
+    if (_isShuttingDown) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping foreground sync start');
       return;
@@ -1477,6 +1503,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Recovery path for cases like unlock-after-sign-out where a previous
   /// sync has already been cancelled, but Rust is still unwinding.
   Future<void> startSyncAnyway() async {
+    if (_isShuttingDown) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping forced foreground sync start');
       return;
@@ -1798,6 +1825,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
+    if (_isShuttingDown) return;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
@@ -1814,6 +1842,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
+    if (_isShuttingDown) return;
     final gen = _syncGen;
     final epoch = _sensitiveStateEpoch;
     final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
@@ -1903,6 +1932,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// by the MEMPOOL_RUNNING atomic, so a double-call just logs
   /// and returns an error; we catch and ignore it.
   void _startMempoolObserver(String dbPath, RpcEndpointConfig endpoint) {
+    if (_isShuttingDown) return;
     if (rust_sync.isMempoolObserverRunning()) {
       // Already up — happens if startSync fires while a previous
       // observer is still winding down. The Rust side will
@@ -2374,6 +2404,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
 
   Future<void> _refreshBalanceAfterResume() async {
+    if (_isShuttingDown) return;
     try {
       await _requestBalanceRefresh();
     } catch (e, st) {

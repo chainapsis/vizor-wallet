@@ -20,6 +20,7 @@ import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_ledger_funding_service.dart';
+import '../services/payment_link_service.dart';
 
 class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkLedgerSigningOverlay({
@@ -28,11 +29,18 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.batch,
+    this.onBatchRefused,
     super.key,
   });
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkBatchDraft? batch;
+
+  /// A group whose proposal no longer matches its quote, or that its signer
+  /// cannot sign, returns here instead of offering a retry.
+  final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final Future<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink,
@@ -60,6 +68,7 @@ class _PaymentLinkLedgerSigningOverlayState
   bool _cancelled = false;
   bool _checkpointed = false;
   bool _terminal = false;
+  bool _requestNeedsRebuilding = false;
   String? _error;
   LedgerFailureGuidance? _deviceGuidance;
 
@@ -96,7 +105,7 @@ class _PaymentLinkLedgerSigningOverlayState
         });
         final result = await _service.resume(
           accountUuid: widget.sourceAccountUuid,
-          address: _draft!.link.address,
+          address: _draft!.recoveryRef,
           draft: _draft,
           spendParamsPath: _params?.spendPath,
           outputParamsPath: _params?.outputPath,
@@ -109,11 +118,13 @@ class _PaymentLinkLedgerSigningOverlayState
         _error = null;
         _deviceGuidance = null;
       });
-      _draft ??= await _service.prepare(
-        accountUuid: widget.sourceAccountUuid,
-        amountZatoshi: widget.amountZatoshi,
-        presentation: widget.presentation,
-      );
+      _draft ??= widget.batch == null
+          ? await _service.prepare(
+              accountUuid: widget.sourceAccountUuid,
+              amountZatoshi: widget.amountZatoshi,
+              presentation: widget.presentation,
+            )
+          : await _service.prepareBatch(widget.batch!);
       if (!_active) return;
       final draft = _draft!;
       if (draft.needsSaplingParams && _params == null) {
@@ -162,6 +173,14 @@ class _PaymentLinkLedgerSigningOverlayState
       await _present(result);
     } catch (error, stack) {
       log('GiftCardLedger: $error\n$stack');
+      final refused = widget.onBatchRefused;
+      if (refused != null &&
+          _active &&
+          _draft == null &&
+          isPaymentLinkBatchRefusal(error)) {
+        await refused(error);
+        return;
+      }
       if (!_active && !_checkpointed) {
         unawaited(
           _discardAfterWork().catchError(
@@ -174,19 +193,35 @@ class _PaymentLinkLedgerSigningOverlayState
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
           _terminal = error is LedgerGiftFundingTerminalException;
-          _deviceGuidance = ledgerFailureGuidance(error);
+          _deviceGuidance = ledgerFailureGuidance(
+            error,
+            requestKind: LedgerRequestKind.giftCard,
+          );
+          // Retrying the same request fails the same way on the device.
+          _requestNeedsRebuilding =
+              !_terminal &&
+              !_checkpointed &&
+              _deviceGuidance?.retryable == false;
           _error = _terminal
               ? LedgerGiftFundingTerminalException.message
               : isLedgerLegacyOrchardRecoveryUnsupported(error)
               ? kLedgerLegacyOrchardRecoveryUnavailableMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : _deviceGuidance?.message ??
-                    'Ledger signing could not be completed. Check your device and try again.';
+              : _deviceGuidance?.message ?? _ledgerFailureMessage(error);
         });
       }
     }
   }
+
+  String _ledgerFailureMessage(
+    Object error,
+  ) => switch (LedgerRequestFailure.fromError(error)) {
+    LedgerRequestFailure.declined =>
+      'The gift card funding was rejected on your Ledger.',
+    _ =>
+      'Ledger signing could not be completed. Check your device and try again.',
+  };
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {
     if (!_active) return;
@@ -268,6 +303,7 @@ class _PaymentLinkLedgerSigningOverlayState
   Widget build(BuildContext context) {
     final unavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final canRetry = !unavailable && !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
       connectionScope: _connectionScope,
@@ -287,22 +323,21 @@ class _PaymentLinkLedgerSigningOverlayState
               title: unavailable
                   ? 'Ledger app update required'
                   : 'Gift card funding needs attention',
-              statusLabel: 'Action needed',
+              statusLabel: _requestNeedsRebuilding
+                  ? 'New gift card required'
+                  : 'Action needed',
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&
                   !unavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
-              actionLabel: unavailable || _terminal ? null : 'Try again',
+              actionLabel: canRetry ? 'Try again' : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to gift card',
       onFailureAction:
-          _phase == LedgerSigningModalPhase.failed &&
-              !_cancelled &&
-              !unavailable &&
-              !_terminal
+          _phase == LedgerSigningModalPhase.failed && !_cancelled && canRetry
           ? _start
           : null,
     );

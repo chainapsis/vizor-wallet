@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/ledger_error_codes.dart';
 import '../../ledger/services/ledger_immediate_migration_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -43,6 +44,9 @@ class _LedgerImmediateMigrationSigningOverlayState
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
   LedgerFailureGuidance? _deviceGuidance;
+
+  // Retrying the same request fails the same way on the device.
+  bool get _requestNeedsRebuilding => _deviceGuidance?.retryable == false;
   bool _cancelled = false;
 
   bool get _canLeave => _phase != LedgerSigningModalPhase.broadcasting;
@@ -105,7 +109,9 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   Future<void> _retry() async {
-    if (_phase != LedgerSigningModalPhase.failed) return;
+    if (_phase != LedgerSigningModalPhase.failed || _requestNeedsRebuilding) {
+      return;
+    }
     await _run();
   }
 
@@ -127,13 +133,17 @@ class _LedgerImmediateMigrationSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
+    _deviceGuidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.migration,
+    );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
     final message = error.toString().toLowerCase();
-    if (message.contains('rejected') || message.contains('6985')) {
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The migration transaction was rejected on your Ledger.';
     }
-    if (message.contains('no ledger') || message.contains('hid')) {
+    if (isLedgerUsbTransportError(error)) {
       return 'Connect and unlock your Ledger, then open the Zcash app.';
     }
     if (message.contains('plan changed')) {
@@ -164,12 +174,13 @@ class _LedgerImmediateMigrationSigningOverlayState
               message: _error ?? 'Ledger migration could not be completed.',
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,
-              actionLabel: 'Try again',
+              actionLabel: _requestNeedsRebuilding ? null : 'Try again',
             )
           : null,
       onCancel: _canLeave ? () => unawaited(_cancel()) : null,
       cancelLabel: 'Back to review',
-      onFailureAction: _phase == LedgerSigningModalPhase.failed
+      onFailureAction:
+          _phase == LedgerSigningModalPhase.failed && !_requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
     );

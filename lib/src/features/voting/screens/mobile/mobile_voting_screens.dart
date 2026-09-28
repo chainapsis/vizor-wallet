@@ -22,6 +22,7 @@ import '../../voting_flow_models.dart';
 import '../voting_status_screen.dart';
 import '../voting_submission_confirmation_screen.dart';
 import '../../widgets/voting_pane_scroll_area.dart';
+import '../../widgets/mobile/voting_scroll_header.dart';
 import '../../widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../../voting_resume_plan.dart';
 
@@ -80,10 +81,17 @@ class _MobileVotingProposalDetailScreenState
       },
       child: MobileVotingScaffold(
         title: title,
+        showHeader: false,
         onBack: () => unawaited(_handleBack()),
         child: VotingProposalDetailView(
           roundId: widget.roundId,
           showDesktopToolbar: false,
+          mobileHeaderBuilder: (compact, navigation) => VotingScrollHeader(
+            title: title,
+            compact: compact,
+            navigation: navigation,
+            onBack: () => unawaited(_handleBack()),
+          ),
         ),
       ),
     );
@@ -274,9 +282,11 @@ class MobileVotingScaffold extends StatelessWidget {
     this.horizontalPadding = 0,
     this.trailing,
     this.onBack,
+    this.showHeader = true,
   });
 
   final String title;
+  final bool showHeader;
   final Widget child;
   final String fallbackPath;
   final double horizontalPadding;
@@ -300,19 +310,20 @@ class MobileVotingScaffold extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              MobileTopNav.back(
-                title: title,
-                trailing: trailing,
-                onBack:
-                    onBack ??
-                    () {
-                      if (context.canPop()) {
-                        context.pop();
-                      } else {
-                        context.go(fallbackPath);
-                      }
-                    },
-              ),
+              if (showHeader)
+                MobileTopNav.back(
+                  title: title,
+                  trailing: trailing,
+                  onBack:
+                      onBack ??
+                      () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go(fallbackPath);
+                        }
+                      },
+                ),
               Expanded(child: body),
             ],
           ),

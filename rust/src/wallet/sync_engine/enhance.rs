@@ -44,7 +44,8 @@ use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{
-    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+    SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
 
@@ -75,19 +76,46 @@ pub(super) fn queue_stored_transactions(
         open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).map_err(SyncError::db)?;
     // query_type=1 is the SDK's Enhancement request. Status requests (0) and
     // dependency links already in the queue must be preserved.
-    let count = conn.execute(
-        "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
+    let count = conn
+        .execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type, dependent_transaction_id)
          SELECT txid, 1, NULL FROM transactions
          WHERE raw IS NOT NULL
            AND (txid IN rarray(?1) OR mined_height BETWEEN ?2 AND ?3)
          ON CONFLICT (txid, query_type) DO NOTHING",
-        rusqlite::params![hashes, heights.start(), heights.end()],
-    )
-    .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
+            rusqlite::params![hashes, heights.start(), heights.end()],
+        )
+        .map_err(|error| SyncError::db(format!("queue scanned stored transactions: {error}")))?;
     if count > 0 {
         log::info!("sync: queued {count} stored transaction(s) for scan-time enhancement");
     }
     Ok(())
+}
+
+/// Recognize a conclusive status observation without retiring its durable guard.
+/// Payload work is independent; tip validation must precede status completion.
+fn conclusive_recovery_status(
+    db_path: &str,
+    req: &TransactionDataRequest,
+    lookup: &Result<zcash_client_backend::proto::service::RawTransaction, Status>,
+) -> Result<bool, SyncError> {
+    let TransactionDataRequest::GetStatus(txid) = req else {
+        return Ok(false);
+    };
+    match lookup {
+        Ok(raw) if mined_height_from_raw_height(raw.height)?.is_none() => {}
+        Err(error)
+            if matches!(
+                classify_get_transaction_error(error),
+                GetTransactionErrorAction::MarkTxidNotRecognized
+            ) => {}
+        // Failed/inconclusive observations cannot complete status work. Mined
+        // observations go through the backend to restore mined_height.
+        _ => return Ok(false),
+    }
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    crate::wallet::sync::has_recovered_status_work(&conn, txid.as_ref()).map_err(SyncError::db)
 }
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
@@ -98,13 +126,18 @@ pub(super) fn queue_stored_transactions(
 /// `set_transaction_status` so it doesn't get retried forever, while
 /// transient network failures bubble up as `SyncError::Network` so the
 /// outer sync retry path can recover without deleting the request.
+///
+/// Returns transactions with conclusive non-mined status observations. Their
+/// status rows remain pending until the caller validates tip identity. Errors,
+/// cancellation, and callers that do not resubmit therefore retain suppression.
 pub(super) async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-) -> Result<(), SyncError> {
+) -> Result<HashSet<Vec<u8>>, SyncError> {
+    let mut ready_resubmission = HashSet::new();
     let mut failed_txids: HashSet<String> = HashSet::new();
     // Retry a failed address on a later invocation, not in all three queue passes.
     let mut failed_addresses = HashSet::new();
@@ -133,11 +166,19 @@ pub(super) async fn run_enhancement(
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
-                    if failed_txids.contains(&txid_str) {
+                    if failed_txids.contains(&txid_str)
+                        || (matches!(req, TransactionDataRequest::GetStatus(_))
+                            && ready_resubmission.contains(txid.as_ref().as_slice()))
+                    {
                         continue;
                     }
 
-                    match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
+                    let lookup = lwd::get_transaction(client, txid.as_ref().to_vec()).await;
+                    if conclusive_recovery_status(db_path, req, &lookup)? {
+                        ready_resubmission.insert(txid.as_ref().to_vec());
+                        continue;
+                    }
+                    match lookup {
                         Ok(raw) => {
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
@@ -241,14 +282,14 @@ pub(super) async fn run_enhancement(
         loop {
             let event = tokio::select! {
                 biased;
-                _ = super::watch_for_exit(should_exit) => return Ok(()),
+                _ = super::watch_for_exit(should_exit) => return Ok(ready_resubmission),
                 event = reads.next() => event,
             };
             let Some((mut read, result)) = event else {
                 break;
             };
             if should_exit() {
-                return Ok(());
+                return Ok(ready_resubmission);
             }
             let req = read.request().clone();
             match result? {
@@ -263,7 +304,7 @@ pub(super) async fn run_enhancement(
                     };
                     let fee_result = tokio::select! {
                         biased;
-                        _ = super::watch_for_exit(should_exit) => return Ok(()),
+                        _ = super::watch_for_exit(should_exit) => return Ok(ready_resubmission),
                         result = fill_missing_fee(client, db_path, &tx) => result,
                     };
                     if let Err(error) = fee_result {
@@ -292,7 +333,7 @@ pub(super) async fn run_enhancement(
             reads.resume(read);
         }
     }
-    Ok(())
+    Ok(ready_resubmission)
 }
 
 /// Parse and store before allowing the caller to acknowledge an address range.
@@ -567,6 +608,114 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
     use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
+
+    #[test]
+    fn recovery_status_lookup_resolution_matrix() {
+        use zcash_client_backend::proto::service::RawTransaction;
+        let txid = TxId::from_bytes([0x81; 32]);
+        for (lookup, resolved, invalid) in [
+            (
+                Ok(RawTransaction {
+                    data: vec![],
+                    height: 0,
+                }),
+                true,
+                false,
+            ),
+            (
+                Ok(RawTransaction {
+                    data: vec![],
+                    height: u64::MAX,
+                }),
+                true,
+                false,
+            ),
+            (Err(Status::not_found("not found")), true, false),
+            (
+                Ok(RawTransaction {
+                    data: vec![],
+                    height: 800_000,
+                }),
+                false,
+                false,
+            ),
+            (
+                Ok(RawTransaction {
+                    data: vec![],
+                    height: u64::MAX - 1,
+                }),
+                false,
+                true,
+            ),
+            (Err(Status::unavailable("unavailable")), false, false),
+            (Err(Status::deadline_exceeded("timeout")), false, false),
+            (Err(Status::unknown("inconclusive")), false, false),
+        ] {
+            for (status_request, no_change) in [false, true]
+                .into_iter()
+                .flat_map(|status| [(status, false), (status, true)])
+            {
+                let file = tempfile::NamedTempFile::new().unwrap();
+                let path = file.path().to_str().unwrap();
+                let conn = rusqlite::Connection::open(path).unwrap();
+                conn.execute_batch("CREATE TABLE transactions (
+                        id_tx INTEGER PRIMARY KEY, txid BLOB, mined_height INTEGER,
+                        confirmed_unmined_at_height INTEGER, raw BLOB);
+                    CREATE TABLE tx_retrieval_queue (txid BLOB, query_type INTEGER,
+                        dependent_transaction_id INTEGER);
+                    CREATE TABLE sapling_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
+                    CREATE TABLE orchard_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
+                    CREATE TABLE ironwood_received_notes (transaction_id INTEGER, commitment_tree_position INTEGER);
+                    CREATE VIEW v_transactions AS SELECT txid, raw, -1 AS account_balance_delta FROM transactions;
+                    CREATE TABLE scan_queue (block_range_end INTEGER);
+                    INSERT INTO scan_queue VALUES (900001);
+                    INSERT INTO ironwood_received_notes VALUES (1, 0);").unwrap();
+                crate::wallet::db::ensure_mined_transaction_history(&conn).unwrap();
+                conn.execute(
+                    "INSERT INTO transactions VALUES (1, ?1, NULL, NULL, X'01')",
+                    [txid.as_ref()],
+                )
+                .unwrap();
+                if no_change {
+                    conn.execute_batch(
+                        "DELETE FROM ironwood_received_notes;
+                        UPDATE transactions SET mined_height = 800000;
+                        UPDATE transactions SET mined_height = NULL;",
+                    )
+                    .unwrap();
+                }
+                conn.execute(
+                    "INSERT INTO tx_retrieval_queue VALUES (?1, 0, NULL), (?1, 1, 17)",
+                    [txid.as_ref()],
+                )
+                .unwrap();
+                let req = if status_request {
+                    TransactionDataRequest::GetStatus(txid)
+                } else {
+                    TransactionDataRequest::Enhancement(txid)
+                };
+                let result = conclusive_recovery_status(path, &req, &lookup);
+                if invalid && status_request {
+                    assert!(result.is_err());
+                } else {
+                    assert_eq!(result.unwrap(), resolved && status_request);
+                }
+                let remaining: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM tx_retrieval_queue WHERE query_type = 0",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    remaining, 1,
+                    "tip validation must precede status completion"
+                );
+                let dependency: i64 = conn.query_row("SELECT dependent_transaction_id FROM tx_retrieval_queue WHERE query_type = 1", [], |r| r.get(0)).unwrap();
+                assert_eq!(dependency, 17);
+            }
+        }
+    }
 
     #[test]
     fn scan_enhancement_is_batch_scoped_durable_and_preserves_existing_requests() {

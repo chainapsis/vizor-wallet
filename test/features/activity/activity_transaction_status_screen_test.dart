@@ -1,33 +1,34 @@
-import 'package:flutter/services.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
-import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txidHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -43,6 +44,9 @@ const _transparentSenderAddress = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 final _blockTime = BigInt.from(1764150000);
 
 void main() {
+  if (const String.fromEnvironment('GIFT_CARD_CAPTURE_DIR').isNotEmpty) {
+    setUpAll(loadFigmaCompareFonts);
+  }
   testWidgets('pending claim transaction ID opens the broadcast hash', (
     tester,
   ) async {
@@ -50,16 +54,27 @@ void main() {
         '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6';
     final protocolTxid = paymentLinkBroadcastTxidsToProtocolOrder(displayTxid);
     final launched = <String>[];
+    final copied = <String>[];
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'launch') {
         launched.add((call.arguments as Map)['url'] as String);
+        return false;
       }
       return true;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await _pumpScreen(
       tester,
       args: ActivityTransactionStatusArgs(
@@ -79,10 +94,12 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text(truncatedTxid(protocolTxid)));
+    expect(find.text(truncatedTxid(displayTxid)), findsOneWidget);
+    await tester.tap(find.text(truncatedTxid(displayTxid)));
     await tester.pump();
     expect(launched, hasLength(1));
     expect(Uri.parse(launched.single).path, '/tx/$displayTxid');
+    expect(copied, [displayTxid]);
   });
 
   for (final settings in [(false, false), (true, true)]) {
@@ -143,6 +160,53 @@ void main() {
     },
   );
 
+  testWidgets('private gift card amount has one currency suffix', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privacyEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent'),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          amountZatoshi: BigInt.from(100000),
+          artworkId: 'ruby',
+          message: null,
+          fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 142.23),
+        ),
+      ),
+    );
+    final card = find.byType(GiftCardActivityDetailView);
+    expect(
+      tester.widget<GiftCardActivityDetailView>(card).amountText,
+      '******',
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('ZEC')),
+      findsOneWidget,
+    );
+    expect(find.text('0.001'), findsNothing);
+    expect(find.text(r'$142.23'), findsNothing);
+    const captureDir = String.fromEnvironment('GIFT_CARD_CAPTURE_DIR');
+    if (captureDir.isNotEmpty) {
+      await tester.runAsync(() async {
+        for (final element in find.byType(Image).evaluate()) {
+          await precacheImage((element.widget as Image).image, element);
+        }
+      });
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        card,
+        matchesGoldenFile('$captureDir/desktop-private-detail.png'),
+      );
+    }
+  });
+
   testWidgets('renders created Gift Card activity metadata', (tester) async {
     await _pumpScreen(
       tester,
@@ -173,6 +237,73 @@ void main() {
     expect(find.text('Card fee'), findsOneWidget);
     expect(find.text('0.0003 ZEC'), findsOneWidget);
     expect(find.text(r'$142.23'), findsOneWidget);
+  });
+
+  testWidgets('renders one receipt for a created gift card batch', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(150000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(200000000),
+          amountPerCardZatoshi: BigInt.from(10000000),
+          claimFeeReserveZatoshi: BigInt.from(200000),
+          batchCount: 20,
+          artworkId: 'ruby',
+          message: 'Enjoy the celebration!',
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<GiftCardActivityDetailView>(
+            find.byType(GiftCardActivityDetailView),
+          )
+          .batch
+          ?.count,
+      20,
+    );
+    expect(find.text('Created 20 gift cards'), findsOneWidget);
+    expect(find.text('2.0035 ZEC'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
+  });
+
+  testWidgets('failed batch receipt does not claim funds were spent', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          expiredUnmined: true,
+          fee: BigInt.from(150000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(200000000),
+          amountPerCardZatoshi: BigInt.from(10000000),
+          claimFeeReserveZatoshi: BigInt.from(200000),
+          batchCount: 20,
+          artworkId: 'ruby',
+          message: null,
+        ),
+      ),
+    );
+    expect(find.text('Gift card group failed'), findsOneWidget);
+    expect(find.text('Planned total'), findsOneWidget);
+    expect(find.text('Total spent'), findsNothing);
   });
 
   testWidgets('renders redeemed Gift Card activity metadata', (tester) async {
@@ -279,6 +410,7 @@ void main() {
           sourcePool: 'unknown',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _receivingAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'transparent',
@@ -316,6 +448,7 @@ void main() {
           sourcePool: 'shielded',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _recipientAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'shielded',
@@ -389,6 +522,7 @@ void main() {
           sourcePool: 'transparent',
           outputs: [
             rust_sync.TransactionDetailOutput(
+              usesOrchardReceiver: false,
               address: _recipientAddress,
               amountZatoshi: BigInt.from(12000000000),
               pool: 'shielded',
@@ -532,7 +666,15 @@ void main() {
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('u195091 ... 190591'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(find.text(truncatedTxid(_txidHex)), findsOneWidget);
+    expect(
+      find.text(
+        truncatedTxid(
+          'efcdab8967452301efcdab8967452301'
+          'efcdab8967452301efcdab8967452301',
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -824,6 +966,7 @@ void main() {
             sourcePool: 'transparent',
             outputs: [
               rust_sync.TransactionDetailOutput(
+                usesOrchardReceiver: false,
                 address: _recipientAddress,
                 amountZatoshi: BigInt.from(12000000000),
                 pool: 'transparent',
@@ -944,6 +1087,11 @@ Future<void> _pumpScreen(
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, state) =>
+            Text('batch route: ${state.uri.queryParameters['batch']}'),
       ),
     ],
   );

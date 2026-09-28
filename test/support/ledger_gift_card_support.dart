@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 
 final ledgerGiftLink = VizorPaymentLink(
   label: 'Gift card',
@@ -92,6 +93,27 @@ class LedgerGiftHardware implements PaymentLinkHardwareSigningService {
   final PaymentLinkRecoveryStore store;
   int discards = 0;
   @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) async {
+    await store.saveBatchDrafts(
+      batchId: batch.id,
+      links: batch.links,
+      sourceAccountUuid: batch.quote.sourceAccountUuid,
+      claimFeeReserveZatoshi: BigInt.from(10000),
+    );
+    return PaymentLinkHardwarePcztDraft(
+      link: batch.links.first,
+      batch: batch,
+      pcztBytes: [1],
+      needsSaplingParams: false,
+      feeZatoshi: batch.quote.fundingFeeZatoshi,
+      proposalId: BigInt.one,
+      sendFlowId: 'gift-batch',
+    );
+  }
+
+  @override
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -118,11 +140,19 @@ class LedgerGiftHardware implements PaymentLinkHardwareSigningService {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    await store.markPrepared(
-      address: draft.link.address,
-      fundingTxid: 'gift-txid',
-      expiryHeight: 3000040,
-    );
+    if (draft.batch case final batch?) {
+      await store.markBatchPrepared(
+        batchId: batch.id,
+        fundingTxid: 'gift-txid',
+        expiryHeight: 3000040,
+      );
+    } else {
+      await store.markPrepared(
+        address: draft.link.address,
+        fundingTxid: 'gift-txid',
+        expiryHeight: 3000040,
+      );
+    }
     return [2];
   }
 
@@ -131,7 +161,11 @@ class LedgerGiftHardware implements PaymentLinkHardwareSigningService {
     required PaymentLinkHardwarePcztDraft draft,
   }) async {
     discards++;
-    await store.removeUnbroadcastDraft(address: draft.link.address);
+    if (draft.batch case final batch?) {
+      await store.removeUnbroadcastBatch(batch.id);
+    } else {
+      await store.removeUnbroadcastDraft(address: draft.link.address);
+    }
   }
 
   // Keystone-only methods must never be used by the Ledger path.

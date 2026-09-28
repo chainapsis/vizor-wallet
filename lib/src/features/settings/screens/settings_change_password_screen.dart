@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -353,38 +354,42 @@ class _NewPasswordView extends StatelessWidget {
               children: [
                 _PasswordFieldBlock(
                   reserveMessageSpace: _fieldReservedMessageHeight,
-                  child: PasswordTextField(
-                    label: 'Password',
-                    controller: passwordController,
-                    messageText: passwordMessage,
-                    tone: passwordMessage == null
-                        ? AppTextFieldTone.neutral
-                        : AppTextFieldTone.destructive,
-                    leadingSlotWidth: 32,
-                    trailingSlotWidth: 40,
-                    inputHorizontalPadding: AppSpacing.s,
-                    autofocus: true,
-                    enabled: !isSubmitting,
-                    onChanged: (_) => onChanged(),
-                    onSubmitted: (_) => onSubmit(),
+                  child: AppPasswordInput(
+                    child: PasswordTextField(
+                      label: 'Password',
+                      controller: passwordController,
+                      messageText: passwordMessage,
+                      tone: passwordMessage == null
+                          ? AppTextFieldTone.neutral
+                          : AppTextFieldTone.destructive,
+                      leadingSlotWidth: 32,
+                      trailingSlotWidth: 40,
+                      inputHorizontalPadding: AppSpacing.s,
+                      autofocus: true,
+                      enabled: !isSubmitting,
+                      onChanged: (_) => onChanged(),
+                      onSubmitted: (_) => onSubmit(),
+                    ),
                   ),
                 ),
                 const SizedBox(height: _fieldGroupGap),
                 _PasswordFieldBlock(
                   reserveMessageSpace: _fieldReservedMessageHeight,
-                  child: PasswordTextField(
-                    label: 'Confirm password',
-                    controller: confirmController,
-                    messageText: confirmMessage,
-                    tone: confirmMessage == null
-                        ? AppTextFieldTone.neutral
-                        : AppTextFieldTone.destructive,
-                    leadingSlotWidth: 32,
-                    inputHorizontalPadding: AppSpacing.s,
-                    showVisibilityToggle: false,
-                    enabled: !isSubmitting,
-                    onChanged: (_) => onChanged(),
-                    onSubmitted: (_) => onSubmit(),
+                  child: AppPasswordInput(
+                    child: PasswordTextField(
+                      label: 'Confirm password',
+                      controller: confirmController,
+                      messageText: confirmMessage,
+                      tone: confirmMessage == null
+                          ? AppTextFieldTone.neutral
+                          : AppTextFieldTone.destructive,
+                      leadingSlotWidth: 32,
+                      inputHorizontalPadding: AppSpacing.s,
+                      showVisibilityToggle: false,
+                      enabled: !isSubmitting,
+                      onChanged: (_) => onChanged(),
+                      onSubmitted: (_) => onSubmit(),
+                    ),
                   ),
                 ),
               ],

@@ -1,4 +1,5 @@
 import 'ledger_pairing_capture.dart';
+import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
 
@@ -65,6 +66,37 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'caps-lock-unlock',
+    description: 'Unlock screen with Caps Lock warning',
+    builder: buildCapsLockUnlockCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-set-password',
+    description: 'Set password screen with Caps Lock warning',
+    builder: buildCapsLockSetPasswordCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-confirm-password',
+    description: 'Set password confirmation field with Caps Lock warning',
+    builder: buildCapsLockConfirmPasswordCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-settings',
+    description: 'Change password access gate with Caps Lock warning',
+    builder: buildCapsLockSettingsCapture,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'caps-lock-remove-account',
+    description: 'Account removal modal with Caps Lock warning',
+    builder: buildCapsLockRemoveAccountCapture,
+    allowFocus: true,
+  ),
+
   FigmaCompareScenario(
     id: 'ledger-recovery-picker-permission',
     description: 'Ledger onboarding: permission recovery',
@@ -283,6 +315,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-memo-hash-update',
+    description: 'Ledger signing: memo needs a newer Zcash app',
+    builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
     description: 'Ledger voting: processing panel without caller background',
     builder: _buildLedgerVotingProcessing,
@@ -484,6 +521,54 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
 
   FigmaCompareScenario(
+    id: 'voting-participation-unavailable',
+    description: 'Desktop ballot with participation already used',
+    builder: buildVotingUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-participation-unavailable',
+    description: 'Mobile ballot with participation already used',
+    builder: buildVotingUnavailableUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-retroactive-q3',
+    description: 'Published Q3 2026 retroactive grants ballot',
+    builder: buildRetroactiveVotingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3',
+    description: 'Published Q3 2026 retroactive grants ballot on mobile',
+    builder: buildRetroactiveVotingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-retroactive-q3-partial',
+    description: 'Q3 2026 ballot with three unanswered questions',
+    builder: buildRetroactiveVotingPartialUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'voting-retroactive-q3-complete',
+    description: 'Q3 2026 ballot with all questions answered',
+    builder: buildRetroactiveVotingCompleteUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3-partial',
+    description: 'Mobile Q3 2026 ballot with three unanswered questions',
+    builder: buildRetroactiveVotingPartialUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-voting-retroactive-q3-complete',
+    description: 'Mobile Q3 2026 ballot with all questions answered',
+    builder: buildRetroactiveVotingCompleteUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'voting-share-status',
     description: 'Desktop completed vote with shares still submitting',
     builder: buildDesktopVotingVotedUseCase,
@@ -672,6 +757,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildRedeemedGiftCardActivityDetailUseCase,
   ),
   FigmaCompareScenario(
+    id: 'activity-gift-card-batch-detail',
+    description: 'Desktop created Gift Card batch activity detail',
+    builder: buildGiftCardBatchActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-empty',
     description: 'Desktop Gift Cards empty state',
     builder: buildPaymentLinkEmptyUseCase,
@@ -762,6 +852,66 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkReadyUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-batch-review',
+    description: 'Desktop Gift Card 20-card batch review',
+    builder: buildPaymentLinkBatchReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-amount',
+    description: 'Desktop Gift Card bulk configuration and cost summary',
+    builder: buildPaymentLinkBatchAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-empty',
+    description: 'Desktop Gift Card bulk configuration before amount entry',
+    builder: buildPaymentLinkBatchEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-calculating',
+    description: 'Desktop Gift Card bulk quote in progress',
+    builder: buildPaymentLinkBatchCalculatingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-minimum',
+    description: 'Desktop Gift Card two-card configuration and thin deck',
+    builder: buildPaymentLinkBatchMinimumUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-maximum',
+    description: 'Desktop Gift Card fifty-card configuration and full deck',
+    builder: buildPaymentLinkBatchMaximumUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-ready',
+    description: 'Desktop Gift Card settled batch reveal',
+    builder: buildPaymentLinkBatchReadyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-detail',
+    description: 'Desktop Gift Card batch management',
+    builder: buildPaymentLinkBatchDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-mixed',
+    description: 'Desktop Gift Card group configuration with mixed designs',
+    builder: buildPaymentLinkBatchMixedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-detail-mixed',
+    description: 'Desktop Gift Card group with mixed designs',
+    builder: buildPaymentLinkBatchDetailMixedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-export',
+    description: 'Desktop Gift Card group CSV save confirmation',
+    builder: buildPaymentLinkBatchExportUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-pending',
+    description: 'Desktop Gift Card batch with unconfirmed broadcast status',
+    builder: buildPaymentLinkBatchPendingUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-motion-handoff',
     description: 'Desktop Gift Card motion handoff playground',
     builder: buildPaymentLinkMotionHandoffUseCase,
@@ -770,6 +920,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-link-cards-list',
     description: 'Desktop created Gift Cards list fixture',
     builder: buildPaymentLinkCardsListUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-cards-list-batch',
+    description: 'Desktop created Gift Card batch row',
+    builder: buildPaymentLinkCardsListBatchUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-share-qr',
@@ -2187,6 +2342,12 @@ Widget _buildLedgerSigningFinishing(BuildContext context) =>
       phase: LedgerSigningModalPhase.saving,
       signingStage: LedgerSigningStage.finishing,
       mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
+Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

@@ -49,17 +49,24 @@ final giftCardTrackingStateProvider =
       GiftCardTrackingStateNotifier.new,
     );
 
+/// Every created card's usage, read once per store change. Each read decrypts
+/// the whole recovery store, so a group's cards share it instead of reading
+/// it once each.
+final _giftCardUsagesProvider = FutureProvider<Map<String, GiftCardUsage>>((
+  ref,
+) async {
+  ref.watch(paymentLinkLifecycleRevisionProvider);
+  if (ref.watch(appSecurityProvider).requiresUnlock) return const {};
+  final cards = await ref.read(paymentLinkRecoveryStoreProvider).load();
+  return {for (final card in cards) card.link.address: card.usage};
+});
+
 final giftCardUsageProvider = FutureProvider.family<GiftCardUsage, String>((
   ref,
   address,
 ) async {
-  ref.watch(paymentLinkLifecycleRevisionProvider);
-  if (ref.watch(appSecurityProvider).requiresUnlock) {
-    return const GiftCardUsage();
-  }
-  final cards = await ref.read(paymentLinkRecoveryStoreProvider).load();
-  return cards.where((c) => c.link.address == address).firstOrNull?.usage ??
-      const GiftCardUsage();
+  final usages = await ref.watch(_giftCardUsagesProvider.future);
+  return usages[address] ?? const GiftCardUsage();
 });
 
 final giftCardTrackingBackendProvider = Provider<GiftCardTrackingBackend>(
@@ -192,27 +199,13 @@ class RustGiftCardTrackingBackend implements GiftCardTrackingBackend {
     if (epoch != _cancelEpoch) throw StateError('Gift Card lookup cancelled');
     _activePath = path;
     try {
-      final e = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation: 'Gift Card funding status',
-            action: (endpoint) {
-              if (epoch != _cancelEpoch) {
-                throw StateError('Gift Card lookup cancelled');
-              }
-              if (endpoint.networkName != card.link.network) {
-                throw StateError('Gift Card network changed');
-              }
-              return rust.inspectGiftCardUsage(
-                dbPath: path,
-                accountUuid: card.usage.accountUuid!,
-                fundingTxids: card.fundingTxids ?? '',
-                expectedFundingZatoshi:
-                    card.link.amountZatoshi + card.claimFeeReserveZatoshi,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              );
-            },
-          );
+      final e = await rust.inspectGiftCardUsage(
+        dbPath: path,
+        accountUuid: card.usage.accountUuid!,
+        fundingTxids: card.fundingTxids ?? '',
+        expectedFundingZatoshi:
+            card.link.amountZatoshi + card.claimFeeReserveZatoshi,
+      );
       return GiftCardUsage(
         status: GiftCardUsageStatus.values.byName(e.status),
         reason: e.reason == null

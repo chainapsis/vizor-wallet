@@ -177,6 +177,22 @@ void main() {
     expect(retryCount, 1);
   });
 
+  testWidgets('asks for an app update when a memo was refused', (tester) async {
+    var retryCount = 0;
+    await tester.pumpWidget(
+      _harness(
+        phase: LedgerSigningModalPhase.failed,
+        failure: ledgerMemoHashUpdateFailure,
+        onFailureAction: () => retryCount++,
+      ),
+    );
+
+    expect(find.text('Ledger app update required'), findsOneWidget);
+    expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
+    await tester.tap(find.text('Try again'));
+    expect(retryCount, 1);
+  });
+
   testWidgets('explains automatic reconnect while opening Zcash', (
     tester,
   ) async {

@@ -195,7 +195,7 @@ void main() {
     );
     expect(tester.getSize(loadingCard), const Size(320, 200));
     expect(tester.getTopLeft(loadingCard), const Offset(36.5, 218));
-    expect(find.text('Checking ...'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_link_mobile_paste_button')),
       findsNothing,
@@ -231,7 +231,7 @@ void main() {
               onHome: _noop,
               waitingHeading: 'Your Gift Card\nis almost ready!',
               waitingDescription: 'Your gift will be ready to claim shortly.',
-              waitingStatusLabel: 'Wait 5:00 to claim',
+              waitingStatusLabel: 'Wait 1:15 to claim',
             ),
           ),
         ),
@@ -242,7 +242,7 @@ void main() {
       find.text('Your gift will be ready to claim shortly.'),
       findsOneWidget,
     );
-    expect(find.text('Wait 5:00 to claim'), findsOneWidget);
+    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
     expect(
       tester

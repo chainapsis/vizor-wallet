@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "payment_uri_handoff.cpp"
+  "password_input_source.cpp"
   "payment_uri_protocol.cpp"
   "single_instance.cpp"
   "utils.cpp"
@@ -99,13 +100,27 @@ if(NOT EXISTS "${VELOPACK_LIBC_ROOT}/include/Velopack.h")
   endif()
 endif()
 
-set(VELOPACK_LIBC_DLL "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.dll")
-set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.dll.lib")
+if(CMAKE_GENERATOR_PLATFORM)
+  if(CMAKE_GENERATOR_PLATFORM MATCHES "[Aa][Rr][Mm]64")
+    set(VELOPACK_LIBC_ARCH "arm64")
+  else()
+    set(VELOPACK_LIBC_ARCH "x64")
+  endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
+  set(VELOPACK_LIBC_ARCH "arm64")
+else()
+  set(VELOPACK_LIBC_ARCH "x64")
+endif()
+set(VELOPACK_LIBC_DLL "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_${VELOPACK_LIBC_ARCH}_msvc.dll")
+set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_${VELOPACK_LIBC_ARCH}_msvc.dll.lib")
+if(NOT EXISTS "${VELOPACK_LIBC_DLL}" OR NOT EXISTS "${VELOPACK_LIBC_IMPLIB}")
+  message(FATAL_ERROR "Velopack libc was not found for Windows ${VELOPACK_LIBC_ARCH}: ${VELOPACK_LIBC_DLL}")
+endif()
 
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
-target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib" "imm32.lib" "ole32.lib" "uuid.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "secur32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")
@@ -128,3 +143,9 @@ add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# Embed the read-only package validator so an adjacent script cannot be substituted.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/validate_update_package.ps1")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/validate_update_package.ps1" UPDATE_PACKAGE_SCRIPT)
+configure_file("update_package_script.h.in" "${CMAKE_CURRENT_BINARY_DIR}/update_package_script.h" @ONLY)

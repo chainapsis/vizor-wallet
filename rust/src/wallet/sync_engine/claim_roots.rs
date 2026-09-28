@@ -186,7 +186,7 @@ mod tests {
     fn wallet(path: &str, height: BlockHeight) -> WalletDatabase {
         let phrase = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&phrase).unwrap();
-        let address = keys::derive_software_address(WalletNetwork::Main, &seed, 0).unwrap();
+        let address = keys::derive_gift_address(WalletNetwork::Main, &seed, 0).unwrap();
         keys::register_gift_card_observer(
             path,
             WalletNetwork::Main,

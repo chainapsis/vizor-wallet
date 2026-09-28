@@ -784,11 +784,14 @@ void main() {
   });
 
   testWidgets(
-    'sidebar enables Swap and Pay but keeps Vote disabled while Ironwood migration is required',
+    'sidebar enables Vote, Swap and Pay while Ironwood migration is required',
     (tester) async {
       await tester.pumpWidget(
         _sidebarHarness(
-          _syncedSyncState,
+          _syncedSyncState.copyWith(
+            orchardBalance: BigInt.from(100000000),
+            ironwoodBalance: BigInt.from(100000000),
+          ),
           ironwoodHomeMigrationCtaState:
               const IronwoodHomeMigrationCtaState.start(
                 network: 'main',
@@ -810,10 +813,9 @@ void main() {
 
       expect(swap.onTap, isNotNull);
       expect(pay.onTap, isNotNull);
-      expect(vote.onTap, isNull);
+      expect(vote.onTap, isNotNull);
       expect(activity.onTap, isNotNull);
       expect(settings.onTap, isNotNull);
-      expect(_opacityForText(tester, 'Vote'), 0.5);
 
       await tester.tap(find.text('Swap'));
       await tester.pumpAndSettle();
@@ -824,8 +826,8 @@ void main() {
       expect(find.text('pay'), findsOneWidget);
 
       await tester.tap(find.text('Vote'));
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('voting'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('voting'), findsOneWidget);
 
       await tester.tap(find.text('Activity'));
       await tester.pumpAndSettle();
@@ -1200,13 +1202,6 @@ MouseCursor _cursorForKey(WidgetTester tester, Key key) {
         .first,
   );
   return mouseRegion.cursor;
-}
-
-double _opacityForText(WidgetTester tester, String text) {
-  final opacity = tester.widget<Opacity>(
-    find.ancestor(of: find.text(text), matching: find.byType(Opacity)).first,
-  );
-  return opacity.opacity;
 }
 
 final _syncedSyncState = SyncState(

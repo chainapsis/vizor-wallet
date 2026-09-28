@@ -709,7 +709,6 @@ class _MobileKeystonePcztSigningFlowState
       size: size,
       scanOptimized: true,
       quietZone: const PrettyQrQuietZone.modules(3),
-      frameInterval: const Duration(milliseconds: 100),
     );
   }
 

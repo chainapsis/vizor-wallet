@@ -4,16 +4,15 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/swap_feature_config.dart';
+import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
-import '../../../core/config/zcash_explorer.dart';
-import '../../../core/config/swap_feature_config.dart';
-import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../../core/layout/app_desktop_shell.dart';
-import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -25,16 +24,17 @@ import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../providers/zcash_explorer_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/zcash_explorer_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../payment_links/services/payment_link_transaction_matching.dart';
+import '../../payment_links/widgets/payment_link_gift_card.dart';
 import '../../send/widgets/send_recipient_resolver.dart';
 import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
-import '../../payment_links/widgets/payment_link_gift_card.dart';
-import '../../payment_links/services/payment_link_transaction_matching.dart';
+import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../gift_card_activity_index.dart';
 import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
@@ -256,7 +256,10 @@ class _ActivityTransactionStatusScreenState
     if (launched || !mounted) return;
     copyTextWithToast(
       context,
-      text: widget.args.txidHex,
+      text: zcashDisplayTxidHex(
+        widget.args.txidHex,
+        ZcashExplorerTxidOrder.protocol,
+      ),
       toastMessage: 'Transaction hash copied',
     );
   }
@@ -401,7 +404,7 @@ class _ActivityTransactionStatusScreenState
         status: _receivedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: truncatedTxid(tx.txidHex),
+        txIdText: _truncatedDisplayTxid(tx.txidHex),
         fromRecipient: fromRecipient,
         unknownFromKind: hasFromAddress
             ? null
@@ -455,7 +458,7 @@ class _ActivityTransactionStatusScreenState
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
       timestampText: _timestampText(tx),
-      txIdText: truncatedTxid(tx.txidHex),
+      txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
       isShieldedRecipient:
           zcashAddressDisplayKind(recipientAddress) ==
@@ -487,7 +490,7 @@ class _ActivityTransactionStatusScreenState
         status: _shieldedStatusFor(tx),
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
-        txIdText: truncatedTxid(tx.txidHex),
+        txIdText: _truncatedDisplayTxid(tx.txidHex),
         feeText: tx.fee > BigInt.zero
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
@@ -514,9 +517,57 @@ class _ActivityTransactionStatusScreenState
         : isInFlight
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+    final batchCount = giftCard.batchCount;
+    if (giftCard.kind == GiftCardActivityKind.created &&
+        batchCount != null &&
+        batchCount > 1) {
+      String privateAmount(BigInt value) => hideAmountIfPrivacyMode(
+        formatZecAmount(value),
+        privacyModeEnabled: privacyModeEnabled,
+        denomination: '',
+      );
+      final reserve = giftCard.claimFeeReserveZatoshi!;
+      final networkFeeLabel = isInFlight || isFailed
+          ? 'Estimated network fee'
+          : 'Network fee';
+      return GiftCardActivityDetailView.batch(
+        batch: GiftCardActivityBatch(
+          count: batchCount,
+          totalLabel: isFailed
+              ? 'Planned total'
+              : isInFlight
+              ? 'Submitted total'
+              : 'Total spent',
+          totalText: privateAmount(giftCard.amountZatoshi + reserve + tx.fee),
+          breakdownText:
+              'Cards ${privateAmount(giftCard.amountZatoshi)} ZEC · '
+              'Redeem fees ${privateAmount(reserve)} ZEC · '
+              '$networkFeeLabel ${privateAmount(tx.fee)} ZEC',
+        ),
+        isInFlight: isInFlight,
+        isFailed: isFailed,
+        artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),
+        amountText: privateAmount(
+          giftCard.amountPerCardZatoshi ??
+              giftCard.amountZatoshi ~/ BigInt.from(batchCount),
+        ),
+        statusText: statusText,
+        statusIconName: statusIconName,
+        statusColor: statusColor,
+        timestampText: _timestampText(tx),
+        txIdText: truncatedTxid(tx.txidHex),
+        onTxIdPressed: () => unawaited(_openTransactionExplorer()),
+        message: giftCard.message,
+        messageExpanded: _messageExpanded,
+        onToggleMessage: giftCard.message?.trim().isNotEmpty == true
+            ? _toggleMessageExpanded
+            : null,
+      );
+    }
     final amountText = hideAmountIfPrivacyMode(
       formatZecAmount(giftCard.amountZatoshi),
       privacyModeEnabled: privacyModeEnabled,
+      denomination: '',
     );
     return GiftCardActivityDetailView(
       kind: giftCard.kind,
@@ -539,7 +590,7 @@ class _ActivityTransactionStatusScreenState
           ? _toggleMessageExpanded
           : null,
       timestampText: _timestampText(tx, override: giftCard.activityTimestamp),
-      txIdText: truncatedTxid(tx.txidHex),
+      txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(
         tx,
         privacyModeEnabled: privacyModeEnabled,
@@ -646,7 +697,7 @@ class _ActivityTransactionStatusScreenState
               ReviewListRow(label: 'Timestamp', value: _timestampText(tx)),
               ReviewListRow(
                 label: 'Tx ID',
-                value: truncatedTxid(widget.args.txidHex),
+                value: _truncatedDisplayTxid(widget.args.txidHex),
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
@@ -791,6 +842,10 @@ class _ActivityTransactionStatusScreenState
     );
   }
 }
+
+String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
+  zcashDisplayTxidHex(protocolTxid, ZcashExplorerTxidOrder.protocol),
+);
 
 /// Centered 420px content column for the received/shielding receipts.
 ///

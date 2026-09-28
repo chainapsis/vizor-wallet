@@ -273,7 +273,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return null;
       }
-      return rust_sync.getTransactionDetail(
+      return await rust_sync.getTransactionDetail(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
@@ -360,6 +360,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               transaction: tx,
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
+              giftCardBatchCount: giftCard?.batchCount,
               giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
               giftCardStableId: giftCard?.stableId,
               giftCardActivityTimestamp: giftCard?.activityTimestamp,

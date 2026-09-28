@@ -180,6 +180,19 @@ mod tests {
         );
     }
     #[test]
+    fn restored_receipt_txids_identify_own_spend_after_claim_wallet_deletion() {
+        let c = db();
+        // A fresh scan recovers the confirmed spend but no locally-created marker.
+        c.execute_batch("INSERT INTO v_received_outputs VALUES(1,3,1,10010000); INSERT INTO transactions(id_tx,txid,mined_height,created) VALUES(1,X'AA',100,NULL); INSERT INTO sent_notes VALUES(1,1); INSERT INTO v_received_output_spends VALUES(3,1,1)").unwrap();
+        let missing_receipt = inspect(&c, &[1], "").unwrap();
+        assert!(missing_receipt.local_claim_txids.is_empty());
+        assert!(missing_receipt.all_funds_spent_elsewhere);
+        let restored_receipt = inspect(&c, &[1], "aa").unwrap();
+        assert!(restored_receipt.local_claim_txids.is_empty());
+        assert!(!restored_receipt.all_funds_spent_elsewhere);
+    }
+
+    #[test]
     fn own_receipt_and_reorg_are_not_losses() {
         let c = db();
         c.execute_batch("INSERT INTO v_received_outputs VALUES(1,3,1,10010000); INSERT INTO transactions(id_tx, txid, mined_height, expiry_height) VALUES(1,X'AA',100,140); INSERT INTO sent_notes VALUES(1,1); INSERT INTO v_received_output_spends VALUES(3,1,1)").unwrap();

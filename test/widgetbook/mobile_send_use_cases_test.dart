@@ -490,6 +490,17 @@ void main() {
     expect(find.text("You've denied camera access"), findsOneWidget);
     expect(find.text('Request again'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
+
+    await _pumpMobileSendUseCase(
+      tester,
+      buildMobileSendQrScanRestrictedUseCase,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Camera access is restricted'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Request again'), findsNothing);
+    expect(find.text('Cancel'), findsOneWidget);
   });
 }
 

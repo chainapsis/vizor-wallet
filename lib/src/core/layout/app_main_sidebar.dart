@@ -443,13 +443,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final ironwoodHomeMigrationPresentation = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
-    final ironwoodPostMigrationState = ref
-        .watch(ironwoodPostMigrationStateProvider)
-        .value;
-    final ironwoodVoteNavigationLocked =
-        ironwoodPostMigrationState?.locksNavigation ??
-        (ironwoodHomeMigrationPresentation.mode ==
-            IronwoodHomeMigrationCtaMode.start);
     final payNavigationLocked =
         ironwoodHomeMigrationPresentation.mode ==
             IronwoodHomeMigrationCtaMode.resume &&
@@ -571,10 +564,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _routeShouldBeActive('/voting'),
                       // Stays tappable while active: _navigateTo requests a
                       // poll-list refresh when re-tapped on /voting.
+                      // The round's snapshot notes determine eligibility;
+                      // remaining Orchard funds do not block voting entry.
                       onTap:
                           isImporting ||
-                              widget.disabledRoutePaths.contains('/voting') ||
-                              ironwoodVoteNavigationLocked
+                              widget.disabledRoutePaths.contains('/voting')
                           ? null
                           : () => _navigateTo('/voting'),
                     ),

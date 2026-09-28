@@ -124,7 +124,10 @@ void main() {
           100_000_000,
         ]);
       }
-      await minePaymentLinkRegtestBlocks(kPaymentLinkClaimConfirmationTarget);
+      // Recovery material is released only at claim finality.
+      await minePaymentLinkRegtestBlocks(
+        kPaymentLinkClaimRecoveryConfirmationTarget,
+      );
 
       for (final claim in manifest.claims) {
         await waitForPaymentLinkHistoryTransaction(

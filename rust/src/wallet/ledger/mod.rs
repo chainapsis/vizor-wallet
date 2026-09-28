@@ -58,6 +58,13 @@ const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
 const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
     "ledger_legacy_orchard_recovery_unsupported: The current Ledger Zcash app cannot sign a transaction that spends legacy Orchard funds into Ironwood.";
+/// Leads errors where the device's signatures verify against keys other than
+/// this account's, so the UI can ask for the Ledger that holds the account.
+const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
+/// Keep this string identical to `ledgerAppChangedError` in
+/// `lib/src/features/ledger/services/ledger_failure_guidance.dart`.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const LEDGER_APP_CHANGED: &str = "Your Ledger changed. Keep one Ledger connected and try again.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceAppInfo {
@@ -293,13 +300,19 @@ fn validate_fingerprint(
 }
 
 /// Builds the complete ordered APDU exchange for compact shielded signing.
-pub(crate) fn build_pczt_signing_plan(pczt_bytes: &[u8]) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, false).map(|(commands, _)| commands)
+pub(crate) fn build_pczt_signing_plan(
+    pczt_bytes: &[u8],
+    memo_hash_supported: bool,
+) -> Result<Vec<ApduCommand>, String> {
+    build_signing_plan(pczt_bytes, false, memo_hash_supported).map(|(commands, _)| commands)
 }
 
 /// Builds the complete ordered APDU exchange for a fully signed PCZT.
-pub(crate) fn build_pczt_full_signing_plan(pczt_bytes: &[u8]) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, true).map(|(commands, _)| commands)
+pub(crate) fn build_pczt_full_signing_plan(
+    pczt_bytes: &[u8],
+    memo_hash_supported: bool,
+) -> Result<Vec<ApduCommand>, String> {
+    build_signing_plan(pczt_bytes, true, memo_hash_supported).map(|(commands, _)| commands)
 }
 
 /// Blocks the known Ledger Zcash app 3.9.2 Orchard-to-Ironwood signing defect
@@ -337,9 +350,9 @@ pub fn finalize_pczt_signing(
     pczt_bytes: &[u8],
     responses: &[Vec<u8>],
 ) -> Result<Vec<SpendAuthSignature>, String> {
-    let (commands, requests) = build_signing_plan(pczt_bytes, false)?;
+    let (commands, requests) = build_signing_plan(pczt_bytes, false, true)?;
     let (_, shielded) = decode_signing_responses(&commands, &requests, responses)?;
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &shielded)?;
+    preflight_device_signatures(pczt_bytes, &shielded)?;
     Ok(shielded)
 }
 
@@ -349,7 +362,7 @@ pub fn finalize_pczt_full_signing(
     responses: &[Vec<u8>],
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
-    let (commands, requests) = build_signing_plan(pczt_bytes, true)?;
+    let (commands, requests) = build_signing_plan(pczt_bytes, true, true)?;
     let (transparent, shielded) = decode_signing_responses(&commands, &requests, responses)?;
     apply_signatures(pczt_bytes, &parsed, &transparent, &shielded)
 }
@@ -357,6 +370,7 @@ pub fn finalize_pczt_full_signing(
 fn build_signing_plan(
     pczt_bytes: &[u8],
     include_transparent: bool,
+    memo_hash_supported: bool,
 ) -> Result<(Vec<ApduCommand>, Vec<SignatureRequest>), String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !include_transparent && !parsed.transparent_inputs.is_empty() {
@@ -366,7 +380,7 @@ fn build_signing_plan(
         );
     }
 
-    let serialized = serialize_pczt(&parsed)?;
+    let serialized = serialize_pczt(&parsed, memo_hash_supported)?;
     let mut commands = Vec::new();
     for command in serialized {
         let total = command.packets.len();
@@ -573,6 +587,21 @@ pub fn open_zcash_app() -> Result<DeviceAppInfo, String> {
     Err(unsupported_platform())
 }
 
+/// App readiness opens its own USB session, and every session takes the first
+/// Ledger it finds. UFVK export and signing proceed only on the app readiness
+/// verified, so a swapped or second Ledger never answers for another version.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn require_readiness_app(
+    app: &transport::RunningDeviceApp,
+    expected_version: &str,
+) -> Result<(), String> {
+    if app.name == ZCASH_APP_NAME && app.version == expected_version {
+        Ok(())
+    } else {
+        Err(LEDGER_APP_CHANGED.into())
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn read_device_app(context: OperationContext) -> Result<DeviceAppInfo, String> {
     let app = transport::LedgerTransport::connect(context)?.current_app()?;
@@ -613,7 +642,12 @@ fn is_dashboard_app(name: &str) -> bool {
 }
 
 fn is_terminal_app_transition_error(error: &str) -> bool {
-    error.contains("locked")
+    matches!(
+        apdu::ledger_status_word(error),
+        Some(
+            0x5515 | 0x6982 | 0x5303 | 0x5502 | 0x6807 | 0x5501 | 0x6985 | 0x6a80 | 0x6e00 | 0x6d00
+        )
+    ) || error.contains("locked")
         || error.contains("PIN is not set")
         || error.contains("not installed")
         || error.contains("rejected")
@@ -621,25 +655,43 @@ fn is_terminal_app_transition_error(error: &str) -> bool {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn get_ufvk(account_index: u32) -> Result<String, String> {
+pub fn get_ufvk(account_index: u32, expected_app_version: Option<&str>) -> Result<String, String> {
     let operation = lock_operation()?;
-    transport::LedgerTransport::connect_ufvk(operation.context())?.ufvk(account_index)
+    let transport = transport::LedgerTransport::connect_ufvk(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
+    transport.ufvk(account_index)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn get_ufvk(_account_index: u32) -> Result<String, String> {
+pub fn get_ufvk(
+    _account_index: u32,
+    _expected_app_version: Option<&str>,
+) -> Result<String, String> {
     Err(unsupported_platform())
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
-    sign_pczt_with_progress(pczt_bytes, &|_, _| {})
+pub fn sign_pczt(
+    pczt_bytes: &[u8],
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+) -> Result<Vec<SpendAuthSignature>, String> {
+    sign_pczt_with_progress(
+        pczt_bytes,
+        &|_, _| {},
+        memo_hash_supported,
+        expected_app_version,
+    )
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
@@ -648,7 +700,7 @@ pub fn sign_pczt_with_progress(
                 .into(),
         );
     }
-    let commands = serialize_pczt(&parsed)?;
+    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
 
     let mut requests = Vec::new();
     if let Some(bundle) = &parsed.orchard_bundle {
@@ -678,6 +730,9 @@ pub fn sign_pczt_with_progress(
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
 
@@ -690,12 +745,16 @@ pub fn sign_pczt_with_progress(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, &signatures)?;
+    preflight_device_signatures(pczt_bytes, &signatures)?;
     Ok(signatures)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> {
+pub fn sign_pczt(
+    _pczt_bytes: &[u8],
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
+) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
 
@@ -703,6 +762,8 @@ pub fn sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<SpendAuthSignature>, String> 
 pub fn sign_pczt_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
 }
@@ -711,17 +772,28 @@ pub fn sign_pczt_with_progress(
 /// transparent and Orchard-family signature it requires, verifies those
 /// signatures through the PCZT Signer role, and returns the signed PCZT.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-pub fn sign_pczt_full(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    sign_pczt_full_with_progress(pczt_bytes, &|_, _| {})
+pub fn sign_pczt_full(
+    pczt_bytes: &[u8],
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    sign_pczt_full_with_progress(
+        pczt_bytes,
+        &|_, _| {},
+        memo_hash_supported,
+        expected_app_version,
+    )
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
-    let commands = serialize_pczt(&parsed)?;
+    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
 
     let transparent_requests = 0..parsed.transparent_inputs.len();
     let mut shielded_requests = Vec::new();
@@ -755,6 +827,9 @@ pub fn sign_pczt_full_with_progress(
     let operation = lock_operation()?;
     let _signing_status_cooldown = SigningStatusCooldownGuard;
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
+    if let Some(version) = expected_app_version {
+        require_readiness_app(&transport.current_app()?, version)?;
+    }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
 
@@ -790,7 +865,11 @@ pub fn sign_pczt_full_with_progress(
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-pub fn sign_pczt_full(_pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub fn sign_pczt_full(
+    _pczt_bytes: &[u8],
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
+) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
 }
 
@@ -798,8 +877,42 @@ pub fn sign_pczt_full(_pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 pub fn sign_pczt_full_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
+}
+
+fn signature_mismatch(message: String) -> String {
+    format!("{SIGNATURE_MISMATCH_PREFIX}{message}")
+}
+
+/// Whether applying a transparent signature failed because the signature did
+/// not verify, rather than because the PCZT input was malformed or incomplete.
+fn is_transparent_signature_verification_failure(error: &pczt::roles::signer::Error) -> bool {
+    matches!(
+        error,
+        pczt::roles::signer::Error::TransparentSign(
+            transparent::pczt::SignerError::InvalidExternalSignature
+        )
+    )
+}
+
+fn preflight_device_signatures(
+    pczt_bytes: &[u8],
+    signatures: &[SpendAuthSignature],
+) -> Result<(), String> {
+    crate::wallet::sync::check_orchard_spend_auth_signatures(pczt_bytes, signatures)
+        .map_err(device_signature_error)
+}
+
+fn device_signature_error(error: crate::wallet::sync::SpendAuthSignatureError) -> String {
+    match error {
+        crate::wallet::sync::SpendAuthSignatureError::Mismatch(message) => {
+            signature_mismatch(message)
+        }
+        crate::wallet::sync::SpendAuthSignatureError::Invalid(message) => message,
+    }
 }
 
 fn apply_signatures(
@@ -816,7 +929,7 @@ fn apply_signatures(
         ));
     }
 
-    crate::wallet::sync::preflight_orchard_spend_auth_signatures(pczt_bytes, shielded_signatures)?;
+    preflight_device_signatures(pczt_bytes, shielded_signatures)?;
 
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Ledger signatures: {e:?}"))?;
@@ -869,18 +982,27 @@ fn apply_signatures(
 
         signer
             .append_transparent_signature(input_index, signature)
-            .map_err(|e| format!("Validate Ledger transparent signature {input_index}: {e:?}"))?;
+            .map_err(|e| {
+                let message = format!("Validate Ledger transparent signature {input_index}: {e:?}");
+                // Only a signature that fails verification means the device
+                // signed with another key; the rest are PCZT construction bugs.
+                if is_transparent_signature_verification_failure(&e) {
+                    signature_mismatch(message)
+                } else {
+                    message
+                }
+            })?;
     }
 
     for signature in shielded_signatures {
         signer
             .apply_orchard_spend_auth_signature(signature)
             .map_err(|e| {
-                format!(
+                signature_mismatch(format!(
                     "Apply Ledger {:?} signature at action {}: {e:?}",
                     signature.value_pool(),
                     signature.action_index()
-                )
+                ))
             })?;
     }
 
@@ -937,7 +1059,7 @@ fn signing_status_cooldown_remaining(ready_at: Option<Instant>, now: Instant) ->
 
 fn classify_operation_state(cancelled: bool, timed_out: bool) -> Result<(), String> {
     if cancelled {
-        Err("Ledger operation was cancelled. Retry when ready.".into())
+        Err("ledger_cancelled: Ledger operation was cancelled. Retry when ready.".into())
     } else if timed_out {
         Err(
             "Ledger operation timed out waiting for the device. Reopen the Zcash app and retry."
@@ -973,6 +1095,60 @@ mod tests {
         value::Zatoshis,
     };
 
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn usb_requests_require_the_app_readiness_verified() {
+        let app = |name: &str, version: &str| transport::RunningDeviceApp {
+            name: name.into(),
+            version: version.into(),
+        };
+        assert!(require_readiness_app(&app("Zcash", "3.9.4"), "3.9.4").is_ok());
+        for (name, version) in [("Zcash", "3.9.3"), ("BOLOS", "3.9.4"), ("Bitcoin", "3.9.4")] {
+            assert_eq!(
+                require_readiness_app(&app(name, version), "3.9.4").unwrap_err(),
+                LEDGER_APP_CHANGED
+            );
+        }
+    }
+
+    #[test]
+    fn only_failed_signature_verification_reads_as_a_signature_mismatch() {
+        use crate::wallet::sync::SpendAuthSignatureError;
+
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Mismatch(
+                "Apply Orchard signature at action 0: InvalidSpendAuthSignature".into()
+            )),
+            "ledger_signature_mismatch: Apply Orchard signature at action 0: InvalidSpendAuthSignature"
+        );
+        assert_eq!(
+            device_signature_error(SpendAuthSignatureError::Invalid(
+                "Missing 1 required compact spend-authorization signature(s)".into()
+            )),
+            "Missing 1 required compact spend-authorization signature(s)"
+        );
+    }
+
+    #[test]
+    fn only_an_unverifiable_transparent_signature_reads_as_a_signature_mismatch() {
+        use pczt::roles::signer::Error;
+
+        assert!(is_transparent_signature_verification_failure(
+            &Error::TransparentSign(transparent::pczt::SignerError::InvalidExternalSignature)
+        ));
+        for other in [
+            Error::InvalidIndex,
+            Error::TransparentSign(transparent::pczt::SignerError::MissingPreimage),
+            Error::TransparentSign(transparent::pczt::SignerError::UnsupportedPubkey),
+            Error::TransparentSign(transparent::pczt::SignerError::WrongSpendingKey),
+        ] {
+            assert!(
+                !is_transparent_signature_verification_failure(&other),
+                "{other:?}"
+            );
+        }
+    }
+
     #[test]
     fn cancellation_targets_only_the_active_operation_generation() {
         let state = OperationState::new();
@@ -1003,7 +1179,7 @@ mod tests {
         assert_eq!(classify_operation_state(false, false), Ok(()));
         assert!(classify_operation_state(true, false)
             .unwrap_err()
-            .contains("cancelled"));
+            .starts_with("ledger_cancelled: "));
         assert!(classify_operation_state(false, true)
             .unwrap_err()
             .contains("timed out"));
@@ -1062,6 +1238,16 @@ mod tests {
         assert!(is_terminal_app_transition_error(
             "Ledger request was rejected on the device"
         ));
+        for status in [0x5515, 0x5502, 0x6807, 0x5501, 0x6985, 0x6a80, 0x6d00] {
+            assert!(is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
+        for status in [0x6601, 0x6901, 0xb007] {
+            assert!(!is_terminal_app_transition_error(&apdu::map_status_word(
+                status
+            )));
+        }
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -1251,7 +1437,7 @@ mod tests {
     #[test]
     fn shielded_only_api_rejects_transparent_inputs_before_transport() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        assert!(sign_pczt(&pczt_bytes)
+        assert!(sign_pczt(&pczt_bytes, false, None)
             .unwrap_err()
             .contains("use sign_pczt_full"));
     }
@@ -1259,7 +1445,7 @@ mod tests {
     #[test]
     fn full_plan_flattens_pczt_packets_before_transparent_requests() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
 
         assert_eq!(commands.first().map(|command| command.ins), Some(0x52));
         assert_eq!(commands.last().map(|command| command.ins), Some(0x55));
@@ -1272,7 +1458,7 @@ mod tests {
     #[test]
     fn short_mobile_exchange_preserves_terminal_status_error() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
         let mut responses = vec![vec![0x90, 0]; commands.len() - 2];
         responses.push(vec![0x69, 0x85]);
 
@@ -1284,7 +1470,7 @@ mod tests {
     #[test]
     fn short_successful_mobile_exchange_reports_response_count() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
         let responses = vec![vec![0x90, 0]; commands.len() - 1];
 
         assert!(finalize_pczt_full_signing(&pczt_bytes, &responses)

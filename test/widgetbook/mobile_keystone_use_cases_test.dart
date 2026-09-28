@@ -70,6 +70,18 @@ void main() {
     expect(find.byType(PrettyQrView, skipOffstage: false), findsOneWidget);
   });
 
+  testWidgets('mobile Keystone scan restricted use case explains the block', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildMobileKeystoneScanRestrictedUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Camera access is restricted'), findsOneWidget);
+    expect(find.text('Screen Time or device management'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Request again'), findsNothing);
+  });
+
   testWidgets('mobile Keystone active scan use case renders common scan card', (
     tester,
   ) async {

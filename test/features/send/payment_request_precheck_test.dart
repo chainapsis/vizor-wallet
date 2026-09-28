@@ -50,6 +50,7 @@ class FakeSendApi {
   void Function()? whileValidating;
 
   var validateCalls = 0;
+  bool isLedger = false;
   var proposeCalls = 0;
   String? lastValidatedNetwork;
   final discarded = <BigInt>[];
@@ -117,6 +118,7 @@ class FakeSendApi {
   }
 
   PaymentRequestPrecheck get precheck => PaymentRequestPrecheck(
+    isLedgerAccount: (_) => isLedger,
     spendableIsAuthoritativeNow: () => spendableIsAuthoritativeNow,
     spendableBalanceNow: () => spendableBalanceNow ?? BigInt.zero,
     validateAddress: validateAddress,

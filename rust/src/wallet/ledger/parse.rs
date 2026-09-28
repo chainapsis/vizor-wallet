@@ -4,11 +4,17 @@
 use std::collections::BTreeMap;
 
 use ff::PrimeField;
-use orchard::{bundle::BundleVersion, note::NoteVersion, ValuePool};
+use orchard::{
+    bundle::BundleVersion,
+    note::{NoteVersion, Rho},
+    note_encryption::{IronwoodDomain, OrchardDomain},
+    Note, ValuePool,
+};
 use pczt::{
     roles::verifier::{OrchardError, TransparentError, Verifier},
     Pczt,
 };
+use zcash_note_encryption::{try_output_recovery_with_pkd_esk, Domain};
 use zcash_primitives::transaction::components::orchard::bundle_version_for_branch;
 use zcash_protocol::consensus::BranchId;
 use zcash_script::script::Evaluable;
@@ -108,6 +114,10 @@ pub(super) struct ParsedPczt {
     pub transparent_outputs: Vec<TransparentOutput>,
     pub orchard_bundle: Option<ShieldedBundle>,
     pub ironwood_bundle: Option<IronwoodBundle>,
+    /// Whether any output memo would take the device's memo-hash render path.
+    /// Recorded here rather than rejected during parsing so the policy decision
+    /// stays with the caller that knows the connected app version.
+    pub memo_reaches_hash_path: bool,
 }
 
 pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
@@ -131,6 +141,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     let mut transparent_outputs = Vec::new();
     let mut orchard_bundle = None;
     let mut ironwood_bundle = None;
+    let mut memo_reaches_hash_path = false;
 
     let verifier = Verifier::new(pczt)
         .with_transparent::<String, _>(|bundle| {
@@ -148,6 +159,8 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
 
     let verifier = verifier
         .with_orchard::<String, _>(|bundle| {
+            memo_reaches_hash_path |=
+                bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
             orchard_bundle = convert_shielded_bundle(
                 bundle,
                 branch,
@@ -162,6 +175,8 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     if global.tx_version >= V6_TX_VERSION {
         verifier
             .with_ironwood::<String, _>(|bundle| {
+                memo_reaches_hash_path |=
+                    bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
                 ironwood_bundle =
                     convert_ironwood_bundle(bundle, branch, shielded_derivation.as_ref())
                         .map_err(OrchardError::Custom)?;
@@ -176,6 +191,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
         transparent_outputs,
         orchard_bundle,
         ironwood_bundle,
+        memo_reaches_hash_path,
     })
 }
 
@@ -536,6 +552,86 @@ fn convert_shielded_action(
     })
 }
 
+fn bundle_memo_reaches_hash_path(bundle: &orchard::pczt::Bundle) -> Result<bool, String> {
+    for action in bundle.actions() {
+        if output_memo_reaches_hash_path(action)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool, String> {
+    let output = action.output();
+    let note = Note::from_parts(
+        output
+            .recipient()
+            .ok_or("Shielded output is missing its recipient")?,
+        output
+            .value()
+            .ok_or("Shielded output is missing its value")?,
+        Rho::from_nf_old(*action.spend().nullifier()),
+        output.rseed().ok_or("Shielded output is missing rseed")?,
+        *output.note_version(),
+    )
+    .into_option()
+    .ok_or("Shielded output note is invalid")?;
+    let pk_d = OrchardDomain::get_pk_d(&note);
+    let esk = OrchardDomain::derive_esk(&note).ok_or("Shielded output is missing esk")?;
+    let recovered = if *output.note_version() == NoteVersion::V3 {
+        try_output_recovery_with_pkd_esk(
+            &IronwoodDomain::for_pczt_action(action),
+            pk_d,
+            esk,
+            action,
+        )
+    } else {
+        try_output_recovery_with_pkd_esk(&OrchardDomain::for_pczt_action(action), pk_d, esk, action)
+    };
+    let Some((_, _, memo)) = recovered else {
+        // Restricted zero-value outputs can have deliberately random ciphertext.
+        return if note.value().inner() == 0 {
+            Ok(false)
+        } else {
+            Err("Could not verify the memo before Ledger signing".into())
+        };
+    };
+    Ok(memo_reaches_ledger_hash_path(&memo))
+}
+
+/// Keep this string identical to `ledgerMemoHashUnsupportedError` in
+/// `lib/src/features/ledger/ledger_capability.dart`: the Dart failure guidance
+/// recognises this error by matching on it.
+pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
+    "Update the Ledger Zcash app to sign non-English memos";
+
+/// Whether the Ledger Zcash app would render `memo` as a hash rather than as
+/// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`
+/// refuses such a memo for them. Mirrors `memo_display` and
+/// `is_displayable_memo_text` in the device app.
+///
+/// The device also falls back to hashing once a transaction's retained memo
+/// text passes its budget, which takes three maximum-length memos. Our
+/// proposals carry at most one memo-bearing output, so that case is not
+/// modelled here.
+fn memo_reaches_ledger_hash_path(memo: &[u8; 512]) -> bool {
+    // ZIP-302 "no memo": 0xF6 followed by zeros. The device shows no field.
+    if memo[0] == 0xf6 && memo[1..].iter().all(|byte| *byte == 0) {
+        return false;
+    }
+    let Some(len) = memo.iter().rposition(|byte| *byte != 0).map(|i| i + 1) else {
+        return false;
+    };
+    // Any other lead byte above the text range is hashed without inspection.
+    if memo[0] > 0xf4 {
+        return true;
+    }
+    match std::str::from_utf8(&memo[..len]) {
+        Ok(text) => !text.bytes().all(|byte| (0x20..=0x7e).contains(&byte)),
+        Err(_) => true,
+    }
+}
+
 fn map_transparent_error(error: TransparentError<String>) -> String {
     match error {
         TransparentError::Custom(message) => message,
@@ -553,6 +649,182 @@ fn map_orchard_error(pool: &str, error: OrchardError<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
+        use orchard::{
+            builder::{Builder, BundleType},
+            keys::{FullViewingKey, Scope, SpendingKey},
+            note::RandomSeed,
+            tree::{MerkleHashOrchard, MerklePath},
+            value::NoteValue,
+        };
+        use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer};
+        use voting_crypto_deps::rand::rngs::OsRng;
+        use zcash_primitives::transaction::{builder::PcztParts, TxVersion};
+        use zcash_protocol::consensus::{BlockHeight, MainNetwork};
+
+        let fvk = FullViewingKey::from(&SpendingKey::from_bytes([0x43; 32]).unwrap());
+        let rho = Rho::from_bytes(&[1; 32]).into_option().unwrap();
+        let rseed = (0u8..=255)
+            .find_map(|byte| RandomSeed::from_bytes([byte; 32], &rho).into_option())
+            .unwrap();
+        let note = Note::from_parts(
+            fvk.address_at(0u32, Scope::External),
+            NoteValue::from_raw(100_000),
+            rho,
+            rseed,
+            version.note_version(),
+        )
+        .into_option()
+        .unwrap();
+        let ironwood = version.value_pool() == ValuePool::Ironwood;
+        let branch = if version != BundleVersion::orchard_v2() {
+            BranchId::Nu6_3
+        } else {
+            BranchId::Nu6_2
+        };
+        let path =
+            MerklePath::from_parts(0, [MerkleHashOrchard::from_bytes(&[0; 32]).unwrap(); 32]);
+        let mut builder = Builder::new(
+            BundleType::UNPADDED,
+            version,
+            version.default_flags(),
+            path.root(note.commitment().into()),
+        )
+        .unwrap();
+        builder.add_spend(fvk.clone(), note, path).unwrap();
+        let mut memo_bytes = [0; 512];
+        memo_bytes[..memo.len()].copy_from_slice(memo);
+        if version.default_flags().cross_address_enabled() {
+            builder
+                .add_output(
+                    with_ovk.then(|| fvk.to_ovk(Scope::External)),
+                    fvk.address_at(1u32, Scope::External),
+                    NoteValue::from_raw(value),
+                    memo_bytes,
+                )
+                .unwrap();
+        } else {
+            builder
+                .add_change_output(
+                    fvk.clone(),
+                    with_ovk.then(|| fvk.to_ovk(Scope::External)),
+                    fvk.address_at(1u32, Scope::External),
+                    NoteValue::from_raw(value),
+                    memo_bytes,
+                )
+                .unwrap();
+        }
+        let (mut bundle, metadata) = builder.build_for_pczt(&mut OsRng).unwrap();
+        let derivation = orchard::pczt::Zip32Derivation::parse(
+            [0x22; 32],
+            vec![0x8000_0020, 0x8000_0085, 0x8000_0000],
+        )
+        .unwrap();
+        bundle
+            .update_with(|mut bundle| {
+                bundle.update_action_with(metadata.spend_action_index(0).unwrap(), |mut action| {
+                    action.set_spend_zip32_derivation(derivation);
+                    Ok(())
+                })
+            })
+            .unwrap();
+        let (orchard, ironwood) = if ironwood {
+            (None, Some(bundle))
+        } else {
+            (Some(bundle), None)
+        };
+        let pczt = Creator::build_from_parts(PcztParts {
+            params: MainNetwork,
+            version: TxVersion::suggested_for_branch(branch),
+            consensus_branch_id: branch,
+            lock_time: 0,
+            expiry_height: BlockHeight::from_u32(0),
+            transparent: None,
+            sapling: None,
+            orchard,
+            ironwood,
+        })
+        .unwrap();
+        IoFinalizer::new(pczt)
+            .finalize_io()
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn memos_the_device_would_hash_are_refused_for_apps_without_memo_hash() {
+        for version in [
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::ironwood_v3(),
+        ] {
+            for memo in [
+                b"first\nsecond".as_slice(),
+                b"first\rsecond",
+                b"first\r\nsecond",
+                b"\n",
+                b"first\tsecond",
+                "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
+                "gg \u{1F389}".as_bytes(),
+                b"caf\xc3\xa9",
+                // A non-text lead byte the device hashes without inspecting.
+                b"\xffabc",
+                // Valid text tag, but not valid UTF-8 after it.
+                b"a\xff",
+                b"nul\0inside",
+            ] {
+                for value in [0, 90_000] {
+                    let pczt = memo_pczt(version, memo, value, true);
+                    assert!(super::super::build_pczt_full_signing_plan(&pczt, false)
+                        .unwrap_err()
+                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert!(super::super::build_pczt_signing_plan(&pczt, false)
+                        .unwrap_err()
+                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    // An app that can show the memo hash signs the same PCZT.
+                    assert!(super::super::build_pczt_full_signing_plan(&pczt, true).is_ok());
+                    assert!(super::super::build_pczt_signing_plan(&pczt, true).is_ok());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn memo_judgement_uses_ciphertext_even_without_an_ock() {
+        let pczt = memo_pczt(
+            BundleVersion::ironwood_v3(),
+            "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
+            90_000,
+            false,
+        );
+        let pczt = crate::wallet::sync::redact_pczt_for_signer(&pczt).unwrap();
+        assert!(parse_pczt(&pczt).unwrap().memo_reaches_hash_path);
+    }
+
+    #[test]
+    fn printable_ascii_memos_still_build_signing_plans() {
+        for version in [
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::ironwood_v3(),
+        ] {
+            for memo in [
+                b"".as_slice(),
+                b"single line",
+                br"literal\n",
+                // ZIP-302 "no memo": the device shows no field at all.
+                b"\xf6",
+                b" leading and trailing ",
+                br#"~!@#$%^&*()_+-=[]{};':\",.<>/?`|"#,
+                &[b'x'; 512],
+            ] {
+                let pczt = memo_pczt(version, memo, 90_000, true);
+                assert!(super::super::build_pczt_full_signing_plan(&pczt, false).is_ok());
+            }
+        }
+    }
 
     fn derivation() -> transparent::pczt::Bip32Derivation {
         transparent::pczt::Bip32Derivation::parse(

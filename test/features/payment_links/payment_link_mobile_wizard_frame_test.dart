@@ -180,11 +180,11 @@ void main() {
         state: PaymentLinkReadyMobileState.waiting,
         card: const SizedBox.shrink(),
         onHome: () {},
-        waitingStatusLabel: 'Wait 5:00 to claim',
+        waitingStatusLabel: 'Wait 1:15 to claim',
       ),
     );
 
-    final status = tester.getRect(find.text('Wait 5:00 to claim'));
+    final status = tester.getRect(find.text('Wait 1:15 to claim'));
     final action = tester.getRect(
       find.byKey(const ValueKey('payment_link_mobile_ready_home_button')),
     );

@@ -13,6 +13,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/ledger_error_codes.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
@@ -545,18 +546,29 @@ class _LedgerShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    _deviceGuidance = ledgerFailureGuidance(error);
-    if (_deviceGuidance != null) return _deviceGuidance!.message;
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.shield,
+    );
+    _deviceGuidance = guidance;
+    // Retrying the same request fails the same way on the device.
+    if (guidance?.retryable == false) _canRetry = false;
+    final failure = LedgerRequestFailure.fromError(error);
+    if (failure == LedgerRequestFailure.requestRejected &&
+        classifyLedgerError(error) == LedgerFailureKind.hostRequestRejected &&
+        _round > 1) {
+      return 'Your Ledger couldn’t accept this approval. Earlier approvals were already sent.';
+    }
+    if (guidance != null) return guidance.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
     );
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    if (failure == LedgerRequestFailure.declined) {
       return 'The shield transaction was rejected on your Ledger.';
     }
-    if (lower.contains('no ledger') || lower.contains('hid')) {
-      return 'Connect and unlock your Ledger. $appInstruction';
-    }
+    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    if (usb != null) return usb;
     if (lower.contains('sync')) {
       return 'Sync the wallet before shielding transparent balance.';
     }

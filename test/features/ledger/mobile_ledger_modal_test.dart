@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,7 @@ void main() {
       );
       await frames(tester);
       expect(find.text('Did you reset pairing?'), findsNothing);
-      expect(find.text('Couldn’t complete the request'), findsOneWidget);
+      expect(find.text('Request failed'), findsOneWidget);
       ble.pairingInvalidEvidence.value = true;
       await frames(tester);
       expect(find.text('Pair your Ledger again'), findsOneWidget);
@@ -91,6 +92,46 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final (label, error, retryable) in fixture.pairingExportFailures) {
+    testWidgets('$label export failure offers retry only when retryable', (
+      tester,
+    ) async {
+      final accounts = fixture.FakeAccounts();
+      var exports = 0;
+      final c = fixture.containerFor(
+        fixture.FakeBle(),
+        accounts,
+        platform: TargetPlatform.android,
+        export: () async {
+          exports++;
+          throw StateError(error);
+        },
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: harness(
+            LedgerAccessRecoveryModal(
+              account: fixture.account,
+              pairingRecovery: true,
+              onRetry: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await frames(tester);
+      await tester.tap(find.text('Try again'));
+      await frames(tester);
+      await tester.tap(find.text('Ledger Flex'));
+      await frames(tester);
+      fixture.expectPairingFailure(retryable: retryable);
+      expect(exports, 1);
+      expect(accounts.writes, 0);
+    });
+  }
 
   for (final failure in [
     LedgerMobileFailure.pairingInvalid,
@@ -158,9 +199,9 @@ void main() {
       if (!invalid) {
         expect(
           find.text(
-            failure == LedgerMobileFailure.rejected
-                ? 'Request declined'
-                : 'Couldn’t complete the request',
+            LedgerRequestFailure.fromError(
+              LedgerMobileException(failure, 'diagnostic'),
+            ).title,
           ),
           findsOneWidget,
         );

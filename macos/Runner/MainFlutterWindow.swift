@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 import FlutterMacOS
 import LocalAuthentication
 import Security
@@ -40,6 +41,143 @@ private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
     _ toolbar: NSToolbar
   ) -> [NSToolbarItem.Identifier] {
     [.flexibleSpace]
+  }
+}
+
+/// App-password convenience only. Never enables sources or changes key handling.
+/// Reads the OS lock flag without changing keyboard layout or lock state.
+final class CapsLockChannel {
+  private let channel: FlutterMethodChannel
+  private weak var window: NSWindow?
+  private var monitor: Any?
+  private var observers: [NSObjectProtocol] = []
+
+  init(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    self.window = window
+    channel = FlutterMethodChannel(name: "com.zcash.wallet/caps_lock", binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "getCapsLockState" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result(self?.currentState())
+    }
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+      self?.publish()
+      return event
+    }
+    let center = NotificationCenter.default
+    for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+      observers.append(center.addObserver(forName: name, object: window, queue: .main) {
+        [weak self] _ in self?.publish()
+      })
+    }
+    observers.append(center.addObserver(
+      forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.publish() })
+    observers.append(center.addObserver(
+      forName: NSApplication.willResignActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.channel.invokeMethod("onStateChanged", arguments: nil) })
+  }
+
+  private func currentState() -> Bool? {
+    guard NSApp.isActive, window?.isKeyWindow == true else { return nil }
+    return NSEvent.modifierFlags.contains(.capsLock)
+  }
+
+  private func publish() {
+    channel.invokeMethod("onStateChanged", arguments: currentState())
+  }
+
+  deinit {
+    channel.setMethodCallHandler(nil)
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+  }
+}
+
+final class PasswordInputSourceChannel {
+  private static var channel: FlutterMethodChannel?
+
+  private static func property(_ source: TISInputSource, _ key: CFString) -> AnyObject? {
+    guard let pointer = TISGetInputSourceProperty(source, key) else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue()
+  }
+
+  private static func capture() -> [String: String]? {
+    guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+          let id = property(source, kTISPropertyInputSourceID) as? String,
+          property(source, kTISPropertyInputSourceIsEnabled) as? Bool == true,
+          property(source, kTISPropertyInputSourceIsSelectCapable) as? Bool == true
+    else { return nil }
+    return ["platform": "macos", "id": id]
+  }
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/password_input_source", binaryMessenger: messenger)
+    self.channel = channel
+    channel.setMethodCallHandler { [weak window] call, result in
+      guard let window, NSApp.isActive, window.isKeyWindow else {
+        result(nil)
+        return
+      }
+      switch call.method {
+      case "capture":
+        result(capture())
+      case "restore":
+        guard let args = call.arguments as? [String: Any],
+              let target = args["target"] as? [String: String],
+              let expected = args["expected"] as? [String: String],
+              target["platform"] == "macos", let id = target["id"],
+              capture() == expected, target != expected,
+              let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue()
+                as? [TISInputSource]
+        else { result(nil); return }
+        for source in sources {
+          guard property(source, kTISPropertyInputSourceID) as? String == id,
+                property(source, kTISPropertyInputSourceIsEnabled) as? Bool == true,
+                property(source, kTISPropertyInputSourceIsSelectCapable) as? Bool == true,
+                property(source, kTISPropertyInputSourceCategory) as? String ==
+                  kTISCategoryKeyboardInputSource as String
+          else { continue }
+          // Main-thread, synchronous selection. Failed selection is a no-op for
+          // this feature; no fallback source or repeated enforcement is used.
+          _ = TISSelectInputSource(source)
+          break
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+}
+
+/// Exit-only hiding needs to be synchronous and must suppress AppKit's
+/// last-window auto-quit until Flutter has replied to its termination request.
+final class DesktopExitChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/desktop_exit",
+      binaryMessenger: messenger
+    )
+    self.channel = channel
+    channel.setMethodCallHandler { [weak window] call, result in
+      guard call.method == "hideForExit" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let window, let delegate = NSApp.delegate as? AppDelegate else {
+        result(FlutterError(code: "missing_window", message: "The main window is unavailable.", details: nil))
+        return
+      }
+      delegate.isPreparingDesktopExit = true
+      window.orderOut(nil)
+      result(nil)
+    }
   }
 }
 
@@ -1040,6 +1178,7 @@ class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
   private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+  private var capsLockChannel: CapsLockChannel?
   private var ledgerBleHandler: LedgerMobileHandler?
   private var ledgerBleMethodChannel: FlutterMethodChannel?
   private var ledgerBleDiscoveryChannel: FlutterEventChannel?
@@ -1061,6 +1200,17 @@ class MainFlutterWindow: NSWindow {
     installVizorWindowToolbarObservers()
     applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
+    capsLockChannel = CapsLockChannel(
+      window: self, messenger: flutterViewController.engine.binaryMessenger
+    )
+    PasswordInputSourceChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    DesktopExitChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     WindowAppearanceChannel.register(
       window: self,
       visualEffectView: desktopWindowViewController.visualEffectView,

@@ -23,7 +23,10 @@ use zcash_voting::{
     WalletDbOpener,
 };
 
+use zcash_client_backend::data_api::{Account, WalletRead};
+
 use crate::wallet::db::WalletDatabase;
+use crate::wallet::keys::{hardware_signer_kind, parse_account_uuid, HardwareSignerKind};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync::open_wallet_db_for_read;
 use crate::wallet::voting::network::wallet_network;
@@ -103,7 +106,15 @@ pub async fn open_pipeline(
         db_path: inputs.db_path.clone(),
         network: wallet_network(inputs.network),
     };
-    DelegationPipeline::new(
+    let wallet = opener.open_for_read()?;
+    let account_id = parse_account_uuid(&inputs.account_uuid).map_err(invalid_input)?;
+    let account = wallet
+        .get_account(account_id)
+        .map_err(|error| internal(format!("Read voting account: {error}")))?
+        .ok_or_else(|| invalid_input("Voting account not found"))?;
+    let is_ledger = hardware_signer_kind(account.source()) == Some(HardwareSignerKind::Ledger);
+    drop(wallet);
+    let pipeline = DelegationPipeline::new(
         voting_db,
         opener,
         lwd,
@@ -111,8 +122,14 @@ pub async fn open_pipeline(
         hotkey,
         inputs.bundle_policy,
         inputs.session_json.as_deref(),
-    )
-    .map(Arc::new)
+    )?;
+    // Ledger needs a recoverable hotkey output and a printable ASCII memo.
+    // Keep account-OVK recovery disabled for software and Keystone accounts.
+    Ok(Arc::new(if is_ledger {
+        pipeline.with_ledger_output_review()
+    } else {
+        pipeline
+    }))
 }
 
 async fn blocking<T: Send + 'static>(

@@ -12,7 +12,7 @@ import 'send_review_layout.dart';
 
 const _selfSendTransparentLookbackLimit = 20;
 
-/// Current unified address and recent transparent receive addresses of every
+/// Current/legacy unified addresses and recent transparent receive addresses of every
 /// local account, keyed by the trimmed address. Used by send review surfaces to
 /// recognize a recipient as one of the user's own accounts without persisting
 /// addresses in [AccountInfo].
@@ -28,10 +28,10 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
   final dbPath = await getWalletDbPath();
   final byAddress = <String, AccountInfo>{};
   for (final account in accounts) {
-    await _addOwnAccountAddress(
+    await _addOwnAccountAddresses(
       byAddress: byAddress,
       account: account,
-      loadAddress: () => rust_wallet.getUnifiedAddress(
+      loadAddresses: () => rust_wallet.getReceiveAddressAliases(
         dbPath: dbPath,
         network: network,
         accountUuid: account.uuid,
@@ -52,27 +52,6 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
   }
   return byAddress;
 });
-
-Future<void> _addOwnAccountAddress({
-  required Map<String, AccountInfo> byAddress,
-  required AccountInfo account,
-  required Future<String> Function() loadAddress,
-  required String addressKind,
-}) async {
-  try {
-    final address = (await loadAddress()).trim();
-    if (address.isNotEmpty) {
-      byAddress[address] = account;
-    }
-  } catch (e) {
-    // Best-effort: an account whose address fails to load simply is not
-    // recognized as a self-transfer target for that address kind.
-    log(
-      'ownAccountAddresses: $addressKind address load failed for '
-      '${account.uuid}: $e',
-    );
-  }
-}
 
 Future<void> _addOwnAccountAddresses({
   required Map<String, AccountInfo> byAddress,

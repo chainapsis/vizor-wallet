@@ -110,12 +110,16 @@ class _MobileLedgerConnectScreenState
   }
 
   String _friendlyError(Object error) {
-    final guidance = ledgerFailureGuidance(error);
-    if (guidance != null) return guidance.message;
-    final lower = '$error'.toLowerCase();
-    if (lower.contains('rejected') || lower.contains('6985')) {
+    // A declined viewing-key request keeps its own copy even when typed.
+    if (LedgerRequestFailure.fromError(error) ==
+        LedgerRequestFailure.declined) {
       return 'The viewing-key request was rejected on your Ledger.';
     }
+    final guidance = ledgerFailureGuidance(
+      error,
+      requestKind: LedgerRequestKind.viewingKey,
+    );
+    if (guidance != null) return guidance.message;
     return 'Vizor could not read this Ledger account. Check the connection and try again.';
   }
 

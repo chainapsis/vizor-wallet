@@ -299,11 +299,14 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
 /// Render this above the dark scrim, not inside [MobileScanner.errorBuilder].
 /// Otherwise text that extends outside the transparent viewfinder hole is
 /// composited through the scrim and appears to change color at the edges.
-class MobileScanCameraErrorOverlay extends StatelessWidget {
+class MobileScanCameraErrorOverlay extends StatefulWidget {
   const MobileScanCameraErrorOverlay({
     required this.controller,
     required this.permissionDeniedMessage,
     required this.unavailableMessage,
+    this.restrictedMessage =
+        'Screen Time or device management is blocking the camera on this '
+        'device.',
     this.maxWidth = 260,
     this.onOpenSettings,
     this.openSettingsLabel = 'Open settings',
@@ -313,26 +316,68 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
   final MobileScannerController controller;
   final String permissionDeniedMessage;
   final String unavailableMessage;
+
+  /// Shown instead of [permissionDeniedMessage] when iOS reports the camera
+  /// as restricted; Settings cannot lift that, so no settings action shows.
+  final String restrictedMessage;
   final double maxWidth;
   final Future<void> Function()? onOpenSettings;
   final String openSettingsLabel;
 
   @override
+  State<MobileScanCameraErrorOverlay> createState() =>
+      _MobileScanCameraErrorOverlayState();
+}
+
+class _MobileScanCameraErrorOverlayState
+    extends State<MobileScanCameraErrorOverlay> {
+  late CameraRestrictionProbe _restriction;
+
+  @override
+  void initState() {
+    super.initState();
+    _restriction = _createRestrictionProbe();
+  }
+
+  @override
+  void didUpdateWidget(covariant MobileScanCameraErrorOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    _restriction.dispose();
+    _restriction = _createRestrictionProbe();
+  }
+
+  @override
+  void dispose() {
+    _restriction.dispose();
+    super.dispose();
+  }
+
+  CameraRestrictionProbe _createRestrictionProbe() =>
+      CameraRestrictionProbe(widget.controller)
+        ..addListener(_handleRestrictionChanged);
+
+  void _handleRestrictionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<MobileScannerState>(
-      valueListenable: controller,
+      valueListenable: widget.controller,
       builder: (context, state, _) {
         final message = _messageFor(state);
         if (message == null) return const SizedBox.shrink();
         final showSettingsButton =
             state.error?.errorCode == MobileScannerErrorCode.permissionDenied &&
-            onOpenSettings != null;
+            !_restriction.restricted &&
+            widget.onOpenSettings != null;
 
         final content = Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth),
+              constraints: BoxConstraints(maxWidth: widget.maxWidth),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -347,12 +392,12 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
                     const SizedBox(height: AppSpacing.sm),
                     AppButton(
                       key: const ValueKey('mobile_scan_open_settings_button'),
-                      onPressed: () => unawaited(onOpenSettings!()),
+                      onPressed: () => unawaited(widget.onOpenSettings!()),
                       variant: AppButtonVariant.secondary,
                       size: AppButtonSize.medium,
                       minWidth: 128,
                       leading: const AppIcon(AppIcons.cog),
-                      child: Text(openSettingsLabel),
+                      child: Text(widget.openSettingsLabel),
                     ),
                   ],
                 ],
@@ -370,9 +415,12 @@ class MobileScanCameraErrorOverlay extends StatelessWidget {
   String? _messageFor(MobileScannerState state) {
     final error = state.error;
     if (error == null) return null;
-    return error.errorCode == MobileScannerErrorCode.permissionDenied
-        ? permissionDeniedMessage
-        : unavailableMessage;
+    if (error.errorCode != MobileScannerErrorCode.permissionDenied) {
+      return widget.unavailableMessage;
+    }
+    return _restriction.restricted
+        ? widget.restrictedMessage
+        : widget.permissionDeniedMessage;
   }
 }
 

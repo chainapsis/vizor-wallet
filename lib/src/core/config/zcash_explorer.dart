@@ -97,7 +97,7 @@ Uri zcashExplorerTransactionUri({
   required ZcashExplorerTxidOrder txidOrder,
   String? customTemplate,
 }) {
-  final displayTxid = _explorerTxidHex(txidHex, txidOrder);
+  final displayTxid = zcashDisplayTxidHex(txidHex, txidOrder);
   final template = customTemplate?.trim() ?? '';
   if (template.isNotEmpty) {
     return applyExplorerUrlTemplate(template, displayTxid);
@@ -105,7 +105,8 @@ Uri zcashExplorerTransactionUri({
   return Uri.https(defaultZcashExplorerHost(networkName), '/tx/$displayTxid');
 }
 
-String _explorerTxidHex(String txidHex, ZcashExplorerTxidOrder txidOrder) {
+/// Returns the canonical txid text used by explorers and node RPCs.
+String zcashDisplayTxidHex(String txidHex, ZcashExplorerTxidOrder txidOrder) {
   final normalized = txidHex.trim().toLowerCase();
   return switch (txidOrder) {
     ZcashExplorerTxidOrder.display => normalized,

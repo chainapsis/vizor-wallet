@@ -1,20 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:zcash_wallet/src/rust/frb_generated.dart';
-import '../fakes/fake_gift_link_rust_api.dart';
-
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.dart';
@@ -23,19 +21,20 @@ import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_trac
 import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_export.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_qr_image_saver.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
-
+import '../fakes/fake_gift_link_rust_api.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
 
@@ -52,9 +51,11 @@ Future<void> loadPaymentLinksTestFonts() async {
 Future<void> pumpPaymentLinksScreen(
   WidgetTester tester, {
   FakePaymentLinkOperations? operations,
+  PaymentLinkBatchOperations? batchOperations,
   FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
   PaymentLinkLedgerFundingService? ledgerFunding,
+  PaymentLinkRecoveryStore? recoveryStore,
   LedgerPcztSigner? ledgerSigner,
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
@@ -65,6 +66,7 @@ Future<void> pumpPaymentLinksScreen(
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
   bool? pricingEnabled,
+  PrivacyModeNotifier? privacyNotifier,
   Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
@@ -84,6 +86,8 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (privacyNotifier != null)
+          privacyModeProvider.overrideWith(() => privacyNotifier),
         // These tests exercise funding and navigation with fake operations.
         // Observer behavior has its own controlled service and widget tests.
         giftCardTrackingServiceProvider.overrideWithValue(
@@ -100,6 +104,10 @@ Future<void> pumpPaymentLinksScreen(
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
+        if (recoveryStore != null)
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        if (batchOperations != null)
+          paymentLinkBatchOperationsProvider.overrideWithValue(batchOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
         zecMarketDataSourceProvider.overrideWithValue(
           marketDataSource ?? const _PaymentLinksTestMarketDataSource(),
@@ -380,6 +388,21 @@ final secondIncomingLink = VizorPaymentLink(
     message: 'A second gift!',
   ),
 );
+
+/// Two members of one batch: distinct cards sharing one card amount.
+final batchTestLinks = [
+  incomingLink,
+  VizorPaymentLink(
+    network: incomingLink.network,
+    address: secondIncomingLink.address,
+    amountZatoshi: incomingLink.amountZatoshi,
+    mnemonic: secondIncomingLink.mnemonic,
+    birthdayHeight: incomingLink.birthdayHeight,
+    label: secondIncomingLink.label,
+    createdAt: incomingLink.createdAt,
+    presentation: incomingLink.presentation,
+  ),
+];
 
 final sharedRecovery = PaymentLinkRecoveryRecord(
   claimFeeReserveZatoshi: BigInt.from(10000),
@@ -938,6 +961,10 @@ class FakePaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
 
 class FakePaymentLinkHardwareSigningService
     implements PaymentLinkHardwareSigningService {
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) => throw UnimplementedError();
   FakePaymentLinkHardwareSigningService({this.createCompleter});
 
   final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;

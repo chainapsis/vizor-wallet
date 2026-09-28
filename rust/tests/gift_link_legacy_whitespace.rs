@@ -11,7 +11,7 @@ fn legacy_whitespace_preserves_the_funded_wallet_but_requires_v2_sharing() {
         let canonical = gift_mnemonic_from_entropy(entropy.clone()).unwrap();
         let original_seed = keys::mnemonic_to_seed(&canonical).unwrap();
         let address =
-            keys::derive_software_address(WalletNetwork::Main, &original_seed, 0).unwrap();
+            keys::derive_gift_address(WalletNetwork::Main, &original_seed, 0).unwrap();
 
         for separator in ["  ", "\t", "\n"] {
             let legacy = canonical.replace(' ', separator);

@@ -126,6 +126,11 @@ void main() {
       await openPaymentLinksFromSettings(tester);
       proxy.failNextSendTransactions(1);
       await claimPaymentLinkForRegtest(tester, firstLink);
+      await pumpUntil(
+        tester,
+        () => claimStatuses.containsKey(firstLink.address),
+        description: 'first claim submission completion',
+      );
       expect(proxy.failedSendTransactionCount, 1);
       expect(
         claimStatuses[firstLink.address],
@@ -133,6 +138,11 @@ void main() {
       );
 
       await claimPaymentLinkForRegtest(tester, secondLink);
+      await pumpUntil(
+        tester,
+        () => claimStatuses.containsKey(secondLink.address),
+        description: 'second claim submission completion',
+      );
       expect(
         claimStatuses[secondLink.address],
         PaymentLinkClaimBroadcastStatus.broadcasted,
