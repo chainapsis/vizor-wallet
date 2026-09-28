@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 import FlutterMacOS
 import LocalAuthentication
 import Security
@@ -40,6 +41,65 @@ private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
     _ toolbar: NSToolbar
   ) -> [NSToolbarItem.Identifier] {
     [.flexibleSpace]
+  }
+}
+
+/// App-password convenience only. Never enables sources or changes key handling.
+final class PasswordInputSourceChannel {
+  private static var channel: FlutterMethodChannel?
+
+  private static func property(_ source: TISInputSource, _ key: CFString) -> AnyObject? {
+    guard let pointer = TISGetInputSourceProperty(source, key) else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue()
+  }
+
+  private static func capture() -> [String: String]? {
+    guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+          let id = property(source, kTISPropertyInputSourceID) as? String,
+          property(source, kTISPropertyInputSourceIsEnabled) as? Bool == true,
+          property(source, kTISPropertyInputSourceIsSelectCapable) as? Bool == true
+    else { return nil }
+    return ["platform": "macos", "id": id]
+  }
+
+  static func register(window: NSWindow, messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/password_input_source", binaryMessenger: messenger)
+    self.channel = channel
+    channel.setMethodCallHandler { [weak window] call, result in
+      guard let window, NSApp.isActive, window.isKeyWindow else {
+        result(nil)
+        return
+      }
+      switch call.method {
+      case "capture":
+        result(capture())
+      case "restore":
+        guard let args = call.arguments as? [String: Any],
+              let target = args["target"] as? [String: String],
+              let expected = args["expected"] as? [String: String],
+              target["platform"] == "macos", let id = target["id"],
+              capture() == expected, target != expected,
+              let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue()
+                as? [TISInputSource]
+        else { result(nil); return }
+        for source in sources {
+          guard property(source, kTISPropertyInputSourceID) as? String == id,
+                property(source, kTISPropertyInputSourceIsEnabled) as? Bool == true,
+                property(source, kTISPropertyInputSourceIsSelectCapable) as? Bool == true,
+                property(source, kTISPropertyInputSourceCategory) as? String ==
+                  kTISCategoryKeyboardInputSource as String
+          else { continue }
+          // Main-thread, synchronous selection. Failed selection is a no-op for
+          // this feature; no fallback source or repeated enforcement is used.
+          _ = TISSelectInputSource(source)
+          break
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }
 
@@ -1088,6 +1148,10 @@ class MainFlutterWindow: NSWindow {
     installVizorWindowToolbarObservers()
     applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
+    PasswordInputSourceChannel.register(
+      window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     DesktopExitChannel.register(
       window: self,
       messenger: flutterViewController.engine.binaryMessenger

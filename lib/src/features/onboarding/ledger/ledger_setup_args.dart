@@ -1,3 +1,4 @@
+import '../../../core/input/app_password_input_source.dart';
 import '../../ledger/services/ledger_account_service.dart';
 
 class LedgerBirthdayArgs {
@@ -21,9 +22,11 @@ class LedgerCustomiseAccountArgs {
     required this.account,
     required this.birthdayHeight,
     this.pendingPassword,
+    this.passwordInputSource,
   });
 
   final LedgerDeviceAccount account;
   final int birthdayHeight;
   final String? pendingPassword;
+  final PasswordInputSourceCandidate? passwordInputSource;
 }

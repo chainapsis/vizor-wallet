@@ -1,3 +1,4 @@
+import '../../../core/input/app_password_input_source.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../ledger/services/ledger_account_service.dart';
@@ -23,10 +24,15 @@ class CreateSecretPassphraseArgs {
 /// setup has been persisted. It stays in route memory and is intentionally not
 /// carried when the user navigates back to the password screen.
 class CustomiseAccountArgs {
-  const CustomiseAccountArgs({required this.setupArgs, this.pendingPassword});
+  const CustomiseAccountArgs({
+    required this.setupArgs,
+    this.pendingPassword,
+    this.passwordInputSource,
+  });
 
   final SetPasswordScreenArgs setupArgs;
   final String? pendingPassword;
+  final PasswordInputSourceCandidate? passwordInputSource;
 
   String get mnemonic => setupArgs.requiredMnemonic;
   SetPasswordFlow get flow => setupArgs.flow;

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/account_name_policy.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
@@ -132,6 +134,7 @@ class _CustomiseAccountScreenState
     final args = widget.args!;
     final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;
+    final inputSourceService = ref.read(appPasswordInputSourceProvider);
 
     Future<void> createAccount() => runCustomisedAccountMutation(
       ref,
@@ -166,6 +169,7 @@ class _CustomiseAccountScreenState
         await createAccount();
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
+        unawaited(inputSourceService.remember(args.passwordInputSource));
         clearCustomisedAccountDraft(ref, args.flow);
         router.go('/home');
       });

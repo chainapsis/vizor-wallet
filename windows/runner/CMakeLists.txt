@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "payment_uri_handoff.cpp"
+  "password_input_source.cpp"
   "payment_uri_protocol.cpp"
   "single_instance.cpp"
   "utils.cpp"
@@ -119,7 +120,7 @@ endif()
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
-target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib" "imm32.lib" "ole32.lib" "uuid.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "secur32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")

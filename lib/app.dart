@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
@@ -281,7 +282,15 @@ Future<void> runZcashWalletApp() async {
   if (Platform.isLinux) {
     app = LinuxKeyringStartupHost(loadApp: buildBootstrappedZcashWalletApp);
   } else {
-    app = await buildBootstrappedZcashWalletApp();
+    app = await buildBootstrappedZcashWalletApp(
+      overrides: [
+        appPasswordInputSourceProvider.overrideWith((ref) {
+          final service = AppPasswordInputSource.production();
+          ref.onDispose(service.dispose);
+          return service;
+        }),
+      ],
+    );
   }
   log('runtime: launching app');
   runApp(
@@ -641,7 +650,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             routePath: '/onboarding/ledger/birthday',
             routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
-          ledgerOnContinue: (password) async {
+          ledgerOnContinue: (password, inputSource) async {
             if (!context.mounted) return;
             context.go(
               '/onboarding/ledger/customise-account',
@@ -649,6 +658,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 account: args.account,
                 birthdayHeight: args.birthdayHeight,
                 pendingPassword: password,
+                passwordInputSource: inputSource,
               ),
             );
           },
@@ -698,6 +708,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 );
 
             final pendingPassword = args.pendingPassword;
+            final inputSourceService = ref.read(appPasswordInputSourceProvider);
             if (pendingPassword == null) {
               await importAccount();
               if (!context.mounted) return;
@@ -716,6 +727,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 await importAccount();
                 securityNotifier.commitPasswordSetup();
                 passwordCommitted = true;
+                unawaited(
+                  inputSourceService.remember(args.passwordInputSource),
+                );
                 if (!context.mounted) return;
                 context.go('/home');
               });

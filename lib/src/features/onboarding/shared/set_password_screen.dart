@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
@@ -36,7 +39,11 @@ class SetPasswordScreen extends ConsumerStatefulWidget {
   }) : args = null;
 
   final SetPasswordScreenArgs? args;
-  final Future<void> Function(String password)? ledgerOnContinue;
+  final Future<void> Function(
+    String password,
+    PasswordInputSourceCandidate? inputSource,
+  )?
+  ledgerOnContinue;
   final onboarding_chrome.OnboardingBackTarget? ledgerBackTarget;
 
   @override
@@ -102,10 +109,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       _submitError = null;
     });
 
+    final inputSourceService = ref.read(appPasswordInputSourceProvider);
+    final inputSource = await inputSourceService.capture();
+    if (!mounted) return;
     final ledgerOnContinue = widget.ledgerOnContinue;
     if (ledgerOnContinue != null) {
       try {
-        await ledgerOnContinue(password);
+        await ledgerOnContinue(password, inputSource);
       } catch (e, st) {
         log('SetPasswordScreen._submit: Ledger continuation failed: $e\n$st');
         if (!mounted) return;
@@ -123,6 +133,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       final customiseArgs = CustomiseAccountArgs(
         setupArgs: args,
         pendingPassword: password,
+        passwordInputSource: inputSource,
       );
       router.go(customiseArgs.routePath, extra: customiseArgs);
       return;
@@ -196,6 +207,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
+        unawaited(inputSourceService.remember(inputSource));
         if (args.flow == SetPasswordFlow.importKeystone) {
           ref.read(keystoneOnboardingProvider.notifier).resetScan();
         }
@@ -426,22 +438,24 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                       _PasswordFieldBlock(
                         reserveMessageSpace:
                             _SetPasswordContent._fieldReservedMessageHeight,
-                        child: PasswordTextField(
-                          key: const ValueKey('set_password_password_field'),
-                          label: 'Password',
-                          labelStyle: fieldLabelStyle,
-                          hintText: 'Min. 8 characters and symbols',
-                          controller: passwordController,
-                          messageText: passwordMessage,
-                          tone: passwordMessage == null
-                              ? AppTextFieldTone.neutral
-                              : AppTextFieldTone.destructive,
-                          leadingSlotWidth: 32,
-                          inputHorizontalPadding: AppSpacing.s,
-                          autofocus: true,
-                          showVisibilityToggle: false,
-                          onChanged: (_) => onChanged(),
-                          onSubmitted: (_) => onSubmit(),
+                        child: AppPasswordInput(
+                          child: PasswordTextField(
+                            key: const ValueKey('set_password_password_field'),
+                            label: 'Password',
+                            labelStyle: fieldLabelStyle,
+                            hintText: 'Min. 8 characters and symbols',
+                            controller: passwordController,
+                            messageText: passwordMessage,
+                            tone: passwordMessage == null
+                                ? AppTextFieldTone.neutral
+                                : AppTextFieldTone.destructive,
+                            leadingSlotWidth: 32,
+                            inputHorizontalPadding: AppSpacing.s,
+                            autofocus: true,
+                            showVisibilityToggle: false,
+                            onChanged: (_) => onChanged(),
+                            onSubmitted: (_) => onSubmit(),
+                          ),
                         ),
                       ),
                       const SizedBox(
@@ -450,21 +464,23 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                       _PasswordFieldBlock(
                         reserveMessageSpace:
                             _SetPasswordContent._fieldReservedMessageHeight,
-                        child: PasswordTextField(
-                          key: const ValueKey('set_password_confirm_field'),
-                          label: 'Confirm password',
-                          labelStyle: fieldLabelStyle,
-                          hintText: 'Confirm password',
-                          controller: confirmController,
-                          messageText: confirmMessage,
-                          tone: confirmMessage == null
-                              ? AppTextFieldTone.neutral
-                              : AppTextFieldTone.destructive,
-                          leadingSlotWidth: 32,
-                          inputHorizontalPadding: AppSpacing.s,
-                          showVisibilityToggle: false,
-                          onChanged: (_) => onChanged(),
-                          onSubmitted: (_) => onSubmit(),
+                        child: AppPasswordInput(
+                          child: PasswordTextField(
+                            key: const ValueKey('set_password_confirm_field'),
+                            label: 'Confirm password',
+                            labelStyle: fieldLabelStyle,
+                            hintText: 'Confirm password',
+                            controller: confirmController,
+                            messageText: confirmMessage,
+                            tone: confirmMessage == null
+                                ? AppTextFieldTone.neutral
+                                : AppTextFieldTone.destructive,
+                            leadingSlotWidth: 32,
+                            inputHorizontalPadding: AppSpacing.s,
+                            showVisibilityToggle: false,
+                            onChanged: (_) => onChanged(),
+                            onSubmitted: (_) => onSubmit(),
+                          ),
                         ),
                       ),
                     ],

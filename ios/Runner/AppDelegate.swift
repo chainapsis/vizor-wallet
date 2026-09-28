@@ -55,6 +55,10 @@ import UIKit
     let messenger = engineBridge.applicationRegistrar.messenger()
     numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
 
+    let modalCorners = ModalCornerHandler()
+    FlutterMethodChannel(name: "com.zcash.wallet/modal_corners", binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in modalCorners.handle(call, result: result) }
+
     ledgerMobileHandler?.close()
     let ledgerMobileHandler = LedgerMobileHandler()
     self.ledgerMobileHandler = ledgerMobileHandler

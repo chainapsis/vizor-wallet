@@ -25,8 +25,9 @@ use zip32::fingerprint::SeedFingerprint;
 use crate::wallet::{
     addresses,
     db::{
-        open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
-        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+        ensure_mined_transaction_history, open_readonly_conn_with_timeout,
+        open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
+        open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
         ACCOUNT_MUTATION_DB_BUSY_TIMEOUT, READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
@@ -237,6 +238,10 @@ pub fn ensure_db_initialized(db_path: &str, network: WalletNetwork) -> Result<()
     with_wallet_db_write_lock("keys.ensure_db_initialized", || {
         let mut db = open_wallet_db_for_init(db_path, network)?;
         init_wallet_db(&mut db, None).map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+        ensure_mined_transaction_history(&open_wallet_raw_conn_with_timeout(
+            db_path,
+            ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
+        )?)?;
         Ok(())
     })
 }
@@ -281,6 +286,10 @@ fn ensure_db_initialized_with_seed(
         let mut db = open_wallet_db_for_init(db_path, network)?;
         init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec())))
             .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+        ensure_mined_transaction_history(&open_wallet_raw_conn_with_timeout(
+            db_path,
+            ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
+        )?)?;
         Ok(())
     })
 }

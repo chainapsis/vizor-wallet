@@ -13,6 +13,7 @@ import '../features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
+import '../core/input/app_password_input_source.dart';
 import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
@@ -1194,6 +1195,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('voting cache wipe', e, st);
       }
+      await ref.read(appPasswordInputSourceProvider).clear();
       try {
         await _storage.deleteAll();
       } catch (e, st) {

@@ -17,6 +17,7 @@ import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
@@ -762,9 +763,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
     final colors = context.colors;
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
+      shape: appModalShape(BorderRadius.circular(AppRadii.medium)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Padding(

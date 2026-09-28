@@ -98,23 +98,11 @@ LedgerBluetoothCapability ledgerBluetoothTransportCapabilityForModel({
   }
   final hardware = ledgerBluetoothCapabilityForModel(model);
   if (hardware != LedgerBluetoothCapability.supported) return hardware;
-  final normalized = (model ?? '').toLowerCase().replaceAll(
-    RegExp('[^a-z0-9]'),
-    '',
-  );
-  if ((platform == TargetPlatform.macOS || platform == TargetPlatform.iOS) &&
-      (normalized.contains('nanogen5') ||
-          normalized.contains('nanogeneration5') ||
-          normalized.contains('apex'))) {
-    return LedgerBluetoothCapability.unsupported;
-  }
   return LedgerBluetoothCapability.supported;
 }
 
 String ledgerBluetoothSupportedModels(TargetPlatform platform) =>
-    platform == TargetPlatform.macOS || platform == TargetPlatform.iOS
-    ? 'Nano X, Flex, and Stax'
-    : 'Nano X, Flex, Stax, and Nano Gen5';
+    'Nano X, Flex, Stax, and Nano Gen5';
 
 class LedgerCapability {
   const LedgerCapability._({required this.supported, this.reason});

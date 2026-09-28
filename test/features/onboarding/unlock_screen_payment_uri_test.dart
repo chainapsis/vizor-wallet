@@ -7,6 +7,10 @@
 // `AppSecureStore` path serialises through a lock whose first future is created
 // outside the test's fake-async zone.
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
+import '../../fakes/fake_password_input_source.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,6 +144,7 @@ late GoRouter _router;
 Future<ProviderContainer> _pumpUnlock(
   WidgetTester tester, {
   bool migrationGate = false,
+  AppPasswordInputSource? inputSource,
 }) async {
   tester.view.physicalSize = const Size(1440, 1024);
   tester.view.devicePixelRatio = 1.0;
@@ -147,7 +152,11 @@ Future<ProviderContainer> _pumpUnlock(
   addTearDown(tester.view.resetDevicePixelRatio);
 
   final container = ProviderContainer(
-    overrides: _overrides(migrationGate: migrationGate),
+    overrides: [
+      ..._overrides(migrationGate: migrationGate),
+      if (inputSource != null)
+        appPasswordInputSourceProvider.overrideWithValue(inputSource),
+    ],
   );
   addTearDown(container.dispose);
 
@@ -195,6 +204,28 @@ Future<void> _unlock(WidgetTester tester) async {
 String _location() => _router.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
+  testWidgets(
+    'only successful password unlock remembers the submission source',
+    (tester) async {
+      final store = FakeStore();
+      final platform = FakePlatform();
+      final inputSource = AppPasswordInputSource(
+        enabled: true,
+        platform: platform,
+        store: store,
+      );
+      await _pumpUnlock(tester, inputSource: inputSource);
+      await tester.enterText(find.byType(PasswordTextField), 'WrongPass1!');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+      await tester.pumpAndSettle();
+      expect(store.writes, 0);
+      await _unlock(tester);
+      expect(store.writes, 1);
+      expect(jsonDecode(store.value!)['source'], source);
+    },
+  );
+
   testWidgets('a fresh parked link becomes a card over the unlocked wallet', (
     tester,
   ) async {

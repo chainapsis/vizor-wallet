@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/input/app_password_input_source.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -110,24 +111,26 @@ class ConfirmAccessCard extends StatelessWidget {
               Expanded(
                 child: SizedBox(
                   height: _fieldBlockHeight,
-                  child: AppTextField(
-                    label: 'Password',
-                    showLabel: false,
-                    controller: controller,
-                    hintText: 'Your password...',
-                    obscureText: true,
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    keyboardType: TextInputType.visiblePassword,
-                    autofocus: autofocus,
-                    enabled: !isSubmitting,
-                    messageText: errorText,
-                    tone: hasError
-                        ? AppTextFieldTone.destructive
-                        : AppTextFieldTone.neutral,
-                    inputHorizontalPadding: AppSpacing.s,
-                    onChanged: (_) => onChanged(),
-                    onSubmitted: (_) => onSubmit(),
+                  child: AppPasswordInput(
+                    child: AppTextField(
+                      label: 'Password',
+                      showLabel: false,
+                      controller: controller,
+                      hintText: 'Your password...',
+                      obscureText: true,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      keyboardType: TextInputType.visiblePassword,
+                      autofocus: autofocus,
+                      enabled: !isSubmitting,
+                      messageText: errorText,
+                      tone: hasError
+                          ? AppTextFieldTone.destructive
+                          : AppTextFieldTone.neutral,
+                      inputHorizontalPadding: AppSpacing.s,
+                      onChanged: (_) => onChanged(),
+                      onSubmitted: (_) => onSubmit(),
+                    ),
                   ),
                 ),
               ),

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/input/app_password_input_source.dart';
 import '../../../main.dart' show log;
 import '../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../core/security/password_policy.dart';
@@ -59,6 +62,10 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       _errorText = null;
     });
 
+    final password = _passwordController.text;
+    final inputSourceService = ref.read(appPasswordInputSourceProvider);
+    final inputSource = await inputSourceService.capture();
+    if (!mounted) return;
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
@@ -67,10 +74,11 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
 
     try {
       await routerRefresh.pauseWhile(() async {
-        final isValid = await securityNotifier.unlock(_passwordController.text);
+        final isValid = await securityNotifier.unlock(password);
         if (!isValid) return;
 
         unlocked = true;
+        unawaited(inputSourceService.remember(inputSource));
         await accountNotifier.restoreAfterUnlock();
         await syncNotifier.refreshAfterUnlock();
         await syncNotifier.startSyncAnyway();
@@ -147,6 +155,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
             ),
             child: DesktopUnlockContent(
               passwordController: _passwordController,
+              autofocus: true,
               canSubmit: _canSubmit,
               messageText: _errorText ?? _passwordPolicyMessage,
               onChanged: () {
@@ -245,24 +254,26 @@ class DesktopUnlockContent extends StatelessWidget {
             SizedBox(
               width: _fieldWidth,
               height: _fieldGroupHeight,
-              child: PasswordTextField(
-                key: const ValueKey('unlock_password_field'),
-                label: 'Password',
-                hintText: 'Enter password',
-                showLabel: false,
-                // Figma Field Type=Secondary on the auth card.
-                surface: AppTextFieldSurface.secondary,
-                leadingSlotWidth: 32,
-                inputHorizontalPadding: AppSpacing.s,
-                controller: passwordController,
-                autofocus: autofocus,
-                showVisibilityToggle: false,
-                messageText: messageText,
-                tone: messageText == null
-                    ? AppTextFieldTone.neutral
-                    : AppTextFieldTone.destructive,
-                onChanged: (_) => onChanged(),
-                onSubmitted: (_) => onSubmit(),
+              child: AppPasswordInput(
+                child: PasswordTextField(
+                  key: const ValueKey('unlock_password_field'),
+                  label: 'Password',
+                  hintText: 'Enter password',
+                  showLabel: false,
+                  // Figma Field Type=Secondary on the auth card.
+                  surface: AppTextFieldSurface.secondary,
+                  leadingSlotWidth: 32,
+                  inputHorizontalPadding: AppSpacing.s,
+                  controller: passwordController,
+                  autofocus: autofocus,
+                  showVisibilityToggle: false,
+                  messageText: messageText,
+                  tone: messageText == null
+                      ? AppTextFieldTone.neutral
+                      : AppTextFieldTone.destructive,
+                  onChanged: (_) => onChanged(),
+                  onSubmitted: (_) => onSubmit(),
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.base),

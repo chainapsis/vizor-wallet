@@ -119,27 +119,26 @@ void main() {
     );
   });
 
-  test('applies the current Apple BLE transport model boundary', () {
-    expect(
-      ledgerBluetoothTransportCapabilityForModel(
-        model: 'Nano Gen5',
-        platform: TargetPlatform.macOS,
-      ),
-      LedgerBluetoothCapability.unsupported,
-    );
-    expect(
-      ledgerBluetoothTransportCapabilityForModel(
-        model: 'Nano Gen5',
-        platform: TargetPlatform.android,
-      ),
-      LedgerBluetoothCapability.supported,
-    );
-    expect(
-      ledgerBluetoothTransportCapabilityForModel(
-        model: 'Ledger Stax',
-        platform: TargetPlatform.macOS,
-      ),
-      LedgerBluetoothCapability.supported,
-    );
+  test('offers supported BLE models on Apple and Android', () {
+    for (final platform in [
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+      TargetPlatform.android,
+    ]) {
+      for (final model in ['Nano X', 'Ledger Stax', 'Flex', 'Nano Gen5']) {
+        expect(
+          ledgerBluetoothTransportCapabilityForModel(
+            model: model,
+            platform: platform,
+          ),
+          LedgerBluetoothCapability.supported,
+          reason: '$platform $model',
+        );
+      }
+      expect(
+        ledgerBluetoothSupportedModels(platform),
+        'Nano X, Flex, Stax, and Nano Gen5',
+      );
+    }
   });
 }

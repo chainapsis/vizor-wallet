@@ -51,7 +51,47 @@ pub(crate) fn open_wallet_db_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
+    ensure_mined_transaction_history(&conn)?;
     Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+}
+
+/// Preserve mined evidence before backend rewinds clear it, including sends
+/// without change. Spend links alone also exist for never-mined transactions.
+/// Install on writable open before any scan or rewind; an uninitialized DB has
+/// no transactions yet and will be handled on its next writable open.
+pub(crate) fn ensure_mined_transaction_history(conn: &rusqlite::Connection) -> Result<(), String> {
+    let install: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pragma_table_info('transactions') WHERE name = 'mined_height')
+         AND NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'trigger'
+                         AND name = 'vizor_preserve_mined_transaction')",
+        [], |row| row.get(0),
+    ).map_err(|e| format!("Mined history schema check: {e}"))?;
+    if !install {
+        return Ok(());
+    }
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Mined history transaction: {e}"))?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS vizor_mined_transactions (txid BLOB PRIMARY KEY NOT NULL);
+         CREATE TRIGGER IF NOT EXISTS vizor_preserve_mined_transaction
+         BEFORE UPDATE OF mined_height ON transactions
+         WHEN OLD.mined_height IS NOT NULL
+         BEGIN
+             INSERT INTO vizor_mined_transactions (txid)
+             SELECT OLD.txid WHERE NOT EXISTS (
+                 SELECT 1 FROM vizor_mined_transactions WHERE txid = OLD.txid
+             );
+         END;
+         CREATE TRIGGER IF NOT EXISTS vizor_delete_mined_transaction
+         AFTER DELETE ON transactions
+         BEGIN
+             DELETE FROM vizor_mined_transactions WHERE txid = OLD.txid;
+         END;",
+    )
+    .map_err(|e| format!("Mined history schema: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Mined history commit: {e}"))
 }
 
 pub(crate) fn open_wallet_db_for_read_with_timeout(
@@ -214,6 +254,68 @@ pub(crate) fn open_readonly_conn_with_timeout(
 mod tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn mined_history_is_atomic_and_removed_with_transaction() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_mined_transaction_history(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (txid BLOB PRIMARY KEY, mined_height INTEGER);
+            INSERT INTO transactions VALUES (X'01', 100), (X'02', NULL);",
+        )
+        .unwrap();
+        // Existing mined rows are covered when upgrading; initialization is idempotent.
+        ensure_mined_transaction_history(&conn).unwrap();
+        ensure_mined_transaction_history(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_history BEFORE INSERT ON vizor_mined_transactions
+            BEGIN SELECT RAISE(ABORT, 'injected history failure'); END;",
+        )
+        .unwrap();
+        assert!(conn
+            .execute(
+                "UPDATE transactions SET mined_height = NULL WHERE txid = X'01'",
+                []
+            )
+            .is_err());
+        assert_eq!(
+            conn.query_row(
+                "SELECT mined_height FROM transactions WHERE txid = X'01'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            100
+        );
+        conn.execute_batch(
+            "DROP TRIGGER reject_history;
+            BEGIN;
+            UPDATE transactions SET mined_height = NULL;
+            ROLLBACK;",
+        )
+        .unwrap();
+        let count = || {
+            conn.query_row("SELECT COUNT(*) FROM vizor_mined_transactions", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(count(), 0);
+        conn.execute("UPDATE transactions SET mined_height = NULL", [])
+            .unwrap();
+        assert_eq!(count(), 1);
+        // An outer conflict policy can override a trigger's INSERT OR IGNORE.
+        // Repeated observations must work even with an explicit ABORT policy.
+        conn.execute_batch(
+            "UPDATE transactions SET mined_height = 100 WHERE txid = X'01';
+            UPDATE OR ABORT transactions SET mined_height = NULL WHERE txid = X'01';",
+        )
+        .unwrap();
+        assert_eq!(count(), 1);
+        conn.execute("DELETE FROM transactions WHERE txid = X'01'", [])
+            .unwrap();
+        assert_eq!(count(), 0);
+    }
 
     #[test]
     fn configure_wallet_connection_enables_wal_mode() {

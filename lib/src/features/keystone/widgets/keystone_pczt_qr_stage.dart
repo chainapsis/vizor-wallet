@@ -9,6 +9,9 @@ import '../../../core/widgets/app_icon.dart';
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
 const _scanOptimizedQrInk = Color(0xFF000000);
+// Keep every Keystone signing screen on the same camera-friendly cadence.
+// Screens select their layout, but cannot override the animation timing.
+const _keystoneQrFrameInterval = Duration(milliseconds: 200);
 
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
@@ -18,7 +21,6 @@ class KeystonePcztQrStage extends StatelessWidget {
     this.size = 230,
     this.scanOptimized = true,
     this.quietZone,
-    this.frameInterval = const Duration(milliseconds: 100),
     super.key,
   });
 
@@ -28,7 +30,6 @@ class KeystonePcztQrStage extends StatelessWidget {
   final double size;
   final bool scanOptimized;
   final PrettyQrQuietZone? quietZone;
-  final Duration frameInterval;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +43,6 @@ class KeystonePcztQrStage extends StatelessWidget {
           size: size,
           scanOptimized: scanOptimized,
           quietZone: quietZone,
-          frameInterval: frameInterval,
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
@@ -82,14 +82,12 @@ class _AnimatedKeystoneQr extends StatefulWidget {
     required this.size,
     required this.scanOptimized,
     required this.quietZone,
-    required this.frameInterval,
   });
 
   final List<String> urParts;
   final double size;
   final bool scanOptimized;
   final PrettyQrQuietZone? quietZone;
-  final Duration frameInterval;
 
   @override
   State<_AnimatedKeystoneQr> createState() => _AnimatedKeystoneQrState();
@@ -111,8 +109,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.urParts != widget.urParts ||
         oldWidget.scanOptimized != widget.scanOptimized ||
-        oldWidget.quietZone != widget.quietZone ||
-        oldWidget.frameInterval != widget.frameInterval) {
+        oldWidget.quietZone != widget.quietZone) {
       _index = 0;
       _frames.clear();
       _startTimer();
@@ -133,7 +130,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(widget.frameInterval, (_) {
+    _timer = Timer.periodic(_keystoneQrFrameInterval, (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;

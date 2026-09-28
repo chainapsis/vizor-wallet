@@ -17,6 +17,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "payment_uri_handoff.h"
+#include "password_input_source.h"
 #include "single_instance.h"
 #include "utils.h"
 #include "velopack_update.h"
@@ -439,6 +440,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  password_input_source_channel_ = CreatePasswordInputSourceChannel(
+      flutter_controller_->engine()->messenger(),
+      flutter_controller_->view()->GetNativeWindow());
 
   camera_permission_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -521,7 +525,8 @@ void FlutterWindow::OnDestroy() {
   // has gone away. Keep the messenger alive until handlers are unregistered.
   auto controller = std::move(flutter_controller_);
   for (auto* channel : {&camera_permission_channel_, &device_owner_auth_channel_,
-                        &velopack_update_channel_, &payment_uri_channel_}) {
+                        &velopack_update_channel_, &payment_uri_channel_,
+                        &password_input_source_channel_}) {
     if (*channel) {
       (*channel)->SetMethodCallHandler(nullptr);
       channel->reset();

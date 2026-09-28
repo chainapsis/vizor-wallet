@@ -192,27 +192,13 @@ class RustGiftCardTrackingBackend implements GiftCardTrackingBackend {
     if (epoch != _cancelEpoch) throw StateError('Gift Card lookup cancelled');
     _activePath = path;
     try {
-      final e = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation: 'Gift Card funding status',
-            action: (endpoint) {
-              if (epoch != _cancelEpoch) {
-                throw StateError('Gift Card lookup cancelled');
-              }
-              if (endpoint.networkName != card.link.network) {
-                throw StateError('Gift Card network changed');
-              }
-              return rust.inspectGiftCardUsage(
-                dbPath: path,
-                accountUuid: card.usage.accountUuid!,
-                fundingTxids: card.fundingTxids ?? '',
-                expectedFundingZatoshi:
-                    card.link.amountZatoshi + card.claimFeeReserveZatoshi,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              );
-            },
-          );
+      final e = await rust.inspectGiftCardUsage(
+        dbPath: path,
+        accountUuid: card.usage.accountUuid!,
+        fundingTxids: card.fundingTxids ?? '',
+        expectedFundingZatoshi:
+            card.link.amountZatoshi + card.claimFeeReserveZatoshi,
+      );
       return GiftCardUsage(
         status: GiftCardUsageStatus.values.byName(e.status),
         reason: e.reason == null

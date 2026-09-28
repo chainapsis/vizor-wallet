@@ -32,6 +32,8 @@ pub(crate) use pczt::{check_orchard_spend_auth_signatures, SpendAuthSignatureErr
 pub(crate) mod proposal_locks;
 mod send;
 mod transactions;
+pub(crate) use transactions::has_recovered_status_work;
+pub(crate) use transactions::resolve_recovered_nonmined_status;
 
 // Keep the existing address API path while its implementation lives with address policy.
 pub use crate::wallet::addresses::{

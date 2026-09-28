@@ -1,44 +1,11 @@
 //! Sender-side observation. No signing, submission, or claim-wallet ownership.
 use super::{keys, network::WalletNetwork};
 use rusqlite::{Connection, OptionalExtension};
-use std::{
-    collections::BTreeSet,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex,
-    },
-};
+use std::{collections::BTreeSet, sync::Mutex};
 
 // All entry points serialize against scans; the main wallet and claim DBs never
 // enter this lock. Cancellation deliberately does not acquire it.
 pub(crate) static OPERATIONS: Mutex<()> = Mutex::new(());
-
-// Observer-only lookup cancellation; main wallet and receiver scans are separate.
-static LOOKUP_EPOCH: AtomicU64 = AtomicU64::new(0);
-pub(crate) fn cancel_lookups() {
-    LOOKUP_EPOCH.fetch_add(1, Ordering::SeqCst);
-}
-pub(crate) fn lookup_epoch() -> u64 {
-    LOOKUP_EPOCH.load(Ordering::SeqCst)
-}
-pub(crate) async fn cancellable_lookup<T>(
-    epoch: u64,
-    work: impl std::future::Future<Output = Result<T, String>>,
-) -> Result<T, String> {
-    if lookup_epoch() != epoch {
-        return Err("Gift Card lookup cancelled".into());
-    }
-    tokio::select! {
-        biased;
-        _ = async {
-            loop {
-                if lookup_epoch() != epoch { break; }
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            }
-        } => Err("Gift Card lookup cancelled".into()),
-        result = work => result,
-    }
-}
 
 #[derive(Debug)]
 pub struct GiftCardUsageEvidence {
@@ -224,25 +191,6 @@ mod tests {
     }
     fn check(c: &Connection) -> GiftCardUsageEvidence {
         inspect_connection(c, &[1], "bbaa", 10010000).unwrap()
-    }
-    #[tokio::test]
-    async fn lookup_cancellation_drops_pending_network_work() {
-        let epoch = lookup_epoch();
-        let work = cancellable_lookup::<()>(epoch, std::future::pending());
-        tokio::pin!(work);
-        tokio::select! {
-            _ = &mut work => panic!("lookup finished before cancellation"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(5)) => {},
-        }
-        cancel_lookups();
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(1), work)
-                .await
-                .unwrap()
-                .unwrap_err()
-                .contains("cancelled")
-        );
-        assert!(cancellable_lookup(epoch, async { Ok(()) }).await.is_err());
     }
     #[test]
     fn insufficient_evidence_has_specific_reason() {

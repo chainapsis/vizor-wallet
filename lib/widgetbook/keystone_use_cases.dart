@@ -69,7 +69,6 @@ Widget buildMobileKeystonePcztQrOptimizedUseCase(BuildContext context) {
       error: null,
       size: 280,
       scanOptimized: true,
-      frameInterval: const Duration(milliseconds: 100),
     ),
   );
 }

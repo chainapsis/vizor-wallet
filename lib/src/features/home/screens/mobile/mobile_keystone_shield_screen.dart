@@ -521,7 +521,6 @@ class _MobileKeystoneShieldScreenState
                     error: error,
                     size: qrSize,
                     scanOptimized: true,
-                    frameInterval: const Duration(milliseconds: 100),
                   ),
                 );
               },

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/input/app_password_input_source.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -14,8 +15,9 @@ import 'account_modal_card.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
 
-typedef AccountRemoveProgressCallback =
-    void Function(AccountRemoveProgress progress);
+typedef AccountRemoveProgressCallback = void Function(
+  AccountRemoveProgress progress,
+);
 
 class AccountRemoveModal extends StatefulWidget {
   const AccountRemoveModal({
@@ -246,20 +248,22 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
             height: _fieldHeight,
-            child: PasswordTextField(
-              label: 'Password',
-              hintText: 'Enter your password',
-              leadingSlotWidth: 32,
-              trailingSlotWidth: 40,
-              inputHorizontalPadding: AppSpacing.s,
-              controller: _passwordController,
-              autofocus: true,
-              enabled: !_isSubmitting && removalBlockMessage == null,
-              tone: passwordMessage == null
-                  ? AppTextFieldTone.neutral
-                  : AppTextFieldTone.destructive,
-              onChanged: (_) => _handlePasswordChanged(),
-              onSubmitted: (_) => _submit(),
+            child: AppPasswordInput(
+              child: PasswordTextField(
+                label: 'Password',
+                hintText: 'Enter your password',
+                leadingSlotWidth: 32,
+                trailingSlotWidth: 40,
+                inputHorizontalPadding: AppSpacing.s,
+                controller: _passwordController,
+                autofocus: true,
+                enabled: !_isSubmitting && removalBlockMessage == null,
+                tone: passwordMessage == null
+                    ? AppTextFieldTone.neutral
+                    : AppTextFieldTone.destructive,
+                onChanged: (_) => _handlePasswordChanged(),
+                onSubmitted: (_) => _submit(),
+              ),
             ),
           ),
           if (passwordMessage != null) ...[
