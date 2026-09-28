@@ -2229,13 +2229,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
     final amount = parseZecAmount(_amountController.text);
     // Keep the price subscription through amount edits and Review so clearing
-    // the input does not restart the lookup or flash its loading state.
+    // the input does not restart the lookup or flash its loading state. The
+    // group flow reads it for each card's fiat snapshot.
     final marketData =
         pricingEnabled &&
             (_page == PaymentLinksLocalPage.amount ||
                 _page == PaymentLinksLocalPage.message ||
                 _page == PaymentLinksLocalPage.review ||
-                _page == PaymentLinksLocalPage.received)
+                _page == PaymentLinksLocalPage.received ||
+                _page == PaymentLinksLocalPage.bulk)
         ? ref.watch(zecHomeMarketDataStateProvider)
         : null;
 
