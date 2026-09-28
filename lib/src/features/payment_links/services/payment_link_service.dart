@@ -927,11 +927,11 @@ class PaymentLinkService
 
   Future<void> registerBatchObservers(PaymentLinkBatchDraft batch) async {
     try {
-      final tracker = _ref.read(giftCardTrackingServiceProvider);
       final records = await _recoveryStore.load();
-      for (final record in records) {
-        if (record.batchId == batch.id) await tracker.register(record);
-      }
+      await _ref.read(giftCardTrackingServiceProvider).registerAll([
+        for (final record in records)
+          if (record.batchId == batch.id) record,
+      ]);
     } catch (_) {
       log('Gift Card observer registration deferred');
     }

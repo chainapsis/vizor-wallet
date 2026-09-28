@@ -395,6 +395,7 @@ class PaymentLinkRecoveryStore {
         updatedAt: now,
         fundingTxids: fundingTxids,
         preparedExpiryHeight: null,
+        fundedAt: record.fundedAt ?? now,
       ),
     );
   }
@@ -810,29 +811,42 @@ class PaymentLinkRecoveryStore {
   Future<bool> updateUsage({
     required PaymentLinkRecoveryRecord expected,
     required GiftCardUsage usage,
-  }) => _runExclusive(() async {
-    final records = await _loadUnlocked();
-    final current = _findByAddress(records, expected.link.address);
-    if (current == null ||
-        !current.link.hasSameCanonicalPayload(expected.link) ||
-        current.fundingTxids != expected.fundingTxids ||
-        jsonEncode(current.usage.toJson()) !=
-            jsonEncode(expected.usage.toJson())) {
-      return false;
-    }
-    // Apply the same validation to writes and reads.
-    GiftCardUsage.fromJson(usage.toJson());
-    await _writeRecords(
-      _replaceByAddress(
+  }) async => (await updateUsages([
+    (expected: expected, usage: usage),
+  ])).contains(expected.link.address);
+
+  /// [updateUsage] for many cards in one secure-store write, so a scan of a
+  /// large group does not rewrite every record once per card. Returns the
+  /// addresses that were saved.
+  Future<Set<String>> updateUsages(
+    List<({PaymentLinkRecoveryRecord expected, GiftCardUsage usage})> updates,
+  ) => _runExclusive(() async {
+    if (updates.isEmpty) return const <String>{};
+    var records = await _loadUnlocked();
+    final saved = <String>{};
+    for (final (:expected, :usage) in updates) {
+      final current = _findByAddress(records, expected.link.address);
+      if (current == null ||
+          !current.link.hasSameCanonicalPayload(expected.link) ||
+          current.fundingTxids != expected.fundingTxids ||
+          jsonEncode(current.usage.toJson()) !=
+              jsonEncode(expected.usage.toJson())) {
+        continue;
+      }
+      // Apply the same validation to writes and reads.
+      GiftCardUsage.fromJson(usage.toJson());
+      records = _replaceByAddress(
         records,
         current.copyWith(
           state: current.state,
           updatedAt: current.updatedAt,
           usage: usage,
         ),
-      ),
-    );
-    return true;
+      );
+      saved.add(expected.link.address);
+    }
+    if (saved.isNotEmpty) await _writeRecords(records);
+    return saved;
   });
 
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {

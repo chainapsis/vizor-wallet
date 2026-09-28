@@ -165,6 +165,10 @@ void main() {
           'one-funding-txid',
           'one-funding-txid',
         ]);
+        // One funding time for the group drives its confirming window.
+        final fundedAt = restored.first.fundedAt;
+        expect(fundedAt, isNotNull);
+        expect(restored.map((record) => record.fundedAt), [fundedAt, fundedAt]);
       },
     );
 
