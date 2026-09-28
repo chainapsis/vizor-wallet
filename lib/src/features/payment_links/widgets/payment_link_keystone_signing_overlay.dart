@@ -28,12 +28,14 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.batch,
     super.key,
   });
 
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkBatchDraft? batch;
   final FutureOr<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
@@ -96,11 +98,13 @@ class _PaymentLinkKeystoneSigningOverlayState
     try {
       final service = ref.read(paymentLinkHardwareSigningServiceProvider);
       _signingService = service;
-      final creation = service.createFundingPczt(
-        amountZatoshi: widget.amountZatoshi,
-        sourceAccountUuid: widget.sourceAccountUuid,
-        presentation: widget.presentation,
-      );
+      final creation = widget.batch == null
+          ? service.createFundingPczt(
+              amountZatoshi: widget.amountZatoshi,
+              sourceAccountUuid: widget.sourceAccountUuid,
+              presentation: widget.presentation,
+            )
+          : service.createBatchFundingPczt(widget.batch!);
       _draftCreation = creation;
       final draft = await creation;
       _draft = draft;
@@ -524,8 +528,8 @@ class _PaymentLinkKeystoneSigningOverlayState
                   'Follow the steps on your device.',
               scanCaption:
                   'Scan the QR code on your Keystone to finish creating',
-              readingSignatureLabel: 'Reading signature...',
-              finalizingSignatureLabel: 'Creating your gift card...',
+              readingSignatureLabel: 'Reading signature…',
+              finalizingSignatureLabel: 'Creating your gift card…',
               keyPrefix: 'payment_link_keystone_sign',
               logTag: 'PaymentLinkKeystoneSigning',
               expectedSignedUrType: 'zcash-batch-sig-result',

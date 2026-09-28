@@ -248,7 +248,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Redeeming a card...'), findsOneWidget);
-      expect(find.text('Redeeming...'), findsOneWidget);
+      expect(find.text('Redeeming…'), findsOneWidget);
       expect(
         find.ancestor(
           of: find.byWidgetPredicate(
@@ -459,7 +459,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('Redeeming...'), findsOneWidget);
+      expect(find.text('Redeeming…'), findsOneWidget);
       currentIndex = index(_giftCard(kind: GiftCardActivityKind.redeemed));
       ProviderScope.containerOf(
         tester.element(find.byType(MobileTransactionStatusScreen)),

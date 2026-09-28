@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
@@ -110,15 +111,12 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
               )
               .map((r) => r.amountText);
     expect(amounts(), everyElement('****** ZEC'));
-    await _expectPrivacyButtonSemantics(tester, 'Turn off privacy mode');
-    if (!mobile) {
-      final title = find.text('Gift Cards');
-      final titleRow = find
-          .ancestor(of: title, matching: find.byType(Row))
-          .first;
+    if (mobile) {
+      await _expectPrivacyButtonSemantics(tester, 'Turn off privacy mode');
+    } else {
       expect(
-        tester.getCenter(title).dx,
-        closeTo(tester.getCenter(titleRow).dx, 0.01),
+        find.byKey(const ValueKey('payment_link_privacy_button')),
+        findsNothing,
       );
     }
     final haptics = <Object?>[];
@@ -152,22 +150,100 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
       file.parent.createSync(recursive: true);
       await expectLater(find.byKey(boundary), matchesGoldenFile(file.uri));
     }
-    await tester.tap(find.byKey(const ValueKey('payment_link_privacy_button')));
+    if (mobile) {
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_privacy_button')),
+      );
+    } else {
+      await privacy.set(false);
+    }
     await tester.pumpAndSettle();
     expect(amounts(), everyElement(isNot(contains('*'))));
     expect(privacy.isEnabled, isFalse);
     expect(haptics, mobile ? ['HapticFeedbackType.mediumImpact'] : isEmpty);
-    await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
-    await tester.tap(find.byKey(const ValueKey('payment_link_privacy_button')));
+    if (mobile) {
+      await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_privacy_button')),
+      );
+    } else {
+      await privacy.set(true);
+    }
     await tester.tap(find.text('Received').first);
     await tester.pumpAndSettle();
     expect(amounts(), ['****** ZEC']);
-    await tester.tap(find.byKey(const ValueKey('payment_link_privacy_button')));
+    if (mobile) {
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_privacy_button')),
+      );
+    } else {
+      await privacy.set(false);
+    }
     await tester.pumpAndSettle();
     expect(amounts(), everyElement(isNot(contains('*'))));
     expect(privacy.isEnabled, isFalse);
-    await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
+    if (mobile) {
+      await _expectPrivacyButtonSemantics(tester, 'Turn on privacy mode');
+    }
   });
+
+  if (!mobile) {
+    testWidgets('gift card groups mask amounts in the list and detail', (
+      tester,
+    ) async {
+      final privacy = _Privacy();
+      final links = batchTestLinks;
+      final records = [
+        for (final (index, link) in links.indexed)
+          PaymentLinkRecoveryRecord(
+            link: link,
+            sourceAccountUuid: 'account-1',
+            claimFeeReserveZatoshi: BigInt.from(10000),
+            state: PaymentLinkRecoveryState.funded,
+            updatedAt: DateTime.utc(2026, 9, 23),
+            fundingTxids: 'group-funding',
+            batchId: 'private-group',
+            batchIndex: index + 1,
+            batchCount: links.length,
+            usage: const GiftCardUsage(status: GiftCardUsageStatus.unused),
+          ),
+      ];
+      await pumpPaymentLinksScreen(
+        tester,
+        logicalSize: size,
+        privacyNotifier: privacy,
+        operations: FakePaymentLinkOperations(records: records),
+        giftCardUsages: {for (final r in records) r.link.address: r.usage},
+      );
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(
+        const ValueKey('payment_link_batch_private-group'),
+      );
+      expect(
+        tester.widget<PaymentLinkBatchListRow>(row).amountText,
+        allOf(contains('*'), isNot(matches(RegExp(r'\d')))),
+      );
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      PaymentLinkBatchDetailDesktopView detail() =>
+          tester.widget<PaymentLinkBatchDetailDesktopView>(
+            find.byType(PaymentLinkBatchDetailDesktopView),
+          );
+      Iterable<String?> cardAmounts() => tester
+          .widgetList<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .map((card) => card.amountText);
+      expect(detail().amountPerCardText, contains('*'));
+      expect(cardAmounts(), everyElement(contains('*')));
+      expect(find.byType(PaymentLinkBatchMemberRow), findsNWidgets(2));
+
+      await privacy.set(false);
+      await tester.pumpAndSettle();
+      expect(detail().amountPerCardText, isNot(contains('*')));
+      expect(cardAmounts(), everyElement(isNot(contains('*'))));
+    });
+  }
 
   testWidgets('privacy keeps gift creation and claim amounts visible', (
     tester,

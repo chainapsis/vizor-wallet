@@ -1003,6 +1003,55 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Gift Cards',
               children: [
                 WidgetbookComponent(
+                  name: 'Desktop batch',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Create - Empty',
+                      builder: buildPaymentLinkBatchEmptyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create - Amount',
+                      builder: buildPaymentLinkBatchAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create - Calculating',
+                      builder: buildPaymentLinkBatchCalculatingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create - Review',
+                      builder: buildPaymentLinkBatchReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Batch detail - Payment pending',
+                      builder: buildPaymentLinkBatchPendingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Batch detail - Just created',
+                      builder: buildPaymentLinkBatchReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Batch detail',
+                      builder: buildPaymentLinkBatchDetailUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Batch detail - Mixed designs',
+                      builder: buildPaymentLinkBatchDetailMixedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Create - Mixed designs',
+                      builder: buildPaymentLinkBatchMixedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Batch detail - Save links',
+                      builder: buildPaymentLinkBatchExportUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Batch',
+                      builder: buildPaymentLinkCardsListBatchUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
@@ -1939,7 +1988,7 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Page',
                   useCases: [
                     WidgetbookUseCase(
-                      name: 'Default',
+                      name: 'Default with batch',
                       builder: buildActivityPageUseCase,
                     ),
                     WidgetbookUseCase(
@@ -1981,6 +2030,10 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookComponent(
                   name: 'Gift Card detail',
                   useCases: [
+                    WidgetbookUseCase(
+                      name: 'Created batch',
+                      builder: buildGiftCardBatchActivityDetailUseCase,
+                    ),
                     WidgetbookUseCase(
                       name: 'Created',
                       builder: buildCreatedGiftCardActivityDetailUseCase,

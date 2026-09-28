@@ -21,7 +21,7 @@ const kPaymentLinkUsedSectionLabel = 'Used';
 const kPaymentLinkNoCreatedCardsText = 'No created cards yet.';
 const kPaymentLinkNoReceivedCardsText = 'No received cards yet.';
 const kPaymentLinkFundingIncompleteStatus = 'Funding incomplete';
-const kPaymentLinkPreparingStatus = 'Preparing...';
+const kPaymentLinkPreparingStatus = 'Preparing…';
 const kPaymentLinkCopyLinkSemanticLabel = 'Copy gift card link';
 const kPaymentLinkReadyHeading = 'Ready to share';
 const kPaymentLinkAlmostReadyHeading = 'Gift Card is\nalmost ready!';
@@ -38,7 +38,7 @@ const kPaymentLinkClaimWaitingDescription =
     'Your gift will be ready to claim shortly.';
 const kPaymentLinkWaitingDescription = 'This may take a little while.';
 const kPaymentLinkPasteLabel = 'Paste card link';
-const kPaymentLinkCheckingLabel = 'Checking ...';
+const kPaymentLinkCheckingLabel = 'Checking…';
 const kPaymentLinkClearClipboardLabel = 'Clear clipboard';
 const kPaymentLinkGiftMessageLabel = 'Gift message';
 const kPaymentLinkMessageAttachedTitle = 'Message attached.';

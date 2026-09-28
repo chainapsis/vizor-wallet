@@ -757,6 +757,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         transaction: transaction,
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
+        giftCardBatchCount: giftCard?.batchCount,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
         giftCardStableId: giftCard?.stableId,
         giftCardActivityTimestamp: giftCard?.activityTimestamp,

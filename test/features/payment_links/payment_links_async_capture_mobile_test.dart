@@ -126,10 +126,10 @@ void main() {
           } else {
             expect(
               find.text(switch (state) {
-                'funding' || 'funding-error' => 'Creating...',
+                'funding' || 'funding-error' => 'Creating…',
                 'metadata' => 'Try saving again',
-                'claiming' || 'claim-error' => 'Claiming...',
-                'account-preparing' => 'Preparing...',
+                'claiming' || 'claim-error' => 'Claiming…',
+                'account-preparing' => 'Preparing…',
                 _ => 'Checking card...',
               }),
               findsOneWidget,

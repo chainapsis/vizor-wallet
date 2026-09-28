@@ -132,7 +132,7 @@ void main() {
       await tester.pump();
       await back(tester);
       expect(keyed(_review), findsOneWidget);
-      expect(find.text('Creating...'), findsOneWidget);
+      expect(find.text('Creating…'), findsOneWidget);
       gate.complete();
       await tester.pumpAndSettle();
       expect(find.text('Go home'), findsOneWidget);
@@ -160,7 +160,7 @@ void main() {
     await tester.pump();
     await back(tester);
     expect(keyed(_review), findsOneWidget);
-    expect(find.text('Creating...'), findsOneWidget);
+    expect(find.text('Creating…'), findsOneWidget);
     expect(keyed('payment_links_mobile_create_button'), findsNothing);
     gate.complete();
     await tester.pumpAndSettle();
@@ -274,10 +274,10 @@ void main() {
     await tester.tap(keyed('payment_link_mobile_claim_button'));
     await tester.pump();
     await back(tester);
-    expect(find.text('Claiming...'), findsOneWidget);
+    expect(find.text('Claiming…'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Close').last);
     await tester.pump();
-    expect(find.text('Claiming...'), findsOneWidget);
+    expect(find.text('Claiming…'), findsOneWidget);
     expect(router.state.uri.path, '/payment-links');
     gate.complete(broadcastedClaimResult);
     for (var i = 0; i < 12; i++) {
@@ -298,7 +298,7 @@ void main() {
     await tester.tap(keyed('payment_link_mobile_claim_button'));
     await tester.pump();
     await back(tester);
-    expect(find.text('Claiming...'), findsOneWidget);
+    expect(find.text('Claiming…'), findsOneWidget);
     gate.completeError(StateError('submission failed'));
     await tester.pumpAndSettle();
     expect(find.text('Try again'), findsOneWidget);
@@ -321,7 +321,7 @@ void main() {
     await tester.pump();
     await accounts.switchAccount('account-2');
     await tester.pump();
-    expect(find.text('Creating...'), findsOneWidget);
+    expect(find.text('Creating…'), findsOneWidget);
     gate.completeError(StateError('funding failed'));
     await tester.pumpAndSettle();
     expect(keyed(_amount), findsOneWidget);

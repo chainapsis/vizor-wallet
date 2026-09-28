@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart'
     show InputDecoration, Material, MaterialType, TextField;
 import 'package:flutter/services.dart';
@@ -49,6 +51,24 @@ enum PaymentLinkCardArtwork {
   }
 }
 
+/// Designs for a mixed group, in card order. Every design appears once per
+/// round in a shuffled order, and no two neighbouring cards share one.
+List<PaymentLinkCardArtwork> paymentLinkMixedArtworks(
+  int count, {
+  Random? random,
+}) {
+  final rng = random ?? Random();
+  final artworks = <PaymentLinkCardArtwork>[];
+  while (artworks.length < count) {
+    final round = [...PaymentLinkCardArtwork.values]..shuffle(rng);
+    if (artworks.isNotEmpty && round.first == artworks.last) {
+      round.add(round.removeAt(0));
+    }
+    artworks.addAll(round);
+  }
+  return artworks.sublist(0, count);
+}
+
 /// Figma `_CARD` presentation component.
 ///
 /// [amountText] selects a static front state: null renders the default prompt,
@@ -83,7 +103,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.messageEditorKey,
     this.messageInputFormatters = const [],
     this.onMessageChanged,
-    this.emptyMessageLabel = 'Start typing...',
+    this.emptyMessageLabel = 'Start typing…',
     this.maxMessageLength = 128,
     this.messageCharacterCount,
     this.onTap,

@@ -19,6 +19,7 @@ class AppPaneFloatingBar extends StatefulWidget {
     required this.builder,
     this.visible = true,
     this.fadeVisible = true,
+    this.fadeEndFraction = 1,
     this.overlayWidth,
     super.key,
   });
@@ -44,6 +45,9 @@ class AppPaneFloatingBar extends StatefulWidget {
   /// bottom fade. Screens with an external scroll controller can turn this
   /// off once the scroll position reaches the end.
   final bool fadeVisible;
+
+  /// Point within the overlay where the fade reaches the window color.
+  final double fadeEndFraction;
 
   /// Width of the gradient band + bar. Null spans the full pane width;
   /// a value centers the overlay in a fixed-width column (the settings
@@ -104,6 +108,7 @@ class _AppPaneFloatingBarState extends State<AppPaneFloatingBar> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
+                    stops: [0, widget.fadeEndFraction],
                     colors: [
                       context.colors.macosUtility.windowTransparent,
                       context.colors.macosUtility.window,

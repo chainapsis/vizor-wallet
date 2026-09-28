@@ -677,6 +677,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildRedeemedGiftCardActivityDetailUseCase,
   ),
   FigmaCompareScenario(
+    id: 'activity-gift-card-batch-detail',
+    description: 'Desktop created Gift Card batch activity detail',
+    builder: buildGiftCardBatchActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-empty',
     description: 'Desktop Gift Cards empty state',
     builder: buildPaymentLinkEmptyUseCase,
@@ -767,6 +772,66 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPaymentLinkReadyUseCase,
   ),
   FigmaCompareScenario(
+    id: 'payment-link-batch-review',
+    description: 'Desktop Gift Card 20-card batch review',
+    builder: buildPaymentLinkBatchReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-amount',
+    description: 'Desktop Gift Card bulk configuration and cost summary',
+    builder: buildPaymentLinkBatchAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-empty',
+    description: 'Desktop Gift Card bulk configuration before amount entry',
+    builder: buildPaymentLinkBatchEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-calculating',
+    description: 'Desktop Gift Card bulk quote in progress',
+    builder: buildPaymentLinkBatchCalculatingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-minimum',
+    description: 'Desktop Gift Card two-card configuration and thin deck',
+    builder: buildPaymentLinkBatchMinimumUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-maximum',
+    description: 'Desktop Gift Card fifty-card configuration and full deck',
+    builder: buildPaymentLinkBatchMaximumUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-ready',
+    description: 'Desktop Gift Card settled batch reveal',
+    builder: buildPaymentLinkBatchReadyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-detail',
+    description: 'Desktop Gift Card batch management',
+    builder: buildPaymentLinkBatchDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-mixed',
+    description: 'Desktop Gift Card group configuration with mixed designs',
+    builder: buildPaymentLinkBatchMixedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-detail-mixed',
+    description: 'Desktop Gift Card group with mixed designs',
+    builder: buildPaymentLinkBatchDetailMixedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-export',
+    description: 'Desktop Gift Card group CSV save confirmation',
+    builder: buildPaymentLinkBatchExportUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-batch-pending',
+    description: 'Desktop Gift Card batch with unconfirmed broadcast status',
+    builder: buildPaymentLinkBatchPendingUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-motion-handoff',
     description: 'Desktop Gift Card motion handoff playground',
     builder: buildPaymentLinkMotionHandoffUseCase,
@@ -775,6 +840,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-link-cards-list',
     description: 'Desktop created Gift Cards list fixture',
     builder: buildPaymentLinkCardsListUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-cards-list-batch',
+    description: 'Desktop created Gift Card batch row',
+    builder: buildPaymentLinkCardsListBatchUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-share-qr',

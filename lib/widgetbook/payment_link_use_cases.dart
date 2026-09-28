@@ -3,6 +3,7 @@
 // data and is intentionally isolated from payment-link services and storage.
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -16,7 +17,10 @@ import '../src/core/widgets/app_profile_picture.dart';
 import '../src/core/widgets/comma_to_dot_input_formatter.dart';
 import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
+import '../src/features/payment_links/services/payment_link_service.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
+import '../src/features/payment_links/widgets/payment_link_bulk_desktop_flow.dart';
+import '../src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
 import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
@@ -49,6 +53,12 @@ enum PaymentLinkPreviewState {
   createEmpty,
   createFocused,
   createAmount,
+  batchAmount,
+  batchEmpty,
+  batchCalculating,
+  batchMinimum,
+  batchMaximum,
+  batchMixed,
   createSyncing,
   createInsufficient,
   createFiatLoading,
@@ -57,9 +67,16 @@ enum PaymentLinkPreviewState {
   messageFilled,
   review,
   reviewMessage,
+  batchReview,
+  batchReady,
+  batchDetail,
+  batchDetailMixed,
+  batchPending,
+  batchExport,
   readyWaiting,
   ready,
   cardsList,
+  cardsListBatch,
   shareQr,
   cardsReceiving,
   cardsReceived,
@@ -89,6 +106,27 @@ Widget buildPaymentLinkCreateFocusedUseCase(BuildContext context) =>
 Widget buildPaymentLinkCreateAmountUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
       state: PaymentLinkPreviewState.createAmount,
+    );
+
+Widget buildPaymentLinkBatchAmountUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchAmount);
+
+Widget buildPaymentLinkBatchEmptyUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchEmpty);
+
+Widget buildPaymentLinkBatchCalculatingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.batchCalculating,
+    );
+
+Widget buildPaymentLinkBatchMinimumUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.batchMinimum,
+    );
+
+Widget buildPaymentLinkBatchMaximumUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.batchMaximum,
     );
 
 Widget buildPaymentLinkCreateInsufficientUseCase(BuildContext context) =>
@@ -158,11 +196,41 @@ Widget buildPaymentLinkReadyWaitingUseCase(BuildContext context) =>
 Widget buildPaymentLinkReadyUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.ready);
 
+Widget buildPaymentLinkBatchReviewUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchReview);
+
+Widget buildPaymentLinkBatchReadyUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchReady);
+
+Widget buildPaymentLinkBatchDetailUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchDetail);
+
+Widget buildPaymentLinkBatchDetailMixedUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.batchDetailMixed,
+    );
+
+Widget buildPaymentLinkBatchMixedUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchMixed);
+
+Widget buildPaymentLinkBatchExportUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchExport);
+
+Widget buildPaymentLinkBatchPendingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.batchPending,
+    );
+
 Widget buildPaymentLinkMotionHandoffUseCase(BuildContext context) =>
     const PaymentLinkMotionDesktopPreview();
 
 Widget buildPaymentLinkCardsListUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.cardsList);
+
+Widget buildPaymentLinkCardsListBatchUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.cardsListBatch,
+    );
 
 Widget buildPaymentLinkShareQrUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.shareQr);
@@ -221,13 +289,16 @@ class PaymentLinkDesktopPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox.fromSize(
-        size: _previewWindowSize,
-        child: AppDesktopShell(
-          sidebar: const _PaymentLinkPreviewSidebar(),
-          pane: AppDesktopPane(
-            padding: EdgeInsets.zero,
-            child: _PaymentLinkPreviewPane(state: state),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox.fromSize(
+          size: _previewWindowSize,
+          child: AppDesktopShell(
+            sidebar: const _PaymentLinkPreviewSidebar(),
+            pane: AppDesktopPane(
+              padding: EdgeInsets.zero,
+              child: _PaymentLinkPreviewPane(state: state),
+            ),
           ),
         ),
       ),
@@ -279,6 +350,22 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
           onUseMax: _noop,
           showMaxButton: true,
         ),
+      ),
+      PaymentLinkPreviewState.batchAmount => const _PaymentLinkBulkPreview(),
+      PaymentLinkPreviewState.batchEmpty => const _PaymentLinkBulkPreview(
+        initialAmount: '',
+      ),
+      PaymentLinkPreviewState.batchCalculating => const _PaymentLinkBulkPreview(
+        initialPreparing: true,
+      ),
+      PaymentLinkPreviewState.batchMinimum => const _PaymentLinkBulkPreview(
+        initialCount: 2,
+      ),
+      PaymentLinkPreviewState.batchMaximum => const _PaymentLinkBulkPreview(
+        initialCount: 50,
+      ),
+      PaymentLinkPreviewState.batchMixed => const _PaymentLinkBulkPreview(
+        initialMixed: true,
       ),
       PaymentLinkPreviewState.createSyncing => _amount(
         visualState: PaymentLinkAmountVisualState.amount,
@@ -360,6 +447,24 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.reviewMessage => const _PaymentLinkReviewPreview(
         initialShowBack: true,
       ),
+      PaymentLinkPreviewState.batchReview => const _PaymentLinkBulkPreview(
+        initialReviewing: true,
+      ),
+      PaymentLinkPreviewState.batchReady ||
+      PaymentLinkPreviewState.batchDetail => _PaymentLinkBatchDetailPreview(
+        justCreated: state == PaymentLinkPreviewState.batchReady,
+      ),
+      PaymentLinkPreviewState.batchDetailMixed =>
+        const _PaymentLinkBatchDetailPreview(mixed: true),
+      PaymentLinkPreviewState.batchPending =>
+        const _PaymentLinkBatchDetailPreview(ready: false),
+      PaymentLinkPreviewState.batchExport => const Stack(
+        fit: StackFit.expand,
+        children: [
+          _PaymentLinkBatchDetailPreview(),
+          PaymentLinkBatchExportModal(onConfirm: _noop, onCancel: _noop),
+        ],
+      ),
       PaymentLinkPreviewState.readyWaiting => PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,
         card: _readyCard(),
@@ -378,89 +483,115 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         waitingStatusLabel: 'Wait 1:15 to claim',
       ),
       PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
-      PaymentLinkPreviewState.cardsList => PaymentLinkCardsDesktopView(
-        sections: const [
-          PaymentLinkCardsSection(
-            label: kPaymentLinkPendingSectionLabel,
-            cards: [
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
-                amountText: '1.10 ZEC',
-                dateText: 'May 20',
-                statusText: 'Preparing...',
-                showLoader: true,
-              ),
-            ],
-          ),
-          PaymentLinkCardsSection(
-            label: kPaymentLinkUnusedSectionLabel,
-            cards: [
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.ruby),
-                amountText: '0.25 ZEC',
-                dateText: 'July 2',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(PaymentLinkCardArtwork.dragon),
-                amountText: '1.10 ZEC',
-                dateText: 'May 20',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-            ],
-          ),
-          PaymentLinkCardsSection(
-            label: kPaymentLinkUsedSectionLabel,
-            cards: [
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(
-                  PaymentLinkCardArtwork.chestLava,
+      PaymentLinkPreviewState.cardsList ||
+      PaymentLinkPreviewState.cardsListBatch => PaymentLinkCardsDesktopView(
+        sections: state == PaymentLinkPreviewState.cardsListBatch
+            ? const [
+                PaymentLinkCardsSection(
+                  label: 'Groups',
+                  cards: [
+                    PaymentLinkBatchListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.ruby,
+                      ),
+                      count: 20,
+                      amountText: '0.1 ZEC',
+                      dateText: 'July 2',
+                      statusText: '3 of 20 used',
+                      onOpen: _noop,
+                    ),
+                  ],
                 ),
-                amountText: '2.5 ZEC',
-                dateText: 'July 20',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(
-                  PaymentLinkCardArtwork.chestLava,
+              ]
+            : const [
+                PaymentLinkCardsSection(
+                  label: kPaymentLinkPendingSectionLabel,
+                  cards: [
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.dragon,
+                      ),
+                      amountText: '1.10 ZEC',
+                      dateText: 'May 20',
+                      statusText: 'Preparing…',
+                      showLoader: true,
+                    ),
+                  ],
                 ),
-                amountText: '2.5 ZEC',
-                dateText: 'July 20',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(
-                  PaymentLinkCardArtwork.chestLava,
+                PaymentLinkCardsSection(
+                  label: kPaymentLinkUnusedSectionLabel,
+                  cards: [
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.ruby,
+                      ),
+                      amountText: '0.25 ZEC',
+                      dateText: 'July 2',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.dragon,
+                      ),
+                      amountText: '1.10 ZEC',
+                      dateText: 'May 20',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                  ],
                 ),
-                amountText: '2.5 ZEC',
-                dateText: 'July 20',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-              PaymentLinkCardListRow(
-                thumbnail: _PaymentLinkThumbnail(
-                  PaymentLinkCardArtwork.chestLava,
+                PaymentLinkCardsSection(
+                  label: kPaymentLinkUsedSectionLabel,
+                  cards: [
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.chestLava,
+                      ),
+                      amountText: '2.5 ZEC',
+                      dateText: 'July 20',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.chestLava,
+                      ),
+                      amountText: '2.5 ZEC',
+                      dateText: 'July 20',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.chestLava,
+                      ),
+                      amountText: '2.5 ZEC',
+                      dateText: 'July 20',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                    PaymentLinkCardListRow(
+                      thumbnail: _PaymentLinkThumbnail(
+                        PaymentLinkCardArtwork.chestLava,
+                      ),
+                      amountText: '2.5 ZEC',
+                      dateText: 'July 20',
+                      showLinkActions: true,
+                      onCopyLink: _noop,
+                      onShowQr: _noop,
+                    ),
+                  ],
                 ),
-                amountText: '2.5 ZEC',
-                dateText: 'July 20',
-                showLinkActions: true,
-                onCopyLink: _noop,
-                onShowQr: _noop,
-              ),
-            ],
-          ),
-        ],
+              ],
         onBack: _noop,
         onCreate: _noop,
+        onCreateMultiple: _noop,
         onRedeem: _noop,
       ),
       PaymentLinkPreviewState.shareQr => PaymentLinkShareQrDesktopView(
@@ -471,7 +602,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onCopyLink: _noop,
       ),
       PaymentLinkPreviewState.cardsReceiving => _receivedCardsList(
-        statusText: 'Receiving...',
+        statusText: 'Receiving…',
       ),
       PaymentLinkPreviewState.cardsReceived => _receivedCardsList(
         statusText: 'Received',
@@ -534,6 +665,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       onBack: _noop,
       onShowHelp: _noop,
       onCreate: _noop,
+      onCreateMultiple: _noop,
       onRedeem: _noop,
     );
   }
@@ -551,13 +683,14 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
               amountText: '4.45 ZEC',
               dateText: 'August 7',
               statusText: statusText,
-              showLoader: statusText == 'Receiving...',
+              showLoader: statusText == 'Receiving…',
             ),
           ],
         ),
       ],
       onBack: _noop,
       onCreate: _noop,
+      onCreateMultiple: _noop,
       onRedeem: _noop,
       activeTab: PaymentLinkCardsTab.received,
     );
@@ -587,6 +720,80 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       amountText: '4.45',
       supportingText: r'$1,210.20',
       showCaret: false,
+    );
+  }
+}
+
+class _PaymentLinkBatchDetailPreview extends StatelessWidget {
+  const _PaymentLinkBatchDetailPreview({
+    this.justCreated = false,
+    this.ready = true,
+    this.mixed = false,
+  });
+
+  final bool justCreated;
+  final bool ready;
+  final bool mixed;
+
+  /// A group a few days after it was handed out; a just-created group cannot
+  /// have been claimed yet.
+  static const _used = {1, 2, 3, 5};
+  static const _detected = {8, 11};
+
+  @override
+  Widget build(BuildContext context) {
+    final artworks = mixed
+        ? paymentLinkMixedArtworks(20, random: Random(7))
+        : List.filled(20, PaymentLinkCardArtwork.ruby);
+    PaymentLinkBatchMemberRow row(int index) {
+      final detected = !justCreated && _detected.contains(index);
+      final used = detected || (!justCreated && _used.contains(index));
+      return PaymentLinkBatchMemberRow(
+        index: index,
+        artwork: artworks[index - 1],
+        statusLabel: detected
+            ? 'Use detected'
+            : used
+            ? 'Used'
+            : 'Unused',
+        used: used,
+        note: detected ? 'Use detected' : null,
+        onCopyLink: _noop,
+        onShowQr: _noop,
+      );
+    }
+
+    final rows = [for (var index = 1; index <= 20; index++) row(index)];
+    return PaymentLinkBatchDetailDesktopView(
+      count: 20,
+      amountPerCardText: '0.1',
+      artwork: artworks.first,
+      backArtworks: mixed ? artworks.sublist(1) : const [],
+      dateText: 'September 23',
+      ready: ready,
+      justCreated: justCreated,
+      onBack: _noop,
+      onExport: _noop,
+      onCheckStatus: _noop,
+      usageActivity: const PaymentLinkBatchUsageActivity(
+        checkedText: 'Checked just now',
+      ),
+      sections: [
+        PaymentLinkCardsSection(
+          label: kPaymentLinkUnusedSectionLabel,
+          cards: [
+            for (final row in rows)
+              if (!row.used) row,
+          ],
+        ),
+        PaymentLinkCardsSection(
+          label: kPaymentLinkUsedSectionLabel,
+          cards: [
+            for (final row in rows)
+              if (row.used) row,
+          ],
+        ),
+      ],
     );
   }
 }
@@ -699,6 +906,87 @@ class _PaymentLinkStaticAmountPreviewState
           : 'Continue',
     );
   }
+}
+
+class _PaymentLinkBulkPreview extends StatefulWidget {
+  const _PaymentLinkBulkPreview({
+    this.initialReviewing = false,
+    this.initialCount = 20,
+    this.initialAmount = '0.1',
+    this.initialPreparing = false,
+    this.initialMixed = false,
+  });
+
+  final bool initialReviewing;
+  final int initialCount;
+  final String initialAmount;
+  final bool initialPreparing;
+  final bool initialMixed;
+
+  @override
+  State<_PaymentLinkBulkPreview> createState() =>
+      _PaymentLinkBulkPreviewState();
+}
+
+class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
+  late final _amount = TextEditingController(text: widget.initialAmount);
+  final _message = TextEditingController();
+  late int _count = widget.initialCount;
+  var _artwork = PaymentLinkCardArtwork.ruby;
+  // Seeded so captures stay deterministic.
+  late List<PaymentLinkCardArtwork>? _mixed = widget.initialMixed
+      ? paymentLinkMixedArtworks(50, random: Random(7))
+      : null;
+  late bool _reviewing = widget.initialReviewing;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _message.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PaymentLinkBulkDesktopFlow(
+    count: _count,
+    maxCount: 50,
+    amountController: _amount,
+    messageController: _message,
+    artwork: _artwork,
+    mixedArtworks: _mixed?.take(_count).toList(),
+    onMixChanged: (mixed) => setState(
+      () => _mixed = mixed
+          ? paymentLinkMixedArtworks(50, random: Random(7))
+          : null,
+    ),
+    spendable: BigInt.from(_count > 30 ? 1000000000 : 400000000),
+    quote: widget.initialPreparing || _amount.text.isEmpty
+        ? null
+        : PaymentLinkBatchQuote(
+            sourceAccountUuid: 'preview-account',
+            count: _count,
+            recipientAmountZatoshi: BigInt.from(10000000),
+            fundingFeeZatoshi: BigInt.from(150000),
+          ),
+    preparing: widget.initialPreparing,
+    reviewing: _reviewing,
+    submitting: false,
+    retrySaving: false,
+    error: null,
+    onCountChanged: (count) => setState(() => _count = count),
+    onAmountChanged: (_) => setState(() {}),
+    onMessageChanged: (_) => setState(() {}),
+    onArtworkChanged: (artwork) => setState(() {
+      _artwork = artwork;
+      _mixed = null;
+    }),
+    onReview: widget.initialPreparing || _amount.text.isEmpty
+        ? null
+        : () => setState(() => _reviewing = true),
+    onEdit: () => setState(() => _reviewing = false),
+    onCreate: _noop,
+    onBack: _noop,
+  );
 }
 
 class _PaymentLinkReadyPreview extends StatefulWidget {

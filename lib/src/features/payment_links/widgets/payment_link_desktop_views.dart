@@ -15,6 +15,7 @@ import 'payment_link_card_motion.dart';
 import 'payment_link_cards_layout.dart';
 import 'payment_link_copy.dart';
 import 'payment_link_gift_card.dart';
+import 'payment_link_group_entry.dart';
 import 'payment_link_qr_share_card.dart';
 import 'payment_link_wizard_chrome.dart';
 
@@ -44,6 +45,10 @@ enum PaymentLinkReadyVisualState { waiting, ready }
 enum PaymentLinkRedeemVisualState { paste, loading, invalid }
 
 /// Empty Gift Cards landing surface.
+/// The pane width from which the **For a group** tile sits beside the
+/// content instead of below it, on the empty home and the card list alike.
+const _kGroupTileBesideMinWidth = 740.0;
+
 class PaymentLinksHomeDesktopView extends StatelessWidget {
   const PaymentLinksHomeDesktopView({
     required this.illustration,
@@ -51,6 +56,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
     required this.onShowHelp,
     required this.onCreate,
     required this.onRedeem,
+    this.onCreateMultiple,
     this.backLabel = 'Home',
     this.title = kPaymentLinkEmptyTitle,
     this.helpLabel = 'How gift cards work',
@@ -64,6 +70,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
   final VoidCallback onShowHelp;
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
+  final VoidCallback? onCreateMultiple;
   final String backLabel;
   final String title;
   final String helpLabel;
@@ -72,78 +79,149 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final heading = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: context.colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        PaymentLinkTextAction(
+          label: helpLabel,
+          onTap: onShowHelp,
+          trailing: AppIcon(
+            AppIcons.help,
+            size: 16,
+            color: context.colors.icon.regular,
+          ),
+        ),
+      ],
+    );
+    final actions = _PaymentLinkDesktopCreateActions(
+      onCreate: onCreate,
+      onRedeem: onRedeem,
+      createLabel: createLabel,
+      redeemLabel: redeemLabel,
+      showGiftIcon: true,
+    );
+    final art = SizedBox(
+      width: 340,
+      height: 220,
+      child: Center(child: illustration),
+    );
+    final largeText = paymentLinkUsesLargeText(context);
+    final body = SizedBox(
+      width: 420,
+      // Large text flows and scrolls instead of clipping the Figma frame.
+      child: largeText
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                art,
+                const SizedBox(height: AppSpacing.md),
+                heading,
+                const SizedBox(height: AppSpacing.md),
+                actions,
+                const SizedBox(height: AppSpacing.md),
+              ],
+            )
+          : SizedBox(
+              height: 624,
+              child: Stack(
+                children: [
+                  Positioned(top: 95.5, left: 40, child: art),
+                  Positioned(top: 339.5, left: 0, right: 0, child: heading),
+                  Positioned(top: 444.5, left: 0, right: 0, child: actions),
+                ],
+              ),
+            ),
+    );
+    final onCreateGroup = onCreateMultiple;
     return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          width: 420,
-          height: 624,
-          child: Stack(
-            children: [
-              Positioned(
-                top: 95.5,
-                left: 40,
-                child: SizedBox(
-                  width: 340,
-                  height: 220,
-                  child: Center(child: illustration),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (onCreateGroup == null) {
+            return Align(alignment: Alignment.topCenter, child: body);
+          }
+          if (constraints.maxWidth < _kGroupTileBesideMinWidth || largeText) {
+            return Column(
+              children: [
+                Center(child: body),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm,
+                    0,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                  ),
+                  child: PaymentLinkGroupEntry(
+                    fullWidth: true,
+                    onPressed: onCreateGroup,
+                  ),
                 ),
-              ),
-              Positioned(
-                top: 339.5,
-                left: 0,
-                right: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: context.colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    PaymentLinkTextAction(
-                      label: helpLabel,
-                      onTap: onShowHelp,
-                      trailing: AppIcon(
-                        AppIcons.help,
-                        size: 16,
-                        color: context.colors.icon.regular,
-                      ),
-                    ),
-                  ],
+              ],
+            );
+          }
+          return SizedBox(
+            height: 624,
+            child: Stack(
+              children: [
+                Align(alignment: Alignment.topCenter, child: body),
+                Positioned(
+                  top: 208,
+                  right: AppSpacing.base,
+                  child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
                 ),
-              ),
-              Positioned(
-                top: 444.5,
-                left: 0,
-                right: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppButton(
-                      key: const ValueKey('payment_link_create_card_button'),
-                      onPressed: onCreate,
-                      size: AppButtonSize.mediumLarge,
-                      leading: const AppIcon(
-                        AppIcons.giftCard,
-                        size: AppIconSize.medium,
-                      ),
-                      child: Text(createLabel),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    PaymentLinkTextAction(label: redeemLabel, onTap: onRedeem),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        },
       ),
+    );
+  }
+}
+
+class _PaymentLinkDesktopCreateActions extends StatelessWidget {
+  const _PaymentLinkDesktopCreateActions({
+    required this.onCreate,
+    required this.onRedeem,
+    required this.createLabel,
+    required this.redeemLabel,
+    this.showGiftIcon = false,
+  });
+
+  final VoidCallback onCreate;
+  final VoidCallback onRedeem;
+  final String createLabel;
+  final String redeemLabel;
+  final bool showGiftIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final largeText = paymentLinkUsesLargeText(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppButton(
+          key: const ValueKey('payment_link_create_card_button'),
+          onPressed: onCreate,
+          size: AppButtonSize.mediumLarge,
+          growWithContent: largeText,
+          constrainContent: largeText,
+          leading: showGiftIcon
+              ? const AppIcon(AppIcons.giftCard, size: AppIconSize.medium)
+              : null,
+          child: Text(createLabel),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        PaymentLinkTextAction(label: redeemLabel, onTap: onRedeem),
+      ],
     );
   }
 }
@@ -1116,14 +1194,14 @@ class PaymentLinkCardListRow extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _CardListIconAction(
+                PaymentLinkIconAction(
                   key: const ValueKey('payment_link_card_copy_action'),
                   icon: AppIcons.copy,
                   semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
                   onPressed: onCopyLink,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
-                _CardListIconAction(
+                PaymentLinkIconAction(
                   key: const ValueKey('payment_link_card_qr_action'),
                   icon: AppIcons.qr,
                   semanticLabel: 'Show gift card QR code',
@@ -1158,51 +1236,188 @@ class PaymentLinkCardListRow extends StatelessWidget {
   }
 }
 
-class _CardListIconAction extends StatelessWidget {
-  const _CardListIconAction({
-    required this.icon,
-    required this.semanticLabel,
-    required this.onPressed,
+/// One batch in the created list; opens the batch detail. It matches the
+/// single-card rows: the amount over the date beside the thumbnail, and the
+/// status centred at the trailing edge.
+class PaymentLinkBatchListRow extends StatelessWidget {
+  const PaymentLinkBatchListRow({
+    required this.thumbnail,
+    required this.count,
+    required this.amountText,
+    required this.dateText,
+    required this.statusText,
+    required this.onOpen,
+    this.backThumbnail,
     super.key,
   });
 
-  final String icon;
-  final String semanticLabel;
-  final VoidCallback? onPressed;
+  final Widget thumbnail;
+
+  /// Shown on the card behind [thumbnail] when the group mixes designs.
+  final Widget? backThumbnail;
+  final int count;
+
+  /// The amount of each card, for example "0.1 ZEC".
+  final String amountText;
+  final String dateText;
+  final String statusText;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null;
+    final colors = context.colors;
+    final largeText = paymentLinkUsesLargeText(context);
+    final secondaryStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+    );
+    final amount = Text(
+      '$amountText × $count',
+      style: AppTypography.bodyMediumStrong.copyWith(
+        color: colors.text.primary,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+    final date = Text(dateText, style: secondaryStyle);
+    final status = Text(
+      statusText,
+      textAlign: largeText ? TextAlign.start : TextAlign.end,
+      style: secondaryStyle.copyWith(
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
     return PaymentLinkAction(
-      semanticLabel: semanticLabel,
-      onPressed: onPressed,
-      builder: (context, hovered, focused) => PaymentLinkActionFocusRing(
-        focused: focused,
-        borderRadius: AppRadii.xSmall,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: hovered
-                ? context.colors.button.ghost.bgHover
-                : context.colors.background.ground.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
-          ),
-          child: Center(
-            child: AppIcon(
-              icon,
-              size: 16,
-              color: enabled
-                  ? context.colors.icon.regular
-                  : context.colors.icon.disabled,
+      semanticLabel: [
+        'Open group of $count gift cards',
+        '$amountText each',
+        'created $dateText',
+        if (statusText.isNotEmpty) statusText,
+      ].join(', '),
+      onPressed: onOpen,
+      builder: (context, hovered, focused) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The hover fill and focus ring bleed past the row so the
+          // thumbnail keeps the same inset as the single-card rows.
+          Positioned(
+            left: -AppSpacing.xs,
+            right: -AppSpacing.xs,
+            top: 0,
+            bottom: 0,
+            child: AnimatedContainer(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                color: hovered
+                    ? colors.button.ghost.bgHover
+                    : colors.background.ground.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(AppRadii.small),
+                border: focused
+                    ? Border.all(
+                        color: colors.state.focusRing,
+                        width: 2,
+                        strokeAlign: BorderSide.strokeAlignOutside,
+                      )
+                    : null,
+              ),
             ),
           ),
-        ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 60),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              child: Row(
+                children: [
+                  _BatchThumbnail(
+                    thumbnail: thumbnail,
+                    backThumbnail: backThumbnail,
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  // Text wraps rather than truncates; large text moves the
+                  // status under the date.
+                  // The amount and date keep the larger share; a long status
+                  // wraps on its side, within the row's two lines.
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [amount, date, if (largeText) status],
+                    ),
+                  ),
+                  if (!largeText) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    // Ends at the chevron, centred like a single card's
+                    // status, whatever its length.
+                    Expanded(
+                      flex: 2,
+                      child: Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: status,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: AppSpacing.xs),
+                  AppIcon(
+                    AppIcons.chevronForward,
+                    size: 16,
+                    color: colors.icon.regular,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// A card thumbnail with one plate behind it, in the single-row footprint.
+class _BatchThumbnail extends StatelessWidget {
+  const _BatchThumbnail({required this.thumbnail, this.backThumbnail});
+
+  final Widget thumbnail;
+  final Widget? backThumbnail;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 60,
+    height: 44,
+    child: Stack(
+      children: [
+        Positioned(
+          top: 0,
+          right: 0,
+          width: 54,
+          height: 40,
+          child: switch (backThumbnail) {
+            final back? => ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              child: back,
+            ),
+            null => DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.colors.background.raised,
+                borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                border: Border.all(color: context.colors.border.regular),
+              ),
+            ),
+          },
+        ),
+        Positioned(
+          left: 0,
+          bottom: 0,
+          width: 54,
+          height: 40,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            child: thumbnail,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class PaymentLinkCardsDesktopView extends StatefulWidget {
@@ -1211,11 +1426,11 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     required this.onBack,
     required this.onCreate,
     required this.onRedeem,
+    this.onCreateMultiple,
     this.activeTab = PaymentLinkCardsTab.created,
     this.onTabSelected,
     this.backLabel = 'Home',
     this.title = 'Gift Cards',
-    this.headerAction,
     super.key,
   });
 
@@ -1223,11 +1438,11 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
+  final VoidCallback? onCreateMultiple;
   final PaymentLinkCardsTab activeTab;
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
   final String backLabel;
   final String title;
-  final Widget? headerAction;
 
   @override
   State<PaymentLinkCardsDesktopView> createState() =>
@@ -1287,99 +1502,112 @@ class _PaymentLinkCardsDesktopViewState
       scrollController: _scrollController,
       showTopScrollFade: _showTopFade,
       showBottomActionFade: _showBottomFade,
-      actions: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppButton(
-            key: const ValueKey('payment_link_create_card_button'),
-            onPressed: widget.onCreate,
-            size: AppButtonSize.mediumLarge,
-            child: const Text(kPaymentLinkCreateCardLabel),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          PaymentLinkTextAction(
-            label: kPaymentLinkRedeemCardLabel,
-            onTap: widget.onRedeem,
-          ),
-        ],
+      actionFadeEndFraction: 0.25,
+      actions: _PaymentLinkDesktopCreateActions(
+        onCreate: widget.onCreate,
+        onRedeem: widget.onRedeem,
+        createLabel: kPaymentLinkCreateCardLabel,
+        redeemLabel: kPaymentLinkRedeemCardLabel,
       ),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          width: 390,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            Text(
+              widget.title,
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineLarge.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            Semantics(
+              role: SemanticsRole.tabBar,
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (widget.headerAction != null)
-                    const SizedBox(width: 32 + AppSpacing.xs),
-                  Flexible(
-                    child: Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: context.colors.text.accent,
-                      ),
-                    ),
+                  PaymentLinkTabAction(
+                    icon: AppIcons.plane,
+                    label: kPaymentLinkCreatedTabLabel,
+                    selected: widget.activeTab == PaymentLinkCardsTab.created,
+                    onTap: widget.onTabSelected == null
+                        ? null
+                        : () => widget.onTabSelected!(
+                            PaymentLinkCardsTab.created,
+                          ),
                   ),
-                  if (widget.headerAction != null) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    widget.headerAction!,
-                  ],
+                  const SizedBox(width: AppSpacing.sm),
+                  PaymentLinkTabAction(
+                    icon: AppIcons.importWallet,
+                    label: kPaymentLinkReceivedTabLabel,
+                    selected: widget.activeTab == PaymentLinkCardsTab.received,
+                    onTap: widget.onTabSelected == null
+                        ? null
+                        : () => widget.onTabSelected!(
+                            PaymentLinkCardsTab.received,
+                          ),
+                  ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.s),
-              Semantics(
-                role: SemanticsRole.tabBar,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    PaymentLinkTabAction(
-                      icon: AppIcons.plane,
-                      label: kPaymentLinkCreatedTabLabel,
-                      selected: widget.activeTab == PaymentLinkCardsTab.created,
-                      onTap: widget.onTabSelected == null
-                          ? null
-                          : () => widget.onTabSelected!(
-                              PaymentLinkCardsTab.created,
-                            ),
+            ),
+            const SizedBox(height: AppSpacing.base),
+            if (widget.onCreateMultiple case final onCreateGroup?
+                when constraints.maxWidth >= _kGroupTileBesideMinWidth &&
+                    !paymentLinkUsesLargeText(context))
+              Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(width: 390, child: _sections(context)),
+                  ),
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.base),
+                      child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
                     ),
-                    const SizedBox(width: AppSpacing.sm),
-                    PaymentLinkTabAction(
-                      icon: AppIcons.importWallet,
-                      label: kPaymentLinkReceivedTabLabel,
-                      selected:
-                          widget.activeTab == PaymentLinkCardsTab.received,
-                      onTap: widget.onTabSelected == null
-                          ? null
-                          : () => widget.onTabSelected!(
-                              PaymentLinkCardsTab.received,
-                            ),
+                  ),
+                ],
+              )
+            else ...[
+              if (widget.onCreateMultiple case final onCreateGroup?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.base),
+                  child: SizedBox(
+                    width: math.min(390, constraints.maxWidth),
+                    child: PaymentLinkGroupEntry(
+                      fullWidth: true,
+                      onPressed: onCreateGroup,
                     ),
-                  ],
+                  ),
                 ),
+              SizedBox(
+                width: math.min(390, constraints.maxWidth),
+                child: _sections(context),
               ),
-              const SizedBox(height: AppSpacing.base),
-              for (final (index, section) in widget.sections.indexed) ...[
-                if (index > 0) const SizedBox(height: AppSpacing.sm),
-                section.header ??
-                    Text(
-                      section.label,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                const SizedBox(height: AppSpacing.xxs),
-                ...section.cards,
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _sections(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final (index, section) in widget.sections.indexed) ...[
+        if (index > 0) const SizedBox(height: AppSpacing.sm),
+        section.header ??
+            Text(
+              section.label,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+        const SizedBox(height: AppSpacing.xxs),
+        ...section.cards,
+      ],
+    ],
+  );
 }
 
 class PaymentLinkRedeemDesktopView extends StatelessWidget {

@@ -133,7 +133,7 @@ Future<void> selectPaymentLinkArtworkForRegtest(
     (a) => a.protocolId == artworkId,
   );
   expect(targetIndex, greaterThanOrEqualTo(0));
-  final selectedIndex = rail.artworks.indexOf(rail.selected);
+  final selectedIndex = rail.artworks.indexOf(rail.selected!);
   await tester.scrollUntilVisible(
     target,
     targetIndex < selectedIndex ? -80 : 80,
@@ -154,7 +154,7 @@ Future<void> selectPaymentLinkArtworkForRegtest(
         .widget<PaymentLinkCardSelectorRail>(
           find.byType(PaymentLinkCardSelectorRail),
         )
-        .selected
+        .selected!
         .protocolId,
     artworkId,
   );
@@ -177,7 +177,7 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
     tester,
     const ValueKey('payment_link_amount_continue_button'),
   );
-  final startTyping = find.text('Start typing...');
+  final startTyping = find.text('Start typing…');
   await pumpUntil(
     tester,
     () => tester.any(startTyping),

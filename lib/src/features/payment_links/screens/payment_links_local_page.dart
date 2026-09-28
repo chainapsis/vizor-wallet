@@ -7,6 +7,8 @@ library;
 
 enum PaymentLinksLocalPage {
   home,
+  batchDetail,
+  bulk,
   amount,
   message,
   review,

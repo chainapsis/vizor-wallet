@@ -360,6 +360,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               transaction: tx,
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
+              giftCardBatchCount: giftCard?.batchCount,
               giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
               giftCardStableId: giftCard?.stableId,
               giftCardActivityTimestamp: giftCard?.activityTimestamp,

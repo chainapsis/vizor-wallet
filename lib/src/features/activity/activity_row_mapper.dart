@@ -26,6 +26,7 @@ ActivityRowData buildTransactionActivityRow({
   required rust_sync.TransactionInfo transaction,
   GiftCardActivityKind? giftCardKind,
   BigInt? giftCardAmountZatoshi,
+  int? giftCardBatchCount,
   bool giftCardClaimInFlight = false,
   String? giftCardStableId,
   DateTime? giftCardActivityTimestamp,
@@ -70,6 +71,7 @@ ActivityRowData buildTransactionActivityRow({
             giftCardKind,
             isInFlight: isInFlight,
             isFailed: isFailed,
+            batchCount: giftCardBatchCount,
           )
         : isFailed && (isSent || isMigration)
         ? isMigration
@@ -136,7 +138,15 @@ String giftCardActivityTitle(
   GiftCardActivityKind kind, {
   required bool isInFlight,
   required bool isFailed,
+  int? batchCount,
 }) {
+  if (kind == GiftCardActivityKind.created &&
+      batchCount != null &&
+      batchCount > 1) {
+    if (isFailed) return 'Gift card group failed';
+    if (isInFlight) return _pendingTxTitle('Creating $batchCount cards');
+    return 'Created $batchCount gift cards';
+  }
   if (isFailed) {
     return switch (kind) {
       GiftCardActivityKind.created => 'Gift card creation failed',
