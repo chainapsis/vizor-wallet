@@ -705,7 +705,7 @@ class SwapNotifier extends Notifier<SwapState> {
     _reviewStagingAccount = accountUuid;
     _reviewStagingDirection = direction;
     // Cache the reservation before awaiting it so edits during preparation do
-    // not allocate another key. The key remains watched even if a quote fails.
+    // not allocate another key. Incoming attempts are also persisted before quoting.
     final pending = _reviewStagingAddress ??= ref
         .read(swapZecStagingAddressServiceProvider)
         .prepareForQuote(accountUuid: accountUuid, direction: direction);
@@ -768,14 +768,20 @@ class SwapNotifier extends Notifier<SwapState> {
         userExternalAddress: userExternalAddress,
       );
       final quote = await ref
-          .read(swapIntentProvider)
+          .read(swapZecStagingAddressServiceProvider)
           .quote(
-            addressPlan.toQuoteRequest(
-              mode: quoteMode,
-              amount: amount,
-              amountText: amountText,
-              slippageBps: state.slippageBps,
-            ),
+            accountUuid,
+            stagingAddress,
+            () => ref
+                .read(swapIntentProvider)
+                .quote(
+                  addressPlan.toQuoteRequest(
+                    mode: quoteMode,
+                    amount: amount,
+                    amountText: amountText,
+                    slippageBps: state.slippageBps,
+                  ),
+                ),
           );
       if (generation != _quoteGeneration) {
         return;
@@ -798,6 +804,9 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (e) {
       if (generation != _quoteGeneration) return;
+      if (!direction.sendsZec && e.toString().contains('SWAP_RECEIVE_STALE:')) {
+        _reviewStagingAddress = null;
+      }
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
@@ -893,6 +902,9 @@ class SwapNotifier extends Notifier<SwapState> {
 
     late final SwapIntentSnapshot snapshot;
     try {
+      await ref
+          .read(swapZecStagingAddressServiceProvider)
+          .startQuote(accountUuid, quote);
       snapshot = await ref.read(swapIntentProvider).startSwap(quote);
     } catch (e) {
       log(

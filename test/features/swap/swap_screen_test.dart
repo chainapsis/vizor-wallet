@@ -66,6 +66,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import 'support/swap_activity_fixture_intents.dart';
 
@@ -74,6 +75,7 @@ import '../../support/leading_decimal_input.dart';
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _SwapScreenRustApi()));
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -10845,4 +10847,12 @@ String _fieldText(WidgetTester tester, String keyValue) {
     ),
   );
   return editable.controller.text;
+}
+
+class _SwapScreenRustApi implements RustLibApi {
+  @override
+  bool crateApiSyncSwapReceivingPocEnabled() => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

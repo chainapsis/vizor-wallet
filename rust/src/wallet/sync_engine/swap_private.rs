@@ -166,6 +166,45 @@ fn discovery_work(
     Ok(work)
 }
 
+/// Connects to a directory publication bound to locally accepted block history.
+pub(crate) async fn receiver_client(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    http: reqwest::Client,
+) -> Result<(HttpClient, AcceptedCoverage, ChainAnchor), String> {
+    let advertised = HttpClient::fetch_manifest(RECEIVER_ORIGIN, &http)
+        .await
+        .map_err(error)?;
+    let height = BlockHeight::from(advertised.directory.end_height);
+    let hash = db
+        .get_block_hash(height)
+        .map_err(error)?
+        .ok_or("Directory anchor has not been scanned")?;
+    let activation = network
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .ok_or("Ironwood inactive")?;
+    let mut genesis: [u8; 32] =
+        hex::decode("00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    genesis.reverse();
+    let accepted = AcceptedCoverage {
+        genesis,
+        required_start: activation.into(),
+        height: height.into(),
+        hash: hash.0,
+    };
+    let client = HttpClient::connect(RECEIVER_ORIGIN, http.clone(), accepted)
+        .await
+        .map_err(error)?;
+    let anchor = ChainAnchor {
+        height,
+        hash: hash.0,
+    };
+    Ok((client, accepted, anchor))
+}
+
 async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<(), String> {
     let Some(tip) = db.block_fully_scanned().map_err(error)? else {
         return Ok(());
@@ -235,36 +274,8 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
     if work.is_empty() {
         return Ok(());
     }
-    let advertised = HttpClient::fetch_manifest(RECEIVER_ORIGIN, &http)
-        .await
-        .map_err(error)?;
-    let height = BlockHeight::from(advertised.directory.end_height);
-    let hash = db
-        .get_block_hash(height)
-        .map_err(error)?
-        .ok_or("Directory anchor has not been scanned")?;
-    let activation = network
-        .activation_height(NetworkUpgrade::Nu6_3)
-        .ok_or("Ironwood inactive")?;
-    let mut genesis: [u8; 32] =
-        hex::decode("00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08")
-            .unwrap()
-            .try_into()
-            .unwrap();
-    genesis.reverse();
-    let accepted = AcceptedCoverage {
-        genesis,
-        required_start: activation.into(),
-        height: height.into(),
-        hash: hash.0,
-    };
-    let client = HttpClient::connect(RECEIVER_ORIGIN, http.clone(), accepted)
-        .await
-        .map_err(error)?;
-    let anchor = ChainAnchor {
-        height,
-        hash: hash.0,
-    };
+    let (client, accepted, anchor) = receiver_client(db, network, http.clone()).await?;
+    let height = anchor.height;
     let mut unchecked = Vec::new();
     for (account, key) in work.drain(..) {
         if db

@@ -1,9 +1,9 @@
 //! Thin application policy over the reusable swap receiving registry and recovery helpers.
 
+pub(crate) mod receive;
+
 use zakura_swap_receiving::{KeyId, Purpose, RefundMemo};
-use zcash_client_backend::data_api::{
-    enhance_pir::EnhancePirRead, Account as _, AccountSource, WalletRead,
-};
+use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{
@@ -26,7 +26,8 @@ pub(crate) fn private_recovery_enabled() -> bool {
 }
 
 pub(crate) const ENABLED: bool = cfg!(feature = "swap-receiving-poc");
-const RECEIVE_LOOKAHEAD: u32 = 20;
+const RECEIVE_LOOKAHEAD: u32 =
+    zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT as u32;
 const MAX_RESERVATION_TIP_LAG: u64 = 10;
 
 /// Permit ordinary tip movement without treating a historical restore as ready.
@@ -88,11 +89,10 @@ pub(crate) fn reserve(
             scanned.map(|block| block.block_height()),
             tip,
             live_tip,
-            scanned.is_some()
-                && !db
-                    .transaction_enhancement_work()
-                    .map_err(|e| e.to_string())?
-                    .is_empty(),
+            refund
+                && db
+                    .swap_refund_memos_pending(account)
+                    .map_err(|e| e.to_string())?,
         )?;
         db.recover_swap_refund_memos(account)
             .map_err(|e| e.to_string())?;
@@ -180,6 +180,12 @@ pub(crate) fn observe_operation(
         let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
         let account = parse_account_uuid(account_uuid)?;
         require_software_account(&db, account)?;
+        if db
+            .has_swap_receive_quote(account, operation)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(());
+        }
         let Some(Address::Unified(address)) = Address::decode(&network, address) else {
             return Ok(());
         };

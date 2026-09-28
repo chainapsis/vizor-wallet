@@ -13,6 +13,7 @@ import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import 'swap_receive_reservation_service.dart';
 
 /// A newly accepted quote starts a pending watch before the first status poll.
 /// Local expiry and unknown provider responses cannot end a receiving watch.
@@ -37,6 +38,21 @@ const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
+    reconcileReceiveReservations: (account) =>
+        ref.read(swapReceiveReservationServiceProvider).reconcile(account),
+    onProviderSnapshot: (intent, snapshot, checkedAt) async {
+      final account = intent.accountUuid;
+      if (account == null || intent.direction?.sendsZec != false) return;
+      await ref
+          .read(swapReceiveReservationServiceProvider)
+          .observeStatus(
+            account,
+            intent.depositAddress ?? intent.id,
+            intent.depositMemo,
+            snapshot,
+            checkedAt,
+          );
+    },
     lifecycle: ref.read(ledgerOperationLifecycleProvider),
     onIntentsPersisted: (accountUuid, intents) async {
       if (!rust_sync.swapReceivingPocEnabled() ||
@@ -172,13 +188,15 @@ class SwapActivityStatusRefresher {
           if (_isRefreshDue(intent, accountUuid, startedAt, force: force))
             intent.id,
       ];
-      if (dueIds.isEmpty) return;
-      await _tracker.refreshIntents(
-        accountUuid: accountUuid,
-        currentIntents: currentIntents,
-        intentIds: dueIds,
-        includeTerminal: false,
-      );
+      if (dueIds.isNotEmpty) {
+        await _tracker.refreshIntents(
+          accountUuid: accountUuid,
+          currentIntents: currentIntents,
+          intentIds: dueIds,
+          includeTerminal: false,
+        );
+      }
+      await _tracker.reconcileReceiveReservations(accountUuid);
     } catch (_) {
       // Activity rows are secondary to the wallet shell. Refresh failures are
       // persisted per intent when the provider returns a status error; storage
@@ -212,13 +230,25 @@ class SwapActivityTracker {
     bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
     LedgerOperationLifecycle? lifecycle,
+    Future<void> Function(String)? reconcileReceiveReservations,
+    Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+    onProviderSnapshot,
     Future<void> Function(String, List<SwapIntent>)? onIntentsPersisted,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
        _isTorEnabled = isTorEnabled,
        _onRecordsChanged = onRecordsChanged,
        _lifecycle = lifecycle,
+       _reconcileReceiveReservations = reconcileReceiveReservations,
+       _onProviderSnapshot = onProviderSnapshot,
        _onIntentsPersisted = onIntentsPersisted;
+
+  final Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+  _onProviderSnapshot;
+  final Future<void> Function(String)? _reconcileReceiveReservations;
+  Future<void> reconcileReceiveReservations(String account) async {
+    await _reconcileReceiveReservations?.call(account);
+  }
 
   final LedgerOperationLifecycle? _lifecycle;
   final Future<void> Function(String, List<SwapIntent>)? _onIntentsPersisted;
@@ -433,6 +463,11 @@ class SwapActivityTracker {
     final snapshot = await _swapProvider.getStatus(
       _providerDepositAddress(intent),
       depositMemo: intent.depositMemo,
+    );
+    await _onProviderSnapshot?.call(
+      intent,
+      snapshot,
+      checkedAt ?? DateTime.now().toUtc(),
     );
     return updateSwapIntentFromSnapshot(
       intent,

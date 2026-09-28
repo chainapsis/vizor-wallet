@@ -94,6 +94,24 @@ void main() {
     },
   );
 
+  test(
+    'reconciles abandoned reservations even without visible activity',
+    () async {
+      var reconciled = 0;
+      final tracker = SwapActivityTracker(
+        activityStore: _MemorySwapActivityStore(),
+        swapProvider: _StatusSwapProvider({}),
+        reconcileReceiveReservations: (account) async {
+          expect(account, 'account-1');
+          reconciled++;
+        },
+      );
+      final refresher = SwapActivityStatusRefresher(tracker: tracker);
+      await refresher.refreshOpenActivities(accountUuid: 'account-1');
+      expect(reconciled, 1);
+    },
+  );
+
   test('refreshes every open activity for the active account', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({

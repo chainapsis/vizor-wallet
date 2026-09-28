@@ -5,6 +5,9 @@ transaction enhancement, restore, and software spending. The next test build add
 Key retirement and Keystone remain later milestones. All registered keys stay active
 in this POC, including after NEAR reports a terminal state.
 
+The current private build adds durable incoming reservations and bounded reclamation;
+see the private recovery document for its 48-hour, three-reservation, and 50-slot policy.
+
 ## Build
 
 The Rust feature `swap-receiving-poc` enables address issuance and recovery orchestration.
@@ -50,7 +53,7 @@ Do not reuse the installed app's wallet identity for this test.
    include that memo in the transaction paying the deposit address. A zero-value
    change note is valid. Multi-step funding and deposit instructions requiring a
    separate memo are rejected in this POC.
-3. Sync registers 20 incoming lookahead keys from the account birthday or Ironwood
+3. Sync registers 50 incoming lookahead keys from the account birthday or Ironwood
    activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
 4. New keys queue missing history. Sync checks again after enhancement and before
@@ -61,7 +64,7 @@ Do not reuse the installed app's wallet identity for this test.
    Change returns to the ordinary internal key.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
-beyond 20 consecutive unpaid indices. Provider-status history reconstruction from
+beyond 50 consecutive unpaid indices. Provider-status history reconstruction from
 recovered deposit addresses remains a later integration task.
 
 ## Validation

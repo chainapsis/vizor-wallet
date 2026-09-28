@@ -54,7 +54,7 @@ mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
-mod swap_private;
+pub(crate) mod swap_private;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;

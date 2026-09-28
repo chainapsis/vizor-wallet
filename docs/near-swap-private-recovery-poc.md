@@ -10,7 +10,7 @@ schema until its upgrade path is qualified.
 1. Scan ordinary account history from before the funding transaction. Retain
    scanned nullifiers so an old payment can be checked for a later spend.
 2. At the accepted tip, use Enhance PIR to authenticate pending Ironwood memos.
-   Funding memos register refund keys. Incoming recovery registers 20 lookahead
+   Funding memos register refund keys. Incoming recovery registers 50 lookahead
    keys. Historical key registration uses private discovery rather than queuing
    another block scan.
 3. Accept the receiver publication against a locally scanned block. Download its
@@ -44,7 +44,7 @@ ipir-sp-compat/
 Enable Rust feature `swap-receiving-poc` and set the compile-time environment
 variable `VIZOR_SWAP_PRIVATE_RECOVERY=1`. The latter also selects private
 Ironwood enhancement on every wallet connection. Keep both set through the
-Flutter/Cargokit build. No generated FFI API changed.
+Flutter/Cargokit build. Regenerate the bridge with the repository wrapper after API changes.
 
 The compatibility checkout keeps the same Spiral math version used by Vizor's
 voting dependencies. Its receiver and Enhance responses were compared with the
@@ -163,3 +163,55 @@ Build with Rust feature `swap-receiving-poc`, Rust environment
 the established local bundle, signing, and secure-store identity. Those local
 settings are intentionally absent from this branch. The receiver runs only on its
 DigitalOcean droplet; the Mac Studio needs no receiver daemon or ingestion job.
+
+### Incoming address reservations
+
+Incoming swaps persist a reservation separately from received notes and UI activity.
+Retries and quote edits reuse the current draft, including after restart. Each
+request is recorded before contacting NEAR and each accepted deposit instruction
+is retained, even if the user leaves the review screen. An explicit quote
+validation rejection removes that request's scan watch; an uncertain outcome
+stays reserved. Starting a swap locks the draft and the next swap gets another
+eligible address. At most three distinct unfunded incoming reservations may be
+open for an account, across all source chains. Provider deposit evidence removes
+that reservation from the unfunded count.
+
+The existing status refresh loop also checks reservations absent from the activity
+UI. An unpaid slot can be reclaimed after 48 hours from creation and from every
+accepted quote's deposit deadline. Every attempt must have a fresh successful
+provider check, with no pending or unknown funded operation. Reclamation then
+requires a complete empty receiver PIR lookup covering the wallet's accepted tip.
+Provider errors, unknown quote outcomes, incomplete PIR coverage, or a payment
+retain the reservation. Cleanup runs while the app is active and before requesting
+another address; it does not need an operating-system service.
+
+Allocation picks the lowest eligible never-paid index. A sticky used marker keeps
+paid addresses excluded after spending or a rewind. Reclaimed reservations and
+quote associations remain in the database for late-payment attribution. Address
+reuse does not invalidate old deposit instructions and cannot prove that no future
+payment will arrive. A late payment still belongs to the same key; receipt during
+an active watch is detected locally, while receipt after final PIR closeout needs
+an explicit later recovery as described above.
+
+The seed-recovery gap is 50, and issuance may not exceed 50 slots after the highest
+canonical receipt (indices 0 through 49 before the first receipt). Provider deposit
+status and local issuance do not advance that boundary. This bound is enforced
+before a draft is resumed as well as before a new reservation is created. Every
+address is checked through PIR before quoting, with no sync restart. Missing old
+outgoing enhancement metadata no longer blocks incoming address preparation;
+refund allocation still waits for unresolved internal funding memos.
+
+Older allocated unpaid keys without durable quote records are conservatively
+reserved during migration. They are not automatically reclaimed based on missing
+history. Independent installations of the same seed do not share local pending
+reservations; coordinating concurrent issuance across devices remains outside
+this POC.
+
+Automated tests cover the paid/empty/paid/paid/paid example, restart, explicit quote
+rejection versus lost responses, the three-reservation cap, the 50-slot bound,
+late-payment races, stale statuses, canonical anchors, and deletion draining.
+For a manual check, start three small incoming attempts without funding them and
+confirm a fourth is blocked; quote refreshes should keep the same receive slot.
+Fund one existing attempt and check that provider deposit evidence permits another.
+The 48-hour reclaim case is exercised with controlled test time, not by changing
+production wallet timestamps.
