@@ -228,7 +228,9 @@ decorative QR treatments to codes that Keystone devices need to scan.
 The receive-address QR of a Keystone account is one of those codes: the device
 scans it to verify rotating addresses. `ReceiveQrSurface(scanOptimized: true)`
 draws it black-on-white with square modules in every theme and keeps the pool
-badge. Software and Ledger accounts keep the decorative dot style.
+badge. Its quiet zone is the white card's padding rather than modules inside
+the bitmap; a Keystone device scans it at the current geometry. Software and
+Ledger accounts keep the decorative dot style.
 
 ## UI Copy Conventions
 
