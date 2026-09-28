@@ -14,7 +14,18 @@ restoration. Native handlers additionally require the app's active window and
 compare the current source with the pre-read snapshot to avoid overwriting a
 manual switch while settings load. There is no blur rollback or continuous
 input-source enforcement. Startup autofocus before window activation is deferred
-until activation; ordinary app reactivation does not repeat a completed attempt. Password validation and exact string comparison are
+until activation; ordinary app reactivation does not repeat a completed attempt.
+Windows uses native window focus notifications and an initial focus query because
+Flutter's lifecycle can remain unset at startup. A newer window event supersedes
+an outstanding query, and duplicate focus events do not cancel restoration.
+Its capture waits until the end of the focus frame so the native password
+text-input client can initialize before the IMM snapshot is read.
+When Flutter parks focus at its root on native view deactivation, returning to
+the same editor is treated as window reactivation, not a new field entry.
+Windows also ignores Tab/Shift releases from focus traversal; key presses,
+repeats, other releases and text/composition edits still cancel pending work.
+macOS retains its existing Flutter lifecycle and all-key cancellation behavior.
+Password validation and exact string comparison are
 unchanged; no password characters are transformed.
 
 The versioned `app_password_input_source_v1` local preference contains only
@@ -34,6 +45,11 @@ not erase a previously learned value.
   No raw HKL is persisted. Ambiguous layout identities or unreadable TIP modes
   are not learned. Third-party/modern IMEs may not expose or honor IMM mode APIs;
   restoration is best effort, not a guarantee for every IME.
+  The Windows-only `restoreWithResult` method reports whether the immediate
+  native readback matches the saved source. An unconfirmed result emits a
+  diagnostic without password text or source identifiers. It can mean a skipped
+  attempt, a failed operation or a mismatched readback; it does not trigger a
+  retry. The legacy void `restore` contract remains unchanged for macOS.
 - Removed, disabled or unresolvable sources are skipped. Nothing installs or
   enables a source, chooses an arbitrary English layout, detaches an IME,
   intercepts input, or blocks manual switching. Partial native mode failure may
@@ -51,6 +67,9 @@ Run on Windows and macOS; widget tests do not emulate real OS input methods.
    confirm the next password focus selects the original submission source.
 2. Fail unlock with a different source, then succeed: only success replaces the
    preference. Restart the app and verify restoration before unlocking.
+   On Windows, include the first autofocus before any minimize/restore or
+   app-switch cycle, and entry by both Tab and Shift+Tab. Returning to the app
+   with the field still focused must preserve a later manual source selection.
 3. Exercise Korean IME in Latin mode, Japanese IME in direct mode, a Chinese IME,
    US English and a non-US Latin layout (for example French or German). Include
    a Windows alternate layout such as Dvorak and a third-party IME where available.

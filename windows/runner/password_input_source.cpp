@@ -202,7 +202,9 @@ CreatePasswordInputSourceChannel(flutter::BinaryMessenger* messenger, HWND view)
       auto value = Capture(view, manager.Get());
       if (value) result->Success(EncodableValue(*value));
       else result->Success();
-    } else if (call.method_name() == "restore") {
+    } else if (call.method_name() == "restore" ||
+               call.method_name() == "restoreWithResult") {
+      bool applied = false;
       const auto* args = call.arguments();
       const auto* map = args ? std::get_if<EncodableMap>(args) : nullptr;
       if (map) {
@@ -211,10 +213,16 @@ CreatePasswordInputSourceChannel(flutter::BinaryMessenger* messenger, HWND view)
         if (t != map->end() && e != map->end()) {
           const auto* target = std::get_if<EncodableMap>(&t->second);
           const auto* expected = std::get_if<EncodableMap>(&e->second);
-          if (target && expected) Restore(view, manager.Get(), *target, *expected);
+          if (target && expected) {
+            applied = Restore(view, manager.Get(), *target, *expected);
+          }
         }
       }
-      result->Success();
+      if (call.method_name() == "restoreWithResult") {
+        result->Success(EncodableValue(applied));
+      } else {
+        result->Success();
+      }
     } else result->NotImplemented();
   });
   return channel;
