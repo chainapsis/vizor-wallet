@@ -47,6 +47,28 @@ void main() {
     );
 
     final operations = container.read(paymentLinkBatchOperationsProvider);
+    // Same process and chain for every size, so the numbers compare directly.
+    // Max RSS is a process high-water mark, so sizes are funded smallest
+    // first and before the larger QR batches below.
+    for (final count in [2, 10, 50]) {
+      await _fundAndMeasureBatch(
+        tester,
+        container: container,
+        operations: operations,
+        accountUuid: accountUuid,
+        count: count,
+      );
+      // Confirm the change so the next step can spend it.
+      await minePaymentLinkRegtestBlocks(10);
+    }
+
+    await _waitForSpendable(
+      tester,
+      container: container,
+      accountUuid: accountUuid,
+      needed: BigInt.from(50 * 1_010_000 + 1_000_000),
+      purpose: 'the 50-card QR batch',
+    );
     final signing = container.read(paymentLinkHardwareSigningServiceProvider);
     for (final qrCount in [2, 20, 30, 50]) {
       final qrBatch = await operations.prepareBatch(
@@ -69,21 +91,6 @@ void main() {
         }
       }
     }
-
-    // Same process and chain for every size, so the numbers compare directly.
-    for (final count in [2, 10, 50]) {
-      await _fundAndMeasureBatch(
-        tester,
-        container: container,
-        operations: operations,
-        accountUuid: accountUuid,
-        count: count,
-      );
-      if (count != 50) {
-        // Confirm the change so the next size can spend it.
-        await minePaymentLinkRegtestBlocks(10);
-      }
-    }
   }, timeout: const Timeout(Duration(minutes: 15)));
 }
 
@@ -95,32 +102,13 @@ Future<void> _fundAndMeasureBatch(
   required int count,
 }) async {
   final cardsTotal = BigInt.from(count * 1_010_000);
-  // Read the wallet DB, not the cached sync state: right after mining, the
-  // cached value can still predate the scan that makes change spendable.
-  final needed = cardsTotal + BigInt.from(1_000_000);
-  final balanceDeadline = DateTime.now().add(const Duration(minutes: 4));
-  Object? lastBalance;
-  while (true) {
-    try {
-      final balance = await readPaymentLinkAccountBalance(accountUuid);
-      lastBalance = balance;
-      if (balance.spendable >= needed &&
-          container.read(syncProvider).value?.isSyncing == false) {
-        break;
-      }
-    } catch (error) {
-      // The foreground sync can briefly own the wallet connection.
-      lastBalance = error;
-    }
-    if (DateTime.now().isAfter(balanceDeadline)) {
-      fail(
-        'Spendable for the $count-card batch never reached $needed: '
-        '$lastBalance',
-      );
-    }
-    await tester.pump(const Duration(milliseconds: 100));
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-  }
+  await _waitForSpendable(
+    tester,
+    container: container,
+    accountUuid: accountUuid,
+    needed: cardsTotal + BigInt.from(1_000_000),
+    purpose: 'the $count-card batch',
+  );
 
   final stopwatch = Stopwatch()..start();
   final draft = await operations.prepareBatch(
@@ -214,4 +202,35 @@ Future<void> _fundAndMeasureBatch(
     'sender history: ${lastHistory.map((tx) => '${tx.txidHex}:${tx.txKind}:'
         '${tx.displayAmount}:height=${tx.minedHeight}').join(', ')}',
   );
+}
+
+Future<void> _waitForSpendable(
+  WidgetTester tester, {
+  required ProviderContainer container,
+  required String accountUuid,
+  required BigInt needed,
+  required String purpose,
+}) async {
+  // Read the wallet DB, not the cached sync state: right after mining, the
+  // cached value can still predate the scan that makes change spendable.
+  final deadline = DateTime.now().add(const Duration(minutes: 4));
+  Object? lastBalance;
+  while (true) {
+    try {
+      final balance = await readPaymentLinkAccountBalance(accountUuid);
+      lastBalance = balance;
+      if (balance.spendable >= needed &&
+          container.read(syncProvider).value?.isSyncing == false) {
+        return;
+      }
+    } catch (error) {
+      // The foreground sync can briefly own the wallet connection.
+      lastBalance = error;
+    }
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Spendable for $purpose never reached $needed: $lastBalance');
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
 }
