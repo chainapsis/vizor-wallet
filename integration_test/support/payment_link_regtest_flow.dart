@@ -34,6 +34,8 @@ const paymentLinkRegtestZcashdRpcPassword = 'zcash';
 const paymentLinkRegtestProxyUrl = 'http://127.0.0.1:19068';
 const paymentLinkRestartManifestName =
     'payment_link_restart_regtest_manifest.json';
+const paymentLinkBatchRestartManifestName =
+    'payment_link_batch_restart_regtest_manifest.json';
 
 class PaymentLinkRestartManifest {
   const PaymentLinkRestartManifest({
@@ -535,11 +537,11 @@ Future<Directory> paymentLinkClaimWalletDirectoryByName(
   return Directory('${support.path}${Platform.pathSeparator}$directoryName');
 }
 
-Future<File> _paymentLinkRestartManifestFile() async {
+Future<File> _paymentLinkRestartManifestFile([
+  String name = paymentLinkRestartManifestName,
+]) async {
   final support = await getWalletSupportDirectory();
-  return File(
-    '${support.path}${Platform.pathSeparator}$paymentLinkRestartManifestName',
-  );
+  return File('${support.path}${Platform.pathSeparator}$name');
 }
 
 Future<void> writePaymentLinkRestartManifest(
@@ -557,5 +559,65 @@ Future<PaymentLinkRestartManifest> readPaymentLinkRestartManifest() async {
 
 Future<void> deletePaymentLinkRestartManifest() async {
   final file = await _paymentLinkRestartManifestFile();
+  if (await file.exists()) await file.delete();
+}
+
+/// The funded group the batch restart phases compare the recovered one to.
+class PaymentLinkBatchRestartManifest {
+  const PaymentLinkBatchRestartManifest({
+    required this.senderAccountUuid,
+    required this.batchId,
+    required this.fundingTxid,
+    required this.addresses,
+  });
+
+  factory PaymentLinkBatchRestartManifest.fromJson(Map<String, Object?> json) {
+    return PaymentLinkBatchRestartManifest(
+      senderAccountUuid: json['senderAccountUuid']! as String,
+      batchId: json['batchId']! as String,
+      fundingTxid: json['fundingTxid']! as String,
+      addresses: [
+        for (final address in json['addresses']! as List<Object?>)
+          address! as String,
+      ],
+    );
+  }
+
+  final String senderAccountUuid;
+  final String batchId;
+  final String fundingTxid;
+  final List<String> addresses;
+
+  Map<String, Object?> toJson() => {
+    'senderAccountUuid': senderAccountUuid,
+    'batchId': batchId,
+    'fundingTxid': fundingTxid,
+    'addresses': addresses,
+  };
+}
+
+Future<void> writePaymentLinkBatchRestartManifest(
+  PaymentLinkBatchRestartManifest manifest,
+) async {
+  final file = await _paymentLinkRestartManifestFile(
+    paymentLinkBatchRestartManifestName,
+  );
+  await file.writeAsString(jsonEncode(manifest.toJson()), flush: true);
+}
+
+Future<PaymentLinkBatchRestartManifest>
+readPaymentLinkBatchRestartManifest() async {
+  final file = await _paymentLinkRestartManifestFile(
+    paymentLinkBatchRestartManifestName,
+  );
+  return PaymentLinkBatchRestartManifest.fromJson(
+    jsonDecode(await file.readAsString()) as Map<String, Object?>,
+  );
+}
+
+Future<void> deletePaymentLinkBatchRestartManifest() async {
+  final file = await _paymentLinkRestartManifestFile(
+    paymentLinkBatchRestartManifestName,
+  );
   if (await file.exists()) await file.delete();
 }
