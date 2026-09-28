@@ -395,6 +395,7 @@ class PaymentLinkRecoveryStore {
         updatedAt: now,
         fundingTxids: fundingTxids,
         preparedExpiryHeight: null,
+        fundedAt: record.fundedAt ?? now,
       ),
     );
   }
