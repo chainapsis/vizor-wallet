@@ -478,20 +478,24 @@ class RustPaymentLinkHardwareSigningService
     );
     var fundingMetadataSaved = false;
     if (fundingAccepted &&
-        draft.batch != null &&
         !isPaymentLinkFundingBroadcastAccepted(result.status)) {
-      // The group reads its drafts as an unconfirmed broadcast, so they stay
-      // drafts for the reconciler. Their prepared txid already lets it settle
-      // them, so there is nothing for the user to retry.
+      // Rust stores the transaction after this broadcast, so it may be on
+      // neither the network nor the wallet. The cards stay drafts for the
+      // reconciler, which their prepared txid lets settle; nothing to retry.
       try {
-        await _recoveryStore.markBatchSubmitted(
-          batchId: draft.batch!.id,
-          fundingTxids: result.txid,
-        );
+        if (draft.batch case final batch?) {
+          await _recoveryStore.markBatchSubmitted(
+            batchId: batch.id,
+            fundingTxids: result.txid,
+          );
+        } else {
+          await _recoveryStore.markSubmitted(
+            address: draft.link.address,
+            fundingTxids: result.txid,
+          );
+        }
       } catch (error) {
-        log(
-          'PaymentLinkHardwareSigning: batch submission write failed: $error',
-        );
+        log('PaymentLinkHardwareSigning: submission write failed: $error');
       }
       fundingMetadataSaved = true;
     } else if (fundingAccepted) {

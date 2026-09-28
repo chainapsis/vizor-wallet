@@ -368,24 +368,31 @@ class PaymentLinkLedgerFundingService {
           );
         }
       } else {
+        // Only an accepted broadcast is promoted; the reconciler settles an
+        // unknown one once the wallet holds the transaction or it expires.
+        final accepted = isPaymentLinkFundingBroadcastAccepted(result.status);
         if (record.batchId case final batchId?) {
           await recovery.markBatchSubmitted(
             batchId: batchId,
             fundingTxids: result.txid,
           );
-          // The group reads its drafts as an unconfirmed broadcast, so only
-          // an accepted one is promoted; the reconciler settles the rest.
-          if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+          if (accepted) {
             await recovery.markBatchFunded(
               batchId: batchId,
               fundingTxids: result.txid,
             );
           }
         } else {
-          await recovery.markFunded(
+          await recovery.markSubmitted(
             address: address,
             fundingTxids: result.txid,
           );
+          if (accepted) {
+            await recovery.markFunded(
+              address: address,
+              fundingTxids: result.txid,
+            );
+          }
         }
       }
     }

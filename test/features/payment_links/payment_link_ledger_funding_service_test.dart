@@ -85,6 +85,18 @@ void main() {
     },
   );
 
+  test('an unknown broadcast leaves the card unconfirmed', () async {
+    final h = LedgerGiftHarness();
+    final draft = await h.prepare();
+    h.operations.status = 'broadcast_unknown';
+    await h.submit(draft);
+
+    final record = (await h.recovery.load()).single;
+    expect(record.state, PaymentLinkRecoveryState.draft);
+    expect(record.fundingTxids, 'gift-txid');
+    expect(record.submittedAtHeight, isNotNull);
+  });
+
   test('an unknown group broadcast leaves its cards unconfirmed', () async {
     final h = LedgerGiftHarness();
     final draft = await h.service.prepareBatch(_testLedgerBatch());
