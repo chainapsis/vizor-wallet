@@ -72,7 +72,8 @@ Local macOS regtest, software account, 2026-09-24. Figures are measurements, not
 | 10 | 11 | 55,000 | 37,569 B | 0.54 s | 0.57 GB |
 | 50 | 51 | 255,000 | 163,811 B | 1.65 s | 1.28 GB |
 
-- Keystone batch QR requests take 61, 246, 349 and 554 parts for 2, 20, 30 and 50 cards. Thirty cards is about 44 KB, within the protocol's 80 KB limit, and one cycle at 10 fps takes about 35 seconds. That cycle length is why Keystone is capped at 30 cards; scan time on a real device is still unmeasured.
+- Keystone batch QR requests took 42–61, 218–246, 321–349 and 526–554 parts for 2, 20, 30 and 50 cards; the count depends on which notes are spent. Thirty cards is at most about 44 KB, within the protocol's 80 KB limit.
+- Keystone signing QRs now show 5 frames per second (#754), so one 30-card cycle takes about 64–70 seconds. The 30-card Keystone cap was set when that cycle took about 35 seconds at 10 fps. Scan time on a real device is still unmeasured.
 - A restart after a lost broadcast response recovered all 50 cards with the same txid and no second funding transaction.
 
 ## Release gates
