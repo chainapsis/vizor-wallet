@@ -373,10 +373,14 @@ class PaymentLinkLedgerFundingService {
             batchId: batchId,
             fundingTxids: result.txid,
           );
-          await recovery.markBatchFunded(
-            batchId: batchId,
-            fundingTxids: result.txid,
-          );
+          // The group reads its drafts as an unconfirmed broadcast, so only
+          // an accepted one is promoted; the reconciler settles the rest.
+          if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+            await recovery.markBatchFunded(
+              batchId: batchId,
+              fundingTxids: result.txid,
+            );
+          }
         } else {
           await recovery.markFunded(
             address: address,

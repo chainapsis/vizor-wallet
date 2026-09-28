@@ -85,6 +85,36 @@ void main() {
     },
   );
 
+  test('an unknown group broadcast leaves its cards unconfirmed', () async {
+    final h = LedgerGiftHarness();
+    final draft = await h.service.prepareBatch(_testLedgerBatch());
+    final proofs = await h.service.prove(
+      accountUuid: 'account-1',
+      draft: draft,
+    );
+    h.operations.status = 'broadcast_unknown';
+    await h.service.submit(
+      accountUuid: 'account-1',
+      draft: draft,
+      proofs: proofs,
+      signatures: [3],
+      onCheckpointed: () {},
+    );
+
+    // Drafts are what the group shows as an unconfirmed broadcast; the
+    // reconciler promotes them once the wallet holds the transaction.
+    final records = await h.recovery.load();
+    expect(records.map((record) => record.state), [
+      PaymentLinkRecoveryState.draft,
+      PaymentLinkRecoveryState.draft,
+    ]);
+    expect(records.map((record) => record.fundingTxids), [
+      'gift-txid',
+      'gift-txid',
+    ]);
+    expect(records.every((record) => record.submittedAtHeight != null), isTrue);
+  });
+
   test(
     'a checkpointed group recovery already funded still finishes its outbox',
     () async {

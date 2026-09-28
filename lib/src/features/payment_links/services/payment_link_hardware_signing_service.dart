@@ -477,7 +477,24 @@ class RustPaymentLinkHardwareSigningService
       txids: result.txid,
     );
     var fundingMetadataSaved = false;
-    if (fundingAccepted) {
+    if (fundingAccepted &&
+        draft.batch != null &&
+        !isPaymentLinkFundingBroadcastAccepted(result.status)) {
+      // The group reads its drafts as an unconfirmed broadcast, so they stay
+      // drafts for the reconciler. Their prepared txid already lets it settle
+      // them, so there is nothing for the user to retry.
+      try {
+        await _recoveryStore.markBatchSubmitted(
+          batchId: draft.batch!.id,
+          fundingTxids: result.txid,
+        );
+      } catch (error) {
+        log(
+          'PaymentLinkHardwareSigning: batch submission write failed: $error',
+        );
+      }
+      fundingMetadataSaved = true;
+    } else if (fundingAccepted) {
       final recovery = PaymentLinkFundingRecovery(_recoveryStore);
       final funding = draft.batch == null
           ? await recovery.complete(
