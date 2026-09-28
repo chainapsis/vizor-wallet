@@ -234,6 +234,7 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
+  void Function(bool enabled)? setRustSwapPrivacyEnabled,
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
 }) async {
   if (bootstrap.hasBlockingFailure) {
@@ -245,6 +246,10 @@ Future<void> applyEnhancePirPolicy(
       isEnhancePirAvailableForNetwork(bootstrap.network);
   (setRustEnabled ??
       (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+  (setRustSwapPrivacyEnabled ??
+      (value) => rust_sync.setNearSwapPrivacyEnabled(enabled: value))(
+    enabled && bootstrap.nearSwapPrivacyEnabled,
+  );
   try {
     await (setNativePrivateRecovery ??
         IronwoodMigrationBackgroundLifecycle.instance.setPrivateRecovery)(

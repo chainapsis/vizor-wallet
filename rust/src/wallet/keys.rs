@@ -104,7 +104,33 @@ fn open_wallet_db_for_init(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<WalletDatabase, String> {
+    reject_legacy_swap_poc(db_path)?;
     open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
+}
+
+/// The earlier local POC reused prerelease migrations. Until its upgrade is
+/// qualified, preserve that wallet and require a separate recovery test identity.
+fn reject_legacy_swap_poc(db_path: &str) -> Result<(), String> {
+    if !std::path::Path::new(db_path).exists() {
+        return Ok(());
+    }
+    let conn =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+    let exists:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schemer_migrations')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if exists {
+        let legacy: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM schemer_migrations WHERE id=?1)",
+                [uuid::Uuid::from_u128(0x2eac815d_67ca_4fb4_b534_066102a0fba2).as_bytes()],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if legacy {
+            return Err("This wallet uses the earlier swap POC database. Preserve it and use a separate wallet identity for private recovery testing.".into());
+        }
+    }
+    Ok(())
 }
 
 fn open_wallet_db_for_mutation(
@@ -3479,5 +3505,25 @@ mod tests {
                 .unwrap(),
             address
         );
+    }
+}
+
+#[cfg(test)]
+mod swap_upgrade_gate_tests {
+    #[test]
+    fn legacy_swap_database_is_rejected_without_modification() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch("CREATE TABLE schemer_migrations(id BLOB PRIMARY KEY)")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO schemer_migrations VALUES (?1)",
+            [uuid::Uuid::from_u128(0x2eac815d_67ca_4fb4_b534_066102a0fba2).as_bytes()],
+        )
+        .unwrap();
+        drop(conn);
+        let before = std::fs::read(file.path()).unwrap();
+        assert!(super::reject_legacy_swap_poc(file.path().to_str().unwrap()).is_err());
+        assert_eq!(before, std::fs::read(file.path()).unwrap());
     }
 }

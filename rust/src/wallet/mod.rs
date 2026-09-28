@@ -11,6 +11,7 @@ pub mod ledger;
 pub mod network;
 pub mod secret_payload;
 pub mod secret_store;
+pub(crate) mod swap_receiving;
 pub mod sync;
 pub mod sync_engine;
 pub(crate) mod transaction_data;

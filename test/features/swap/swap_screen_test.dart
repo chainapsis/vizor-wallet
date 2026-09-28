@@ -42,6 +42,8 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservation_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
@@ -66,6 +68,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import 'support/swap_activity_fixture_intents.dart';
 
@@ -74,6 +77,7 @@ import '../../support/leading_decimal_input.dart';
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  setUpAll(() => RustLib.initMock(api: _SwapScreenRustApi()));
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -7709,6 +7713,182 @@ void main() {
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
+  for (final direction in SwapDirection.values) {
+    testWidgets(
+      'rejected POC ${direction.name} quotes reuse the first key after amount edits',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        final provider = _LowAmountQuoteSwapProvider();
+        var reservations = 0;
+        await tester.pumpWidget(
+          _routerHarness(
+            GoRouter(
+              initialLocation: '/swap',
+              routes: [_swapRoute(), _swapActivityRoute()],
+            ),
+            swapProvider: provider,
+            seedSwapActivityFixtures: false,
+            reserveSwapAddress:
+                ({required accountUuid, required direction}) async {
+                  reservations++;
+                  return SwapZecStagingAddress(
+                    address: 'u1poc$reservations',
+                    receivingIndex: BigInt.from(reservations),
+                  );
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SwapScreen)),
+        );
+        container.read(swapStateProvider.notifier).selectDirection(direction);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('swap_amount_field')),
+          '0.001',
+        );
+        await _enterDestinationText(
+          tester,
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+        for (final amount in ['0.001', '0.002', '0.003']) {
+          await tester.enterText(
+            find.byKey(const ValueKey('swap_amount_field')),
+            amount,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('swap_quote_error_message')),
+            findsOneWidget,
+          );
+        }
+        expect(provider.requests, hasLength(3));
+        expect(reservations, 1);
+        expect(
+          provider.requests
+              .map((r) => direction.sendsZec ? r.refundAddress : r.destination)
+              .toSet(),
+          {'u1poc1'},
+        );
+      },
+    );
+  }
+
+  testWidgets('POC amount edits share an in-flight address reservation', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final provider = _LowAmountQuoteSwapProvider();
+    final pending = Completer<SwapZecStagingAddress>();
+    var reservations = 0;
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: provider,
+        seedSwapActivityFixtures: false,
+        reserveSwapAddress: ({required accountUuid, required direction}) {
+          reservations++;
+          return pending.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.001',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    final first = notifier.showReview();
+    await tester.pump();
+    notifier.updateAmount('0.002');
+    final second = notifier.showReview();
+    await tester.pump();
+    expect(reservations, 1);
+    pending.complete(
+      SwapZecStagingAddress(address: 'u1poc', receivingIndex: BigInt.zero),
+    );
+    await tester.pumpAndSettle();
+    await Future.wait([first, second]);
+    expect(provider.requests, hasLength(1));
+    expect(provider.requests.single.refundAddress, 'u1poc');
+  });
+
+  testWidgets('starting a POC swap consumes the cached receiving key', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    var reservations = 0;
+    final purposes = <SwapDirection>[];
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          purposes.add(direction);
+          reservations++;
+          return SwapZecStagingAddress(
+            address: 'u1poc$reservations',
+            receivingIndex: BigInt.from(reservations),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRecipient,
+      'u1poc1',
+    );
+    expect(await notifier.startIntent(), isA<SwapStartedActivity>());
+    await tester.pumpAndSettle();
+    notifier.updateAmount('30');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(reservations, 2);
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRecipient,
+      'u1poc2',
+    );
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('0.1');
+    await notifier.showReview();
+    await tester.pumpAndSettle();
+    expect(reservations, 3);
+    expect(purposes.last, SwapDirection.zecToExternal);
+    expect(
+      container.read(swapStateProvider).reviewAddressPlan?.oneClickRefundTo,
+      'u1poc3',
+    );
+  });
+
   testWidgets('pay quote failure uses payment-specific copy', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -9757,6 +9937,7 @@ Widget _routerHarness(
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
   ReserveOrchardAddress? loadShieldedAddress,
+  ReserveSwapAddress? reserveSwapAddress,
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
@@ -9803,6 +9984,7 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
+          reserveSwapAddress: reserveSwapAddress,
           reserveFreshOrchardAddress:
               loadShieldedAddress ??
               ({required accountUuid}) {
@@ -9835,6 +10017,25 @@ Widget _routerHarness(
         ledgerOperationService ?? _FakeLedgerSignedOperationService(),
       ),
       swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
+      // These widget tests use an in-memory activity store, not a wallet database.
+      // Durable private-swap hooks are covered by the service and registry tests.
+      swapActivityTrackerProvider.overrideWith(
+        (ref) => SwapActivityTracker(
+          activityStore: effectiveSessionStore,
+          swapProvider: ref.read(swapIntentProvider),
+          isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
+          onRecordsChanged: () =>
+              ref.read(swapActivityRecordsRevisionProvider.notifier).bump(),
+        ),
+      ),
+      swapReceiveReservationServiceProvider.overrideWith(
+        (ref) => SwapReceiveReservationService(
+          enabled: () => false,
+          store: (_) async =>
+              throw StateError('No wallet database in widget tests'),
+          provider: ref.read(swapIntentProvider),
+        ),
+      ),
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
       ),
@@ -10667,4 +10868,12 @@ String _fieldText(WidgetTester tester, String keyValue) {
     ),
   );
   return editable.controller.text;
+}
+
+class _SwapScreenRustApi implements RustLibApi {
+  @override
+  bool crateApiSyncNearSwapPrivacyEnabled() => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

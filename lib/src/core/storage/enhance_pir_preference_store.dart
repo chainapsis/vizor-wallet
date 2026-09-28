@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// describes how this installation talks to the network, not what a particular
 /// wallet holds, so it is deliberately retained across wallet resets.
 const kEnhancePirEnabledPreferenceKey = 'zcash_enhance_pir_enabled';
+const kNearSwapPrivacyPreferenceKey = 'zcash_near_swap_privacy_enabled';
 
 /// Legacy secure-store key the preference used before it became install-scoped.
 /// Read once at bootstrap so an upgrading install keeps its existing choice.
@@ -24,34 +25,34 @@ abstract interface class EnhancePirPreferenceStore {
 }
 
 class SharedPreferencesEnhancePirStore implements EnhancePirPreferenceStore {
-  const SharedPreferencesEnhancePirStore();
+  const SharedPreferencesEnhancePirStore({
+    this.key = kEnhancePirEnabledPreferenceKey,
+  });
+  final String key;
 
   @override
   Future<bool?> readEnabled() async {
     final preferences = await SharedPreferences.getInstance();
-    return preferences.getBool(kEnhancePirEnabledPreferenceKey);
+    return preferences.getBool(key);
   }
 
   @override
   Future<void> writeEnabled(bool enabled) async {
     final preferences = await SharedPreferences.getInstance();
-    final previous = preferences.getBool(kEnhancePirEnabledPreferenceKey);
+    final previous = preferences.getBool(key);
     try {
-      final saved = await preferences.setBool(
-        kEnhancePirEnabledPreferenceKey,
-        enabled,
-      );
+      final saved = await preferences.setBool(key, enabled);
       if (!saved) {
-        throw StateError('Could not save the private queries setting.');
+        throw StateError('Could not save the privacy setting.');
       }
     } catch (_) {
       // SharedPreferences changes its memory cache before the platform write.
       // Restore that cache as well as the last committed value on failure.
       try {
         if (previous == null) {
-          await preferences.remove(kEnhancePirEnabledPreferenceKey);
+          await preferences.remove(key);
         } else {
-          await preferences.setBool(kEnhancePirEnabledPreferenceKey, previous);
+          await preferences.setBool(key, previous);
         }
       } catch (_) {
         // Preserve the original write failure; the visible/Rust mode is unchanged.

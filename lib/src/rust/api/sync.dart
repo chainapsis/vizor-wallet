@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `near_swap_setting`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -1208,6 +1208,81 @@ Future<EnhanceRecoveryStatus> getEnhanceRecoveryStatus({
 }) => RustLib.instance.api.crateApiSyncGetEnhanceRecoveryStatus(
   dbPath: dbPath,
   network: network,
+);
+
+/// Whether new private swap addresses may be issued.
+bool nearSwapPrivacyEnabled() =>
+    RustLib.instance.api.crateApiSyncNearSwapPrivacyEnabled();
+
+/// New private swap addresses require Private queries. Existing keys remain stored.
+void setNearSwapPrivacyEnabled({required bool enabled}) => RustLib.instance.api
+    .crateApiSyncSetNearSwapPrivacyEnabled(enabled: enabled);
+
+Future<SwapReceivingAddress> reserveSwapReceivingAddress({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool refund,
+  required BigInt liveTip,
+}) => RustLib.instance.api.crateApiSyncReserveSwapReceivingAddress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  refund: refund,
+  liveTip: liveTip,
+);
+
+/// Persists the compact scanning deadline for an existing local swap operation.
+/// Only supported provider statuses may call this; transport errors preserve state.
+Future<void> observeSwapReceivingOperation({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String operationId,
+  required String address,
+  required bool terminal,
+}) => RustLib.instance.api.crateApiSyncObserveSwapReceivingOperation(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  operationId: operationId,
+  address: address,
+  terminal: terminal,
+);
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+Future<ProposalResult> proposeSwapFunding({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+  required BigInt refundIndex,
+}) => RustLib.instance.api.crateApiSyncProposeSwapFunding(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
+  refundIndex: refundIndex,
+);
+
+Future<BigInt> estimateSwapFundingFee({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String depositAddress,
+  required BigInt amountZatoshi,
+  required BigInt refundIndex,
+}) => RustLib.instance.api.crateApiSyncEstimateSwapFundingFee(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  depositAddress: depositAddress,
+  amountZatoshi: amountZatoshi,
+  refundIndex: refundIndex,
 );
 
 /// Flat address-validation result for the Dart side.
@@ -2665,6 +2740,25 @@ class SubtreeRoot {
           runtimeType == other.runtimeType &&
           completingBlockHeight == other.completingBlockHeight &&
           rootHash == other.rootHash;
+}
+
+/// A durably reserved address in the independent refund or incoming sequence.
+class SwapReceivingAddress {
+  final String address;
+  final BigInt index;
+
+  const SwapReceivingAddress({required this.address, required this.index});
+
+  @override
+  int get hashCode => address.hashCode ^ index.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SwapReceivingAddress &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          index == other.index;
 }
 
 class SyncProgress {

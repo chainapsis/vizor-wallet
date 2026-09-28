@@ -53,11 +53,33 @@ mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+pub(crate) mod swap_private;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
 use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
+/// Fetches a bounded verification tail without modifying the normal sync queue.
+/// The library validates canonical identities, counts, ownership, and coverage.
+pub(crate) async fn download_swap_verification_tail(
+    endpoint: &str,
+    network: WalletNetwork,
+    range: std::ops::Range<BlockHeight>,
+) -> Result<Vec<zcash_client_backend::proto::compact_formats::CompactBlock>, SyncError> {
+    if range.is_empty()
+        || range.end - range.start
+            > zcash_client_sqlite::wallet::swap_receiving::RECEIVE_VERIFICATION_MAX_LAG
+    {
+        return Err(SyncError::other("Invalid receive verification tail"));
+    }
+    let mut client = lwd::open_lwd_channel(endpoint).await?;
+    Ok(
+        lwd::download_blocks(&mut client, range.start, range.end - 1, network)
+            .await?
+            .into_blocks(),
+    )
+}
+
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -2345,6 +2367,23 @@ where
     tokio::try_join!(blocks, chain_state)
 }
 
+/// Logs inclusive phase durations; download prefetch can overlap scanning.
+struct SyncPhaseTimer(&'static str, std::time::Instant);
+impl SyncPhaseTimer {
+    fn new(stage: &'static str) -> Self {
+        Self(stage, std::time::Instant::now())
+    }
+}
+impl Drop for SyncPhaseTimer {
+    fn drop(&mut self) {
+        log::info!(
+            "sync_metric stage={} elapsed_us={}",
+            self.0,
+            self.1.elapsed().as_micros()
+        );
+    }
+}
+
 /// Downloads one compact-block batch and its preceding chain state in
 /// parallel. If independently served responses do not form one sequence, the
 /// tree state is fetched again by the first block's exact predecessor hash.
@@ -2354,6 +2393,7 @@ async fn download_scan_batch(
     end: BlockHeight,
     network: WalletNetwork,
 ) -> Result<ScanBatch, SyncError> {
+    let _metric = SyncPhaseTimer::new("download_batch");
     let mut tree_state_client = client.clone();
     let use_empty_state = should_use_empty_chain_state(&network, start)?;
     let tree_state = async move {
@@ -2816,6 +2856,10 @@ async fn run_payment_link_claim_sync_once(
                     ));
                 }
                 RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
+                    swap_private::run(&mut db, network, &should_exit).await?;
+                    if should_exit() {
+                        return Ok(());
+                    }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     if allow_resubmit {
                         let exclusions =
@@ -2845,6 +2889,14 @@ async fn run_payment_link_claim_sync_once(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
             ));
+        };
+        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+            let (_, boundary) = db
+                .get_swap_scan_window(start)
+                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
+            boundary.map_or(end, |boundary| end.min(boundary))
+        } else {
+            end
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
 
@@ -2968,6 +3020,10 @@ async fn run_sync_impl(
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
     let mut enhancement = EnhancementSession::new(network, db_data_path);
+    with_wallet_db_write_lock("swap_receiving.prepare", || {
+        crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+    })
+    .map_err(SyncError::db)?;
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -3634,6 +3690,25 @@ async fn run_sync_impl(
                     {
                         return Ok(());
                     }
+                    with_wallet_db_write_lock("swap_receiving.complete", || {
+                        crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+                    })
+                    .map_err(SyncError::db)?;
+                    // Final enhancement can discover a funding memo after the
+                    // queue drained. Replay its key before declaring sync complete.
+                    if db
+                        .suggest_scan_ranges()
+                        .map_err(|e| SyncError::db(e.to_string()))?
+                        .iter()
+                        .any(is_pending_scan_range)
+                    {
+                        prefetch = None;
+                        continue;
+                    }
+                    swap_private::run(&mut db, network, &should_exit).await?;
+                    if should_exit() {
+                        return Ok(());
+                    }
                     let released = enhancement.take_ready_resubmission();
                     // This path completes without a post-batch pass, so a
                     // transaction released by a final status observation is
@@ -3732,6 +3807,14 @@ async fn run_sync_impl(
             );
             break;
         };
+        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+            let (_, boundary) = db
+                .get_swap_scan_window(start)
+                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
+            boundary.map_or(end, |boundary| end.min(boundary))
+        } else {
+            end
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);
         let current_pct = progress_display_mode.percentage(
@@ -3778,11 +3861,13 @@ async fn run_sync_impl(
 
         // Download blocks and their preceding frontier together, or consume a
         // matching tuple that the previous iteration prefetched.
+        let download_wait = SyncPhaseTimer::new("download_wait");
         let batch =
             resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
                 download_scan_batch(&mut client, start, end - 1, network)
             })
             .await?;
+        drop(download_wait);
         let Some((block_source, from_state)) = batch else {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
@@ -3849,6 +3934,7 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
+        let scan_metric = SyncPhaseTimer::new("scan_and_store");
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
@@ -3942,6 +4028,7 @@ async fn run_sync_impl(
             })
         });
 
+        drop(scan_metric);
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
         // nearest checkpoint) and restart the scan loop. librustzcash's
@@ -4175,6 +4262,11 @@ async fn run_sync_impl(
         }
         let ready = enhancement.take_ready_resubmission();
         enhancement_after_scan = true;
+
+        with_wallet_db_write_lock("swap_receiving.recover", || {
+            crate::wallet::swap_receiving::maintain_recovery(&mut db, network)
+        })
+        .map_err(SyncError::db)?;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a

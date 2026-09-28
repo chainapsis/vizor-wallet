@@ -1092,13 +1092,7 @@ impl InputSource for RecordingConsolidationSource {
         Ok(None)
     }
 
-    fn anchor_computable(
-        &self,
-        _protocol: ShieldedPool,
-        _height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
+
 
     fn select_spendable_notes(
         &self,

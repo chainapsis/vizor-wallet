@@ -827,6 +827,54 @@ pub(crate) fn propose_send_for_purpose(
     )
 }
 
+/// The recovery memo shares the funding transaction and its input locks.
+pub(crate) fn propose_send_with_swap_refund(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+    swap_refund_index: Option<u64>,
+) -> Result<ProposalResult, String> {
+    propose_send_with_request(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        SendRequest::SwapFunding {
+            to_address,
+            amount_zatoshi,
+            memo_str,
+            swap_refund_index,
+        },
+        SendPurpose::Ordinary,
+    )
+}
+
+pub(crate) fn estimate_fee_with_swap_refund(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+    swap_refund_index: Option<u64>,
+) -> Result<u64, String> {
+    estimate_fee_with_request(
+        db_path,
+        network,
+        account_uuid,
+        SendRequest::SwapFunding {
+            to_address,
+            amount_zatoshi,
+            memo_str,
+            swap_refund_index,
+        },
+    )
+}
+
 pub(crate) fn propose_payment_link_batch(
     db_path: &str,
     network: WalletNetwork,
@@ -1022,6 +1070,12 @@ fn estimate_fee_with_request(
 /// card of a Gift Card batch.
 #[derive(Clone, Copy)]
 enum SendRequest<'a> {
+    SwapFunding {
+        to_address: &'a str,
+        amount_zatoshi: u64,
+        memo_str: Option<&'a str>,
+        swap_refund_index: Option<u64>,
+    },
     Single {
         to_address: &'a str,
         amount_zatoshi: u64,
@@ -1033,7 +1087,13 @@ enum SendRequest<'a> {
 impl SendRequest<'_> {
     fn build(self) -> Result<TransactionRequest, String> {
         match self {
-            Self::Single {
+            Self::SwapFunding {
+                to_address,
+                amount_zatoshi,
+                memo_str,
+                ..
+            }
+            | Self::Single {
                 to_address,
                 amount_zatoshi,
                 memo_str,
@@ -1061,6 +1121,16 @@ fn propose_request(
 ) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
+    let change_memo = match request {
+        SendRequest::SwapFunding {
+            to_address,
+            swap_refund_index: Some(index),
+            ..
+        } => Some(crate::wallet::swap_receiving::funding_memo(
+            db, network, account_id, index, to_address,
+        )?),
+        _ => None,
+    };
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
     let spend_policy = ordinary_send_spend_policy(
         super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
@@ -1076,6 +1146,7 @@ fn propose_request(
             &spend_policy,
             tx_version,
             purpose.confirmations_policy(),
+            change_memo.clone(),
         )
     };
     let pass1_proposal = propose(transaction_request.clone(), proposed_tx_version)?;
@@ -3678,7 +3749,6 @@ fn build_ledger_shielding_round(
             account,
             target,
             anchor,
-            &db.pool_migration_params(),
             confirmations,
             CoinbaseFilter::AllTransparentOutputs,
         )
@@ -3846,6 +3916,7 @@ fn propose_send_with_reserved_notes(
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
     confirmations_policy: ConfirmationsPolicy,
+    change_memo: Option<MemoBytes>,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
@@ -3857,23 +3928,33 @@ fn propose_send_with_reserved_notes(
         migration_locks,
         transparent_allowlist: None,
     };
-    let zip318 = db.pool_migration_params();
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
+    let (change_strategy, input_selector) = if change_memo.is_some() {
+        (
+            MultiOutputChangeStrategy::new(
+                ConservativeZip317FeeRule,
+                change_memo.clone(),
+                ShieldedPool::Ironwood,
+                DustOutputPolicy::default(),
+                SplitPolicy::single_output(),
+            ),
+            GreedyInputSelector::new(),
+        )
+    } else {
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger)
+    };
 
-    input_selector
+    let proposal = input_selector
         .propose_transaction(
             &network,
             &reserved_db,
             target_height,
             anchor_height,
-            &zip318,
             confirmations_policy,
             account_id,
             request,
@@ -3883,7 +3964,23 @@ fn propose_send_with_reserved_notes(
             spend_policy,
             proposed_tx_version,
         )
-        .map_err(|e| format!("Propose failed: {e}"))
+        .map_err(|e| format!("Propose failed: {e}"))?;
+    if let Some(memo) = change_memo {
+        // Keep payment and recovery record atomic. TEX/multi-step proposals must
+        // not silently move the marker into a different transaction.
+        if proposal.steps().len() != 1
+            || !proposal.steps()[0]
+                .balance()
+                .proposed_change()
+                .iter()
+                .any(|change| {
+                    change.output_pool() == PoolType::IRONWOOD && change.memo() == Some(&memo)
+                })
+        {
+            return Err("Swap funding requires an internal Ironwood recovery memo in the payment transaction".into());
+        }
+    }
+    Ok(proposal)
 }
 
 fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {
@@ -4086,14 +4183,6 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
     type Error = I::Error;
     type AccountId = I::AccountId;
     type NoteRef = I::NoteRef;
-
-    fn anchor_computable(
-        &self,
-        protocol: ShieldedPool,
-        height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        self.inner.anchor_computable(protocol, height)
-    }
 
     fn get_spendable_note(
         &self,

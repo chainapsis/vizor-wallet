@@ -2,17 +2,93 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../core/storage/wallet_paths.dart';
+import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import 'swap_receive_reservation_service.dart';
+
+/// A newly accepted quote starts a pending watch before the first status poll.
+/// Local expiry and unknown provider responses cannot end a receiving watch.
+bool? swapScanningTerminalStatus(
+  String? raw, {
+  SwapIntentStatus? localStatus,
+}) => switch (raw) {
+  null
+      when localStatus == SwapIntentStatus.awaitingDeposit ||
+          localStatus == SwapIntentStatus.awaitingExternalDeposit =>
+    false,
+  'SUCCESS' || 'REFUNDED' || 'FAILED' => true,
+  'PENDING_DEPOSIT' ||
+  'KNOWN_DEPOSIT_TX' ||
+  'PROCESSING' ||
+  'INCOMPLETE_DEPOSIT' => false,
+  _ => null,
+};
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
+    reconcileReceiveReservations: (account) =>
+        ref.read(swapReceiveReservationServiceProvider).reconcile(account),
+    onProviderSnapshot: (intent, snapshot, checkedAt) async {
+      final account = intent.accountUuid;
+      if (account == null || intent.direction?.sendsZec != false) return;
+      await ref
+          .read(swapReceiveReservationServiceProvider)
+          .observeStatus(
+            account,
+            intent.depositAddress ?? intent.id,
+            intent.depositMemo,
+            snapshot,
+            checkedAt,
+          );
+    },
+    lifecycle: ref.read(ledgerOperationLifecycleProvider),
+    onIntentsPersisted: (accountUuid, intents) async {
+      if (ref.read(appSecurityProvider).requiresUnlock) {
+        return;
+      }
+      if (!(ref
+              .read(accountProvider)
+              .value
+              ?.accounts
+              .any(
+                (account) => account.uuid == accountUuid && !account.isHardware,
+              ) ??
+          false)) {
+        return;
+      }
+      final dbPath = await getWalletDbPath();
+      final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
+      for (final intent in intents) {
+        final terminal = swapScanningTerminalStatus(
+          intent.providerStatusRaw,
+          localStatus: intent.status,
+        );
+        final address = intent.direction?.sendsZec == true
+            ? intent.oneClickRefundTo
+            : intent.oneClickRecipient;
+        if (terminal == null || address == null) continue;
+        await rust_sync.observeSwapReceivingOperation(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+          operationId: intent.id,
+          address: address,
+          terminal: terminal,
+        );
+      }
+    },
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     onRecordsChanged: () {
@@ -113,13 +189,15 @@ class SwapActivityStatusRefresher {
           if (_isRefreshDue(intent, accountUuid, startedAt, force: force))
             intent.id,
       ];
-      if (dueIds.isEmpty) return;
-      await _tracker.refreshIntents(
-        accountUuid: accountUuid,
-        currentIntents: currentIntents,
-        intentIds: dueIds,
-        includeTerminal: false,
-      );
+      if (dueIds.isNotEmpty) {
+        await _tracker.refreshIntents(
+          accountUuid: accountUuid,
+          currentIntents: currentIntents,
+          intentIds: dueIds,
+          includeTerminal: false,
+        );
+      }
+      await _tracker.reconcileReceiveReservations(accountUuid);
     } catch (_) {
       // Activity rows are secondary to the wallet shell. Refresh failures are
       // persisted per intent when the provider returns a status error; storage
@@ -152,10 +230,34 @@ class SwapActivityTracker {
     required SwapProvider swapProvider,
     bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
+    LedgerOperationLifecycle? lifecycle,
+    Future<void> Function(String)? reconcileReceiveReservations,
+    Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+    onProviderSnapshot,
+    Future<void> Function(String, List<SwapIntent>)? onIntentsPersisted,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
        _isTorEnabled = isTorEnabled,
-       _onRecordsChanged = onRecordsChanged;
+       _onRecordsChanged = onRecordsChanged,
+       _lifecycle = lifecycle,
+       _reconcileReceiveReservations = reconcileReceiveReservations,
+       _onProviderSnapshot = onProviderSnapshot,
+       _onIntentsPersisted = onIntentsPersisted;
+
+  final Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+  _onProviderSnapshot;
+  final Future<void> Function(String)? _reconcileReceiveReservations;
+  Future<void> reconcileReceiveReservations(String account) async {
+    await _reconcileReceiveReservations?.call(account);
+  }
+
+  final LedgerOperationLifecycle? _lifecycle;
+  final Future<void> Function(String, List<SwapIntent>)? _onIntentsPersisted;
+
+  // Share the wallet deletion drain with durable send operations. Acquire before
+  // the first await, including status requests whose results later write state.
+  Future<T> _run<T>(Future<T> Function() action) =>
+      _lifecycle?.run(action) ?? action();
 
   final SwapActivityStore _activityStore;
   final SwapProvider _swapProvider;
@@ -171,16 +273,26 @@ class SwapActivityTracker {
     return scopedAccountUuid;
   }
 
-  Future<List<SwapIntent>> loadIntents({required String? accountUuid}) async {
+  Future<List<SwapIntent>> loadIntents({required String? accountUuid}) =>
+      _run(() => _loadIntents(accountUuid: accountUuid));
+
+  Future<List<SwapIntent>> _loadIntents({required String? accountUuid}) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return const [];
     final records = await _activityStore.loadRecords(
       accountUuid: scopedAccountUuid,
     );
-    return _intentsFromRecords(records);
+    final intents = _intentsFromRecords(records);
+    await _onIntentsPersisted?.call(scopedAccountUuid, intents);
+    return intents;
   }
 
   Future<void> saveIntents({
+    required String? accountUuid,
+    required List<SwapIntent> intents,
+  }) => _run(() => _saveIntents(accountUuid: accountUuid, intents: intents));
+
+  Future<void> _saveIntents({
     required String? accountUuid,
     required List<SwapIntent> intents,
   }) async {
@@ -196,6 +308,15 @@ class SwapActivityTracker {
               accountUuid: scopedAccountUuid,
             ),
       ],
+    );
+    await _onIntentsPersisted?.call(
+      scopedAccountUuid,
+      intents
+          .where(
+            (intent) =>
+                _isPersistableIntent(intent, accountUuid: scopedAccountUuid),
+          )
+          .toList(),
     );
     _onRecordsChanged?.call();
   }
@@ -236,6 +357,20 @@ class SwapActivityTracker {
   }
 
   Future<SwapActivityRefreshResult> refreshIntents({
+    required String accountUuid,
+    required List<SwapIntent> currentIntents,
+    required Iterable<String> intentIds,
+    required bool includeTerminal,
+  }) => _run(
+    () => _refreshIntents(
+      accountUuid: accountUuid,
+      currentIntents: currentIntents,
+      intentIds: intentIds,
+      includeTerminal: includeTerminal,
+    ),
+  );
+
+  Future<SwapActivityRefreshResult> _refreshIntents({
     required String accountUuid,
     required List<SwapIntent> currentIntents,
     required Iterable<String> intentIds,
@@ -329,6 +464,11 @@ class SwapActivityTracker {
     final snapshot = await _swapProvider.getStatus(
       _providerDepositAddress(intent),
       depositMemo: intent.depositMemo,
+    );
+    await _onProviderSnapshot?.call(
+      intent,
+      snapshot,
+      checkedAt ?? DateTime.now().toUtc(),
     );
     return updateSwapIntentFromSnapshot(
       intent,

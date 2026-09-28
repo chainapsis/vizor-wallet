@@ -12,6 +12,7 @@ import 'api/ledger.dart';
 import 'api/network_privacy.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
+import 'api/swap_receive.dart';
 import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
@@ -715,6 +716,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<ReceiveQuoteStatusRequest> dco_decode_list_receive_quote_status_request(
+    dynamic raw,
+  );
+
+  @protected
   List<ResubmittedShareView> dco_decode_list_resubmitted_share_view(
     dynamic raw,
   );
@@ -1053,6 +1059,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProposalResult dco_decode_proposal_result(dynamic raw);
 
   @protected
+  ReceiveQuoteStatusRequest dco_decode_receive_quote_status_request(
+    dynamic raw,
+  );
+
+  @protected
+  ReceiveReservation dco_decode_receive_reservation(dynamic raw);
+
+  @protected
   ResolvedVotingConfig dco_decode_resolved_voting_config(dynamic raw);
 
   @protected
@@ -1204,6 +1218,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SupportedVersions dco_decode_supported_versions(dynamic raw);
+
+  @protected
+  SwapReceivingAddress dco_decode_swap_receiving_address(dynamic raw);
 
   @protected
   SyncProgress dco_decode_sync_progress(dynamic raw);
@@ -2165,6 +2182,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<ReceiveQuoteStatusRequest> sse_decode_list_receive_quote_status_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ResubmittedShareView> sse_decode_list_resubmitted_share_view(
     SseDeserializer deserializer,
   );
@@ -2585,6 +2607,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
 
   @protected
+  ReceiveQuoteStatusRequest sse_decode_receive_quote_status_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiveReservation sse_decode_receive_reservation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ResolvedVotingConfig sse_decode_resolved_voting_config(
     SseDeserializer deserializer,
   );
@@ -2784,6 +2816,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SupportedVersions sse_decode_supported_versions(SseDeserializer deserializer);
+
+  @protected
+  SwapReceivingAddress sse_decode_swap_receiving_address(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SyncProgress sse_decode_sync_progress(SseDeserializer deserializer);
@@ -3962,6 +3999,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_receive_quote_status_request(
+    List<ReceiveQuoteStatusRequest> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_resubmitted_share_view(
     List<ResubmittedShareView> self,
     SseSerializer serializer,
@@ -4451,6 +4494,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_receive_quote_status_request(
+    ReceiveQuoteStatusRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receive_reservation(
+    ReceiveReservation self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_resolved_voting_config(
     ResolvedVotingConfig self,
     SseSerializer serializer,
@@ -4690,6 +4745,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_supported_versions(
     SupportedVersions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_swap_receiving_address(
+    SwapReceivingAddress self,
     SseSerializer serializer,
   );
 

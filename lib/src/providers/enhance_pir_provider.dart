@@ -57,6 +57,9 @@ class EnhancePirNotifier extends Notifier<bool> {
         // enabling reaches native before anything commits, and disabling
         // releases it only after the new setting is saved and enforced.
         if (effectiveEnabled) await background(true);
+        if (!effectiveEnabled) {
+          await ref.read(nearSwapPrivacyProvider.notifier).disableWithParent();
+        }
         await ref
             .read(enhancePirPreferenceStoreProvider)
             .writeEnabled(effectiveEnabled);
@@ -74,7 +77,7 @@ class EnhancePirNotifier extends Notifier<bool> {
       });
       transition.update(null);
     } catch (_) {
-      transition.update('Setting unchanged. Try again.');
+      transition.update('Could not change setting. Try again.');
     }
   }
 
@@ -95,3 +98,57 @@ final enhancePirTransitionProvider =
     NotifierProvider<EnhancePirTransitionNotifier, String?>(
       EnhancePirTransitionNotifier.new,
     );
+
+final nearSwapPrivacyPreferenceStoreProvider =
+    Provider<EnhancePirPreferenceStore>(
+      (_) => const SharedPreferencesEnhancePirStore(
+        key: kNearSwapPrivacyPreferenceKey,
+      ),
+    );
+
+/// Install-scoped opt-in for new swap addresses. Recovery of existing keys is independent.
+class NearSwapPrivacyNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final bootstrap = ref.watch(appBootstrapProvider);
+    return ref.watch(enhancePirAvailableProvider) &&
+        bootstrap.enhancePirEnabled &&
+        bootstrap.nearSwapPrivacyEnabled;
+  }
+
+  Future<void> set(bool enabled) async {
+    if (ref.read(enhancePirTransitionProvider) == 'Changing setting…') return;
+    if (enabled && !ref.read(enhancePirProvider)) return;
+    if (enabled == state) return;
+    final transition = ref.read(enhancePirTransitionProvider.notifier);
+    transition.update('Changing setting…');
+    try {
+      await ref.read(syncProvider.notifier).withRecoverySettingPaused(() async {
+        // Recheck after draining work so a new address cannot race its parent setting.
+        if (enabled && !ref.read(enhancePirProvider)) return;
+        await ref
+            .read(nearSwapPrivacyPreferenceStoreProvider)
+            .writeEnabled(enabled);
+        rust_sync.setNearSwapPrivacyEnabled(enabled: enabled);
+        state = enabled;
+      });
+      transition.update(null);
+    } catch (_) {
+      transition.update('Could not change setting. Try again.');
+    }
+  }
+
+  /// Called while the parent already holds the shared recovery pause.
+  Future<void> disableWithParent() async {
+    if (!state) return;
+    await ref.read(nearSwapPrivacyPreferenceStoreProvider).writeEnabled(false);
+    rust_sync.setNearSwapPrivacyEnabled(enabled: false);
+    state = false;
+  }
+
+  Future<void> toggle() => set(!state);
+}
+
+final nearSwapPrivacyProvider = NotifierProvider<NearSwapPrivacyNotifier, bool>(
+  NearSwapPrivacyNotifier.new,
+);

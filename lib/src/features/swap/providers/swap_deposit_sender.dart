@@ -58,6 +58,18 @@ class RustSwapDepositSender implements SwapDepositSender {
               'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
               'zatoshi=$amountZatoshi',
             );
+            final refundIndex = quote.swapRefundIndex;
+            if (refundIndex != null) {
+              _requireAddressOnlyDeposit(quote);
+              return rust_sync.estimateSwapFundingFee(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                depositAddress: quote.depositInstruction.address,
+                amountZatoshi: amountZatoshi,
+                refundIndex: refundIndex,
+              );
+            }
             return rust_sync.estimateFee(
               dbPath: dbPath,
               network: endpoint.networkName,
@@ -108,14 +120,26 @@ class RustSwapDepositSender implements SwapDepositSender {
               final dbPath = await getWalletDbPath();
               secretGuard.check();
               final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-              final proposal = await rust_sync.proposeSend(
-                dbPath: dbPath,
-                network: endpoint.networkName,
-                accountUuid: accountUuid,
-                sendFlowId: sendFlowId,
-                toAddress: quote.depositInstruction.address,
-                amountZatoshi: amountZatoshi,
-              );
+              final refundIndex = quote.swapRefundIndex;
+              if (refundIndex != null) _requireAddressOnlyDeposit(quote);
+              final proposal = refundIndex != null
+                  ? await rust_sync.proposeSwapFunding(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      sendFlowId: sendFlowId,
+                      depositAddress: quote.depositInstruction.address,
+                      amountZatoshi: amountZatoshi,
+                      refundIndex: refundIndex,
+                    )
+                  : await rust_sync.proposeSend(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      sendFlowId: sendFlowId,
+                      toAddress: quote.depositInstruction.address,
+                      amountZatoshi: amountZatoshi,
+                    );
               return (proposal: proposal, dbPath: dbPath, endpoint: endpoint);
             },
           );
@@ -262,4 +286,10 @@ String _shortSwapValue(String? value) {
   if (trimmed == null || trimmed.isEmpty) return '-';
   if (trimmed.length <= 14) return trimmed;
   return '${trimmed.substring(0, 7)}...${trimmed.substring(trimmed.length - 6)}';
+}
+
+void _requireAddressOnlyDeposit(SwapQuote quote) {
+  if (quote.depositInstruction.memo?.isNotEmpty ?? false) {
+    throw StateError('Swap receiving POC requires an address-only ZEC deposit');
+  }
 }

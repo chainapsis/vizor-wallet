@@ -32,6 +32,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
     final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacyProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final changingRecovery = recoveryTransition == 'Changing setting…';
@@ -172,83 +173,15 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
             ),
           if (enhancePirAvailable) const SizedBox(height: AppSpacing.md),
           if (enhancePirAvailable)
-            Semantics(
-              button: true,
-              toggled: enhancePirEnabled,
+            _MobilePrivateQueriesControl(
               label: 'Private queries',
-              onTap: changingRecovery
+              keyPrefix: 'mobile_settings_enhance_pir',
+              enabled: enhancePirEnabled,
+              onToggle: changingRecovery
                   ? null
                   : () => unawaited(
                       ref.read(enhancePirProvider.notifier).toggle(),
                     ),
-              excludeSemantics: true,
-              child: GestureDetector(
-                key: const ValueKey('mobile_settings_enhance_pir_row'),
-                behavior: HitTestBehavior.opaque,
-                onTap: changingRecovery
-                    ? null
-                    : () => unawaited(
-                        ref.read(enhancePirProvider.notifier).toggle(),
-                      ),
-                child: SizedBox(
-                  height: _rowHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xxs,
-                    ),
-                    child: Row(
-                      children: [
-                        SizedBox.square(
-                          dimension: 32,
-                          child: Center(
-                            child: AppIcon(
-                              AppIcons.eye,
-                              size: 20,
-                              color: enhancePirEnabled
-                                  ? colors.icon.brandCrimson
-                                  : colors.icon.muted,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.s),
-                        Expanded(
-                          child: Text(
-                            'Private queries',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          enhancePirEnabled ? 'On' : 'Off',
-                          key: const ValueKey(
-                            'mobile_settings_enhance_pir_status',
-                          ),
-                          style: AppTypography.labelLarge.copyWith(
-                            color: enhancePirEnabled
-                                ? colors.text.brandCrimson
-                                : colors.text.secondary,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.s),
-                        MobilePrivacyToggle(
-                          key: const ValueKey(
-                            'mobile_settings_enhance_pir_toggle',
-                          ),
-                          enabled: enhancePirEnabled,
-                          interactive: !changingRecovery,
-                          thumbKey: const ValueKey(
-                            'mobile_settings_enhance_pir_toggle_thumb',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
             ),
           // Feedback for the user's own toggle only; recovery queue counts are
           // deliberately not surfaced — see _EnhancePirPrivacyControl.
@@ -273,7 +206,109 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 color: colors.text.secondary,
               ),
             ),
+          if (enhancePirAvailable) ...[
+            const SizedBox(height: AppSpacing.md),
+            _MobilePrivateQueriesControl(
+              label: 'NEAR swap privacy',
+              keyPrefix: 'mobile_settings_near_swap_privacy',
+              enabled: nearSwapPrivacy && enhancePirEnabled,
+              onToggle: changingRecovery || !enhancePirEnabled
+                  ? null
+                  : () => unawaited(
+                      ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              enhancePirEnabled
+                  ? 'Uses a separate receiving key for each swap. Existing swaps remain recoverable when turned off.'
+                  : 'Turn on Private queries to enable NEAR swap privacy.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _MobilePrivateQueriesControl extends StatelessWidget {
+  const _MobilePrivateQueriesControl({
+    required this.label,
+    required this.keyPrefix,
+    required this.enabled,
+    required this.onToggle,
+  });
+  final String label;
+  final String keyPrefix;
+  final bool enabled;
+  final VoidCallback? onToggle;
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      toggled: enabled,
+      enabled: onToggle != null,
+      label: label,
+      onTap: onToggle,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: ValueKey('${keyPrefix}_row'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onToggle,
+        child: SizedBox(
+          height: _rowHeight,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 32,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.eye,
+                      size: 20,
+                      color: enabled
+                          ? colors.icon.brandCrimson
+                          : colors.icon.muted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  enabled ? 'On' : 'Off',
+                  key: ValueKey('${keyPrefix}_status'),
+                  style: AppTypography.labelLarge.copyWith(
+                    color: enabled
+                        ? colors.text.brandCrimson
+                        : colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                MobilePrivacyToggle(
+                  key: ValueKey('${keyPrefix}_toggle'),
+                  enabled: enabled,
+                  interactive: onToggle != null,
+                  thumbKey: ValueKey('${keyPrefix}_toggle_thumb'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

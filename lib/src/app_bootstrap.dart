@@ -63,6 +63,7 @@ class AppBootstrapState {
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
     this.enhancePirEnabled = false,
+    this.nearSwapPrivacyEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -79,6 +80,7 @@ class AppBootstrapState {
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
   final bool enhancePirEnabled;
+  final bool nearSwapPrivacyEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -262,6 +264,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       label: 'sync keep-awake prompt seen flag',
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
+    final nearSwapPrivacyEnabled = await readNearSwapPrivacyPreference();
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -404,6 +407,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
       enhancePirEnabled: enhancePirEnabled,
+      nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -768,5 +772,19 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   } catch (e) {
     log('bootstrap: failed to load initial sync snapshot: $e');
     return AppSyncSnapshot.emptyForAccount(accountUuid);
+  }
+}
+
+/// New address issuance stays off if its opt-in cannot be read.
+Future<bool> readNearSwapPrivacyPreference({
+  EnhancePirPreferenceStore preferences =
+      const SharedPreferencesEnhancePirStore(
+        key: kNearSwapPrivacyPreferenceKey,
+      ),
+}) async {
+  try {
+    return await preferences.readEnabled() ?? false;
+  } catch (_) {
+    return false;
   }
 }

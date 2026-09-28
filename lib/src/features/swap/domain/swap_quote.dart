@@ -129,6 +129,7 @@ class SwapQuote {
     this.rateTextOverride,
     this.providerRefundInfo,
     this.fiatValueBasis,
+    this.swapRefundIndex,
   });
 
   factory SwapQuote.estimate({
@@ -213,6 +214,35 @@ class SwapQuote {
   final String? rateTextOverride;
   final SwapProviderRefundInfo? providerRefundInfo;
   final SwapFiatValueBasis? fiatValueBasis;
+
+  /// Local key identity. Never sent to the quote provider.
+  final BigInt? swapRefundIndex;
+
+  SwapQuote.withSwapRefundIndex(SwapQuote quote, BigInt? index)
+    : direction = quote.direction,
+      sellAsset = quote.sellAsset,
+      receiveAsset = quote.receiveAsset,
+      externalAsset = quote.externalAsset,
+      mode = quote.mode,
+      sellAmount = quote.sellAmount,
+      receiveAmount = quote.receiveAmount,
+      minimumReceiveAmount = quote.minimumReceiveAmount,
+      providerLabel = quote.providerLabel,
+      feeLabel = quote.feeLabel,
+      totalFeesText = quote.totalFeesText,
+      expiryLabel = quote.expiryLabel,
+      quoteExpiresAt = quote.quoteExpiresAt,
+      depositInstruction = quote.depositInstruction,
+      providerQuoteId = quote.providerQuoteId,
+      sellAmountBaseUnits = quote.sellAmountBaseUnits,
+      sellAmountTextOverride = quote.sellAmountTextOverride,
+      receiveEstimateTextOverride = quote.receiveEstimateTextOverride,
+      minimumReceiveTextOverride = quote.minimumReceiveTextOverride,
+      slippageToleranceTextOverride = quote.slippageToleranceTextOverride,
+      rateTextOverride = quote.rateTextOverride,
+      providerRefundInfo = quote.providerRefundInfo,
+      fiatValueBasis = quote.fiatValueBasis,
+      swapRefundIndex = index;
 
   /// Deadline used by review countdowns and the start gate. Provider quote
   /// expiries reserve [kSwapQuoteStartExpiryBuffer]; deposit-only deadlines

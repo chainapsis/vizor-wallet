@@ -498,6 +498,7 @@ class _SettingsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacyProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final changingRecovery = recoveryTransition == 'Changing setting…';
@@ -611,6 +612,21 @@ class _SettingsList extends ConsumerWidget {
                     ? null
                     : () => unawaited(
                         ref.read(enhancePirProvider.notifier).toggle(),
+                      ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _EnhancePirPrivacyControl(
+                label: 'NEAR swap privacy',
+                keyPrefix: 'settings_near_swap_privacy',
+                description: enhancePirEnabled
+                    ? 'Uses a separate receiving key for each swap. Existing swaps remain recoverable when turned off.'
+                    : 'Turn on Private queries to enable NEAR swap privacy.',
+                enabled: nearSwapPrivacy && enhancePirEnabled,
+                transition: null,
+                onToggle: changingRecovery || !enhancePirEnabled
+                    ? null
+                    : () => unawaited(
+                        ref.read(nearSwapPrivacyProvider.notifier).toggle(),
                       ),
               ),
             ],
@@ -1074,8 +1090,15 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
     required this.enabled,
     required this.onToggle,
     required this.transition,
+    this.label = 'Private queries',
+    this.keyPrefix = 'settings_enhance_pir',
+    this.description =
+        'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
   });
 
+  final String label;
+  final String keyPrefix;
+  final String description;
   final bool enabled;
   final VoidCallback? onToggle;
 
@@ -1116,7 +1139,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Private queries',
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
@@ -1126,7 +1149,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
                         enabled ? 'On' : 'Off',
-                        key: const ValueKey('settings_enhance_pir_status'),
+                        key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled
                               ? colors.text.brandCrimson
@@ -1139,10 +1162,10 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 PrivacyToggle(
-                  key: const ValueKey('settings_enhance_pir_toggle'),
-                  trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
+                  key: ValueKey('${keyPrefix}_toggle'),
+                  trackKey: ValueKey('${keyPrefix}_toggle_track'),
                   enabled: enabled,
-                  semanticsLabel: 'Private queries',
+                  semanticsLabel: label,
                   onToggle: onToggle,
                 ),
               ],
@@ -1153,7 +1176,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             transition!,
-            key: const ValueKey('settings_enhance_pir_transition'),
+            key: ValueKey('${keyPrefix}_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -1163,7 +1186,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
+            description,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

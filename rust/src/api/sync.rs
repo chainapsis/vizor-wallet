@@ -12,7 +12,9 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
-static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
+static PRIVACY_SETTINGS: AtomicU8 = AtomicU8::new(0);
+const PRIVATE_QUERIES: u8 = 1;
+const NEAR_SWAP_PRIVACY: u8 = 2;
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -43,11 +45,19 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
 /// Enable private Ironwood transaction enhancement for future sync work.
 #[frb(sync)]
 pub fn set_enhance_pir_enabled(enabled: bool) {
-    ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
+    PRIVACY_SETTINGS
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+            Some(if enabled {
+                current | PRIVATE_QUERIES
+            } else {
+                0
+            })
+        })
+        .unwrap();
 }
 
 pub(crate) fn enhance_pir_enabled() -> bool {
-    ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
+    PRIVACY_SETTINGS.load(Ordering::SeqCst) & PRIVATE_QUERIES != 0
 }
 
 // ======================== Full Sync ========================
@@ -3101,4 +3111,140 @@ pub fn get_enhance_recovery_status(
 ) -> Result<EnhanceRecoveryStatus, String> {
     let network = keys::parse_network(&network)?;
     sync_engine::enhance_recovery_status(&db_path, network)
+}
+
+/// Whether new private swap addresses may be issued.
+#[frb(sync)]
+pub fn near_swap_privacy_enabled() -> bool {
+    PRIVACY_SETTINGS.load(Ordering::SeqCst) & NEAR_SWAP_PRIVACY != 0
+}
+
+/// New private swap addresses require Private queries. Existing keys remain stored.
+#[frb(sync)]
+pub fn set_near_swap_privacy_enabled(enabled: bool) {
+    PRIVACY_SETTINGS
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+            Some(near_swap_setting(current, enabled))
+        })
+        .unwrap();
+}
+
+fn near_swap_setting(current: u8, enabled: bool) -> u8 {
+    if enabled && current & PRIVATE_QUERIES != 0 {
+        current | NEAR_SWAP_PRIVACY
+    } else {
+        current & !NEAR_SWAP_PRIVACY
+    }
+}
+
+/// A durably reserved address in the independent refund or incoming sequence.
+pub struct SwapReceivingAddress {
+    pub address: String,
+    pub index: u64,
+}
+
+pub fn reserve_swap_receiving_address(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    refund: bool,
+    live_tip: u64,
+) -> Result<SwapReceivingAddress, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let (address, index) = crate::wallet::swap_receiving::reserve(
+            &db_path,
+            network,
+            &account_uuid,
+            refund,
+            live_tip,
+        )?;
+        Ok(SwapReceivingAddress { address, index })
+    })
+}
+
+/// Persists the compact scanning deadline for an existing local swap operation.
+/// Only supported provider statuses may call this; transport errors preserve state.
+pub fn observe_swap_receiving_operation(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    operation_id: String,
+    address: String,
+    terminal: bool,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        crate::wallet::swap_receiving::observe_operation(
+            &db_path,
+            network,
+            &account_uuid,
+            &operation_id,
+            &address,
+            terminal,
+        )
+    })
+}
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+pub fn propose_swap_funding(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::propose_send_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &deposit_address,
+            amount_zatoshi,
+            None,
+            Some(refund_index),
+        )?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+pub fn estimate_swap_funding_fee(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::estimate_fee_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &deposit_address,
+            amount_zatoshi,
+            None,
+            Some(refund_index),
+        )
+    })
+}
+
+#[cfg(test)]
+mod swap_privacy_setting_tests {
+    use super::*;
+    #[test]
+    fn private_queries_is_required_for_swap_privacy() {
+        assert_eq!(near_swap_setting(0, true), 0);
+        assert_eq!(near_swap_setting(PRIVATE_QUERIES, true), 3);
+        assert_eq!(near_swap_setting(3, false), PRIVATE_QUERIES);
+    }
 }
