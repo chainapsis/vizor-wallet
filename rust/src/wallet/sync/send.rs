@@ -813,6 +813,45 @@ pub(crate) fn propose_send_for_purpose(
     memo_str: Option<&str>,
     purpose: SendPurpose,
 ) -> Result<ProposalResult, String> {
+    propose_send_with_request(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        SendRequest::Single {
+            to_address,
+            amount_zatoshi,
+            memo_str,
+        },
+        purpose,
+    )
+}
+
+pub(crate) fn propose_payment_link_batch(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    payments: &[(String, u64)],
+) -> Result<ProposalResult, String> {
+    propose_send_with_request(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        SendRequest::PaymentLinkBatch(payments),
+        SendPurpose::Ordinary,
+    )
+}
+
+fn propose_send_with_request(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    request: SendRequest<'_>,
+    purpose: SendPurpose,
+) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
@@ -823,42 +862,16 @@ pub(crate) fn propose_send_for_purpose(
         super::proposal_locks::require_active_session()?;
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
-        let proposed_tx_version =
-            proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
-        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-        let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-        let spend_policy = ordinary_send_spend_policy(
-            super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
-        );
-        let pass1_proposal = propose_send_with_reserved_notes(
+        let (proposal, stored_tx_version) = propose_request(
             &db,
+            db_path,
             network,
+            account_uuid,
             account_id,
             request,
-            &BTreeSet::new(),
-            &migration_locks,
-            &spend_policy,
-            proposed_tx_version,
-            purpose.confirmations_policy(),
+            purpose,
+            "creating a send",
         )?;
-        let (proposal, stored_tx_version) = propose_with_note_version_downgrade(
-            pass1_proposal,
-            proposed_tx_version,
-            |tx_version| {
-                let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-                propose_send_with_reserved_notes(
-                    &db,
-                    network,
-                    account_id,
-                    request,
-                    &BTreeSet::new(),
-                    &migration_locks,
-                    &spend_policy,
-                    tx_version,
-                    purpose.confirmations_policy(),
-                )
-            },
-        );
 
         let needs_sapling = proposal
             .steps()
@@ -958,45 +971,127 @@ pub fn estimate_fee(
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<u64, String> {
+    estimate_fee_with_request(
+        db_path,
+        network,
+        account_uuid,
+        SendRequest::Single {
+            to_address,
+            amount_zatoshi,
+            memo_str,
+        },
+    )
+}
+
+pub fn estimate_payment_link_batch_fee(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    payments: &[(String, u64)],
+) -> Result<u64, String> {
+    estimate_fee_with_request(
+        db_path,
+        network,
+        account_uuid,
+        SendRequest::PaymentLinkBatch(payments),
+    )
+}
+
+fn estimate_fee_with_request(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    request: SendRequest<'_>,
+) -> Result<u64, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposed_tx_version =
-        proposed_tx_version_for_wallet_db(&db, network, "estimating a send fee")?;
-    let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+    let (proposal, _) = propose_request(
+        &db,
+        db_path,
+        network,
+        account_uuid,
+        account_id,
+        request,
+        SendPurpose::Ordinary,
+        "estimating a send fee",
+    )?;
+    Ok(proposal_fee_zatoshi(&proposal))
+}
+
+/// What an ordinary send pays: one recipient, or one shielded payment per
+/// card of a Gift Card batch.
+#[derive(Clone, Copy)]
+enum SendRequest<'a> {
+    Single {
+        to_address: &'a str,
+        amount_zatoshi: u64,
+        memo_str: Option<&'a str>,
+    },
+    PaymentLinkBatch(&'a [(String, u64)]),
+}
+
+impl SendRequest<'_> {
+    fn build(self) -> Result<TransactionRequest, String> {
+        match self {
+            Self::Single {
+                to_address,
+                amount_zatoshi,
+                memo_str,
+            } => build_send_request(to_address, amount_zatoshi, memo_str),
+            Self::PaymentLinkBatch(payments) => build_payment_link_batch_request(payments),
+        }
+    }
+}
+
+/// Shared proposal step of [`propose_send`] and [`estimate_fee`]: pass 1 plus
+/// the [`propose_with_note_version_downgrade`] pass 2, so the displayed
+/// estimate equals the stored proposal's fee. Gift Card batches are also held
+/// to one funding transaction and their signer's limits here, so a quote is
+/// rejected exactly when the proposal would be.
+#[allow(clippy::too_many_arguments)]
+fn propose_request(
+    db: &WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    account_id: AccountUuid,
+    request: SendRequest<'_>,
+    purpose: SendPurpose,
+    context: &str,
+) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+    let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
+    let transaction_request = request.build()?;
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
     let spend_policy = ordinary_send_spend_policy(
         super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
     );
-    let pass1_proposal = propose_send_with_reserved_notes(
-        &db,
-        network,
-        account_id,
-        request,
-        &BTreeSet::new(),
-        &migration_locks,
-        &spend_policy,
-        proposed_tx_version,
-        confirmations_policy(),
-    )?;
-    // Same two-pass rule as `propose_send`, so the displayed estimate equals
-    // the stored proposal's fee.
-    let (proposal, _) =
+    let propose = |transaction_request: TransactionRequest, tx_version: Option<TxVersion>| {
+        propose_send_with_reserved_notes(
+            db,
+            network,
+            account_id,
+            transaction_request,
+            &BTreeSet::new(),
+            &migration_locks,
+            &spend_policy,
+            tx_version,
+            purpose.confirmations_policy(),
+        )
+    };
+    let pass1_proposal = propose(transaction_request.clone(), proposed_tx_version)?;
+    let (proposal, tx_version) =
         propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
-            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-            propose_send_with_reserved_notes(
-                &db,
-                network,
-                account_id,
-                request,
-                &BTreeSet::new(),
-                &migration_locks,
-                &spend_policy,
-                tx_version,
-                confirmations_policy(),
-            )
+            propose(transaction_request, tx_version)
         });
 
-    Ok(proposal_fee_zatoshi(&proposal))
+    if let SendRequest::PaymentLinkBatch(_) = request {
+        let signer = db
+            .get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .and_then(|account| crate::wallet::keys::hardware_signer_kind(account.source()));
+        validate_payment_link_batch_proposal(&proposal, network, signer)?;
+    }
+    Ok((proposal, tx_version))
 }
 
 /// Estimate the maximum recipient amount for the current destination and memo.
@@ -3582,6 +3677,132 @@ fn build_send_request(
     let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
         .map_err(|e| format!("Cannot create payment: {e:?}"))?;
     TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))
+}
+
+/// Dart shows any error containing this prefix as a final, user-facing batch
+/// message, so every user-facing batch rejection starts with it. Errors only a
+/// programming error can reach must not use it.
+const PAYMENT_LINK_BATCH_REJECTION_PREFIX: &str = "This group ";
+/// What every group rejection asks for: a smaller transaction avoids both
+/// the signer limits and the older funds a signer cannot spend.
+const PAYMENT_LINK_BATCH_ADVICE: &str = "Try fewer cards or a smaller amount per card.";
+
+fn payment_link_batch_rejection(reason: impl std::fmt::Display) -> String {
+    format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason}")
+}
+
+fn build_payment_link_batch_request(
+    payments: &[(String, u64)],
+) -> Result<TransactionRequest, String> {
+    if !(2..=50).contains(&payments.len()) {
+        return Err("Gift Card batch must contain 2 to 50 cards".to_string());
+    }
+    let mut seen = HashSet::with_capacity(payments.len());
+    let mut outputs = Vec::with_capacity(payments.len());
+    for (address, amount) in payments {
+        if !seen.insert(address.as_str()) {
+            return Err("Gift Card batch addresses must be distinct".to_string());
+        }
+        if *amount == 0 {
+            return Err("Gift Card batch amounts must be positive".to_string());
+        }
+        let to: zcash_address::ZcashAddress = address
+            .parse()
+            .map_err(|e| format!("Bad Gift Card address: {e}"))?;
+        // Card addresses are generated shielded, so this is an internal error.
+        if !(to.can_receive_as(PoolType::ORCHARD) || to.can_receive_as(PoolType::SAPLING)) {
+            return Err("Gift Card batch address has no shielded receiver".to_string());
+        }
+        let value = Zatoshis::from_u64(*amount).map_err(|_| "Bad Gift Card amount")?;
+        outputs.push(
+            Payment::new(to, Some(value), None, None, None, vec![])
+                .map_err(|e| format!("Cannot create Gift Card payment: {e:?}"))?,
+        );
+    }
+    TransactionRequest::new(outputs).map_err(|e| format!("{e:?}"))
+}
+
+/// Rejects a Gift Card batch proposal that is not one funding transaction the
+/// account's signer can sign. The request admits only shielded recipients and
+/// ordinary sends spend shielded notes with shielded change, so the step has
+/// no transparent inputs or outputs to check.
+fn validate_payment_link_batch_proposal<NoteRef>(
+    proposal: &Proposal<WalletFeeRule, NoteRef>,
+    network: WalletNetwork,
+    signer: Option<crate::wallet::keys::HardwareSignerKind>,
+) -> Result<(), String> {
+    use crate::wallet::keys::HardwareSignerKind;
+    use orchard::ValuePool;
+
+    if proposal.steps().len() != 1 {
+        return Err(payment_link_batch_rejection(format_args!(
+            "can’t be funded in one transaction. {PAYMENT_LINK_BATCH_ADVICE}"
+        )));
+    }
+    let Some(signer) = signer else { return Ok(()) };
+    let step = proposal.steps().first();
+    match signer {
+        HardwareSignerKind::Keystone => {
+            if step.input_count_in_pool(PoolType::SAPLING) > 0 {
+                return Err(payment_link_batch_rejection(format_args!(
+                    "would spend older Sapling funds, which your Keystone can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
+                )));
+            }
+            let signatures = step.input_count_in_pool(PoolType::ORCHARD)
+                + step.input_count_in_pool(PoolType::IRONWOOD);
+            let max = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
+            if signatures > max {
+                return Err(payment_link_batch_rejection(format_args!(
+                    "needs more inputs than your Keystone can sign at once. {PAYMENT_LINK_BATCH_ADVICE}"
+                )));
+            }
+        }
+        HardwareSignerKind::Ledger => {
+            if step.input_count_in_pool(PoolType::SAPLING) > 0 {
+                return Err(payment_link_batch_rejection(format_args!(
+                    "would spend older Sapling funds, which your Ledger can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
+                )));
+            }
+            let branch = consensus::BranchId::for_height(
+                &network,
+                BlockHeight::from(proposal.min_target_height()),
+            );
+            for (pool, value_pool) in [
+                (PoolType::ORCHARD, ValuePool::Orchard),
+                (PoolType::IRONWOOD, ValuePool::Ironwood),
+            ] {
+                let spends = step.input_count_in_pool(pool);
+                let outputs = step.output_count_in_pool(pool) + step.change_count_in_pool(pool);
+                if spends + outputs == 0 {
+                    continue;
+                }
+                let actions =
+                    payment_link_ledger_action_count(branch, value_pool, spends, outputs)?;
+                let max = crate::wallet::ledger::MAX_SHIELDED_ACTIONS;
+                if actions > max {
+                    return Err(payment_link_batch_rejection(format_args!(
+                        "is too large for your Ledger to sign. {PAYMENT_LINK_BATCH_ADVICE}"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn payment_link_ledger_action_count(
+    branch: consensus::BranchId,
+    pool: orchard::ValuePool,
+    spends: usize,
+    outputs: usize,
+) -> Result<usize, String> {
+    use zcash_primitives::transaction::components::orchard::bundle_version_for_branch;
+
+    let version = bundle_version_for_branch(branch, pool)
+        .ok_or_else(|| format!("Gift Card batch has no {pool:?} bundle at this height"))?;
+    ::orchard::builder::BundleType::DEFAULT
+        .num_actions(version.default_flags(), spends, outputs)
+        .map_err(|e| format!("Count {pool:?} actions for Gift Card batch: {e}"))
 }
 
 fn propose_send_with_reserved_notes(

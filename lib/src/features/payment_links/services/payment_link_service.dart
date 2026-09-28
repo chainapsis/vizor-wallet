@@ -22,6 +22,7 @@ import '../models/vizor_payment_link.dart';
 import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
+import 'payment_link_batch_limits.dart';
 import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_sharing.dart';
@@ -172,6 +173,102 @@ abstract interface class PaymentLinkOperations {
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
   return ref.watch(paymentLinkServiceProvider);
 });
+
+class PaymentLinkBatchQuote {
+  const PaymentLinkBatchQuote({
+    required this.sourceAccountUuid,
+    required this.count,
+    required this.recipientAmountZatoshi,
+    required this.fundingFeeZatoshi,
+  });
+
+  final String sourceAccountUuid;
+  final int count;
+  final BigInt recipientAmountZatoshi;
+  final BigInt fundingFeeZatoshi;
+
+  BigInt get claimFeeReserveZatoshi =>
+      BigInt.from(count * kPaymentLinkClaimFeeReserveZatoshi);
+  BigInt get totalDeductedZatoshi =>
+      BigInt.from(count) * recipientAmountZatoshi +
+      claimFeeReserveZatoshi +
+      fundingFeeZatoshi;
+}
+
+class PaymentLinkBatchDraft {
+  const PaymentLinkBatchDraft({
+    required this.id,
+    required this.links,
+    required this.quote,
+  });
+
+  final String id;
+  final List<VizorPaymentLink> links;
+  final PaymentLinkBatchQuote quote;
+}
+
+class PaymentLinkBatchFundingResult {
+  const PaymentLinkBatchFundingResult({
+    required this.draft,
+    required this.txids,
+    required this.broadcastAccepted,
+    required this.fundingMetadataSaved,
+  });
+
+  final PaymentLinkBatchDraft draft;
+  final String txids;
+  final bool broadcastAccepted;
+  final bool fundingMetadataSaved;
+}
+
+class PaymentLinkBatchQuoteChanged implements Exception {
+  const PaymentLinkBatchQuoteChanged();
+}
+
+class PaymentLinkBatchPreSubmissionFailure implements Exception {
+  const PaymentLinkBatchPreSubmissionFailure();
+}
+
+/// A batch the wallet cannot fund as asked (a signer limit or the
+/// one-transaction rule). [message] is written for the user; retrying the same
+/// batch will not help.
+class PaymentLinkBatchRejected implements Exception {
+  const PaymentLinkBatchRejected(this.message);
+
+  final String message;
+
+  /// Rust prefixes every user-facing batch rejection with this.
+  static const _prefix = 'This group ';
+
+  static PaymentLinkBatchRejected? from(Object error) {
+    final text = error.toString();
+    final start = text.indexOf(_prefix);
+    if (start < 0) return null;
+    return PaymentLinkBatchRejected(text.substring(start).split('\n').first);
+  }
+}
+
+abstract interface class PaymentLinkBatchOperations {
+  /// [artworkIds], when given, holds one design per card in order for a mixed
+  /// group; otherwise every card takes [presentation]'s design.
+  Future<PaymentLinkBatchDraft> prepareBatch({
+    required int count,
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    required PaymentLinkPresentation presentation,
+    List<String>? artworkIds,
+  });
+  Future<void> abandonUnsubmittedBatch(String batchId);
+  Future<PaymentLinkBatchFundingResult> fundBatch(PaymentLinkBatchDraft draft);
+  Future<void> retryBatchFundingMetadata({
+    required String batchId,
+    required String fundingTxids,
+  });
+}
+
+final paymentLinkBatchOperationsProvider = Provider<PaymentLinkBatchOperations>(
+  (ref) => ref.watch(paymentLinkServiceProvider),
+);
 
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
@@ -416,7 +513,8 @@ class PaymentLinkFundingResult {
   final bool broadcastAccepted;
 }
 
-class PaymentLinkService implements PaymentLinkOperations {
+class PaymentLinkService
+    implements PaymentLinkOperations, PaymentLinkBatchOperations {
   PaymentLinkService(
     this._ref,
     this._recoveryStore,
@@ -505,6 +603,186 @@ class PaymentLinkService implements PaymentLinkOperations {
             );
           },
         );
+  }
+
+  @override
+  Future<PaymentLinkBatchDraft> prepareBatch({
+    required int count,
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    required PaymentLinkPresentation presentation,
+    List<String>? artworkIds,
+  }) async {
+    final signer = _ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(sourceAccountUuid);
+    if (count < kPaymentLinkBatchMinCount ||
+        count > paymentLinkBatchMaxCount(signer) ||
+        amountZatoshi <= BigInt.zero ||
+        sourceAccountUuid.isEmpty ||
+        (artworkIds != null && artworkIds.length != count)) {
+      throw ArgumentError('Invalid Gift Card batch.');
+    }
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final birthdayHeight = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .getLatestBlockHeight();
+    final links = <VizorPaymentLink>[];
+    for (var index = 0; index < count; index++) {
+      links.add(
+        await _createFundingLink(
+          amountZatoshi: amountZatoshi,
+          sourceAccountUuid: sourceAccountUuid,
+          presentation: artworkIds == null
+              ? presentation
+              : PaymentLinkPresentation(
+                  artworkId: artworkIds[index],
+                  message: presentation.message,
+                  fiatSnapshot: presentation.fiatSnapshot,
+                ),
+          birthdayHeight: birthdayHeight.toInt(),
+        ),
+      );
+    }
+    // Quote before saving, so a quote that fails (such as an amount above the
+    // balance while typing) never writes the card secrets.
+    final BigInt fee;
+    try {
+      fee = await _ref
+          .read(syncProvider.notifier)
+          .runWithAuthoritativeSpendable(
+            accountUuid: sourceAccountUuid,
+            operation: () async => rust_sync.estimatePaymentLinkBatchFee(
+              dbPath: await getWalletDbPath(),
+              network: endpoint.networkName,
+              accountUuid: sourceAccountUuid,
+              addresses: [for (final link in links) link.address],
+              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+            ),
+          );
+    } catch (error) {
+      if (PaymentLinkBatchRejected.from(error) case final rejected?) {
+        throw rejected;
+      }
+      rethrow;
+    }
+    final batchId = _newSendFlowId();
+    await _recoveryStore.saveBatchDrafts(
+      batchId: batchId,
+      links: links,
+      sourceAccountUuid: sourceAccountUuid,
+      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+    );
+    return PaymentLinkBatchDraft(
+      id: batchId,
+      links: links,
+      quote: PaymentLinkBatchQuote(
+        sourceAccountUuid: sourceAccountUuid,
+        count: count,
+        recipientAmountZatoshi: amountZatoshi,
+        fundingFeeZatoshi: fee,
+      ),
+    );
+  }
+
+  @override
+  Future<void> abandonUnsubmittedBatch(String batchId) =>
+      _recoveryStore.removeUnsubmittedBatch(batchId);
+
+  @override
+  Future<PaymentLinkBatchFundingResult> fundBatch(
+    PaymentLinkBatchDraft draft,
+  ) async {
+    final accountUuid = draft.quote.sourceAccountUuid;
+    final rust_sync.ExecuteProposalResult result;
+    try {
+      result = await runPaymentLinkFundingSubmission((markLocalSubmission) {
+        if (_ref.read(accountProvider).value?.activeAccountUuid !=
+                accountUuid ||
+            _ref
+                .read(accountProvider.notifier)
+                .isHardwareAccount(accountUuid)) {
+          throw StateError('The Gift Card source account changed.');
+        }
+        return _proposeAndExecute(
+          fromAccountUuid: accountUuid,
+          propose: (dbPath, network, sendFlowId) {
+            if (draft.links.any((link) => link.network != network)) {
+              throw StateError('The Gift Card network changed.');
+            }
+            return rust_sync.proposePaymentLinkBatch(
+              dbPath: dbPath,
+              network: network,
+              accountUuid: accountUuid,
+              sendFlowId: sendFlowId,
+              addresses: [for (final link in draft.links) link.address],
+              amountZatoshi: paymentLinkFundingAmountZatoshi(
+                draft.quote.recipientAmountZatoshi,
+              ),
+            );
+          },
+          checkProposal: (proposal) {
+            if (proposal.feeZatoshi != draft.quote.fundingFeeZatoshi) {
+              throw const PaymentLinkBatchQuoteChanged();
+            }
+          },
+          onSubmissionStarted: () async {
+            await _recoveryStore.markBatchSubmissionStarted(
+              batchId: draft.id,
+              chainHeight: _ref.read(syncProvider).value?.chainTipHeight ?? 0,
+            );
+            markLocalSubmission();
+          },
+        );
+      });
+    } on PaymentLinkFundingNotSubmittedException catch (failure) {
+      // Nothing reached the network, so the drafts hold no funds.
+      await _recoveryStore.removeUnsubmittedBatch(draft.id);
+      final error = failure.error;
+      if (error is PaymentLinkBatchQuoteChanged) throw error;
+      throw PaymentLinkBatchRejected.from(error) ??
+          const PaymentLinkBatchPreSubmissionFailure();
+    }
+    final funding = await PaymentLinkFundingRecovery(_recoveryStore)
+        .completeBatch(
+          transaction: result,
+          batchId: draft.id,
+          fundingTxids: result.txids,
+        );
+    if (!funding.fundingMetadataSaved) {
+      log(
+        'PaymentLinkService: batch funding metadata needs recovery: '
+        '${funding.recoveryError}',
+      );
+    }
+    // Usage tracking re-registers missing cards on its next pass, so this
+    // stays off the broadcast path.
+    unawaited(registerBatchObservers(draft));
+    unawaited(_refreshMainWalletAfterSend());
+    return PaymentLinkBatchFundingResult(
+      draft: draft,
+      txids: result.txids,
+      broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
+      fundingMetadataSaved: funding.fundingMetadataSaved,
+    );
+  }
+
+  @override
+  Future<void> retryBatchFundingMetadata({
+    required String batchId,
+    required String fundingTxids,
+  }) async {
+    final recovery = await PaymentLinkFundingRecovery(_recoveryStore)
+        .completeBatch(
+          transaction: fundingTxids,
+          batchId: batchId,
+          fundingTxids: fundingTxids,
+        );
+    if (recovery.fundingMetadataSaved) return;
+    Error.throwWithStackTrace(
+      recovery.recoveryError!,
+      recovery.recoveryStackTrace!,
+    );
   }
 
   @override
@@ -636,10 +914,23 @@ class PaymentLinkService implements PaymentLinkOperations {
     }
   }
 
+  Future<void> registerBatchObservers(PaymentLinkBatchDraft batch) async {
+    try {
+      final tracker = _ref.read(giftCardTrackingServiceProvider);
+      final records = await _recoveryStore.load();
+      for (final record in records) {
+        if (record.batchId == batch.id) await tracker.register(record);
+      }
+    } catch (_) {
+      log('Gift Card observer registration deferred');
+    }
+  }
+
   Future<VizorPaymentLink> _createFundingLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     if (sourceAccountUuid.isEmpty) {
       throw StateError('No active account.');
@@ -663,15 +954,18 @@ class PaymentLinkService implements PaymentLinkOperations {
       throw StateError('Payment link account was created without an address.');
     }
 
-    final birthdayHeight = await _ref
-        .read(rpcEndpointFailoverProvider.notifier)
-        .getLatestBlockHeight();
+    final linkBirthdayHeight =
+        birthdayHeight ??
+        (await _ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .getLatestBlockHeight())
+            .toInt();
     final link = VizorPaymentLink(
       network: endpoint.networkName,
       address: ephemeralAddress,
       amountZatoshi: amountZatoshi,
       mnemonic: paymentAccount.mnemonic,
-      birthdayHeight: birthdayHeight.toInt(),
+      birthdayHeight: linkBirthdayHeight,
       label: 'Payment link',
       createdAt: DateTime.now(),
       presentation: presentation,
@@ -1530,33 +1824,59 @@ class PaymentLinkService implements PaymentLinkOperations {
   }) async {
     await _requireShieldedAddress(toAddress);
     assert(!paymentLinkClaim || (dbPath != null && memo == null));
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    final sendFlowId = _newSendFlowId();
-    Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
-      String proposalDbPath,
-    ) async {
+    return _proposeAndExecute(
+      dbPath: dbPath,
+      fromAccountUuid: fromAccountUuid,
       // Claims use the claim confirmation policy and discard the link
       // wallet's OVK, so the shared seed cannot recover the recipient.
-      final proposal = paymentLinkClaim
-          ? await rust_sync.proposePaymentLinkClaim(
+      propose: (proposalDbPath, network, sendFlowId) => paymentLinkClaim
+          ? rust_sync.proposePaymentLinkClaim(
               dbPath: proposalDbPath,
-              network: endpoint.networkName,
+              network: network,
               accountUuid: fromAccountUuid,
               sendFlowId: sendFlowId,
               toAddress: toAddress,
               amountZatoshi: amountZatoshi,
             )
-          : await rust_sync.proposeSend(
+          : rust_sync.proposeSend(
               dbPath: proposalDbPath,
-              network: endpoint.networkName,
+              network: network,
               accountUuid: fromAccountUuid,
               sendFlowId: sendFlowId,
               toAddress: toAddress,
               amountZatoshi: amountZatoshi,
               memo: memo,
-            );
-      return (dbPath: proposalDbPath, proposal: proposal);
-    }
+            ),
+      mnemonic: mnemonic,
+      beforeExecute: beforeExecute,
+      onSubmissionStarted: onSubmissionStarted,
+    );
+  }
+
+  /// Proposes with [propose] and executes the result, discarding the proposal
+  /// if [checkProposal] or execution fails.
+  Future<rust_sync.ExecuteProposalResult> _proposeAndExecute({
+    String? dbPath,
+    required String fromAccountUuid,
+    required Future<rust_sync.ProposalResult> Function(
+      String dbPath,
+      String network,
+      String sendFlowId,
+    )
+    propose,
+    void Function(rust_sync.ProposalResult proposal)? checkProposal,
+    String? mnemonic,
+    Future<void> Function()? beforeExecute,
+    FutureOr<void> Function()? onSubmissionStarted,
+  }) async {
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final sendFlowId = _newSendFlowId();
+    Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
+      String proposalDbPath,
+    ) async => (
+      dbPath: proposalDbPath,
+      proposal: await propose(proposalDbPath, endpoint.networkName, sendFlowId),
+    );
 
     // The primary wallet shares the ordinary send flow's authoritative
     // spendable lease. Claim wallets are fully synchronized before this path.
@@ -1572,6 +1892,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     final proposal = proposalContext.proposal;
 
     try {
+      checkProposal?.call(proposal);
       final result = await _executeProposal(
         dbPath: walletDbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

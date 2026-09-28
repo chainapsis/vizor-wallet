@@ -196,9 +196,28 @@ class PaymentLinkRecoveryReconciler {
           now.difference(record.updatedAt) > kPaymentLinkInertDraftRetention,
     );
     var changed = false;
+    final handledBatches = <String>{};
     for (final record in inert) {
       try {
-        await _store.removeUnsubmittedDraft(address: record.link.address);
+        final batchId = record.batchId;
+        if (batchId != null) {
+          if (!handledBatches.add(batchId)) continue;
+          final members = records
+              .where((entry) => entry.batchId == batchId)
+              .toList();
+          if (members.length != record.batchCount ||
+              members.any(
+                (entry) =>
+                    !entry.isInertDraft ||
+                    now.difference(entry.updatedAt) <=
+                        kPaymentLinkInertDraftRetention,
+              )) {
+            continue;
+          }
+          await _store.removeUnsubmittedBatch(batchId);
+        } else {
+          await _store.removeUnsubmittedDraft(address: record.link.address);
+        }
         changed = true;
       } catch (error) {
         log(
@@ -245,13 +264,31 @@ class PaymentLinkRecoveryReconciler {
       return records;
     }
     var changed = false;
+    final handledBatches = <String>{};
     for (final record in candidates) {
       final address = record.link.address;
-      if (operationRefs.contains(address) || isFundingSurfaceOpen(address)) {
+      final batchId = record.batchId;
+      if (batchId != null && !handledBatches.add(batchId)) continue;
+      if (operationRefs.contains(address) ||
+          (batchId != null && operationRefs.contains(batchId)) ||
+          isFundingSurfaceOpen(address)) {
         continue;
       }
       try {
-        await _store.removeUnsubmittedPreparedDraft(address: address);
+        if (batchId != null) {
+          final members = records.where((member) => member.batchId == batchId);
+          if (members.length != record.batchCount ||
+              members.any(
+                (member) =>
+                    !candidates.contains(member) ||
+                    isFundingSurfaceOpen(member.link.address),
+              )) {
+            continue;
+          }
+          await _store.removeUnbroadcastBatch(batchId);
+        } else {
+          await _store.removeUnsubmittedPreparedDraft(address: address);
+        }
         changed = true;
       } catch (error) {
         log(
@@ -291,7 +328,9 @@ class PaymentLinkRecoveryReconciler {
                   record.sourceAccountUuid == sourceAccountUuid &&
                   record.state == PaymentLinkRecoveryState.draft &&
                   !record.mayHoldUnsharedFunds &&
-                  signedPending.contains(record.link.address),
+                  (signedPending.contains(record.link.address) ||
+                      (record.batchId != null &&
+                          signedPending.contains(record.batchId))),
             )
             .length;
   }
@@ -350,7 +389,52 @@ class PaymentLinkRecoveryReconciler {
       }
 
       var changed = false;
+      final handledPreparedBatches = <String>{};
       for (final record in preparedDrafts) {
+        if (record.batchId case final batchId?) {
+          if (!handledPreparedBatches.add(batchId)) continue;
+          final members = records
+              .where((entry) => entry.batchId == batchId)
+              .toList();
+          if (members.length != record.batchCount ||
+              members.any(
+                (entry) =>
+                    entry.state != PaymentLinkRecoveryState.draft ||
+                    entry.fundingTxids != record.fundingTxids ||
+                    entry.submittedAtHeight == null,
+              )) {
+            continue;
+          }
+          final disposition = _paymentLinkPreparedFundingDisposition(
+            fundingTxid: record.fundingTxids!.trim(),
+            expiryHeight: record.preparedExpiryHeight,
+            currentHeight: currentHeight,
+            scannedHeight: scannedHeight,
+            transactions:
+                transactionsByAccount[record.sourceAccountUuid] ?? const [],
+          );
+          try {
+            switch (disposition) {
+              case PaymentLinkPreparedFundingDisposition.pending:
+                break;
+              case PaymentLinkPreparedFundingDisposition.funded:
+                await _store.markBatchFunded(
+                  batchId: batchId,
+                  fundingTxids: record.fundingTxids!.trim(),
+                );
+                changed = true;
+              case PaymentLinkPreparedFundingDisposition.expired:
+                await _store.removeTerminalBatch(batchId);
+                changed = true;
+            }
+          } catch (error) {
+            log(
+              'PaymentLinkRecoveryReconciler: prepared batch update failed '
+              'batch=$batchId error=$error',
+            );
+          }
+          continue;
+        }
         final fundingTxid = record.fundingTxids!.trim();
         final disposition = _paymentLinkPreparedFundingDisposition(
           fundingTxid: fundingTxid,
@@ -383,7 +467,46 @@ class PaymentLinkRecoveryReconciler {
           );
         }
       }
+      final handledAmbiguousBatches = <String>{};
       for (final record in ambiguousDrafts) {
+        if (record.batchId case final batchId?) {
+          if (!handledAmbiguousBatches.add(batchId)) continue;
+          final members = records
+              .where((entry) => entry.batchId == batchId)
+              .toList();
+          if (members.length != record.batchCount ||
+              members.any((entry) => !entry.isAmbiguousSubmission)) {
+            continue;
+          }
+          try {
+            // One transaction funds every member or none, so probe the claim
+            // wallets one at a time and stop at the first that disagrees.
+            Set<String>? common;
+            for (final entry in members) {
+              final funding = _paymentLinkOwnFundingTxids(
+                await _loadLinkFundingHistory(entry.link),
+                expectedZatoshi: paymentLinkFundingAmountZatoshi(
+                  entry.link.amountZatoshi,
+                ),
+              ).toSet();
+              common = common == null ? funding : common.intersection(funding);
+              if (common.isEmpty) break;
+            }
+            if (common == null || common.length != 1) continue;
+            final txid = common.single;
+            await _store.markBatchSubmitted(
+              batchId: batchId,
+              fundingTxids: txid,
+            );
+            await _store.markBatchFunded(batchId: batchId, fundingTxids: txid);
+            changed = true;
+          } catch (error) {
+            log(
+              'PaymentLinkRecoveryReconciler: batch funding update failed batch=$batchId error=$error',
+            );
+          }
+          continue;
+        }
         try {
           final fundingTxids = _paymentLinkOwnFundingTxids(
             await _loadLinkFundingHistory(record.link),

@@ -2366,6 +2366,58 @@ void main() {
     },
   );
 
+  test('batch funding after an account switch is a pre-submission failure '
+      'that drops the drafts', () async {
+    final store = PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage());
+    final container = ProviderContainer(
+      overrides: [
+        accountProvider.overrideWith(_HardwareAccountNotifier.new),
+        rpcEndpointProvider.overrideWith(_ClaimDestinationRpcNotifier.new),
+        paymentLinkRecoveryStoreProvider.overrideWithValue(store),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    final links = [
+      for (final address in ['u1batchcardone', 'u1batchcardtwo'])
+        VizorPaymentLink(
+          network: 'main',
+          address: address,
+          amountZatoshi: BigInt.from(100000),
+          mnemonic: _link().mnemonic,
+          birthdayHeight: 3_456_789,
+          label: 'Payment link',
+          createdAt: DateTime.utc(2026, 8, 5, 12),
+        ),
+    ];
+    await store.saveBatchDrafts(
+      batchId: 'batch-1',
+      links: links,
+      sourceAccountUuid: 'account-1',
+      claimFeeReserveZatoshi: BigInt.from(10000),
+    );
+
+    await expectLater(
+      container
+          .read(paymentLinkBatchOperationsProvider)
+          .fundBatch(
+            PaymentLinkBatchDraft(
+              id: 'batch-1',
+              links: links,
+              quote: PaymentLinkBatchQuote(
+                sourceAccountUuid: 'account-1',
+                count: 2,
+                recipientAmountZatoshi: BigInt.from(100000),
+                fundingFeeZatoshi: BigInt.from(15000),
+              ),
+            ),
+          ),
+      // Not an uncertain broadcast: nothing was proposed.
+      throwsA(isA<PaymentLinkBatchPreSubmissionFailure>()),
+    );
+    expect(await store.load(), isEmpty);
+  });
+
   test('a quiesced reset stops a pending claim from being retained', () async {
     final storage = _PaymentLinkServiceReceivedStorage();
     final container = ProviderContainer(

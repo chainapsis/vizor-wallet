@@ -87,14 +87,17 @@ pub(crate) use send::{
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
-    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, ExecuteProposalResult,
-    IronwoodMigrationResult,
+    estimate_fee, estimate_payment_link_batch_fee, execute_proposal,
+    execute_proposal_with_seed_loader, ExecuteProposalResult, IronwoodMigrationResult,
 };
 pub(crate) use send::{
     create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
     shield_transparent_balance,
 };
-pub(crate) use send::{estimate_send_max_for_purpose, propose_send_for_purpose, SendPurpose};
+pub(crate) use send::{
+    estimate_send_max_for_purpose, propose_payment_link_batch, propose_send_for_purpose,
+    SendPurpose,
+};
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.

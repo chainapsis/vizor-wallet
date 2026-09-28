@@ -107,6 +107,13 @@ class PaymentLinkLedgerFundingService {
     );
   });
 
+  Future<PaymentLinkHardwarePcztDraft> prepareBatch(
+    PaymentLinkBatchDraft batch,
+  ) => lifecycle.run(() {
+    _requireAccount(batch.quote.sourceAccountUuid);
+    return hardware.createBatchFundingPczt(batch);
+  });
+
   Future<List<int>> prove({
     required String accountUuid,
     required PaymentLinkHardwarePcztDraft draft,
@@ -141,10 +148,10 @@ class PaymentLinkLedgerFundingService {
   }) => lifecycle.run(() async {
     _requireAccount(accountUuid);
     await operations.checkpoint(
-      operationId: operationId(accountUuid, draft.link.address),
+      operationId: operationId(accountUuid, draft.recoveryRef),
       accountUuid: accountUuid,
       kind: LedgerSignedOperationKind.giftCard,
-      externalRef: draft.link.address,
+      externalRef: draft.recoveryRef,
       pcztWithProofsBytes: proofs,
       pcztWithSignaturesBytes: signatures,
     );
@@ -153,7 +160,7 @@ class PaymentLinkLedgerFundingService {
     // reservation until the broadcast result determines safe settlement.
     return resume(
       accountUuid: accountUuid,
-      address: draft.link.address,
+      address: draft.recoveryRef,
       draft: draft,
       spendParamsPath: spendParamsPath,
       outputParamsPath: outputParamsPath,
@@ -180,7 +187,8 @@ class PaymentLinkLedgerFundingService {
         final record = (await recovery.load())
             .where(
               (record) =>
-                  record.link.address == address &&
+                  (record.link.address == address ||
+                      record.batchId == address) &&
                   record.sourceAccountUuid == accountUuid,
             )
             .firstOrNull;
@@ -250,10 +258,20 @@ class PaymentLinkLedgerFundingService {
   }) async {
     // Past this marker the draft may hold funds and blocks deleting its
     // account. A failed write aborts before the network sees anything.
-    await recovery.markSubmissionStartedIfPresent(
-      address: address,
-      chainHeight: currentChainHeight(),
-    );
+    final batch = (await recovery.load())
+        .where((record) => record.batchId == address)
+        .firstOrNull;
+    if (batch != null) {
+      await recovery.markBatchSubmissionStarted(
+        batchId: address,
+        chainHeight: currentChainHeight(),
+      );
+    } else {
+      await recovery.markSubmissionStartedIfPresent(
+        address: address,
+        chainHeight: currentChainHeight(),
+      );
+    }
     try {
       return await operations.broadcast(
         operationId: operationId,
@@ -264,7 +282,11 @@ class PaymentLinkLedgerFundingService {
       if (!isTerminalLedgerSignedOperationError(error)) rethrow;
       // Rust has rejected this transaction definitively and removed its outbox
       // entry. The prepared secret is safe to remove; never offer rebroadcast.
-      await recovery.removeUnbroadcastDraft(address: address);
+      if (batch != null) {
+        await recovery.removeTerminalBatch(address);
+      } else {
+        await recovery.removeUnbroadcastDraft(address: address);
+      }
       return null;
     }
   }
@@ -287,14 +309,21 @@ class PaymentLinkLedgerFundingService {
       );
     }
     final record = (await recovery.load())
-        .where((record) => record.link.address == address)
+        .where(
+          (record) =>
+              record.link.address == address || record.batchId == address,
+        )
         .firstOrNull;
     if (record != null && record.sourceAccountUuid != operation.accountUuid) {
       throw StateError('The gift card belongs to a different account.');
     }
     if (result.status == 'expired') {
       if (record?.state == PaymentLinkRecoveryState.draft) {
-        await recovery.removeUnbroadcastDraft(address: address);
+        if (record?.batchId case final batchId?) {
+          await recovery.removeTerminalBatch(batchId);
+        } else {
+          await recovery.removeUnbroadcastDraft(address: address);
+        }
       }
     } else {
       if (record == null) {
@@ -303,10 +332,19 @@ class PaymentLinkLedgerFundingService {
       if (record.state == PaymentLinkRecoveryState.draft) {
         // Rust attempted this broadcast, so the boundary was crossed even if
         // the marker was never written.
-        await recovery.markSubmissionStarted(
-          address: address,
-          chainHeight: currentChainHeight(),
-        );
+        if (record.batchId case final batchId?) {
+          if (record.submittedAtHeight == null) {
+            await recovery.markBatchSubmissionStarted(
+              batchId: batchId,
+              chainHeight: currentChainHeight(),
+            );
+          }
+        } else {
+          await recovery.markSubmissionStarted(
+            address: address,
+            chainHeight: currentChainHeight(),
+          );
+        }
       }
       if (!isPaymentLinkFundingSubmitted(
         status: result.status,
@@ -324,7 +362,21 @@ class PaymentLinkLedgerFundingService {
           );
         }
       } else {
-        await recovery.markFunded(address: address, fundingTxids: result.txid);
+        if (record.batchId case final batchId?) {
+          await recovery.markBatchSubmitted(
+            batchId: batchId,
+            fundingTxids: result.txid,
+          );
+          await recovery.markBatchFunded(
+            batchId: batchId,
+            fundingTxids: result.txid,
+          );
+        } else {
+          await recovery.markFunded(
+            address: address,
+            fundingTxids: result.txid,
+          );
+        }
       }
     }
     if (result.requiresAck) await operations.acknowledge(result.operationId);

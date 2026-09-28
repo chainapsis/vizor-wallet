@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -245,6 +245,38 @@ Future<AddressValidationResult> validateAddress({
 }) => RustLib.instance.api.crateApiSyncValidateAddress(
   address: address,
   network: network,
+);
+
+/// Quotes the complete batch, including its actual destination addresses.
+Future<BigInt> estimatePaymentLinkBatchFee({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<String> addresses,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkBatchFee(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  addresses: addresses,
+  amountZatoshi: amountZatoshi,
+);
+
+/// Proposes a Gift Card batch only if it fits in one funding transaction.
+Future<ProposalResult> proposePaymentLinkBatch({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required List<String> addresses,
+  required BigInt amountZatoshi,
+}) => RustLib.instance.api.crateApiSyncProposePaymentLinkBatch(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  addresses: addresses,
+  amountZatoshi: amountZatoshi,
 );
 
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.

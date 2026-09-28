@@ -140,6 +140,61 @@ void main() {
     expect(await reconciler.countUnsharedFundedForAccount('source-account'), 0);
   });
 
+  test('removes a software batch whose transaction expired unmined', () async {
+    final store = PaymentLinkRecoveryStore(_MemoryStorage());
+    await _saveSubmittedBatch(store);
+    final reconciler = PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _secondTxid, expiredUnmined: true),
+        ],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    expect(await reconciler.load(), isEmpty);
+  });
+
+  test('a failed batch update still settles the other cards', () async {
+    final store = _FailingBatchStore(_MemoryStorage());
+    await _saveSubmittedBatch(store);
+    await store.saveDraft(
+      claimFeeReserveZatoshi: BigInt.from(10000),
+      link: _giftCardLink(_preparedAddress),
+      sourceAccountUuid: 'source-account',
+    );
+    await store.markSubmitted(
+      address: _preparedAddress,
+      fundingTxids: _preparedTxid,
+    );
+    final reconciler = PaymentLinkRecoveryReconciler(
+      store,
+      loadCurrentHeight: () async => BigInt.from(200),
+      loadScannedHeight: () async => BigInt.from(200),
+      loadTransactionsByAccount: (_) async => {
+        'source-account': [
+          _transaction(txid: _secondTxid),
+          _transaction(txid: _preparedTxid),
+        ],
+      },
+      loadLinkFundingHistory: (_) async => const [],
+    );
+
+    final records = await reconciler.load();
+
+    expect(
+      records.singleWhere((record) => record.batchId == null).state,
+      PaymentLinkRecoveryState.funded,
+    );
+    expect(
+      records.where((record) => record.batchId != null).map((r) => r.state),
+      everyElement(PaymentLinkRecoveryState.draft),
+    );
+  });
+
   test('promotes a recorded transaction even at its expiry height', () async {
     final fixture = await _preparedFixture();
     final reconciler = PaymentLinkRecoveryReconciler(
@@ -303,6 +358,74 @@ void main() {
     expect(await reconciler.countUnsharedFundedForAccount('source-account'), 1);
   });
 
+  test(
+    'recovers an ambiguous batch only after every card sees the same tx',
+    () async {
+      final storage = _MemoryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final links = [
+        for (var index = 1; index <= 2; index++)
+          VizorPaymentLink(
+            network: 'main',
+            address: 'u1batchgiftcard$index',
+            amountZatoshi: BigInt.from(100000),
+            mnemonic:
+                'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+            birthdayHeight: 100,
+            label: 'Payment link',
+            createdAt: DateTime.utc(2026, 9, 1),
+          ),
+      ];
+      await store.saveBatchDrafts(
+        batchId: 'batch-1',
+        links: links,
+        sourceAccountUuid: 'source-account',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+      await store.markBatchSubmissionStarted(
+        batchId: 'batch-1',
+        chainHeight: 100,
+      );
+      var fundedAddresses = {links.first.address};
+      PaymentLinkRecoveryReconciler reconciler() =>
+          PaymentLinkRecoveryReconciler(
+            store,
+            loadCurrentHeight: () async => BigInt.from(200),
+            loadScannedHeight: () async => BigInt.from(200),
+            loadTransactionsByAccount: (_) async => const {
+              'source-account': [],
+            },
+            loadLinkFundingHistory: (link) async =>
+                fundedAddresses.contains(link.address)
+                ? [
+                    _transaction(
+                      txid: _preparedTxid,
+                      txKind: 'received',
+                      accountBalanceDelta: 110000,
+                    ),
+                  ]
+                : [],
+          );
+      expect(
+        (await reconciler().load()).every(
+          (record) => record.state == PaymentLinkRecoveryState.draft,
+        ),
+        isTrue,
+      );
+      fundedAddresses = {for (final link in links) link.address};
+      final restored = await reconciler().load();
+      expect(
+        restored.every(
+          (record) => record.state == PaymentLinkRecoveryState.funded,
+        ),
+        isTrue,
+      );
+      expect(restored.map((record) => record.fundingTxids).toSet(), {
+        _preparedTxid,
+      });
+    },
+  );
+
   test('an unrelated receive does not fund an ambiguous submission', () async {
     final fixture = await _ambiguousFixture();
     final reconciler = PaymentLinkRecoveryReconciler(
@@ -392,6 +515,52 @@ void main() {
 
   group('abandoned prepared drafts', () {
     final stale = DateTime.now().toUtc().subtract(const Duration(hours: 1));
+
+    test(
+      'keeps every prepared batch member while its Ledger outbox exists',
+      () async {
+        final storage = _MemoryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final links = [
+          for (var index = 1; index <= 2; index++)
+            VizorPaymentLink(
+              network: 'main',
+              address: 'u1preparedbatch$index',
+              amountZatoshi: BigInt.from(100000),
+              mnemonic:
+                  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+              birthdayHeight: 100,
+              label: 'Payment link',
+              createdAt: DateTime.utc(2026, 9, 1),
+            ),
+        ];
+        await store.saveBatchDrafts(
+          batchId: 'prepared-batch',
+          links: links,
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        await store.markBatchPrepared(
+          batchId: 'prepared-batch',
+          fundingTxid: _preparedTxid,
+          expiryHeight: 120,
+        );
+        final payload = jsonDecode(storage.value!) as Map<String, dynamic>;
+        for (final record in payload['records'] as List<dynamic>) {
+          (record as Map<String, dynamic>)['updatedAt'] = stale
+              .toIso8601String();
+        }
+        storage.value = jsonEncode(payload);
+        expect(
+          (await _abandonmentReconciler(
+            store,
+            ledgerOperationRefs: {'prepared-batch'},
+          ).load()).length,
+          2,
+        );
+        expect(await _abandonmentReconciler(store).load(), isEmpty);
+      },
+    );
 
     test('drops one whose funding flow ended before its broadcast', () async {
       final fixture = await _preparedFixture(updatedAt: stale);
@@ -609,6 +778,33 @@ _submittedFixture({String fundingTxids = _preparedTxid}) async {
   return (store: store, storage: storage);
 }
 
+VizorPaymentLink _giftCardLink(String address) => VizorPaymentLink(
+  network: 'main',
+  address: address,
+  amountZatoshi: BigInt.from(100000),
+  mnemonic:
+      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+  birthdayHeight: 100,
+  label: 'Payment link',
+  createdAt: DateTime.utc(2026, 9, 1),
+);
+
+/// A software batch whose broadcast landed but whose `markBatchFunded`
+/// promotion never did: submitted, with a transaction id and no expiry height.
+Future<void> _saveSubmittedBatch(PaymentLinkRecoveryStore store) async {
+  await store.saveBatchDrafts(
+    batchId: 'batch-1',
+    links: [
+      _giftCardLink('u1batchgiftcard1'),
+      _giftCardLink('u1batchgiftcard2'),
+    ],
+    sourceAccountUuid: 'source-account',
+    claimFeeReserveZatoshi: BigInt.from(10000),
+  );
+  await store.markBatchSubmissionStarted(batchId: 'batch-1', chainHeight: 100);
+  await store.markBatchSubmitted(batchId: 'batch-1', fundingTxids: _secondTxid);
+}
+
 /// A software funding whose broadcast started and whose result never came
 /// back: the draft carries a submission height and no transaction id.
 Future<({PaymentLinkRecoveryStore store, _MemoryStorage storage})>
@@ -743,6 +939,16 @@ class _MemoryStorage implements PaymentLinkRecoveryStorage {
 
   @override
   Future<void> write(String nextValue) async => value = nextValue;
+}
+
+class _FailingBatchStore extends PaymentLinkRecoveryStore {
+  _FailingBatchStore(super.storage);
+
+  @override
+  Future<void> markBatchFunded({
+    required String batchId,
+    required String fundingTxids,
+  }) async => throw StateError('secure storage write failed');
 }
 
 class _CountingRecoveryReconciler extends PaymentLinkRecoveryReconciler {

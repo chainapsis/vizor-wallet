@@ -1094,6 +1094,63 @@ pub struct ShieldTransparentPcztResult {
     pub needs_sapling_params: bool,
 }
 
+/// Pairs every card address with the same funding amount.
+fn payment_link_batch_pairs(addresses: Vec<String>, amount_zatoshi: u64) -> Vec<(String, u64)> {
+    addresses
+        .into_iter()
+        .map(|address| (address, amount_zatoshi))
+        .collect()
+}
+
+/// Quotes the complete batch, including its actual destination addresses.
+pub fn estimate_payment_link_batch_fee(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    addresses: Vec<String>,
+    amount_zatoshi: u64,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::estimate_payment_link_batch_fee(
+            &db_path,
+            network,
+            &account_uuid,
+            &payment_link_batch_pairs(addresses, amount_zatoshi),
+        )
+    })
+}
+
+/// Proposes a Gift Card batch only if it fits in one funding transaction.
+pub fn propose_payment_link_batch(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    addresses: Vec<String>,
+    amount_zatoshi: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::propose_payment_link_batch(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &payment_link_batch_pairs(addresses, amount_zatoshi),
+        )
+        .map(api_proposal_result)
+    })
+}
+
+fn api_proposal_result(result: wallet_sync::ProposalResult) -> ProposalResult {
+    ProposalResult {
+        proposal_id: result.proposal_id,
+        needs_sapling_params: result.needs_sapling_params,
+        fee_zatoshi: result.fee_zatoshi,
+    }
+}
+
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 pub fn propose_send(
     db_path: String,
@@ -1106,7 +1163,7 @@ pub fn propose_send(
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let r = wallet_sync::propose_send(
+        wallet_sync::propose_send(
             &db_path,
             network,
             &account_uuid,
@@ -1114,12 +1171,8 @@ pub fn propose_send(
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
-        )?;
-        Ok(ProposalResult {
-            proposal_id: r.proposal_id,
-            needs_sapling_params: r.needs_sapling_params,
-            fee_zatoshi: r.fee_zatoshi,
-        })
+        )
+        .map(api_proposal_result)
     })
 }
 
@@ -1183,7 +1236,7 @@ pub fn propose_payment_link_claim(
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let r = wallet_sync::propose_send_for_purpose(
+        wallet_sync::propose_send_for_purpose(
             &db_path,
             network,
             &account_uuid,
@@ -1192,12 +1245,8 @@ pub fn propose_payment_link_claim(
             amount_zatoshi,
             None,
             wallet_sync::SendPurpose::PaymentLinkClaim,
-        )?;
-        Ok(ProposalResult {
-            proposal_id: r.proposal_id,
-            needs_sapling_params: r.needs_sapling_params,
-            fee_zatoshi: r.fee_zatoshi,
-        })
+        )
+        .map(api_proposal_result)
     })
 }
 
