@@ -441,6 +441,16 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
           record.submittedAtHeight != null ||
           (record.fundingTxids?.isNotEmpty ?? false),
     );
+    if (!uncertain && retained.isNotEmpty) {
+      // A failed preparation leaves the drafts for a retry; leaving drops them.
+      try {
+        await ref
+            .read(paymentLinkBatchOperationsProvider)
+            .abandonUnsubmittedBatch(draft.id);
+      } catch (error) {
+        log('PaymentLinksScreen: could not discard unsubmitted batch: $error');
+      }
+    }
     if (!mounted || _hardwareBatchSigning != draft) return;
     setState(() {
       _batchQuote = const _BatchQuoteEmpty();

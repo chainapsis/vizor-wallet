@@ -168,7 +168,9 @@ class RustPaymentLinkHardwareSigningService
           throw const PaymentLinkBatchQuoteChanged();
         }
       },
-      removeDrafts: () => _recoveryStore.removeUnsubmittedBatch(batch.id),
+      // The group's drafts belong to its quote, so a retry can reuse them.
+      // Leaving the signer abandons them.
+      removeDrafts: null,
     );
   }
 
@@ -200,8 +202,8 @@ class RustPaymentLinkHardwareSigningService
   }
 
   /// Proposes funding for [links] and turns it into an unsigned PCZT. A
-  /// proposal that never became a PCZT is discarded, and any failure removes
-  /// the still-unsubmitted drafts.
+  /// proposal that never became a PCZT is discarded, and any failure runs
+  /// [removeDrafts] on the still-unsubmitted drafts.
   Future<PaymentLinkHardwarePcztDraft> _createPczt({
     required String accountUuid,
     required List<VizorPaymentLink> links,
@@ -210,7 +212,7 @@ class RustPaymentLinkHardwareSigningService
       String sendFlowId,
     )
     propose,
-    required Future<void> Function() removeDrafts,
+    required Future<void> Function()? removeDrafts,
     void Function(rust_sync.ProposalResult proposal)? checkProposal,
     PaymentLinkBatchDraft? batch,
   }) async {
@@ -269,7 +271,7 @@ class RustPaymentLinkHardwareSigningService
           );
     } catch (error, stackTrace) {
       try {
-        await removeDrafts();
+        await removeDrafts?.call();
       } catch (cleanupError) {
         log(
           'PaymentLinkHardwareSigning: failed PCZT draft cleanup '
