@@ -218,7 +218,7 @@ class DesktopUnlockContent extends StatelessWidget {
           width: 50,
           height: 50,
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.md),
         SizedBox(
           width: _titleWidth,
           child: Column(
@@ -247,7 +247,8 @@ class DesktopUnlockContent extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.base),
+        // Leave room for the persistent Caps Lock warning above the input.
+        const SizedBox(height: AppSpacing.base + AppSpacing.xs),
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [

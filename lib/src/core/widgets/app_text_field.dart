@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../input/caps_lock_warning.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
@@ -784,6 +785,8 @@ class _AppTextFieldState extends State<AppTextField> {
       ),
     );
 
+    final passwordWarning = CapsLockWarningScope.maybeOf(context);
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -802,7 +805,14 @@ class _AppTextFieldState extends State<AppTextField> {
               ),
               SizedBox(height: gap),
             ],
-            shell,
+            if (passwordWarning != null)
+              CapsLockWarning(
+                hasLabel: widget.showLabel,
+                onDarkCard: passwordWarning.onDarkCard,
+                child: shell,
+              )
+            else
+              shell,
           ],
         ),
         if (_showMessage)

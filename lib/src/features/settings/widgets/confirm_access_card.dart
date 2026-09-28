@@ -112,6 +112,7 @@ class ConfirmAccessCard extends StatelessWidget {
                 child: SizedBox(
                   height: _fieldBlockHeight,
                   child: AppPasswordInput(
+                    warningOnDarkCard: true,
                     child: AppTextField(
                       label: 'Password',
                       showLabel: false,

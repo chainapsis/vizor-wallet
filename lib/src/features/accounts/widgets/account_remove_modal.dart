@@ -245,7 +245,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               message: unsharedGiftCardWarning,
             ),
           ],
-          const SizedBox(height: AppSpacing.sm),
+          // Leave clearance above the label row for the Caps Lock warning.
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
             height: _fieldHeight,
             child: AppPasswordInput(
