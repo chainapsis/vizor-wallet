@@ -15,6 +15,58 @@ const MIGRATION_TEST_ACCOUNT: &str = "account-1";
 const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
+#[test]
+fn gift_card_batch_request_accepts_fifty_distinct_payments() {
+    let payments: Vec<_> = (1..=50)
+        .map(|index| (gift_card_batch_address(index), 20_000))
+        .collect();
+    let request = build_payment_link_batch_request(&payments).unwrap();
+    assert_eq!(request.payments().len(), 50);
+    assert!(build_payment_link_batch_request(&payments[..1]).is_err());
+    assert!(build_payment_link_batch_request(
+        &[
+            payments.clone(),
+            vec![(gift_card_batch_address(51), 20_000)]
+        ]
+        .concat()
+    )
+    .is_err());
+    let duplicate = vec![payments[0].clone(), payments[0].clone()];
+    assert!(build_payment_link_batch_request(&duplicate).is_err());
+}
+
+#[test]
+fn gift_card_batch_request_rejects_transparent_only_recipients() {
+    let network = WalletNetwork::Main;
+    let sapling = {
+        let esk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[9u8; 32]);
+        Address::from(esk.default_address().1)
+            .to_zcash_address(&network)
+            .to_string()
+    };
+    assert!(build_payment_link_batch_request(&[
+        (gift_card_batch_address(1), 20_000),
+        (sapling, 20_000),
+    ])
+    .is_ok());
+
+    for transparent in [
+        Address::Transparent(taddr(2)),
+        Address::Transparent(TransparentAddress::ScriptHash([2; 20])),
+        Address::Tex([2; 20]),
+    ] {
+        let error = build_payment_link_batch_request(&[
+            (gift_card_batch_address(1), 20_000),
+            (transparent.to_zcash_address(&network).to_string(), 20_000),
+        ])
+        .unwrap_err();
+        assert_eq!(error, "Gift Card batch address has no shielded receiver");
+        // Card addresses are generated shielded; this is not a user-facing
+        // batch rejection.
+        assert!(!error.contains(PAYMENT_LINK_BATCH_REJECTION_PREFIX));
+    }
+}
+
 fn resubmit_test_transaction(
     prevout_txid: [u8; 32],
     output_value: u64,
@@ -3465,4 +3517,294 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     assert_eq!(progress.input_count, 1);
     assert!(progress.below_threshold);
 
+}
+#[test]
+fn gift_card_ledger_preflight_counts_pool_actions_at_the_consensus_version() {
+    use orchard::ValuePool;
+    use zcash_protocol::consensus::BranchId;
+
+    assert_eq!(
+        super::payment_link_ledger_action_count(BranchId::Nu6_3, ValuePool::Orchard, 1, 31),
+        Ok(32),
+    );
+    assert_eq!(
+        super::payment_link_ledger_action_count(BranchId::Nu6_3, ValuePool::Orchard, 2, 31),
+        Ok(33),
+    );
+    assert_eq!(
+        super::payment_link_ledger_action_count(BranchId::Nu6_2, ValuePool::Orchard, 2, 31),
+        Ok(31),
+    );
+    assert_eq!(
+        super::payment_link_ledger_action_count(BranchId::Nu6_3, ValuePool::Ironwood, 1, 31),
+        Ok(31),
+    );
+}
+
+/// A distinct Orchard-only unified address for Gift Card card `index`.
+fn gift_card_batch_address(index: u32) -> String {
+    let ua = zcash_keys::address::UnifiedAddress::from_receivers(
+        Some(gift_card_batch_orchard_receiver(index)),
+        None,
+        None,
+    )
+    .expect("UA with an Orchard receiver is valid");
+    Address::from(ua)
+        .to_zcash_address(&WalletNetwork::Main)
+        .to_string()
+}
+
+fn gift_card_batch_orchard_receiver(index: u32) -> orchard::Address {
+    let sk = orchard::keys::SpendingKey::from_bytes([42; 32]).unwrap();
+    orchard::keys::FullViewingKey::from(&sk).address_at(index, orchard::keys::Scope::External)
+}
+
+/// Selected inputs of a fabricated Gift Card batch step, 100,000 zatoshis each.
+#[derive(Clone, Copy, Default)]
+struct BatchInputs {
+    orchard: usize,
+    ironwood: usize,
+    sapling: usize,
+}
+
+/// Fabricates one step of a regtest Gift Card batch before NU6.3: `cards`
+/// 1,000-zatoshi Orchard payments, a 10,000-zatoshi fee, and one Orchard
+/// change output. `txid_seed` keeps inputs of separate steps distinct.
+fn fabricated_batch_step(
+    cards: u32,
+    inputs: BatchInputs,
+    txid_seed: u8,
+) -> Proposal<WalletFeeRule, u32> {
+    let network = WalletNetwork::Regtest;
+    let input_value = 100_000u64;
+    let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+    let rseed = (0u8..=255)
+        .find_map(|b| orchard::note::RandomSeed::from_bytes([b; 32], &rho).into_option())
+        .expect("test rseed");
+    let orchard_note = |version| {
+        orchard::Note::from_parts(
+            gift_card_batch_orchard_receiver(0),
+            orchard::value::NoteValue::from_raw(input_value),
+            rho,
+            rseed,
+            version,
+        )
+        .unwrap()
+    };
+    let orchard_notes: Vec<_> = (0..inputs.orchard)
+        .map(|id| batch_received_note(id, txid_seed, orchard_note(orchard::note::NoteVersion::V2)))
+        .collect();
+    let ironwood_notes: Vec<_> = (inputs.orchard..inputs.orchard + inputs.ironwood)
+        .map(|id| batch_received_note(id, txid_seed, orchard_note(orchard::note::NoteVersion::V3)))
+        .collect();
+    let sapling_recipient = sapling_crypto::zip32::ExtendedSpendingKey::master(&[7u8; 32])
+        .default_address()
+        .1;
+    let first_sapling = inputs.orchard + inputs.ironwood;
+    let sapling_notes: Vec<_> = (first_sapling..first_sapling + inputs.sapling)
+        .map(|id| {
+            let note = sapling_crypto::Note::from_parts(
+                sapling_recipient,
+                sapling_crypto::value::NoteValue::from_raw(input_value),
+                sapling_crypto::Rseed::AfterZip212([3u8; 32]),
+            );
+            batch_received_note(id, txid_seed, note)
+        })
+        .collect();
+    let input_count = (inputs.orchard + inputs.ironwood + inputs.sapling) as u64;
+    let notes =
+        ReceivedNotes::new(sapling_notes, orchard_notes, ironwood_notes).into_vec(&RetainAllNotes);
+    let shielded_inputs = ShieldedInputs::from_parts(nonempty::NonEmpty::from_vec(notes).unwrap());
+
+    let card_value = 1_000u64;
+    let payments = (0..cards)
+        .map(|index| {
+            let ua = zcash_keys::address::UnifiedAddress::from_receivers(
+                Some(gift_card_batch_orchard_receiver(index + 1)),
+                None,
+                None,
+            )
+            .unwrap();
+            Payment::new(
+                Address::from(ua).to_zcash_address(&network),
+                Some(Zatoshis::const_from_u64(card_value)),
+                None,
+                None,
+                None,
+                vec![],
+            )
+            .unwrap()
+        })
+        .collect();
+    let fee = 10_000u64;
+    let change = input_count * input_value - u64::from(cards) * card_value - fee;
+    let balance = TransactionBalance::new(
+        vec![zcash_client_backend::fees::ChangeValue::shielded(
+            ShieldedPool::Orchard,
+            Zatoshis::from_u64(change).unwrap(),
+            None,
+        )],
+        Zatoshis::const_from_u64(fee),
+    )
+    .unwrap();
+
+    Proposal::single_step(
+        TransactionRequest::new(payments).unwrap(),
+        (0..cards as usize)
+            .map(|i| (i, PoolType::ORCHARD))
+            .collect(),
+        vec![],
+        Some(shielded_inputs),
+        BlockHeight::from_u32(900),
+        balance,
+        ConservativeZip317FeeRule,
+        TargetHeight::from(BlockHeight::from_u32(1_000)),
+        ConfirmationsPolicy::default(),
+        false,
+        false,
+    )
+    .expect("fabricated batch step should build")
+}
+
+fn batch_received_note<N>(id: usize, txid_seed: u8, note: N) -> ReceivedNote<u32, N> {
+    let id = u32::try_from(id).unwrap();
+    let mut txid = [txid_seed; 32];
+    txid[..4].copy_from_slice(&id.to_le_bytes());
+    ReceivedNote::from_parts(
+        id,
+        TxId::from_bytes(txid),
+        0,
+        note,
+        zip32::Scope::External,
+        Position::from(u64::from(id)),
+        Some(BlockHeight::from_u32(20)),
+        None,
+    )
+}
+
+fn batch_orchard_inputs(orchard: usize) -> BatchInputs {
+    BatchInputs {
+        orchard,
+        ..BatchInputs::default()
+    }
+}
+
+fn validate_batch(
+    proposal: &Proposal<WalletFeeRule, u32>,
+    signer: Option<crate::wallet::keys::HardwareSignerKind>,
+) -> Result<(), String> {
+    let result = validate_payment_link_batch_proposal(proposal, WalletNetwork::Regtest, signer);
+    if let Err(error) = &result {
+        assert!(
+            error.starts_with(PAYMENT_LINK_BATCH_REJECTION_PREFIX),
+            "Dart shows only prefixed batch errors: {error}"
+        );
+    }
+    result
+}
+
+#[test]
+fn gift_card_batch_rejects_more_than_one_funding_transaction_for_every_signer() {
+    use crate::wallet::keys::HardwareSignerKind;
+
+    let first = fabricated_batch_step(2, batch_orchard_inputs(1), 1);
+    let second = fabricated_batch_step(2, batch_orchard_inputs(1), 2);
+    let two_steps = Proposal::multi_step(
+        ConservativeZip317FeeRule,
+        TargetHeight::from(BlockHeight::from_u32(1_000)),
+        ConfirmationsPolicy::default(),
+        nonempty::NonEmpty::from((
+            first.steps().first().clone(),
+            vec![second.steps().first().clone()],
+        )),
+    )
+    .unwrap();
+
+    for signer in [
+        None,
+        Some(HardwareSignerKind::Keystone),
+        Some(HardwareSignerKind::Ledger),
+    ] {
+        assert_eq!(
+            validate_batch(&two_steps, signer).unwrap_err(),
+            "This group can’t be funded in one transaction. \
+             Try fewer cards or a smaller amount per card."
+        );
+        assert_eq!(validate_batch(&first, signer), Ok(()));
+    }
+}
+
+#[test]
+fn gift_card_batch_hardware_signers_reject_sapling_inputs() {
+    use crate::wallet::keys::HardwareSignerKind;
+
+    let sapling = fabricated_batch_step(
+        2,
+        BatchInputs {
+            orchard: 1,
+            sapling: 1,
+            ..BatchInputs::default()
+        },
+        1,
+    );
+    assert_eq!(validate_batch(&sapling, None), Ok(()));
+    assert_eq!(
+        validate_batch(&sapling, Some(HardwareSignerKind::Keystone)).unwrap_err(),
+        "This group would spend older Sapling funds, which your Keystone can’t sign. \
+         Try fewer cards or a smaller amount per card."
+    );
+    assert_eq!(
+        validate_batch(&sapling, Some(HardwareSignerKind::Ledger)).unwrap_err(),
+        "This group would spend older Sapling funds, which your Ledger can’t sign. \
+         Try fewer cards or a smaller amount per card."
+    );
+}
+
+#[test]
+fn gift_card_batch_keystone_counts_orchard_and_ironwood_signatures() {
+    use crate::wallet::keys::HardwareSignerKind::Keystone;
+
+    assert_eq!(
+        validate_batch(
+            &fabricated_batch_step(2, batch_orchard_inputs(96), 1),
+            Some(Keystone)
+        ),
+        Ok(())
+    );
+    let mixed = BatchInputs {
+        orchard: 50,
+        ironwood: 47,
+        ..BatchInputs::default()
+    };
+    for inputs in [batch_orchard_inputs(97), mixed] {
+        assert_eq!(
+            validate_batch(&fabricated_batch_step(2, inputs, 1), Some(Keystone)).unwrap_err(),
+            "This group needs more inputs than your Keystone can sign at once. \
+             Try fewer cards or a smaller amount per card."
+        );
+    }
+}
+
+#[test]
+fn gift_card_batch_ledger_limits_orchard_actions() {
+    use crate::wallet::keys::HardwareSignerKind::Ledger;
+
+    // Before NU6.3 an Orchard action pairs one spend with one output, so 30
+    // cards plus change fit beside up to 32 spends.
+    assert_eq!(
+        validate_batch(
+            &fabricated_batch_step(30, batch_orchard_inputs(32), 1),
+            Some(Ledger)
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        validate_batch(
+            &fabricated_batch_step(30, batch_orchard_inputs(33), 1),
+            Some(Ledger)
+        )
+        .unwrap_err(),
+        "This group is too large for your Ledger to sign. \
+         Try fewer cards or a smaller amount per card."
+    );
 }

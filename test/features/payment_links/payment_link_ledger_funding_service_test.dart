@@ -2,10 +2,89 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import '../../support/ledger_gift_card_support.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 
 void main() {
+  test(
+    'definitive Ledger batch rejection removes all unfunded secrets',
+    () async {
+      final h = LedgerGiftHarness();
+      final batch = _testLedgerBatch();
+      final draft = await h.service.prepareBatch(batch);
+      await h.service.prove(accountUuid: 'account-1', draft: draft);
+      h.operations.terminalRejection = true;
+      await expectLater(
+        h.submit(draft),
+        throwsA(isA<LedgerGiftFundingTerminalException>()),
+      );
+      expect(await h.recovery.load(), isEmpty);
+      expect(h.operations.acks, 0);
+    },
+  );
+
+  test(
+    'Ledger batch checkpoints one operation and funds every card atomically',
+    () async {
+      final h = LedgerGiftHarness();
+      final second = VizorPaymentLink(
+        label: ledgerGiftLink.label,
+        network: ledgerGiftLink.network,
+        address: 'u1giftsecond',
+        amountZatoshi: ledgerGiftLink.amountZatoshi,
+        mnemonic: ledgerGiftLink.mnemonic,
+        birthdayHeight: ledgerGiftLink.birthdayHeight,
+        createdAt: ledgerGiftLink.createdAt,
+      );
+      final batch = PaymentLinkBatchDraft(
+        id: 'gift-batch-1',
+        links: [ledgerGiftLink, second],
+        quote: PaymentLinkBatchQuote(
+          sourceAccountUuid: 'account-1',
+          count: 2,
+          recipientAmountZatoshi: ledgerGiftLink.amountZatoshi,
+          fundingFeeZatoshi: BigInt.from(20000),
+        ),
+      );
+      final draft = await h.service.prepareBatch(batch);
+      final proofs = await h.service.prove(
+        accountUuid: 'account-1',
+        draft: draft,
+      );
+      expect((await h.recovery.load()).map((record) => record.fundingTxids), [
+        'gift-txid',
+        'gift-txid',
+      ]);
+      h.operations.broadcastGate = Completer<void>();
+      final submitted = h.service.submit(
+        accountUuid: 'account-1',
+        draft: draft,
+        proofs: proofs,
+        signatures: [3],
+        onCheckpointed: () {},
+      );
+      await _untilBroadcast(h);
+      expect(h.operations.entry?.externalRef, batch.id);
+      expect(
+        (await h.recovery.load()).every(
+          (record) => record.submittedAtHeight == ledgerGiftChainHeight,
+        ),
+        isTrue,
+      );
+      h.operations.broadcastGate!.complete();
+      expect((await submitted).fundingMetadataSaved, isTrue);
+      expect(h.operations.checkpoints, 1);
+      expect(h.operations.broadcasts, 1);
+      expect(h.operations.acks, 1);
+      expect((await h.recovery.load()).map((record) => record.state), [
+        PaymentLinkRecoveryState.funded,
+        PaymentLinkRecoveryState.funded,
+      ]);
+    },
+  );
+
   test(
     'funding persistence precedes acknowledgement and destructive drain',
     () async {
@@ -253,6 +332,28 @@ void main() {
       expect(await h.recovery.countUnsharedFundedForAccount('account-1'), 1);
       expect(h.operations.acks, 0);
     },
+  );
+}
+
+PaymentLinkBatchDraft _testLedgerBatch() {
+  final second = VizorPaymentLink(
+    label: ledgerGiftLink.label,
+    network: ledgerGiftLink.network,
+    address: 'u1giftsecond',
+    amountZatoshi: ledgerGiftLink.amountZatoshi,
+    mnemonic: ledgerGiftLink.mnemonic,
+    birthdayHeight: ledgerGiftLink.birthdayHeight,
+    createdAt: ledgerGiftLink.createdAt,
+  );
+  return PaymentLinkBatchDraft(
+    id: 'gift-batch-rejected',
+    links: [ledgerGiftLink, second],
+    quote: PaymentLinkBatchQuote(
+      sourceAccountUuid: 'account-1',
+      count: 2,
+      recipientAmountZatoshi: ledgerGiftLink.amountZatoshi,
+      fundingFeeZatoshi: BigInt.from(20000),
+    ),
   );
 }
 

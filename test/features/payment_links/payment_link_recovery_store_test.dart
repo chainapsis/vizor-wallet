@@ -28,6 +28,228 @@ void main() {
   );
 
   group('PaymentLinkRecoveryStore', () {
+    test('prepared hardware batch is removed only before submission', () async {
+      final store = PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage());
+      final first = _link();
+      final second = VizorPaymentLink(
+        network: first.network,
+        address: 'u1preparedsecond',
+        amountZatoshi: first.amountZatoshi,
+        mnemonic: first.mnemonic,
+        birthdayHeight: first.birthdayHeight,
+        label: first.label,
+        createdAt: first.createdAt,
+      );
+      await store.saveBatchDrafts(
+        batchId: 'hardware-1',
+        links: [first, second],
+        sourceAccountUuid: 'source-account',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+      await store.markBatchPrepared(
+        batchId: 'hardware-1',
+        fundingTxid: 'prepared-tx',
+        expiryHeight: 3000040,
+      );
+      expect(
+        (await store.load()).every(
+          (record) => record.fundingTxids == 'prepared-tx',
+        ),
+        isTrue,
+      );
+      await store.markBatchSubmissionStarted(
+        batchId: 'hardware-1',
+        chainHeight: 3000010,
+      );
+      await store.markBatchSubmissionStarted(
+        batchId: 'hardware-1',
+        chainHeight: 3000010,
+      );
+      await expectLater(
+        store.removeUnbroadcastBatch('hardware-1'),
+        throwsStateError,
+      );
+      expect((await store.load()).length, 2);
+
+      await store.saveBatchDrafts(
+        batchId: 'hardware-2',
+        links: [
+          VizorPaymentLink(
+            network: first.network,
+            address: 'u1freshfirst',
+            amountZatoshi: first.amountZatoshi,
+            mnemonic: first.mnemonic,
+            birthdayHeight: first.birthdayHeight,
+            label: first.label,
+            createdAt: first.createdAt,
+          ),
+          VizorPaymentLink(
+            network: first.network,
+            address: 'u1freshsecond',
+            amountZatoshi: first.amountZatoshi,
+            mnemonic: first.mnemonic,
+            birthdayHeight: first.birthdayHeight,
+            label: first.label,
+            createdAt: first.createdAt,
+          ),
+        ],
+        sourceAccountUuid: 'source-account',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+      await store.markBatchPrepared(
+        batchId: 'hardware-2',
+        fundingTxid: 'other-tx',
+        expiryHeight: 3000040,
+      );
+      await store.removeUnbroadcastBatch('hardware-2');
+      expect((await store.load()).map((record) => record.batchId), [
+        'hardware-1',
+        'hardware-1',
+      ]);
+    });
+
+    test(
+      'batch secrets and submission marker survive restart atomically',
+      () async {
+        final storage = _FakePaymentLinkRecoveryStorage();
+        final store = PaymentLinkRecoveryStore(storage);
+        final first = _link();
+        final second = VizorPaymentLink(
+          network: first.network,
+          address: 'u1anothergiftcardaddress',
+          amountZatoshi: first.amountZatoshi,
+          mnemonic: first.mnemonic,
+          birthdayHeight: first.birthdayHeight,
+          label: first.label,
+          createdAt: first.createdAt,
+        );
+
+        await store.saveBatchDrafts(
+          batchId: 'batch-1',
+          links: [first, second],
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        var restored = await PaymentLinkRecoveryStore(storage).load();
+        expect(restored.map((record) => record.batchIndex), [1, 2]);
+        expect(restored.every((record) => record.isInertDraft), isTrue);
+
+        await store.markBatchSubmissionStarted(
+          batchId: 'batch-1',
+          chainHeight: _submissionHeight,
+        );
+        restored = await PaymentLinkRecoveryStore(storage).load();
+        expect(
+          restored.every((record) => record.isAmbiguousSubmission),
+          isTrue,
+        );
+        await expectLater(
+          store.removeUnsubmittedBatch('batch-1'),
+          throwsStateError,
+        );
+
+        await store.markBatchSubmitted(
+          batchId: 'batch-1',
+          fundingTxids: 'one-funding-txid',
+        );
+        await store.markBatchFunded(
+          batchId: 'batch-1',
+          fundingTxids: 'one-funding-txid',
+        );
+        restored = await PaymentLinkRecoveryStore(storage).load();
+        expect(restored.map((record) => record.state), [
+          PaymentLinkRecoveryState.funded,
+          PaymentLinkRecoveryState.funded,
+        ]);
+        expect(restored.map((record) => record.fundingTxids), [
+          'one-funding-txid',
+          'one-funding-txid',
+        ]);
+      },
+    );
+
+    test('batch funding completion can be retried after promotion', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final first = _link();
+      final second = VizorPaymentLink(
+        network: first.network,
+        address: 'u1retriedgiftcardaddress',
+        amountZatoshi: first.amountZatoshi,
+        mnemonic: first.mnemonic,
+        birthdayHeight: first.birthdayHeight,
+        label: first.label,
+        createdAt: first.createdAt,
+      );
+      await store.saveBatchDrafts(
+        batchId: 'batch-retry',
+        links: [first, second],
+        sourceAccountUuid: 'source-account',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+      await store.markBatchSubmissionStarted(
+        batchId: 'batch-retry',
+        chainHeight: _submissionHeight,
+      );
+      // Recovery promoted the batch before the in-app retry ran.
+      await store.markBatchSubmitted(
+        batchId: 'batch-retry',
+        fundingTxids: 'ABCDEF',
+      );
+      await store.markBatchFunded(
+        batchId: 'batch-retry',
+        fundingTxids: 'ABCDEF',
+      );
+
+      final retry = await PaymentLinkFundingRecovery(store).completeBatch(
+        transaction: 'abcdef',
+        batchId: 'batch-retry',
+        fundingTxids: 'abcdef',
+      );
+      expect(retry.fundingMetadataSaved, isTrue);
+      await expectLater(
+        store.markBatchFunded(batchId: 'batch-retry', fundingTxids: 'other'),
+        throwsStateError,
+      );
+      expect(
+        (await store.load()).map((record) => record.state),
+        everyElement(PaymentLinkRecoveryState.funded),
+      );
+    });
+
+    test('removing a batch that is already gone is a no-op', () async {
+      final store = PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage());
+      await store.removeUnsubmittedBatch('missing');
+      await store.removeUnbroadcastBatch('missing');
+      await store.removeTerminalBatch('missing');
+      expect(await store.load(), isEmpty);
+    });
+
+    test('failed batch draft write leaves no member behind', () async {
+      final storage = _FakePaymentLinkRecoveryStorage(failOnWrites: {1});
+      final store = PaymentLinkRecoveryStore(storage);
+      final first = _link();
+      final second = VizorPaymentLink(
+        network: first.network,
+        address: 'u1anothergiftcardaddress',
+        amountZatoshi: first.amountZatoshi,
+        mnemonic: first.mnemonic,
+        birthdayHeight: first.birthdayHeight,
+        label: first.label,
+        createdAt: first.createdAt,
+      );
+      await expectLater(
+        store.saveBatchDrafts(
+          batchId: 'batch-1',
+          links: [first, second],
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        ),
+        throwsStateError,
+      );
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    });
+
     test(
       'persists the secret before broadcast and records funding success',
       () async {

@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 
 void main() {
   testWidgets('scans a Keystone signature and broadcasts Gift Card funding', (
@@ -294,6 +295,11 @@ final _link = VizorPaymentLink(
 );
 
 class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) => throw UnimplementedError();
+
   _FakeHardwareSigningService({
     this.broadcastStatus = 'broadcasted',
     this.broadcastMessage,

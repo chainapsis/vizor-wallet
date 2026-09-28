@@ -940,6 +940,11 @@ class FakePaymentLinkQrImageSaver implements PaymentLinkQrImageSaver {
 
 class FakePaymentLinkHardwareSigningService
     implements PaymentLinkHardwareSigningService {
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) => throw UnimplementedError();
+
   FakePaymentLinkHardwareSigningService({this.createCompleter});
 
   final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;

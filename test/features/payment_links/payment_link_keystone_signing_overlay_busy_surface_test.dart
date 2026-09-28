@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -68,6 +69,10 @@ Widget Function(Widget) _host(ProviderContainer container) =>
 /// test. The latch is about the surface being mounted, not about which phase
 /// it reached.
 class _StalledSigningService implements PaymentLinkHardwareSigningService {
+  @override
+  Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
+    PaymentLinkBatchDraft batch,
+  ) => throw UnimplementedError();
   @override
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,

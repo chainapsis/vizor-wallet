@@ -40,6 +40,43 @@ pub(crate) async fn cancellable_lookup<T>(
     }
 }
 
+// Cards funded by one transaction reach the same network verdict. Reuse it
+// for the rest of a refresh pass instead of looking the transaction up per card.
+const FUNDING_LOOKUP_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+type FundingLookupKey = (u64, String, String, u64);
+static FUNDING_LOOKUPS: Mutex<Vec<(FundingLookupKey, std::time::Instant, String)>> =
+    Mutex::new(Vec::new());
+
+/// Runs `fetch` as a [`cancellable_lookup`] unless the verdict is cached; a
+/// cache hit drops the future unpolled. Failures are not cached.
+pub(crate) async fn shared_funding_lookup(
+    epoch: u64,
+    url: &str,
+    funding_txids: &str,
+    verified_height: u64,
+    fetch: impl std::future::Future<Output = Result<String, String>>,
+) -> Result<String, String> {
+    let key = (
+        epoch,
+        url.to_owned(),
+        funding_txids.to_owned(),
+        verified_height,
+    );
+    {
+        let mut cache = FUNDING_LOOKUPS.lock().unwrap_or_else(|e| e.into_inner());
+        cache.retain(|(_, at, _)| at.elapsed() < FUNDING_LOOKUP_TTL);
+        if let Some((_, _, reason)) = cache.iter().find(|(k, _, _)| *k == key) {
+            return Ok(reason.clone());
+        }
+    }
+    let reason = cancellable_lookup(epoch, fetch).await?;
+    FUNDING_LOOKUPS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push((key, std::time::Instant::now(), reason.clone()));
+    Ok(reason)
+}
+
 #[derive(Debug)]
 pub struct GiftCardUsageEvidence {
     pub status: String,
@@ -225,8 +262,12 @@ mod tests {
     fn check(c: &Connection) -> GiftCardUsageEvidence {
         inspect_connection(c, &[1], "bbaa", 10010000).unwrap()
     }
+    // Tests that read or advance the global lookup epoch run one at a time.
+    static LOOKUP_EPOCH_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn lookup_cancellation_drops_pending_network_work() {
+        let _serial = LOOKUP_EPOCH_TEST.lock().await;
         let epoch = lookup_epoch();
         let work = cancellable_lookup::<()>(epoch, std::future::pending());
         tokio::pin!(work);
@@ -243,6 +284,52 @@ mod tests {
                 .contains("cancelled")
         );
         assert!(cancellable_lookup(epoch, async { Ok(()) }).await.is_err());
+    }
+    #[tokio::test]
+    async fn funding_lookup_is_shared_by_cards_with_the_same_transaction() {
+        use std::sync::atomic::AtomicUsize;
+        static FETCHES: AtomicUsize = AtomicUsize::new(0);
+        let fetch = || async {
+            FETCHES.fetch_add(1, Ordering::SeqCst);
+            Ok("awaitingConfirmation".to_owned())
+        };
+        let _serial = LOOKUP_EPOCH_TEST.lock().await;
+        let epoch = lookup_epoch();
+        for _ in 0..50 {
+            let reason = shared_funding_lookup(epoch, "u", "aa", 100, fetch())
+                .await
+                .unwrap();
+            assert_eq!(reason, "awaitingConfirmation");
+        }
+        assert_eq!(FETCHES.load(Ordering::SeqCst), 1);
+        shared_funding_lookup(epoch, "u", "bb", 100, fetch())
+            .await
+            .unwrap();
+        shared_funding_lookup(epoch, "u", "aa", 101, fetch())
+            .await
+            .unwrap();
+        assert_eq!(FETCHES.load(Ordering::SeqCst), 3);
+        let failed = shared_funding_lookup(epoch, "u", "cc", 100, async {
+            Err::<String, _>("offline".to_owned())
+        })
+        .await;
+        assert!(failed.is_err());
+        shared_funding_lookup(epoch, "u", "cc", 100, fetch())
+            .await
+            .unwrap();
+        assert_eq!(FETCHES.load(Ordering::SeqCst), 4);
+
+        // A new epoch refetches; the cancelled one no longer reaches the network.
+        cancel_lookups();
+        shared_funding_lookup(lookup_epoch(), "u", "aa", 100, fetch())
+            .await
+            .unwrap();
+        assert_eq!(FETCHES.load(Ordering::SeqCst), 5);
+        assert!(shared_funding_lookup(epoch, "u", "dd", 100, fetch())
+            .await
+            .unwrap_err()
+            .contains("cancelled"));
+        assert_eq!(FETCHES.load(Ordering::SeqCst), 5);
     }
     #[test]
     fn insufficient_evidence_has_specific_reason() {

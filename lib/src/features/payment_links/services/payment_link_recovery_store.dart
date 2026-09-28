@@ -7,6 +7,7 @@ import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
 import '../models/gift_card_usage.dart';
 import 'payment_link_lifecycle_revision.dart';
+import 'payment_link_batch_limits.dart';
 
 const _storageVersion = 1;
 // Envelope flag: every draft in this payload was written by a build that marks
@@ -62,6 +63,9 @@ class PaymentLinkRecoveryRecord {
     this.submittedAtHeight,
     this.usage = const GiftCardUsage(),
     required this.claimFeeReserveZatoshi,
+    this.batchId,
+    this.batchIndex,
+    this.batchCount,
   });
 
   final GiftCardUsage usage;
@@ -82,6 +86,11 @@ class PaymentLinkRecoveryRecord {
 
   /// Amount actually reserved for claiming when this card was funded.
   final BigInt claimFeeReserveZatoshi;
+
+  /// Present together for cards funded by one desktop batch transaction.
+  final String? batchId;
+  final int? batchIndex;
+  final int? batchCount;
 
   /// True while the wallet knows a funding broadcast started but never learned
   /// its transaction id.
@@ -122,6 +131,9 @@ class PaymentLinkRecoveryRecord {
       link: link,
       usage: usage ?? this.usage,
       claimFeeReserveZatoshi: claimFeeReserveZatoshi,
+      batchId: batchId,
+      batchIndex: batchIndex,
+      batchCount: batchCount,
       sourceAccountUuid: sourceAccountUuid,
       state: state,
       updatedAt: updatedAt,
@@ -233,6 +245,209 @@ class PaymentLinkRecoveryStore {
       return record;
     });
   }
+
+  /// A single secure-store write makes every bearer secret recoverable before
+  /// the shared funding transaction can cross its broadcast boundary.
+  Future<List<PaymentLinkRecoveryRecord>> saveBatchDrafts({
+    required String batchId,
+    required List<VizorPaymentLink> links,
+    required String sourceAccountUuid,
+    required BigInt claimFeeReserveZatoshi,
+  }) => _runExclusive(() async {
+    if (batchId.isEmpty ||
+        sourceAccountUuid.isEmpty ||
+        links.length < kPaymentLinkBatchMinCount ||
+        links.length > kPaymentLinkBatchMaxCount ||
+        links.map((link) => link.address).toSet().length != links.length ||
+        links.any(
+          (link) =>
+              link.network != links.first.network ||
+              link.amountZatoshi != links.first.amountZatoshi,
+        )) {
+      throw ArgumentError('Invalid Gift Card batch draft.');
+    }
+    final records = await _loadUnlocked();
+    if (records.any(
+      (record) =>
+          record.batchId == batchId ||
+          links.any((link) => link.address == record.link.address),
+    )) {
+      throw StateError('Gift Card batch identity already exists.');
+    }
+    final now = DateTime.now().toUtc();
+    final drafts = [
+      for (var index = 0; index < links.length; index++)
+        PaymentLinkRecoveryRecord(
+          link: links[index],
+          sourceAccountUuid: sourceAccountUuid,
+          state: PaymentLinkRecoveryState.draft,
+          updatedAt: now,
+          claimFeeReserveZatoshi: claimFeeReserveZatoshi,
+          batchId: batchId,
+          batchIndex: index + 1,
+          batchCount: links.length,
+        ),
+    ];
+    await _writeRecords([...records, ...drafts]);
+    return drafts;
+  });
+
+  Future<void> markBatchSubmissionStarted({
+    required String batchId,
+    required int chainHeight,
+  }) {
+    if (chainHeight < 0) throw ArgumentError.value(chainHeight);
+    return _updateBatch(
+      batchId,
+      done: (record) =>
+          record.state == PaymentLinkRecoveryState.draft &&
+          record.submittedAtHeight != null,
+      invalid: (record) =>
+          record.state != PaymentLinkRecoveryState.draft ||
+          record.submittedAtHeight != null,
+      error: 'Gift Card batch has already crossed submission.',
+      update: (record, now) => record.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: now,
+        submittedAtHeight: chainHeight,
+      ),
+    );
+  }
+
+  Future<void> markBatchPrepared({
+    required String batchId,
+    required String fundingTxid,
+    required int expiryHeight,
+  }) {
+    if (fundingTxid.trim().isEmpty || expiryHeight <= 0) {
+      throw ArgumentError('Invalid prepared Gift Card batch.');
+    }
+    return _updateBatch(
+      batchId,
+      invalid: (record) =>
+          record.state != PaymentLinkRecoveryState.draft ||
+          record.submittedAtHeight != null ||
+          !_sameFundingTxid(record.fundingTxids, fundingTxid) ||
+          (record.preparedExpiryHeight != null &&
+              record.preparedExpiryHeight != expiryHeight),
+      error: 'Gift Card batch preparation state is inconsistent.',
+      update: (record, now) => record.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: now,
+        fundingTxids: fundingTxid,
+        preparedExpiryHeight: expiryHeight,
+      ),
+    );
+  }
+
+  /// Records the shared funding txid on every member. Repeating it, or
+  /// calling it after the batch was already promoted, is a no-op.
+  Future<void> markBatchSubmitted({
+    required String batchId,
+    required String fundingTxids,
+  }) {
+    if (fundingTxids.trim().isEmpty) throw ArgumentError.value(fundingTxids);
+    return _updateBatch(
+      batchId,
+      done: (record) =>
+          record.fundingTxids != null &&
+          _sameFundingTxid(record.fundingTxids, fundingTxids) &&
+          (record.state != PaymentLinkRecoveryState.draft ||
+              record.submittedAtHeight != null),
+      invalid: _cannotTakeBatchFunding(fundingTxids),
+      error: 'Gift Card batch submission state is inconsistent.',
+      update: (record, now) => record.copyWith(
+        state: PaymentLinkRecoveryState.draft,
+        updatedAt: now,
+        fundingTxids: fundingTxids,
+      ),
+    );
+  }
+
+  /// Promotes every member at once. Already-funded members with the same
+  /// txid make this a no-op, so a lost write can simply be retried.
+  Future<void> markBatchFunded({
+    required String batchId,
+    required String fundingTxids,
+  }) {
+    if (fundingTxids.trim().isEmpty) throw ArgumentError.value(fundingTxids);
+    return _updateBatch(
+      batchId,
+      done: (record) =>
+          record.state != PaymentLinkRecoveryState.draft &&
+          _sameFundingTxid(record.fundingTxids, fundingTxids),
+      invalid: _cannotTakeBatchFunding(fundingTxids),
+      error: 'Gift Card batch funding state is inconsistent.',
+      update: (record, now) => record.copyWith(
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: now,
+        fundingTxids: fundingTxids,
+        preparedExpiryHeight: null,
+      ),
+    );
+  }
+
+  Future<void> removeUnsubmittedBatch(String batchId) => _removeBatch(
+    batchId,
+    retained: (record) => !record.isInertDraft,
+    error: 'A submitted Gift Card batch cannot be removed.',
+  );
+
+  Future<void> removeUnbroadcastBatch(String batchId) => _removeBatch(
+    batchId,
+    retained: (record) =>
+        record.state != PaymentLinkRecoveryState.draft ||
+        record.submittedAtHeight != null,
+    error: 'A broadcast Gift Card batch cannot be removed.',
+  );
+
+  /// Caller must have a definitive rejection or expiry from the signed
+  /// outbox. An uncertain network result must retain every bearer secret.
+  Future<void> removeTerminalBatch(String batchId) => _removeBatch(
+    batchId,
+    retained: (record) => record.state != PaymentLinkRecoveryState.draft,
+    error: 'A funded Gift Card batch cannot be removed.',
+  );
+
+  /// Rewrites every member of [batchId] in one secure-store write, unless all
+  /// of them are already [done].
+  Future<void> _updateBatch(
+    String batchId, {
+    required bool Function(PaymentLinkRecoveryRecord record) invalid,
+    required String error,
+    required PaymentLinkRecoveryRecord Function(
+      PaymentLinkRecoveryRecord record,
+      DateTime now,
+    )
+    update,
+    bool Function(PaymentLinkRecoveryRecord record)? done,
+  }) => _runExclusive(() async {
+    final records = await _loadUnlocked();
+    final members = _requireBatchMembers(records, batchId);
+    if (done != null && members.every(done)) return;
+    if (members.any(invalid)) throw StateError(error);
+    final now = DateTime.now().toUtc();
+    await _writeRecords([
+      for (final record in records)
+        record.batchId == batchId ? update(record, now) : record,
+    ]);
+  });
+
+  /// Removes a whole batch unless any member must be [retained]. A batch that
+  /// is already gone counts as removed.
+  Future<void> _removeBatch(
+    String batchId, {
+    required bool Function(PaymentLinkRecoveryRecord record) retained,
+    required String error,
+  }) => _runExclusive(() async {
+    final records = await _loadUnlocked();
+    if (!records.any((record) => record.batchId == batchId)) return;
+    final members = _requireBatchMembers(records, batchId);
+    if (members.any(retained)) throw StateError(error);
+    await _writeRecords(
+      records.where((record) => record.batchId != batchId).toList(),
+    );
+  });
 
   Future<PaymentLinkRecoveryRecord> markFunded({
     required String address,
@@ -739,15 +954,42 @@ class PaymentLinkFundingRecovery {
     required T transaction,
     required String address,
     required String Function(T result) fundingTxids,
-  }) async {
+  }) {
     final txids = fundingTxids(transaction);
+    return _complete(
+      transaction,
+      markSubmitted: () =>
+          _store.markSubmitted(address: address, fundingTxids: txids),
+      markFunded: () =>
+          _store.markFunded(address: address, fundingTxids: txids),
+    );
+  }
+
+  /// [complete] for a batch whose members share one funding transaction.
+  Future<PaymentLinkFundingRecoveryResult<T>> completeBatch<T>({
+    required T transaction,
+    required String batchId,
+    required String fundingTxids,
+  }) => _complete(
+    transaction,
+    markSubmitted: () =>
+        _store.markBatchSubmitted(batchId: batchId, fundingTxids: fundingTxids),
+    markFunded: () =>
+        _store.markBatchFunded(batchId: batchId, fundingTxids: fundingTxids),
+  );
+
+  Future<PaymentLinkFundingRecoveryResult<T>> _complete<T>(
+    T transaction, {
+    required Future<void> Function() markSubmitted,
+    required Future<void> Function() markFunded,
+  }) async {
     // Earliest durable trace of a broadcast the software path can produce. If
     // the promotion below never lands and the in-app retry never runs, the
     // draft still carries its funding transaction, so recovery can finish the
     // job on a later launch instead of leaving funded ZEC behind an
     // unreachable link.
     try {
-      await _store.markSubmitted(address: address, fundingTxids: txids);
+      await markSubmitted();
     } catch (_) {
       // The promotion below reports the durable-write failure to the caller.
     }
@@ -755,7 +997,7 @@ class PaymentLinkFundingRecovery {
     StackTrace? recoveryStackTrace;
     for (var attempt = 0; attempt < _fundingMetadataWriteAttempts; attempt++) {
       try {
-        await _store.markFunded(address: address, fundingTxids: txids);
+        await markFunded();
         return PaymentLinkFundingRecoveryResult(transaction: transaction);
       } catch (error, stackTrace) {
         recoveryError = error;
@@ -847,6 +1089,9 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'submittedAtHeight': record.submittedAtHeight,
     'claimFeeReserveZatoshi': record.claimFeeReserveZatoshi.toString(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
+    if (record.batchId != null) 'batchId': record.batchId,
+    if (record.batchIndex != null) 'batchIndex': record.batchIndex,
+    if (record.batchCount != null) 'batchCount': record.batchCount,
   };
 }
 
@@ -874,6 +1119,9 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final preparedExpiryHeight = value['preparedExpiryHeight'];
   final submittedAtHeight = value['submittedAtHeight'];
   final updatedAtRaw = value['updatedAt'];
+  final batchId = value['batchId'];
+  final batchIndex = value['batchIndex'];
+  final batchCount = value['batchCount'];
   if (linkRaw is! String ||
       (address != null && (address is! String || address.isEmpty)) ||
       (createdAtRaw != null && createdAtRaw is! String) ||
@@ -888,6 +1136,19 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
       'Recovery record fields are invalid.',
+    );
+  }
+  if ((batchId != null || batchIndex != null || batchCount != null) &&
+      (batchId is! String ||
+          batchId.isEmpty ||
+          batchIndex is! int ||
+          batchCount is! int ||
+          batchCount < kPaymentLinkBatchMinCount ||
+          batchCount > kPaymentLinkBatchMaxCount ||
+          batchIndex < 1 ||
+          batchIndex > batchCount)) {
+    throw const PaymentLinkRecoveryStoreFormatException(
+      'Gift Card batch metadata is invalid.',
     );
   }
   final updatedAt = DateTime.tryParse(updatedAtRaw);
@@ -962,7 +1223,56 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     preparedExpiryHeight: preparedExpiryHeight as int?,
     submittedAtHeight: submittedAtHeight as int?,
     updatedAt: updatedAt.toUtc(),
+    batchId: batchId as String?,
+    batchIndex: batchIndex as int?,
+    batchCount: batchCount as int?,
   );
+}
+
+bool Function(PaymentLinkRecoveryRecord record) _cannotTakeBatchFunding(
+  String fundingTxids,
+) =>
+    (record) =>
+        record.state != PaymentLinkRecoveryState.draft ||
+        record.submittedAtHeight == null ||
+        !_sameFundingTxid(record.fundingTxids, fundingTxids);
+
+/// An unset saved txid accepts any; otherwise txids compare case-insensitively.
+bool _sameFundingTxid(String? saved, String txid) =>
+    saved == null ||
+    saved.trim().isEmpty ||
+    saved.trim().toLowerCase() == txid.trim().toLowerCase();
+
+List<PaymentLinkRecoveryRecord> _requireBatchMembers(
+  List<PaymentLinkRecoveryRecord> records,
+  String batchId,
+) {
+  final members = records.where((record) => record.batchId == batchId).toList();
+  if (batchId.isEmpty || !isCompletePaymentLinkBatch(members)) {
+    throw StateError('Gift Card batch recovery records are incomplete.');
+  }
+  return members;
+}
+
+/// Whether [members] are exactly one batch: numbered 1 through N and sharing
+/// the batch, source account, network, card amount and claim fee reserve.
+bool isCompletePaymentLinkBatch(List<PaymentLinkRecoveryRecord> members) {
+  if (members.isEmpty) return false;
+  final first = members.first;
+  final indices = members.map((record) => record.batchIndex).toSet();
+  return first.batchId != null &&
+      first.batchCount == members.length &&
+      indices.length == members.length &&
+      indices.containsAll([for (var i = 1; i <= members.length; i++) i]) &&
+      members.every(
+        (record) =>
+            record.batchId == first.batchId &&
+            record.batchCount == members.length &&
+            record.sourceAccountUuid == first.sourceAccountUuid &&
+            record.link.network == first.link.network &&
+            record.link.amountZatoshi == first.link.amountZatoshi &&
+            record.claimFeeReserveZatoshi == first.claimFeeReserveZatoshi,
+      );
 }
 
 /// Gift Cards that block deleting [sourceAccountUuid]: see
