@@ -219,6 +219,25 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   );
 }
 
+/// Shared production configuration for immediate and Linux keyring startup.
+/// Preview/test builders remain opted out of native input monitoring.
+Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
+  Future<AppBootstrapState> Function() loadBootstrap = loadAppBootstrap,
+}) async {
+  final bootstrap = await loadBootstrap();
+  return BootstrappedZcashWalletApp(
+    initialBootstrap: bootstrap,
+    overrides: [
+      capsLockMonitoringEnabledProvider.overrideWithValue(true),
+      appPasswordInputSourceProvider.overrideWith((ref) {
+        final service = AppPasswordInputSource.production();
+        ref.onDispose(service.dispose);
+        return service;
+      }),
+    ],
+  );
+}
+
 Widget buildZcashWalletApp({
   required AppBootstrapState bootstrap,
   List<Override> overrides = const [],
@@ -279,21 +298,9 @@ class _BootstrappedZcashWalletAppState
 Future<void> runZcashWalletApp() async {
   log('runtime: starting');
   await initializeZcashWalletRuntime();
-  final Widget app;
-  if (Platform.isLinux) {
-    app = LinuxKeyringStartupHost(loadApp: buildBootstrappedZcashWalletApp);
-  } else {
-    app = await buildBootstrappedZcashWalletApp(
-      overrides: [
-        capsLockMonitoringEnabledProvider.overrideWithValue(true),
-        appPasswordInputSourceProvider.overrideWith((ref) {
-          final service = AppPasswordInputSource.production();
-          ref.onDispose(service.dispose);
-          return service;
-        }),
-      ],
-    );
-  }
+  final Widget app = Platform.isLinux
+      ? LinuxKeyringStartupHost(loadApp: buildProductionZcashWalletApp)
+      : await buildProductionZcashWalletApp();
   log('runtime: launching app');
   runApp(
     SigningShutdownHost(
