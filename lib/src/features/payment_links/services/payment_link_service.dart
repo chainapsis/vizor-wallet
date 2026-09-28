@@ -248,6 +248,12 @@ class PaymentLinkBatchRejected implements Exception {
   }
 }
 
+/// Whether [error] ends a group's funding before any signing: the fee moved
+/// off the quote or the signer cannot fund it. Retrying the same group fails
+/// the same way.
+bool isPaymentLinkBatchRefusal(Object error) =>
+    error is PaymentLinkBatchQuoteChanged || error is PaymentLinkBatchRejected;
+
 abstract interface class PaymentLinkBatchOperations {
   /// [artworkIds], when given, holds one design per card in order for a mixed
   /// group; otherwise every card takes [presentation]'s design.
@@ -736,8 +742,13 @@ class PaymentLinkService
         );
       });
     } on PaymentLinkFundingNotSubmittedException catch (failure) {
-      // Nothing reached the network, so the drafts hold no funds.
-      await _recoveryStore.removeUnsubmittedBatch(draft.id);
+      // Nothing reached the network, so the drafts hold no funds. If removing
+      // them fails, stale-draft recovery does it later; this still was not sent.
+      try {
+        await _recoveryStore.removeUnsubmittedBatch(draft.id);
+      } catch (cleanupError) {
+        log('PaymentLinkService: unsent batch cleanup failed: $cleanupError');
+      }
       final error = failure.error;
       if (error is PaymentLinkBatchQuoteChanged) throw error;
       throw PaymentLinkBatchRejected.from(error) ??

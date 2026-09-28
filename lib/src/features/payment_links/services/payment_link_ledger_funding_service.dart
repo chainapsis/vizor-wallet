@@ -258,14 +258,20 @@ class PaymentLinkLedgerFundingService {
   }) async {
     // Past this marker the draft may hold funds and blocks deleting its
     // account. A failed write aborts before the network sees anything.
-    final batch = (await recovery.load())
+    final members = (await recovery.load())
         .where((record) => record.batchId == address)
-        .firstOrNull;
+        .toList();
+    final batch = members.firstOrNull;
     if (batch != null) {
-      await recovery.markBatchSubmissionStarted(
-        batchId: address,
-        chainHeight: currentChainHeight(),
-      );
+      // Like one card: a group recovery already funded is past its marker.
+      if (members.any(
+        (record) => record.state == PaymentLinkRecoveryState.draft,
+      )) {
+        await recovery.markBatchSubmissionStarted(
+          batchId: address,
+          chainHeight: currentChainHeight(),
+        );
+      }
     } else {
       await recovery.markSubmissionStartedIfPresent(
         address: address,

@@ -16,65 +16,72 @@ import '../src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 
 Widget buildActivityPageUseCase(BuildContext context) {
-  return SizedBox(
-    width: 1080,
-    height: 720,
-    child: AppDesktopShell(
-      sidebar: const _ActivityUseCaseSidebar(),
-      pane: AppDesktopPane(
-        padding: EdgeInsets.zero,
-        child: ColoredBox(
-          key: const ValueKey('activity_page_pane_background'),
-          color: context.colors.macosUtility.window,
-          child: Stack(
-            children: [
-              const Positioned(
-                left: 0,
-                top: 0,
-                right: 0,
-                height: 48,
-                child: AppPaneToolbar(
-                  leading: AppBackLink(
-                    key: ValueKey('activity_page_back_button'),
-                    label: 'Home',
-                    minWidth: 60,
-                    onTap: _noop,
+  return Center(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: SizedBox(
+        width: 1080,
+        height: 720,
+        child: AppDesktopShell(
+          sidebar: const _ActivityUseCaseSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: ColoredBox(
+              key: const ValueKey('activity_page_pane_background'),
+              color: context.colors.macosUtility.window,
+              child: Stack(
+                children: [
+                  const Positioned(
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    height: 48,
+                    child: AppPaneToolbar(
+                      leading: AppBackLink(
+                        key: ValueKey('activity_page_back_button'),
+                        label: 'Home',
+                        minWidth: 60,
+                        onTap: _noop,
+                      ),
+                      padding: EdgeInsets.only(
+                        left: AppSpacing.sm,
+                        top: AppSpacing.xs,
+                        bottom: AppSpacing.xs,
+                      ),
+                    ),
                   ),
-                  padding: EdgeInsets.only(
-                    left: AppSpacing.sm,
-                    top: AppSpacing.xs,
-                    bottom: AppSpacing.xs,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: 48,
-                right: 0,
-                bottom: 0,
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: SingleChildScrollView(
-                    key: const ValueKey('activity_page_scroll_view'),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        width: 420,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.sm),
-                          child: ActivityFeed(
-                            sections: _activitySections(context),
-                            rowKeyPrefix: 'activity_page',
+                  Positioned(
+                    left: 0,
+                    top: 48,
+                    right: 0,
+                    bottom: 0,
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      child: SingleChildScrollView(
+                        key: const ValueKey('activity_page_scroll_view'),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: 420,
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                top: AppSpacing.sm,
+                              ),
+                              child: ActivityFeed(
+                                sections: _activitySections(context),
+                                rowKeyPrefix: 'activity_page',
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -95,6 +102,54 @@ Widget buildRedeemedGiftCardActivityDetailUseCase(BuildContext context) {
     context,
     kind: GiftCardActivityKind.redeemed,
     artwork: PaymentLinkCardArtwork.crystal,
+  );
+}
+
+Widget buildGiftCardBatchActivityDetailUseCase(BuildContext context) {
+  return Center(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: SizedBox(
+        width: 1080,
+        height: 720,
+        child: AppDesktopShell(
+          sidebar: const _ActivityUseCaseSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: AppPaneScrollScaffold(
+              toolbar: AppPaneToolbar(
+                leading: AppBackLink(
+                  label: 'Activity',
+                  minWidth: 60,
+                  onTap: _noop,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: GiftCardActivityDetailView.batch(
+                batch: const GiftCardActivityBatch(
+                  count: 20,
+                  totalLabel: 'Total spent',
+                  totalText: '2.0035',
+                  breakdownText:
+                      'Cards 2 ZEC · Redeem fees 0.002 ZEC · '
+                      'Network fee 0.0015 ZEC',
+                ),
+                artwork: PaymentLinkCardArtwork.ruby,
+                amountText: '0.1',
+                statusText: 'Completed',
+                statusIconName: AppIcons.checkCircle,
+                statusColor: context.colors.text.positiveStrong,
+                timestampText: '25 May, 13:30',
+                txIdText: 'f154...8143',
+                onTxIdPressed: _noop,
+                message: 'Enjoy the celebration!',
+                onToggleMessage: _noop,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -145,6 +200,15 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
     ActivityFeedSectionData(
       title: 'This week',
       rows: [
+        _activityRow(
+          context,
+          title: 'Created 20 gift cards',
+          iconName: AppIcons.giftCard,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '-2 ZEC',
+          onTap: _noop,
+        ),
         _activityRow(
           context,
           title: 'Redeemed a gift card',

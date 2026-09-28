@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +34,8 @@ import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
 import '../services/payment_link_clipboard.dart';
+import '../services/payment_link_batch_export.dart';
+import '../services/payment_link_batch_limits.dart';
 import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_qr_export.dart';
@@ -48,6 +51,8 @@ import '../widgets/mobile/payment_link_scan_sheet.dart';
 import '../widgets/mobile/payment_link_share_sheet.dart';
 import '../widgets/payment_link_archive_header.dart';
 import '../widgets/payment_link_card_flip.dart';
+import '../widgets/payment_link_batch_detail_desktop_view.dart';
+import '../widgets/payment_link_bulk_desktop_flow.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
@@ -57,9 +62,11 @@ import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
 import '../widgets/payment_link_ledger_signing_overlay.dart';
 import '../widgets/payment_link_long_sync_warning.dart';
-import '../widgets/payment_link_privacy_button.dart';
+import '../widgets/payment_link_wizard_chrome.dart';
 import 'payment_links_local_page.dart';
 import 'payment_links_mobile_body.dart';
+
+part 'payment_links_batch_creation.dart';
 
 /// Desktop Payment Link lifecycle.
 ///
@@ -76,7 +83,8 @@ class PaymentLinksScreen extends ConsumerStatefulWidget {
   ConsumerState<PaymentLinksScreen> createState() => _PaymentLinksScreenState();
 }
 
-class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
+class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
+    with _PaymentLinksBatchCreation {
   static const _estimatedBlockTimeSeconds = 75;
   static const _linkAvailableSoonRemainingConfirmations = 3;
   static const _syncingFeeEstimateMessage =
@@ -121,12 +129,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     DecimalAmountInputFormatter(maxFractionDigits: 8),
   ];
 
+  @override
   final TextEditingController _amountController = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
+  @override
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   late final PaymentLinkOperations _paymentLinkOperations;
   late final PaymentLinkIntakeNotifier _paymentLinkIntake;
+  @override
   Timer? _fundingQuoteDebounce;
   Timer? _fundingProgressTimer;
 
@@ -142,12 +153,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   bool _isCurrentNavigation(int epoch) =>
       kAppFormFactor != AppFormFactor.mobile || epoch == _mobileNavigationEpoch;
 
+  @override
   PaymentLinksLocalPage _page = PaymentLinksLocalPage.home;
+  @override
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
   PaymentLinkRedeemVisualState _redeemState =
       PaymentLinkRedeemVisualState.paste;
   PaymentLinkCardsTab _activeCardsTab = PaymentLinkCardsTab.created;
   List<PaymentLinkRecoveryRecord> _recoveries = const [];
+  @override
   Map<String, PaymentLinkFundingProgress> _fundingProgressByAddress = const {};
   List<PaymentLinkReceivedRecord> _receivedCards = const [];
   final GlobalKey _shareQrCardKey = GlobalKey();
@@ -163,14 +177,17 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   VizorPaymentLink? _lastDeferredPendingLink;
   VizorPaymentLink? _longSyncLink;
   VizorPaymentLink? _retryLink;
+  @override
   PaymentLinkFundingResult? _pendingFundingMetadata;
   _PaymentLinkHardwareFundingRequest? _hardwareFundingRequest;
+  @override
   bool _showHelp = false;
   bool _amountFocused = false;
   bool _maxFundingQuoteInProgress = false;
   bool _fundingQuoteInProgress = false;
   String? _amountSupportingText;
   bool _amountSupportingTextIsError = false;
+  @override
   int _fundingQuoteGeneration = 0;
   int _maxFundingQuoteGeneration = 0;
   bool _fundingQuoteRetryScheduled = false;
@@ -178,6 +195,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   bool _readyShowsBack = false;
   bool _receivedShowsBack = false;
   bool _messageEditorRevealed = false;
+  @override
   bool _operationInProgress = false;
   final Set<String> _copyingLinkAddresses = {};
   final Set<String> _savingQrAddresses = {};
@@ -188,11 +206,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   bool _claimConfirmationRefreshInProgress = false;
   bool _pendingIntakeScheduled = false;
   bool _initialCardsLoaded = false;
+  // Whether funding progress has been read once. Until then a batch's
+  // readiness is unknown, not pending.
+  bool _fundingProgressChecked = false;
+  final Set<String> _exportingBatchIds = {};
+  bool _checkingBatchStatus = false;
+  List<PaymentLinkRecoveryRecord>? _exportConfirmMembers;
 
   @override
   void initState() {
     super.initState();
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
+    _batchOperations = ref.read(paymentLinkBatchOperationsProvider);
     _paymentLinkIntake = ref.read(paymentLinkIntakeProvider.notifier);
     // Both form factors open on the Gift Card home (the cards list once any
     // exist, the create/redeem landing otherwise). Only a link that is
@@ -227,6 +252,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   @override
   void dispose() {
     _fundingQuoteDebounce?.cancel();
+    _disposeBatchCreation();
     _fundingProgressTimer?.cancel();
     final claimSession = _receivedClaimSession;
     if (claimSession != null) {
@@ -257,7 +283,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       (_operationInProgress &&
           (_page == PaymentLinksLocalPage.review || _choosingClaimAccount));
 
+  @override
   void _showPage(PaymentLinksLocalPage page) {
+    if (_batchBusy) return;
     if (kAppFormFactor == AppFormFactor.mobile && _mobileNavigationLocked) {
       return;
     }
@@ -265,6 +293,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         page != PaymentLinksLocalPage.review) {
       _showError('Save this gift card before leaving this screen.');
       return;
+    }
+    if (_batchSubmission is _BatchUnsaved &&
+        page != PaymentLinksLocalPage.bulk) {
+      _showError('Save these gift cards before leaving this screen.');
+      return;
+    }
+    if (_page == PaymentLinksLocalPage.bulk &&
+        page != PaymentLinksLocalPage.bulk) {
+      _leaveBatchCreation();
     }
     if (page != _page) {
       _mobileNavigationEpoch++;
@@ -290,6 +327,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _redeemState = PaymentLinkRedeemVisualState.paste;
       }
       _page = page;
+      if (page != PaymentLinksLocalPage.bulk) _batchReviewing = false;
+      // The reveal plays once, on the first visit.
+      if (page != PaymentLinksLocalPage.batchDetail) _justCreatedBatchId = null;
       if (page != PaymentLinksLocalPage.shareQr) {
         _shareQrRecord = null;
         _shareQrData = null;
@@ -315,7 +355,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _maxFundingQuoteGeneration++;
     _amountController.clear();
     _messageController.clear();
+    _clearPreparedBatch();
     setState(() {
+      _batchSubmission = const _BatchNotSent();
       _selectedArtwork = PaymentLinkCardArtwork
           .values[Random().nextInt(PaymentLinkCardArtwork.values.length)];
       _maxFundingQuote = null;
@@ -393,6 +435,26 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     await _consumePendingPaymentLink();
   }
 
+  /// Whether the open group's records are loaded, in any account.
+  bool get _openBatchLoaded =>
+      _selectedBatchId != null &&
+      _recoveries.any((record) => record.batchId == _selectedBatchId);
+
+  /// Recovery removes a group only once it is known to hold no funds.
+  void _leaveVanishedBatch() {
+    if (!mounted ||
+        _page != PaymentLinksLocalPage.batchDetail ||
+        _openBatchLoaded) {
+      return;
+    }
+    setState(() {
+      _selectedBatchId = null;
+      _page = PaymentLinksLocalPage.home;
+    });
+    _showError('This group wasn’t funded. Create it again.');
+  }
+
+  @override
   Future<void> _loadRecoveries({bool showError = true}) async {
     try {
       final records = await ref
@@ -400,7 +462,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           .loadCreatedLinkRecoveries();
       if (!mounted) return;
       final visible = records.toList()..sort(compareCreatedPaymentLinks);
+      final hadOpenBatch = _openBatchLoaded;
       setState(() => _recoveries = visible);
+      if (hadOpenBatch) _leaveVanishedBatch();
       unawaited(_refreshFundingProgress(records: visible));
     } catch (_) {
       if (mounted && showError) {
@@ -409,6 +473,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  @override
   Future<void> _refreshFundingProgress({
     List<PaymentLinkRecoveryRecord>? records,
   }) async {
@@ -420,7 +485,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
                   false),
         )
         .toList();
-    if (pending.isEmpty || _operationInProgress) return;
+    if (pending.isEmpty) {
+      if (!_fundingProgressChecked && mounted) {
+        setState(() => _fundingProgressChecked = true);
+      }
+      return;
+    }
+    if (_operationInProgress) return;
     try {
       final updates = await ref
           .read(paymentLinkOperationsProvider)
@@ -432,6 +503,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       };
       final readyFundingExpired =
           _readyLink != null && expiredAddresses.contains(_readyLink!.address);
+      final hadOpenBatch = _openBatchLoaded;
       final mergedUpdates = {
         for (final entry in updates.entries)
           entry.key:
@@ -450,15 +522,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         };
         if (readyFundingExpired) {
           _readyLink = null;
-          _page = PaymentLinksLocalPage.home;
+          if (_page == PaymentLinksLocalPage.ready) {
+            _page = PaymentLinksLocalPage.home;
+          }
         }
       });
       if (readyFundingExpired) {
         _showError('Gift card funding expired. Create it again.');
       }
+      if (hadOpenBatch) _leaveVanishedBatch();
     } catch (_) {
       // Keep the last known progress. A later foreground sync or timer tick
       // retries this read without hiding an already-ready link.
+    } finally {
+      if (mounted && !_fundingProgressChecked) {
+        setState(() => _fundingProgressChecked = true);
+      }
     }
   }
 
@@ -733,6 +812,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       _fundingQuote != null &&
       _amountSupportingText == null;
 
+  @override
   bool _canEstimateCardFee(SyncState? sync, String accountUuid) {
     return sync != null &&
         sync.accountUuid == accountUuid &&
@@ -754,7 +834,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         _fundingQuoteRetryScheduled) {
       return;
     }
-    if (_page != PaymentLinksLocalPage.amount || next.accountUuid == null) {
+    if (next.accountUuid == null) return;
+    if (_page == PaymentLinksLocalPage.bulk) {
+      _requoteBatchAfterSync();
+      return;
+    }
+    if (_page != PaymentLinksLocalPage.amount) {
       return;
     }
     final shouldLoadMax =
@@ -879,6 +964,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   void _handleActiveAccountChanged(String? previous, String? current) {
     if (current != null) _handleClaimDestinationAccountChanged(current);
+    if (_batchBusy) return;
     // Keep the original review and loading label during mobile funding.
     // An unsaved result must also retain its review so saving can be retried.
     if (_pendingFundingMetadata != null ||
@@ -894,7 +980,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
     if (_page != PaymentLinksLocalPage.amount &&
         _page != PaymentLinksLocalPage.message &&
-        _page != PaymentLinksLocalPage.review) {
+        _page != PaymentLinksLocalPage.review &&
+        _page != PaymentLinksLocalPage.bulk) {
+      return;
+    }
+
+    if (_page == PaymentLinksLocalPage.bulk) {
+      _requoteBatchForAccount();
       return;
     }
 
@@ -1007,6 +1099,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   bool get _hasMessage => _messageController.text.trim().isNotEmpty;
 
+  @override
   bool get _messageExceedsByteLimit =>
       !PaymentLinkPresentation.isMessageWithinUtf8ByteLimit(
         _messageController.text,
@@ -1032,12 +1125,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
 
   /// Created Cards show under the account that funded them, like their funding
   /// transaction; a record of unknown origin stays visible so its recovery is.
+  /// A draft with no submission trace cannot hold funds. Quoting a batch saves
+  /// such drafts before the user chooses Create, so they are not created Cards.
   List<PaymentLinkRecoveryRecord> get _visibleRecoveries {
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final batchesNeedingRecovery = {
+      for (final record in _recoveries)
+        if (record.batchId != null && !record.isInertDraft) record.batchId,
+    };
     return [
       for (final record in _recoveries)
-        if (record.sourceAccountUuid.isEmpty ||
-            record.sourceAccountUuid == accountUuid)
+        if ((!record.isInertDraft ||
+                batchesNeedingRecovery.contains(record.batchId)) &&
+            (record.sourceAccountUuid.isEmpty ||
+                record.sourceAccountUuid == accountUuid))
           record,
     ];
   }
@@ -1092,6 +1193,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     _messageController.clear();
     _showPage(PaymentLinksLocalPage.review);
   }
+
+  @override
+  HardwareSignerKind? _signerFor(String? accountUuid) => accountUuid == null
+      ? null
+      : ref
+            .read(accountProvider.notifier)
+            .hardwareSignerKindForAccount(accountUuid);
 
   void _selectWizardStep(int step) {
     if (_pendingFundingMetadata != null) {
@@ -1159,9 +1267,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       setState(() {
         _operationInProgress = true;
         _hardwareFundingRequest = _PaymentLinkHardwareFundingRequest(
-          signerKind: ref
-              .read(accountProvider.notifier)
-              .hardwareSignerKindForAccount(sourceAccountUuid),
+          signerKind: _signerFor(sourceAccountUuid),
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
           presentation: presentation,
@@ -1405,17 +1511,25 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
     );
     unawaited(_refreshFundingProgress());
-    if (result.status == 'broadcasted_storage_failed' ||
-        result.status == 'broadcast_unknown') {
-      showAppToast(
-        context,
-        result.message ??
-            (result.status == 'broadcast_unknown'
-                ? 'Funding is still being verified. Vizor will keep checking it.'
-                : 'Funding was sent, but local transaction storage needs to sync.'),
-        iconName: AppIcons.warning,
-      );
+    _warnUnsettledHardwareFunding(result);
+  }
+
+  /// A hardware funding the network may hold that is not settled locally yet.
+  @override
+  void _warnUnsettledHardwareFunding(PaymentLinkHardwareFundingResult result) {
+    if (!mounted ||
+        (result.status != 'broadcasted_storage_failed' &&
+            result.status != 'broadcast_unknown')) {
+      return;
     }
+    showAppToast(
+      context,
+      result.message ??
+          (result.status == 'broadcast_unknown'
+              ? 'Funding is still being verified. Vizor will keep checking it.'
+              : 'Funding was sent, but local transaction storage needs to sync.'),
+      iconName: AppIcons.warning,
+    );
   }
 
   Future<void> _copyPaymentLink(VizorPaymentLink link) async {
@@ -2110,6 +2224,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     }
   }
 
+  @override
   void _showError(String message) {
     showAppToast(
       context,
@@ -2147,13 +2262,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
     final amount = parseZecAmount(_amountController.text);
     // Keep the price subscription through amount edits and Review so clearing
-    // the input does not restart the lookup or flash its loading state.
+    // the input does not restart the lookup or flash its loading state. The
+    // group flow reads it for each card's fiat snapshot.
     final marketData =
         pricingEnabled &&
             (_page == PaymentLinksLocalPage.amount ||
                 _page == PaymentLinksLocalPage.message ||
                 _page == PaymentLinksLocalPage.review ||
-                _page == PaymentLinksLocalPage.received)
+                _page == PaymentLinksLocalPage.received ||
+                _page == PaymentLinksLocalPage.bulk)
         ? ref.watch(zecHomeMarketDataStateProvider)
         : null;
 
@@ -2261,28 +2378,24 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       amountFiatLoading: amountFiatLoading,
     );
     final hardwareRequest = _hardwareFundingRequest;
-    final longSyncLink = _longSyncLink;
-    final pane = hardwareRequest != null
-        ? Stack(
-            fit: StackFit.expand,
-            children: [
-              currentPage,
-              Positioned.fill(
-                child: _buildHardwareFundingOverlay(hardwareRequest),
-              ),
-            ],
+    final hardwareBatch = _hardwareBatchSigning;
+    final overlay = hardwareRequest != null
+        ? _buildHardwareFundingOverlay(hardwareRequest)
+        : hardwareBatch != null
+        ? _buildHardwareBatchOverlay(hardwareBatch)
+        : _exportConfirmMembers != null
+        ? PaymentLinkBatchExportModal(
+            onConfirm: () => unawaited(_confirmBatchExport()),
+            onCancel: _cancelBatchExport,
           )
-        : longSyncLink != null
-        ? Stack(
-            fit: StackFit.expand,
-            children: [
-              currentPage,
-              PaymentLinkLongSyncWarningModal(
-                onConfirm: _confirmLongSyncWarning,
-                onCancel: _cancelLongSyncWarning,
-              ),
-            ],
+        : _longSyncLink != null
+        ? PaymentLinkLongSyncWarningModal(
+            onConfirm: _confirmLongSyncWarning,
+            onCancel: _cancelLongSyncWarning,
           )
+        : null;
+    final pane = overlay != null
+        ? Stack(fit: StackFit.expand, children: [currentPage, overlay])
         : _showHelp
         ? PaymentLinkHowItWorksDesktopView(
             background: _buildHome(),
@@ -2303,6 +2416,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
   }) {
     return switch (_page) {
       PaymentLinksLocalPage.home => _buildHome(),
+      PaymentLinksLocalPage.batchDetail => _buildBatchDetail(),
+      PaymentLinksLocalPage.bulk => _buildBulk(),
       PaymentLinksLocalPage.amount => _buildAmount(
         fiatText: amountFiatText,
         fiatLoading: amountFiatLoading,
@@ -2342,13 +2457,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onBack: () => context.go('/home'),
       onShowHelp: _showHelpOverlay,
       onCreate: _startCreate,
+      onCreateMultiple: _startBulkCreate,
       onRedeem: () => _showPage(PaymentLinksLocalPage.redeem),
     );
   }
 
   Widget _buildCardsList() {
     return PaymentLinkCardsDesktopView(
-      headerAction: const PaymentLinkPrivacyButton(),
       sections: _cardsSections(
         recoveryRow: _buildRecoveryRow,
         receivedRow: _buildReceivedRow,
@@ -2367,6 +2482,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       ),
       onBack: () => context.go('/home'),
       onCreate: _startCreate,
+      onCreateMultiple: _startBulkCreate,
       onRedeem: () => _showPage(PaymentLinksLocalPage.redeem),
       activeTab: _activeCardsTab,
       onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
@@ -2383,10 +2499,24 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     List<Widget> emptyReceivedCards = const <Widget>[],
   }) {
     if (_activeCardsTab == PaymentLinkCardsTab.created) {
+      final batches = <Widget>[];
       final pendingCards = <Widget>[];
       final unusedCards = <Widget>[];
       final usedCards = <Widget>[];
+      final seenBatchIds = <String>{};
       for (final record in _visibleRecoveries) {
+        if (kAppFormFactor == AppFormFactor.desktop && record.batchId != null) {
+          if (!seenBatchIds.add(record.batchId!)) continue;
+          final members =
+              _visibleRecoveries
+                  .where((candidate) => candidate.batchId == record.batchId)
+                  .toList()
+                ..sort(
+                  (a, b) => (a.batchIndex ?? 0).compareTo(b.batchIndex ?? 0),
+                );
+          batches.add(_buildBatchRow(members));
+          continue;
+        }
         final fundingReady =
             _fundingProgressByAddress[record.link.address]?.isReady ?? false;
         final usage = ref
@@ -2402,6 +2532,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         cards.add(recoveryRow(record));
       }
       return <PaymentLinkCardsSection>[
+        if (batches.isNotEmpty)
+          PaymentLinkCardsSection(label: 'Groups', cards: batches),
         if (pendingCards.isNotEmpty)
           PaymentLinkCardsSection(
             label: kPaymentLinkPendingSectionLabel,
@@ -2487,7 +2619,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           (record.availability == PaymentLinkAvailability.checking ||
                   record.availability == PaymentLinkAvailability.rejected)
               ? 'Checking result'
-              : 'Receiving...',
+              : 'Receiving…',
         PaymentLinkReceivedStatus.received => 'Received',
       },
       canClaim:
@@ -2530,6 +2662,271 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
             )
           : null,
     );
+  }
+
+  bool _batchMembersReady(List<PaymentLinkRecoveryRecord> members) {
+    return isCompletePaymentLinkBatch(members) &&
+        members.every(
+          (record) =>
+              record.fundingTxids == members.first.fundingTxids &&
+              _recoveryRowState(record).canUseLink,
+        );
+  }
+
+  static bool _isUsedStatus(GiftCardUsageStatus status) =>
+      status == GiftCardUsageStatus.used ||
+      status == GiftCardUsageStatus.spendDetected;
+
+  Widget _buildBatchRow(List<PaymentLinkRecoveryRecord> members) {
+    final first = members.first;
+    final count = first.batchCount ?? members.length;
+    final ready = _batchMembersReady(members);
+    final statuses = [
+      for (final record in members)
+        ref.watch(giftCardUsageProvider(record.link.address)).value?.status ??
+            record.usage.status,
+    ];
+    final usedCount = statuses.where(_isUsedStatus).length;
+    final secondArtworkId = members.length > 1
+        ? members[1].link.presentation?.artworkId
+        : null;
+    return PaymentLinkBatchListRow(
+      key: ValueKey('payment_link_batch_${first.batchId}'),
+      thumbnail: _cardThumbnail(first.link.presentation?.artworkId),
+      // A mixed group shows its second design on the card behind.
+      backThumbnail: secondArtworkId != first.link.presentation?.artworkId
+          ? _cardThumbnail(secondArtworkId)
+          : null,
+      count: count,
+      amountText: hideAmountIfPrivacyMode(
+        '${formatZecAmount(first.link.amountZatoshi)} ZEC',
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+      ),
+      dateText: _formatCardDate(first.link.createdAt),
+      // Before funding is read once, a batch is unknown rather than pending,
+      // so the row does not flash a pending status on entry.
+      statusText: !ready && !_fundingProgressChecked
+          ? ''
+          : ready
+          ? switch (usedCount) {
+              0 => 'Ready to share',
+              _ when usedCount == count => 'All used',
+              _ => '$usedCount of $count used',
+            }
+          : switch (_batchPendingKind(members)) {
+              PaymentLinkBatchPendingKind.incomplete => 'Some cards aren’t ready',
+              PaymentLinkBatchPendingKind.unconfirmedBroadcast =>
+                'Payment status pending',
+              PaymentLinkBatchPendingKind.confirming => 'Confirming payment',
+            },
+      onOpen: () => _openBatchDetail(first.batchId!),
+    );
+  }
+
+  PaymentLinkBatchPendingKind _batchPendingKind(
+    List<PaymentLinkRecoveryRecord> members,
+  ) {
+    if (members.isEmpty || members.length != members.first.batchCount) {
+      return PaymentLinkBatchPendingKind.incomplete;
+    }
+    // Funded members only wait for their confirmation; a draft member means
+    // the broadcast result is still unknown.
+    return members.any(
+          (record) => record.state == PaymentLinkRecoveryState.draft,
+        )
+        ? PaymentLinkBatchPendingKind.unconfirmedBroadcast
+        : PaymentLinkBatchPendingKind.confirming;
+  }
+
+  Future<void> _checkBatchStatus() async {
+    setState(() => _checkingBatchStatus = true);
+    try {
+      // Reloading reconciles an ambiguous batch, then refreshes its progress.
+      await _loadRecoveries();
+    } finally {
+      if (mounted) setState(() => _checkingBatchStatus = false);
+    }
+  }
+
+  void _openBatchDetail(String batchId) {
+    _selectedBatchId = batchId;
+    _showPage(PaymentLinksLocalPage.batchDetail);
+  }
+
+  Widget _buildBatchDetail() {
+    final id = _selectedBatchId;
+    if (id == null) return _buildHome();
+    final members =
+        _visibleRecoveries.where((record) => record.batchId == id).toList()
+          ..sort((a, b) => (a.batchIndex ?? 0).compareTo(b.batchIndex ?? 0));
+    if (members.isEmpty) {
+      // Not loaded at all (a failed reload): show the list until it is.
+      if (_initialCardsLoaded && !_openBatchLoaded) return _buildHome();
+      return PaymentLinkPane(
+        backLabel: 'Gift Cards',
+        onBack: () => _showPage(PaymentLinksLocalPage.home),
+        child: Center(
+          child: _initialCardsLoaded
+              ? Text(
+                  'This group belongs to another account. Switch accounts to view it.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                )
+              : const CircularProgressIndicator(),
+        ),
+      );
+    }
+    final first = members.first;
+    final ready = _batchMembersReady(members);
+    final privacyMode = ref.watch(privacyModeProvider);
+    GiftCardUsage usageOf(PaymentLinkRecoveryRecord record) =>
+        ref.watch(giftCardUsageProvider(record.link.address)).value ??
+        record.usage;
+    final tracking = ref.watch(giftCardTrackingStateProvider);
+    final lastChecked = members
+        .map((record) => usageOf(record).checkedAt)
+        .whereType<DateTime>()
+        .fold<DateTime?>(
+          null,
+          (latest, checked) =>
+              latest == null || checked.isAfter(latest) ? checked : latest,
+        );
+    // Grouped like the created-card list: cards whose use is not known yet,
+    // then unused, then used.
+    final pendingCards = <Widget>[];
+    final unusedCards = <Widget>[];
+    final usedCards = <Widget>[];
+    for (final record in members) {
+      final usage = usageOf(record);
+      final used = _isUsedStatus(usage.status);
+      final pending = usage.status == GiftCardUsageStatus.unknown;
+      (used
+              ? usedCards
+              : pending
+              ? pendingCards
+              : unusedCards)
+          .add(
+            PaymentLinkBatchMemberRow(
+              key: ValueKey('payment_link_batch_card_${record.batchIndex}'),
+              index: record.batchIndex ?? 0,
+              artwork: PaymentLinkCardArtwork.fromProtocolId(
+                record.link.presentation?.artworkId,
+              ),
+              statusLabel: usage.label,
+              used: used,
+              // The section already says Unused or Used; anything else is
+              // spelled out on the row.
+              note: pending || usage.status == GiftCardUsageStatus.spendDetected
+                  ? usage.label
+                  : null,
+              updateFailed:
+                  !usage.cleaned &&
+                  !tracking.checking &&
+                  tracking.failedFor(record.link.address),
+              onCopyLink: !_copyingLinkAddresses.contains(record.link.address)
+                  ? () => _copyPaymentLink(record.link)
+                  : null,
+              onShowQr: () => _openShareQr(record),
+            ),
+          );
+    }
+    final artworks = [
+      for (final record in members)
+        PaymentLinkCardArtwork.fromProtocolId(
+          record.link.presentation?.artworkId,
+        ),
+    ];
+    return PaymentLinkBatchDetailDesktopView(
+      count: first.batchCount ?? members.length,
+      artwork: artworks.first,
+      backArtworks: artworks.toSet().length > 1
+          ? artworks.sublist(1)
+          : const [],
+      amountPerCardText: hideAmountIfPrivacyMode(
+        formatZecAmount(first.link.amountZatoshi),
+        privacyModeEnabled: privacyMode,
+        denomination: '',
+      ),
+      dateText: _formatCardDate(first.link.createdAt),
+      ready: ready,
+      justCreated: ready && id == _justCreatedBatchId,
+      onBack: () => _showPage(PaymentLinksLocalPage.home),
+      onExport: ready && !_exportingBatchIds.contains(id)
+          ? () => _requestBatchExport(members)
+          : null,
+      onCheckStatus: _checkingBatchStatus
+          ? null
+          : () => unawaited(_checkBatchStatus()),
+      pendingKind: _batchPendingKind(members),
+      usageActivity: PaymentLinkBatchUsageActivity(
+        checking: tracking.checking,
+        failed:
+            tracking.failed ||
+            members.any((record) => tracking.failedFor(record.link.address)),
+        checkedText: lastChecked == null ? null : _checkedAgoText(lastChecked),
+      ),
+      // Only shown once every card is ready to share.
+      sections: [
+        PaymentLinkCardsSection(
+          label: kPaymentLinkPendingSectionLabel,
+          cards: pendingCards,
+        ),
+        PaymentLinkCardsSection(
+          label: kPaymentLinkUnusedSectionLabel,
+          cards: unusedCards,
+        ),
+        PaymentLinkCardsSection(
+          label: kPaymentLinkUsedSectionLabel,
+          cards: usedCards,
+        ),
+      ],
+    );
+  }
+
+  String _checkedAgoText(DateTime checkedAt) {
+    final elapsed = DateTime.now().toUtc().difference(checkedAt.toUtc());
+    if (elapsed.inMinutes < 1) return 'Checked just now';
+    if (elapsed.inHours < 1) return 'Checked ${elapsed.inMinutes}m ago';
+    if (elapsed.inDays < 1) return 'Checked ${elapsed.inHours}h ago';
+    return 'Checked ${_formatCardDate(checkedAt.toLocal())}';
+  }
+
+  void _requestBatchExport(List<PaymentLinkRecoveryRecord> members) {
+    if (!_batchMembersReady(members) ||
+        _exportingBatchIds.contains(members.first.batchId)) {
+      _showError('All cards must be ready before exporting links.');
+      return;
+    }
+    setState(() => _exportConfirmMembers = members);
+  }
+
+  void _cancelBatchExport() => setState(() => _exportConfirmMembers = null);
+
+  Future<void> _confirmBatchExport() async {
+    final members = _exportConfirmMembers;
+    if (members == null) return;
+    setState(() => _exportConfirmMembers = null);
+    final id = members.first.batchId!;
+    final currentAccount = ref.read(accountProvider).value?.activeAccountUuid;
+    final latest = _recoveries.where((record) => record.batchId == id).toList();
+    if (currentAccount != members.first.sourceAccountUuid ||
+        !_batchMembersReady(latest)) {
+      _showError(
+        'The account or card status changed. Check the cards and try again.',
+      );
+      return;
+    }
+    setState(() => _exportingBatchIds.add(id));
+    try {
+      final saved = await exportPaymentLinkBatchCsv(latest);
+      if (saved && mounted) showAppToast(context, 'Gift card links saved');
+    } catch (error) {
+      if (mounted) _showError('Gift card links could not be saved. Try again.');
+      log('PaymentLinksScreen: batch export failed: $error');
+    } finally {
+      if (mounted) setState(() => _exportingBatchIds.remove(id));
+    }
   }
 
   Widget _buildMobileRecoveryRow(PaymentLinkRecoveryRecord record) {
@@ -2613,6 +3010,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
     setState(() {
       _shareQrRecord = record;
       _shareQrData = shareData;
+      _justCreatedBatchId = null;
       _page = PaymentLinksLocalPage.shareQr;
       _showHelp = false;
       _longSyncLink = null;
@@ -2630,15 +3028,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
         record.link.presentation?.artworkId,
       ),
       qrData: _shareQrData!,
-      onBack: () => _showPage(PaymentLinksLocalPage.home),
+      onBack: () => _showPage(
+        _shareQrRecord?.batchId == null
+            ? PaymentLinksLocalPage.home
+            : PaymentLinksLocalPage.batchDetail,
+      ),
       onSaveQr: _operationInProgress || saving
           ? null
           : () => _savePaymentLinkQr(record),
       onCopyLink: _operationInProgress || copying
           ? null
           : () => _copyPaymentLink(record.link),
-      saveLabel: saving ? 'Saving...' : 'Save QR code',
-      copyLabel: copying ? 'Copying...' : 'Copy link',
+      saveLabel: saving ? 'Saving…' : 'Save QR code',
+      copyLabel: copying ? 'Copying…' : 'Copy link',
     );
   }
 
@@ -2903,8 +3305,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onStepSelected: _operationInProgress ? null : _selectWizardStep,
       confirmLabel: _operationInProgress
           ? _pendingFundingMetadata == null
-                ? 'Creating...'
-                : 'Saving...'
+                ? 'Creating…'
+                : 'Saving…'
           : _pendingFundingMetadata == null
           ? 'Create card'
           : 'Try saving again',
@@ -2961,7 +3363,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
           : null,
       onReturnHome: () => _showPage(PaymentLinksLocalPage.home),
       waitingStatusLabel: _estimatedLinkWaitLabel(fundingProgress),
-      copyLabel: copying ? 'Copying...' : 'Copy link',
+      copyLabel: copying ? 'Copying…' : 'Copy link',
     );
   }
 
@@ -3019,7 +3421,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen> {
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming...' : 'Claim the gift card',
+      claimLabel: _operationInProgress ? 'Claiming…' : 'Claim the gift card',
     );
   }
 

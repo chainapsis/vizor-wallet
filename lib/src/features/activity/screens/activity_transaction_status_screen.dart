@@ -514,6 +514,53 @@ class _ActivityTransactionStatusScreenState
         : isInFlight
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+    final batchCount = giftCard.batchCount;
+    if (giftCard.kind == GiftCardActivityKind.created &&
+        batchCount != null &&
+        batchCount > 1) {
+      String privateAmount(BigInt value) => hideAmountIfPrivacyMode(
+        formatZecAmount(value),
+        privacyModeEnabled: privacyModeEnabled,
+        denomination: '',
+      );
+      final reserve = giftCard.claimFeeReserveZatoshi!;
+      final networkFeeLabel = isInFlight || isFailed
+          ? 'Estimated network fee'
+          : 'Network fee';
+      return GiftCardActivityDetailView.batch(
+        batch: GiftCardActivityBatch(
+          count: batchCount,
+          totalLabel: isFailed
+              ? 'Planned total'
+              : isInFlight
+              ? 'Submitted total'
+              : 'Total spent',
+          totalText: privateAmount(giftCard.amountZatoshi + reserve + tx.fee),
+          breakdownText:
+              'Cards ${privateAmount(giftCard.amountZatoshi)} ZEC · '
+              'Redeem fees ${privateAmount(reserve)} ZEC · '
+              '$networkFeeLabel ${privateAmount(tx.fee)} ZEC',
+        ),
+        isInFlight: isInFlight,
+        isFailed: isFailed,
+        artwork: PaymentLinkCardArtwork.fromProtocolId(giftCard.artworkId),
+        amountText: privateAmount(
+          giftCard.amountPerCardZatoshi ??
+              giftCard.amountZatoshi ~/ BigInt.from(batchCount),
+        ),
+        statusText: statusText,
+        statusIconName: statusIconName,
+        statusColor: statusColor,
+        timestampText: _timestampText(tx),
+        txIdText: truncatedTxid(tx.txidHex),
+        onTxIdPressed: () => unawaited(_openTransactionExplorer()),
+        message: giftCard.message,
+        messageExpanded: _messageExpanded,
+        onToggleMessage: giftCard.message?.trim().isNotEmpty == true
+            ? _toggleMessageExpanded
+            : null,
+      );
+    }
     final amountText = hideAmountIfPrivacyMode(
       formatZecAmount(giftCard.amountZatoshi),
       privacyModeEnabled: privacyModeEnabled,

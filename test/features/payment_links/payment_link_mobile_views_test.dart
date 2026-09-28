@@ -195,7 +195,7 @@ void main() {
     );
     expect(tester.getSize(loadingCard), const Size(320, 200));
     expect(tester.getTopLeft(loadingCard), const Offset(36.5, 218));
-    expect(find.text('Checking ...'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_link_mobile_paste_button')),
       findsNothing,

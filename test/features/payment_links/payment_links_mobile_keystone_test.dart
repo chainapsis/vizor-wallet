@@ -86,7 +86,7 @@ void main() {
 
       await _walkToApproveAndCreate(tester);
 
-      // The review CTA must not be left spinning on "Creating..." — the
+      // The review CTA must not be left spinning on "Creating…" — the
       // Keystone round trip owns the surface from here.
       expect(
         find.byKey(

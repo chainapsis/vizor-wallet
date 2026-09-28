@@ -98,7 +98,7 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               constrainContent: true,
               onPressed: _sharing ? null : _share,
               leading: const AppIcon(AppIcons.share),
-              child: Text(_sharing ? 'Sharing...' : 'Share card'),
+              child: Text(_sharing ? 'Sharing…' : 'Share card'),
             ),
             const SizedBox(height: AppSpacing.s),
             AppButton(
@@ -107,7 +107,7 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               expand: true,
               constrainContent: true,
               onPressed: _copying ? null : _copy,
-              child: Text(_copying ? 'Copying...' : 'Copy link'),
+              child: Text(_copying ? 'Copying…' : 'Copy link'),
             ),
           ],
         ),

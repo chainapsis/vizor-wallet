@@ -637,7 +637,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                     ),
                     amountText: '0.75 ZEC',
                     dateText: 'August 4',
-                    statusText: 'Receiving...',
+                    statusText: 'Receiving…',
                     showLoader: true,
                   ),
                 ],

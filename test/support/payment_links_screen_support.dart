@@ -51,9 +51,11 @@ Future<void> loadPaymentLinksTestFonts() async {
 Future<void> pumpPaymentLinksScreen(
   WidgetTester tester, {
   FakePaymentLinkOperations? operations,
+  PaymentLinkBatchOperations? batchOperations,
   FakePaymentLinkClipboard? clipboard,
   PaymentLinkHardwareSigningService? hardwareSigning,
   PaymentLinkLedgerFundingService? ledgerFunding,
+  PaymentLinkRecoveryStore? recoveryStore,
   LedgerPcztSigner? ledgerSigner,
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
@@ -102,6 +104,10 @@ Future<void> pumpPaymentLinksScreen(
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
+        if (recoveryStore != null)
+          paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
+        if (batchOperations != null)
+          paymentLinkBatchOperationsProvider.overrideWithValue(batchOperations),
         paymentLinkClipboardProvider.overrideWithValue(paymentLinkClipboard),
         zecMarketDataSourceProvider.overrideWithValue(
           marketDataSource ?? const _PaymentLinksTestMarketDataSource(),
@@ -382,6 +388,21 @@ final secondIncomingLink = VizorPaymentLink(
     message: 'A second gift!',
   ),
 );
+
+/// Two members of one batch: distinct cards sharing one card amount.
+final batchTestLinks = [
+  incomingLink,
+  VizorPaymentLink(
+    network: incomingLink.network,
+    address: secondIncomingLink.address,
+    amountZatoshi: incomingLink.amountZatoshi,
+    mnemonic: secondIncomingLink.mnemonic,
+    birthdayHeight: incomingLink.birthdayHeight,
+    label: secondIncomingLink.label,
+    createdAt: incomingLink.createdAt,
+    presentation: incomingLink.presentation,
+  ),
+];
 
 final sharedRecovery = PaymentLinkRecoveryRecord(
   claimFeeReserveZatoshi: BigInt.from(10000),
@@ -944,7 +965,6 @@ class FakePaymentLinkHardwareSigningService
   Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
     PaymentLinkBatchDraft batch,
   ) => throw UnimplementedError();
-
   FakePaymentLinkHardwareSigningService({this.createCompleter});
 
   final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;

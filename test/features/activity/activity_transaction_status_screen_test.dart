@@ -226,6 +226,73 @@ void main() {
     expect(find.text(r'$142.23'), findsOneWidget);
   });
 
+  testWidgets('renders one receipt for a created gift card batch', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(150000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(200000000),
+          amountPerCardZatoshi: BigInt.from(10000000),
+          claimFeeReserveZatoshi: BigInt.from(200000),
+          batchCount: 20,
+          artworkId: 'ruby',
+          message: 'Enjoy the celebration!',
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<GiftCardActivityDetailView>(
+            find.byType(GiftCardActivityDetailView),
+          )
+          .batch
+          ?.count,
+      20,
+    );
+    expect(find.text('Created 20 gift cards'), findsOneWidget);
+    expect(find.text('2.0035 ZEC'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
+  });
+
+  testWidgets('failed batch receipt does not claim funds were spent', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          expiredUnmined: true,
+          fee: BigInt.from(150000),
+        ),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(200000000),
+          amountPerCardZatoshi: BigInt.from(10000000),
+          claimFeeReserveZatoshi: BigInt.from(200000),
+          batchCount: 20,
+          artworkId: 'ruby',
+          message: null,
+        ),
+      ),
+    );
+    expect(find.text('Gift card group failed'), findsOneWidget);
+    expect(find.text('Planned total'), findsOneWidget);
+    expect(find.text('Total spent'), findsNothing);
+  });
+
   testWidgets('renders redeemed Gift Card activity metadata', (tester) async {
     await _pumpScreen(
       tester,
@@ -999,6 +1066,11 @@ Future<void> _pumpScreen(
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, state) =>
+            Text('batch route: ${state.uri.queryParameters['batch']}'),
       ),
     ],
   );

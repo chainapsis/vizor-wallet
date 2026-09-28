@@ -17,6 +17,7 @@ class PaymentLinkAction extends StatefulWidget {
     this.semanticLabel,
     this.excludeChildSemantics = true,
     this.selected,
+    this.checked,
     this.expanded,
     this.button = true,
     this.role,
@@ -30,6 +31,9 @@ class PaymentLinkAction extends StatefulWidget {
   final String? semanticLabel;
   final bool excludeChildSemantics;
   final bool? selected;
+
+  /// Set for a checkbox-like action.
+  final bool? checked;
   final bool? expanded;
   final bool button;
   final SemanticsRole? role;
@@ -72,6 +76,7 @@ class _PaymentLinkActionState extends State<PaymentLinkAction> {
           widget.semanticLabel != null && widget.excludeChildSemantics,
       button: widget.button,
       selected: widget.selected,
+      checked: widget.checked,
       expanded: widget.expanded,
       enabled: _enabled,
       label: widget.semanticLabel,

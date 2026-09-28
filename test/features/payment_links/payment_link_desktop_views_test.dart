@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
@@ -52,8 +53,13 @@ void main() {
   });
 
   testWidgets('home actions forward their callbacks', (tester) async {
+    // The minimum desktop window.
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final semantics = tester.ensureSemantics();
     var helpPressed = false;
     var createPressed = false;
+    var createMultiplePressed = false;
     var redeemPressed = false;
 
     await _pump(
@@ -63,17 +69,80 @@ void main() {
         onBack: () {},
         onShowHelp: () => helpPressed = true,
         onCreate: () => createPressed = true,
+        onCreateMultiple: () => createMultiplePressed = true,
         onRedeem: () => redeemPressed = true,
       ),
     );
 
     await tester.tap(find.text('How gift cards work'));
     await tester.tap(find.text('Create new card'));
+    // The group tile opens the group flow in one step, with no panel.
+    expect(find.bySemanticsLabel('Create cards for a group'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
     await tester.tap(find.text('Redeem a card'));
 
     expect(helpPressed, isTrue);
     expect(createPressed, isTrue);
+    expect(createMultiplePressed, isTrue);
     expect(redeemPressed, isTrue);
+    semantics.dispose();
+  });
+
+  testWidgets('batch detail actions remain reachable at 200%', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(416, 851));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    for (final ready in [true, false]) {
+      var primaryPressed = false;
+      await _pump(
+        tester,
+        PaymentLinkBatchDetailDesktopView(
+          count: 20,
+          amountPerCardText: '0.1',
+          dateText: 'July 2',
+          artwork: PaymentLinkCardArtwork.ruby,
+          ready: ready,
+          onBack: () {},
+          sections: [
+            PaymentLinkCardsSection(
+              label: 'Unused',
+              cards: [
+                PaymentLinkBatchMemberRow(
+                  index: 1,
+                  artwork: PaymentLinkCardArtwork.ruby,
+                  statusLabel: 'Unused',
+                  used: false,
+                  onCopyLink: () {},
+                  onShowQr: () {},
+                ),
+              ],
+            ),
+          ],
+          usageActivity: const PaymentLinkBatchUsageActivity(),
+          onExport: () => primaryPressed = true,
+          onCheckStatus: () => primaryPressed = true,
+        ),
+      );
+      final primary = find.text(
+        ready ? 'Save all links as CSV' : 'Check status',
+      );
+      await tester.ensureVisible(primary);
+      await tester.pumpAndSettle();
+      await tester.tap(primary);
+      expect(primaryPressed, isTrue);
+      expect(
+        find.byType(PaymentLinkBatchMemberRow),
+        ready ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.textContaining('hasn’t confirmed that the payment was sent'),
+        ready ? findsNothing : findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('hover feedback keeps the keyboard focus ring fully visible', (
@@ -727,7 +796,7 @@ void main() {
           const PaymentLinkInteractiveMessageDesktopPreview(),
           disableAnimations: reducedMotion,
         );
-        await tester.tap(find.text('Start typing...'));
+        await tester.tap(find.text('Start typing…'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 250));
         await tester.pump();
@@ -763,9 +832,9 @@ void main() {
         const ValueKey('payment_link_interactive_message_editor'),
       );
       expect(editor, findsNothing);
-      expect(find.text('Start typing...'), findsOneWidget);
+      expect(find.text('Start typing…'), findsOneWidget);
 
-      await tester.tap(find.text('Start typing...'));
+      await tester.tap(find.text('Start typing…'));
       await tester.pump();
       expect(
         tester
@@ -1302,7 +1371,7 @@ void main() {
 
     var receivedRows = find.byType(PaymentLinkCardListRow);
     expect(
-      find.descendant(of: receivedRows, matching: find.text('Receiving...')),
+      find.descendant(of: receivedRows, matching: find.text('Receiving…')),
       findsOneWidget,
     );
     expect(
@@ -1328,7 +1397,7 @@ void main() {
 
     receivedRows = find.byType(PaymentLinkCardListRow);
     expect(
-      find.descendant(of: receivedRows, matching: find.text('Receiving...')),
+      find.descendant(of: receivedRows, matching: find.text('Receiving…')),
       findsNothing,
     );
     expect(
@@ -1447,7 +1516,7 @@ void main() {
         state: PaymentLinkPreviewState.redeemLoading,
       ),
     );
-    expect(tester.getTopLeft(find.text('Checking ...')).dy, closeTo(166, 1));
+    expect(tester.getTopLeft(find.text('Checking…')).dy, closeTo(166, 1));
     expect(
       tester.getTopLeft(
         find.byKey(const ValueKey('payment_link_loading_card')),

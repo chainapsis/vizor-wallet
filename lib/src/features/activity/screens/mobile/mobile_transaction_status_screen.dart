@@ -663,8 +663,8 @@ class _MobileTransactionStatusScreenState
                             : switch (_phaseFor(giftCard)) {
                                 _TxPhase.pending =>
                                   giftCard.kind == GiftCardActivityKind.created
-                                      ? 'Creating...'
-                                      : 'Redeeming...',
+                                      ? 'Creating…'
+                                      : 'Redeeming…',
                                 _TxPhase.succeeded =>
                                   giftCard.kind == GiftCardActivityKind.created
                                       ? 'Created'

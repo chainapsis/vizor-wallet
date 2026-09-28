@@ -141,35 +141,45 @@ class RustPaymentLinkHardwareSigningService
   @override
   Future<PaymentLinkHardwarePcztDraft> createBatchFundingPczt(
     PaymentLinkBatchDraft batch,
-  ) {
+  ) async {
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (batch.links.any((link) => link.network != endpoint.networkName)) {
       throw StateError('The Gift Card network changed.');
     }
-    return _createPczt(
-      accountUuid: batch.quote.sourceAccountUuid,
-      links: batch.links,
-      batch: batch,
-      propose: (dbPath, sendFlowId) async {
-        final proposal = await rust_sync.proposePaymentLinkBatch(
-          dbPath: dbPath,
-          network: endpoint.networkName,
-          accountUuid: batch.quote.sourceAccountUuid,
-          sendFlowId: sendFlowId,
-          addresses: [for (final link in batch.links) link.address],
-          amountZatoshi: paymentLinkFundingAmountZatoshi(
-            batch.quote.recipientAmountZatoshi,
-          ),
-        );
-        return proposal;
-      },
-      checkProposal: (proposal) {
-        if (proposal.feeZatoshi != batch.quote.fundingFeeZatoshi) {
-          throw const PaymentLinkBatchQuoteChanged();
-        }
-      },
-      removeDrafts: () => _recoveryStore.removeUnsubmittedBatch(batch.id),
-    );
+    try {
+      return await _createPczt(
+        accountUuid: batch.quote.sourceAccountUuid,
+        links: batch.links,
+        batch: batch,
+        propose: (dbPath, sendFlowId) async {
+          final proposal = await rust_sync.proposePaymentLinkBatch(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            accountUuid: batch.quote.sourceAccountUuid,
+            sendFlowId: sendFlowId,
+            addresses: [for (final link in batch.links) link.address],
+            amountZatoshi: paymentLinkFundingAmountZatoshi(
+              batch.quote.recipientAmountZatoshi,
+            ),
+          );
+          return proposal;
+        },
+        checkProposal: (proposal) {
+          if (proposal.feeZatoshi != batch.quote.fundingFeeZatoshi) {
+            throw const PaymentLinkBatchQuoteChanged();
+          }
+        },
+        // The group's drafts belong to its quote, so a retry can reuse them.
+        // Leaving the signer abandons them.
+        removeDrafts: null,
+      );
+    } catch (error) {
+      // A signer limit found at signing reads like the software path's.
+      if (PaymentLinkBatchRejected.from(error) case final rejected?) {
+        throw rejected;
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -200,8 +210,8 @@ class RustPaymentLinkHardwareSigningService
   }
 
   /// Proposes funding for [links] and turns it into an unsigned PCZT. A
-  /// proposal that never became a PCZT is discarded, and any failure removes
-  /// the still-unsubmitted drafts.
+  /// proposal that never became a PCZT is discarded, and any failure runs
+  /// [removeDrafts] on the still-unsubmitted drafts.
   Future<PaymentLinkHardwarePcztDraft> _createPczt({
     required String accountUuid,
     required List<VizorPaymentLink> links,
@@ -210,7 +220,7 @@ class RustPaymentLinkHardwareSigningService
       String sendFlowId,
     )
     propose,
-    required Future<void> Function() removeDrafts,
+    required Future<void> Function()? removeDrafts,
     void Function(rust_sync.ProposalResult proposal)? checkProposal,
     PaymentLinkBatchDraft? batch,
   }) async {
@@ -269,7 +279,7 @@ class RustPaymentLinkHardwareSigningService
           );
     } catch (error, stackTrace) {
       try {
-        await removeDrafts();
+        await removeDrafts?.call();
       } catch (cleanupError) {
         log(
           'PaymentLinkHardwareSigning: failed PCZT draft cleanup '

@@ -237,8 +237,8 @@ void main() {
     final copy = find.byKey(const ValueKey('payment_link_share_copy_button'));
     await tester.tap(copy);
     await tester.pump();
-    expect(find.text('Copying...'), findsOneWidget);
-    expect(find.text('Sharing...'), findsNothing);
+    expect(find.text('Copying…'), findsOneWidget);
+    expect(find.text('Sharing…'), findsNothing);
     expect(
       tester
           .widget<AppButton>(find.widgetWithText(AppButton, 'Share card'))
@@ -254,13 +254,13 @@ void main() {
     });
     await tester.pump();
     expect(images, hasLength(1));
-    expect(find.text('Sharing...'), findsOneWidget);
+    expect(find.text('Sharing…'), findsOneWidget);
     copyGate.complete();
     await tester.pumpAndSettle();
     expect(find.text('Copy link'), findsOneWidget);
-    expect(find.text('Sharing...'), findsOneWidget);
+    expect(find.text('Sharing…'), findsOneWidget);
     expect(tester.widget<AppButton>(copy).onPressed, isNotNull);
-    await tester.tap(find.text('Sharing...'), warnIfMissed: false);
+    await tester.tap(find.text('Sharing…'), warnIfMissed: false);
     await tester.pump();
     expect(images, hasLength(1));
     shareGate.complete(false);
@@ -1047,7 +1047,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(accounts.current.activeAccountUuid, 'account-2');
-      expect(find.text('Preparing...'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
       expect(operations.claimedSessions, isEmpty);
       expect(operations.discardedClaimAddresses, isEmpty);
       // Preparation owns the destination; another tap or system Back cannot
@@ -1055,15 +1055,15 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_link_claim_account_account-1')),
       );
-      await tester.tap(find.text('Preparing...'));
+      await tester.tap(find.text('Preparing…'));
       await tester.binding.handlePopRoute();
       await tester.pump();
-      expect(find.text('Preparing...'), findsOneWidget);
+      expect(find.text('Preparing…'), findsOneWidget);
       expect(accounts.switchedAccounts, ['account-2']);
 
       prepare.complete();
       await tester.pumpAndSettle();
-      expect(find.text('Claiming...'), findsOneWidget);
+      expect(find.text('Claiming…'), findsOneWidget);
       expect(haptics, isEmpty);
       final submitted = operations.claimedSessions.single;
       expect(submitted.destinationAccountUuid, 'account-2');
@@ -1311,7 +1311,7 @@ void main() {
         router.routerDelegate.currentConfiguration.uri.path,
         '/payment-links',
       );
-      expect(find.text('Claiming...'), findsOneWidget);
+      expect(find.text('Claiming…'), findsOneWidget);
       expect(haptics, isEmpty);
 
       await tester.tap(
@@ -1506,7 +1506,7 @@ void main() {
       expect(pngSize.getUint32(4), 810);
       expect(origin!.isEmpty, isFalse);
       expect(operations.sharedLinks, isEmpty);
-      await tester.tap(find.text('Sharing...'));
+      await tester.tap(find.text('Sharing…'));
       await tester.pump();
       expect(images, hasLength(1));
 
@@ -1569,7 +1569,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
   });
 }
 

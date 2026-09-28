@@ -10,6 +10,49 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('one funding transaction describes the whole created batch', () {
+    final members = List.generate(
+      3,
+      (index) => PaymentLinkRecoveryRecord(
+        link: _link('batch-card-$index'),
+        sourceAccountUuid: 'account-1',
+        state: PaymentLinkRecoveryState.funded,
+        updatedAt: DateTime.utc(2026, 9, 23),
+        fundingTxids: 'batch-funding-txid',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        batchId: 'batch-1',
+        batchIndex: index,
+        batchCount: 3,
+      ),
+    );
+    final index = GiftCardActivityIndex.forAccount(
+      accountUuid: 'account-1',
+      createdRecords: [
+        ...members,
+        PaymentLinkRecoveryRecord(
+          link: _link('other-account-card'),
+          sourceAccountUuid: 'account-2',
+          state: PaymentLinkRecoveryState.funded,
+          updatedAt: DateTime.utc(2026, 9, 23),
+          fundingTxids: 'other-account-txid',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        ),
+      ],
+      receivedRecords: const [],
+    );
+
+    final metadata = index.metadataFor(
+      _transaction(txidHex: 'batch-funding-txid', txKind: 'sent'),
+    )!;
+    expect(index.createdTxids, {'batch-funding-txid'});
+    expect(metadata.batchCount, 3);
+    expect(metadata.stableId, 'gift-card-batch:batch-1');
+    expect(metadata.amountPerCardZatoshi, BigInt.from(100000000));
+    expect(metadata.amountZatoshi, BigInt.from(300000000));
+    expect(metadata.claimFeeReserveZatoshi, BigInt.from(30000));
+    expect(metadata.detailFeeZatoshi(BigInt.from(15000)), BigInt.from(45000));
+  });
+
   test(
     'pending and detected claim rows open the same broadcast transaction',
     () {

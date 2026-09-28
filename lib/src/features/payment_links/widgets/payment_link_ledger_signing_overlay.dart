@@ -20,6 +20,7 @@ import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_ledger_funding_service.dart';
+import '../services/payment_link_service.dart';
 
 class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkLedgerSigningOverlay({
@@ -28,11 +29,18 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.batch,
+    this.onBatchRefused,
     super.key,
   });
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkBatchDraft? batch;
+
+  /// A group whose proposal no longer matches its quote, or that its signer
+  /// cannot sign, returns here instead of offering a retry.
+  final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final Future<void> Function() onCancel;
   final Future<void> Function(
     VizorPaymentLink,
@@ -97,7 +105,7 @@ class _PaymentLinkLedgerSigningOverlayState
         });
         final result = await _service.resume(
           accountUuid: widget.sourceAccountUuid,
-          address: _draft!.link.address,
+          address: _draft!.recoveryRef,
           draft: _draft,
           spendParamsPath: _params?.spendPath,
           outputParamsPath: _params?.outputPath,
@@ -110,11 +118,13 @@ class _PaymentLinkLedgerSigningOverlayState
         _error = null;
         _deviceGuidance = null;
       });
-      _draft ??= await _service.prepare(
-        accountUuid: widget.sourceAccountUuid,
-        amountZatoshi: widget.amountZatoshi,
-        presentation: widget.presentation,
-      );
+      _draft ??= widget.batch == null
+          ? await _service.prepare(
+              accountUuid: widget.sourceAccountUuid,
+              amountZatoshi: widget.amountZatoshi,
+              presentation: widget.presentation,
+            )
+          : await _service.prepareBatch(widget.batch!);
       if (!_active) return;
       final draft = _draft!;
       if (draft.needsSaplingParams && _params == null) {
@@ -163,6 +173,14 @@ class _PaymentLinkLedgerSigningOverlayState
       await _present(result);
     } catch (error, stack) {
       log('GiftCardLedger: $error\n$stack');
+      final refused = widget.onBatchRefused;
+      if (refused != null &&
+          _active &&
+          _draft == null &&
+          isPaymentLinkBatchRefusal(error)) {
+        await refused(error);
+        return;
+      }
       if (!_active && !_checkpointed) {
         unawaited(
           _discardAfterWork().catchError(

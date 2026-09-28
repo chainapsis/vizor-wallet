@@ -107,7 +107,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   /// The hardware funding round trip, already built by the screen. A hardware
   /// account funds its Card through the same Keystone handoff the desktop pane
   /// runs; without this overlay the mobile review CTA would sit on
-  /// "Creating..." forever.
+  /// "Creating…" forever.
   final Widget? keystoneOverlay;
   final VoidCallback onCancelKeystone;
   final bool navigationLocked;
@@ -185,6 +185,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
   Widget _buildPage(BuildContext context, PaymentLinksLocalPage page) =>
       switch (page) {
         PaymentLinksLocalPage.home => _buildHome(context),
+        PaymentLinksLocalPage.bulk ||
+        PaymentLinksLocalPage.batchDetail => _buildHome(context),
         PaymentLinksLocalPage.amount => _buildAmount(),
         PaymentLinksLocalPage.message => _buildMessage(),
         PaymentLinksLocalPage.review => _buildReview(),
@@ -372,8 +374,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onFeeHelp: () {},
       continueLabel: operationInProgress
           ? !hasPendingFundingMetadata
-                ? 'Creating...'
-                : 'Saving...'
+                ? 'Creating…'
+                : 'Saving…'
           : !hasPendingFundingMetadata
           ? 'Approve & create'
           : 'Try saving again',
@@ -432,7 +434,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
           : null,
       onCardTap: ready && message.isNotEmpty ? onToggleReadyBack : null,
       waitingStatusLabel: linkWaitLabel(progress),
-      copyLabel: readyCopyInProgress ? 'Copying...' : 'Copy link',
+      copyLabel: readyCopyInProgress ? 'Copying…' : 'Copy link',
     );
   }
 
@@ -505,7 +507,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
       onClaim: operationInProgress ? null : onClaimReceivedLink,
       claimLabel: operationInProgress
-          ? 'Claiming...'
+          ? 'Claiming…'
           : receivedClaimSession == null
           ? 'Try again'
           : 'Claim the gift',
@@ -532,6 +534,8 @@ class _PaymentLinksMobileNavigatorState
 
   List<PaymentLinksLocalPage> get _steps => switch (widget.body.page) {
     PaymentLinksLocalPage.home ||
+    PaymentLinksLocalPage.bulk ||
+    PaymentLinksLocalPage.batchDetail ||
     PaymentLinksLocalPage.shareQr => [PaymentLinksLocalPage.home],
     PaymentLinksLocalPage.amount => [
       PaymentLinksLocalPage.home,

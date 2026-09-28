@@ -14,6 +14,7 @@ void main() {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityKind? giftCardKind,
     BigInt? giftCardAmountZatoshi,
+    int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
   }) async {
     late ActivityRowData row;
@@ -27,6 +28,7 @@ void main() {
               transaction: transaction,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
+              giftCardBatchCount: giftCardBatchCount,
               giftCardClaimInFlight: giftCardClaimInFlight,
             );
             return const SizedBox.shrink();
@@ -167,6 +169,39 @@ void main() {
     expect(redeemed.title, 'Redeemed a gift card');
     expect(redeemed.leadingIconName, AppIcons.giftCard);
     expect(redeemed.amountText, '+0.001 ZEC');
+  });
+
+  testWidgets('created batch has one row with its full card value', (
+    tester,
+  ) async {
+    final row = await mapRow(
+      tester,
+      _transaction(txKind: 'sent'),
+      giftCardKind: GiftCardActivityKind.created,
+      giftCardBatchCount: 20,
+      giftCardAmountZatoshi: BigInt.from(200000000),
+    );
+    expect(row.title, 'Created 20 gift cards');
+    expect(row.amountText, '-2 ZEC');
+    expect(row.leadingIconName, AppIcons.giftCard);
+    expect(
+      giftCardActivityTitle(
+        GiftCardActivityKind.created,
+        isInFlight: true,
+        isFailed: false,
+        batchCount: 20,
+      ),
+      'Creating 20 cards ...',
+    );
+    expect(
+      giftCardActivityTitle(
+        GiftCardActivityKind.created,
+        isInFlight: false,
+        isFailed: true,
+        batchCount: 20,
+      ),
+      'Gift card group failed',
+    );
   });
 
   testWidgets('confirmed migration renders as an Ironwood activity row', (

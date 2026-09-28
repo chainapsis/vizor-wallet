@@ -94,7 +94,7 @@ void main() {
         tester,
         const ValueKey('payment_link_amount_continue_button'),
       );
-      final startTyping = find.text('Start typing...');
+      final startTyping = find.text('Start typing…');
       await pumpUntil(
         tester,
         () => tester.any(startTyping),
@@ -245,7 +245,7 @@ void main() {
       await tapAppButton(tester, const ValueKey('payment_link_claim_button'));
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Receiving...')),
+        () => tester.any(find.text('Receiving…')),
         description: 'accepted claim to remain in Receiving state',
       );
       final pendingClaim = await _waitForHistoryTransaction(

@@ -229,7 +229,7 @@ class _PaymentLinkClaimAccountSheetState
               onPressed: _preparing || accounts.isEmpty ? null : _confirm,
               child: Text(
                 _preparing
-                    ? 'Preparing...'
+                    ? 'Preparing…'
                     : _failed
                     ? 'Try again'
                     : 'Claim gift',

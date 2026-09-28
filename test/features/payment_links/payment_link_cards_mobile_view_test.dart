@@ -209,7 +209,7 @@ void main() {
               thumbnail: SizedBox(),
               amountText: '0.75 ZEC',
               dateText: 'August 4',
-              statusText: 'Receiving...',
+              statusText: 'Receiving…',
               showLoader: true,
             ),
           ],
@@ -217,10 +217,10 @@ void main() {
       ],
     );
 
-    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Receiving…'), findsOneWidget);
     expect(find.text('0.75 ZEC'), findsOneWidget);
     // A claim already in flight is not re-openable from the row.
-    expect(find.bySemanticsLabel('Receiving...'), findsNothing);
+    expect(find.bySemanticsLabel('Receiving…'), findsNothing);
   });
 
   testWidgets('tapping a tab reports the selection', (tester) async {
