@@ -13,14 +13,16 @@ does not re-enable it. Desktop and mobile use the same preference and runtime gu
 
 NEAR swap privacy controls new private addresses. Turning it off does not discard
 existing reservations, funding memos, keys, notes, or provider status tracking.
-Existing private recovery continues while Private queries is on. With Private
-queries off, queued private discovery waits for it to be enabled again. Already
-received notes remain spendable and change returns to the ordinary internal key.
+Recovery runs for every software account, including a fresh seed restore with both
+switches off. Private queries selects receiver and Enhance PIR. With it off, the
+wallet uses ordinary retrieval and bounded compact-block replay. Already received
+notes remain spendable and change returns to the ordinary internal key.
 A quote already issued keeps its reserved address and funding recovery memo.
 
 The receiver client currently requires Tor off. New private reservations fail
-before exposure when Tor is selected. Existing private discovery is deferred
-without bypassing Tor or blocking ordinary scanning.
+before exposure when Tor is selected. Private discovery stays pending
+without bypassing Tor. Ordinary blocks can finish scanning, but the wallet does
+not report a complete restore while a receiver lookup remains unexamined.
 
 The dependencies use exact Git revisions and published PIR math crates. No sibling
 compatibility checkout or compile-time privacy environment variable is needed.
@@ -56,14 +58,21 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
    include that memo in the transaction paying the deposit address. A zero-value
    change note is valid. Multi-step funding and deposit instructions requiring a
    separate memo are rejected in this POC.
-3. With NEAR swap privacy enabled, sync registers 50 incoming lookahead keys from the account birthday or Ironwood
-   activation, whichever is later. Confirmed internal funding memos register refund
+3. Every software restore registers 50 incoming lookahead keys from the account
+   birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
-4. After ordinary scanning, registered keys use receiver PIR to find payments and
-   Enhance PIR to retrieve encrypted note data. Payments extend incoming lookahead.
-   Pending swaps also add their key to ordinary trial decryption for a bounded watch.
+4. After ordinary scanning, Private queries selects PIR discovery or local block
+   replay. Payments extend incoming lookahead until 50 consecutive indices are empty.
+   Finish the extended window before reporting recovery complete. Each restored key
+   keeps a fixed recovery height, so new blocks do not restart completed checks.
+   Known pending swaps retain their own watch and terminal grace deadline.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
+
+The POC retains scanned nullifiers for every software account so switching to PIR
+later does not lose the evidence needed to recognize already spent notes. This
+adds local storage even for accounts that have never created a private swap.
+Bounding that storage remains release work.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
 beyond 50 consecutive unpaid indices. Provider-status history reconstruction from
@@ -91,8 +100,10 @@ exercise. Record the funding and payout transaction IDs and scan heights.
 
 - Exercise both an outgoing swap refund and an incoming Zcash payout.
 - Close before settlement, reopen after it, and confirm catch-up finds the payment.
-- Restore the seed into another fresh wallet with a birthday before funding.
-  Confirm recovery finds the same notes and does not duplicate the balance.
+- Restore the seed into another fresh wallet with a birthday before funding and
+  NEAR swap privacy off. Test once with Private queries on and once with it off.
+  Confirm refund and incoming recovery find the same notes without duplicates.
+  Follow the tip afterward and confirm completed empty windows are not checked again.
 - Spend recovered notes together with ordinary funds. Confirm the spend mines and
   the change is found by the ordinary internal key.
 - Confirm hardware accounts continue to use their existing address flow.

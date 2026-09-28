@@ -129,10 +129,19 @@ pub(crate) fn reserve(
 }
 
 /// Called under the wallet write lock before planning more scan work.
-/// Private restore derives keys for PIR; local operation records bound compact scanning.
+/// Discovery is independent of address issuance. The transport preference selects
+/// PIR or bounded local replay, never whether existing funds are recoverable.
 pub(crate) fn maintain_recovery(
     db: &mut WalletDatabase,
     network: WalletNetwork,
+) -> Result<(), String> {
+    maintain_recovery_with_transport(db, network, private_recovery_enabled())
+}
+
+fn maintain_recovery_with_transport(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    private_queries: bool,
 ) -> Result<(), String> {
     let Some(activation) = network.activation_height(NetworkUpgrade::Nu6_3) else {
         return Ok(());
@@ -147,38 +156,38 @@ pub(crate) fn maintain_recovery(
         {
             continue;
         }
-        let new_addresses = crate::api::sync::near_swap_privacy_enabled();
-        let has_keys = !db
-            .get_swap_receiving_keys(account)
-            .map_err(|e| e.to_string())?
-            .is_empty();
-        if private_recovery_enabled() && (new_addresses || has_keys) {
-            db.enable_private_swap_recovery(account)
-                .map_err(|e| e.to_string())?;
-            // Finish ordinary scanning before adding historical directory work.
-            let scanned = db
-                .block_fully_scanned()
-                .map_err(|e| e.to_string())?
-                .map(|b| b.block_height());
-            if scanned.is_none() || scanned != db.chain_height().map_err(|e| e.to_string())? {
-                continue;
-            }
-        }
-        db.recover_swap_refund_memos(account)
+        // Retain spend evidence from the first scan, including when the user
+        // enables Private queries only after restoring this account.
+        db.enable_private_swap_recovery(account)
             .map_err(|e| e.to_string())?;
-        if !new_addresses
-            && db
-                .get_swap_receiving_keys(account)
-                .map_err(|e| e.to_string())?
-                .is_empty()
+        let Some(scanned) = db.block_fully_scanned().map_err(|e| e.to_string())? else {
+            continue;
+        };
+        if Some(scanned.block_height()) != db.chain_height().map_err(|e| e.to_string())?
+            || scanned.block_height() < activation
         {
             continue;
         }
+        db.recover_swap_refund_memos(account)
+            .map_err(|e| e.to_string())?;
         let birthday = db
             .get_account_birthday(account)
             .map_err(|e| e.to_string())?;
         db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, birthday.max(activation))
             .map_err(|e| e.to_string())?;
+        if !private_queries {
+            let through = zakura_swap_receiving::lifecycle::ChainAnchor {
+                height: scanned.block_height(),
+                hash: scanned.block_hash().0,
+            };
+            for key in db
+                .get_swap_receiving_keys(account)
+                .map_err(|e| e.to_string())?
+            {
+                db.queue_swap_recovery_scan(account, key.key_id(), through)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
     Ok(())
 }
@@ -250,7 +259,7 @@ pub(crate) fn funding_memo(
     MemoBytes::from_bytes(&memo.encode()).map_err(|e| e.to_string())
 }
 
-#[cfg(all(test, feature = "swap-receiving-poc"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use secrecy::SecretVec;
@@ -314,28 +323,79 @@ mod tests {
     }
 
     #[test]
-    fn default_setting_does_not_create_lookahead_or_allow_reservations() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("wallet.db");
-        let path = path.to_str().unwrap();
-        let network = WalletNetwork::Regtest;
-        super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
-        let (uuid, _) = super::super::keys::init_db_and_create_account(
-            path,
-            network,
-            &SecretVec::new(vec![0; 32]),
-            Some(100),
-            "POC",
-        )
-        .unwrap();
-        let account = parse_account_uuid(&uuid).unwrap();
-        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
-        maintain_recovery(&mut db, network).unwrap();
-        let keys = db.get_swap_receiving_keys(account).unwrap();
-        assert!(keys.is_empty());
-        assert!(keys.iter().all(|key| !key.advances_allocation()));
-        let error = reserve(path, network, &uuid, true, 110).unwrap_err();
-        assert!(error.contains("Enable Private queries"), "{error}");
+    fn restore_discovers_incoming_keys_with_address_issuance_off() {
+        for private_queries in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("wallet.db");
+            let path = path.to_str().unwrap();
+            let network = WalletNetwork::Regtest;
+            super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+            let (uuid, _) = super::super::keys::init_db_and_create_account(
+                path,
+                network,
+                &SecretVec::new(vec![0; 32]),
+                Some(100),
+                "POC",
+            )
+            .unwrap();
+            let account = parse_account_uuid(&uuid).unwrap();
+            let mut db =
+                open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+            db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
+            maintain_recovery_with_transport(&mut db, network, private_queries).unwrap();
+            assert!(db.get_swap_receiving_keys(account).unwrap().is_empty());
+            // Model completed ordinary scanning. Real note discovery and replay are
+            // exercised by the shared library's compact-block recovery tests.
+            let conn = rusqlite::Connection::open(path).unwrap();
+            conn.execute_batch(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(110,zeroblob(32),0,X'000000');
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
+        ).unwrap();
+            maintain_recovery_with_transport(&mut db, network, private_queries).unwrap();
+            let keys = db.get_swap_receiving_keys(account).unwrap();
+            assert_eq!(keys.len(), RECEIVE_LOOKAHEAD as usize);
+            assert!(keys.iter().all(|key| !key.advances_allocation()));
+            assert!(db
+                .get_swap_scan_window(BlockHeight::from_u32(111))
+                .unwrap()
+                .0
+                .is_empty());
+            if private_queries {
+                assert_eq!(
+                    db.block_fully_scanned().unwrap().unwrap().block_height(),
+                    BlockHeight::from_u32(110)
+                );
+                assert!(db
+                    .get_swap_scan_window(BlockHeight::from_u32(100))
+                    .unwrap()
+                    .0
+                    .is_empty());
+            } else {
+                assert_eq!(
+                    db.get_swap_scan_window(BlockHeight::from_u32(100))
+                        .unwrap()
+                        .0
+                        .len(),
+                    RECEIVE_LOOKAHEAD as usize
+                );
+                assert!(keys.iter().all(|key| db
+                    .swap_recovery_target(account, key.key_id())
+                    .unwrap()
+                    .unwrap()
+                    .height
+                    == BlockHeight::from_u32(110)));
+            }
+            drop(db);
+            let mut reopened =
+                open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+            maintain_recovery_with_transport(&mut reopened, network, private_queries).unwrap();
+            assert_eq!(
+                reopened.get_swap_receiving_keys(account).unwrap().len(),
+                RECEIVE_LOOKAHEAD as usize
+            );
+            let error = reserve(path, network, &uuid, true, 110).unwrap_err();
+            assert!(error.contains("Enable Private queries"), "{error}");
+        }
     }
 }

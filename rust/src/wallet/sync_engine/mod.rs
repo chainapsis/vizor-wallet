@@ -2890,13 +2890,11 @@ async fn run_payment_link_claim_sync_once(
                 "payment-link pending scan range starts after the observed tip",
             ));
         };
-        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+        let end = {
             let (_, boundary) = db
                 .get_swap_scan_window(start)
                 .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
             boundary.map_or(end, |boundary| end.min(boundary))
-        } else {
-            end
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
 
@@ -3807,13 +3805,11 @@ async fn run_sync_impl(
             );
             break;
         };
-        let end = if crate::wallet::swap_receiving::private_recovery_enabled() {
+        let end = {
             let (_, boundary) = db
                 .get_swap_scan_window(start)
                 .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
             boundary.map_or(end, |boundary| end.min(boundary))
-        } else {
-            end
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);

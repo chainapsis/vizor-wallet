@@ -21,7 +21,7 @@ schema until its upgrade path is qualified.
    retained history. Store the note, key, memo, witness and known spend together.
    Missing evidence leaves a candidate pending without crediting balance.
 5. Record completed directory checks by key and block anchor. Paid incoming
-   indices extend the lookahead. Newly added keys are checked on the next sync.
+   indices extend the lookahead. Check the extended window before completing sync.
    Rewinds invalidate affected candidates, spend coverage and directory checks.
 
 The shared witness file contains deduplicated Merkle sibling hashes for all
@@ -32,8 +32,9 @@ accepted root. It never trusts the file's root on its own.
 
 ## Build and services
 
-Use the mainnet build and enable **Private queries**, then **NEAR swap privacy**
-in Settings before restoring or creating a private swap. Both default off.
+Use the mainnet build. Recovery runs with **NEAR swap privacy** off. Enable
+**Private queries** for PIR recovery. With it off, recovery uses bounded local
+block replay. Creating a new private swap requires both switches on. Both default off.
 The [software-wallet guide](near-swap-software-poc.md) defines toggle behavior.
 Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. No sibling
 math compatibility checkout or compile-time privacy environment variable is required.
@@ -74,11 +75,13 @@ Private recovery scans only locally recorded operations while pending and throug
 ten blocks after the first supported NEAR terminal status. Repeated observations
 and restarts preserve that deadline. Unknown statuses and transport failures do
 not retire or reopen a watch. PIR closeout can outlive scanning without extending
-it. Restored and lookahead keys never join ordinary scanning by themselves.
+it. Restored and lookahead keys can scan historical blocks through their fixed
+recovery target. They do not join ongoing tip scanning after that height.
 
-The private mode retains the shared nullifier map without pruning. Use a fresh
+Software accounts retain the shared nullifier map from their first scan,
+independently of either switch, so later PIR discovery has spend evidence. Use a fresh
 restore because evidence already pruned by an older build cannot be recreated
-by enabling the mode. Witness publications must be within 100 blocks of the
+by changing a preference. Witness publications must be within 100 blocks of the
 accepted tip. The receiver droplet polls every ten seconds and publishes the
 latest canonical tip with no confirmation delay, following Enhance's reorg rules.
 
@@ -98,6 +101,12 @@ lagging publication causes no receiver queries or common witness download.
 Completed targets stay fixed when new blocks arrive, so normal tip following needs
 no receiver PIR requests. Newly found funding memos and paid receive indices expand
 the deterministic key discovery window and create their own recovery targets.
+With Private queries off, `queue_swap_recovery_scan` queues missing local coverage
+to the same fixed targets. It uses the normal block transport, including Tor.
+Completed local restore coverage needs no subsequent directory lookup. Known
+operations keep their final directory check for when Private queries is enabled.
+PIR failures never trigger an automatic public fallback. An unavailable transport
+or publication leaves recovery pending instead of reporting a complete restore.
 
 The SQLite scanner splits a batch at a watch boundary and derives only active keys.
 Retirement removes trial decryption, preserving key IDs, note ownership, witnesses,

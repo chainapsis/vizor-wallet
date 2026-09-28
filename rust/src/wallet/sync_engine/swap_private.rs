@@ -89,38 +89,65 @@ pub(super) async fn run(
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    if !crate::wallet::swap_receiving::private_recovery_enabled() {
-        return Ok(());
-    }
     if network != WalletNetwork::Main {
         return Ok(());
     }
-    let mut has_keys = false;
-    for account in db
-        .get_account_ids()
+    let Some(tip) = db
+        .block_fully_scanned()
         .map_err(|e| SyncError::db(e.to_string()))?
-    {
-        let Some(details) = db.get_account(account).map_err(|e| SyncError::db(e.to_string()))? else { continue; };
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some() { continue; }
-        has_keys |= !db
-            .get_swap_receiving_keys(account)
-            .map_err(|e| SyncError::db(e.to_string()))?
-            .is_empty();
-    }
-    if !has_keys {
+    else {
         return Ok(());
+    };
+    let through = ChainAnchor {
+        height: tip.block_height(),
+        hash: tip.block_hash().0,
+    };
+    if !crate::wallet::swap_receiving::private_recovery_enabled() {
+        return with_wallet_db_write_lock("swap_recovery.local_complete", || {
+            ensure_local_recovery_complete(db, through)?;
+            // Applying a previously queued candidate can advance the window too.
+            crate::wallet::swap_receiving::maintain_recovery(db, network)?;
+            ensure_local_recovery_complete(db, through)
+        })
+        .map_err(SyncError::db);
     }
     if crate::network_privacy::is_tor_desired() {
-        // Keep obligations durable without blocking ordinary scanning or using a direct route.
-        log::info!("Private swap recovery deferred while Tor is selected");
-        return Ok(());
+        if discovery_work(db, through)
+            .map_err(SyncError::db)?
+            .is_empty()
+        {
+            return Ok(());
+        }
+        return Err(SyncError::net(
+            "Swap recovery is pending. Receiver PIR does not support Tor yet",
+        ));
     }
     // A Tor toggle or cancellation drops the entire phase, including pending HTTP reads.
     let lease = crate::network_privacy::DirectRouteLease::new();
     let started = std::time::Instant::now();
     let phase = async {
-        let result = run_inner(db, network).await;
+        let result = async {
+            loop {
+                let before: Vec<_> = discovery_work(db, through)?
+                    .into_iter()
+                    .map(|(account, key)| (account, key.key_id()))
+                    .collect();
+                run_inner(db, network).await?;
+                // A payment at the window edge adds more keys. Finish checking
+                // them in this sync before announcing a complete restore.
+                let after: Vec<_> = discovery_work(db, through)?
+                    .into_iter()
+                    .map(|(account, key)| (account, key.key_id()))
+                    .collect();
+                if after.is_empty() {
+                    return Ok::<(), String>(());
+                }
+                if after == before {
+                    return Err("Swap recovery needs more scanning or a newer publication".into());
+                }
+            }
+        }
+        .await;
         log::info!(
             "pir_metric component=recovery stage=total elapsed_us={} ok={}",
             started.elapsed().as_micros(),
@@ -135,6 +162,44 @@ pub(super) async fn run(
         _=super::watch_for_exit(should_exit)=>Ok(()),
         result=routed=>result.map_err(|e|SyncError::net(format!("Private swap recovery pending: {e}"))),
     }
+}
+
+fn ensure_local_recovery_complete(
+    db: &mut WalletDatabase,
+    through: ChainAnchor,
+) -> Result<(), String> {
+    for account in db.get_account_ids().map_err(error)? {
+        let Some(details) = db.get_account(account).map_err(error)? else {
+            continue;
+        };
+        if !matches!(details.source(), AccountSource::Derived { .. })
+            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
+        {
+            continue;
+        }
+        for key in db.get_swap_receiving_keys(account).map_err(error)? {
+            // A transport change can leave an authenticated PIR candidate queued.
+            // Finish it from the witness built by local scanning when available.
+            for candidate in db
+                .pending_swap_payments(account, key.key_id())
+                .map_err(error)?
+            {
+                db.apply_pending_swap_payment(account, key.key_id(), &candidate, through, None)
+                    .map_err(error)?;
+            }
+            let target = db
+                .swap_recovery_target(account, key.key_id())
+                .map_err(error)?
+                .unwrap_or(through);
+            if db
+                .swap_receiving_needs_discovery(account, key.key_id(), target.height)
+                .map_err(error)?
+            {
+                return Err("Swap recovery is pending. Historical scanning or queued payment verification is incomplete".into());
+            }
+        }
+    }
+    Ok(())
 }
 fn discovery_work(
     db: &mut WalletDatabase,
@@ -166,13 +231,8 @@ fn discovery_work(
                 // Closeout requires a directory check even if local scanning found
                 // the receipt. Its saved target does not move with the chain tip.
                 if db
-                    .swap_directory_check(account, key.key_id())
+                    .swap_recovery_needs_directory(account, key.key_id(), target.height)
                     .map_err(error)?
-                    .is_none_or(|checked| checked.height < target.height)
-                    || !db
-                        .pending_swap_payments(account, key.key_id())
-                        .map_err(error)?
-                        .is_empty()
                 {
                     work.push((account, key));
                 }
@@ -308,7 +368,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
     }
     let work = unchecked;
     if work.is_empty() {
-        return Ok(());
+        return Err("Directory publication has not reached the swap recovery target".into());
     }
     if through.height < height || through.height - height > 100 {
         return Err("Directory witness publication is stale; refresh the test service".into());
@@ -395,7 +455,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
                 .map_err(error)
         })?;
     }
-    // Paid receive indices can extend the lookahead. The next sync checks the new keys.
+    // The caller repeats discovery if these payments extend the receive window.
     with_wallet_db_write_lock("swap_private.lookahead", || {
         crate::wallet::swap_receiving::maintain_recovery(db, network)
     })?;
@@ -410,6 +470,85 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
 mod tests {
     use super::*;
     use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
+
+    #[test]
+    fn restore_checks_extended_window_without_rechecking_completed_keys() {
+        use crate::wallet::{
+            db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT},
+            keys,
+        };
+        use secrecy::SecretVec;
+        use zakura_swap_receiving::{KeyId, Purpose};
+        use zcash_client_backend::data_api::WalletWrite;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("restore.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let height = network.activation_height(NetworkUpgrade::Nu6_3).unwrap();
+        let (uuid, _) = keys::init_db_and_create_account(
+            path,
+            network,
+            &SecretVec::new(vec![1; 32]),
+            Some(height.into()),
+            "restore",
+        )
+        .unwrap();
+        let account = keys::parse_account_uuid(&uuid).unwrap();
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        db.update_chain_tip(height).unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,zeroblob(32),0,X'000000')",
+            [u32::from(height)],
+        )
+        .unwrap();
+        let through = ChainAnchor {
+            height,
+            hash: [0; 32],
+        };
+        db.enable_private_swap_recovery(account).unwrap();
+        db.maintain_swap_receive_lookahead(account, 50, height)
+            .unwrap();
+        let work = discovery_work(&mut db, through).unwrap();
+        assert_eq!(work.len(), 50);
+        assert!(ensure_local_recovery_complete(&mut db, through).is_err());
+        for (account, key) in work {
+            db.mark_swap_directory_checked(account, key.key_id(), through)
+                .unwrap();
+        }
+        assert!(discovery_work(&mut db, through).unwrap().is_empty());
+        ensure_local_recovery_complete(&mut db, through).unwrap();
+
+        // Model the registry advancement after a verified payment at the edge.
+        // The library tests exercise the actual compact note decryption.
+        db.recover_swap_receiving_key(account, KeyId::new(Purpose::Receive, 49), height)
+            .unwrap();
+        db.maintain_swap_receive_lookahead(account, 50, height)
+            .unwrap();
+        let work = discovery_work(&mut db, through).unwrap();
+        assert_eq!(work.len(), 50);
+        assert!(work.iter().all(|(_, key)| key.key_id().index() >= 50));
+        assert!(ensure_local_recovery_complete(&mut db, through).is_err());
+        for (account, key) in work {
+            db.mark_swap_directory_checked(account, key.key_id(), through)
+                .unwrap();
+        }
+        drop(db);
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        let later = ChainAnchor {
+            height: height + 1,
+            hash: [1; 32],
+        };
+        conn.execute(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
+            rusqlite::params![u32::from(later.height), later.hash],
+        )
+        .unwrap();
+        assert!(discovery_work(&mut db, later).unwrap().is_empty());
+        ensure_local_recovery_complete(&mut db, later).unwrap();
+    }
+
     #[test]
     fn enhance_routes_remain_on_the_public_tls_origin() {
         assert!(allowed_enhance_route(
