@@ -2805,7 +2805,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onExport: ready && !_exportingBatchIds.contains(id)
           ? () => _requestBatchExport(members)
           : null,
-      onCheckStatus: () => unawaited(_refreshFundingProgress()),
+      // Reloading reconciles an ambiguous batch, then refreshes its progress.
+      onCheckStatus: () => unawaited(_loadRecoveries()),
       pendingKind: _batchPendingKind(members),
       usageActivity: PaymentLinkBatchUsageActivity(
         checking: tracking.checking,

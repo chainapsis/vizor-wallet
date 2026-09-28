@@ -3471,16 +3471,22 @@ void main() {
           batchCount: links.length,
         ),
     ];
-    await pumpPaymentLinksScreen(
-      tester,
-      operations: FakePaymentLinkOperations(records: records),
-    );
+    final operations = FakePaymentLinkOperations(records: records);
+    await pumpPaymentLinksScreen(tester, operations: operations);
 
-    expect(
-      find.byKey(const ValueKey('payment_link_batch_uncertain-batch')),
-      findsOneWidget,
+    final row = find.byKey(
+      const ValueKey('payment_link_batch_uncertain-batch'),
     );
+    expect(row, findsOneWidget);
     expect(find.textContaining('Payment status pending'), findsOneWidget);
+
+    // Only a reload reconciles an ambiguous batch; progress checks cannot.
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    final loads = operations.createdLoadCalls;
+    await tester.tap(find.text('Check status'));
+    await tester.pumpAndSettle();
+    expect(operations.createdLoadCalls, loads + 1);
   });
 
   testWidgets('desktop creates two cards through one batch and groups them', (
