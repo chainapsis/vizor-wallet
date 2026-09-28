@@ -89,11 +89,17 @@ class _CapsLockWarningState extends ConsumerState<CapsLockWarning> {
                         horizontal: AppSpacing.s,
                         vertical: AppSpacing.xs,
                       ),
-                      decoration: useLightSurface
-                          ? AppTooltip.decorationOf(
-                              context,
-                            ).copyWith(color: context.colors.background.ground)
-                          : AppTooltip.decorationOf(context),
+                      decoration: ShapeDecoration(
+                        color: useLightSurface
+                            ? context.colors.background.ground
+                            : AppTooltip.decorationOf(context).color,
+                        shape: _WarningBubbleBorder(
+                          targetTop: target.top,
+                          side:
+                              AppTooltip.decorationOf(context).border?.top ??
+                              BorderSide.none,
+                        ),
+                      ),
                       child: Text(
                         'Caps Lock is on',
                         style: useLightSurface
@@ -119,7 +125,8 @@ class _WarningPosition extends SingleChildLayoutDelegate {
   const _WarningPosition(this.target, this.hasLabel);
   final bool hasLabel;
   final Rect target;
-  static const _gap = 4.0;
+  // The arrow extends beyond the body; keep its tip 2 px from the input.
+  static const _gap = _WarningBubbleBorder.arrowHeight + 2;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
@@ -147,4 +154,52 @@ class _WarningPosition extends SingleChildLayoutDelegate {
   @override
   bool shouldRelayout(_WarningPosition oldDelegate) =>
       target != oldDelegate.target || hasLabel != oldDelegate.hasLabel;
+}
+
+/// Paints the body and pointer as one outline, without a seam at the join.
+/// The pointer occupies the gap reserved by [_WarningPosition].
+class _WarningBubbleBorder extends ShapeBorder {
+  const _WarningBubbleBorder({required this.targetTop, required this.side});
+
+  static const arrowHeight = 4.0;
+  static const arrowHalfWidth = 4.0;
+  final double targetTop;
+  final BorderSide side;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  ShapeBorder scale(double t) =>
+      _WarningBubbleBorder(targetTop: targetTop, side: side.scale(t));
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    final below = targetTop < rect.height + _WarningPosition._gap;
+    final edge = below ? rect.top : rect.bottom;
+    final direction = below ? -1.0 : 1.0;
+    final body = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(AppRadii.xSmall)),
+      );
+    final pointer = Path()
+      ..moveTo(rect.center.dx - arrowHalfWidth, edge - direction)
+      ..lineTo(rect.center.dx, edge + direction * arrowHeight)
+      ..lineTo(rect.center.dx + arrowHalfWidth, edge - direction)
+      ..close();
+    return Path.combine(PathOperation.union, body, pointer);
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    if (side.style == BorderStyle.none) return;
+    canvas.drawPath(
+      getOuterPath(rect, textDirection: textDirection),
+      side.toPaint(),
+    );
+  }
 }

@@ -15,24 +15,25 @@ void main() {
   setUp(() => monitor = CapsLockMonitor(enabled: false));
   tearDown(() => monitor.dispose());
 
-  Widget harness(Widget child, {AppThemeData theme = AppThemeData.dark}) =>
-      ProviderScope(
-        overrides: [capsLockMonitorProvider.overrideWithValue(monitor)],
-        child: MaterialApp(
-          builder: (context, child) => AppTheme(data: theme, child: child!),
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: 396,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [child],
-                ),
-              ),
-            ),
+  Widget harness(
+    Widget child, {
+    AppThemeData theme = AppThemeData.dark,
+    Alignment alignment = Alignment.center,
+  }) => ProviderScope(
+    overrides: [capsLockMonitorProvider.overrideWithValue(monitor)],
+    child: MaterialApp(
+      builder: (context, child) => AppTheme(data: theme, child: child!),
+      home: Scaffold(
+        body: Align(
+          alignment: alignment,
+          child: SizedBox(
+            width: 396,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [child]),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('focused field keeps warning above it without shifting layout', (
     tester,
@@ -74,7 +75,7 @@ void main() {
     );
     final input = tester.getRect(find.byType(CapsLockWarning));
     expect(bubble.right, input.right);
-    expect(bubble.bottom, input.top - 4);
+    expect(bubble.bottom, input.top - 6);
     final label = tester.renderObject<RenderParagraph>(find.text('Password'));
     final labelInk = label
         .getBoxesForSelection(
@@ -193,7 +194,8 @@ void main() {
               .first;
           final context = tester.element(text);
           final decoration =
-              tester.widget<Container>(container).decoration! as BoxDecoration;
+              tester.widget<Container>(container).decoration!
+                  as ShapeDecoration;
           final style = tester.widget<Text>(text).style!;
           final special = theme == AppThemeData.light && onDarkCard;
           expect(
@@ -211,9 +213,42 @@ void main() {
           final bubble = tester.getRect(container);
           final input = tester.getRect(find.byType(CapsLockWarning));
           expect(bubble.center.dx, input.center.dx);
-          expect(bubble.bottom, input.top - 4);
+          expect(bubble.bottom, input.top - 6);
         },
       );
     }
   }
+  testWidgets('warning below a field points upwards towards it', (
+    tester,
+  ) async {
+    monitor.value = true;
+    await tester.pumpWidget(
+      harness(
+        const AppPasswordInput(
+          child: PasswordTextField(
+            label: 'Password',
+            showLabel: false,
+            autofocus: true,
+          ),
+        ),
+        alignment: Alignment.topCenter,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = find
+        .ancestor(
+          of: find.text('Caps Lock is on'),
+          matching: find.byType(Container),
+        )
+        .first;
+    final bubble = tester.getRect(container);
+    final input = tester.getRect(find.byType(CapsLockWarning));
+    expect(bubble.top, input.bottom + 6);
+    final decoration =
+        tester.widget<Container>(container).decoration! as ShapeDecoration;
+    final outline = decoration.shape.getOuterPath(Offset.zero & bubble.size);
+    expect(outline.getBounds().top, -4);
+    expect(outline.contains(Offset(bubble.width / 2, -3)), isTrue);
+    expect(outline.contains(const Offset(1, -3)), isFalse);
+  });
 }
