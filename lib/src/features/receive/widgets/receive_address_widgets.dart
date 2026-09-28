@@ -187,6 +187,8 @@ class _ReceiveTab extends StatelessWidget {
   }
 }
 
+const _scanOptimizedQrInk = Color(0xFF000000);
+
 class ReceiveQrSurface extends StatelessWidget {
   const ReceiveQrSurface({
     required this.address,
@@ -195,6 +197,7 @@ class ReceiveQrSurface extends StatelessWidget {
     required this.paddingY,
     required this.type,
     this.badgeSize = 48,
+    this.scanOptimized = false,
     super.key,
   });
 
@@ -210,16 +213,25 @@ class ReceiveQrSurface extends StatelessWidget {
   /// mobile receive frame.
   final double badgeSize;
 
+  /// Keystone scans this QR to verify the address on the device, and its
+  /// decoder rejects the inverted surface and the round finder patterns. When
+  /// set, draw black square modules on the theme-invariant QR surface instead.
+  final bool scanOptimized;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final isShielded = type == ReceiveAddressType.shielded;
-    final usesDarkQrSurface = isDark || isShielded;
-    final qrColor = usesDarkQrSurface
+    final usesDarkQrSurface = !scanOptimized && (isDark || isShielded);
+    final qrColor = scanOptimized
+        ? _scanOptimizedQrInk
+        : usesDarkQrSurface
         ? (isDark ? colors.text.accent : colors.text.inverse)
         : colors.text.accent;
-    final qrBackground = usesDarkQrSurface
+    final qrBackground = scanOptimized
+        ? colors.surface.qrCode
+        : usesDarkQrSurface
         ? (isDark ? colors.background.ground : colors.background.inverse)
         : colors.background.ground;
     final embeddedImageAsset = _ReceiveQrEmbeddedImage.assetFor(
@@ -248,6 +260,7 @@ class ReceiveQrSurface extends StatelessWidget {
               type: type,
               embeddedImageAsset: embeddedImageAsset,
               embeddedImageScale: badgeSize / size,
+              scanOptimized: scanOptimized,
             )
           : Center(
               child: Text(
@@ -289,6 +302,7 @@ class _CachedQrBitmap extends StatefulWidget {
     required this.type,
     required this.embeddedImageAsset,
     required this.embeddedImageScale,
+    required this.scanOptimized,
   });
 
   static const _bitmapSize = 1536;
@@ -299,6 +313,7 @@ class _CachedQrBitmap extends StatefulWidget {
   final ReceiveAddressType type;
   final String embeddedImageAsset;
   final double embeddedImageScale;
+  final bool scanOptimized;
 
   @override
   State<_CachedQrBitmap> createState() => _CachedQrBitmapState();
@@ -324,7 +339,8 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         oldWidget.color != widget.color ||
         oldWidget.type != widget.type ||
         oldWidget.embeddedImageAsset != widget.embeddedImageAsset ||
-        oldWidget.embeddedImageScale != widget.embeddedImageScale) {
+        oldWidget.embeddedImageScale != widget.embeddedImageScale ||
+        oldWidget.scanOptimized != widget.scanOptimized) {
       final previous = _image;
       setState(() {
         _image = null;
@@ -364,13 +380,17 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
             clipper: const _ReceiveQrEmbeddedImageClipper(),
             position: PrettyQrDecorationImagePosition.embedded,
           ),
-          shape: DotQrShape(
-            color: widget.color,
-            // Transparent receive addresses make a very dense code; clamp the
-            // finder dots so they stay proportional.
-            finderReferenceDimension:
-                widget.type == ReceiveAddressType.transparent ? 49.0 : null,
-          ),
+          shape: widget.scanOptimized
+              ? PrettyQrSquaresSymbol(color: widget.color)
+              : DotQrShape(
+                  color: widget.color,
+                  // Transparent receive addresses make a very dense code;
+                  // clamp the finder dots so they stay proportional.
+                  finderReferenceDimension:
+                      widget.type == ReceiveAddressType.transparent
+                      ? 49.0
+                      : null,
+                ),
         ),
       );
       if (!mounted || generation != _generation) {

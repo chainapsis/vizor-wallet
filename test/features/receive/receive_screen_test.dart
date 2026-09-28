@@ -443,6 +443,60 @@ void main() {
     expect(_findRenewShieldedAddressButton(), findsOneWidget);
   });
 
+  testWidgets('draws a scan-first QR for Keystone accounts in any theme', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      _receiveHarness(
+        bootstrap: _hardwareBootstrap,
+        themeData: AppThemeData.dark,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final surface = find.byType(ReceiveQrSurface);
+    expect(tester.widget<ReceiveQrSurface>(surface).scanOptimized, isTrue);
+    final decoration =
+        tester
+                .widget<Container>(
+                  find
+                      .descendant(of: surface, matching: find.byType(Container))
+                      .first,
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(decoration.color, AppThemeData.dark.colors.surface.qrCode);
+  });
+
+  for (final (label, bootstrap) in [
+    ('software', _bootstrap),
+    ('Ledger', _ledgerBootstrap),
+  ]) {
+    testWidgets('keeps the dot QR for $label accounts', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      await tester.pumpWidget(_receiveHarness(bootstrap: bootstrap));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<ReceiveQrSurface>(find.byType(ReceiveQrSurface))
+            .scanOptimized,
+        isFalse,
+      );
+    });
+  }
+
   testWidgets('renews shielded address for hardware accounts', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
@@ -1366,6 +1420,31 @@ final _hardwareBootstrap = AppBootstrapState(
         name: 'Keystone Vault',
         order: 0,
         isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: _shieldedAddress,
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _ledgerBootstrap = AppBootstrapState(
+  initialLocation: '/receive',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Ledger Vault',
+        order: 0,
+        isHardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
       ),
     ],
     activeAccountUuid: 'account-1',
