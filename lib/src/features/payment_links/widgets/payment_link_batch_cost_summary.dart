@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_wrap_card.dart';
+import '../../send/widgets/send_review_layout.dart';
 import '../services/payment_link_service.dart';
 import 'payment_link_copy.dart';
 import 'payment_link_skeleton.dart';
@@ -191,8 +193,8 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         ),
         if (reviewing && message.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xs),
-          // One line keeps room for a signing error; Edit shows it whole.
-          _messageRow(context, message),
+          // Collapsed to one line so a signing error keeps its room.
+          _BatchMessageRows(message: message),
         ],
       ],
     );
@@ -255,41 +257,6 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
     // The rows join once there is an amount to calculate from.
     if (!hasAmount) return [heading];
     return [heading, const ReviewWrapDivider(), rows, ?shortfallLine];
-  }
-
-  Widget _messageRow(BuildContext context, String message) {
-    final colors = context.colors;
-    final label = Text(
-      'Message on every card',
-      style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
-    );
-    final largeText = paymentLinkUsesLargeText(context);
-    final value = Text(
-      message,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: largeText ? TextAlign.start : TextAlign.end,
-      style: AppTypography.bodyMediumStrong.copyWith(
-        color: colors.text.primary,
-      ),
-    );
-    if (largeText) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          label,
-          const SizedBox(height: AppSpacing.xxs),
-          value,
-        ],
-      );
-    }
-    return Row(
-      children: [
-        label,
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(child: value),
-      ],
-    );
   }
 
   Widget _line(
@@ -364,4 +331,35 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
       colors: [color.withValues(alpha: 0.12), color.withValues(alpha: 0.26)],
     );
   }
+}
+
+/// The message every card carries, expandable like the Send review's memo.
+class _BatchMessageRows extends StatefulWidget {
+  const _BatchMessageRows({required this.message});
+
+  final String message;
+
+  @override
+  State<_BatchMessageRows> createState() => _BatchMessageRowsState();
+}
+
+class _BatchMessageRowsState extends State<_BatchMessageRows> {
+  var _expanded = false;
+
+  // The list row insets its label and pill by xxs; widening it by the same
+  // lines its text up with the plain rows above.
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => OverflowBox(
+      fit: OverflowBoxFit.deferToChild,
+      minWidth: constraints.maxWidth + 2 * AppSpacing.xxs,
+      maxWidth: constraints.maxWidth + 2 * AppSpacing.xxs,
+      child: ReviewMemoRows(
+        label: 'Message on every card',
+        memoText: widget.message,
+        expanded: _expanded,
+        onToggle: () => setState(() => _expanded = !_expanded),
+      ),
+    ),
+  );
 }

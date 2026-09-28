@@ -289,10 +289,13 @@ const kWhitespaceOnlyMemoPlaceholder = 'Whitespace only';
 class ReviewMemoRows extends StatelessWidget {
   const ReviewMemoRows({
     required this.memoText,
+    this.label = 'Message',
     this.expanded = false,
     this.onToggle,
     super.key,
   });
+
+  final String label;
 
   /// Full memo text; the collapsed row truncates it to one line. Non-empty:
   /// a memo made only of whitespace is shown as
@@ -314,7 +317,7 @@ class ReviewMemoRows extends StatelessWidget {
     final valueColor = placeholder == null ? null : colors.text.muted;
     if (!expanded) {
       return ReviewListRow(
-        label: 'Message',
+        label: label,
         value: placeholder ?? memoText,
         valueColor: valueColor,
         trailingIconName: AppIcons.expand,
@@ -326,7 +329,7 @@ class ReviewMemoRows extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ReviewListRow(
-          label: 'Message',
+          label: label,
           value: 'Collapse',
           trailingIconName: AppIcons.collapsed,
           onPressed: onToggle,

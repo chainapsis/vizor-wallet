@@ -449,6 +449,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       ),
       PaymentLinkPreviewState.batchReview => const _PaymentLinkBulkPreview(
         initialReviewing: true,
+        initialMessage:
+            'Thanks for coming to the Zcash meetup in Seoul! Claim your ZEC '
+            'with this card and bring a friend to the next one.',
       ),
       PaymentLinkPreviewState.batchReady ||
       PaymentLinkPreviewState.batchDetail => _PaymentLinkBatchDetailPreview(
@@ -915,6 +918,7 @@ class _PaymentLinkBulkPreview extends StatefulWidget {
     this.initialAmount = '0.1',
     this.initialPreparing = false,
     this.initialMixed = false,
+    this.initialMessage = '',
   });
 
   final bool initialReviewing;
@@ -922,6 +926,7 @@ class _PaymentLinkBulkPreview extends StatefulWidget {
   final String initialAmount;
   final bool initialPreparing;
   final bool initialMixed;
+  final String initialMessage;
 
   @override
   State<_PaymentLinkBulkPreview> createState() =>
@@ -930,7 +935,7 @@ class _PaymentLinkBulkPreview extends StatefulWidget {
 
 class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
   late final _amount = TextEditingController(text: widget.initialAmount);
-  final _message = TextEditingController();
+  late final _message = TextEditingController(text: widget.initialMessage);
   late int _count = widget.initialCount;
   var _artwork = PaymentLinkCardArtwork.ruby;
   // Seeded so captures stay deterministic.
