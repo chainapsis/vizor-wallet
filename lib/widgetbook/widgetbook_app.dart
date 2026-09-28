@@ -263,6 +263,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileKeystoneScanDeniedUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Scan restricted',
+                      builder: buildMobileKeystoneScanRestrictedUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Scan active',
                       builder: buildMobileKeystoneScanActiveUseCase,
                     ),
@@ -1851,6 +1855,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'QR scan - denied',
                       builder: buildMobileSendQrScanDeniedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'QR scan - restricted',
+                      builder: buildMobileSendQrScanRestrictedUseCase,
                     ),
                   ],
                 ),

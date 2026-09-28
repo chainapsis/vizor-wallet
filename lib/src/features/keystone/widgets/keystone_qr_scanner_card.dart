@@ -15,7 +15,7 @@ import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import 'keystone_transaction_progress_panel.dart';
 
-enum _CameraAccessStatus { active, requesting, denied, unavailable }
+enum _CameraAccessStatus { active, requesting, denied, restricted, unavailable }
 
 // The mobile Keystone Scan frames diverge from the desktop pane in the
 // permission states: Body L titles, the slashed camera glyph on a dark
@@ -99,6 +99,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   static const _cameraRadius = 24.0;
 
   late MobileScannerController _controller;
+  late final CameraRestrictionProbe _restriction;
   StreamSubscription<List<MobileScannerCameraInfo>>? _camerasSubscription;
   List<MobileScannerCameraInfo> _cameras = const [];
   String? _selectedCameraId;
@@ -114,6 +115,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller = _createController();
+    _restriction = CameraRestrictionProbe(_controller)
+      ..addListener(_handleRestrictionChanged);
     _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
     _loadCameras();
     _notifyControlsReady();
@@ -125,6 +128,10 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     if (oldWidget.onControlsReady != widget.onControlsReady) {
       _notifyControlsReady();
     }
+  }
+
+  void _handleRestrictionChanged() {
+    if (mounted) setState(() {});
   }
 
   void _notifyControlsReady() {
@@ -304,7 +311,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   _CameraAccessStatus _cameraAccessStatus(MobileScannerState state) {
     if (!QrScanner.isAvailable) return _CameraAccessStatus.unavailable;
     if (state.error?.errorCode == MobileScannerErrorCode.permissionDenied) {
-      return _CameraAccessStatus.denied;
+      return _restriction.restricted
+          ? _CameraAccessStatus.restricted
+          : _CameraAccessStatus.denied;
     }
     if (state.error != null && !state.isRunning) {
       return _CameraAccessStatus.unavailable;
@@ -413,6 +422,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _camerasSubscription?.cancel();
+    _restriction.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -507,6 +517,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                   final canScan =
                                       accessStatus ==
                                       _CameraAccessStatus.active;
+                                  final restricted =
+                                      accessStatus ==
+                                      _CameraAccessStatus.restricted;
 
                                   return Stack(
                                     fit: StackFit.expand,
@@ -604,16 +617,21 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
                                         ),
-                                      if (accessStatus ==
-                                          _CameraAccessStatus.unavailable)
+                                      if (restricted ||
+                                          accessStatus ==
+                                              _CameraAccessStatus.unavailable)
                                         _CameraPermissionPrompt(
                                           backgroundColor: cardSurface,
                                           icon: AppIcons.cameraDenied,
-                                          title: 'Camera unavailable',
-                                          description:
-                                              _cameraUnavailableDescription(
-                                                scannerState,
-                                              ),
+                                          title: restricted
+                                              ? 'Camera access is restricted'
+                                              : 'Camera unavailable',
+                                          description: restricted
+                                              ? 'Screen Time or device management\n'
+                                                    'is blocking the camera.'
+                                              : _cameraUnavailableDescription(
+                                                  scannerState,
+                                                ),
                                           iconStyle:
                                               _CameraPermissionIconStyle.raised,
                                           action: AppButton(

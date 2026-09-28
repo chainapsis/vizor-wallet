@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,17 @@ import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_sc
     show MobileScanOutcome;
 
 const _cameraKey = ValueKey('mobile_address_scan_card_camera');
+
+void _mockCameraAuthorization(String status) {
+  const channel = MethodChannel('com.zcash.wallet/camera_permission');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(
+    channel,
+    (call) async => call.method == 'authorizationStatus' ? status : null,
+  );
+  addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+}
 
 Widget _host(Widget child) {
   return AppTheme(
@@ -260,6 +272,54 @@ void main() {
     );
     expect(find.text('Try again'), findsOneWidget);
   });
+
+  testWidgets('restricted access explains the block instead of asking again', (
+    tester,
+  ) async {
+    _mockCameraAuthorization('restricted');
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_host(_card(controller)));
+    await tester.pump();
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      error: const MobileScannerException(
+        errorCode: MobileScannerErrorCode.permissionDenied,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Camera access is restricted'), findsOneWidget);
+    expect(find.text('Screen Time or device management'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Request again'), findsNothing);
+    expect(find.text("You've denied camera access"), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS denial that is not restricted keeps the denied copy', (
+    tester,
+  ) async {
+    _mockCameraAuthorization('denied');
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_host(_card(controller)));
+    await tester.pump();
+
+    controller.value = controller.value.copyWith(
+      isInitialized: true,
+      error: const MobileScannerException(
+        errorCode: MobileScannerErrorCode.permissionDenied,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text("You've denied camera access"), findsOneWidget);
+    expect(find.text('Request again'), findsOneWidget);
+    expect(find.text('Camera access is restricted'), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets('camera-state morph preserves the single camera element', (
     tester,

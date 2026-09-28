@@ -325,6 +325,19 @@ Widget buildMobileSendQrScanDeniedUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileSendQrScanRestrictedUseCase(BuildContext context) {
+  return const _MobileSendScanFrame(
+    child: MobileAddressScanCardContent(
+      key: ValueKey('mobile_send_qr_scan_card'),
+      status: AddressQrCameraStatus.restricted,
+      cameraView: _MobileSendScanCameraPreview(),
+      onTorch: _noop,
+      onClose: _noop,
+      onRetry: _noop,
+    ),
+  );
+}
+
 /// Desktop window chrome (sidebar + pane + back link) wrapping the compose
 /// view, mirroring `_SwapPageFrame` so Widgetbook previews use the same
 /// surface the real screen lives in.
