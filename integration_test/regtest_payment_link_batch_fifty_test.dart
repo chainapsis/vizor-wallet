@@ -213,14 +213,20 @@ Future<void> _waitForSpendable(
 }) async {
   // Read the wallet DB, not the cached sync state: right after mining, the
   // cached value can still predate the scan that makes change spendable.
+  // Also wait for the scan of the mined blocks: until the previous funding is
+  // seen mined, its sibling notes are not selectable even though the balance
+  // already counts them as spendable.
+  final chainTip = await paymentLinkZcashdRpc<int>('getblockcount');
   final deadline = DateTime.now().add(const Duration(minutes: 4));
   Object? lastBalance;
   while (true) {
     try {
       final balance = await readPaymentLinkAccountBalance(accountUuid);
       lastBalance = balance;
+      final sync = container.read(syncProvider).value;
       if (balance.spendable >= needed &&
-          container.read(syncProvider).value?.isSyncing == false) {
+          sync?.isSyncing == false &&
+          (sync?.scannedHeight ?? 0) >= chainTip) {
         return;
       }
     } catch (error) {
@@ -228,7 +234,10 @@ Future<void> _waitForSpendable(
       lastBalance = error;
     }
     if (DateTime.now().isAfter(deadline)) {
-      fail('Spendable for $purpose never reached $needed: $lastBalance');
+      fail(
+        'Spendable for $purpose never reached $needed at height $chainTip: '
+        '$lastBalance',
+      );
     }
     await tester.pump(const Duration(milliseconds: 100));
     await Future<void>.delayed(const Duration(milliseconds: 400));
