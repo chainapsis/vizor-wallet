@@ -21,9 +21,9 @@ fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mob
 # Rust tests (run from project root or rust/)
 cd rust && cargo test
 
-# After changing Rust API files (rust/src/api/*.rs):
-# MUST run from project root, not rust/
-flutter_rust_bridge_codegen generate
+# After changing Rust API files (rust/src/api/*.rs). Use the wrapper;
+# bare flutter_rust_bridge_codegen fails on rustc's expanded `super let`.
+scripts/generate-rust-bridge.sh
 
 # Clear app from iOS simulator (keychain + state + uninstall)
 ./clear-app.sh
