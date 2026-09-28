@@ -217,6 +217,29 @@ void main() {
     );
   });
 
+  test('keeps the refund address for a refunded ZEC-sourced swap', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: '0xrecipient',
+        oneClickRefundTo: 'u1refund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          refundedAmountText: '0.0499 ZEC',
+          recordedRefundFeeText: '0.0001 ZEC',
+        ),
+      ),
+    );
+
+    expect(presentation.payDetailCopyText, isNull);
+    expect(
+      _detailRow(presentation.details, 'Refund to').copyText,
+      'u1refund-address',
+    );
+  });
+
   test('restores the refund address in the terminal swap summary', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),

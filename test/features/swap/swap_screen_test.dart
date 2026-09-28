@@ -462,7 +462,7 @@ void main() {
     final expiresAt = now.add(const Duration(minutes: 16));
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         SwapDepositTokensPageContent(
           asset: SwapAsset.usdc,
           amountText: '999.99 USDC',
@@ -503,7 +503,7 @@ void main() {
     final expiresAt = now.add(const Duration(hours: 2));
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         SwapDepositTokensPageContent(
           asset: SwapAsset.usdc,
           amountText: '999.99 USDC',
@@ -559,7 +559,7 @@ void main() {
     const compactDepositAddress = '0x1111111 ... 1111111';
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         AppToastHost(
           child: Center(
             child: SwapDepositTokensPageContent(
@@ -673,7 +673,7 @@ void main() {
         '0x1111111111111111111111111111111111111111111111111111111111111111';
 
     await tester.pumpWidget(
-      _themeHarness(
+      _themeHarnessWithOverlay(
         AppToastHost(
           child: Center(
             child: SwapDepositTokensPageContent(
@@ -5225,7 +5225,7 @@ void main() {
     // The refunded swap row renders its amount unsigned (no outgoing
     // sign), so the real ZEC deposit keeps its standalone Sent row —
     // otherwise the feed would show the refund credit with no debit.
-    expect(find.text('Swap failed'), findsOneWidget);
+    expect(find.text('Swap refunded'), findsOneWidget);
     expect(find.text('Sent'), findsOneWidget);
   });
 
@@ -6031,7 +6031,13 @@ void main() {
     await _openActivityDetail(tester, 'swap-refund');
 
     expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
-    expect(find.text('Swap refunded'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_status_page_content')),
+        matching: find.text('Swap refunded'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Funds refunded'), findsNothing);
     expect(find.text('Refund complete'), findsNothing);
     expect(

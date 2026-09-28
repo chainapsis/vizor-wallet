@@ -538,7 +538,10 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (failed &&
           refundAddress != null &&
           refundAddress.isNotEmpty &&
-          (intent.status != SwapIntentStatus.refunded ||
+          // Desktop headers carry the refund address only for external
+          // deposits, so ZEC-sourced refunds keep the detail row.
+          (sendsZec ||
+              intent.status != SwapIntentStatus.refunded ||
               kAppFormFactor == AppFormFactor.mobile))
         ..._addressDetailRows(
           label: 'Refund to',
