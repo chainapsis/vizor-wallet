@@ -1737,16 +1737,26 @@ async fn refresh_utxos(
         |db, downloaded| {
             let downloaded_count = downloaded.len() as u64;
             let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
+            let completion_authorized = std::cell::Cell::new(false);
             store_then_mark_transparent_refreshes(
                 downloaded,
-                |downloaded| store_transparent_outputs(db, downloaded),
                 |downloaded| {
-                    update_transparent_refresh_cache_metadata(
-                        db_data_path,
-                        network,
-                        tip_height,
-                        downloaded,
-                    )
+                    store_transparent_outputs(db, downloaded)?;
+                    // Outputs already received are stored, but a group answered
+                    // after a transition does not advance refresh metadata, so
+                    // a later pass under the new policy re-covers it.
+                    completion_authorized.set(lookups.still_allowed(db)?);
+                    Ok(())
+                },
+                |downloaded| {
+                    if completion_authorized.get() {
+                        update_transparent_refresh_cache_metadata(
+                            db_data_path,
+                            network,
+                            tip_height,
+                            downloaded,
+                        )
+                    }
                 },
             )?;
             *received_outputs_seen |= received_outputs;

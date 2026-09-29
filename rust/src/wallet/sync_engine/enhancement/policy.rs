@@ -4,7 +4,7 @@ use zcash_client_backend::data_api::status::TransactionStatusMode;
 
 use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 use zcash_client_backend::data_api::transparent_ledger::{
-    TransparentLedgerMode, TransparentLedgerRead,
+    AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerRead,
 };
 
 use crate::wallet::network::WalletNetwork;
@@ -141,14 +141,24 @@ impl PublicTransparentLookups {
     /// durable policy generation is unchanged and retains public authority. A
     /// transition by another connection withholds the rest of the operation.
     pub(crate) fn still_allowed(self, db: &WalletDatabase) -> Result<bool, SyncError> {
-        let Self::Allowed { generation } = self else {
+        if !self.is_allowed() {
             return Ok(false);
-        };
+        }
         let applied = db
             .applied_transparent_policy()
             .map_err(|error| SyncError::db(format!("applied_transparent_policy: {error}")))?;
-        Ok(applied.mode.retains_public_authority()
-            && generation.map_or(true, |generation| generation == applied.generation))
+        Ok(self.permits(applied))
+    }
+
+    /// Whether `applied`, read by the caller, still authorizes these lookups.
+    /// Read it in the same SQLite transaction as a write to make that write's
+    /// commit check atomic with it.
+    pub(crate) fn permits(self, applied: AppliedTransparentPolicy) -> bool {
+        let Self::Allowed { generation } = self else {
+            return false;
+        };
+        applied.mode.retains_public_authority()
+            && generation.map_or(true, |generation| generation == applied.generation)
     }
 }
 
