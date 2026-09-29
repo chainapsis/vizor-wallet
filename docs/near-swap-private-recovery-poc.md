@@ -9,7 +9,8 @@ schema until its upgrade path is qualified.
 
 1. Scan ordinary account history from before the funding transaction. Retain
    scanned nullifiers so an old payment can be checked for a later spend.
-2. At the accepted tip, use Enhance PIR to authenticate pending Ironwood memos.
+2. At the accepted tip, authenticate pending Ironwood memos through ordinary
+   enhancement, following the general Private queries setting.
    Funding memos register refund keys. Incoming recovery registers 50 lookahead
    keys. Historical key registration uses private discovery rather than queuing
    another block scan.
@@ -32,9 +33,11 @@ accepted root. It never trusts the file's root on its own.
 
 ## Build and services
 
-Use the mainnet build. Recovery runs with **NEAR swap privacy** off. Enable
-**Private queries** for PIR recovery. With it off, recovery uses bounded local
-block replay. Creating a new private swap requires both switches on. Both default off.
+Use the mainnet build. NEAR address recovery always uses PIR, independently of
+**NEAR swap privacy** and the general **Private queries** setting. This exception
+covers receiver discovery and matching note data. Ordinary transaction retrieval
+still follows Private queries. Creating a new private swap requires both switches
+on. Both default off.
 The [software-wallet guide](near-swap-software-poc.md) defines toggle behavior.
 Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. No sibling
 math compatibility checkout or compile-time privacy environment variable is required.
@@ -75,8 +78,8 @@ Private recovery scans only locally recorded operations while pending and throug
 ten blocks after the first supported NEAR terminal status. Repeated observations
 and restarts preserve that deadline. Unknown statuses and transport failures do
 not retire or reopen a watch. PIR closeout can outlive scanning without extending
-it. Restored and lookahead keys can scan historical blocks through their fixed
-recovery target. They do not join ongoing tip scanning after that height.
+it. Restored and lookahead keys use PIR through their fixed recovery target and
+do not join ordinary scanning without a local operation watch.
 
 Software accounts retain the shared nullifier map from their first scan,
 independently of either switch, so later PIR discovery has spend evidence. Use a fresh
@@ -101,11 +104,8 @@ lagging publication causes no receiver queries or common witness download.
 Completed targets stay fixed when new blocks arrive, so normal tip following needs
 no receiver PIR requests. Newly found funding memos and paid receive indices expand
 the deterministic key discovery window and create their own recovery targets.
-With Private queries off, `queue_swap_recovery_scan` queues missing local coverage
-to the same fixed targets. It uses the normal block transport, including Tor.
-Completed local restore coverage needs no subsequent directory lookup. Known
-operations keep their final directory check for when Private queries is enabled.
-PIR failures never trigger an automatic public fallback. An unavailable transport
+Receiver discovery and matching note retrieval always use PIR, even with both
+switches off. A PIR failure never triggers public replay. An unavailable transport
 or publication leaves recovery pending instead of reporting a complete restore.
 
 The SQLite scanner splits a batch at a watch boundary and derives only active keys.

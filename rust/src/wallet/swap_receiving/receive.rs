@@ -32,9 +32,6 @@ pub(crate) async fn prepare(
     lightwalletd_url: &str,
 ) -> Result<ReceiveReservation, String> {
     require_new_address(network)?;
-    if !private_recovery_enabled() {
-        return Err("Incoming address recycling requires private recovery".into());
-    }
     let reservation = with_db(path, network, uuid, |db, account| {
         require_software_account(db, account)?;
         let tip = db
@@ -72,9 +69,6 @@ async fn check(
     reuse: bool,
 ) -> Result<zakura_swap_receiving::lifecycle::ChainAnchor, String> {
     use futures::Future;
-    if !private_recovery_enabled() {
-        return Err("Enable Private queries to verify a swap address".into());
-    }
     if network != WalletNetwork::Main {
         return Err("Private receive verification requires mainnet".into());
     }

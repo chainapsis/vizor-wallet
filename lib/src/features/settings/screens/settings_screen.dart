@@ -619,8 +619,8 @@ class _SettingsList extends ConsumerWidget {
                 label: 'NEAR swap privacy',
                 keyPrefix: 'settings_near_swap_privacy',
                 description: enhancePirEnabled
-                    ? 'Uses a separate receiving key for each swap. Existing swaps remain recoverable when turned off.'
-                    : 'Turn on Private queries to enable NEAR swap privacy.',
+                    ? 'Uses a separate receiving key for each swap. Recovery always uses private queries.'
+                    : 'Turn on Private queries to create private swap addresses.',
                 enabled: nearSwapPrivacy && enhancePirEnabled,
                 transition: null,
                 onToggle: changingRecovery || !enhancePirEnabled
@@ -1093,7 +1093,7 @@ class _EnhancePirPrivacyControl extends StatelessWidget {
     this.label = 'Private queries',
     this.keyPrefix = 'settings_enhance_pir',
     this.description =
-        'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
+        'Experimental. Queries and enhances transaction data without revealing their IDs to servers. NEAR address recovery always uses private queries, even when this is off.',
   });
 
   final String label;

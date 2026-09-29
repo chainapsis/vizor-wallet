@@ -14,9 +14,10 @@ does not re-enable it. Desktop and mobile use the same preference and runtime gu
 NEAR swap privacy controls new private addresses. Turning it off does not discard
 existing reservations, funding memos, keys, notes, or provider status tracking.
 Recovery runs for every software account, including a fresh seed restore with both
-switches off. Private queries selects receiver and Enhance PIR. With it off, the
-wallet uses ordinary retrieval and bounded compact-block replay. Already received
-notes remain spendable and change returns to the ordinary internal key.
+switches off. NEAR address recovery always uses receiver PIR and Enhance PIR for
+matching note data. Ordinary transaction and memo retrieval follows the general
+Private queries setting. Already received notes remain spendable and change
+returns to the ordinary internal key.
 A quote already issued keeps its reserved address and funding recovery memo.
 
 The receiver client currently requires Tor off. New private reservations fail
@@ -61,16 +62,16 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
 3. Every software restore registers 50 incoming lookahead keys from the account
    birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
-4. After ordinary scanning, Private queries selects PIR discovery or local block
-   replay. Payments extend incoming lookahead until 50 consecutive indices are empty.
+4. After ordinary scanning, refund keys and incoming lookahead use PIR discovery.
+   Payments extend incoming lookahead until 50 consecutive indices are empty.
    Finish the extended window before reporting recovery complete. Each restored key
    keeps a fixed recovery height, so new blocks do not restart completed checks.
    Known pending swaps retain their own watch and terminal grace deadline.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 
-The POC retains scanned nullifiers for every software account so switching to PIR
-later does not lose the evidence needed to recognize already spent notes. This
+The POC retains scanned nullifiers for every software account so PIR recovery
+can recognize already spent notes even when both privacy switches are off. This
 adds local storage even for accounts that have never created a private swap.
 Bounding that storage remains release work.
 
@@ -82,8 +83,10 @@ recovered deposit addresses remains a later integration task.
 
 The shared-library tests cover zero-value funding records, seed restore, a refund
 whose block was already scanned, incoming payments outside the initial window,
-close/reopen, and mixed-input spending into ordinary change. Recovery tests run
-with receiver PIR and Enhance PIR disabled as well as with library PIR support enabled.
+close/reopen, and mixed-input spending into ordinary change. Library tests cover
+compact scanning and private insertion. Vizor tests verify
+that disabling both settings still prepares receiver PIR discovery without queuing
+a historical block replay.
 Vizor tests cover reserved refund-key validation, restart, lookahead preparation,
 issuance during incomplete sync, direction mapping, and rejection without falling
 back to an ordinary address.
@@ -102,7 +105,7 @@ exercise. Record the funding and payout transaction IDs and scan heights.
 - Close before settlement, reopen after it, and confirm catch-up finds the payment.
 - Restore the seed into another fresh wallet with a birthday before funding and
   NEAR swap privacy off. Test once with Private queries on and once with it off.
-  Confirm refund and incoming recovery find the same notes without duplicates.
+  Confirm both runs use receiver PIR and recover the same notes without duplicates.
   Follow the tip afterward and confirm completed empty windows are not checked again.
 - Spend recovered notes together with ordinary funds. Confirm the spend mines and
   the change is found by the ordinary internal key.

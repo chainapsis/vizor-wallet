@@ -89,7 +89,7 @@ pub(super) async fn run(
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    if network != WalletNetwork::Main {
+    if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
         return Ok(());
     }
     let Some(tip) = db
@@ -102,15 +102,6 @@ pub(super) async fn run(
         height: tip.block_height(),
         hash: tip.block_hash().0,
     };
-    if !crate::wallet::swap_receiving::private_recovery_enabled() {
-        return with_wallet_db_write_lock("swap_recovery.local_complete", || {
-            ensure_local_recovery_complete(db, through)?;
-            // Applying a previously queued candidate can advance the window too.
-            crate::wallet::swap_receiving::maintain_recovery(db, network)?;
-            ensure_local_recovery_complete(db, through)
-        })
-        .map_err(SyncError::db);
-    }
     if crate::network_privacy::is_tor_desired() {
         if discovery_work(db, through)
             .map_err(SyncError::db)?
@@ -164,43 +155,6 @@ pub(super) async fn run(
     }
 }
 
-fn ensure_local_recovery_complete(
-    db: &mut WalletDatabase,
-    through: ChainAnchor,
-) -> Result<(), String> {
-    for account in db.get_account_ids().map_err(error)? {
-        let Some(details) = db.get_account(account).map_err(error)? else {
-            continue;
-        };
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
-        {
-            continue;
-        }
-        for key in db.get_swap_receiving_keys(account).map_err(error)? {
-            // A transport change can leave an authenticated PIR candidate queued.
-            // Finish it from the witness built by local scanning when available.
-            for candidate in db
-                .pending_swap_payments(account, key.key_id())
-                .map_err(error)?
-            {
-                db.apply_pending_swap_payment(account, key.key_id(), &candidate, through, None)
-                    .map_err(error)?;
-            }
-            let target = db
-                .swap_recovery_target(account, key.key_id())
-                .map_err(error)?
-                .unwrap_or(through);
-            if db
-                .swap_receiving_needs_discovery(account, key.key_id(), target.height)
-                .map_err(error)?
-            {
-                return Err("Swap recovery is pending. Historical scanning or queued payment verification is incomplete".into());
-            }
-        }
-    }
-    Ok(())
-}
 fn discovery_work(
     db: &mut WalletDatabase,
     through: ChainAnchor,
@@ -231,8 +185,13 @@ fn discovery_work(
                 // Closeout requires a directory check even if local scanning found
                 // the receipt. Its saved target does not move with the chain tip.
                 if db
-                    .swap_recovery_needs_directory(account, key.key_id(), target.height)
+                    .swap_directory_check(account, key.key_id())
                     .map_err(error)?
+                    .is_none_or(|checked| checked.height < target.height)
+                    || !db
+                        .pending_swap_payments(account, key.key_id())
+                        .map_err(error)?
+                        .is_empty()
                 {
                     work.push((account, key));
                 }
@@ -292,12 +251,18 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         height: tip.block_height(),
         hash: tip.block_hash().0,
     };
+    // The exception covers receiver discovery and its matching note data only.
+    // Ordinary memo enhancement still follows the general Private queries setting.
     let prepared = PreparedWork::new(
         db.transaction_enhancement_work()
             .map_err(error)?
             .into_iter()
             .filter_map(|w| match w {
-                TransactionEnhancementWork::Private(w) => Some(w),
+                TransactionEnhancementWork::Private(w)
+                    if crate::api::sync::enhance_pir_enabled() =>
+                {
+                    Some(w)
+                }
                 _ => None,
             }),
     );
@@ -510,15 +475,15 @@ mod tests {
         db.enable_private_swap_recovery(account).unwrap();
         db.maintain_swap_receive_lookahead(account, 50, height)
             .unwrap();
+        assert!(!crate::api::sync::enhance_pir_enabled());
+        assert!(!crate::api::sync::near_swap_privacy_enabled());
         let work = discovery_work(&mut db, through).unwrap();
         assert_eq!(work.len(), 50);
-        assert!(ensure_local_recovery_complete(&mut db, through).is_err());
         for (account, key) in work {
             db.mark_swap_directory_checked(account, key.key_id(), through)
                 .unwrap();
         }
         assert!(discovery_work(&mut db, through).unwrap().is_empty());
-        ensure_local_recovery_complete(&mut db, through).unwrap();
 
         // Model the registry advancement after a verified payment at the edge.
         // The library tests exercise the actual compact note decryption.
@@ -529,7 +494,6 @@ mod tests {
         let work = discovery_work(&mut db, through).unwrap();
         assert_eq!(work.len(), 50);
         assert!(work.iter().all(|(_, key)| key.key_id().index() >= 50));
-        assert!(ensure_local_recovery_complete(&mut db, through).is_err());
         for (account, key) in work {
             db.mark_swap_directory_checked(account, key.key_id(), through)
                 .unwrap();
@@ -546,7 +510,6 @@ mod tests {
         )
         .unwrap();
         assert!(discovery_work(&mut db, later).unwrap().is_empty());
-        ensure_local_recovery_complete(&mut db, later).unwrap();
     }
 
     #[test]

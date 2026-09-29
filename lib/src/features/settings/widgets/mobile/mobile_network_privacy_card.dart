@@ -199,8 +199,8 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
               // iOS background migration tracking cannot run privately, so it
               // stays off while this is on; say where confirmations happen.
               defaultTargetPlatform == TargetPlatform.iOS
-                  ? 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. While on, migration confirmations are checked only when Vizor is open.'
-                  : 'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
+                  ? 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. NEAR address recovery always uses private queries, even when this is off. While on, migration confirmations are checked only when Vizor is open.'
+                  : 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. NEAR address recovery always uses private queries, even when this is off.',
               key: const ValueKey('mobile_settings_enhance_pir_description'),
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -221,8 +221,8 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
             const SizedBox(height: AppSpacing.sm),
             Text(
               enhancePirEnabled
-                  ? 'Uses a separate receiving key for each swap. Existing swaps remain recoverable when turned off.'
-                  : 'Turn on Private queries to enable NEAR swap privacy.',
+                  ? 'Uses a separate receiving key for each swap. Recovery always uses private queries.'
+                  : 'Turn on Private queries to create private swap addresses.',
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
               ),
