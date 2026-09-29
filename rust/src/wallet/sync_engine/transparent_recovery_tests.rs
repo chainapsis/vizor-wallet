@@ -1009,6 +1009,7 @@ mod private_transparent_policy {
             })
         })
         .unwrap();
+        let queued = f.queued_follow_on_work();
         let mut lwd = transitioning_lwd(&f, "/GetTransaction").await;
 
         enhancement::EnhancementSession::new(f.network, &f.path)
@@ -1017,6 +1018,8 @@ mod private_transparent_policy {
             .unwrap();
 
         assert_eq!(lwd.count("/GetTransaction"), 1);
+        // The NotFound answered after the transition does not retire its request.
+        assert_eq!(f.queued_follow_on_work(), queued);
         assert_eq!(
             requests_after_first(&lwd, "/GetTransaction"),
             Vec::<String>::new()

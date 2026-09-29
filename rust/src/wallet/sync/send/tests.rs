@@ -4095,7 +4095,13 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         conn.query_row(
             "SELECT applied_mode, policy_generation, min_reader_version FROM tpir_meta",
             [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         )
         .unwrap()
     };
@@ -4118,7 +4124,10 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         None,
     )
     .unwrap();
-    let error = db.put_received_transparent_utxo(&utxo).unwrap_err().to_string();
+    let error = db
+        .put_received_transparent_utxo(&utxo)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains(NEEDS_NEWER_BUILD), "{error}");
 
     // Startup migration keeps the stricter policy, and a fresh handle stays blocked.
@@ -4419,4 +4428,91 @@ fn gift_card_batch_ledger_limits_orchard_actions() {
         "This group is too large for your Ledger to sign. \
          Try fewer cards or a smaller amount per card."
     );
+}
+
+/// Records public status observations and runs `on_observe` as each one
+/// is dispatched.
+struct HookedStatusSource {
+    observed: std::sync::Arc<std::sync::Mutex<Vec<TxId>>>,
+    on_observe: std::sync::Arc<dyn Fn() + Send + Sync>,
+}
+impl zakura_transaction_status::StatusSource for HookedStatusSource {
+    type Session = Self;
+    async fn open(self) -> Result<Self, zakura_transaction_status::StatusError> {
+        Ok(self)
+    }
+}
+impl zakura_transaction_status::StatusSession for HookedStatusSource {
+    async fn observe(
+        &mut self,
+        request: zakura_transaction_status::StatusRequest,
+    ) -> Result<zakura_transaction_status::StatusObservation, zakura_transaction_status::StatusError>
+    {
+        self.observed.lock().unwrap().push(request.txid);
+        (self.on_observe)();
+        Ok(zakura_transaction_status::StatusObservation::NotFound)
+    }
+}
+
+#[tokio::test]
+async fn policy_transition_withholds_remaining_migration_status_checks() {
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentLedgerMode, TransparentLedgerWrite,
+    };
+    let network = WalletNetwork::Regtest;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+    crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "migration")
+        .unwrap();
+    let policy = sync_engine::enhancement::EnhancementPolicy::for_preference(network, false);
+    let mut status_db = super::super::open_wallet_db_for_read(&path, network).unwrap();
+    policy.configure_db(&mut status_db);
+    let lookups = policy.public_transparent_lookups(&status_db).unwrap();
+    let candidates: Vec<_> = [0x41u8, 0x42]
+        .iter()
+        .map(
+            |b| super::super::migration::UnbroadcastMigrationRecoveryCandidate {
+                txid_hex: hex::encode([*b; 32]),
+                status: "scheduled".into(),
+                scheduled_height: 100,
+            },
+        )
+        .collect();
+    let txids = [0x41u8, 0x42].map(|b| TxId::from_bytes([b; 32]));
+    // PrivateShadow keeps public authority; only the new generation revokes.
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let transition_path = path.clone();
+    let public = HookedStatusSource {
+        observed: observed.clone(),
+        on_observe: std::sync::Arc::new(move || {
+            crate::wallet::db::open_wallet_db_with_timeout(
+                &transition_path,
+                network,
+                crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+            )
+            .unwrap()
+            .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+            .unwrap();
+        }),
+    };
+    let private = HookedStatusSource {
+        observed: Default::default(),
+        on_observe: std::sync::Arc::new(|| {}),
+    };
+    let mut reader = sync_engine::enhancement::status::RoutedStatusReader::new(public, private);
+
+    let result = verify_unbroadcast_migration_txids_absent(
+        &mut reader,
+        &status_db,
+        lookups,
+        &candidates,
+        &txids,
+        200,
+    )
+    .await;
+
+    assert!(result.unwrap_err().contains("private transparent policy"));
+    assert_eq!(*observed.lock().unwrap(), vec![txids[0]]);
 }
