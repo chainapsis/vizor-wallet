@@ -20,6 +20,7 @@ use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
+use super::enhancement::EnhancementPolicy;
 use super::{get_taddress_txids, next_stream_message, watch_for_exit, SyncError};
 use crate::wallet::{
     db::{
@@ -210,6 +211,15 @@ async fn run_with<R: DiscoveryRpc>(
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
+    // Candidate addresses are sent to public lightwalletd; nothing is queried or
+    // marked complete unless the wallet's transparent policy authorizes that.
+    if !EnhancementPolicy::current(network)
+        .public_transparent_lookups(db)?
+        .is_allowed()
+    {
+        log::info!("sync: transparent policy withholds Ledger address-history discovery");
+        return Ok(());
+    }
     let mut accounts = Vec::new();
     for id in db
         .get_account_ids()
@@ -1030,5 +1040,49 @@ mod tests {
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
         assert!(is_ready(&path, id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn private_transparent_policy_withholds_discovery_without_completing_it() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let (_dir, path, id, mut db, _) = ledger_fixture();
+        crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+        let mut rpc = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: None,
+            hash: 1,
+        };
+        let tip = BlockHeight::from_u32(2_600_000);
+        // This build's Public handle fails closed on the stricter wallet.
+        assert!(
+            run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
+                false
+            })
+            .await
+            .is_err()
+        );
+        // A handle configured for the durable policy skips discovery.
+        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
+            false
+        })
+        .await
+        .unwrap();
+
+        assert!(rpc.queries.lock().unwrap().is_empty());
+        assert!(
+            !is_ready(&path, id).unwrap(),
+            "withheld scopes stay incomplete"
+        );
     }
 }

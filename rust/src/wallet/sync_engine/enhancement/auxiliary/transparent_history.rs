@@ -18,7 +18,10 @@ use crate::wallet::{
     sync_engine::{lwd, SyncError, WalletDatabase},
 };
 
-use super::{super::payload::public::mined_height_from_raw_height, fees::fill_missing_fee};
+use super::{
+    super::{payload::public::mined_height_from_raw_height, PublicTransparentLookups},
+    fees::fill_missing_fee,
+};
 
 #[derive(Default)]
 pub(in crate::wallet::sync_engine::enhancement) struct HistoryPass {
@@ -33,8 +36,14 @@ impl HistoryPass {
         db_path: &str,
         requests: &[TransactionDataRequest],
         network: WalletNetwork,
+        lookups: PublicTransparentLookups,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
+        // Every planned read sends a transparent address. Withheld ranges stay
+        // unchecked and durable; nothing is acknowledged without a response.
+        if !lookups.still_allowed(db)? {
+            return Ok(false);
+        }
         let mut planned = super::super::super::address_history::plan(requests);
         planned.retain(|group| !self.failed_addresses.contains(&group[0].address()));
         let actionable = !planned.is_empty();

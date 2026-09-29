@@ -283,6 +283,27 @@ from wallet outputs or locally stored parent transactions; missing values leave
 the fee unknown without network lookups. Fully shielded transactions can compute
 their fee locally. Fee persistence updates only a still-missing fee.
 
+## Transparent policy gate
+
+Every request that sends a transparent address, outpoint, or txid to public
+lightwalletd first resolves `EnhancementPolicy::public_transparent_lookups`:
+UTXO refresh, Ledger and software account discovery, the import balance
+preview, address history, public payloads, and public status. Fee enrichment
+and migration stop send no transaction identifiers, so they need no gate. The
+resolved value is the stricter of the captured mode and the policy durably
+applied to the wallet, stamped with the policy generation.
+
+- `Withheld` sends nothing and completes nothing. Queued work, unchecked
+  ranges, and UTXO query heights stay durable for a later authorized pass.
+- Public dispatch lanes re-check with `still_allowed` so that a transition by
+  another connection, including one that keeps public authority, revokes
+  lookups captured under the old generation.
+- This build's Public handle cannot read a wallet whose durable policy is
+  `PrivateRequired`; the gate then returns an error, which also sends nothing.
+- Production always captures `Public`. `PrivateRequired` is reachable only in
+  tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
+  recovery exists.
+
 ## Transport and cancellation
 
 ```text
