@@ -26,11 +26,12 @@ const REMOTE_VALUE_ZAT: i64 = 50_000_000;
 const LOCAL_CHANGE_ZAT: i64 = 49_990_000;
 
 /// Migrations the current build adds that no supported base has applied: the
-/// ZIP 318 schema drop and the transparent ledger schema. Older bases also
-/// pick up earlier upstream migrations.
-const NEW_MIGRATIONS: [&str; 2] = [
+/// ZIP 318 schema drop, the transparent ledger schema, and the transparent
+/// policy generation. Older bases also pick up earlier upstream migrations.
+const NEW_MIGRATIONS: [&str; 3] = [
     "772a06323d0e4dffb1f8c64863eefaaa",
     "8f290af0eb5a4f1e88d43550fc0ff911",
+    "b7c4e2a19d3f4e8ba6c51f0e8d7c6b5a",
 ];
 const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;
@@ -313,6 +314,24 @@ fn assert_transparent_ledger(db_path: &str) {
         )
         .expect("read tpir_meta");
     assert_eq!(meta, (0, 0, 1), "transparent ledger policy is not public");
+    // Queued follow-on work is bound to the initial policy generation.
+    assert_eq!(
+        scalar_i64(
+            &conn,
+            "SELECT COUNT(*) FROM pragma_table_info('tx_retrieval_queue')
+             WHERE name = 'policy_generation'",
+        ),
+        1,
+        "tx_retrieval_queue has no policy generation"
+    );
+    assert_eq!(
+        scalar_i64(
+            &conn,
+            "SELECT COUNT(*) FROM tx_retrieval_queue WHERE policy_generation != 0",
+        ),
+        0,
+        "queued work outside the initial policy generation"
+    );
     assert_eq!(
         scalar_i64(
             &conn,
