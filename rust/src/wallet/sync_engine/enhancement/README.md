@@ -288,7 +288,8 @@ their fee locally. Fee persistence updates only a still-missing fee.
 Every request that sends a transparent address, outpoint, or txid to public
 lightwalletd first resolves `EnhancementPolicy::public_transparent_lookups`:
 UTXO refresh, Ledger and software account discovery, the import balance
-preview, address history, public payloads, and public status. Fee enrichment
+preview, address history, public payloads, public status, and the public status
+checks that unbroadcast migration recovery runs before retiring a run. Fee enrichment
 and migration stop send no transaction identifiers, so they need no gate. The
 resolved value is the stricter of the captured mode and the policy durably
 applied to the wallet, stamped with the policy generation.

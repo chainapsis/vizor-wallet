@@ -8,10 +8,12 @@ use std::collections::HashSet;
 use tonic::{transport::Channel, Code, Status};
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, PublicTransactionEnhancementRequest, WalletWrite,
+        transparent_ledger::TransparentLedgerRead, wallet::decrypt_and_store_transaction,
+        PublicTransactionEnhancementRequest, WalletWrite,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
@@ -109,10 +111,26 @@ impl PublicPayloadExecutor {
                     GetTransactionErrorAction::CompleteEnhancementNotFound => {
                         log::warn!("sync: get_transaction did not recognize {txid_str}: {e}");
                         self.failed.insert(txid);
-                        if let Err(e) = with_wallet_db_write_lock(
+                        // Retiring the request is a completion write: it reads
+                        // the generation in its own transaction, so a transition
+                        // while the lookup was in flight leaves it retryable.
+                        let retired = with_wallet_db_write_lock(
                             "sync_engine.enhance.notify_transaction_enhancement_not_found",
-                            || db.notify_transaction_enhancement_not_found(txid),
-                        ) {
+                            || {
+                                db.transactionally(|tx| {
+                                    if !lookups.permits(tx.applied_transparent_policy()?) {
+                                        return Ok(false);
+                                    }
+                                    tx.notify_transaction_enhancement_not_found(txid)?;
+                                    Ok::<_, SqliteClientError>(true)
+                                })
+                            },
+                        );
+                        if matches!(retired, Ok(false)) {
+                            log::info!("sync: transparent policy changed; {txid_str} stays queued");
+                            return;
+                        }
+                        if let Err(e) = retired {
                             log::error!(
                                 "sync: notify_transaction_enhancement_not_found failed: {e}"
                             );
