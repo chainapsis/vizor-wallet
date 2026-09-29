@@ -4793,7 +4793,8 @@ fn clear_unmined_note_commitment_positions(db_data_path: &str) -> Result<usize, 
 /// The chain state preceding a scan batch that starts at `start`, when it is
 /// known without asking lightwalletd: empty at Sapling activation, or a
 /// compiled mainnet checkpoint (see [`tree_states`]). Account birthdays are
-/// rounded so that a restored account's first batch always gets one.
+/// rounded to the checkpoint grid, so a restored account's first batch gets one
+/// whenever its bucket is in the table.
 fn local_batch_start_state(
     network: WalletNetwork,
     start: BlockHeight,

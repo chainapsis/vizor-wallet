@@ -878,15 +878,21 @@ discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
 
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
 
-On mainnet, `make_birthday` (`rust/src/wallet/keys.rs`) stores a restored
-birthday rounded down to one past a compiled 10,000-block tree-state
-checkpoint (`rust/src/wallet/tree_states.rs`), and the first scan batch reads
-that checkpoint locally instead of sending `GetTreeState(birthday - 1)`.
-Birthdays past the last checkpoint (new wallets) and Gift Card observers keep
-the exact height; testnet, regtest, and masquerade builds are unchanged. Code
-that queries lightwalletd from an imported birthday must use the rounded value
-(`tree_states::privacy_birthday`), never the exact requested height. The
-weekly `update-mainnet-chain-tables.yml` workflow appends checkpoints.
+On mainnet, the wallet API (`rust/src/api/wallet.rs`, `restored_birthday`)
+stores every restored birthday rounded down to one past a 10,000-block grid
+point (`tree_states::restore_birthday`), so lightwalletd learns only the bucket.
+When the grid point is a compiled checkpoint (`rust/src/wallet/tree_states.rs`)
+the first scan batch reads its state locally instead of sending
+`GetTreeState`; a restore newer than the table fetches the grid point's state.
+Restores are the discovery import
+(`import_software_wallet_with_account_discovery`), wallet-link import
+(`import_software_account_at_index`), and hardware import
+(`import_hardware_account`). Newly created accounts (`create_wallet`,
+`add_account`, and `import_wallet` from onboarding's reveal-then-confirm
+flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
+exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+rounded value, never the exact requested height. The weekly
+`update-mainnet-chain-tables.yml` workflow appends checkpoints.
 
 ### Rust API Design Constraint
 

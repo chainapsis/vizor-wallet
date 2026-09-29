@@ -2,16 +2,18 @@
 //!
 //! Scanning a new account starts with the tree state just below its first
 //! block. Fetching it with `GetTreeState(birthday - 1)` told lightwalletd the
-//! account's exact birthday, re-sent on every rescan. Restore birthdays are
-//! instead rounded down to one past a checkpoint in this table
-//! ([`privacy_birthday`]), and the sync engine reads that checkpoint's state
-//! locally ([`mainnet_chain_state`]). lightwalletd then learns only the
-//! 10,000-block bucket from the first `GetBlockRange` request.
+//! account's exact birthday, re-sent on every rescan. Restored birthdays are
+//! instead rounded down to one past a point on a fixed 10,000-block grid
+//! ([`restore_birthday`]), so lightwalletd learns only the bucket. When the
+//! grid point is a checkpoint in this table, the sync engine reads its state
+//! locally ([`mainnet_chain_state`]) and sends no `GetTreeState` at all; a
+//! restore newer than the table fetches the grid point's state, which reveals
+//! the same bucket the first `GetBlockRange` already does.
 //!
-//! Birthdays past the last checkpoint stay exact. That keeps new wallets,
-//! whose birthday is the chain tip, from scanning up to a bucket of extra
-//! blocks; the cost is that a restore of a wallet younger than the table still
-//! sends its exact birthday.
+//! Newly created accounts keep their exact birthday (the chain tip), which
+//! reveals only that a wallet was created now; rounding would scan up to a
+//! bucket of extra blocks for nothing. Gift Card and payment-link claims keep
+//! the exact height from the shared link, so claims stay fast.
 //!
 //! Entry `i` of [`mainnet_data::CHECKPOINTS`] holds lightwalletd's
 //! `GetTreeState` fields for block `START_HEIGHT + i * STEP`.
@@ -40,6 +42,7 @@ fn checkpoint_height(index: usize) -> u64 {
     START_HEIGHT + index as u64 * STEP
 }
 
+#[cfg(test)]
 fn last_checkpoint_height() -> u64 {
     checkpoint_height(CHECKPOINTS.len() - 1)
 }
@@ -86,15 +89,15 @@ pub(crate) fn mainnet_chain_state(network: WalletNetwork, height: u64) -> Option
     }
 }
 
-/// The birthday to store for an account whose requested birthday is
-/// `birthday`, so that scanning starts right after a compiled checkpoint.
+/// The birthday to store for a restored account whose requested birthday is
+/// `birthday`, so that scanning starts right after a grid point.
 ///
-/// On real mainnet a birthday at or below the last checkpoint moves down to
-/// one past the highest checkpoint below it, or to Sapling activation when no
-/// checkpoint is below it. An earlier birthday only scans more blocks, and
-/// never misses funds. Birthdays past the last checkpoint and all other
+/// On real mainnet the birthday moves down to one past the highest multiple of
+/// `STEP` (counted from `START_HEIGHT`) below it, or to Sapling activation when
+/// no grid point is below it. An earlier birthday only scans more blocks, and
+/// never misses funds. Birthdays at or before Sapling activation and all other
 /// networks are unchanged.
-pub(crate) fn privacy_birthday(network: WalletNetwork, birthday: u64) -> u64 {
+pub(crate) fn restore_birthday(network: WalletNetwork, birthday: u64) -> u64 {
     if !table_covers(network) {
         return birthday;
     }
@@ -104,7 +107,7 @@ pub(crate) fn privacy_birthday(network: WalletNetwork, birthday: u64) -> u64 {
     else {
         return birthday;
     };
-    if birthday <= sapling_activation || birthday > last_checkpoint_height() {
+    if birthday <= sapling_activation {
         return birthday;
     }
     let prior = birthday - 1;
@@ -168,7 +171,7 @@ mod tests {
     fn other_networks_never_use_the_table() {
         for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
             assert!(mainnet_chain_state(network, 1_000_000).is_none());
-            assert_eq!(privacy_birthday(network, 1_234_567), 1_234_567);
+            assert_eq!(restore_birthday(network, 1_234_567), 1_234_567);
         }
     }
 
@@ -176,35 +179,38 @@ mod tests {
     #[test]
     fn masquerade_builds_never_use_the_table() {
         assert!(mainnet_chain_state(WalletNetwork::Main, 1_000_000).is_none());
-        assert_eq!(privacy_birthday(WalletNetwork::Main, 1_234_567), 1_234_567);
+        assert_eq!(restore_birthday(WalletNetwork::Main, 1_234_567), 1_234_567);
     }
 
     #[cfg(not(ironwood_masquerade))]
     #[test]
-    fn privacy_birthday_starts_right_after_a_checkpoint() {
+    fn restore_birthday_starts_right_after_a_grid_point() {
         let main = WalletNetwork::Main;
         // Mid-bucket rounds down.
-        assert_eq!(privacy_birthday(main, 1_234_567), 1_230_001);
+        assert_eq!(restore_birthday(main, 1_234_567), 1_230_001);
         // Already one past a checkpoint: unchanged.
-        assert_eq!(privacy_birthday(main, 1_230_001), 1_230_001);
+        assert_eq!(restore_birthday(main, 1_230_001), 1_230_001);
         // A checkpoint height itself belongs to the bucket below.
-        assert_eq!(privacy_birthday(main, 1_230_000), 1_220_001);
+        assert_eq!(restore_birthday(main, 1_230_000), 1_220_001);
         // Below the first checkpoint: Sapling activation, which scans from an
         // empty state without any request.
-        assert_eq!(privacy_birthday(main, 420_000), SAPLING_ACTIVATION);
-        assert_eq!(privacy_birthday(main, 419_201), SAPLING_ACTIVATION);
-        assert_eq!(privacy_birthday(main, 420_001), 420_001);
+        assert_eq!(restore_birthday(main, 420_000), SAPLING_ACTIVATION);
+        assert_eq!(restore_birthday(main, 419_201), SAPLING_ACTIVATION);
+        assert_eq!(restore_birthday(main, 420_001), 420_001);
         // At or before Sapling activation: unchanged.
         assert_eq!(
-            privacy_birthday(main, SAPLING_ACTIVATION),
+            restore_birthday(main, SAPLING_ACTIVATION),
             SAPLING_ACTIVATION
         );
-        assert_eq!(privacy_birthday(main, 1), 1);
-        // Past the table: unchanged.
+        assert_eq!(restore_birthday(main, 1), 1);
+        // Past the table: still on the grid, whose point's state is then
+        // fetched from lightwalletd and reveals only the bucket.
         let last = last_checkpoint_height();
-        assert_eq!(privacy_birthday(main, last + 1), last + 1);
-        assert_eq!(privacy_birthday(main, last + 5_000), last + 5_000);
-        assert_eq!(privacy_birthday(main, last), last - STEP + 1);
+        assert_eq!(restore_birthday(main, last + 1), last + 1);
+        assert_eq!(restore_birthday(main, last + 5_000), last + 1);
+        assert_eq!(restore_birthday(main, last + 25_000), last + 2 * STEP + 1);
+        assert_eq!(restore_birthday(main, last), last - STEP + 1);
+        assert!(mainnet_chain_state(main, last + 2 * STEP).is_none());
     }
 
     #[cfg(not(ironwood_masquerade))]
@@ -218,7 +224,7 @@ mod tests {
             3_428_143,
             last_checkpoint_height(),
         ] {
-            let rounded = privacy_birthday(main, birthday);
+            let rounded = restore_birthday(main, birthday);
             assert!(rounded <= birthday);
             assert!(
                 mainnet_chain_state(main, rounded - 1).is_some(),
