@@ -306,9 +306,13 @@ applied to the wallet, stamped with the policy generation.
   may land between any check and its dispatch. The invariant is therefore: no
   request is started after the lane has yielded since its last check. The rest
   of the lane is withheld;
-  responses already in flight are stored, but nothing is acknowledged after the
-  transition: an in-flight history range, even one answered empty, stays
-  unchecked and is retried later. Import-time requests (discovery probes, the
+  responses already in flight are stored, but nothing is acknowledged or
+  marked complete after the transition: an in-flight history range, even one
+  answered empty, stays unchecked, and UTXO refresh metadata and Ledger
+  discovery progress are not advanced, so later passes re-cover them. The
+  history acknowledgement reads the generation in its own SQLite transaction;
+  the Vizor-owned metadata writes re-check just before writing but not
+  atomically, a window the Phase 4 transition fence closes. Import-time requests (discovery probes, the
   balance preview) re-check the same way, including after opening their
   channel. A later operation resolves lookups afresh
   under the new generation.

@@ -1048,6 +1048,12 @@ mod private_transparent_policy {
 
         assert!(summary.withheld);
         assert!(lwd.count("/GetAddressUtxosStream") <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
+
+        // The group answered after the transition advanced no metadata, so a
+        // later pass re-covers every planned batch.
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        refresh(&mut f, &mut lwd).await.unwrap();
+        assert_eq!(lwd.count("/GetAddressUtxosStream"), planned);
     }
 
     #[test]
