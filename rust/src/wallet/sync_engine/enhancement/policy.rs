@@ -3,9 +3,20 @@
 use zcash_client_backend::data_api::status::TransactionStatusMode;
 
 use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
+use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
 
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::WalletDatabase;
+
+/// Transparent ledger mode for every wallet handle this build opens.
+///
+/// Always `Public`: this build has no private transparent recovery, so it
+/// keeps public transparent authority. A wallet whose durably applied policy is
+/// stricter stays blocked instead of being weakened. Private modes will derive
+/// from the private-queries preference once transparent PIR recovery exists.
+pub(crate) fn transparent_ledger_mode() -> TransparentLedgerMode {
+    TransparentLedgerMode::Public
+}
 
 /// Resolves the install preference once so status and payload retrieval cannot
 /// observe different values during the same operation.

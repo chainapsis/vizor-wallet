@@ -70,6 +70,9 @@ fn old_wallet(db_path: &str) -> WalletDatabase {
     rusqlite::vtab::array::load_module(&conn).unwrap();
     // A plain handle deliberately retains the upstream AllAvailableKeys default.
     WalletDb::from_connection(conn, WalletNetwork::Main, SystemClock, OsRng)
+        .with_transparent_ledger_mode(
+            crate::wallet::sync_engine::enhancement::transparent_ledger_mode(),
+        )
 }
 
 fn old_birthday() -> AccountBirthday {

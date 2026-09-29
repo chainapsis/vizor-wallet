@@ -51,7 +51,7 @@ use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, updater::Updater}
 use shardtree::error::ShardTreeError;
 use voting_crypto_deps::rand::rngs::OsRng;
 use zcash_client_backend::{
-    data_api::{WalletCommitmentTrees, WalletWrite},
+    data_api::{transparent_ledger::TransparentLedgerMode, WalletCommitmentTrees, WalletWrite},
     wallet::WalletTransparentOutput,
 };
 use zcash_client_sqlite::{util::SystemClock, wallet::commitment_tree, WalletDb};
@@ -194,7 +194,8 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     )?;
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
     let mut db = WalletDb::for_path(&db_path, WalletNetwork::Main, SystemClock, OsRng)
-        .map_err(|error| format!("Open fixture wallet DB: {error}"))?;
+        .map_err(|error| format!("Open fixture wallet DB: {error}"))?
+        .with_transparent_ledger_mode(TransparentLedgerMode::Public);
     let chain_tip = BlockHeight::from_u32(3_000_000);
     db.update_chain_tip(chain_tip)
         .map_err(|error| format!("Set fixture chain tip: {error}"))?;

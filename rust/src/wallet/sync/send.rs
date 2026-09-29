@@ -3678,7 +3678,6 @@ fn build_ledger_shielding_round(
             account,
             target,
             anchor,
-            &db.pool_migration_params(),
             confirmations,
             CoinbaseFilter::AllTransparentOutputs,
         )
@@ -3857,7 +3856,6 @@ fn propose_send_with_reserved_notes(
         migration_locks,
         transparent_allowlist: None,
     };
-    let zip318 = db.pool_migration_params();
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
@@ -3873,7 +3871,6 @@ fn propose_send_with_reserved_notes(
             &reserved_db,
             target_height,
             anchor_height,
-            &zip318,
             confirmations_policy,
             account_id,
             request,
@@ -4087,12 +4084,10 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
     type AccountId = I::AccountId;
     type NoteRef = I::NoteRef;
 
-    fn anchor_computable(
+    fn anchor_retention_interval(
         &self,
-        protocol: ShieldedPool,
-        height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        self.inner.anchor_computable(protocol, height)
+    ) -> zcash_client_backend::data_api::anchor_retention::AnchorRetentionInterval {
+        self.inner.anchor_retention_interval()
     }
 
     fn get_spendable_note(
