@@ -68,23 +68,10 @@ async fn check(
     lightwalletd_url: &str,
     reuse: bool,
 ) -> Result<zakura_swap_receiving::lifecycle::ChainAnchor, String> {
-    use futures::Future;
     if network != WalletNetwork::Main {
         return Err("Private receive verification requires mainnet".into());
     }
-    if crate::network_privacy::is_tor_desired() {
-        return Err("Private receive verification requires Tor off in this test build".into());
-    }
-    let lease = crate::network_privacy::DirectRouteLease::new();
-    let phase = async {
-        check_inner(path, network, uuid, id, lightwalletd_url, reuse)
-            .await
-            .map_err(std::io::Error::other)
-    };
-    futures::pin_mut!(phase);
-    futures::future::poll_fn(|cx| lease.poll(cx, |cx| phase.as_mut().poll(cx)))
-        .await
-        .map_err(|e| e.to_string())
+    check_inner(path, network, uuid, id, lightwalletd_url, reuse).await
 }
 
 async fn check_inner(
@@ -96,7 +83,7 @@ async fn check_inner(
     reuse: bool,
 ) -> Result<zakura_swap_receiving::lifecycle::ChainAnchor, String> {
     use receiver_directory::Receiver;
-    use std::{num::NonZeroU32, time::Duration};
+    use std::num::NonZeroU32;
     let (account, key, verified) = with_db(path, network, uuid, |db, account| {
         let key = db
             .swap_receive_reservation(account, id)
@@ -113,15 +100,12 @@ async fn check_inner(
     if let Some(verified) = verified {
         return Ok(verified);
     }
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let should_exit = || false;
+    let transport = super::super::sync_engine::swap_private::SwapTransport::new(&should_exit);
     let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT)?;
     let (client, accepted, anchor) =
-        super::super::sync_engine::swap_private::receiver_client(&mut db, network, http).await?;
+        super::super::sync_engine::swap_private::receiver_client(&mut db, network, &transport)
+            .await?;
     // Avoid a receiver query while the publication is too stale to verify safely.
     db.swap_receive_verification_tail(account, id, anchor)
         .map_err(|e| e.to_string())?;

@@ -12,10 +12,9 @@ swap-receiving-poc = []
 
 [dependencies]
 # These receiver and swap crates are not published yet.
-receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "d96eb7694727faceb4a11092c366e41451f72e98", features = ["http"] }
-receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "d96eb7694727faceb4a11092c366e41451f72e98" }
+receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "57d1b2fde9c702da54d555d6af4efa14f47635a6" }
+receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "57d1b2fde9c702da54d555d6af4efa14f47635a6" }
 zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "deb3326511a8ea253c65959d2ce5563e32b27387" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 zakura-pir-status = { version = "=0.0.1-rc0" }
 zakura-transaction-status = { version = "=0.0.1-rc0" }
 zcash_note_encryption = "0.4"

@@ -29,9 +29,6 @@ pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> 
             "Enable Private queries and NEAR swap privacy before reserving an address".into(),
         );
     }
-    if crate::network_privacy::is_tor_desired() {
-        return Err("Private swap recovery is not available over Tor yet".into());
-    }
     Ok(())
 }
 const RECEIVE_LOOKAHEAD: u32 =

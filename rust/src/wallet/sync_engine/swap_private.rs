@@ -1,15 +1,19 @@
 //! Experimental receiver → Enhance PIR → verified wallet insertion.
 //! All chain acceptance and note mutation stays in the wallet library.
+use super::enhancement::transport::{RoutedHttpError, RoutedTransport};
 use super::{SyncError, WalletDatabase};
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
-use futures::{Future, StreamExt};
+use futures::StreamExt;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use receiver_directory::Receiver;
-use receiver_pir::{http::HttpClient, AcceptedCoverage};
-use std::{num::NonZeroU32, time::Duration};
+use receiver_pir::{
+    transport::{DirectoryClient, Transport as ReceiverTransport},
+    AcceptedCoverage,
+};
+use std::num::NonZeroU32;
 use zakura_pir_enhance::wallet::{self as enhance_wallet, Acceptance, PreparedWork};
 use zakura_pir_enhance::{
-    transport::{Method, PendingClient, Request, ResponseBody, Transport},
+    transport::{PendingClient, Request, ResponseBody, Transport},
     ClientError, ClientResourceLimits,
 };
 use zakura_swap_receiving::{lifecycle::ChainAnchor, recovery::EncryptedNote};
@@ -31,53 +35,52 @@ fn allowed_enhance_route(url: &url::Url) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
 }
-struct Http(reqwest::Client);
-impl Transport for Http {
+/// Both swap services use the same Tor-aware transport as ordinary Enhance PIR.
+pub(crate) struct SwapTransport<'a, F>(RoutedTransport<'a, F>);
+impl<'a, F> SwapTransport<'a, F> {
+    pub(crate) fn new(should_exit: &'a F) -> Self {
+        Self(RoutedTransport::new(should_exit))
+    }
+}
+impl<F: Fn() -> bool> Transport for SwapTransport<'_, F> {
     async fn execute(&self, request: Request) -> Result<ResponseBody, ClientError> {
-        let started = std::time::Instant::now();
-        let sent = request.body.len();
-        let kind = match request.method {
-            Method::Get => "get",
-            Method::Post => "post",
-        };
-        let mut received = 0usize;
-        let result = async {
-            let mut body = request.response_body();
-            let method = match request.method {
-                Method::Get => reqwest::Method::GET,
-                Method::Post => reqwest::Method::POST,
-            };
-            // Manifest-provided session URLs must stay on the selected HTTPS origin.
-            let url =
-                url::Url::parse(&request.url).map_err(|e| ClientError::Transport(e.to_string()))?;
-            if !allowed_enhance_route(&url) {
-                return Err(ClientError::Transport(
-                    "Enhance route escaped the selected HTTPS origin".into(),
-                ));
-            }
-            let mut response = self
-                .0
-                .request(method, url)
-                .body(request.body)
-                .send()
-                .await
-                .map_err(|e| ClientError::Transport(e.to_string()))?;
-            if !response.status().is_success() {
-                return Err(ClientError::HttpStatus(response.status().as_u16()));
-            }
-            while let Some(chunk) = response
-                .chunk()
-                .await
-                .map_err(|e| ClientError::Transport(e.to_string()))?
-            {
-                received += chunk.len();
-                body.extend(&chunk)?;
-            }
-            Ok(body.finish())
+        let url = url::Url::parse(&request.url)
+            .map_err(|_| ClientError::Transport("Invalid Enhance URL".into()))?;
+        if !allowed_enhance_route(&url) {
+            return Err(ClientError::Transport(
+                "Enhance route escaped the selected HTTPS origin".into(),
+            ));
         }
-        .await;
-        log::info!("pir_http component=enhance kind={} sent_bytes={} received_bytes={} elapsed_us={} ok={}", kind, sent, received, started.elapsed().as_micros(), result.is_ok());
-        result
+        self.0.execute(request).await
+    }
+}
+fn receiver_error(error: RoutedHttpError) -> receiver_pir::Error {
+    match error {
+        RoutedHttpError::HttpStatus(409 | 410) => receiver_pir::Error::Revision,
+        RoutedHttpError::HttpStatus(status) => {
+            receiver_pir::Error::Transport(format!("HTTP {status}"))
+        }
+        RoutedHttpError::Cancelled => receiver_pir::Error::Transport("Cancelled".into()),
+        RoutedHttpError::Failed(error) => receiver_pir::Error::Transport(error.to_string()),
+    }
+}
+impl<F: Fn() -> bool> ReceiverTransport for SwapTransport<'_, F> {
+    async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, receiver_pir::Error> {
+        self.0
+            .bytes(http::Method::GET, url, vec![], limit)
+            .await
+            .map_err(receiver_error)
+    }
+    async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+        limit: usize,
+    ) -> Result<Vec<u8>, receiver_pir::Error> {
+        self.0
+            .bytes(http::Method::POST, url, body, limit)
+            .await
+            .map_err(receiver_error)
     }
 }
 fn error(e: impl std::fmt::Display) -> String {
@@ -102,23 +105,6 @@ pub(super) async fn run(
         height: tip.block_height(),
         hash: tip.block_hash().0,
     };
-    if crate::network_privacy::is_tor_desired() {
-        with_wallet_db_write_lock("swap_private.prune", || {
-            crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
-        })
-        .map_err(SyncError::db)?;
-        if discovery_work(db, through)
-            .map_err(SyncError::db)?
-            .is_empty()
-        {
-            return Ok(());
-        }
-        return Err(SyncError::net(
-            "Swap recovery is pending. Receiver PIR does not support Tor yet",
-        ));
-    }
-    // A Tor toggle or cancellation drops the entire phase, including pending HTTP reads.
-    let lease = crate::network_privacy::DirectRouteLease::new();
     let started = std::time::Instant::now();
     let phase = async {
         let result = async {
@@ -127,7 +113,7 @@ pub(super) async fn run(
                     .into_iter()
                     .map(|(account, key)| (account, key.key_id()))
                     .collect();
-                run_inner(db, network).await?;
+                run_inner(db, network, should_exit).await?;
                 with_wallet_db_write_lock("swap_private.prune", || {
                     crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
                 })?;
@@ -153,12 +139,10 @@ pub(super) async fn run(
         );
         result.map_err(std::io::Error::other)
     };
-    futures::pin_mut!(phase);
-    let routed = futures::future::poll_fn(|cx| lease.poll(cx, |cx| phase.as_mut().poll(cx)));
     tokio::select! {
         biased;
         _=super::watch_for_exit(should_exit)=>Ok(()),
-        result=routed=>result.map_err(|e|SyncError::net(format!("Private swap recovery pending: {e}"))),
+        result=phase=>result.map_err(|e|SyncError::net(format!("Private swap recovery pending: {e}"))),
     }
 }
 
@@ -209,12 +193,12 @@ fn discovery_work(
 }
 
 /// Connects to a directory publication bound to locally accepted block history.
-pub(crate) async fn receiver_client(
+pub(crate) async fn receiver_client<T: ReceiverTransport>(
     db: &mut WalletDatabase,
     network: WalletNetwork,
-    http: reqwest::Client,
-) -> Result<(HttpClient, AcceptedCoverage, ChainAnchor), String> {
-    let advertised = HttpClient::fetch_manifest(RECEIVER_ORIGIN, &http)
+    http: T,
+) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainAnchor), String> {
+    let advertised = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &http)
         .await
         .map_err(error)?;
     let height = BlockHeight::from(advertised.directory.end_height);
@@ -237,7 +221,7 @@ pub(crate) async fn receiver_client(
         height: height.into(),
         hash: hash.0,
     };
-    let client = HttpClient::connect(RECEIVER_ORIGIN, http.clone(), accepted)
+    let client = DirectoryClient::connect(RECEIVER_ORIGIN, http, accepted)
         .await
         .map_err(error)?;
     let anchor = ChainAnchor {
@@ -247,7 +231,11 @@ pub(crate) async fn receiver_client(
     Ok((client, accepted, anchor))
 }
 
-async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<(), String> {
+async fn run_inner(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    should_exit: &impl Fn() -> bool,
+) -> Result<(), String> {
     let Some(tip) = db.block_fully_scanned().map_err(error)? else {
         return Ok(());
     };
@@ -278,13 +266,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
         log::info!("swap_private: recovery covered locally; no PIR requests");
         return Ok(());
     }
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(error)?;
-    let transport = Http(http.clone());
+    let transport = SwapTransport::new(should_exit);
     let pending = PendingClient::fetch(&transport, ENHANCE_ORIGIN)
         .await
         .map_err(error)?;
@@ -322,7 +304,7 @@ async fn run_inner(db: &mut WalletDatabase, network: WalletNetwork) -> Result<()
     if work.is_empty() {
         return Ok(());
     }
-    let (client, accepted, anchor) = receiver_client(db, network, http.clone()).await?;
+    let (client, accepted, anchor) = receiver_client(db, network, &transport).await?;
     let height = anchor.height;
     let mut unchecked = Vec::new();
     for (account, key) in work.drain(..) {
@@ -556,13 +538,9 @@ mod tests {
             height: anchors["directory"]["height"].as_u64().unwrap() as u32,
             hash: hash(&anchors["directory"]["hash"]),
         };
-        let http = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(60))
-            .build()
-            .unwrap();
-        let client = HttpClient::connect(RECEIVER_ORIGIN, http.clone(), accepted)
+        let should_exit = || false;
+        let transport = SwapTransport::new(&should_exit);
+        let client = DirectoryClient::connect(RECEIVER_ORIGIN, &transport, accepted)
             .await
             .unwrap();
         let proofs = client.witnesses().await.unwrap();
@@ -596,7 +574,6 @@ mod tests {
         let payment = found.iter().find(|p| p.position == 610503).unwrap();
         assert_eq!(payment.height, 3496114);
         proofs.path(610503, action.cmx).unwrap();
-        let transport = Http(http);
         let pending = PendingClient::fetch(&transport, ENHANCE_ORIGIN)
             .await
             .unwrap();

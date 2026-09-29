@@ -32,7 +32,7 @@ mod auxiliary;
 mod payload;
 mod policy;
 pub(crate) mod status;
-mod transport;
+pub(crate) mod transport;
 
 /// Default mainnet endpoint shared by payload and status PIR. Each lane keeps
 /// its own env-var override.

@@ -8,7 +8,6 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/swap_receive.dart' as api;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
@@ -40,11 +39,6 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
                 false)) {
           throw StateError(
             'Unlock this account before preparing a receive address.',
-          );
-        }
-        if (ref.read(networkPrivacyProvider).torEnabled) {
-          throw StateError(
-            'Private swap recovery does not support Tor in this test build.',
           );
         }
       }
