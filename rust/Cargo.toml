@@ -214,6 +214,18 @@ should_implement_trait = "allow"
 items_after_test_module = "allow"
 assertions_on_constants = "allow"
 
+# Phase 1 of the transparent PIR ledger is merged in wallet-libraries but not
+# released. Patch the crates.io packages rather than depending on git directly:
+# other dependencies (zakura-pir-enhance, zakura-transaction-status) reach
+# these crates through crates.io, and a direct git dependency would duplicate
+# them. `zakura-pczt` and `zakura-pir-enhance-types` are patched because the
+# git `zakura-client-backend` depends on them by path. Drop this once a release includes the revision.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "86add5251998af48db918eb49f7644658126c029" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "86add5251998af48db918eb49f7644658126c029" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "86add5251998af48db918eb49f7644658126c029" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "86add5251998af48db918eb49f7644658126c029" }
+
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
 # debug opt-level=0, so keep debug assertions and symbols while making local

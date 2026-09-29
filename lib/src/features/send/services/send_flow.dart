@@ -18,6 +18,7 @@ import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
@@ -543,6 +544,9 @@ String friendlyPaymentRequestCheckError(String raw) {
 }
 
 String friendlyProposeSendError(String raw) {
+  if (isTransparentLedgerNeedsNewerBuildError(raw)) {
+    return transparentLedgerNeedsNewerBuildMessage;
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
       lower.contains('wallet sync failed before balance refresh') ||

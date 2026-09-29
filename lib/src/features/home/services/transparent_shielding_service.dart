@@ -9,6 +9,7 @@ import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -28,6 +29,9 @@ String? shieldBalanceBroadcastStatusMessage(
 
 String friendlyShieldBalanceError(Object error) {
   final message = error.toString();
+  if (isTransparentLedgerNeedsNewerBuildError(message)) {
+    return transparentLedgerNeedsNewerBuildMessage;
+  }
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
