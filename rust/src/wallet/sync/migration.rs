@@ -2095,7 +2095,10 @@ fn record_creation_evidence(
         .try_into()
         .map_err(|_| "Invalid migration txid length")?;
     bytes.reverse();
-    let mut db = zcash_client_sqlite::WalletDb::from_connection(&**tx, network, (), ());
+    let mut db = zcash_client_sqlite::WalletDb::from_connection(&**tx, network, (), ())
+        .with_transparent_ledger_mode(
+            zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode::Public,
+        );
     db.record_transaction_created(
         zcash_primitives::transaction::TxId::from_bytes(bytes),
         BlockHeight::from_u32(target_height),
