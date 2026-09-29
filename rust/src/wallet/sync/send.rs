@@ -2322,8 +2322,9 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 
 /// Confirms every unbroadcast migration transaction is absent before its run
 /// is retired. A public observation discloses the txid, so `lookups` is
-/// re-checked before each one; a transition withholds the rest and leaves the
-/// run unchanged. Private observations are unaffected.
+/// re-checked before each one, and again after it so an absence answered after
+/// a transition cannot retire the run; either way the run is left unchanged.
+/// Private observations are unaffected.
 async fn verify_unbroadcast_migration_txids_absent<P, R>(
     reader: &mut sync_engine::enhancement::status::RoutedStatusReader<P, R>,
     status_db: &super::WalletDatabase,
@@ -2338,18 +2339,28 @@ where
 {
     use zakura_transaction_status::StatusObservation;
     use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
+    const WITHHELD: &str = "Migration recovery is unavailable under the private transparent policy; the run is unchanged";
     for (candidate, txid) in candidates.iter().zip(txids) {
         let work = status_db
             .transaction_status_work_for(*txid)
             .map_err(|e| e.to_string())?;
-        if matches!(work, TransactionStatusWork::Public(_))
+        let public = matches!(work, TransactionStatusWork::Public(_));
+        if public
             && !lookups
                 .still_allowed(status_db)
                 .map_err(|e| e.to_string())?
         {
-            return Err("Migration recovery is unavailable under the private transparent policy; the run is unchanged".into());
+            return Err(WITHHELD.into());
         }
         let observation = reader.observe(work, Some(chain_tip_height)).await;
+        // An absence answered after a transition must not retire the run.
+        if public
+            && !lookups
+                .still_allowed(status_db)
+                .map_err(|e| e.to_string())?
+        {
+            return Err(WITHHELD.into());
+        }
         match observation {
             Ok(StatusObservation::NotFound) => {}
             Ok(_) => {

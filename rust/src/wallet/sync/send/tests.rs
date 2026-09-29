@@ -4457,7 +4457,7 @@ impl zakura_transaction_status::StatusSession for HookedStatusSource {
 #[tokio::test]
 async fn policy_transition_withholds_remaining_migration_status_checks() {
     use zcash_client_backend::data_api::transparent_ledger::{
-        TransparentLedgerMode, TransparentLedgerWrite,
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
     };
     let network = WalletNetwork::Regtest;
     let dir = tempfile::tempdir().unwrap();
@@ -4486,15 +4486,19 @@ async fn policy_transition_withholds_remaining_migration_status_checks() {
     let transition_path = path.clone();
     let public = HookedStatusSource {
         observed: observed.clone(),
+        // Alternates modes so every observation bumps the generation.
         on_observe: std::sync::Arc::new(move || {
-            crate::wallet::db::open_wallet_db_with_timeout(
+            let mut db = crate::wallet::db::open_wallet_db_with_timeout(
                 &transition_path,
                 network,
                 crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
             )
-            .unwrap()
-            .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
             .unwrap();
+            let next = match db.applied_transparent_policy().unwrap().mode {
+                TransparentLedgerMode::PrivateShadow => TransparentLedgerMode::Public,
+                _ => TransparentLedgerMode::PrivateShadow,
+            };
+            db.apply_transparent_policy(next).unwrap();
         }),
     };
     let private = HookedStatusSource {
@@ -4515,4 +4519,19 @@ async fn policy_transition_withholds_remaining_migration_status_checks() {
 
     assert!(result.unwrap_err().contains("private transparent policy"));
     assert_eq!(*observed.lock().unwrap(), vec![txids[0]]);
+
+    // A single candidate answered absent after a transition cannot retire the
+    // run either: there is no later candidate to notice the revocation.
+    let lookups = policy.public_transparent_lookups(&status_db).unwrap();
+    let result = verify_unbroadcast_migration_txids_absent(
+        &mut reader,
+        &status_db,
+        lookups,
+        &candidates[..1],
+        &txids[..1],
+        200,
+    )
+    .await;
+    assert!(result.unwrap_err().contains("private transparent policy"));
+    assert_eq!(observed.lock().unwrap().len(), 2);
 }
