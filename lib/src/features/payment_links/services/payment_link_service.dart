@@ -906,18 +906,14 @@ class PaymentLinkService
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
-    await _registerObserver(link);
+    unawaited(_registerObserver(link));
     return link;
   }
 
   Future<void> _registerObserver(VizorPaymentLink link) async {
     try {
       final tracker = _ref.read(giftCardTrackingServiceProvider);
-      final cards = await _recoveryStore.load();
-      final card = cards
-          .where((c) => c.link.address == link.address)
-          .firstOrNull;
-      if (card != null) await tracker.register(card);
+      await tracker.registerLinks([link]);
     } catch (_) {
       // The durable draft is also a retryable registration intent. Observation
       // failure must never turn an accepted funding into another send attempt.

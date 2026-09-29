@@ -26,8 +26,10 @@ Long inline labels may wrap to two lines while preserving the action positions.
 
 `GiftCardTrackingService` serializes registration, scans, observations and
 cleanup. A durable recovery draft is also the registration intent. Creation
-attempts registration before funding; observation failure leaves that intent
-retryable without causing another funding send. Related visible screens request
+queues hardware draft registration before funding without waiting for an
+observer scan already in progress. The tracker owns that queued work before
+reading storage, so lock/reset can invalidate and drain it. Observation failure
+leaves the durable intent retryable without causing another funding send. Related visible screens request
 refreshes, coalesced with a 30-second cooldown. Usage is displayed on the card
 list and desktop creation completion screens; the mobile completion screen
 keeps only the original sharing guidance; sharing and activity detail retain their
