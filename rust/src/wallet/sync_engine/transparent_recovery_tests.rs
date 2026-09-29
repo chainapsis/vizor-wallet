@@ -708,3 +708,309 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     assert_eq!(sent_amount(&reimported), 900_000);
     assert!(!has_public_payload_work(&mut db, payment.txid()));
 }
+
+/// Phase 2 privacy boundaries: under a private transparent policy no inventoried
+/// sync lane sends a transparent address, outpoint, or txid to lightwalletd.
+mod private_transparent_policy {
+    use super::*;
+    use bytes::Bytes;
+    use http_body_util::Full;
+    use hyper::service::service_fn;
+    use prost::Message;
+    use std::sync::{Arc, Mutex};
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
+    };
+    use zcash_client_backend::proto::service::RawTransaction;
+
+    /// A lightwalletd that records every request path. Address history returns
+    /// `history_tx`; transaction lookups answer "not found"; UTXO streams are empty.
+    struct CapturingLwd {
+        client: CompactTxStreamerClient<Channel>,
+        requests: Arc<Mutex<Vec<String>>>,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    impl CapturingLwd {
+        async fn start(history_tx: Vec<u8>) -> Self {
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let recorded = requests.clone();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let recorded = recorded.clone();
+                    let history_tx = history_tx.clone();
+                    tokio::spawn(async move {
+                        let service =
+                            service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
+                                let path = request.uri().path().to_owned();
+                                recorded.lock().unwrap().push(path.clone());
+                                let history_tx = history_tx.clone();
+                                async move {
+                                    let grpc = hyper::Response::builder()
+                                        .header("content-type", "application/grpc");
+                                    let response = if path.ends_with("/GetTaddressTxids") {
+                                        let message = RawTransaction {
+                                            data: history_tx,
+                                            height: 150,
+                                        }
+                                        .encode_to_vec();
+                                        let mut frame = vec![0];
+                                        frame.extend_from_slice(
+                                            &(message.len() as u32).to_be_bytes(),
+                                        );
+                                        frame.extend_from_slice(&message);
+                                        grpc.header("grpc-status", "0")
+                                            .body(Full::new(Bytes::from(frame)))
+                                    } else if path.ends_with("/GetTransaction") {
+                                        grpc.header("grpc-status", "5")
+                                            .header("grpc-message", "not found")
+                                            .body(Full::new(Bytes::new()))
+                                    } else {
+                                        grpc.header("grpc-status", "0")
+                                            .body(Full::new(Bytes::new()))
+                                    };
+                                    Ok::<_, std::convert::Infallible>(response.unwrap())
+                                }
+                            });
+                        let _ = hyper::server::conn::http2::Builder::new(
+                            hyper_util::rt::TokioExecutor::new(),
+                        )
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                        .await;
+                    });
+                }
+            });
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://{endpoint}"))
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            Self {
+                client: CompactTxStreamerClient::new(channel),
+                requests,
+                server,
+            }
+        }
+
+        fn requests(&self) -> Vec<String> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for CapturingLwd {
+        fn drop(&mut self) {
+            self.server.abort();
+        }
+    }
+
+    /// A wallet with a transparent receipt whose address history, parent
+    /// payload, and status work are all queued as public follow-on work.
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        path: String,
+        network: WalletNetwork,
+        db: WalletDatabase,
+        history_tx: Vec<u8>,
+    }
+
+    fn fixture() -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let network = WalletNetwork::Regtest;
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let (uuid, _) =
+            keys::init_db_and_create_account(&path, network, &seed, Some(100), "policy").unwrap();
+        let address =
+            keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap()[0].clone();
+        let address = TransparentAddress::decode(&network, &address).unwrap();
+        let mut db = open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        let receipt = legacy_transaction(OutPoint::new([1; 32], 0), address, 1_000_000);
+        store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
+        decrypt_and_store_transaction(
+            &network,
+            &mut db,
+            &receipt,
+            Some(BlockHeight::from_u32(100)),
+        )
+        .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+        assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+        let discovered = legacy_transaction(OutPoint::new([9; 32], 0), address, 900_000);
+        let mut history_tx = Vec::new();
+        discovered.write(&mut history_tx).unwrap();
+        Fixture {
+            _dir: dir,
+            path,
+            network,
+            db,
+            history_tx,
+        }
+    }
+
+    impl Fixture {
+        /// Applies `mode` durably through a second connection, as a setting
+        /// transition or a newer build would.
+        fn apply(&self, mode: TransparentLedgerMode) {
+            let mut other =
+                open_wallet_db_with_timeout(&self.path, self.network, SYNC_DB_BUSY_TIMEOUT)
+                    .unwrap();
+            other.apply_transparent_policy(mode).unwrap();
+        }
+
+        fn queued_follow_on_work(&self) -> i64 {
+            rusqlite::Connection::open(&self.path)
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM tx_retrieval_queue", [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        }
+
+        fn private_required_session(&self) -> enhancement::EnhancementSession {
+            let policy = enhancement::EnhancementPolicy::current(self.network)
+                .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+            enhancement::EnhancementSession::with_policy(self.network, &self.path, policy)
+        }
+    }
+
+    #[tokio::test]
+    async fn checkpoint_withholds_work_queued_before_private_transition() {
+        let mut f = fixture();
+        let queued = f.queued_follow_on_work();
+        assert!(queued > 0, "fixture queues public follow-on work");
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+
+        let mut session = f.private_required_session();
+        assert!(!session
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap());
+        assert!(!session
+            .run_payload_recovery(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap());
+
+        assert_eq!(lwd.requests(), Vec::<String>::new());
+        assert_eq!(
+            f.queued_follow_on_work(),
+            queued,
+            "withheld work stays durable"
+        );
+    }
+
+    #[tokio::test]
+    async fn restoring_public_policy_releases_withheld_work() {
+        let mut f = fixture();
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        f.private_required_session()
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+        assert!(lwd.requests().is_empty());
+
+        f.apply(TransparentLedgerMode::Public);
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+        let requests = lwd.requests();
+        assert!(
+            requests
+                .iter()
+                .any(|path| path.ends_with("/GetTaddressTxids")),
+            "address history resumes: {requests:?}"
+        );
+        assert!(
+            requests
+                .iter()
+                .any(|path| path.ends_with("/GetTransaction")),
+            "parent and payload lookups resume: {requests:?}"
+        );
+    }
+
+    async fn refresh(
+        f: &mut Fixture,
+        lwd: &mut CapturingLwd,
+    ) -> Result<TransparentRefreshSummary, SyncError> {
+        let mut received = false;
+        let summary = refresh_utxos(
+            &mut lwd.client,
+            &f.path,
+            &mut f.db,
+            f.network,
+            BlockHeight::from_u32(200),
+            TransparentAccountSelection::All,
+            None,
+            &mut received,
+            None,
+            &|| false,
+        )
+        .await;
+        assert!(!received);
+        summary
+    }
+
+    #[tokio::test]
+    async fn utxo_refresh_is_withheld_without_advancing_query_height() {
+        let mut f = fixture();
+        let accounts = f.db.get_account_ids().unwrap();
+        let before = f.db.utxo_query_height(accounts[0]).unwrap();
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+
+        // This build's Public handle cannot operate on the stricter wallet.
+        assert!(refresh(&mut f, &mut lwd).await.is_err());
+        // A handle configured for the durable policy resolves to withheld.
+        f.db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        assert!(refresh(&mut f, &mut lwd).await.unwrap().withheld);
+
+        assert_eq!(lwd.requests(), Vec::<String>::new());
+        assert_eq!(f.db.utxo_query_height(accounts[0]).unwrap(), before);
+    }
+
+    #[test]
+    fn another_connections_transition_revokes_captured_lookups() {
+        let f = fixture();
+        let policy = enhancement::EnhancementPolicy::current(f.network);
+        let lookups = policy.public_transparent_lookups(&f.db).unwrap();
+        assert!(lookups.still_allowed(&f.db).unwrap());
+
+        // PrivateShadow keeps public authority, but a new generation still
+        // revokes lookups captured under the old one.
+        f.apply(TransparentLedgerMode::PrivateShadow);
+        assert!(!lookups.still_allowed(&f.db).unwrap());
+        let renewed = policy.public_transparent_lookups(&f.db).unwrap();
+        assert!(renewed.still_allowed(&f.db).unwrap());
+
+        // PrivateRequired revokes it too; this build's Public handle then fails
+        // closed rather than resolving any authority.
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        assert!(!matches!(renewed.still_allowed(&f.db), Ok(true)));
+        assert!(!matches!(
+            policy.public_transparent_lookups(&f.db),
+            Ok(lookups) if lookups.is_allowed()
+        ));
+    }
+
+    #[test]
+    fn unconfigured_handle_fails_closed() {
+        let f = fixture();
+        let conn = rusqlite::Connection::open(&f.path).unwrap();
+        let db: WalletDatabase = zcash_client_sqlite::WalletDb::from_connection(
+            conn,
+            f.network,
+            zcash_client_sqlite::util::SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
+        assert!(db.applied_transparent_policy().is_err());
+        assert!(enhancement::EnhancementPolicy::current(f.network)
+            .public_transparent_lookups(&db)
+            .is_err());
+    }
+}

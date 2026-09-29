@@ -1,6 +1,12 @@
 use std::panic;
 
+use crate::wallet::sync_engine::enhancement::{EnhancementPolicy, PublicTransparentLookups};
 use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+
+/// Returned before any request when the transparent policy withholds public
+/// UTXO lookups; an unavailable preview is not a zero balance.
+const TRANSPARENT_PREVIEW_UNAVAILABLE: &str =
+    "Transparent balance preview is unavailable under the private transparent policy";
 use tonic::{transport::Channel, Request};
 use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
@@ -435,6 +441,15 @@ pub fn discover_software_wallet_import_accounts(
         let primary_account_already_exists = existing_seed_accounts
             .as_ref()
             .is_some_and(|state| state.contains(0));
+        let policy = EnhancementPolicy::current(network);
+        let lookups = if is_first_wallet_account {
+            policy.pre_db_public_transparent_lookups()
+        } else {
+            let db = crate::wallet::sync::open_wallet_db_for_read(&db_path, network)?;
+            policy
+                .public_transparent_lookups(&db)
+                .map_err(|e| e.to_string())?
+        };
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let discovered_accounts = rt.block_on(discover_used_software_accounts(
@@ -442,6 +457,7 @@ pub fn discover_software_wallet_import_accounts(
             &seed,
             birthday_height,
             &lightwalletd_url,
+            lookups,
         ));
 
         let accounts = discovered_accounts
@@ -482,10 +498,12 @@ pub fn preview_software_account_transparent_balance(
             SOFTWARE_ACCOUNT_BALANCE_PREVIEW_ADDRESSES_PER_SCOPE,
         )?;
 
+        let lookups = EnhancementPolicy::current(network).pre_db_public_transparent_lookups();
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(preview_transparent_balance_for_addresses(
             &lightwalletd_url,
             addresses,
+            lookups,
         ))
     })
 }
@@ -781,7 +799,13 @@ async fn discover_used_software_accounts(
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
+    lookups: PublicTransparentLookups,
 ) -> Vec<SoftwareWalletDiscoveredAccount> {
+    // Each probe sends an account's first transparent address to lightwalletd.
+    if !lookups.is_allowed() {
+        log::info!("software account discovery: withheld by the transparent policy");
+        return Vec::new();
+    }
     let start_height = discovery_start_height(network, birthday_height);
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
@@ -912,7 +936,11 @@ fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) 
 async fn preview_transparent_balance_for_addresses(
     lightwalletd_url: &str,
     addresses: Vec<String>,
+    lookups: PublicTransparentLookups,
 ) -> Result<u64, String> {
+    if !lookups.is_allowed() {
+        return Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string());
+    }
     if addresses.is_empty() {
         return Ok(0);
     }
@@ -1568,5 +1596,37 @@ mod tests {
             1,
         )
         .unwrap());
+    }
+
+    #[tokio::test]
+    async fn private_transparent_policy_withholds_pre_db_discovery_and_preview() {
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        let network = WalletNetwork::Main;
+        let lookups = EnhancementPolicy::for_preference(network, true)
+            .with_transparent_mode(TransparentLedgerMode::PrivateRequired)
+            .pre_db_public_transparent_lookups();
+        assert!(!lookups.is_allowed());
+
+        // Any connection to this endpoint would be a disclosure.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 2).unwrap();
+
+        assert!(
+            discover_used_software_accounts(network, &seed, None, &url, lookups)
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            preview_transparent_balance_for_addresses(&url, addresses, lookups).await,
+            Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()),
+            "an unavailable preview is not a zero balance"
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                .await
+                .is_err()
+        );
     }
 }

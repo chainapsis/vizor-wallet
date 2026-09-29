@@ -39,11 +39,14 @@ mod transport;
 pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 pub(super) use payload::{phase, queue_stored_transactions};
-pub(crate) use policy::{transparent_ledger_mode, EnhancementPolicy};
+pub(crate) use policy::{transparent_ledger_mode, EnhancementPolicy, PublicTransparentLookups};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
-use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
+use zcash_client_backend::data_api::{
+    status::{TransactionStatusRead, TransactionStatusWork},
+    WalletRead,
+};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, WalletDatabase};
@@ -67,7 +70,14 @@ pub(super) struct EnhancementSession {
 
 impl EnhancementSession {
     pub(super) fn new(network: crate::wallet::network::WalletNetwork, db_path: &str) -> Self {
-        let policy = EnhancementPolicy::current(network);
+        Self::with_policy(network, db_path, EnhancementPolicy::current(network))
+    }
+
+    pub(super) fn with_policy(
+        network: crate::wallet::network::WalletNetwork,
+        db_path: &str,
+        policy: EnhancementPolicy,
+    ) -> Self {
         payload::begin_session(db_path);
         Self {
             policy,
@@ -94,6 +104,9 @@ impl EnhancementSession {
     ) -> Result<bool, SyncError> {
         self.ready_resubmission.clear();
         self.policy.configure_db(db);
+        // Captured once per checkpoint; each public lane re-checks the durable
+        // generation before it discloses anything.
+        let lookups = self.policy.public_transparent_lookups(db)?;
         backfill_stored_fees(client, db, &self.db_path, should_exit).await?;
 
         // The public source reuses the caller-owned lightwalletd channel, while
@@ -109,9 +122,13 @@ impl EnhancementSession {
             let requests = db
                 .transaction_data_requests()
                 .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
-            let status_work = db
+            let mut status_work = db
                 .transaction_status_work()
                 .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
+            // Public status discloses the txid. Private work is unaffected.
+            if !lookups.still_allowed(db)? {
+                status_work.retain(|work| matches!(work, TransactionStatusWork::Private(_)));
+            }
             let status_actionable = status::run_requests(
                 &mut status_reader,
                 db,
@@ -133,6 +150,7 @@ impl EnhancementSession {
                     &self.db_path,
                     &requests,
                     self.network,
+                    lookups,
                     should_exit,
                 )
                 .await?;
@@ -157,8 +175,9 @@ impl EnhancementSession {
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
+        let lookups = self.policy.public_transparent_lookups(db)?;
         let mut effects =
-            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached);
+            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached, lookups);
         let route = RoutedTransport::new(should_exit);
         match Box::pin(self.payload.run(db, &route, &mut effects, should_exit)).await {
             Ok(()) => effects.finish().map(|()| false),

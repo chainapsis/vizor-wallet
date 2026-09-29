@@ -1439,6 +1439,8 @@ impl TransparentAccountSelection<'_> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct TransparentRefreshSummary {
     matched_accounts: usize,
+    /// The transparent policy withheld the public UTXO lookup entirely.
+    withheld: bool,
 }
 
 async fn refresh_utxos(
@@ -1455,6 +1457,19 @@ async fn refresh_utxos(
 ) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
     let mut summary = TransparentRefreshSummary::default();
+    // GetAddressUtxos discloses every refreshed address. When withheld, no query
+    // height advances, so a later authorized refresh still covers the gap.
+    if !EnhancementPolicy::current(network)
+        .public_transparent_lookups(db)?
+        .is_allowed()
+    {
+        log::info!(
+            "[{}] sync: transparent policy withholds public UTXO refresh",
+            elapsed(),
+        );
+        summary.withheld = true;
+        return Ok(summary);
+    }
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
@@ -3112,7 +3127,7 @@ async fn run_sync_impl(
             &should_exit,
         )
         .await?;
-        if active_summary.matched_accounts == 0 {
+        if active_summary.matched_accounts == 0 && !active_summary.withheld {
             log::warn!(
                 "[{}] sync: active account {} was absent from the wallet DB; refreshing all transparent UTXOs before chain scan",
                 elapsed(),

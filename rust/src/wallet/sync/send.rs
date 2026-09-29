@@ -2295,7 +2295,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 
     use zcash_client_backend::data_api::status::TransactionStatusRead;
     let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
-    status_db.set_status_mode(policy.status_mode());
+    policy.configure_db(&mut status_db);
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
         let observation = reader
