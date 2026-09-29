@@ -729,25 +729,43 @@ mod private_transparent_policy {
     }
 
     fn fixture() -> Fixture {
+        fixture_with_receipts(1)
+    }
+
+    /// Like [`fixture`], with receipts to the first `receipts` external
+    /// addresses, so address history plans that many independent addresses.
+    fn fixture_with_receipts(receipts: usize) -> Fixture {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
         let network = WalletNetwork::Regtest;
         let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
         let (uuid, _) =
             keys::init_db_and_create_account(&path, network, &seed, Some(100), "policy").unwrap();
-        let address =
-            keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap()[0].clone();
-        let address = TransparentAddress::decode(&network, &address).unwrap();
+        let addresses: Vec<_> =
+            keys::software_account_transparent_addresses(network, &seed, 0, receipts as u32)
+                .unwrap()
+                .iter()
+                .take(receipts)
+                .map(|address| TransparentAddress::decode(&network, address).unwrap())
+                .collect();
+        assert_eq!(addresses.len(), receipts);
+        let address = addresses[0];
         let mut db = open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
-        let receipt = legacy_transaction(OutPoint::new([1; 32], 0), address, 1_000_000);
-        store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
-        decrypt_and_store_transaction(
-            &network,
-            &mut db,
-            &receipt,
-            Some(BlockHeight::from_u32(100)),
-        )
-        .unwrap();
+        for (index, recipient) in addresses.iter().enumerate() {
+            let receipt = legacy_transaction(
+                OutPoint::new([index as u8 + 1; 32], 0),
+                *recipient,
+                1_000_000,
+            );
+            store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
+            decrypt_and_store_transaction(
+                &network,
+                &mut db,
+                &receipt,
+                Some(BlockHeight::from_u32(100)),
+            )
+            .unwrap();
+        }
         db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
         assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
         let discovered = legacy_transaction(OutPoint::new([9; 32], 0), address, 900_000);
@@ -932,6 +950,27 @@ mod private_transparent_policy {
         assert!(unchecked
             .iter()
             .any(|group| group[0].address() == address && group[0].block_range_start() == start));
+    }
+
+    /// The initial fill opens up to `MAX_ADDRESS_STREAMS` addresses in the poll
+    /// after the check; the transition must stop every address after it.
+    #[tokio::test]
+    async fn transition_during_address_history_fill_withholds_later_addresses() {
+        let mut f = fixture_with_receipts(6);
+        let planned = address_history::plan(&f.db.transaction_data_requests().unwrap()).len();
+        assert!(planned > 4, "more addresses than one fill: {planned}");
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lwd.count("/GetTaddressTxids"),
+            4,
+            "only the first fill is sent"
+        );
     }
 
     #[tokio::test]

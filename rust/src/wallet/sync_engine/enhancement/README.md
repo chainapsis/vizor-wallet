@@ -295,11 +295,17 @@ applied to the wallet, stamped with the policy generation.
 
 - `Withheld` sends nothing and completes nothing. Queued work, unchecked
   ranges, and UTXO query heights stay durable for a later authorized pass.
-- Every lane re-checks with `still_allowed` immediately before each request
-  it dispatches (a UTXO group, a Ledger discovery batch, an address-history
-  stream, a status or payload request, a discovery probe), so a transition by
+- Every lane re-checks with `still_allowed` immediately before each dispatch
+  (a UTXO group, a Ledger discovery batch, an address-history fill or resumed
+  range, a status or payload request, a discovery probe), so a transition by
   another connection, including one that keeps public authority, revokes
-  lookups captured under the old generation. The rest of the lane is withheld;
+  lookups captured under the old generation. A concurrent dispatch is bounded
+  by its buffer, so all of its requests start in the poll that follows the
+  check, with no yield in between. A check per request would run in that same
+  poll and could order no better against another connection's commit, which
+  may land between any check and its dispatch. The invariant is therefore: no
+  request is started after the lane has yielded since its last check. The rest
+  of the lane is withheld;
   responses already in flight are stored, but an in-flight history range is not
   acknowledged and is retried later. A later operation resolves lookups afresh
   under the new generation.

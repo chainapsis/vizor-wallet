@@ -1898,7 +1898,9 @@ fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncEr
 ///
 /// `authorize` runs immediately before every group's dispatch, so a group
 /// starts only while its disclosure is still authorized; the first `false`
-/// ends the run as `Withheld` with later groups unsent. `state` is lent to
+/// ends the run as `Withheld` with later groups unsent. A group never exceeds
+/// the download buffer, so all of its RPCs start in the poll that follows the
+/// check; a per-RPC check would run in that same poll and add nothing. `state` is lent to
 /// `authorize` and `persist` in turn, since both need the wallet database.
 async fn process_bounded_transparent_refreshes<
     S,

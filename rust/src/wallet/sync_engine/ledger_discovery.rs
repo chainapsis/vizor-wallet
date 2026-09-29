@@ -1153,6 +1153,10 @@ mod tests {
         .await
         .unwrap();
 
+        // The fake transitions synchronously inside the first open, which a
+        // real concurrent connection cannot order before the other opens: the
+        // whole batch starts in the poll after the check. What revocation must
+        // stop is the next batch.
         assert_eq!(
             queries.lock().unwrap().len(),
             CONCURRENCY,
