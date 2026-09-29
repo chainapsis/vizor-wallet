@@ -952,6 +952,30 @@ mod private_transparent_policy {
             .any(|group| group[0].address() == address && group[0].block_range_start() == start));
     }
 
+    /// An empty range answered after the transition is not acknowledged.
+    #[tokio::test]
+    async fn transition_during_empty_address_history_withholds_acknowledgement() {
+        let mut f = fixture();
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let (address, start) = (
+            unchecked[0][0].address(),
+            unchecked[0][0].block_range_start(),
+        );
+        f.history_tx.clear();
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        assert!(unchecked
+            .iter()
+            .any(|group| group[0].address() == address && group[0].block_range_start() == start));
+    }
+
     /// The initial fill opens up to `MAX_ADDRESS_STREAMS` addresses in the poll
     /// after the check; the transition must stop every address after it.
     #[tokio::test]
