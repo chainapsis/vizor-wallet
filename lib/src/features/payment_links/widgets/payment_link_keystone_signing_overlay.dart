@@ -343,6 +343,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       amountZatoshi: widget.amountZatoshi,
       sourceAccountUuid: widget.sourceAccountUuid,
       presentation: widget.presentation,
+      birthdayHeight: widget.birthdayHeight,
     );
     _draftCreation = creation;
     final draft = await creation;
