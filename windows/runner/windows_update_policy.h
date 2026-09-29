@@ -9,12 +9,18 @@ namespace windows_update {
 inline std::string Channel(const std::string& arch, const std::string& network) {
   return "win-" + arch + "-" + network;
 }
-inline bool ProbeArm64(uint16_t native_machine, const std::string& installed_arch) {
-  return installed_arch == "x64" && native_machine == 0xaa64;
+struct Channels {
+  bool x64;
+  bool arm64;
+};
+inline Channels ChannelsForMachine(uint16_t native_machine, const std::string& installed_arch) {
+  if (native_machine == 0xaa64) return {true, true};
+  if (native_machine == 0x8664) return {true, false};
+  return {installed_arch == "x64", installed_arch == "arm64"};
 }
 
-enum class CheckResult { kNone, kAvailable, kMissing, kTransient, kError };
-enum class Choice { kNone, kInstalled, kArm64, kError };
+enum class CheckResult { kSkipped, kNone, kAvailable, kMissing, kTransient, kError };
+enum class Choice { kNone, kX64, kArm64, kError };
 
 inline CheckResult FeedFailure(uint32_t status, bool signature) {
   // A missing signature on an existing feed is never an absent architecture.
@@ -68,16 +74,21 @@ inline int CompareVersions(std::string left, std::string right) {
   return lp.size() == rp.size() ? 0 : lp.size() < rp.size() ? -1 : 1;
 }
 
-inline Choice ChooseUpdate(CheckResult installed, const std::string& installed_version,
+// Available candidates must be newer than the installed version: the caller
+// obtains them from Velopack with AllowVersionDowngrade=false.
+inline Choice ChooseUpdate(CheckResult x64, const std::string& x64_version,
                            CheckResult arm64, const std::string& arm64_version) {
-  if (installed == CheckResult::kError || arm64 == CheckResult::kError) return Choice::kError;
-  if (installed == CheckResult::kAvailable && arm64 == CheckResult::kAvailable) {
-    return CompareVersions(arm64_version, installed_version) >= 0 ? Choice::kArm64 : Choice::kInstalled;
+  if (x64 == CheckResult::kError || arm64 == CheckResult::kError) return Choice::kError;
+  if (x64 == CheckResult::kAvailable && arm64 == CheckResult::kAvailable) {
+    return CompareVersions(arm64_version, x64_version) >= 0 ? Choice::kArm64 : Choice::kX64;
   }
   if (arm64 == CheckResult::kAvailable) return Choice::kArm64;
-  if (installed == CheckResult::kAvailable) return Choice::kInstalled;
-  if (installed == CheckResult::kTransient || arm64 == CheckResult::kTransient) return Choice::kError;
-  return Choice::kNone;
+  if (x64 == CheckResult::kAvailable) return Choice::kX64;
+  if (x64 == CheckResult::kTransient || arm64 == CheckResult::kTransient) return Choice::kError;
+  // No update is meaningful only if at least one queried feed was valid.
+  // Both feeds missing (or the only queried feed missing) is a lookup failure.
+  if (x64 == CheckResult::kNone || arm64 == CheckResult::kNone) return Choice::kNone;
+  return Choice::kError;
 }
 inline bool SafeVersion(const std::string& version) {
   return !version.empty() && version.size() <= 128 &&

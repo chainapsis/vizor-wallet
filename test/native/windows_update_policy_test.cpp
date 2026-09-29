@@ -5,22 +5,28 @@ int main() {
   using namespace windows_update;
   assert(Channel("x64", "mainnet") == "win-x64-mainnet");
   assert(Channel("arm64", "testnet") == "win-arm64-testnet");
-  assert(ProbeArm64(0xaa64, "x64"));
-  assert(!ProbeArm64(0xaa64, "arm64"));
-  assert(!ProbeArm64(0x8664, "x64"));
-  assert(!ProbeArm64(0, "x64"));
-  assert(!ProbeArm64(0x1234, "arm64"));
+  for (const auto& installed : {"x64", "arm64"}) {
+    const auto arm_pc = ChannelsForMachine(0xaa64, installed);
+    assert(arm_pc.x64 && arm_pc.arm64);
+    const auto x64_pc = ChannelsForMachine(0x8664, installed);
+    assert(x64_pc.x64 && !x64_pc.arm64);
+    for (const auto unknown : {0, 0x1234}) {
+      const auto fallback = ChannelsForMachine(unknown, installed);
+      assert(fallback.x64 == (std::string(installed) == "x64"));
+      assert(fallback.arm64 == (std::string(installed) == "arm64"));
+    }
+  }
 
   using R = CheckResult;
   using C = Choice;
   // ARM64 absent, empty, old, or already at the installed version: continue x64.
   for (const auto arm : {R::kMissing, R::kNone, R::kTransient}) {
-    assert(ChooseUpdate(R::kAvailable, "1.2.3", arm, "") == C::kInstalled);
+    assert(ChooseUpdate(R::kAvailable, "1.2.3", arm, "") == C::kX64);
   }
   assert(ChooseUpdate(R::kNone, "", R::kMissing, "") == C::kNone);
   assert(ChooseUpdate(R::kNone, "", R::kNone, "") == C::kNone);
   assert(ChooseUpdate(R::kAvailable, "1.2.3", R::kAvailable, "1.2.3") == C::kArm64);
-  assert(ChooseUpdate(R::kAvailable, "1.2.4", R::kAvailable, "1.2.3") == C::kInstalled);
+  assert(ChooseUpdate(R::kAvailable, "1.2.4", R::kAvailable, "1.2.3") == C::kX64);
   assert(ChooseUpdate(R::kAvailable, "1.2.3", R::kAvailable, "1.2.4") == C::kArm64);
   assert(ChooseUpdate(R::kNone, "", R::kAvailable, "1.2.4") == C::kArm64);
   assert(ChooseUpdate(R::kTransient, "", R::kAvailable, "1.2.4") == C::kArm64);
@@ -30,6 +36,27 @@ int main() {
   // Never hide a signature, identity, or format failure behind the other feed.
   assert(ChooseUpdate(R::kAvailable, "1.2.3", R::kError, "") == C::kError);
   assert(ChooseUpdate(R::kError, "", R::kAvailable, "1.2.3") == C::kError);
+  // ARM64 publication can disappear after an ARM64 app has been installed.
+  assert(ChooseUpdate(R::kAvailable, "0.0.61", R::kMissing, "") == C::kX64);
+  assert(ChooseUpdate(R::kMissing, "", R::kAvailable, "0.0.62") == C::kArm64);
+  assert(ChooseUpdate(R::kMissing, "", R::kNone, "") == C::kNone);
+  assert(ChooseUpdate(R::kMissing, "", R::kMissing, "") == C::kError);
+  // A skipped channel is not evidence that the release feed exists.
+  assert(ChooseUpdate(R::kMissing, "", R::kSkipped, "") == C::kError);
+  assert(ChooseUpdate(R::kSkipped, "", R::kMissing, "") == C::kError);
+  assert(ChooseUpdate(R::kNone, "", R::kSkipped, "") == C::kNone);
+  assert(ChooseUpdate(R::kSkipped, "", R::kNone, "") == C::kNone);
+  assert(ChooseUpdate(R::kAvailable, "0.0.61", R::kSkipped, "") == C::kX64);
+  assert(ChooseUpdate(R::kSkipped, "", R::kAvailable, "0.0.61") == C::kArm64);
+  // Switching architecture does not alter the next check's channel set.
+  // Velopack represents candidates at/below the installed version as kNone.
+  for (const auto& installed : {"x64", "arm64"}) {
+    const auto channels = ChannelsForMachine(0xaa64, installed);
+    assert(channels.x64 && channels.arm64);
+    assert(ChooseUpdate(R::kAvailable, "0.0.61", R::kNone, "") == C::kX64);
+    assert(ChooseUpdate(R::kNone, "", R::kAvailable, "0.0.62") == C::kArm64);
+    assert(ChooseUpdate(R::kAvailable, "0.0.63", R::kAvailable, "0.0.63") == C::kArm64);
+  }
   assert(FeedFailure(404, false) == R::kMissing);
   assert(FeedFailure(404, true) == R::kError);
   for (const auto status : {0, 200, 408, 429, 500, 502, 503, 504}) {

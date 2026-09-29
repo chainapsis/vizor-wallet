@@ -96,7 +96,7 @@ struct UpdateSession {
 std::unique_ptr<UpdateSession> g_session;
 std::string g_installed_arch;
 std::string g_network;
-bool g_check_arm64 = false;
+windows_update::Channels g_channels = {false, false};
 
 UpdateStatus g_status = UpdateStatus::kIdle;
 bool g_supported = true;
@@ -868,7 +868,7 @@ bool EnsureManagerLocked() {
   g_installed_arch = "x64";
 #endif
   g_network = std::string(VIZOR_WINDOWS_STORAGE_PREFIX) == "Vizor" ? "mainnet" : "testnet";
-  g_check_arm64 = windows_update::ProbeArm64(native_machine, g_installed_arch);
+  g_channels = windows_update::ChannelsForMachine(native_machine, g_installed_arch);
   g_session = CreateSession(g_installed_arch);
   if (!g_session) {
     SetUnavailableLocked(LastVelopackError());
@@ -905,9 +905,6 @@ std::unique_ptr<UpdateSession> CheckChannel(const std::string& arch) {
     }
   } else if (check == NO_UPDATE_AVAILABLE || check == REMOTE_IS_EMPTY) {
     context.result = windows_update::CheckResult::kNone;
-  }
-  if (context.result == windows_update::CheckResult::kMissing && arch == g_installed_arch) {
-    context.result = windows_update::CheckResult::kError;
   }
   if (context.result != windows_update::CheckResult::kAvailable &&
       context.result != windows_update::CheckResult::kNone) {
@@ -976,36 +973,38 @@ UpdateOperationStartResult StartCheckForUpdates() {
 
   std::thread([]() {
     using windows_update::CheckResult;
-    auto installed = CheckChannel(g_installed_arch);
-    const std::string installed_error = installed ? installed->context.error : LastVelopackError();
-    auto arm64 = g_check_arm64 ? CheckChannel("arm64") : nullptr;
+    auto x64 = g_channels.x64 ? CheckChannel("x64") : nullptr;
+    const std::string x64_error = x64 ? x64->context.error :
+        (g_channels.x64 ? LastVelopackError() : "");
+    auto arm64 = g_channels.arm64 ? CheckChannel("arm64") : nullptr;
     const std::string arm64_error = arm64 ? arm64->context.error :
-        (g_check_arm64 ? LastVelopackError() : "");
-    const auto installed_result = installed ? installed->context.result : CheckResult::kError;
+        (g_channels.arm64 ? LastVelopackError() : "");
+    const auto x64_result = x64 ? x64->context.result :
+        (g_channels.x64 ? CheckResult::kError : CheckResult::kSkipped);
     const auto arm64_result = arm64 ? arm64->context.result :
-        (g_check_arm64 ? CheckResult::kError : CheckResult::kNone);
+        (g_channels.arm64 ? CheckResult::kError : CheckResult::kSkipped);
     const auto version = [](const std::unique_ptr<UpdateSession>& session) {
       return session && session->update ? AssetVersion(session->update->TargetFullRelease) : "";
     };
     const auto choice = windows_update::ChooseUpdate(
-        installed_result, version(installed), arm64_result, version(arm64));
+        x64_result, version(x64), arm64_result, version(arm64));
     std::lock_guard<std::mutex> lock(g_update_mutex);
     g_busy = false;
-    if (choice == windows_update::Choice::kInstalled || choice == windows_update::Choice::kArm64) {
-      if (installed_result == CheckResult::kTransient || arm64_result == CheckResult::kTransient) {
+    if (choice == windows_update::Choice::kX64 || choice == windows_update::Choice::kArm64) {
+      if (x64_result == CheckResult::kTransient || arm64_result == CheckResult::kTransient) {
         const std::string diagnostic = "Vizor update: using the verified alternative after " +
-            (installed_result == CheckResult::kTransient ? installed_error : arm64_error) + "\n";
+            (x64_result == CheckResult::kTransient ? x64_error : arm64_error) + "\n";
         OutputDebugStringA(diagnostic.c_str());
       }
-      g_session = choice == windows_update::Choice::kArm64 ? std::move(arm64) : std::move(installed);
+      g_session = choice == windows_update::Choice::kArm64 ? std::move(arm64) : std::move(x64);
       g_available_version = AssetVersion(g_session->update->TargetFullRelease);
       g_status = UpdateStatus::kAvailable;
     } else if (choice == windows_update::Choice::kError) {
       g_status = UpdateStatus::kFailed;
       // Prefer integrity/configuration failures over a transient failure on the other channel.
-      g_message = CoalesceMessage(installed_result == CheckResult::kError ? installed_error :
+      g_message = CoalesceMessage(x64_result == CheckResult::kError ? x64_error :
           arm64_result == CheckResult::kError ? arm64_error :
-          !installed_error.empty() ? installed_error : arm64_error);
+          !x64_error.empty() ? x64_error : arm64_error);
     } else {
       g_status = UpdateStatus::kNoUpdate;
     }
