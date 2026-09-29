@@ -1,3 +1,4 @@
+import '../../../rust/wallet/swap_receiving/receive.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -804,7 +805,9 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (e) {
       if (generation != _quoteGeneration) return;
-      if (!direction.sendsZec && e.toString().contains('SWAP_RECEIVE_STALE:')) {
+      if (!direction.sendsZec &&
+          e is ReceiveError &&
+          e.code == ReceiveErrorCode.stale) {
         _reviewStagingAddress = null;
       }
       state = state.copyWith(
@@ -2147,6 +2150,7 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   String _friendlyQuoteError(Object error) {
+    if (error is ReceiveError) return error.message;
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }

@@ -2857,7 +2857,7 @@ async fn run_payment_link_claim_sync_once(
                     ));
                 }
                 RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
-                    swap_private::run(&mut db, network, &should_exit).await?;
+                    swap_private::run(&mut db, network, &should_exit, &mut client).await?;
                     if should_exit() {
                         return Ok(());
                     }
@@ -3704,7 +3704,7 @@ async fn run_sync_impl(
                         prefetch = None;
                         continue;
                     }
-                    swap_private::run(&mut db, network, &should_exit).await?;
+                    swap_private::run(&mut db, network, &should_exit, &mut client).await?;
                     if should_exit() {
                         return Ok(());
                     }

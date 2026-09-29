@@ -7,47 +7,31 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
-  test('only supported NEAR statuses change the receiving watch', () {
-    expect(
-      swapScanningTerminalStatus(
-        null,
-        localStatus: SwapIntentStatus.awaitingDeposit,
-      ),
-      false,
-    );
-    expect(
-      swapScanningTerminalStatus(
-        null,
-        localStatus: SwapIntentStatus.awaitingExternalDeposit,
-      ),
-      false,
-    );
-    expect(
-      swapScanningTerminalStatus(
-        'UNKNOWN',
-        localStatus: SwapIntentStatus.awaitingDeposit,
-      ),
-      isNull,
-    );
-    expect(
-      swapScanningTerminalStatus(null, localStatus: SwapIntentStatus.expired),
-      isNull,
-    );
-    for (final status in ['SUCCESS', 'REFUNDED', 'FAILED']) {
-      expect(swapScanningTerminalStatus(status), true);
-    }
-    for (final status in [
-      'PENDING_DEPOSIT',
-      'KNOWN_DEPOSIT_TX',
-      'PROCESSING',
-      'INCOMPLETE_DEPOSIT',
-    ]) {
-      expect(swapScanningTerminalStatus(status), false);
-    }
-    for (final status in [null, 'expired', 'UNKNOWN', 'HTTP 500']) {
-      expect(swapScanningTerminalStatus(status), isNull);
-    }
-  });
+  test(
+    'new quotes start pending and local expiry does not invent an outcome',
+    () {
+      expect(
+        swapScanningProviderStatus(
+          null,
+          localStatus: SwapIntentStatus.awaitingDeposit,
+        ),
+        'PENDING_DEPOSIT',
+      );
+      expect(
+        swapScanningProviderStatus(
+          null,
+          localStatus: SwapIntentStatus.awaitingExternalDeposit,
+        ),
+        'PENDING_DEPOSIT',
+      );
+      expect(
+        swapScanningProviderStatus(null, localStatus: SwapIntentStatus.expired),
+        isNull,
+      );
+      expect(swapScanningProviderStatus('REFUNDED'), 'REFUNDED');
+      expect(swapScanningProviderStatus('UNKNOWN'), 'UNKNOWN');
+    },
+  );
 
   test(
     'replays persisted terminal records and drains lifecycle writes before reset',

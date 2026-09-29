@@ -38,12 +38,16 @@ accepted root. It never trusts the file's root on its own.
 
 ## Build and services
 
-Use the mainnet build. NEAR address recovery always uses PIR, independently of
+Use the mainnet build. NEAR address recovery always uses private directory discovery, independently of
 **NEAR swap privacy** and the general **Private queries** setting. This exception
 covers receiver discovery and matching note data. Ordinary transaction retrieval
 still follows Private queries. Creating a new private swap requires both switches
 on. Both default off.
 The [software-wallet guide](near-swap-software-poc.md) defines toggle behavior.
+The complete software implementation is saved on `adam/near-swap-complete-20260929`
+in the wallet, library and receiver service repositories. These are integration
+branches to preserve the complete state before extracting review-sized PRs.
+
 Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. No sibling
 math compatibility checkout or compile-time privacy environment variable is required.
 Regenerate the bridge with the repository wrapper after API changes.
@@ -81,30 +85,29 @@ POC database with this build or reuse its secure-store namespace.
 
 ## POC boundaries
 
-Private recovery scans locally recorded and memo-restored operations while pending and through
-ten blocks after the first supported NEAR terminal status. Repeated observations
-and restarts preserve that deadline. Unknown statuses and transport failures do
-not retire or reopen a watch. PIR closeout can outlive scanning without extending
-it. Authenticated funding memos restore the refund watch and deposit address.
-The first historical PIR lookup runs independently of that watch. Pending refunds
-are polled during sync at most once per minute, including after restart. Supported
-terminal status starts the grace deadline. Status never establishes a wallet note
-or its balance. Incoming lookahead has no recoverable provider association and
-uses its fixed PIR target without a reconstructed operation watch.
+New local operations use temporary compact scanning with no key-count cap.
+Restored funding memos register directory work without adding historical keys to
+trial decryption. Supported pending statuses keep a local watch active. A terminal
+observation is persisted immediately, then a later fresh chain request anchors
+ten more scanning blocks. Repeated observations preserve that horizon. Cached UI
+status and failed polls do not refresh the observation time.
 
-The retention floor is durable and shared pruning respects the oldest unfinished
-account. Sapling and Orchard keep their ordinary policies. A long restore, missing
-memo, pending operation or unavailable directory can extend temporary retention.
-Reaching the tip alone does not release it. Reorgs rewind the floor with scan state.
-Pruning deletes rows for SQLite to reuse. It does not force a database-file vacuum.
+After two days without a supported observation, an unknown local operation moves
+to directory follow-ups without being marked complete. Follow-ups back off from
+one to twelve hours. Terminal operations also require a separate check twelve
+hours after the first terminal observation. An expected Zcash refund cannot close
+with an empty lookup. Incoming source-chain refunds do not imply a Zcash receipt.
 
-If an authenticated, included candidate needs already-pruned spend history, the
-library queues ordinary compact-block replay from the account birthday or Ironwood
-activation, whichever is later, through the accepted tip. This uses the account's
-whole public recovery interval, not the note's height or nullifier. It preserves
-PIR for receiver discovery and matching ciphertext, survives restart and keeps the
-candidate out of balances until spentness is established. It may redownload a large
-range. A separate archive or nullifier PIR service is not required for this path.
+The retention floor follows processed coverage and pending candidates, independent
+of provider completion. Missing memos or unavailable directory data can extend
+temporary retention. Sapling and Orchard keep their ordinary policies. Reorgs
+rewind affected coverage. Pruning permits SQLite to reuse rows without forcing a
+vacuum.
+
+If an authenticated, included candidate needs pruned spend history, the library
+coalesces replay of the whole public account recovery interval. Repeated attempts
+do not restart the same replay. A candidate before that interval stays explicitly
+unresolved until the range is widened. Pending candidates never enter balances.
 
 Witness publications must be within 100 blocks of the
 accepted tip. The receiver droplet polls every ten seconds and publishes the
@@ -115,21 +118,42 @@ private and pending. It is logged explicitly. This does not authenticate missing
 transaction metadata or permit a public fallback. Inclusion authenticates a note
 and position. Transaction IDs and Action indices remain indexer assertions,
 checked for conflicts with local data. Directory omission detection, production
-capacity, temporary-cache sizing under long outages and hardware qualification remain release work.
+resource sizing, temporary-cache sizing under long outages and hardware qualification remain release work.
 
 ### Recovery completion and ordinary sync
 
-Each key has a durable recovery target. A local operation targets the saved grace
-height once that height has been scanned. Restored refunds first check the accepted
-restore tip, then keep their watch until provider completion and final closeout.
-Incoming lookahead keys use only their first accepted restore tip. The receiver publication must cover that target before lookup; a
-lagging publication causes no receiver queries or common witness download.
-Completed targets stay fixed when new blocks arrive, so normal tip following needs
-no receiver PIR requests. Newly found funding memos and paid receive indices expand
-the deterministic key discovery window and create their own recovery targets.
-Receiver discovery and matching note retrieval always use PIR, even with both
-switches off. A PIR failure never triggers public replay. An unavailable transport
-or publication leaves recovery pending instead of reporting a complete restore.
+`WalletDb::prepare_swap_discovery_batch` selects bounded metadata batches without
+deriving historical keys. It counts the whole job's remaining uncached lookups.
+Retries retain fixed canonical targets. Attempts are leased individually before
+network I/O so interruption cannot postpone the unstarted tail. A failed key does
+not prevent other selected work from progressing.
+
+The coordinator reuses one directory session and common witness file across
+batches. Small jobs use PIR. Large jobs download the common row file after checking
+its length, digest and independently accepted chain coverage. At current geometry,
+remaining PIR upload plus response bytes cross the 32 MiB file at about 240
+one-page lookups. The initial 50/250/10,000 lookup test measured 7,034,703,
+33,555,199 and 33,555,199 HTTP body bytes respectively, including setup. These
+loopback measurements exclude headers and TLS. Common witnesses and note data
+are separate costs for both modes.
+
+Complete lookup results and authenticated ciphertexts are persisted atomically.
+A restart resumes queued notes without another receiver lookup or ciphertext
+retrieval. Already imported output identities are checked rather than imported
+again. Inclusion, witness and spend validation still precede balance changes.
+Processed coverage and final scheduling are committed together. Backoff and an
+unavailable publication never make incomplete historical recovery appear complete.
+
+New memos and paid receive indices extend recovery. Completed work makes no routine
+requests. Both issuance settings may be off during recovery. File mode sends no
+receiver-dependent public ranges, and PIR failure has no public fallback.
+
+Funding memo recovery now persists completion per note together with its key and
+provider watch. Maintenance retries missing memos and missing own-send evidence,
+but returns only newly processed records. Changed memo data or funding heights
+make a record eligible again. The forward migration starts with no inferred
+completion. Registry lookup by key ID, receiver or reservation derives only the
+selected key. Scanning reuses that validated derivation.
 
 The SQLite scanner splits a batch at a watch boundary and derives only active keys.
 Retirement removes trial decryption, preserving key IDs, note ownership, witnesses,

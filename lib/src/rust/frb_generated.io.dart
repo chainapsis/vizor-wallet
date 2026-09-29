@@ -26,6 +26,7 @@ import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
+import 'wallet/swap_receiving/receive.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustLibApiImplPlatform({
@@ -1055,6 +1056,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
+
+  @protected
+  ReceiveError dco_decode_receive_error(dynamic raw);
+
+  @protected
+  ReceiveErrorCode dco_decode_receive_error_code(dynamic raw);
 
   @protected
   ReceiveQuoteStatusRequest dco_decode_receive_quote_status_request(
@@ -2603,6 +2610,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
+
+  @protected
+  ReceiveError sse_decode_receive_error(SseDeserializer deserializer);
+
+  @protected
+  ReceiveErrorCode sse_decode_receive_error_code(SseDeserializer deserializer);
 
   @protected
   ReceiveQuoteStatusRequest sse_decode_receive_quote_status_request(
@@ -4488,6 +4501,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_proposal_result(
     ProposalResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receive_error(ReceiveError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_receive_error_code(
+    ReceiveErrorCode self,
     SseSerializer serializer,
   );
 

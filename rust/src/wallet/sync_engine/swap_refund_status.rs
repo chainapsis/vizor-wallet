@@ -4,21 +4,18 @@ use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
 use futures::StreamExt;
 use std::num::NonZeroU32;
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
-use zcash_protocol::consensus::BlockHeight;
 
 /// A status response affects scanning deadlines, never note ownership or balance.
-fn terminal_status(bytes: &[u8]) -> Option<bool> {
+fn provider_status(bytes: &[u8]) -> Option<zakura_swap_receiving::lifecycle::OperationStatus> {
     let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
-    match value.get("status")?.as_str()? {
-        "KNOWN_DEPOSIT_TX" | "PENDING_DEPOSIT" | "INCOMPLETE_DEPOSIT" | "PROCESSING" => Some(false),
-        "SUCCESS" | "REFUNDED" | "FAILED" => Some(true),
-        _ => None,
-    }
+    zakura_swap_receiving::lifecycle::near_status(
+        zakura_swap_receiving::Purpose::Refund,
+        value.get("status")?.as_str()?,
+    )
 }
 
 pub(super) async fn reconcile(
     db: &mut WalletDatabase,
-    tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), String> {
     let now = crate::wallet::swap_receiving::receive::now()?;
@@ -52,7 +49,7 @@ pub(super) async fn reconcile(
                     )
                     .await;
                     let terminal = match response {
-                        Ok(Ok(bytes)) => terminal_status(&bytes),
+                        Ok(Ok(bytes)) => provider_status(&bytes),
                         _ => None,
                     };
                     (key, deposit, terminal)
@@ -64,9 +61,9 @@ pub(super) async fn reconcile(
             if should_exit() {
                 return Ok(());
             }
-            if terminal == Some(true) {
+            if let Some(status) = terminal {
                 with_wallet_db_write_lock("swap_refund.status", || {
-                    db.observe_swap_operation(account, key, &deposit, true, tip)
+                    db.record_swap_observation(account, key, &deposit, status, now, false)
                         .map_err(|e| e.to_string())
                 })?;
             }
@@ -75,37 +72,4 @@ pub(super) async fn reconcile(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn only_supported_provider_states_change_scanning() {
-        for status in [
-            "KNOWN_DEPOSIT_TX",
-            "PENDING_DEPOSIT",
-            "INCOMPLETE_DEPOSIT",
-            "PROCESSING",
-        ] {
-            assert_eq!(
-                terminal_status(format!(r#"{{"status":"{status}"}}"#).as_bytes()),
-                Some(false)
-            );
-        }
-        for status in ["SUCCESS", "REFUNDED", "FAILED"] {
-            assert_eq!(
-                terminal_status(format!(r#"{{"status":"{status}"}}"#).as_bytes()),
-                Some(true)
-            );
-        }
-        for bytes in [
-            b"{}".as_slice(),
-            br#"{"status":"CANCELLED"}"#,
-            br#"{"status":1}"#,
-            b"bad json",
-        ] {
-            assert_eq!(terminal_status(bytes), None);
-        }
-    }
 }

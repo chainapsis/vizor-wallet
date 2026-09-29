@@ -1,8 +1,19 @@
+import 'package:zcash_wallet/src/rust/wallet/swap_receiving/receive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 
 void main() {
+  test('typed allocation failures preserve the display message', () {
+    const cause = ReceiveError(
+      code: ReceiveErrorCode.stale,
+      message: 'Choose another quote.',
+    );
+    expect(
+      const SwapZecStagingAddressUnavailableException(cause).toString(),
+      'Choose another quote.',
+    );
+  });
   test('POC uses separate refund and incoming reservations', () async {
     final purposes = <SwapDirection>[];
     final service = SwapZecStagingAddressService(

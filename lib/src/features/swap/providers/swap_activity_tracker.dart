@@ -1,3 +1,5 @@
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show PlatformInt64Util;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
@@ -15,23 +17,19 @@ import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
 import 'swap_receive_reservation_service.dart';
 
-/// A newly accepted quote starts a pending watch before the first status poll.
-/// Local expiry and unknown provider responses cannot end a receiving watch.
-bool? swapScanningTerminalStatus(
+/// Supply the initial pending observation for a new quote. Rust normalizes all
+/// provider states by swap direction; local UI expiry is not a provider outcome.
+String? swapScanningProviderStatus(
   String? raw, {
   SwapIntentStatus? localStatus,
-}) => switch (raw) {
-  null
-      when localStatus == SwapIntentStatus.awaitingDeposit ||
-          localStatus == SwapIntentStatus.awaitingExternalDeposit =>
-    false,
-  'SUCCESS' || 'REFUNDED' || 'FAILED' => true,
-  'PENDING_DEPOSIT' ||
-  'KNOWN_DEPOSIT_TX' ||
-  'PROCESSING' ||
-  'INCOMPLETE_DEPOSIT' => false,
-  _ => null,
-};
+}) {
+  if (raw != null) return raw;
+  if (localStatus == SwapIntentStatus.awaitingDeposit ||
+      localStatus == SwapIntentStatus.awaitingExternalDeposit) {
+    return 'PENDING_DEPOSIT';
+  }
+  return null;
+}
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
@@ -71,21 +69,30 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
       final dbPath = await getWalletDbPath();
       final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
       for (final intent in intents) {
-        final terminal = swapScanningTerminalStatus(
+        final status = swapScanningProviderStatus(
           intent.providerStatusRaw,
           localStatus: intent.status,
         );
         final address = intent.direction?.sendsZec == true
             ? intent.oneClickRefundTo
             : intent.oneClickRecipient;
-        if (terminal == null || address == null) continue;
+        final observedAt = intent.lastStatusCheckedAt ?? intent.createdAt;
+        if (status == null ||
+            address == null ||
+            observedAt == null ||
+            intent.statusError != null) {
+          continue;
+        }
         await rust_sync.observeSwapReceivingOperation(
           dbPath: dbPath,
           network: network,
           accountUuid: accountUuid,
-          operationId: intent.id,
+          operationId: intent.depositAddress ?? intent.id,
           address: address,
-          terminal: terminal,
+          status: status,
+          observedAtSeconds: PlatformInt64Util.from(
+            observedAt.millisecondsSinceEpoch ~/ 1000,
+          ),
         );
       }
     },

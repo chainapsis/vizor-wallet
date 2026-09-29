@@ -21,7 +21,9 @@ use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
-use zcash_client_sqlite::wallet::swap_receiving::{PaymentApplication, PendingPayment};
+use zcash_client_sqlite::wallet::swap_receiving::{
+    DiscoveryWork, PaymentApplication, PendingPayment,
+};
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
@@ -91,6 +93,7 @@ pub(super) async fn run(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
+    lwd: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
 ) -> Result<(), SyncError> {
     if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
         return Ok(());
@@ -108,28 +111,24 @@ pub(super) async fn run(
     let started = std::time::Instant::now();
     let phase = async {
         let result = async {
-            loop {
-                let before: Vec<_> = discovery_work(db, through)?
-                    .into_iter()
-                    .map(|(account, key)| (account, key.key_id()))
-                    .collect();
-                run_inner(db, network, should_exit).await?;
-                with_wallet_db_write_lock("swap_private.prune", || {
-                    crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
-                })?;
-                // A payment at the window edge adds more keys. Finish checking
-                // them in this sync before announcing a complete restore.
-                let after: Vec<_> = discovery_work(db, through)?
-                    .into_iter()
-                    .map(|(account, key)| (account, key.key_id()))
-                    .collect();
-                if after.is_empty() {
-                    return Ok::<(), String>(());
-                }
-                if after == before {
-                    return Err("Swap recovery needs more scanning or a newer publication".into());
+            run_inner(db, network, should_exit, lwd).await?;
+            with_wallet_db_write_lock("swap_private.prune", || {
+                crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
+            })?;
+            for account in db.get_account_ids().map_err(error)? {
+                let Some(details) = db.get_account(account).map_err(error)? else {
+                    continue;
+                };
+                if matches!(details.source(), AccountSource::Derived { .. })
+                    && crate::wallet::keys::hardware_signer_kind(details.source()).is_none()
+                    && db
+                        .swap_history_pending(account, through.height)
+                        .map_err(error)?
+                {
+                    return Err("Historical swap recovery remains pending".to_owned());
                 }
             }
+            Ok::<(), String>(())
         }
         .await;
         log::info!(
@@ -150,13 +149,15 @@ fn discovery_work(
     db: &mut WalletDatabase,
     through: ChainAnchor,
 ) -> Result<
-    Vec<(
-        zcash_client_sqlite::AccountUuid,
-        zcash_client_sqlite::wallet::swap_receiving::RegisteredKey,
-    )>,
+    (
+        Vec<(zcash_client_sqlite::AccountUuid, DiscoveryWork)>,
+        usize,
+    ),
     String,
 > {
     let mut work = Vec::new();
+    let mut remaining = 0;
+    let now = crate::wallet::swap_receiving::receive::now()?;
     for account in db.get_account_ids().map_err(error)? {
         let details = db
             .get_account(account)
@@ -167,29 +168,14 @@ fn discovery_work(
         {
             continue;
         }
-        for key in db.get_swap_receiving_keys(account).map_err(error)? {
-            let target = with_wallet_db_write_lock("swap_private.target", || {
-                db.prepare_swap_recovery_target(account, key.key_id(), through)
-                    .map_err(error)
-            })?;
-            if let Some(target) = target {
-                // Closeout requires a directory check even if local scanning found
-                // the receipt. Its saved target does not move with the chain tip.
-                if db
-                    .swap_directory_check(account, key.key_id())
-                    .map_err(error)?
-                    .is_none_or(|checked| checked.height < target.height)
-                    || !db
-                        .pending_swap_payments(account, key.key_id())
-                        .map_err(error)?
-                        .is_empty()
-                {
-                    work.push((account, key));
-                }
-            }
-        }
+        let batch = with_wallet_db_write_lock("swap_private.discovery", || {
+            db.prepare_swap_discovery_batch(account, through, now, NonZeroU32::new(64).unwrap())
+                .map_err(error)
+        })?;
+        remaining += batch.remaining_lookups;
+        work.extend(batch.work.into_iter().map(|key| (account, key)));
     }
-    Ok(work)
+    Ok((work, remaining))
 }
 
 /// Connects to a directory publication bound to locally accepted block history.
@@ -197,6 +183,7 @@ pub(crate) async fn receiver_client<T: ReceiverTransport>(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     http: T,
+    remaining_lookups: usize,
 ) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainAnchor), String> {
     let advertised = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &http)
         .await
@@ -221,9 +208,15 @@ pub(crate) async fn receiver_client<T: ReceiverTransport>(
         height: height.into(),
         hash: hash.0,
     };
-    let client = DirectoryClient::connect(RECEIVER_ORIGIN, http, accepted)
-        .await
-        .map_err(error)?;
+    let client = DirectoryClient::connect_manifest(
+        RECEIVER_ORIGIN,
+        http,
+        accepted,
+        advertised,
+        remaining_lookups,
+    )
+    .await
+    .map_err(error)?;
     let anchor = ChainAnchor {
         height,
         hash: hash.0,
@@ -235,6 +228,7 @@ async fn run_inner(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
+    lwd: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
 ) -> Result<(), String> {
     let Some(tip) = db.block_fully_scanned().map_err(error)? else {
         return Ok(());
@@ -262,8 +256,26 @@ async fn run_inner(
             }),
     );
     let batches = prepared.batches_by_tx_and_row();
-    super::swap_refund_status::reconcile(db, through.height, should_exit).await?;
-    if batches.is_empty() && discovery_work(db, through)?.is_empty() {
+    super::swap_refund_status::reconcile(db, should_exit).await?;
+    let requested_at = crate::wallet::swap_receiving::receive::now()?;
+    let fresh = super::get_latest_block(lwd).await.map_err(error)?;
+    let relation = super::classify_refreshed_tip_with_fallback(
+        lwd,
+        u64::from(u32::from(through.height)),
+        Some(BlockHash(through.hash)),
+        fresh.height,
+        &fresh.hash,
+    )
+    .await
+    .map_err(error)?;
+    if relation != super::RefreshedTipRelation::Unchanged {
+        return Err("Swap completion is waiting for the newly refreshed chain tip".into());
+    }
+    with_wallet_db_write_lock("swap_private.anchor", || {
+        db.anchor_swap_observations(through, requested_at)
+            .map_err(error)
+    })?;
+    if batches.is_empty() && discovery_work(db, through)?.0.is_empty() {
         log::info!("swap_private: recovery covered locally; no PIR requests");
         return Ok(());
     }
@@ -299,126 +311,164 @@ async fn run_inner(
     with_wallet_db_write_lock("swap_private.memos", || {
         crate::wallet::swap_receiving::maintain_recovery(db, network)
     })?;
-    super::swap_refund_status::reconcile(db, through.height, should_exit).await?;
-    // Outgoing rediscovery needs local compact context, not another PIR request.
-    // Keep its durable queue without retrying it on the network every block.
-    let mut work = discovery_work(db, through)?;
+    let (mut work, remaining) = discovery_work(db, through)?;
     if work.is_empty() {
         return Ok(());
     }
-    let (client, accepted, anchor) = receiver_client(db, network, &transport).await?;
-    let height = anchor.height;
-    let mut unchecked = Vec::new();
-    for (account, key) in work.drain(..) {
-        if db
-            .swap_recovery_target(account, key.key_id())
-            .map_err(error)?
-            .is_some_and(|target| target.height <= height)
-            && db
-                .swap_directory_check(account, key.key_id())
-                .map_err(error)?
-                != Some(anchor)
-        {
-            unchecked.push((account, key));
-        }
+    let (mut client, accepted, anchor) =
+        receiver_client(db, network, &transport, remaining).await?;
+    if through.height < anchor.height || through.height - anchor.height > 100 {
+        return Err("Directory witness publication is stale".into());
     }
-    let work = unchecked;
-    if work.is_empty() {
-        return Err("Directory publication has not reached the swap recovery target".into());
-    }
-    if through.height < height || through.height - height > 100 {
-        return Err("Directory witness publication is stale; refresh the test service".into());
-    }
-    // Download the same proof file before any receiver lookups, including when no key matches.
-    log::info!(
-        "pir_metric component=recovery stage=work receivers={}",
-        work.len()
-    );
+    // Both modes fetch the same common proofs once for the entire revision.
     let witnesses = client.witnesses().await.map_err(error)?;
-    let mut applied = 0;
-    for (account, key) in work {
-        let receiver =
-            Receiver::from_bytes(key.receiver().to_raw_address_bytes()).map_err(error)?;
-        let lookup_started = std::time::Instant::now();
-        let payments = client
-            .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
-            .await
-            .map_err(error)?;
-        log::info!(
-            "pir_metric component=receiver stage=lookup elapsed_us={} payments={}",
-            lookup_started.elapsed().as_micros(),
-            payments.len()
-        );
-        for payment in payments {
-            // Persist only authenticated full ciphertext. A failed stage is retried from its durable queue.
-            let stream = enhance
-                .query_batch(&transport, [payment.position])
-                .map_err(error)?;
-            futures::pin_mut!(stream);
-            let record = stream
-                .next()
-                .await
-                .ok_or("Missing Enhance result")?
-                .record
-                .map_err(error)?;
-            let candidate = PendingPayment {
-                txid: TxId::from_bytes(payment.txid),
-                action_index: payment.action_index,
-                height: payment.height.into(),
-                block_hash: BlockHash(payment.block_hash),
-                tx_index: payment.tx_index.try_into().map_err(error)?,
-                position: payment.position.try_into().map_err(error)?,
-                encrypted_note: EncryptedNote::from_parts(
-                    payment.action_nullifier,
-                    payment.cmx,
-                    payment.ephemeral_key,
-                    payment.ciphertext_prefix,
-                    record.enc_ciphertext_suffix(),
-                ),
-            };
-            let apply_started = std::time::Instant::now();
-            let raw_path = witnesses
-                .path(candidate.position, payment.cmx)
-                .map_err(error)?;
-            let path = MerklePath::from_parts(
-                candidate.position,
-                raw_path.map(|h| MerkleHashOrchard::from_bytes(&h).unwrap()),
-            );
-            let result =
-                with_wallet_db_write_lock("swap_private.apply", || -> Result<_, String> {
-                    db.queue_swap_payment(account, key.key_id(), &candidate)
-                        .map_err(error)?;
-                    db.apply_pending_swap_payment(
-                        account,
-                        key.key_id(),
-                        &candidate,
-                        through,
-                        Some((anchor, &path)),
-                    )
-                    .map_err(error)
-                })?;
-            if result != PaymentApplication::Applied {
-                return Err(format!("Payment remains queued: {result:?}"));
+    let mut failures = 0usize;
+    loop {
+        for (account, work_item) in work {
+            if should_exit() {
+                return Ok(());
             }
-            log::info!(
-                "pir_metric component=recovery stage=validate_insert elapsed_us={}",
-                apply_started.elapsed().as_micros()
-            );
-            applied += 1;
+            let now = crate::wallet::swap_receiving::receive::now()?;
+            with_wallet_db_write_lock("swap_private.attempt", || {
+                db.begin_swap_discovery_attempt(account, work_item.key, now)
+                    .map_err(error)
+            })?;
+            let result = async {
+                if work_item.target.height > anchor.height {
+                    return Err("Publication has not reached recovery target".to_owned());
+                }
+                let key = work_item.key;
+                if work_item.lookup.is_none() {
+                    let receiver = Receiver::from_bytes(work_item.receiver).map_err(error)?;
+                    let payments = client
+                        .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
+                        .await
+                        .map_err(error)?;
+                    let queued = db.pending_swap_payments(account, key).map_err(error)?;
+                    let mut candidates = Vec::new();
+                    let mut missing = Vec::new();
+                    for payment in payments {
+                        let position = payment.position.try_into().map_err(error)?;
+                        let txid = TxId::from_bytes(payment.txid);
+                        if db
+                            .has_swap_payment(
+                                account,
+                                key,
+                                txid,
+                                payment.action_index,
+                                payment.height.into(),
+                                BlockHash(payment.block_hash),
+                                position,
+                            )
+                            .map_err(error)?
+                        {
+                            continue;
+                        }
+                        if let Some(old) = queued
+                            .iter()
+                            .find(|p| p.txid == txid && p.action_index == payment.action_index)
+                        {
+                            if old.position != position
+                                || u32::from(old.height) != payment.height
+                                || old.block_hash.0 != payment.block_hash
+                                || !old.encrypted_note.matches_compact(
+                                    payment.action_nullifier,
+                                    payment.cmx,
+                                    payment.ephemeral_key,
+                                    payment.ciphertext_prefix,
+                                )
+                            {
+                                return Err("Conflicting queued payment".to_owned());
+                            }
+                            candidates.push(old.clone());
+                        } else {
+                            missing.push(payment);
+                        }
+                    }
+                    // Enhance groups these positions into shared row requests internally.
+                    let stream = enhance
+                        .query_batch(&transport, missing.iter().map(|p| p.position))
+                        .map_err(error)?;
+                    futures::pin_mut!(stream);
+                    let mut records = std::collections::HashMap::new();
+                    while let Some(result) = stream.next().await {
+                        records.insert(result.position, result.record.map_err(error)?);
+                    }
+                    for payment in missing {
+                        let record = records
+                            .remove(&payment.position)
+                            .ok_or("Missing Enhance result")?;
+                        candidates.push(PendingPayment {
+                            txid: TxId::from_bytes(payment.txid),
+                            action_index: payment.action_index,
+                            height: payment.height.into(),
+                            block_hash: BlockHash(payment.block_hash),
+                            tx_index: payment.tx_index.try_into().map_err(error)?,
+                            position: payment.position.try_into().map_err(error)?,
+                            encrypted_note: EncryptedNote::from_parts(
+                                payment.action_nullifier,
+                                payment.cmx,
+                                payment.ephemeral_key,
+                                payment.ciphertext_prefix,
+                                record.enc_ciphertext_suffix(),
+                            ),
+                        });
+                    }
+                    with_wallet_db_write_lock("swap_private.queue", || {
+                        db.queue_swap_lookup(account, key, anchor, &candidates)
+                            .map_err(error)
+                    })?;
+                }
+                for candidate in db.pending_swap_payments(account, key).map_err(error)? {
+                    let cmx = candidate.encrypted_note.commitment();
+                    let raw_path = witnesses.path(candidate.position, cmx).map_err(error)?;
+                    let path = MerklePath::from_parts(
+                        candidate.position,
+                        raw_path.map(|h| MerkleHashOrchard::from_bytes(&h).unwrap()),
+                    );
+                    let result = with_wallet_db_write_lock("swap_private.apply", || {
+                        db.apply_pending_swap_payment(
+                            account,
+                            key,
+                            &candidate,
+                            through,
+                            Some((anchor, &path)),
+                        )
+                        .map_err(error)
+                    })?;
+                    if result != PaymentApplication::Applied {
+                        return Err(format!("Payment remains queued: {result:?}"));
+                    }
+                }
+                let coverage = db
+                    .swap_lookup_coverage(account, key)
+                    .map_err(error)?
+                    .ok_or("Missing lookup coverage")?;
+                with_wallet_db_write_lock("swap_private.finish", || {
+                    db.finish_swap_discovery_attempt(account, key, coverage, now)
+                        .map_err(error)
+                })?;
+                Ok::<(), String>(())
+            }
+            .await;
+            if let Err(e) = result {
+                failures += 1;
+                log::warn!("Private swap recovery work deferred: {e}");
+            }
         }
-        with_wallet_db_write_lock("swap_private.checked", || {
-            db.mark_swap_directory_checked(account, key.key_id(), anchor)
-                .map_err(error)
+        with_wallet_db_write_lock("swap_private.lookahead", || {
+            crate::wallet::swap_receiving::maintain_recovery(db, network)
         })?;
+        let (next, remaining) = discovery_work(db, through)?;
+        if next.is_empty() {
+            break;
+        }
+        client.use_file_for_work(remaining).await.map_err(error)?;
+        work = next;
     }
-    // The caller repeats discovery if these payments extend the receive window.
-    with_wallet_db_write_lock("swap_private.lookahead", || {
-        crate::wallet::swap_receiving::maintain_recovery(db, network)
-    })?;
-    log::info!(
-        "swap_private: directory checked at {} with {applied} verified payments",
-        u32::from(height)
-    );
+    if failures > 0 {
+        return Err(format!("{failures} swap recovery records remain pending"));
+    }
     Ok(())
 }
 
@@ -468,13 +518,13 @@ mod tests {
             .unwrap();
         assert!(!crate::api::sync::enhance_pir_enabled());
         assert!(!crate::api::sync::near_swap_privacy_enabled());
-        let work = discovery_work(&mut db, through).unwrap();
+        let work = discovery_work(&mut db, through).unwrap().0;
         assert_eq!(work.len(), 50);
         for (account, key) in work {
-            db.mark_swap_directory_checked(account, key.key_id(), through)
+            db.mark_swap_directory_checked(account, key.key, through)
                 .unwrap();
         }
-        assert!(discovery_work(&mut db, through).unwrap().is_empty());
+        assert!(discovery_work(&mut db, through).unwrap().0.is_empty());
 
         // Model the registry advancement after a verified payment at the edge.
         // The library tests exercise the actual compact note decryption.
@@ -482,11 +532,11 @@ mod tests {
             .unwrap();
         db.maintain_swap_receive_lookahead(account, 50, height)
             .unwrap();
-        let work = discovery_work(&mut db, through).unwrap();
+        let work = discovery_work(&mut db, through).unwrap().0;
         assert_eq!(work.len(), 50);
-        assert!(work.iter().all(|(_, key)| key.key_id().index() >= 50));
+        assert!(work.iter().all(|(_, key)| key.key.index() >= 50));
         for (account, key) in work {
-            db.mark_swap_directory_checked(account, key.key_id(), through)
+            db.mark_swap_directory_checked(account, key.key, through)
                 .unwrap();
         }
         drop(db);
@@ -500,7 +550,7 @@ mod tests {
             rusqlite::params![u32::from(later.height), later.hash],
         )
         .unwrap();
-        assert!(discovery_work(&mut db, later).unwrap().is_empty());
+        assert!(discovery_work(&mut db, later).unwrap().0.is_empty());
     }
 
     #[test]

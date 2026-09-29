@@ -27,6 +27,7 @@ import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
+import 'wallet/swap_receiving/receive.dart';
 
 /// Main entrypoint of the Rust API
 class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
@@ -1060,7 +1061,8 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String operationId,
     required String address,
-    required bool terminal,
+    required String status,
+    required PlatformInt64 observedAtSeconds,
   });
 
   VotingRoundSession crateApiVotingSessionOpenVotingRoundSession({
@@ -2229,7 +2231,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveBeginReceiveQuoteConstMeta,
         argValues: [dbPath, networkName, accountUuid, reservationId, requestId],
@@ -8051,7 +8053,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveObserveReceiveQuoteConstMeta,
         argValues: [
@@ -8089,7 +8091,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String operationId,
     required String address,
-    required bool terminal,
+    required String status,
+    required PlatformInt64 observedAtSeconds,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8100,7 +8103,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(operationId, serializer);
           sse_encode_String(address, serializer);
-          sse_encode_bool(terminal, serializer);
+          sse_encode_String(status, serializer);
+          sse_encode_i_64(observedAtSeconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8119,7 +8123,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           operationId,
           address,
-          terminal,
+          status,
+          observedAtSeconds,
         ],
         apiImpl: this,
       ),
@@ -8135,7 +8140,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "operationId",
           "address",
-          "terminal",
+          "status",
+          "observedAtSeconds",
         ],
       );
 
@@ -8619,7 +8625,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_receive_reservation,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceivePrepareReceiveReservationConstMeta,
         argValues: [dbPath, networkName, accountUuid, liveTip, lightwalletdUrl],
@@ -9084,7 +9090,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveReapReceiveReservationsConstMeta,
         argValues: [dbPath, networkName, accountUuid, lightwalletdUrl],
@@ -9121,7 +9127,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_receive_quote_status_request,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveReceiveQuotesDueConstMeta,
         argValues: [dbPath, networkName, accountUuid],
@@ -9246,7 +9252,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveRecordReceiveQuoteConstMeta,
         argValues: [
@@ -9382,7 +9388,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveRejectReceiveQuoteConstMeta,
         argValues: [dbPath, networkName, accountUuid, requestId],
@@ -10574,7 +10580,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveStartReceiveQuoteConstMeta,
         argValues: [dbPath, networkName, accountUuid, operationId],
@@ -14377,6 +14383,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       needsSaplingParams: dco_decode_bool(arr[1]),
       feeZatoshi: dco_decode_u_64(arr[2]),
     );
+  }
+
+  @protected
+  ReceiveError dco_decode_receive_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ReceiveError(
+      code: dco_decode_receive_error_code(arr[0]),
+      message: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ReceiveErrorCode dco_decode_receive_error_code(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ReceiveErrorCode.values[raw as int];
   }
 
   @protected
@@ -19172,6 +19196,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReceiveError sse_decode_receive_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_code = sse_decode_receive_error_code(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    return ReceiveError(code: var_code, message: var_message);
+  }
+
+  @protected
+  ReceiveErrorCode sse_decode_receive_error_code(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ReceiveErrorCode.values[inner];
+  }
+
+  @protected
   ReceiveQuoteStatusRequest sse_decode_receive_quote_status_request(
     SseDeserializer deserializer,
   ) {
@@ -23617,6 +23656,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.proposalId, serializer);
     sse_encode_bool(self.needsSaplingParams, serializer);
     sse_encode_u_64(self.feeZatoshi, serializer);
+  }
+
+  @protected
+  void sse_encode_receive_error(ReceiveError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_receive_error_code(self.code, serializer);
+    sse_encode_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_receive_error_code(
+    ReceiveErrorCode self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

@@ -1,4 +1,5 @@
 //! Incoming swap reservation lifecycle. Refund allocation uses the existing API.
+use crate::wallet::swap_receiving::receive::ReceiveError;
 use crate::wallet::{keys, network::WalletNetwork, swap_receiving::receive};
 use zcash_keys::address::{Address, UnifiedAddress};
 
@@ -30,7 +31,7 @@ pub async fn prepare_receive_reservation(
     account_uuid: String,
     live_tip: u64,
     lightwalletd_url: String,
-) -> Result<ReceiveReservation, String> {
+) -> Result<ReceiveReservation, ReceiveError> {
     let network = network(&db_path, &network_name)?;
     let r = receive::prepare(
         &db_path,
@@ -60,7 +61,7 @@ pub fn begin_receive_quote(
     account_uuid: String,
     reservation_id: i64,
     request_id: String,
-) -> Result<(), String> {
+) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
@@ -70,7 +71,7 @@ pub fn begin_receive_quote(
                 &network_name,
             )?)?;
             db.begin_swap_receive_quote(a, reservation_id, &request_id, receive::now()?)
-                .map_err(|e| e.to_string())
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -84,7 +85,7 @@ pub fn record_receive_quote(
     operation_id: String,
     deposit_memo: Option<String>,
     deadline_seconds: i64,
-) -> Result<(), String> {
+) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
@@ -97,7 +98,7 @@ pub fn record_receive_quote(
                 deposit_memo.as_deref(),
                 deadline_seconds,
             )
-            .map_err(|e| e.to_string())
+            .map_err(ReceiveError::from)
         },
     )
 }
@@ -108,14 +109,14 @@ pub fn reject_receive_quote(
     network_name: String,
     account_uuid: String,
     request_id: String,
-) -> Result<(), String> {
+) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             db.reject_swap_receive_quote(a, &request_id)
-                .map_err(|e| e.to_string())
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -126,7 +127,7 @@ pub fn start_receive_quote(
     network_name: String,
     account_uuid: String,
     operation_id: String,
-) -> Result<(), String> {
+) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
@@ -134,12 +135,12 @@ pub fn start_receive_quote(
         |db, a| {
             if !db
                 .has_swap_receive_quote(a, &operation_id)
-                .map_err(|e| e.to_string())?
+                .map_err(ReceiveError::from)?
             {
                 return Ok(());
             }
             db.start_swap_receive_quote(a, &operation_id)
-                .map_err(|e| e.to_string())
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -149,7 +150,7 @@ pub fn receive_quotes_due(
     db_path: String,
     network_name: String,
     account_uuid: String,
-) -> Result<Vec<ReceiveQuoteStatusRequest>, String> {
+) -> Result<Vec<ReceiveQuoteStatusRequest>, ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
@@ -157,7 +158,7 @@ pub fn receive_quotes_due(
         |db, a| {
             Ok(db
                 .swap_receive_quotes_due(a, receive::now()?)
-                .map_err(|e| e.to_string())?
+                .map_err(ReceiveError::from)?
                 .into_iter()
                 .map(|q| ReceiveQuoteStatusRequest {
                     request_id: q.request_id,
@@ -178,14 +179,14 @@ pub fn observe_receive_quote(
     status: String,
     funded: bool,
     checked_at_seconds: i64,
-) -> Result<(), String> {
+) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             db.observe_swap_receive_quote(a, &request_id, &status, funded, checked_at_seconds)
-                .map_err(|e| e.to_string())
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -196,7 +197,7 @@ pub async fn reap_receive_reservations(
     network_name: String,
     account_uuid: String,
     lightwalletd_url: String,
-) -> Result<u32, String> {
+) -> Result<u32, ReceiveError> {
     receive::reap(
         &db_path,
         network(&db_path, &network_name)?,

@@ -3171,7 +3171,8 @@ pub fn observe_swap_receiving_operation(
     account_uuid: String,
     operation_id: String,
     address: String,
-    terminal: bool,
+    status: String,
+    observed_at_seconds: i64,
 ) -> Result<(), String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -3181,7 +3182,8 @@ pub fn observe_swap_receiving_operation(
             &account_uuid,
             &operation_id,
             &address,
-            terminal,
+            &status,
+            observed_at_seconds,
         )
     })
 }

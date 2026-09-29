@@ -8,6 +8,7 @@ import '../../../providers/account_provider.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../rust/wallet/swap_receiving/receive.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_receive_reservation_service.dart';
@@ -112,9 +113,7 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 
   @override
   String toString() {
-    final detail = cause.toString();
-    final policy = RegExp(r'SWAP_RECEIVE_[A-Z]+: ([^\n]+)').firstMatch(detail);
-    if (policy != null) return policy.group(1)!;
+    if (cause is ReceiveError) return (cause as ReceiveError).message;
     return 'Could not prepare a fresh wallet receive address. '
         'Try again after wallet sync.';
   }

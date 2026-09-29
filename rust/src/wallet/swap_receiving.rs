@@ -196,7 +196,8 @@ pub(crate) fn observe_operation(
     account_uuid: &str,
     operation: &str,
     address: &str,
-    terminal: bool,
+    status: &str,
+    observed_at: i64,
 ) -> Result<(), String> {
     with_wallet_db_write_lock("swap_receiving.operation", || {
         let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
@@ -215,19 +216,18 @@ pub(crate) fn observe_operation(
             return Ok(());
         };
         let Some(key) = db
-            .get_swap_receiving_keys(account)
+            .get_swap_receiving_key_for_receiver(account, receiver)
             .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|key| key.receiver() == *receiver)
         else {
             return Ok(());
         };
-        let height = db
-            .chain_height()
-            .map_err(|e| e.to_string())?
-            .ok_or("Sync before tracking a swap")?;
-        db.observe_swap_operation(account, key.key_id(), operation, terminal, height)
-            .map_err(|e| e.to_string())
+        if let Some(status) =
+            zakura_swap_receiving::lifecycle::near_status(key.key_id().purpose(), status)
+        {
+            db.record_swap_observation(account, key.key_id(), operation, status, observed_at, true)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     })
 }
 
@@ -242,10 +242,9 @@ pub(crate) fn funding_memo(
     require_software_account(db, account)?;
     let key_id = KeyId::new(Purpose::Refund, index);
     if !db
-        .get_swap_receiving_keys(account)
+        .get_swap_receiving_key(account, key_id)
         .map_err(|e| e.to_string())?
-        .iter()
-        .any(|key| key.key_id() == key_id && key.advances_allocation())
+        .is_some_and(|key| key.advances_allocation())
     {
         return Err("Refund key was not reserved by this account".into());
     }

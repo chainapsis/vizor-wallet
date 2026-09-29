@@ -1240,14 +1240,16 @@ Future<void> observeSwapReceivingOperation({
   required String accountUuid,
   required String operationId,
   required String address,
-  required bool terminal,
+  required String status,
+  required PlatformInt64 observedAtSeconds,
 }) => RustLib.instance.api.crateApiSyncObserveSwapReceivingOperation(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   operationId: operationId,
   address: address,
-  terminal: terminal,
+  status: status,
+  observedAtSeconds: observedAtSeconds,
 );
 
 /// Same software send lifecycle, with an authenticated refund record on change.

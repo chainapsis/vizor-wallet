@@ -799,16 +799,18 @@ fn wire__crate__api__swap_receive__begin_receive_quote_impl(
             let api_request_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::begin_receive_quote(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                        api_reservation_id,
-                        api_request_id,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::begin_receive_quote(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                            api_reservation_id,
+                            api_request_id,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -6401,18 +6403,20 @@ fn wire__crate__api__swap_receive__observe_receive_quote_impl(
             let api_checked_at_seconds = <i64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::observe_receive_quote(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                        api_request_id,
-                        api_status,
-                        api_funded,
-                        api_checked_at_seconds,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::observe_receive_quote(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                            api_request_id,
+                            api_status,
+                            api_funded,
+                            api_checked_at_seconds,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -6444,7 +6448,8 @@ fn wire__crate__api__sync__observe_swap_receiving_operation_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_operation_id = <String>::sse_decode(&mut deserializer);
             let api_address = <String>::sse_decode(&mut deserializer);
-            let api_terminal = <bool>::sse_decode(&mut deserializer);
+            let api_status = <String>::sse_decode(&mut deserializer);
+            let api_observed_at_seconds = <i64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -6454,7 +6459,8 @@ fn wire__crate__api__sync__observe_swap_receiving_operation_impl(
                         api_account_uuid,
                         api_operation_id,
                         api_address,
-                        api_terminal,
+                        api_status,
+                        api_observed_at_seconds,
                     )?;
                     Ok(output_ok)
                 })())
@@ -6905,7 +6911,7 @@ fn wire__crate__api__swap_receive__prepare_receive_reservation_impl(
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
                     (move || async move {
                         let output_ok = crate::api::swap_receive::prepare_receive_reservation(
                             api_db_path,
@@ -7302,7 +7308,7 @@ fn wire__crate__api__swap_receive__reap_receive_reservations_impl(
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, String>(
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
                     (move || async move {
                         let output_ok = crate::api::swap_receive::reap_receive_reservations(
                             api_db_path,
@@ -7346,14 +7352,16 @@ fn wire__crate__api__swap_receive__receive_quotes_due_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::receive_quotes_due(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::receive_quotes_due(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -7445,18 +7453,20 @@ fn wire__crate__api__swap_receive__record_receive_quote_impl(
             let api_deadline_seconds = <i64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::record_receive_quote(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                        api_request_id,
-                        api_operation_id,
-                        api_deposit_memo,
-                        api_deadline_seconds,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::record_receive_quote(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                            api_request_id,
+                            api_operation_id,
+                            api_deposit_memo,
+                            api_deadline_seconds,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -7565,15 +7575,17 @@ fn wire__crate__api__swap_receive__reject_receive_quote_impl(
             let api_request_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::reject_receive_quote(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                        api_request_id,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::reject_receive_quote(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                            api_request_id,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -8764,15 +8776,17 @@ fn wire__crate__api__swap_receive__start_receive_quote_impl(
             let api_operation_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::swap_receive::start_receive_quote(
-                        api_db_path,
-                        api_network_name,
-                        api_account_uuid,
-                        api_operation_id,
-                    )?;
-                    Ok(output_ok)
-                })())
+                transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
+                    (move || {
+                        let output_ok = crate::api::swap_receive::start_receive_quote(
+                            api_db_path,
+                            api_network_name,
+                            api_account_uuid,
+                            api_operation_id,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -13596,6 +13610,35 @@ impl SseDecode for crate::api::sync::ProposalResult {
     }
 }
 
+impl SseDecode for crate::wallet::swap_receiving::receive::ReceiveError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_code =
+            <crate::wallet::swap_receiving::receive::ReceiveErrorCode>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        return crate::wallet::swap_receiving::receive::ReceiveError {
+            code: var_code,
+            message: var_message,
+        };
+    }
+}
+
+impl SseDecode for crate::wallet::swap_receiving::receive::ReceiveErrorCode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Gap,
+            1 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Limit,
+            2 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Stale,
+            3 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Coverage,
+            4 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Recovery,
+            5 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other,
+            _ => unreachable!("Invalid variant for ReceiveErrorCode: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::swap_receive::ReceiveQuoteStatusRequest {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -17985,6 +18028,52 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ProposalResult>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::wallet::swap_receiving::receive::ReceiveError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.code.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::wallet::swap_receiving::receive::ReceiveError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::wallet::swap_receiving::receive::ReceiveError>
+    for crate::wallet::swap_receiving::receive::ReceiveError
+{
+    fn into_into_dart(self) -> crate::wallet::swap_receiving::receive::ReceiveError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::wallet::swap_receiving::receive::ReceiveErrorCode {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Gap => 0.into_dart(),
+            Self::Limit => 1.into_dart(),
+            Self::Stale => 2.into_dart(),
+            Self::Coverage => 3.into_dart(),
+            Self::Recovery => 4.into_dart(),
+            Self::Other => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::wallet::swap_receiving::receive::ReceiveErrorCode
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::wallet::swap_receiving::receive::ReceiveErrorCode>
+    for crate::wallet::swap_receiving::receive::ReceiveErrorCode
+{
+    fn into_into_dart(self) -> crate::wallet::swap_receiving::receive::ReceiveErrorCode {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::swap_receive::ReceiveQuoteStatusRequest {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -22243,6 +22332,36 @@ impl SseEncode for crate::api::sync::ProposalResult {
         <u64>::sse_encode(self.proposal_id, serializer);
         <bool>::sse_encode(self.needs_sapling_params, serializer);
         <u64>::sse_encode(self.fee_zatoshi, serializer);
+    }
+}
+
+impl SseEncode for crate::wallet::swap_receiving::receive::ReceiveError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::wallet::swap_receiving::receive::ReceiveErrorCode>::sse_encode(
+            self.code, serializer,
+        );
+        <String>::sse_encode(self.message, serializer);
+    }
+}
+
+impl SseEncode for crate::wallet::swap_receiving::receive::ReceiveErrorCode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Gap => 0,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Limit => 1,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Stale => 2,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Coverage => 3,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Recovery => 4,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
