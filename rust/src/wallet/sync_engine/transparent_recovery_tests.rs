@@ -144,12 +144,12 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
     let network = WalletNetwork::Main;
     let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
     let (uuid, _) =
-        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "rewind").unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_001), "rewind").unwrap();
     let external =
         keys::get_external_transparent_receive_addresses_from_db(path, network, Some(&uuid))
             .unwrap();
     let plan = transparent_receive_cache::plan_external_utxo_refresh(
-        path, network, &uuid, &external, 2_000_000, 2_000_000, 20, 20,
+        path, network, &uuid, &external, 2_000_001, 2_000_001, 20, 20,
     )
     .unwrap();
     for batch in &plan {
@@ -170,7 +170,7 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
     .unwrap();
     invalidate_transparent_checks_before_rewind(path).unwrap();
     let plan = transparent_receive_cache::plan_external_utxo_refresh(
-        path, network, &uuid, &external, 2_000_000, 2_000_000, 20, 20,
+        path, network, &uuid, &external, 2_000_001, 2_000_001, 20, 20,
     )
     .unwrap();
     assert!(plan.iter().all(|batch| batch.start_height == 0));
@@ -180,8 +180,8 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
             network,
             &uuid,
             &internal,
-            2_000_000,
-            2_000_000,
+            2_000_001,
+            2_000_001,
             &std::collections::HashSet::new(),
             1000
         )
@@ -191,7 +191,7 @@ fn rewind_invalidates_external_and_internal_completion_without_changing_birthday
     );
     assert_eq!(
         account_birthday_height(path, keys::parse_account_uuid(&uuid).unwrap()).unwrap(),
-        2_000_000
+        2_000_001
     );
 }
 
@@ -480,7 +480,7 @@ fn public_rewind_fixture(corrupt_cache: bool) {
     let path = dir.path().join("wallet.db");
     let path = path.to_str().unwrap();
     let network = WalletNetwork::Main;
-    let birthday = 2_000_000;
+    let birthday = 2_000_001;
     let tip = 2_000_500;
     let target = 2_000_100;
     let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();

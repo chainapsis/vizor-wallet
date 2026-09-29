@@ -900,13 +900,18 @@ async fn discover_software_account_at_index(
     }
 }
 
+/// Start of the transparent history read during import discovery. It uses the
+/// same rounded birthday the account will store, so lightwalletd never sees
+/// the exact requested height.
 fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) -> u64 {
-    birthday_height.unwrap_or_else(|| {
-        network
-            .activation_height(NetworkUpgrade::Sapling)
-            .map(|h| u32::from(h) as u64)
-            .unwrap_or(0)
-    })
+    birthday_height
+        .map(|height| crate::wallet::tree_states::privacy_birthday(network, height))
+        .unwrap_or_else(|| {
+            network
+                .activation_height(NetworkUpgrade::Sapling)
+                .map(|h| u32::from(h) as u64)
+                .unwrap_or(0)
+        })
 }
 
 async fn preview_transparent_balance_for_addresses(
@@ -1221,6 +1226,20 @@ pub fn get_recent_transparent_receive_addresses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn discovery_reads_history_from_the_rounded_birthday() {
+        assert_eq!(
+            discovery_start_height(WalletNetwork::Main, Some(2_345_678)),
+            2_340_001
+        );
+        assert_eq!(
+            discovery_start_height(WalletNetwork::Test, Some(2_345_678)),
+            2_345_678
+        );
+        assert_eq!(discovery_start_height(WalletNetwork::Main, None), 419_200);
+    }
 
     #[test]
     fn gift_entropy_preserves_wallet_and_rejects_invalid_inputs() {

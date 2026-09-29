@@ -294,7 +294,18 @@ fn ensure_db_initialized_with_seed(
     })
 }
 
+/// Birthday for a new account. On mainnet a requested height inside the
+/// compiled tree-state table moves down to just past a checkpoint, so the
+/// first scan batch never asks lightwalletd for the exact birthday's tree
+/// state (see [`crate::wallet::tree_states::privacy_birthday`]).
 fn make_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> AccountBirthday {
+    make_exact_birthday(
+        network,
+        birthday_height.map(|h| crate::wallet::tree_states::privacy_birthday(network, h)),
+    )
+}
+
+fn make_exact_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> AccountBirthday {
     match birthday_height {
         Some(h) => {
             let height = BlockHeight::from_u32(h as u32);
@@ -527,7 +538,9 @@ pub(crate) fn register_gift_card_observer(
         .import_account_ufvk(
             "Gift Card observer",
             &ufvk,
-            &make_birthday(network, Some(birthday_height)),
+            // Exact: the height comes from the shared card link, and rounding
+            // would slow the claim scan by up to a checkpoint bucket.
+            &make_exact_birthday(network, Some(birthday_height)),
             AccountPurpose::ViewOnly,
             None,
         )
@@ -2185,6 +2198,63 @@ mod tests {
         }
     }
 
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn test_mainnet_birthdays_start_right_after_a_tree_state_checkpoint() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+
+        let first_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (restored, _) =
+            init_db_and_create_account(db_path_str, network, &first_seed, Some(2_345_678), "A")
+                .unwrap();
+        let second_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (added, _) =
+            add_account(db_path_str, network, "B", &second_seed, Some(3_000_000)).unwrap();
+        // Past the compiled table, as a new wallet's tip birthday is: exact.
+        let third_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (recent, _) =
+            add_account(db_path_str, network, "C", &third_seed, Some(9_000_123)).unwrap();
+
+        let birthdays = list_accounts(db_path_str, network)
+            .unwrap()
+            .into_iter()
+            .map(|account| (account.uuid, account.birthday_height))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(birthdays[&restored], 2_340_001);
+        assert_eq!(birthdays[&added], 2_990_001);
+        assert_eq!(birthdays[&recent], 9_000_123);
+    }
+
+    #[test]
+    fn test_gift_card_observer_keeps_the_exact_link_birthday() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("observer.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let address = derive_gift_address(network, &seed, 0).unwrap();
+
+        let uuid = register_gift_card_observer(
+            db_path_str,
+            network,
+            phrase.as_bytes(),
+            &address,
+            2_345_678,
+        )
+        .unwrap();
+
+        let observer = list_accounts(db_path_str, network)
+            .unwrap()
+            .into_iter()
+            .find(|account| account.uuid == uuid)
+            .unwrap();
+        assert_eq!(observer.birthday_height, 2_345_678);
+    }
+
     #[test]
     fn test_list_accounts_preserves_ledger_signer_kind() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2194,7 +2264,7 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
         let account_index = zip32::AccountId::try_from(7).unwrap();
-        let birthday_height = 2_500_000;
+        let birthday_height = 2_500_001;
         let usk = UnifiedSpendingKey::from_seed(
             &WalletNetwork::Main,
             seed.expose_secret(),
@@ -2260,7 +2330,7 @@ mod tests {
             &hardware_style_ufvk(&seed, keystone_index),
             &seed_fingerprint,
             u32::from(keystone_index),
-            Some(2_400_000),
+            Some(2_400_001),
             HardwareSignerKind::Keystone,
         )
         .unwrap();
@@ -2271,7 +2341,7 @@ mod tests {
             &hardware_style_ufvk(&seed, ledger_index),
             &seed_fingerprint,
             u32::from(ledger_index),
-            Some(2_500_000),
+            Some(2_500_001),
             HardwareSignerKind::Ledger,
         )
         .unwrap();
@@ -2347,7 +2417,7 @@ mod tests {
             keystone.hardware_signer_kind,
             Some(HardwareSignerKind::Keystone)
         );
-        assert_eq!(keystone.birthday_height, 2_400_000);
+        assert_eq!(keystone.birthday_height, 2_400_001);
         assert_eq!(keystone.zip32_account_index, Some(0));
         let ledger = after
             .iter()
@@ -2358,7 +2428,7 @@ mod tests {
             ledger.hardware_signer_kind,
             Some(HardwareSignerKind::Ledger)
         );
-        assert_eq!(ledger.birthday_height, 2_500_000);
+        assert_eq!(ledger.birthday_height, 2_500_001);
         assert_eq!(ledger.zip32_account_index, Some(1));
         let invalid = after
             .iter()

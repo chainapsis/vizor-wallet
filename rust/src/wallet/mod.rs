@@ -16,6 +16,7 @@ pub mod sync;
 pub mod sync_engine;
 pub(crate) mod transaction_data;
 pub(crate) mod transparent_receive_cache;
+pub(crate) mod tree_states;
 pub mod voting;
 pub(crate) mod wallet_summary_cache;
 

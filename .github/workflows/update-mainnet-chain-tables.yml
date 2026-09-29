@@ -1,9 +1,10 @@
-name: Update mainnet block times
+name: Update mainnet chain tables
 
-# Appends new entries to the compiled-in mainnet block-time table that the
-# wallet uses to convert birthday dates and heights without asking
-# lightwalletd about wallet-derived heights. A person reviews and merges each
-# update, since the table ships in the binary.
+# Appends new entries to the compiled-in mainnet tables that let the wallet
+# avoid asking lightwalletd about wallet-derived heights:
+# - block times every 1,000 blocks, for birthday date and height conversion;
+# - tree states every 10,000 blocks, where restored birthdays start scanning.
+# A person reviews and merges each update, since the tables ship in the binary.
 
 on:
   schedule:
@@ -15,12 +16,14 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: update-mainnet-block-times
+  group: update-mainnet-chain-tables
   cancel-in-progress: false
 
 env:
-  BRANCH: automation/mainnet-block-times
-  DATA_FILE: rust/src/wallet/block_times/mainnet_data.rs
+  BRANCH: automation/mainnet-chain-tables
+  DATA_FILES: >-
+    rust/src/wallet/block_times/mainnet_data.rs
+    rust/src/wallet/tree_states/mainnet_data.rs
   GRPCURL_VERSION: 1.9.4
   GRPCURL_SHA256: 97e13d58d2733a0e62cd2571d1d5f0c02823f0d25282f08bddedf1ad9c5d1736
 
@@ -42,17 +45,26 @@ jobs:
           tar -xzf "$archive" grpcurl
           sudo install -m 0755 grpcurl /usr/local/bin/grpcurl
 
-      - name: Validate the checked-in table
-        run: scripts/update-mainnet-block-times.py --check
+      - name: Validate the checked-in tables
+        run: |
+          scripts/update-mainnet-block-times.py --check
+          scripts/update-mainnet-tree-states.py --check
 
       - name: Append agreed entries
         id: update
         run: |
-          summary="$(scripts/update-mainnet-block-times.py)"
-          echo "$summary"
-          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+          block_times="$(scripts/update-mainnet-block-times.py)"
+          echo "$block_times"
+          tree_states="$(scripts/update-mainnet-tree-states.py)"
+          echo "$tree_states"
           scripts/update-mainnet-block-times.py --check
-          if git diff --quiet -- "$DATA_FILE"; then
+          scripts/update-mainnet-tree-states.py --check
+          {
+            echo "block_times=$block_times"
+            echo "tree_states=$tree_states"
+          } >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2086 # DATA_FILES is a space-separated list.
+          if git diff --quiet -- $DATA_FILES; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -62,23 +74,27 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.update.outputs.summary }}
+          BLOCK_TIMES: ${{ steps.update.outputs.block_times }}
+          TREE_STATES: ${{ steps.update.outputs.tree_states }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
-          git add "$DATA_FILE"
-          git commit -m "Update mainnet block-time table" -m "$SUMMARY"
+          # shellcheck disable=SC2086 # DATA_FILES is a space-separated list.
+          git add $DATA_FILES
+          git commit -m "Update mainnet chain tables" \
+            -m "Block times: $BLOCK_TIMES" -m "Tree states: $TREE_STATES"
           git push --force origin "$BRANCH"
 
-          body="$(printf '%s\n\n%s\n\n%s' \
-            "Weekly update from \`scripts/update-mainnet-block-times.py\`." \
-            "$SUMMARY" \
+          body="$(printf '%s\n\n- Block times: %s\n- Tree states: %s\n\n%s' \
+            "Weekly update from \`scripts/update-mainnet-block-times.py\` and \`scripts/update-mainnet-tree-states.py\`." \
+            "$BLOCK_TIMES" \
+            "$TREE_STATES" \
             "Each new entry was confirmed by two independent lightwalletd endpoints, and the last existing entries were re-verified. Review and merge to ship the entries in the next release.")"
           existing="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')"
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --body "$body"
           else
             gh pr create --base main --head "$BRANCH" \
-              --title "Update mainnet block-time table" --body "$body"
+              --title "Update mainnet chain tables" --body "$body"
           fi

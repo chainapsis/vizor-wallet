@@ -878,6 +878,16 @@ discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
 
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
 
+On mainnet, `make_birthday` (`rust/src/wallet/keys.rs`) stores a restored
+birthday rounded down to one past a compiled 10,000-block tree-state
+checkpoint (`rust/src/wallet/tree_states.rs`), and the first scan batch reads
+that checkpoint locally instead of sending `GetTreeState(birthday - 1)`.
+Birthdays past the last checkpoint (new wallets) and Gift Card observers keep
+the exact height; testnet, regtest, and masquerade builds are unchanged. Code
+that queries lightwalletd from an imported birthday must use the rounded value
+(`tree_states::privacy_birthday`), never the exact requested height. The
+weekly `update-mainnet-chain-tables.yml` workflow appends checkpoints.
+
 ### Rust API Design Constraint
 
 FRB codegen works best with simple types. Keep the `rust/src/api/` surface limited to primitives, `String`, and flat structs. Do all complex Zcash type manipulation inside `rust/src/wallet/` and return simple results through `rust/src/api/`.
