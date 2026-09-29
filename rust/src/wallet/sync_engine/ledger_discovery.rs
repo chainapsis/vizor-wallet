@@ -8,11 +8,12 @@ use tonic::transport::Channel;
 use transparent::keys::TransparentKeyScope;
 use zcash_client_backend::{
     data_api::{
-        ll::LowLevelWalletWrite, wallet::decrypt_and_store_transaction, Account as _, WalletRead,
+        ll::LowLevelWalletWrite, transparent_ledger::TransparentLedgerRead,
+        wallet::decrypt_and_store_transaction, Account as _, WalletRead,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
-use zcash_client_sqlite::AccountUuid;
+use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 use zcash_keys::keys::{
     transparent::gap_limits::GapLimits, ReceiverRequirement::*, UnifiedAddressRequest,
 };
@@ -148,6 +149,14 @@ fn load(
     conn.query_row(&format!("SELECT next_index,unused,tip_height,tip_hash,complete FROM {TABLE} WHERE account_uuid=?1 AND key_scope=?2"), params![id.expose_uuid().as_bytes().as_slice(),scope], |r| Ok((Progress { next_index:r.get(0)?, unused:r.get(1)? },r.get(2)?,r.get(3)?,r.get(4)?))).optional().map_err(|e| SyncError::db(e.to_string()))
 }
 
+fn upsert_checkpoint_sql() -> String {
+    format!("INSERT INTO {TABLE} (account_uuid,key_scope,next_index,unused,tip_height,tip_hash,complete)
+            SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM accounts WHERE uuid=?1)
+            ON CONFLICT(account_uuid,key_scope) DO UPDATE SET next_index=excluded.next_index,unused=excluded.unused,tip_height=excluded.tip_height,tip_hash=excluded.tip_hash,complete=excluded.complete")
+}
+
+/// Writes a checkpoint that marks no candidate checked: a pass's starting
+/// tip, or a reset after a reorg.
 fn save(
     db_path: &str,
     id: AccountUuid,
@@ -160,11 +169,72 @@ fn save(
     with_wallet_db_write_lock("ledger_discovery.checkpoint", || {
         let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
             .map_err(SyncError::db)?;
-        conn.execute(&format!("INSERT INTO {TABLE} (account_uuid,key_scope,next_index,unused,tip_height,tip_hash,complete)
-            SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM accounts WHERE uuid=?1)
-            ON CONFLICT(account_uuid,key_scope) DO UPDATE SET next_index=excluded.next_index,unused=excluded.unused,tip_height=excluded.tip_height,tip_hash=excluded.tip_hash,complete=excluded.complete"), params![id.expose_uuid().as_bytes().as_slice(),scope,progress.next_index,progress.unused,tip,hash,complete]).map_err(|e| SyncError::db(e.to_string()))?;
+        conn.execute(
+            &upsert_checkpoint_sql(),
+            params![
+                id.expose_uuid().as_bytes().as_slice(),
+                scope,
+                progress.next_index,
+                progress.unused,
+                tip,
+                hash,
+                complete
+            ],
+        )
+        .map_err(|e| SyncError::db(e.to_string()))?;
         Ok(())
     })
+}
+
+/// Writes a checkpoint that marks candidates checked, or a scope complete, in
+/// the SQLite transaction that reads the durable policy, so a transition by
+/// another connection fails the write instead of slipping past the check.
+/// Returns `false`, writing nothing, when `gate` no longer authorizes it.
+#[allow(clippy::too_many_arguments)]
+fn commit(
+    db: &mut WalletDatabase,
+    gate: &TransparentLookupGate,
+    id: AccountUuid,
+    scope: u32,
+    progress: Progress,
+    tip: u32,
+    hash: &[u8],
+    complete: bool,
+) -> Result<bool, SyncError> {
+    commit_extension(db, gate, "ledger_discovery.checkpoint", |ext| {
+        ext.execute(
+            &upsert_checkpoint_sql(),
+            params![
+                id.expose_uuid().as_bytes().as_slice(),
+                scope,
+                progress.next_index,
+                progress.unused,
+                tip,
+                hash,
+                complete
+            ],
+        )
+    })
+}
+
+/// Runs `write` against Vizor's extension tables only while `gate` still
+/// authorizes it, reading the policy in the same transaction.
+fn commit_extension(
+    db: &mut WalletDatabase,
+    gate: &TransparentLookupGate,
+    label: &'static str,
+    write: impl FnOnce(&zcash_client_sqlite::ExtensionTransaction<'_>) -> rusqlite::Result<usize>,
+) -> Result<bool, SyncError> {
+    with_wallet_db_write_lock(label, || {
+        db.transactionally_with_extension(|wdb, ext| {
+            if !gate.permits_applied(wdb.applied_transparent_policy()?) {
+                return Ok(false);
+            }
+            write(ext)?;
+            Ok::<_, SqliteClientError>(true)
+        })
+    })
+    .map_err(|e| SyncError::db(e.to_string()))
 }
 
 type History = Pin<Box<dyn Stream<Item = Result<RawTransaction, SyncError>> + Send>>;
@@ -367,14 +437,18 @@ async fn run_with<R: DiscoveryRpc>(
                     else {
                         return Ok(());
                     };
+                    if should_exit() {
+                        return Ok(());
+                    }
                     // Answers already received are stored, but progress is not
                     // checkpointed after a transition, so a later pass under the
                     // new policy re-covers these indices.
-                    if should_exit() || !gate.permits()? {
+                    progress.advance(used)?;
+                    if !commit(
+                        db, &gate, id, scope_code, progress, scan_tip, &hash.0, false,
+                    )? {
                         return Ok(());
                     }
-                    progress.advance(used)?;
-                    save(db_path, id, scope_code, progress, scan_tip, &hash.0, false)?;
                     log::info!(
                         "ledger discovery: account={} scope={} index={} used={} gap={}/{} elapsed_ms={}",
                         id.expose_uuid(),
@@ -401,12 +475,14 @@ async fn run_with<R: DiscoveryRpc>(
                 )?;
                 return Err(SyncError::other("Ledger discovery chain changed; retrying"));
             }
-            // The last batch may have been answered after a transition; a
-            // scope completed under stale authority would never be retried.
-            if should_exit() || !gate.permits()? {
+            if should_exit() {
                 return Ok(());
             }
-            save(db_path, id, scope_code, progress, scan_tip, &hash.0, true)?;
+            // The last batch may have been answered after a transition; a
+            // scope completed under stale authority would never be retried.
+            if !commit(db, &gate, id, scope_code, progress, scan_tip, &hash.0, true)? {
+                return Ok(());
+            }
             log::info!(
                 "ledger discovery: account={} scope={} complete addresses={} elapsed_ms={}",
                 id.expose_uuid(),
@@ -442,19 +518,18 @@ async fn run_with<R: DiscoveryRpc>(
                 ));
             }
         }
-        if should_exit() || !gate.permits()? {
+        if should_exit() {
             return Ok(());
         }
-        with_wallet_db_write_lock("ledger_discovery.complete", || {
-            let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
-                .map_err(SyncError::db)?;
-            conn.execute(
+        let ready = commit_extension(db, &gate, "ledger_discovery.complete", |ext| {
+            ext.execute(
                 &format!("UPDATE {TABLE} SET complete=2 WHERE account_uuid=?1 AND complete=1"),
                 [id.expose_uuid().as_bytes().as_slice()],
             )
-            .map_err(|e| SyncError::db(e.to_string()))?;
-            Ok::<_, SyncError>(())
         })?;
+        if !ready {
+            return Ok(());
+        }
     }
     Ok(())
 }
