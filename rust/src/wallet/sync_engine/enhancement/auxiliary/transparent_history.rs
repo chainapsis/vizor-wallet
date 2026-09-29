@@ -39,11 +39,6 @@ impl HistoryPass {
         lookups: PublicTransparentLookups,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
-        // Every planned read sends a transparent address. Withheld ranges stay
-        // unchecked and durable; nothing is acknowledged without a response.
-        if !lookups.still_allowed(db)? {
-            return Ok(false);
-        }
         let mut planned = super::super::super::address_history::plan(requests);
         planned.retain(|group| !self.failed_addresses.contains(&group[0].address()));
         let actionable = !planned.is_empty();
@@ -79,6 +74,14 @@ impl HistoryPass {
         });
         let mut reads = super::super::super::address_history::HistoryReads::new(planned, open);
         loop {
+            // Every read sends a transparent address, and a stream opened by
+            // `resume` or the initial fill is first polled inside `next`, so
+            // this check precedes each dispatch. A transition by another
+            // connection withholds the rest: unacknowledged ranges stay
+            // unchecked and durable, and dropping `reads` cancels open streams.
+            if !lookups.still_allowed(db)? {
+                return Ok(false);
+            }
             let event = tokio::select! {
                 biased;
                 _ = super::super::super::watch_for_exit(should_exit) => return Ok(actionable),

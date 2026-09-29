@@ -213,10 +213,8 @@ async fn run_with<R: DiscoveryRpc>(
 ) -> Result<(), SyncError> {
     // Candidate addresses are sent to public lightwalletd; nothing is queried or
     // marked complete unless the wallet's transparent policy authorizes that.
-    if !EnhancementPolicy::current(network)
-        .public_transparent_lookups(db)?
-        .is_allowed()
-    {
+    let lookups = EnhancementPolicy::current(network).public_transparent_lookups(db)?;
+    if !lookups.is_allowed() {
         log::info!("sync: transparent policy withholds Ledger address-history discovery");
         return Ok(());
     }
@@ -315,6 +313,16 @@ async fn run_with<R: DiscoveryRpc>(
                     return Err(SyncError::db(
                         "Ledger discovery candidate range is incomplete",
                     ));
+                }
+                // A batch never exceeds CONCURRENCY, so every stream below opens
+                // on first poll, right after this check. A transition by another
+                // connection withholds the rest of discovery; the checkpoint keeps
+                // the answered prefix.
+                if !lookups.still_allowed(db)? {
+                    log::info!(
+                        "sync: transparent policy changed; withholding remaining Ledger discovery"
+                    );
+                    return Ok(());
                 }
                 // Only stream headers are acquired concurrently. Bodies are drained and stored
                 // incrementally, so heavily reused addresses cannot accumulate unbounded history.
@@ -1084,5 +1092,80 @@ mod tests {
             !is_ready(&path, id).unwrap(),
             "withheld scopes stay incomplete"
         );
+    }
+
+    /// Runs `on_history` as each address-history request is dispatched.
+    #[derive(Clone)]
+    struct HookedRpc {
+        inner: FakeRpc,
+        on_history: std::sync::Arc<dyn Fn() + Send + Sync>,
+    }
+    impl DiscoveryRpc for HookedRpc {
+        async fn block_hash(&mut self, height: u64) -> Result<BlockHash, SyncError> {
+            self.inner.block_hash(height).await
+        }
+        async fn history(&mut self, address: String, tip: u64) -> Result<History, SyncError> {
+            (self.on_history)();
+            self.inner.history(address, tip).await
+        }
+    }
+
+    #[tokio::test]
+    async fn transition_during_discovery_withholds_later_batches() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let (_dir, path, id, mut db, _) = ledger_fixture();
+        let transition_path = path.clone();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let inner = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: None,
+            hash: 1,
+        };
+        let queries = inner.queries.clone();
+        // PrivateShadow keeps public authority, so only the generation change
+        // revokes the lookups discovery captured at its start.
+        let mut rpc = HookedRpc {
+            inner,
+            on_history: std::sync::Arc::new(move || {
+                if !fired.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    crate::wallet::db::open_wallet_db_with_timeout(
+                        &transition_path,
+                        WalletNetwork::Main,
+                        SYNC_DB_BUSY_TIMEOUT,
+                    )
+                    .unwrap()
+                    .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+                    .unwrap();
+                }
+            }),
+        };
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_000),
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            queries.lock().unwrap().len(),
+            CONCURRENCY,
+            "only the batch dispatched before the transition is sent"
+        );
+        assert_eq!(
+            load(&path, id, 0).unwrap().unwrap().0,
+            Progress {
+                next_index: CONCURRENCY as u32,
+                unused: CONCURRENCY as u32
+            },
+            "the answered prefix is checkpointed"
+        );
+        assert!(!is_ready(&path, id).unwrap());
     }
 }

@@ -56,6 +56,8 @@ mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+#[cfg(test)]
+pub(crate) mod test_lwd;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
@@ -1420,6 +1422,8 @@ struct DownloadedTransparentRefresh {
 enum TransparentRefreshOutcome {
     Completed,
     Cancelled,
+    /// Authorization was revoked before a later group was dispatched.
+    Withheld,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1462,10 +1466,8 @@ async fn refresh_utxos(
     let mut summary = TransparentRefreshSummary::default();
     // GetAddressUtxos discloses every refreshed address. When withheld, no query
     // height advances, so a later authorized refresh still covers the gap.
-    if !EnhancementPolicy::current(network)
-        .public_transparent_lookups(db)?
-        .is_allowed()
-    {
+    let lookups = EnhancementPolicy::current(network).public_transparent_lookups(db)?;
+    if !lookups.is_allowed() {
         log::info!(
             "[{}] sync: transparent policy withholds public UTXO refresh",
             elapsed(),
@@ -1731,9 +1733,11 @@ async fn refresh_utxos(
     let mut completed_refreshes = 0u64;
     let download_client = client.clone();
     let outcome = process_bounded_transparent_refreshes(
+        db,
         refreshes,
         move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
-        |downloaded| {
+        |db| lookups.still_allowed(db),
+        |db, downloaded| {
             let downloaded_count = downloaded.len() as u64;
             let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
             store_then_mark_transparent_refreshes(
@@ -1759,11 +1763,19 @@ async fn refresh_utxos(
         should_exit,
     )
     .await?;
-    if outcome == TransparentRefreshOutcome::Cancelled {
-        log::info!(
+    match outcome {
+        TransparentRefreshOutcome::Completed => {}
+        TransparentRefreshOutcome::Cancelled => log::info!(
             "[{}] sync: exiting before transparent UTXO database update",
             elapsed(),
-        );
+        ),
+        TransparentRefreshOutcome::Withheld => {
+            log::info!(
+                "[{}] sync: transparent policy changed; withholding remaining UTXO refreshes",
+                elapsed(),
+            );
+            summary.withheld = true;
+        }
     }
 
     Ok(summary)
@@ -1881,9 +1893,28 @@ fn block_height_from_u64(height: u64, label: &str) -> Result<BlockHeight, SyncEr
     Ok(BlockHeight::from_u32(height))
 }
 
-async fn process_bounded_transparent_refreshes<R, D, E, Download, DownloadFuture, Persist, Exit>(
+/// Downloads refreshes in bounded concurrent groups and persists each group
+/// before the next is dispatched.
+///
+/// `authorize` runs immediately before every group's dispatch, so a group
+/// starts only while its disclosure is still authorized; the first `false`
+/// ends the run as `Withheld` with later groups unsent. `state` is lent to
+/// `authorize` and `persist` in turn, since both need the wallet database.
+async fn process_bounded_transparent_refreshes<
+    S,
+    R,
+    D,
+    E,
+    Download,
+    DownloadFuture,
+    Authorize,
+    Persist,
+    Exit,
+>(
+    state: &mut S,
     refreshes: Vec<R>,
     download: Download,
+    mut authorize: Authorize,
     mut persist: Persist,
     mut prioritize_pending: impl FnMut(&mut VecDeque<R>),
     should_exit: &Exit,
@@ -1891,7 +1922,8 @@ async fn process_bounded_transparent_refreshes<R, D, E, Download, DownloadFuture
 where
     Download: Fn(R) -> DownloadFuture,
     DownloadFuture: Future<Output = Result<Option<D>, E>>,
-    Persist: FnMut(Vec<D>) -> Result<(), E>,
+    Authorize: FnMut(&S) -> Result<bool, E>,
+    Persist: FnMut(&mut S, Vec<D>) -> Result<(), E>,
     Exit: Fn() -> bool,
 {
     let mut refreshes = VecDeque::from(refreshes);
@@ -1907,6 +1939,9 @@ where
         if group.is_empty() {
             return Ok(TransparentRefreshOutcome::Completed);
         }
+        if !authorize(state)? {
+            return Ok(TransparentRefreshOutcome::Withheld);
+        }
 
         let downloaded_result = download_transparent_refresh_group(group, &download).await;
         // Cancellation and mode handoff win if they race a network error.
@@ -1919,7 +1954,7 @@ where
             return Ok(TransparentRefreshOutcome::Cancelled);
         };
 
-        persist(downloaded)?;
+        persist(state, downloaded)?;
     }
 }
 
@@ -4942,6 +4977,7 @@ mod tests {
         let download_peak = peak.clone();
         let persist_count = commit_count.clone();
         let outcome = process_bounded_transparent_refreshes(
+            &mut (),
             (0..12).collect(),
             move |refresh| {
                 let active = download_active.clone();
@@ -4954,7 +4990,8 @@ mod tests {
                     Ok::<_, &'static str>(Some(refresh))
                 }
             },
-            move |group| {
+            |_| Ok(true),
+            move |_, group| {
                 assert!(group.len() <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
                 persist_count.fetch_add(1, Ordering::SeqCst);
                 Ok(())
@@ -4978,7 +5015,9 @@ mod tests {
 
         let download_barrier = barrier.clone();
         let download_started = started.clone();
+        let mut state = ();
         let refresh = process_bounded_transparent_refreshes(
+            &mut state,
             (0..4).collect(),
             move |refresh| {
                 let barrier = download_barrier.clone();
@@ -4989,7 +5028,8 @@ mod tests {
                     Ok::<_, &'static str>(Some(refresh))
                 }
             },
-            |_| Ok(()),
+            |_| Ok(true),
+            |_, _| Ok(()),
             |_| {},
             &|| false,
         );
@@ -5012,6 +5052,7 @@ mod tests {
         let should_exit = move || exit_cancelled.load(Ordering::SeqCst);
 
         let outcome = process_bounded_transparent_refreshes(
+            &mut (),
             vec![0],
             move |_| {
                 let cancelled = download_cancelled.clone();
@@ -5020,7 +5061,8 @@ mod tests {
                     Err::<Option<usize>, _>("network error")
                 }
             },
-            move |_| {
+            |_| Ok(true),
+            move |_, _| {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
@@ -5039,6 +5081,7 @@ mod tests {
         let commits = Arc::new(AtomicUsize::new(0));
         let persist_commits = commits.clone();
         let result = process_bounded_transparent_refreshes(
+            &mut (),
             (0..4).collect(),
             |refresh| async move {
                 if refresh == 2 {
@@ -5048,7 +5091,8 @@ mod tests {
                     Ok(Some(refresh))
                 }
             },
-            move |_| {
+            |_| Ok(true),
+            move |_, _| {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
@@ -5066,9 +5110,11 @@ mod tests {
         let commits = Arc::new(AtomicUsize::new(0));
         let persist_commits = commits.clone();
         let outcome = process_bounded_transparent_refreshes(
+            &mut (),
             (0..4).collect(),
             |refresh| async move { Ok::<_, &'static str>((refresh != 2).then_some(refresh)) },
-            move |_| {
+            |_| Ok(true),
+            move |_, _| {
                 persist_commits.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
@@ -5087,13 +5133,15 @@ mod tests {
         let commits = Arc::new(Mutex::new(Vec::new()));
         let persist_commits = commits.clone();
         let outcome = process_bounded_transparent_refreshes(
+            &mut (),
             (0..6).collect(),
             |refresh| async move {
                 let delay = 5 * (4 - (refresh % 4));
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                 Ok::<_, &'static str>(Some(refresh))
             },
-            move |group| {
+            |_| Ok(true),
+            move |_, group| {
                 persist_commits.lock().unwrap().push(group);
                 Ok(())
             },
@@ -5105,6 +5153,41 @@ mod tests {
 
         assert_eq!(outcome, TransparentRefreshOutcome::Completed);
         assert_eq!(*commits.lock().unwrap(), vec![vec![0, 1, 2, 3], vec![4, 5]]);
+    }
+
+    #[tokio::test]
+    async fn transparent_refresh_revocation_withholds_later_groups() {
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let download_started = started.clone();
+        let mut authorizations = 0;
+        let mut committed = Vec::new();
+        let outcome = process_bounded_transparent_refreshes(
+            &mut committed,
+            (0..12).collect(),
+            move |refresh| {
+                download_started.lock().unwrap().push(refresh);
+                async move { Ok::<_, &'static str>(Some(refresh)) }
+            },
+            |committed: &Vec<Vec<i32>>| {
+                // Each check precedes a dispatch and follows the previous commit.
+                assert_eq!(committed.len(), authorizations);
+                authorizations += 1;
+                Ok(authorizations == 1)
+            },
+            |committed, group| {
+                committed.push(group);
+                Ok(())
+            },
+            |_| {},
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, TransparentRefreshOutcome::Withheld);
+        assert_eq!(authorizations, 2);
+        assert_eq!(*started.lock().unwrap(), vec![0, 1, 2, 3]);
+        assert_eq!(committed, vec![vec![0, 1, 2, 3]]);
     }
 
     #[tokio::test]
@@ -5120,6 +5203,7 @@ mod tests {
         let run_release = release_first_group.clone();
         let run = tokio::spawn(async move {
             process_bounded_transparent_refreshes(
+                &mut (),
                 (0..6).collect(),
                 move |refresh| {
                     let started = run_started.clone();
@@ -5132,7 +5216,8 @@ mod tests {
                         Ok::<_, &'static str>(Some(refresh))
                     }
                 },
-                move |group| {
+                |_| Ok(true),
+                move |_, group| {
                     run_commits.lock().unwrap().push(group);
                     Ok(())
                 },

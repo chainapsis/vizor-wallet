@@ -1,7 +1,7 @@
 use std::panic;
 
 use crate::wallet::sync_engine::enhancement::{EnhancementPolicy, PublicTransparentLookups};
-use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+use crate::wallet::{db::WalletDatabase, keys, network::WalletNetwork, transparent_receive_cache};
 
 /// Returned before any request when the transparent policy withholds public
 /// UTXO lookups; an unavailable preview is not a zero balance.
@@ -442,13 +442,18 @@ pub fn discover_software_wallet_import_accounts(
             .as_ref()
             .is_some_and(|state| state.contains(0));
         let policy = EnhancementPolicy::current(network);
-        let lookups = if is_first_wallet_account {
-            policy.pre_db_public_transparent_lookups()
+        let db = if is_first_wallet_account {
+            None
         } else {
-            let db = crate::wallet::sync::open_wallet_db_for_read(&db_path, network)?;
-            policy
-                .public_transparent_lookups(&db)
-                .map_err(|e| e.to_string())?
+            Some(crate::wallet::sync::open_wallet_db_for_read(
+                &db_path, network,
+            )?)
+        };
+        let lookups = match &db {
+            None => policy.pre_db_public_transparent_lookups(),
+            Some(db) => policy
+                .public_transparent_lookups(db)
+                .map_err(|e| e.to_string())?,
         };
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
@@ -457,7 +462,7 @@ pub fn discover_software_wallet_import_accounts(
             &seed,
             birthday_height,
             &lightwalletd_url,
-            lookups,
+            || lookups_still_allowed(lookups, db.as_ref()),
         ));
 
         let accounts = discovered_accounts
@@ -794,15 +799,31 @@ fn import_discovered_software_wallet_accounts(
     })
 }
 
+/// Whether discovery may still send a probe. Without a wallet database only
+/// the captured mode applies; with one, a transition by another connection
+/// revokes the lookups, and a policy read failure withholds too.
+fn lookups_still_allowed(lookups: PublicTransparentLookups, db: Option<&WalletDatabase>) -> bool {
+    let Some(db) = db else {
+        return lookups.is_allowed();
+    };
+    lookups.still_allowed(db).unwrap_or_else(|e| {
+        log::warn!("software account discovery: transparent policy check failed: {e}");
+        false
+    })
+}
+
+/// Probes ZIP 32 account indices for transparent history. Each probe sends an
+/// account's first transparent address to lightwalletd, so `still_allowed`
+/// runs before every probe and the first `false` ends discovery with the
+/// accounts found so far.
 async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
-    lookups: PublicTransparentLookups,
+    still_allowed: impl Fn() -> bool,
 ) -> Vec<SoftwareWalletDiscoveredAccount> {
-    // Each probe sends an account's first transparent address to lightwalletd.
-    if !lookups.is_allowed() {
+    if !still_allowed() {
         log::info!("software account discovery: withheld by the transparent policy");
         return Vec::new();
     }
@@ -838,6 +859,10 @@ async fn discover_used_software_accounts(
     for &(start, end) in SOFTWARE_ACCOUNT_DISCOVERY_BATCHES {
         let mut found_in_batch = false;
         for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
+            if !still_allowed() {
+                log::info!("software account discovery: transparent policy changed; stopping");
+                return discovered;
+            }
             if let Some(account) = discover_software_account_at_index(
                 &mut client,
                 network,
@@ -1614,9 +1639,11 @@ mod tests {
         let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 2).unwrap();
 
         assert!(
-            discover_used_software_accounts(network, &seed, None, &url, lookups)
-                .await
-                .is_empty()
+            discover_used_software_accounts(network, &seed, None, &url, || {
+                lookups_still_allowed(lookups, None)
+            })
+            .await
+            .is_empty()
         );
         assert_eq!(
             preview_transparent_balance_for_addresses(&url, addresses, lookups).await,
@@ -1627,6 +1654,54 @@ mod tests {
             tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn transition_during_software_discovery_stops_probing() {
+        use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        // Discovery opens its own direct channel, which reads the route policy.
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        let db = crate::wallet::sync::open_wallet_db_for_read(path, network).unwrap();
+        let lookups = EnhancementPolicy::current(network)
+            .public_transparent_lookups(&db)
+            .unwrap();
+        // Every probe finds history, so an unrevoked run probes every index.
+        // PrivateShadow keeps public authority; only the generation revokes.
+        let lwd = CapturingLwd::start_with(
+            Vec::new(),
+            3_000_000,
+            transition_on_first(
+                "/GetTaddressTxids",
+                path,
+                network,
+                TransparentLedgerMode::PrivateShadow,
+            ),
+        )
+        .await;
+
+        let discovered =
+            discover_used_software_accounts(network, &seed, Some(2_000_000), &lwd.url, || {
+                lookups_still_allowed(lookups, Some(&db))
+            })
+            .await;
+
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        assert_eq!(
+            discovered
+                .iter()
+                .map(|account| account.zip32_account_index)
+                .collect::<Vec<_>>(),
+            vec![1],
+            "accounts found before the transition are kept"
         );
     }
 }

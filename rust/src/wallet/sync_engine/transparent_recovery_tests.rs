@@ -713,99 +713,10 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
 /// sync lane sends a transparent address, outpoint, or txid to lightwalletd.
 mod private_transparent_policy {
     use super::*;
-    use bytes::Bytes;
-    use http_body_util::Full;
-    use hyper::service::service_fn;
-    use prost::Message;
-    use std::sync::{Arc, Mutex};
+    use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
     use zcash_client_backend::data_api::transparent_ledger::{
         TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
     };
-    use zcash_client_backend::proto::service::RawTransaction;
-
-    /// A lightwalletd that records every request path. Address history returns
-    /// `history_tx`; transaction lookups answer "not found"; UTXO streams are empty.
-    struct CapturingLwd {
-        client: CompactTxStreamerClient<Channel>,
-        requests: Arc<Mutex<Vec<String>>>,
-        server: tokio::task::JoinHandle<()>,
-    }
-
-    impl CapturingLwd {
-        async fn start(history_tx: Vec<u8>) -> Self {
-            let requests = Arc::new(Mutex::new(Vec::new()));
-            let recorded = requests.clone();
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let endpoint = listener.local_addr().unwrap();
-            let server = tokio::spawn(async move {
-                loop {
-                    let (stream, _) = listener.accept().await.unwrap();
-                    let recorded = recorded.clone();
-                    let history_tx = history_tx.clone();
-                    tokio::spawn(async move {
-                        let service =
-                            service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
-                                let path = request.uri().path().to_owned();
-                                recorded.lock().unwrap().push(path.clone());
-                                let history_tx = history_tx.clone();
-                                async move {
-                                    let grpc = hyper::Response::builder()
-                                        .header("content-type", "application/grpc");
-                                    let response = if path.ends_with("/GetTaddressTxids") {
-                                        let message = RawTransaction {
-                                            data: history_tx,
-                                            height: 150,
-                                        }
-                                        .encode_to_vec();
-                                        let mut frame = vec![0];
-                                        frame.extend_from_slice(
-                                            &(message.len() as u32).to_be_bytes(),
-                                        );
-                                        frame.extend_from_slice(&message);
-                                        grpc.header("grpc-status", "0")
-                                            .body(Full::new(Bytes::from(frame)))
-                                    } else if path.ends_with("/GetTransaction") {
-                                        grpc.header("grpc-status", "5")
-                                            .header("grpc-message", "not found")
-                                            .body(Full::new(Bytes::new()))
-                                    } else {
-                                        grpc.header("grpc-status", "0")
-                                            .body(Full::new(Bytes::new()))
-                                    };
-                                    Ok::<_, std::convert::Infallible>(response.unwrap())
-                                }
-                            });
-                        let _ = hyper::server::conn::http2::Builder::new(
-                            hyper_util::rt::TokioExecutor::new(),
-                        )
-                        .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
-                        .await;
-                    });
-                }
-            });
-            let channel = tonic::transport::Endpoint::from_shared(format!("http://{endpoint}"))
-                .unwrap()
-                .connect()
-                .await
-                .unwrap();
-            let _ = rustls::crypto::ring::default_provider().install_default();
-            Self {
-                client: CompactTxStreamerClient::new(channel),
-                requests,
-                server,
-            }
-        }
-
-        fn requests(&self) -> Vec<String> {
-            self.requests.lock().unwrap().clone()
-        }
-    }
-
-    impl Drop for CapturingLwd {
-        fn drop(&mut self) {
-            self.server.abort();
-        }
-    }
 
     /// A wallet with a transparent receipt whose address history, parent
     /// payload, and status work are all queued as public follow-on work.
@@ -972,6 +883,108 @@ mod private_transparent_policy {
 
         assert_eq!(lwd.requests(), Vec::<String>::new());
         assert_eq!(f.db.utxo_query_height(accounts[0]).unwrap(), before);
+    }
+
+    /// Starts a lightwalletd on which the first `rpc` request makes another
+    /// connection apply `PrivateShadow`. That mode keeps public authority, so
+    /// only the new generation revokes lookups captured before it.
+    async fn transitioning_lwd(f: &Fixture, rpc: &'static str) -> CapturingLwd {
+        CapturingLwd::start_with(
+            f.history_tx.clone(),
+            0,
+            transition_on_first(
+                rpc,
+                &f.path,
+                f.network,
+                TransparentLedgerMode::PrivateShadow,
+            ),
+        )
+        .await
+    }
+
+    /// Requests recorded after the first `rpc` request.
+    fn requests_after_first(lwd: &CapturingLwd, rpc: &str) -> Vec<String> {
+        lwd.requests()
+            .into_iter()
+            .skip_while(|path| !path.ends_with(rpc))
+            .skip(1)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn transition_during_address_history_withholds_later_reads() {
+        let mut f = fixture();
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let address = unchecked[0][0].address();
+        let start = unchecked[0][0].block_range_start();
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        // Later operations, such as payload recovery, resolve lookups afresh
+        // under the new generation; this lane must not reuse its stale ones.
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        // The in-flight range is not acknowledged; it is retried from its start.
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        assert!(unchecked
+            .iter()
+            .any(|group| group[0].address() == address && group[0].block_range_start() == start));
+    }
+
+    #[tokio::test]
+    async fn transition_during_public_payloads_withholds_later_requests() {
+        let mut f = fixture();
+        with_wallet_db_write_lock("test.queue_tx_retrieval", || {
+            f.db.transactionally(|db| {
+                db.queue_tx_retrieval(
+                    [0x31, 0x32].map(|b| TxId::from_bytes([b; 32])).into_iter(),
+                    None,
+                )
+            })
+        })
+        .unwrap();
+        let mut lwd = transitioning_lwd(&f, "/GetTransaction").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_payload_recovery(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(lwd.count("/GetTransaction"), 1);
+        assert_eq!(
+            requests_after_first(&lwd, "/GetTransaction"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn transition_during_utxo_refresh_withholds_later_groups() {
+        let three_accounts = || {
+            let f = fixture();
+            for name in ["second", "third"] {
+                let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+                keys::add_account(&f.path, f.network, name, &seed, Some(100)).unwrap();
+            }
+            f
+        };
+        let mut unrevoked = three_accounts();
+        let mut lwd = CapturingLwd::start(unrevoked.history_tx.clone()).await;
+        refresh(&mut unrevoked, &mut lwd).await.unwrap();
+        let planned = lwd.count("/GetAddressUtxosStream");
+        assert!(
+            planned > MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS,
+            "the fixture plans more than one group: {planned}"
+        );
+
+        let mut f = three_accounts();
+        let mut lwd = transitioning_lwd(&f, "/GetAddressUtxosStream").await;
+        let summary = refresh(&mut f, &mut lwd).await.unwrap();
+
+        assert!(summary.withheld);
+        assert!(lwd.count("/GetAddressUtxosStream") <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
     }
 
     #[test]

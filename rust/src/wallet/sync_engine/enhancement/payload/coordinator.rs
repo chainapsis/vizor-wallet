@@ -226,22 +226,9 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         should_exit: &impl Fn() -> bool,
     ) {
         // Durable routing already withholds public work under a private policy;
-        // this re-checks the captured generation so a transition made by another
-        // connection cannot release work routed before it.
-        match self.lookups.still_allowed(db) {
-            Ok(true) => {}
-            Ok(false) => {
-                log::info!(
-                    "sync: transparent policy withholds {} public payload requests",
-                    requests.len()
-                );
-                return;
-            }
-            Err(error) => {
-                log::warn!("sync: withholding public payloads; policy check failed: {error}");
-                return;
-            }
-        }
+        // the executor re-checks the captured generation before each request so
+        // a transition made by another connection cannot release work routed
+        // before it.
         self.public
             .run(
                 self.lwd,
@@ -249,6 +236,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 self.db_path,
                 self.network,
                 requests,
+                self.lookups,
                 should_exit,
             )
             .await;
