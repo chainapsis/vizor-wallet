@@ -6,9 +6,13 @@ use futures::{FutureExt, StreamExt};
 use tonic::transport::Channel;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::{
-    data_api::{wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletWrite},
+    data_api::{
+        transparent_ledger::TransparentLedgerRead, wallet::decrypt_and_store_transaction,
+        TransactionDataRequest, WalletWrite,
+    },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BranchId;
 
@@ -123,25 +127,34 @@ impl HistoryPass {
                 None => {
                     // A transition while this stream was open withholds the
                     // acknowledgement, so the range is retried under the new
-                    // policy rather than marked checked under the old one.
-                    if !lookups.still_allowed(db)? {
-                        return Ok(false);
-                    }
-                    if let Err(error) =
+                    // policy rather than marked checked under the old one. The
+                    // generation is read in the acknowledging transaction, so a
+                    // commit by another connection between the two fails the
+                    // write instead of slipping past the check.
+                    let acknowledged =
                         with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
-                            db.notify_address_checked(
-                                req.clone(),
-                                req.block_range_end().unwrap() - 1,
-                            )
-                        })
-                    {
-                        log::warn!(
-                            "sync: address completion write failed; retrying on a later sync: {error}"
-                        );
-                        self.failed_addresses.insert(req.address());
-                        continue;
+                            db.transactionally(|tx| {
+                                if !lookups.permits(tx.applied_transparent_policy()?) {
+                                    return Ok(false);
+                                }
+                                tx.notify_address_checked(
+                                    req.clone(),
+                                    req.block_range_end().unwrap() - 1,
+                                )?;
+                                Ok::<_, SqliteClientError>(true)
+                            })
+                        });
+                    match acknowledged {
+                        Ok(true) => read.finish_range(),
+                        Ok(false) => return Ok(false),
+                        Err(error) => {
+                            log::warn!(
+                                "sync: address completion write failed; retrying on a later sync: {error}"
+                            );
+                            self.failed_addresses.insert(req.address());
+                            continue;
+                        }
                     }
-                    read.finish_range();
                 }
             }
             reads.resume(read);

@@ -316,8 +316,7 @@ async fn run_with<R: DiscoveryRpc>(
                 }
                 // A batch never exceeds CONCURRENCY, so every stream below opens
                 // on first poll, right after this check. A transition by another
-                // connection withholds the rest of discovery; the checkpoint keeps
-                // the answered prefix.
+                // connection withholds the rest of discovery.
                 if !lookups.still_allowed(db)? {
                     log::info!(
                         "sync: transparent policy changed; withholding remaining Ledger discovery"
@@ -356,6 +355,12 @@ async fn run_with<R: DiscoveryRpc>(
                     if should_exit() {
                         return Ok(());
                     }
+                    // Answers already received are stored, but progress is not
+                    // checkpointed after a transition, so a later pass under the
+                    // new policy re-covers these indices.
+                    if !lookups.still_allowed(db)? {
+                        return Ok(());
+                    }
                     progress.advance(used)?;
                     save(db_path, id, scope_code, progress, scan_tip, &hash.0, false)?;
                     log::info!(
@@ -384,7 +389,9 @@ async fn run_with<R: DiscoveryRpc>(
                 )?;
                 return Err(SyncError::other("Ledger discovery chain changed; retrying"));
             }
-            if should_exit() {
+            // The last batch may have been answered after a transition; a
+            // scope completed under stale authority would never be retried.
+            if should_exit() || !lookups.still_allowed(db)? {
                 return Ok(());
             }
             save(db_path, id, scope_code, progress, scan_tip, &hash.0, true)?;
@@ -423,7 +430,7 @@ async fn run_with<R: DiscoveryRpc>(
                 ));
             }
         }
-        if should_exit() {
+        if should_exit() || !lookups.still_allowed(db)? {
             return Ok(());
         }
         with_wallet_db_write_lock("ledger_discovery.complete", || {
@@ -1164,11 +1171,8 @@ mod tests {
         );
         assert_eq!(
             load(&path, id, 0).unwrap().unwrap().0,
-            Progress {
-                next_index: CONCURRENCY as u32,
-                unused: CONCURRENCY as u32
-            },
-            "the answered prefix is checkpointed"
+            Progress::default(),
+            "answers after the transition are not checkpointed"
         );
         assert!(!is_ready(&path, id).unwrap());
     }
