@@ -54,6 +54,7 @@ pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 pub(crate) mod swap_private;
+mod swap_refund_status;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;

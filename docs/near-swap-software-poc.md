@@ -20,10 +20,10 @@ Private queries setting. Already received notes remain spendable and change
 returns to the ordinary internal key.
 A quote already issued keeps its reserved address and funding recovery memo.
 
-The receiver client currently requires Tor off. New private reservations fail
-before exposure when Tor is selected. Private discovery stays pending
-without bypassing Tor. Ordinary blocks can finish scanning, but the wallet does
-not report a complete restore while a receiver lookup remains unexamined.
+Receiver discovery, its common witness file and swap note enhancement use the
+same route-aware HTTPS transport as ordinary Enhance PIR. They honor Tor and
+cancellation without a direct fallback. Incoming-address verification uses it too.
+An unavailable private service leaves recovery pending.
 
 The dependencies use exact Git revisions and published PIR math crates. No sibling
 compatibility checkout or compile-time privacy environment variable is needed.
@@ -66,7 +66,12 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
    Payments extend incoming lookahead until 50 consecutive indices are empty.
    Finish the extended window before reporting recovery complete. Each restored key
    keeps a fixed recovery height, so new blocks do not restart completed checks.
-   Known pending swaps retain their own watch and terminal grace deadline.
+   Funding memos also restore the deposit address and a pending watch. An initial
+   PIR check covers existing history while that watch covers new blocks. Vizor
+   checks NEAR status during sync, at most once per minute per pending refund.
+   Terminal status saves the ten-block grace deadline, followed by PIR closeout.
+   Failures and unknown statuses keep the watch active. Reopening preserves both
+   polling times and deadlines.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 
@@ -81,8 +86,13 @@ replays the account's public Ironwood recovery interval. Receiver discovery and
 matching note enhancement still use PIR. No nullifier service is required.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
-beyond 50 consecutive unpaid indices. Provider-status history reconstruction from
-recovered deposit addresses remains a later integration task.
+beyond 50 consecutive unpaid indices. Incoming recovery cannot reconstruct a
+provider association without its deposit address. Restored refund polling does
+not recreate the full UI activity record or infer funds from provider status.
+
+Wallet handles explicitly retain the existing public transparent-discovery mode
+required by the latest library base. The shielded privacy switches do not select
+a transparent PIR policy.
 
 ## Validation
 

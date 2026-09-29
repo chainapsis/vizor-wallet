@@ -262,6 +262,7 @@ async fn run_inner(
             }),
     );
     let batches = prepared.batches_by_tx_and_row();
+    super::swap_refund_status::reconcile(db, through.height, should_exit).await?;
     if batches.is_empty() && discovery_work(db, through)?.is_empty() {
         log::info!("swap_private: recovery covered locally; no PIR requests");
         return Ok(());
@@ -298,6 +299,7 @@ async fn run_inner(
     with_wallet_db_write_lock("swap_private.memos", || {
         crate::wallet::swap_receiving::maintain_recovery(db, network)
     })?;
+    super::swap_refund_status::reconcile(db, through.height, should_exit).await?;
     // Outgoing rediscovery needs local compact context, not another PIR request.
     // Keep its durable queue without retrying it on the network every block.
     let mut work = discovery_work(db, through)?;

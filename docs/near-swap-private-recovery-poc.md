@@ -52,10 +52,12 @@ The POC uses the public Enhance v9 native two-mask protocol at
 `https://enhance-pir.valargroup.dev`. Receiver PIR is independently hosted at
 `https://161-35-182-172.sslip.io`. No Mac or SSH tunnel is required for serving.
 Requests are bounded, redirects are disabled, and Enhance routes must remain
-on that exact HTTPS origin with standard TLS validation. This POC transport is
-still direct-only: Tor must be off, and enabling it or cancelling sync cancels
-outstanding recovery requests. There is no public transaction fallback on PIR
-failure. Public service reachability does not itself add Tor transport support.
+on that exact HTTPS origin with standard TLS validation. Receiver and Enhance
+requests reuse ordinary Enhance PIR's route-aware HTTPS transport, including Tor,
+cancellation and bounded responses. Manifest, setup, query and witness requests
+all follow the same route. Incoming-address verification uses the same client.
+There is no direct fallback when Tor fails and no public transaction fallback
+when PIR fails.
 
 Signing, bundle identity and secure-store overrides stay local. Record the app
 path, bundle ID, secure-store service and new wallet DB path before opening it.
@@ -79,12 +81,16 @@ POC database with this build or reuse its secure-store namespace.
 
 ## POC boundaries
 
-Private recovery scans only locally recorded operations while pending and through
+Private recovery scans locally recorded and memo-restored operations while pending and through
 ten blocks after the first supported NEAR terminal status. Repeated observations
 and restarts preserve that deadline. Unknown statuses and transport failures do
 not retire or reopen a watch. PIR closeout can outlive scanning without extending
-it. Restored and lookahead keys use PIR through their fixed recovery target and
-do not join ordinary scanning without a local operation watch.
+it. Authenticated funding memos restore the refund watch and deposit address.
+The first historical PIR lookup runs independently of that watch. Pending refunds
+are polled during sync at most once per minute, including after restart. Supported
+terminal status starts the grace deadline. Status never establishes a wallet note
+or its balance. Incoming lookahead has no recoverable provider association and
+uses its fixed PIR target without a reconstructed operation watch.
 
 The retention floor is durable and shared pruning respects the oldest unfinished
 account. Sapling and Orchard keep their ordinary policies. A long restore, missing
@@ -114,8 +120,9 @@ capacity, temporary-cache sizing under long outages and hardware qualification r
 ### Recovery completion and ordinary sync
 
 Each key has a durable recovery target. A local operation targets the saved grace
-height once that height has been scanned. Restored keys use their first accepted
-restore tip. The receiver publication must cover that target before lookup; a
+height once that height has been scanned. Restored refunds first check the accepted
+restore tip, then keep their watch until provider completion and final closeout.
+Incoming lookahead keys use only their first accepted restore tip. The receiver publication must cover that target before lookup; a
 lagging publication causes no receiver queries or common witness download.
 Completed targets stay fixed when new blocks arrive, so normal tip following needs
 no receiver PIR requests. Newly found funding memos and paid receive indices expand
