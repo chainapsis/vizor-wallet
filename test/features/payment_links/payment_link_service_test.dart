@@ -491,33 +491,38 @@ void main() {
       await supportDirectory.delete(recursive: true);
     });
 
-    test(
-      'hardware draft persists and returns while observer registration waits',
-      () async {
-        api.validGiftAddresses.add(_link().address);
-        try {
-          final link = await service
-              .createFundingDraft(
-                amountZatoshi: BigInt.from(100000),
-                sourceAccountUuid: 'hardware-account',
-              )
-              .timeout(const Duration(seconds: 1));
-          await observer.started.future;
-          expect(observer.release.isCompleted, isFalse);
-          final record =
-              (await container.read(paymentLinkRecoveryStoreProvider).load())
-                  .single;
-          expect(record.link.address, link.address);
-          expect(record.state, PaymentLinkRecoveryState.draft);
-          expect(record.usage.accountUuid, isNull);
-        } finally {
-          observer.release.complete();
-          await container
-              .read(giftCardTrackingServiceProvider)
-              .quiesceAndDrain();
-        }
-      },
-    );
+    for (final prefetchedHeight in [null, 75]) {
+      test(
+        'hardware draft uses birthday $prefetchedHeight without waiting for observation',
+        () async {
+          api.validGiftAddresses.add(_link().address);
+          try {
+            final link = await service
+                .createFundingDraft(
+                  amountZatoshi: BigInt.from(100000),
+                  sourceAccountUuid: 'hardware-account',
+                  birthdayHeight: prefetchedHeight,
+                )
+                .timeout(const Duration(seconds: 1));
+            await observer.started.future;
+            expect(observer.release.isCompleted, isFalse);
+            final record =
+                (await container.read(paymentLinkRecoveryStoreProvider).load())
+                    .single;
+            expect(record.link.address, link.address);
+            expect(link.birthdayHeight, prefetchedHeight ?? 100);
+            expect(api.heightLookups, prefetchedHeight == null ? 1 : 0);
+            expect(record.state, PaymentLinkRecoveryState.draft);
+            expect(record.usage.accountUuid, isNull);
+          } finally {
+            observer.release.complete();
+            await container
+                .read(giftCardTrackingServiceProvider)
+                .quiesceAndDrain();
+          }
+        },
+      );
+    }
 
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
@@ -2635,7 +2640,12 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   Future<BigInt> crateApiWalletGetLatestBlockHeight({
     required String lightwalletdUrl,
     required String network,
-  }) async => BigInt.from(100);
+  }) async {
+    heightLookups++;
+    return BigInt.from(100);
+  }
+
+  int heightLookups = 0;
 
   final requestedAccounts = <String>[];
   final validatedAddresses = <String>[];
@@ -2775,6 +2785,7 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   }) async {}
 
   void reset() {
+    heightLookups = 0;
     requestedAccounts.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();

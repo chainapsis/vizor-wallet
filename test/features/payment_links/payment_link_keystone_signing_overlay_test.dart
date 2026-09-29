@@ -494,6 +494,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
