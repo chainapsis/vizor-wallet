@@ -467,6 +467,11 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    final authenticated = await context.push<bool>(
+      '/accounts/confirm-removal',
+      extra: isLastAccount,
+    );
+    if (authenticated != true || !mounted) return;
 
     final router = GoRouter.of(context);
     setState(() => _busy = true);
