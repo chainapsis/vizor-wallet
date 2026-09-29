@@ -713,7 +713,9 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
 /// sync lane sends a transparent address, outpoint, or txid to lightwalletd.
 mod private_transparent_policy {
     use super::*;
-    use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
+    use crate::wallet::sync_engine::test_lwd::{
+        transition_on_first, transition_on_first_dispatch, CapturingLwd,
+    };
     use zcash_client_backend::data_api::transparent_ledger::{
         TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
     };
@@ -976,24 +978,27 @@ mod private_transparent_policy {
             .any(|group| group[0].address() == address && group[0].block_range_start() == start));
     }
 
-    /// The initial fill opens up to `MAX_ADDRESS_STREAMS` addresses in the poll
-    /// after the check; the transition must stop every address after it.
+    /// The initial fill opens up to `MAX_ADDRESS_STREAMS` addresses in one poll.
+    /// A transition landing between two of those opens stops every later one.
     #[tokio::test]
     async fn transition_during_address_history_fill_withholds_later_addresses() {
         let mut f = fixture_with_receipts(6);
         let planned = address_history::plan(&f.db.transaction_data_requests().unwrap()).len();
         assert!(planned > 4, "more addresses than one fill: {planned}");
-        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        let _transition =
+            transition_on_first_dispatch(&f.path, f.network, TransparentLedgerMode::PrivateShadow);
 
         enhancement::EnhancementSession::new(f.network, &f.path)
             .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
             .await
             .unwrap();
 
-        assert_eq!(
-            lwd.count("/GetTaddressTxids"),
-            4,
-            "only the first fill is sent"
+        // The authorized open may even be cancelled before it reaches the
+        // wire, since the lane stops at the first withheld open.
+        assert!(
+            lwd.count("/GetTaddressTxids") <= 1,
+            "no open is sent after the transition, even within the fill"
         );
     }
 
@@ -1026,8 +1031,10 @@ mod private_transparent_policy {
         );
     }
 
+    /// A UTXO group starts up to four RPCs in one poll. A transition landing
+    /// between two of them stops every later RPC and commits nothing.
     #[tokio::test]
-    async fn transition_during_utxo_refresh_withholds_later_groups() {
+    async fn transition_during_utxo_refresh_withholds_every_later_rpc() {
         let three_accounts = || {
             let f = fixture();
             for name in ["second", "third"] {
@@ -1046,14 +1053,15 @@ mod private_transparent_policy {
         );
 
         let mut f = three_accounts();
-        let mut lwd = transitioning_lwd(&f, "/GetAddressUtxosStream").await;
-        let summary = refresh(&mut f, &mut lwd).await.unwrap();
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        let _transition =
+            transition_on_first_dispatch(&f.path, f.network, TransparentLedgerMode::PrivateShadow);
+        refresh(&mut f, &mut lwd).await.unwrap();
 
-        assert!(summary.withheld);
-        assert!(lwd.count("/GetAddressUtxosStream") <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
+        assert_eq!(lwd.count("/GetAddressUtxosStream"), 1);
 
-        // The group answered after the transition advanced no metadata, so a
-        // later pass re-covers every planned batch.
+        // The withheld group advanced no metadata, so a later pass under the
+        // new generation re-covers every planned batch.
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
         refresh(&mut f, &mut lwd).await.unwrap();
         assert_eq!(lwd.count("/GetAddressUtxosStream"), planned);

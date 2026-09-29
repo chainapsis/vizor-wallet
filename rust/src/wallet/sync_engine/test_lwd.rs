@@ -165,3 +165,43 @@ pub(crate) fn transition_on_first(
         }
     }
 }
+
+/// Durably applies `mode` through another connection right after the first
+/// authorized transparent lookup dispatch on this thread, before that RPC or
+/// any other request of its batch is polled. The transition lands between two
+/// requests of one concurrent batch, which a per-batch check cannot see.
+pub(crate) fn transition_on_first_dispatch(
+    db_path: &str,
+    network: WalletNetwork,
+    mode: TransparentLedgerMode,
+) -> super::lwd::transparent_lookup::test_hooks::DispatchHook {
+    let db_path = db_path.to_owned();
+    let mut fired = false;
+    super::lwd::transparent_lookup::test_hooks::on_dispatch(move || {
+        if !std::mem::replace(&mut fired, true) {
+            open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap()
+                .apply_transparent_policy(mode)
+                .unwrap();
+        }
+    })
+}
+
+/// Like [`transition_on_first_dispatch`], but on every authorized dispatch,
+/// alternating `PrivateShadow` and `Public` so each one bumps the generation
+/// while keeping public authority.
+pub(crate) fn transition_on_every_dispatch(
+    db_path: &str,
+    network: WalletNetwork,
+) -> super::lwd::transparent_lookup::test_hooks::DispatchHook {
+    use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead;
+    let db_path = db_path.to_owned();
+    super::lwd::transparent_lookup::test_hooks::on_dispatch(move || {
+        let mut db = open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        let next = match db.applied_transparent_policy().unwrap().mode {
+            TransparentLedgerMode::PrivateShadow => TransparentLedgerMode::Public,
+            _ => TransparentLedgerMode::PrivateShadow,
+        };
+        db.apply_transparent_policy(next).unwrap();
+    })
+}

@@ -286,37 +286,52 @@ their fee locally. Fee persistence updates only a still-missing fee.
 ## Transparent policy gate
 
 Every request that sends a transparent address, outpoint, or txid to public
-lightwalletd first resolves `EnhancementPolicy::public_transparent_lookups`:
-UTXO refresh, Ledger and software account discovery, the import balance
-preview, address history, public payloads, public status, and the public status
-checks that unbroadcast migration recovery runs before retiring a run. Fee enrichment
-and migration stop send no transaction identifiers, so they need no gate. The
-resolved value is the stricter of the captured mode and the policy durably
-applied to the wallet, stamped with the policy generation.
+lightwalletd goes through `TransparentLookupGate`
+(`sync_engine/lwd/transparent_lookup.rs`): UTXO refresh, Ledger and software
+account discovery, the import balance preview, address history, public
+payloads, public status, and the public status checks that unbroadcast
+migration recovery runs before retiring a run. The raw `GetAddressUtxos`,
+`GetTaddressTxids`, and `GetTransaction` helpers are private to `lwd`, so a
+lane cannot reach them any other way; the public status source is wrapped by
+`status::lightwalletd_source`. Fee enrichment and migration stop send no
+transaction identifiers, so they need no gate. The iOS FFI
+`zcash_lightwalletd_observe_transaction` has no wallet context and stays out of
+scope until Phase 4.
 
-- `Withheld` sends nothing and completes nothing. Queued work, unchecked
-  ranges, and UTXO query heights stay durable for a later authorized pass.
-- Every lane re-checks with `still_allowed` immediately before each dispatch
-  (a UTXO group, a Ledger discovery batch, an address-history fill or resumed
-  range, a status or payload request, a discovery probe), so a transition by
-  another connection, including one that keeps public authority, revokes
-  lookups captured under the old generation. A concurrent dispatch is bounded
-  by its buffer, so all of its requests start in the poll that follows the
-  check, with no yield in between. A check per request would run in that same
-  poll and could order no better against another connection's commit, which
-  may land between any check and its dispatch. The invariant is therefore: no
-  request is started after the lane has yielded since its last check. The rest
-  of the lane is withheld;
-  responses already in flight are stored, but nothing is acknowledged or
-  marked complete after the transition: an in-flight history range, even one
-  answered empty, stays unchecked, and UTXO refresh metadata and Ledger
-  discovery progress are not advanced, so later passes re-cover them. The
-  history acknowledgement reads the generation in its own SQLite transaction;
-  the Vizor-owned metadata writes re-check just before writing but not
-  atomically, a window the Phase 4 transition fence closes. Import-time requests (discovery probes, the
-  balance preview) re-check the same way, including after opening their
-  channel. A later operation resolves lookups afresh
-  under the new generation.
+A lane captures `EnhancementPolicy::public_transparent_lookups` once: the
+stricter of the captured mode and the policy durably applied to the wallet,
+stamped with the policy generation. The gate keeps its own read-only policy
+handle and re-checks that generation at two kinds of check point:
+
+- **Every dispatch.** Each RPC is authorized as it is first polled, including
+  each request of a concurrent UTXO group, Ledger batch, or address-history
+  fill, so a transition landing between two requests of one batch withholds
+  the later ones. A withheld request sends nothing.
+- **Every completing write.** Received data is still stored, but nothing is
+  acknowledged or marked complete after the transition: an in-flight history
+  range, even one answered empty, stays unchecked; a public status observation
+  or payload `NotFound` is not committed; UTXO refresh metadata and Ledger
+  discovery progress are not advanced. Later passes re-cover them. The history
+  acknowledgement and payload `NotFound` retirement read the generation in the
+  writing SQLite transaction, so a concurrent transition fails the write
+  instead of slipping past the check. Ledger checkpoints and the UTXO receive
+  cache re-check just before writing, not atomically.
+
+`Withheld` sends nothing and completes nothing. Queued work, unchecked ranges,
+and UTXO query heights stay durable for a later authorized pass. A later
+operation resolves lookups afresh under the new generation, and a withheld
+lane never regains the generation it captured.
+
+Per-RPC checks narrow the check-to-dispatch window but cannot close it: another
+connection may commit a transition between a check and its request, and a
+disclosure cannot be undone. Phase 4, where the private-queries toggle can move
+a live wallet to `PrivateRequired`, needs a transition-side fence: a transition
+to a stricter mode blocks new public-lookup leases and drains or cancels
+in-flight ones before it commits, modeled on the destructive-operation drain
+and `ledgerOperationLifecycleProvider`. That likely needs a hook beside
+`apply_transparent_policy` in wallet-libraries. Nothing in this build applies a
+transition in production, so the fence is not built yet.
+
 - This build's Public handle cannot read a wallet whose durable policy is
   `PrivateRequired`; the gate then returns an error, which also sends nothing.
 - Production always captures `Public`. `PrivateRequired` is reachable only in

@@ -19,13 +19,10 @@ use zcash_protocol::consensus::BranchId;
 use crate::wallet::{
     db::with_wallet_db_write_lock,
     network::WalletNetwork,
-    sync_engine::{lwd, SyncError, WalletDatabase},
+    sync_engine::{lwd, SyncError, TransparentLookupGate, WalletDatabase},
 };
 
-use super::{
-    super::{payload::public::mined_height_from_raw_height, PublicTransparentLookups},
-    fees::fill_missing_fee,
-};
+use super::{super::payload::public::mined_height_from_raw_height, fees::fill_missing_fee};
 
 #[derive(Default)]
 pub(in crate::wallet::sync_engine::enhancement) struct HistoryPass {
@@ -40,7 +37,7 @@ impl HistoryPass {
         db_path: &str,
         requests: &[TransactionDataRequest],
         network: WalletNetwork,
-        lookups: PublicTransparentLookups,
+        gate: &TransparentLookupGate,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         let mut planned = super::super::super::address_history::plan(requests);
@@ -51,18 +48,25 @@ impl HistoryPass {
         }
 
         let download_client = client.clone();
+        let open_gate = gate.clone();
+        // Every open sends a transparent address, so the gate authorizes each
+        // one as it is first polled, including every stream of the initial
+        // fill. A withheld open surfaces as an error the loop resolves below.
         let open: super::super::super::address_history::OpenHistory = Box::new(move |req| {
             let mut client = download_client.clone();
+            let gate = open_gate.clone();
             async move {
                 let address =
                     zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
-                let stream = lwd::get_taddress_txids(
-                    &mut client,
-                    address,
-                    u64::from(u32::from(req.block_range_start())),
-                    u64::from(u32::from(req.block_range_end().unwrap())) - 1,
-                )
-                .await?;
+                let stream = gate
+                    .taddress_txids(
+                        &mut client,
+                        address,
+                        u64::from(u32::from(req.block_range_start())),
+                        u64::from(u32::from(req.block_range_end().unwrap())) - 1,
+                    )
+                    .await?
+                    .ok_or_else(|| SyncError::other("address history withheld by policy"))?;
                 Ok(
                     futures::stream::try_unfold(stream, |mut stream| async move {
                         Ok(
@@ -78,14 +82,6 @@ impl HistoryPass {
         });
         let mut reads = super::super::super::address_history::HistoryReads::new(planned, open);
         loop {
-            // Every read sends a transparent address, and a stream opened by
-            // `resume` or the initial fill is first polled inside `next`, so
-            // this check precedes each dispatch. A transition by another
-            // connection withholds the rest: unacknowledged ranges stay
-            // unchecked and durable, and dropping `reads` cancels open streams.
-            if !lookups.still_allowed(db)? {
-                return Ok(false);
-            }
             let event = tokio::select! {
                 biased;
                 _ = super::super::super::watch_for_exit(should_exit) => return Ok(actionable),
@@ -98,7 +94,14 @@ impl HistoryPass {
                 return Ok(actionable);
             }
             let req = read.request().clone();
-            match result? {
+            // A withheld open, or any failure once authority is revoked, ends
+            // the lane quietly: unacknowledged ranges stay unchecked and
+            // durable, and dropping `reads` cancels the open streams.
+            let result = match result {
+                Err(_) if !gate.permits()? => return Ok(false),
+                result => result?,
+            };
+            match result {
                 Some(raw) => {
                     let tx = match store_address_transaction(&network, db, &raw.data, raw.height) {
                         Ok(tx) => tx,
@@ -134,7 +137,7 @@ impl HistoryPass {
                     let acknowledged =
                         with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
                             db.transactionally(|tx| {
-                                if !lookups.permits(tx.applied_transparent_policy()?) {
+                                if !gate.permits_applied(tx.applied_transparent_policy()?) {
                                     return Ok(false);
                                 }
                                 tx.notify_address_checked(

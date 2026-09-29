@@ -14,10 +14,9 @@ mod store;
 
 use std::collections::HashSet;
 
-use super::PublicTransparentLookups;
 use crate::wallet::{
     network::WalletNetwork,
-    sync_engine::{SyncError, WalletDatabase},
+    sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
 };
 use zakura_transaction_status::{
     DisabledSource, StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest,
@@ -27,7 +26,9 @@ use zcash_client_backend::data_api::{status::TransactionStatusWork, WalletRead};
 use zcash_primitives::transaction::TxId;
 
 pub(crate) use private::PrivateStatusSource;
-pub(super) use public::lightwalletd_source;
+#[cfg(test)]
+pub(crate) use public::gated;
+pub(crate) use public::lightwalletd_source;
 #[cfg(test)]
 pub(super) use store::persist_status_observation;
 
@@ -99,7 +100,7 @@ pub(super) async fn run_requests<P, R>(
     reader: &mut RoutedStatusReader<P, R>,
     db: &mut WalletDatabase,
     work: &[TransactionStatusWork],
-    lookups: PublicTransparentLookups,
+    gate: &TransparentLookupGate,
     attempted: &mut HashSet<TxId>,
     private_failed: &mut bool,
     db_path: &str,
@@ -110,10 +111,10 @@ where
     P: StatusSource,
     R: StatusSource,
 {
-    // Public status discloses the txid; private work is unaffected. Withheld
-    // public work is neither attempted nor actionable, so it stays durable.
-    let mut public_allowed =
-        work.iter().any(|work| !is_private(work)) && lookups.still_allowed(db)?;
+    // Public status discloses the txid; private work is unaffected. The public
+    // source is gated per observation, and persistence re-reads the generation
+    // in its own transaction. Withheld public work stays durable.
+    let mut public_allowed = work.iter().any(|work| !is_private(work)) && gate.permits()?;
     let pending: Vec<_> = work
         .iter()
         .copied()
@@ -140,13 +141,8 @@ where
         if should_exit() {
             return Ok(actionable);
         }
-        // Re-checked before each public dispatch: a transition by another
-        // connection withholds the remaining public work.
-        if !is_private(&work) {
-            public_allowed = public_allowed && lookups.still_allowed(db)?;
-            if !public_allowed {
-                continue;
-            }
+        if !is_private(&work) && !public_allowed {
+            continue;
         }
         let txid = work.txid();
         attempted.insert(txid);
@@ -159,6 +155,13 @@ where
                 // complete negative-coverage recovery instead of silently
                 // weakening privacy.
                 return Err(SyncError::PrivateStatusCoverageIncomplete);
+            }
+            // The gated public source reports a withheld observation as
+            // `Cancelled`; the rest of the public work is withheld too.
+            Err(StatusError::Cancelled) if !is_private(&work) && !gate.permits()? => {
+                attempted.remove(&txid);
+                public_allowed = false;
+                continue;
             }
             Err(StatusError::Cancelled) => return Ok(actionable),
             // The wallet's own database could not be read. That is not a
@@ -189,7 +192,7 @@ where
             observation,
             required_through,
             decision_hash,
-            lookups,
+            gate,
         )? {
             ready.insert(txid.as_ref().to_vec());
         }
