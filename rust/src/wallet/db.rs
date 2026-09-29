@@ -10,6 +10,7 @@ use voting_crypto_deps::rand::rngs::OsRng;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
 
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::enhancement::transparent_ledger_mode;
 
 pub(crate) type WalletDatabase = WalletDb<rusqlite::Connection, WalletNetwork, SystemClock, OsRng>;
 
@@ -52,7 +53,7 @@ pub(crate) fn open_wallet_db_with_timeout(
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
     ensure_mined_transaction_history(&conn)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(wallet_db(conn, network))
 }
 
 /// Preserve mined evidence before backend rewinds clear it, including sends
@@ -102,7 +103,7 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, false)?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(wallet_db(conn, network))
 }
 
 pub(crate) fn open_wallet_db_readonly_with_timeout(
@@ -111,7 +112,15 @@ pub(crate) fn open_wallet_db_readonly_with_timeout(
     timeout: Duration,
 ) -> Result<WalletDatabase, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(timeout))?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(wallet_db(conn, network))
+}
+
+/// Every wallet handle selects its transparent ledger mode explicitly; the
+/// library rejects transparent selection, stores, and history on an
+/// unconfigured handle.
+fn wallet_db(conn: rusqlite::Connection, network: WalletNetwork) -> WalletDatabase {
+    WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_transparent_ledger_mode(transparent_ledger_mode())
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(

@@ -40,7 +40,7 @@ pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargrou
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
 pub(super) use payload::{phase, queue_stored_transactions};
-pub(crate) use policy::EnhancementPolicy;
+pub(crate) use policy::{transparent_ledger_mode, EnhancementPolicy};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;

@@ -84,7 +84,24 @@ fn create_creation_evidence_fixture(conn: &rusqlite::Connection) {
          );
          CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
          INSERT INTO scan_queue (block_range_end) SELECT 101
-         WHERE NOT EXISTS (SELECT 1 FROM scan_queue);",
+         WHERE NOT EXISTS (SELECT 1 FROM scan_queue);
+         -- Creation evidence also records local transparent provenance.
+         CREATE TABLE IF NOT EXISTS transparent_received_outputs (
+             id INTEGER PRIMARY KEY,
+             transaction_id INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS tpir_output_origins (
+             output_id INTEGER NOT NULL,
+             origin INTEGER NOT NULL,
+             UNIQUE (output_id, origin)
+         );
+         CREATE TABLE IF NOT EXISTS tpir_spend_origins (
+             spending_transaction_id INTEGER NOT NULL,
+             prevout_txid BLOB NOT NULL,
+             prevout_output_index INTEGER NOT NULL,
+             origin INTEGER NOT NULL,
+             UNIQUE (spending_transaction_id, prevout_txid, prevout_output_index, origin)
+         );",
     )
     .unwrap();
 }
