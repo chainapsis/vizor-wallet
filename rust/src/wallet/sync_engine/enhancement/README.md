@@ -295,9 +295,14 @@ applied to the wallet, stamped with the policy generation.
 
 - `Withheld` sends nothing and completes nothing. Queued work, unchecked
   ranges, and UTXO query heights stay durable for a later authorized pass.
-- Public dispatch lanes re-check with `still_allowed` so that a transition by
+- Every lane re-checks with `still_allowed` immediately before each request
+  it dispatches (a UTXO group, a Ledger discovery batch, an address-history
+  stream, a status or payload request, a discovery probe), so a transition by
   another connection, including one that keeps public authority, revokes
-  lookups captured under the old generation.
+  lookups captured under the old generation. The rest of the lane is withheld;
+  responses already in flight are stored, but an in-flight history range is not
+  acknowledged and is retried later. A later operation resolves lookups afresh
+  under the new generation.
 - This build's Public handle cannot read a wallet whose durable policy is
   `PrivateRequired`; the gate then returns an error, which also sends nothing.
 - Production always captures `Public`. `PrivateRequired` is reachable only in

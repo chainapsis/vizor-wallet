@@ -43,10 +43,7 @@ pub(crate) use policy::{transparent_ledger_mode, EnhancementPolicy, PublicTransp
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
-use zcash_client_backend::data_api::{
-    status::{TransactionStatusRead, TransactionStatusWork},
-    WalletRead,
-};
+use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, WalletDatabase};
@@ -105,7 +102,7 @@ impl EnhancementSession {
         self.ready_resubmission.clear();
         self.policy.configure_db(db);
         // Captured once per checkpoint; each public lane re-checks the durable
-        // generation before it discloses anything.
+        // generation before every request it dispatches.
         let lookups = self.policy.public_transparent_lookups(db)?;
         backfill_stored_fees(client, db, &self.db_path, should_exit).await?;
 
@@ -122,17 +119,14 @@ impl EnhancementSession {
             let requests = db
                 .transaction_data_requests()
                 .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
-            let mut status_work = db
+            let status_work = db
                 .transaction_status_work()
                 .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
-            // Public status discloses the txid. Private work is unaffected.
-            if !lookups.still_allowed(db)? {
-                status_work.retain(|work| matches!(work, TransactionStatusWork::Private(_)));
-            }
             let status_actionable = status::run_requests(
                 &mut status_reader,
                 db,
                 &status_work,
+                lookups,
                 &mut attempted_statuses,
                 &mut self.private_status_failed,
                 &self.db_path,
