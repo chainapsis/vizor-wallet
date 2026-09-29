@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -10,6 +14,80 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_key
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
 
 void main() {
+  for (final outcome in ['complete', 'fail', 'cancel']) {
+    testWidgets('QR stays available while proving, then $outcome', (
+      tester,
+    ) async {
+      final proofs = Completer<List<int>>();
+      final service = _FakeHardwareSigningService(proofs: proofs);
+      var cancelled = false;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            paymentLinkHardwareSigningServiceProvider.overrideWithValue(
+              service,
+            ),
+            syncProvider.overrideWith(_CleanupSyncNotifier.new),
+          ],
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.dark,
+              child: PaymentLinkKeystoneSigningOverlay(
+                amountZatoshi: _link.amountZatoshi,
+                sourceAccountUuid: 'hardware-account',
+                onCancel: () => cancelled = true,
+                onFundingBroadcast: (_, _) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      for (var i = 0; i < 20 && service.proofDrafts.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pump();
+      final modal = tester.widget<KeystoneSigningModal>(
+        find.byType(KeystoneSigningModal),
+      );
+      expect(modal.phase, KeystoneSigningModalPhase.ready);
+      expect(modal.urParts, ['ur:zcash-sign-batch/test']);
+      expect(modal.onPrimary, isNull);
+      expect(proofs.isCompleted, isFalse);
+      if (outcome == 'cancel') {
+        await tester.tap(find.text('Cancel'));
+        await tester.pump();
+        expect(cancelled, isTrue);
+        expect(service.discardedDrafts, [BigInt.one]);
+        await tester.pumpWidget(const SizedBox());
+      }
+      if (outcome == 'fail') {
+        proofs.completeError(StateError('proof failed'));
+      } else {
+        proofs.complete([7, 8, 9]);
+      }
+      await tester.pump();
+      await tester.pump();
+      if (outcome == 'complete') {
+        expect(
+          tester
+              .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+              .onPrimary,
+          isNotNull,
+        );
+      } else if (outcome == 'fail') {
+        expect(
+          tester
+              .widget<KeystoneSigningModal>(find.byType(KeystoneSigningModal))
+              .phase,
+          KeystoneSigningModalPhase.failed,
+        );
+        expect(service.discardedDrafts, [BigInt.one]);
+      }
+      expect(service.broadcastSignatures, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('Keystone signs one PCZT for a two-card batch', (tester) async {
     final service = _FakeHardwareSigningService();
     final batch = PaymentLinkBatchDraft(
@@ -388,10 +466,12 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   _FakeHardwareSigningService({
     this.broadcastStatus = 'broadcasted',
     this.broadcastMessage,
+    this.proofs,
     this.broadcastError,
     this.throwAfterSubmissionStarted = false,
   });
 
+  final Completer<List<int>>? proofs;
   final String broadcastStatus;
   final String? broadcastMessage;
   final Object? broadcastError;
@@ -448,7 +528,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
     String? outputParamsPath,
   }) async {
     proofDrafts.add(draft.proposalId);
-    return const [7, 8, 9];
+    return proofs?.future ?? Future.value(const [7, 8, 9]);
   }
 
   @override
@@ -483,4 +563,12 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
       fundingMetadataSaved: true,
     );
   }
+}
+
+class _CleanupSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
 }
