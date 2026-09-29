@@ -189,6 +189,7 @@ where
             observation,
             required_through,
             decision_hash,
+            lookups,
         )? {
             ready.insert(txid.as_ref().to_vec());
         }

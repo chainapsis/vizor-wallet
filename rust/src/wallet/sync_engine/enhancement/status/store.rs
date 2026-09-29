@@ -4,6 +4,7 @@ use zcash_client_backend::data_api::WalletWrite;
 #[cfg(test)]
 use zcash_primitives::transaction::TxId;
 
+use super::super::PublicTransparentLookups;
 use crate::wallet::{
     db::with_wallet_db_write_lock,
     sync_engine::{SyncError, WalletDatabase},
@@ -42,9 +43,11 @@ pub(super) fn persist_work_observation(
     observation: TransactionObservation,
     required_through: Option<u32>,
     decision_hash: Option<zcash_primitives::block::BlockHash>,
+    lookups: PublicTransparentLookups,
 ) -> Result<bool, SyncError> {
     use zcash_client_backend::data_api::{
         status::{TransactionStatusRead, TransactionStatusWork},
+        transparent_ledger::TransparentLedgerRead,
         WalletRead,
     };
     with_wallet_db_write_lock("sync_engine.enhance.persist_status_work", || {
@@ -62,6 +65,14 @@ pub(super) fn persist_work_observation(
             false
         };
         db.transactionally(|db| {
+            // A public answer received after a transition is not persisted: the
+            // generation is read in this transaction, so the work stays for
+            // the new policy's route.
+            if matches!(work, TransactionStatusWork::Public(_))
+                && !lookups.permits(db.applied_transparent_policy()?)
+            {
+                return Ok(false);
+            }
             if matches!(work, TransactionStatusWork::Private(_))
                 && matches!(observation, TransactionObservation::NotFound)
             {

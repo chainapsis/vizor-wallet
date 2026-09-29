@@ -1090,12 +1090,14 @@ mod tests {
         };
         let (file, mut db, private_txid) = private_status_work_db();
         let path = file.path().to_str().unwrap().to_owned();
-        let first = TxId::from_bytes([0x71; 32]);
+        // The first public request asks about a stored mined transaction, so a
+        // persisted absence would visibly clear its height.
+        let first = private_txid;
         let second = TxId::from_bytes([0x72; 32]);
+        let private_work = db.transaction_status_work_for(private_txid).unwrap();
         let work = vec![
             TransactionStatusWork::Public(PublicTransactionStatusRequest::new(first)),
             TransactionStatusWork::Public(PublicTransactionStatusRequest::new(second)),
-            db.transaction_status_work_for(private_txid).unwrap(),
         ];
         let lookups =
             super::super::EnhancementPolicy::for_preference(WalletNetwork::Regtest, false)
@@ -1148,9 +1150,9 @@ mod tests {
             "no public dispatch after the transition"
         );
         assert_eq!(
-            private_requests.lock().unwrap().len(),
-            1,
-            "private work continues"
+            db.get_tx_height(first).unwrap(),
+            Some(BlockHeight::from_u32(100)),
+            "an absence answered after the transition is not persisted"
         );
         assert!(
             !attempted.contains(&second),
@@ -1172,6 +1174,26 @@ mod tests {
         .await
         .unwrap());
         assert_eq!(public_requests.lock().unwrap().len(), 1);
+
+        // Private work is unaffected by the revoked public lookups.
+        super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &[private_work],
+            lookups,
+            &mut std::collections::HashSet::new(),
+            &mut false,
+            &path,
+            &mut std::collections::HashSet::new(),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            private_requests.lock().unwrap().len(),
+            1,
+            "private work continues"
+        );
     }
 
     #[tokio::test]
