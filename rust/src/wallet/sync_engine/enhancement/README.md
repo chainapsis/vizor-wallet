@@ -312,10 +312,12 @@ handle and re-checks that generation at two kinds of check point:
   range, even one answered empty, stays unchecked; a public status observation
   or payload `NotFound` is not committed; UTXO refresh metadata and Ledger
   discovery progress are not advanced. Later passes re-cover them. The history
-  acknowledgement and payload `NotFound` retirement read the generation in the
-  writing SQLite transaction, so a concurrent transition fails the write
-  instead of slipping past the check. Ledger checkpoints and the UTXO receive
-  cache re-check just before writing, not atomically.
+  acknowledgement, public status persistence, payload `NotFound` retirement,
+  and Ledger checkpoints (`transactionally_with_extension`) read the
+  generation in the writing SQLite
+  transaction, so a concurrent transition fails the write instead of slipping
+  past the check. The UTXO receive cache lives outside the wallet database and
+  re-checks just before writing, not atomically.
 
 `Withheld` sends nothing and completes nothing. Queued work, unchecked ranges,
 and UTXO query heights stay durable for a later authorized pass. A later
