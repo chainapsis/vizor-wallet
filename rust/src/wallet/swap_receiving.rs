@@ -169,6 +169,27 @@ pub(crate) fn maintain_recovery(
     Ok(())
 }
 
+/// Called after private discovery, under the wallet write lock. The library checks
+/// every completion barrier again before releasing temporary spend evidence.
+pub(crate) fn finish_nullifier_recovery(
+    db: &mut WalletDatabase,
+    through: zakura_swap_receiving::lifecycle::ChainAnchor,
+) -> Result<(), String> {
+    for account in db.get_account_ids().map_err(|e| e.to_string())? {
+        let details = db
+            .get_account(account)
+            .map_err(|e| e.to_string())?
+            .ok_or("Account not found")?;
+        if matches!(details.source(), AccountSource::Derived { .. })
+            && super::keys::hardware_signer_kind(details.source()).is_none()
+        {
+            db.finish_swap_nullifier_recovery(account, through, RECEIVE_LOOKAHEAD)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// Apply a provider status to the registered local address. Older ordinary wallet
 /// addresses are ignored. Address matching also migrates existing activity records
 /// without depending on a newly added index field in secure storage.

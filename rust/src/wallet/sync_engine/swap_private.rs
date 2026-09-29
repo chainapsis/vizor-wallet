@@ -103,6 +103,10 @@ pub(super) async fn run(
         hash: tip.block_hash().0,
     };
     if crate::network_privacy::is_tor_desired() {
+        with_wallet_db_write_lock("swap_private.prune", || {
+            crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
+        })
+        .map_err(SyncError::db)?;
         if discovery_work(db, through)
             .map_err(SyncError::db)?
             .is_empty()
@@ -124,6 +128,9 @@ pub(super) async fn run(
                     .map(|(account, key)| (account, key.key_id()))
                     .collect();
                 run_inner(db, network).await?;
+                with_wallet_db_write_lock("swap_private.prune", || {
+                    crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
+                })?;
                 // A payment at the window edge adds more keys. Finish checking
                 // them in this sync before announcing a complete restore.
                 let after: Vec<_> = discovery_work(db, through)?

@@ -7,8 +7,9 @@ schema until its upgrade path is qualified.
 
 ## Recovery flow
 
-1. Scan ordinary account history from before the funding transaction. Retain
-   scanned nullifiers so an old payment can be checked for a later spend.
+1. Scan ordinary account history from before the funding transaction. Temporarily
+   retain Ironwood nullifiers and spend locations already delivered by compact
+   scanning so an old payment can be checked for a later spend.
 2. At the accepted tip, authenticate pending Ironwood memos through ordinary
    enhancement, following the general Private queries setting.
    Funding memos register refund keys. Incoming recovery registers 50 lookahead
@@ -24,6 +25,10 @@ schema until its upgrade path is qualified.
 5. Record completed directory checks by key and block anchor. Paid incoming
    indices extend the lookahead. Check the extended window before completing sync.
    Rewinds invalidate affected candidates, spend coverage and directory checks.
+6. After all funding memos, own-send evidence, lookahead, directory checks and
+   candidate imports are resolved, release old unrelated Ironwood spend evidence.
+   Normal recent history and wallet-owned spend links remain. New scans retain
+   their evidence until the next completed recovery pass.
 
 The shared witness file contains deduplicated Merkle sibling hashes for all
 published payments. Every participating wallet downloads identical bytes before
@@ -81,10 +86,21 @@ not retire or reopen a watch. PIR closeout can outlive scanning without extendin
 it. Restored and lookahead keys use PIR through their fixed recovery target and
 do not join ordinary scanning without a local operation watch.
 
-Software accounts retain the shared nullifier map from their first scan,
-independently of either switch, so later PIR discovery has spend evidence. Use a fresh
-restore because evidence already pruned by an older build cannot be recreated
-by changing a preference. Witness publications must be within 100 blocks of the
+The retention floor is durable and shared pruning respects the oldest unfinished
+account. Sapling and Orchard keep their ordinary policies. A long restore, missing
+memo, pending operation or unavailable directory can extend temporary retention.
+Reaching the tip alone does not release it. Reorgs rewind the floor with scan state.
+Pruning deletes rows for SQLite to reuse. It does not force a database-file vacuum.
+
+If an authenticated, included candidate needs already-pruned spend history, the
+library queues ordinary compact-block replay from the account birthday or Ironwood
+activation, whichever is later, through the accepted tip. This uses the account's
+whole public recovery interval, not the note's height or nullifier. It preserves
+PIR for receiver discovery and matching ciphertext, survives restart and keeps the
+candidate out of balances until spentness is established. It may redownload a large
+range. A separate archive or nullifier PIR service is not required for this path.
+
+Witness publications must be within 100 blocks of the
 accepted tip. The receiver droplet polls every ten seconds and publishes the
 latest canonical tip with no confirmation delay, following Enhance's reorg rules.
 
@@ -93,7 +109,7 @@ private and pending. It is logged explicitly. This does not authenticate missing
 transaction metadata or permit a public fallback. Inclusion authenticates a note
 and position. Transaction IDs and Action indices remain indexer assertions,
 checked for conflicts with local data. Directory omission detection, production
-capacity, bounded nullifier storage and hardware qualification remain release work.
+capacity, temporary-cache sizing under long outages and hardware qualification remain release work.
 
 ### Recovery completion and ordinary sync
 

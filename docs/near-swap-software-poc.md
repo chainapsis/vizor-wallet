@@ -70,10 +70,15 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 
-The POC retains scanned nullifiers for every software account so PIR recovery
-can recognize already spent notes even when both privacy switches are off. This
-adds local storage even for accounts that have never created a private swap.
-Bounding that storage remains release work.
+Software accounts temporarily retain Ironwood spend evidence already downloaded
+by normal compact scanning. Recovery releases old unrelated evidence after funding
+memos, lookahead, directory checks and note imports complete. Other pools keep
+ordinary retention. Interrupted recovery keeps its cache across restarts. A long
+restore or stalled operation can still need a large temporary cache.
+
+An included note discovered after pruning remains uncredited while the wallet
+replays the account's public Ironwood recovery interval. Receiver discovery and
+matching note enhancement still use PIR. No nullifier service is required.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
 beyond 50 consecutive unpaid indices. Provider-status history reconstruction from
