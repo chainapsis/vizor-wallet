@@ -30,16 +30,18 @@ use zcash_client_backend::{
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
-        SendResponse, TransparentAddressBlockFilter, TreeState,
+        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
-use zcash_primitives::block::BlockHash;
+use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
+
+pub(super) mod transparent_lookup;
 
 const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
@@ -432,7 +434,10 @@ pub(crate) async fn send_transaction(
 /// Open the deprecated transparent-address transaction stream with a
 /// bounded wait for response headers. Individual stream messages must
 /// still be read with [`next_stream_message`] to bound an idle stream.
-pub(crate) async fn get_taddress_txids(
+///
+/// It discloses `address`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_taddress_txids(
     client: &mut CompactTxStreamerClient<Channel>,
     address: String,
     start_height: u64,
@@ -463,7 +468,10 @@ pub(crate) async fn get_taddress_txids(
 /// Open a transparent UTXO stream with a bounded wait for response headers.
 /// Callers should read individual messages with [`next_stream_message`] so a
 /// stalled lightwalletd stream cannot pin the sync loop indefinitely.
-pub(super) async fn get_address_utxos_stream(
+///
+/// It discloses `addresses`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_address_utxos_stream(
     client: &mut CompactTxStreamerClient<Channel>,
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -477,6 +485,25 @@ pub(super) async fn get_address_utxos_stream(
         })),
     )
     .await
+}
+
+/// Public, txid-disclosing `GetTransaction`. Lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_transaction_payload(
+    client: &mut CompactTxStreamerClient<Channel>,
+    txid: TxId,
+) -> Result<RawTransaction, Status> {
+    const TIMEOUT: Duration = Duration::from_secs(20);
+    let mut request = Request::new(TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+    request.set_timeout(TIMEOUT);
+    tokio::time::timeout(TIMEOUT, client.get_transaction(request))
+        .await
+        .map_err(|_| Status::deadline_exceeded("get_transaction_payload timed out"))?
+        .map(|response| response.into_inner())
 }
 
 async fn await_stream_message<T, F>(

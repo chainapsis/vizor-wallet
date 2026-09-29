@@ -17,16 +17,11 @@ use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
-use crate::wallet::{
-    db::with_wallet_db_write_lock, network::WalletNetwork,
-    transaction_data::payload::get_transaction_payload,
-};
+use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use crate::wallet::sync_engine::{
-    enhancement::{
-        auxiliary::fees::fill_missing_fee, transport::cancelable, PublicTransparentLookups,
-    },
-    SyncError, WalletDatabase,
+    enhancement::{auxiliary::fees::fill_missing_fee, transport::cancelable},
+    SyncError, TransparentLookupGate, WalletDatabase,
 };
 
 /// Retrieves routed public payloads over lightwalletd for one sync pass.
@@ -44,8 +39,8 @@ pub(in crate::wallet::sync_engine) struct PublicPayloadExecutor {
 
 impl PublicPayloadExecutor {
     /// Dispatches each request not already failed in this pass, stopping
-    /// before the next dispatch once `should_exit` is set or `lookups` is no
-    /// longer authorized. Withheld requests stay queued for a later pass.
+    /// before the next dispatch once `should_exit` is set or `gate` withholds
+    /// a request. Withheld requests stay queued for a later pass.
     pub(in crate::wallet::sync_engine) async fn run(
         &mut self,
         client: &mut CompactTxStreamerClient<Channel>,
@@ -53,7 +48,7 @@ impl PublicPayloadExecutor {
         db_path: &str,
         network: WalletNetwork,
         requests: &[PublicTransactionEnhancementRequest],
-        lookups: PublicTransparentLookups,
+        gate: &TransparentLookupGate,
         should_exit: &impl Fn() -> bool,
     ) {
         for (index, request) in requests.iter().enumerate() {
@@ -64,25 +59,27 @@ impl PublicPayloadExecutor {
             if self.failed.contains(&txid) {
                 continue;
             }
-            // GetTransaction discloses the txid. A policy read failure withholds
-            // too; the work stays durable either way.
-            match lookups.still_allowed(db) {
-                Ok(true) => {}
-                Ok(false) => {
+            let txid_str = format!("{txid}");
+
+            // GetTransaction discloses the txid, so the gate authorizes each
+            // request. A policy read failure withholds too; the work stays
+            // durable either way.
+            let response = match cancelable(gate.transaction(client, txid), should_exit).await {
+                Ok(Some(response)) => response,
+                Ok(None) => {
                     log::info!(
                         "sync: transparent policy withholds {} public payload requests",
                         requests.len() - index
                     );
                     return;
                 }
+                Err(_) if should_exit() => return,
                 Err(error) => {
                     log::warn!("sync: withholding public payloads; policy check failed: {error}");
                     return;
                 }
-            }
-            let txid_str = format!("{txid}");
-
-            match cancelable(get_transaction_payload(client, txid), should_exit).await {
+            };
+            match response {
                 Ok(raw) => match decode_enhancement_payload(&raw, txid) {
                     Ok((tx, mined_height)) => {
                         if let Err(e) = with_wallet_db_write_lock(
@@ -118,7 +115,7 @@ impl PublicPayloadExecutor {
                             "sync_engine.enhance.notify_transaction_enhancement_not_found",
                             || {
                                 db.transactionally(|tx| {
-                                    if !lookups.permits(tx.applied_transparent_policy()?) {
+                                    if !gate.permits_applied(tx.applied_transparent_policy()?) {
                                         return Ok(false);
                                     }
                                     tx.notify_transaction_enhancement_not_found(txid)?;

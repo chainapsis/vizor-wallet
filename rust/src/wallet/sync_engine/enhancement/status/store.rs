@@ -4,10 +4,9 @@ use zcash_client_backend::data_api::WalletWrite;
 #[cfg(test)]
 use zcash_primitives::transaction::TxId;
 
-use super::super::PublicTransparentLookups;
 use crate::wallet::{
     db::with_wallet_db_write_lock,
-    sync_engine::{SyncError, WalletDatabase},
+    sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
     transaction_data::TransactionObservation,
 };
 
@@ -43,7 +42,7 @@ pub(super) fn persist_work_observation(
     observation: TransactionObservation,
     required_through: Option<u32>,
     decision_hash: Option<zcash_primitives::block::BlockHash>,
-    lookups: PublicTransparentLookups,
+    gate: &TransparentLookupGate,
 ) -> Result<bool, SyncError> {
     use zcash_client_backend::data_api::{
         status::{TransactionStatusRead, TransactionStatusWork},
@@ -69,7 +68,7 @@ pub(super) fn persist_work_observation(
             // generation is read in this transaction, so the work stays for
             // the new policy's route.
             if matches!(work, TransactionStatusWork::Public(_))
-                && !lookups.permits(db.applied_transparent_policy()?)
+                && !gate.permits_applied(db.applied_transparent_policy()?)
             {
                 return Ok(false);
             }

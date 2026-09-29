@@ -2263,7 +2263,6 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    use zakura_transaction_status::lightwalletd::LightwalletdSource;
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     super::migration::backfill_unbroadcast_migration_creation_evidence(
         db_path,
@@ -2287,17 +2286,23 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
     validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
 
-    let never_exit = || false;
-    let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
     let policy = sync_engine::enhancement::EnhancementPolicy::current(network);
+    let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
+    policy.configure_db(&mut status_db);
+    let gate = sync_engine::TransparentLookupGate::for_wallet(
+        policy
+            .public_transparent_lookups(&status_db)
+            .map_err(|e| e.to_string())?,
+        db_path,
+        network,
+    )
+    .map_err(|e| e.to_string())?;
+    let never_exit = || false;
+    let public_source =
+        sync_engine::enhancement::status::lightwalletd_source(client, gate.clone(), &never_exit);
     let mut reader =
         sync_engine::enhancement::status::reader(db_path, network, &never_exit, public_source);
 
-    let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
-    policy.configure_db(&mut status_db);
-    let lookups = policy
-        .public_transparent_lookups(&status_db)
-        .map_err(|e| e.to_string())?;
     let txids = candidates
         .iter()
         .map(|candidate| parse_txid_hex(&candidate.txid_hex))
@@ -2305,7 +2310,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     verify_unbroadcast_migration_txids_absent(
         &mut reader,
         &status_db,
-        lookups,
+        &gate,
         &candidates,
         &txids,
         chain_tip_height,
@@ -2321,14 +2326,16 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 }
 
 /// Confirms every unbroadcast migration transaction is absent before its run
-/// is retired. A public observation discloses the txid, so `lookups` is
-/// re-checked before each one, and again after it so an absence answered after
-/// a transition cannot retire the run; either way the run is left unchanged.
+/// is retired. A public observation discloses the txid, so the reader's public
+/// source must be gated by `gate` (`status::lightwalletd_source`): a transition
+/// withholds the rest, reported as `Cancelled`. `gate` is re-checked after each
+/// public observation too, so an absence answered after a transition cannot
+/// retire the run; either way the run is left unchanged.
 /// Private observations are unaffected.
 async fn verify_unbroadcast_migration_txids_absent<P, R>(
     reader: &mut sync_engine::enhancement::status::RoutedStatusReader<P, R>,
     status_db: &super::WalletDatabase,
-    lookups: sync_engine::enhancement::PublicTransparentLookups,
+    gate: &sync_engine::TransparentLookupGate,
     candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
     txids: &[TxId],
     chain_tip_height: u32,
@@ -2345,20 +2352,9 @@ where
             .transaction_status_work_for(*txid)
             .map_err(|e| e.to_string())?;
         let public = matches!(work, TransactionStatusWork::Public(_));
-        if public
-            && !lookups
-                .still_allowed(status_db)
-                .map_err(|e| e.to_string())?
-        {
-            return Err(WITHHELD.into());
-        }
         let observation = reader.observe(work, Some(chain_tip_height)).await;
         // An absence answered after a transition must not retire the run.
-        if public
-            && !lookups
-                .still_allowed(status_db)
-                .map_err(|e| e.to_string())?
-        {
+        if public && !gate.permits().map_err(|e| e.to_string())? {
             return Err(WITHHELD.into());
         }
         match observation {
@@ -2368,6 +2364,10 @@ where
                     "Migration transaction {} is present in the mempool or chain",
                     candidate.txid_hex
                 ));
+            }
+            // Recovery never exits early, so only the gate cancels.
+            Err(zakura_transaction_status::StatusError::Cancelled) => {
+                return Err(WITHHELD.into());
             }
             Err(zakura_transaction_status::StatusError::CoverageIncomplete) => {
                 return Err("Migration recovery is pending sufficient private status coverage; the run is unchanged".into());
