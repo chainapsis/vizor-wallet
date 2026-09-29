@@ -540,6 +540,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required int accountIndex,
   }) async {
     try {
+      final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
@@ -547,12 +548,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
+      // An existing wallet's durable transparent policy gates the preview.
       return await rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         network: network,
+        dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         zip32AccountIndex: accountIndex,
+        isFirstWalletAccount: isFirstWalletAccount,
       );
     } catch (e, st) {
       log('previewSoftwareAccountTransparentBalance: ERROR: $e\n$st');
