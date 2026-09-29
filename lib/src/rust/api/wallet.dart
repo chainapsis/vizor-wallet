@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_lookups`, `is_ironwood_active_at_height`, `lookups_still_allowed`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({
@@ -165,22 +165,30 @@ discoverSoftwareWalletImportAccounts({
 
 /// Preview the spendable transparent UTXO balance for a software ZIP32 account.
 ///
-/// This does not import the account or touch the wallet DB. It checks a bounded
-/// standard BIP44 transparent address range so the onboarding modal can update
-/// balance rows after discovery has already returned.
+/// This does not import the account. It checks a bounded standard BIP44
+/// transparent address range so the onboarding modal can update balance rows
+/// after discovery has already returned.
+///
+/// Importing into an existing wallet reads that wallet's durably applied
+/// transparent policy, like discovery; only a first account, which has no
+/// wallet database, is limited to the captured mode.
 Future<BigInt> previewSoftwareAccountTransparentBalance({
   required String mnemonic,
   required String bip39Passphrase,
   required String network,
+  required String dbPath,
   required String lightwalletdUrl,
   required int zip32AccountIndex,
+  required bool isFirstWalletAccount,
 }) =>
     RustLib.instance.api.crateApiWalletPreviewSoftwareAccountTransparentBalance(
       mnemonic: mnemonic,
       bip39Passphrase: bip39Passphrase,
       network: network,
+      dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
       zip32AccountIndex: zip32AccountIndex,
+      isFirstWalletAccount: isFirstWalletAccount,
     );
 
 /// Import a software mnemonic. `account'=0` must be imported successfully;

@@ -441,20 +441,7 @@ pub fn discover_software_wallet_import_accounts(
         let primary_account_already_exists = existing_seed_accounts
             .as_ref()
             .is_some_and(|state| state.contains(0));
-        let policy = EnhancementPolicy::current(network);
-        let db = if is_first_wallet_account {
-            None
-        } else {
-            Some(crate::wallet::sync::open_wallet_db_for_read(
-                &db_path, network,
-            )?)
-        };
-        let lookups = match &db {
-            None => policy.pre_db_public_transparent_lookups(),
-            Some(db) => policy
-                .public_transparent_lookups(db)
-                .map_err(|e| e.to_string())?,
-        };
+        let (db, lookups) = import_lookups(network, &db_path, is_first_wallet_account)?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let discovered_accounts = rt.block_on(discover_used_software_accounts(
@@ -483,18 +470,30 @@ pub fn discover_software_wallet_import_accounts(
 
 /// Preview the spendable transparent UTXO balance for a software ZIP32 account.
 ///
-/// This does not import the account or touch the wallet DB. It checks a bounded
-/// standard BIP44 transparent address range so the onboarding modal can update
-/// balance rows after discovery has already returned.
+/// This does not import the account. It checks a bounded standard BIP44
+/// transparent address range so the onboarding modal can update balance rows
+/// after discovery has already returned.
+///
+/// Importing into an existing wallet reads that wallet's durably applied
+/// transparent policy, like discovery; only a first account, which has no
+/// wallet database, is limited to the captured mode.
 pub fn preview_software_account_transparent_balance(
     mnemonic: String,
     bip39_passphrase: String,
     network: String,
+    db_path: String,
     lightwalletd_url: String,
     zip32_account_index: u32,
+    is_first_wallet_account: bool,
 ) -> Result<u64, String> {
     catch(|| {
-        let network = keys::parse_network(&network)?;
+        let network = if is_first_wallet_account {
+            keys::parse_network(&network)?
+        } else {
+            parse_network_and_migrate(&db_path, &network)?
+        };
+        // One request follows immediately, so the capture is its dispatch check.
+        let (_, lookups) = import_lookups(network, &db_path, is_first_wallet_account)?;
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let addresses = keys::software_account_transparent_addresses(
             network,
@@ -503,7 +502,6 @@ pub fn preview_software_account_transparent_balance(
             SOFTWARE_ACCOUNT_BALANCE_PREVIEW_ADDRESSES_PER_SCOPE,
         )?;
 
-        let lookups = EnhancementPolicy::current(network).pre_db_public_transparent_lookups();
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(preview_transparent_balance_for_addresses(
             &lightwalletd_url,
@@ -797,6 +795,26 @@ fn import_discovered_software_wallet_accounts(
         accounts,
         did_import_primary_account,
     })
+}
+
+/// Resolves public transparent lookups for an import-time request. A first
+/// account has no wallet database, so only the captured mode applies; an
+/// existing wallet's durably applied policy may be stricter and wins. The
+/// returned handle lets a multi-request caller re-check before each dispatch.
+fn import_lookups(
+    network: WalletNetwork,
+    db_path: &str,
+    is_first_wallet_account: bool,
+) -> Result<(Option<WalletDatabase>, PublicTransparentLookups), String> {
+    let policy = EnhancementPolicy::current(network);
+    if is_first_wallet_account {
+        return Ok((None, policy.pre_db_public_transparent_lookups()));
+    }
+    let db = crate::wallet::sync::open_wallet_db_for_read(db_path, network)?;
+    let lookups = policy
+        .public_transparent_lookups(&db)
+        .map_err(|e| e.to_string())?;
+    Ok((Some(db), lookups))
 }
 
 /// Whether discovery may still send a probe. Without a wallet database only
@@ -1654,6 +1672,57 @@ mod tests {
             tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
                 .await
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn existing_wallet_preview_honors_the_durable_transparent_policy() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let phrase = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&phrase).unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        // A newer build or another connection made the wallet strictly private.
+        crate::wallet::db::open_wallet_db_with_timeout(
+            path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+        // Any connection to this endpoint would be a disclosure.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let preview = |is_first_wallet_account| {
+            preview_software_account_transparent_balance(
+                phrase.clone(),
+                String::new(),
+                "main".into(),
+                path.into(),
+                url.clone(),
+                1,
+                is_first_wallet_account,
+            )
+        };
+        // This build's Public handle fails closed on the stricter wallet.
+        assert!(
+            preview(false).is_err(),
+            "an unavailable preview is not a balance"
+        );
+
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().map(|_| ()).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "no request reaches lightwalletd"
         );
     }
 
