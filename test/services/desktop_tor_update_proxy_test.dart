@@ -74,6 +74,63 @@ length: 321
     expect(relayStopped, isTrue);
   });
 
+  test(
+    'preserves ARM64 feed absence and both signed Windows channels',
+    () async {
+      const origin = 'https://updates.example/releases/';
+      const armFeed = 'releases.win-arm64-mainnet.json';
+      const x64Feed = 'releases.win-x64-mainnet.json';
+      final bridge = _UpdateTorBridge(
+        bodies: {
+          '$origin$x64Feed': utf8.encode('{"Assets":[]}'),
+          '$origin$x64Feed.sig': utf8.encode('x64-signature'),
+        },
+        statuses: {'$origin$armFeed': HttpStatus.notFound},
+      );
+      final proxy = DesktopTorUpdateProxy(
+        clientFactory: () => NetworkHttpClient(
+          torDesired: () => true,
+          torBootstrapping: () => false,
+          torBridge: bridge,
+        ),
+        torRelayStarter: () async =>
+            Uri.parse('http://127.0.0.1:12345/resource'),
+        torRelayStopper: () async {},
+      );
+      addTearDown(proxy.stop);
+      final base = await proxy.configureWindows(Uri.parse(origin));
+      expect(
+        (await _get(base.resolve(armFeed))).statusCode,
+        HttpStatus.notFound,
+      );
+      expect(
+        (await _get(base.resolve(x64Feed))).bodyBytes,
+        utf8.encode('{"Assets":[]}'),
+      );
+      expect(
+        (await _get(base.resolve('$x64Feed.sig'))).bodyBytes,
+        utf8.encode('x64-signature'),
+      );
+
+      // A later check sees ARM64 publication without recreating the proxy.
+      bridge.statuses.remove('$origin$armFeed');
+      bridge.bodies['$origin$armFeed'] = utf8.encode('{"Assets":[]}');
+      bridge.bodies['$origin$armFeed.sig'] = utf8.encode('arm64-signature');
+      expect((await _get(base.resolve(armFeed))).statusCode, HttpStatus.ok);
+      expect(
+        (await _get(base.resolve('$armFeed.sig'))).bodyBytes,
+        utf8.encode('arm64-signature'),
+      );
+      expect(bridge.downloads, [
+        '$origin$armFeed',
+        '$origin$x64Feed',
+        '$origin$x64Feed.sig',
+        '$origin$armFeed',
+        '$origin$armFeed.sig',
+      ]);
+    },
+  );
+
   test('maps Velopack release assets to the configured Tor base', () async {
     final packageBytes = List<int>.generate(1024, (index) => index % 251);
     final bridge = _UpdateTorBridge(
@@ -159,9 +216,11 @@ Future<NetworkHttpResponse> _get(Uri uri) async {
 }
 
 class _UpdateTorBridge implements TorHttpBridge {
-  _UpdateTorBridge({required this.bodies});
+  _UpdateTorBridge({required this.bodies, Map<String, int>? statuses})
+    : statuses = statuses ?? {};
 
   final Map<String, List<int>> bodies;
+  final Map<String, int> statuses;
   final downloads = <String>[];
 
   @override
@@ -171,11 +230,13 @@ class _UpdateTorBridge implements TorHttpBridge {
     required String destinationPath,
   }) async {
     final body = bodies[uri.toString()];
-    if (body == null) throw StateError('Unexpected download: $uri');
+    if (body == null && !statuses.containsKey(uri.toString())) {
+      throw StateError('Unexpected download: $uri');
+    }
     downloads.add(uri.toString());
-    await File(destinationPath).writeAsBytes(body);
+    await File(destinationPath).writeAsBytes(body ?? []);
     return NetworkHttpResponse(
-      statusCode: HttpStatus.ok,
+      statusCode: statuses[uri.toString()] ?? HttpStatus.ok,
       bodyBytes: Uint8List(0),
       headers: const {
         HttpHeaders.contentTypeHeader: ['application/octet-stream'],
