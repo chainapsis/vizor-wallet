@@ -23,7 +23,8 @@ use super::SYNC_DB_BUSY_TIMEOUT;
 
 type OnRequest = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Records every request path. Address history returns `history_tx`,
+/// Records every request path. Address history returns `history_tx`, or ends
+/// with no transaction when `history_tx` is empty;
 /// transaction lookups answer "not found", `GetLatestBlock` reports
 /// `tip_height`, and UTXO streams are empty.
 pub(crate) struct CapturingLwd {
@@ -67,7 +68,9 @@ impl CapturingLwd {
                             async move {
                                 let grpc = hyper::Response::builder()
                                     .header("content-type", "application/grpc");
-                                let response = if path.ends_with("/GetTaddressTxids") {
+                                let response = if path.ends_with("/GetTaddressTxids")
+                                    && !history_tx.is_empty()
+                                {
                                     let message = RawTransaction {
                                         data: history_tx,
                                         height: 150,

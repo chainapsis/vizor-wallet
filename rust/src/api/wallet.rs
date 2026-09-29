@@ -492,8 +492,7 @@ pub fn preview_software_account_transparent_balance(
         } else {
             parse_network_and_migrate(&db_path, &network)?
         };
-        // One request follows immediately, so the capture is its dispatch check.
-        let (_, lookups) = import_lookups(network, &db_path, is_first_wallet_account)?;
+        let (db, lookups) = import_lookups(network, &db_path, is_first_wallet_account)?;
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let addresses = keys::software_account_transparent_addresses(
             network,
@@ -506,7 +505,7 @@ pub fn preview_software_account_transparent_balance(
         rt.block_on(preview_transparent_balance_for_addresses(
             &lightwalletd_url,
             addresses,
-            lookups,
+            || lookups_still_allowed(lookups, db.as_ref()),
         ))
     })
 }
@@ -817,15 +816,15 @@ fn import_lookups(
     Ok((Some(db), lookups))
 }
 
-/// Whether discovery may still send a probe. Without a wallet database only
-/// the captured mode applies; with one, a transition by another connection
-/// revokes the lookups, and a policy read failure withholds too.
+/// Whether an import-time request may still be sent. Without a wallet
+/// database only the captured mode applies; with one, a transition by another
+/// connection revokes the lookups, and a policy read failure withholds too.
 fn lookups_still_allowed(lookups: PublicTransparentLookups, db: Option<&WalletDatabase>) -> bool {
     let Some(db) = db else {
         return lookups.is_allowed();
     };
     lookups.still_allowed(db).unwrap_or_else(|e| {
-        log::warn!("software account discovery: transparent policy check failed: {e}");
+        log::warn!("import lookup: transparent policy check failed: {e}");
         false
     })
 }
@@ -976,12 +975,14 @@ fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) 
     })
 }
 
+/// `still_allowed` runs before the channel opens and again immediately before
+/// the RPC, since opening the channel yields.
 async fn preview_transparent_balance_for_addresses(
     lightwalletd_url: &str,
     addresses: Vec<String>,
-    lookups: PublicTransparentLookups,
+    still_allowed: impl Fn() -> bool,
 ) -> Result<u64, String> {
-    if !lookups.is_allowed() {
+    if !still_allowed() {
         return Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string());
     }
     if addresses.is_empty() {
@@ -991,6 +992,9 @@ async fn preview_transparent_balance_for_addresses(
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
+    if !still_allowed() {
+        return Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string());
+    }
     let mut stream = client
         .get_address_utxos_stream(Request::new(service::GetAddressUtxosArg {
             addresses,
@@ -1664,7 +1668,10 @@ mod tests {
             .is_empty()
         );
         assert_eq!(
-            preview_transparent_balance_for_addresses(&url, addresses, lookups).await,
+            preview_transparent_balance_for_addresses(&url, addresses, || {
+                lookups_still_allowed(lookups, None)
+            })
+            .await,
             Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()),
             "an unavailable preview is not a zero balance"
         );
@@ -1727,6 +1734,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preview_rechecks_policy_after_opening_the_channel() {
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let lwd = CapturingLwd::start(Vec::new()).await;
+        // Authorized when the preview starts, revoked while the channel opens.
+        let checks = std::cell::Cell::new(0);
+        let result =
+            preview_transparent_balance_for_addresses(&lwd.url, vec!["t1address".into()], || {
+                checks.set(checks.get() + 1);
+                checks.get() == 1
+            })
+            .await;
+
+        assert_eq!(result, Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()));
+        assert_eq!(checks.get(), 2);
+        assert_eq!(lwd.count("/GetAddressUtxosStream"), 0);
+    }
+
+    #[tokio::test]
     async fn transition_during_software_discovery_stops_probing() {
         use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
         use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
@@ -1746,7 +1772,7 @@ mod tests {
         // Every probe finds history, so an unrevoked run probes every index.
         // PrivateShadow keeps public authority; only the generation revokes.
         let lwd = CapturingLwd::start_with(
-            Vec::new(),
+            vec![0],
             3_000_000,
             transition_on_first(
                 "/GetTaddressTxids",

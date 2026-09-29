@@ -306,8 +306,11 @@ applied to the wallet, stamped with the policy generation.
   may land between any check and its dispatch. The invariant is therefore: no
   request is started after the lane has yielded since its last check. The rest
   of the lane is withheld;
-  responses already in flight are stored, but an in-flight history range is not
-  acknowledged and is retried later. A later operation resolves lookups afresh
+  responses already in flight are stored, but nothing is acknowledged after the
+  transition: an in-flight history range, even one answered empty, stays
+  unchecked and is retried later. Import-time requests (discovery probes, the
+  balance preview) re-check the same way, including after opening their
+  channel. A later operation resolves lookups afresh
   under the new generation.
 - This build's Public handle cannot read a wallet whose durable policy is
   `PrivateRequired`; the gate then returns an error, which also sends nothing.

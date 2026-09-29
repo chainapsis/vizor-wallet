@@ -121,6 +121,12 @@ impl HistoryPass {
                     }
                 }
                 None => {
+                    // A transition while this stream was open withholds the
+                    // acknowledgement, so the range is retried under the new
+                    // policy rather than marked checked under the old one.
+                    if !lookups.still_allowed(db)? {
+                        return Ok(false);
+                    }
                     if let Err(error) =
                         with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
                             db.notify_address_checked(
