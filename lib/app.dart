@@ -60,9 +60,6 @@ import 'src/features/onboarding/create/onboarding_split_view.dart';
 import 'src/features/onboarding/create/secret_passphrase_screen.dart';
 import 'src/features/onboarding/create/things_to_know_screen.dart';
 import 'src/features/onboarding/import/import_secret_passphrase_screen.dart';
-import 'src/features/onboarding/import/desktop_import_method_selection_screen.dart';
-import 'src/features/onboarding/import/desktop_hardware_selection_screen.dart';
-import 'src/features/onboarding/import/desktop_import_navigation.dart';
 import 'src/features/onboarding/import/import_split_view.dart';
 import 'src/features/onboarding/import/import_wallet_birthday_screen.dart';
 import 'src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
@@ -603,43 +600,7 @@ List<RouteBase> appAuthRoutes(
 /// split-view shells, and the keystone entry aliases. The mobile tree
 /// replaces these with single-pane mobile onboarding screens (same
 /// route paths, so the shared guard keeps working).
-OnboardingBackTarget? _desktopImportBackTarget(GoRouterState state) {
-  final selection = desktopImportSelectionLocation(state.uri);
-  if (selection == null) return null;
-  return OnboardingBackTarget.route(
-    label: selection.startsWith('/import/hardware')
-        ? 'Hardware wallets'
-        : 'Import methods',
-    routePath: selection,
-  );
-}
-
 List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
-  GoRoute(
-    path: '/import/method',
-    builder: (_, state) {
-      final addingAccount = state.uri.queryParameters['from'] == 'add-account';
-      return DesktopImportMethodSelectionScreen(
-        cancelRoute: addingAccount ? '/add-account' : '/welcome',
-        hardwareRoute: addingAccount
-            ? '/import/hardware?from=add-account'
-            : '/import/hardware',
-        secretPassphraseRoute: addingAccount
-            ? '/import?entry=import-method&from=add-account'
-            : '/import?entry=import-method',
-      );
-    },
-  ),
-  GoRoute(
-    path: '/import/hardware',
-    builder: (_, state) => DesktopHardwareSelectionScreen(
-      deviceBackRoute: state.uri.toString(),
-      backRoute: state.uri.queryParameters['from'] == 'add-account'
-          ? '/import/method?from=add-account'
-          : '/import/method',
-    ),
-  ),
-
   // Onboarding-route transitions. Desktop acrylic visibly stutters
   // through a snapped page swap, so each route gets a custom
   // page builder that lets contents enter while the acrylic stays
@@ -677,7 +638,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       key: state.pageKey,
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
-      child: LedgerConnectScreen(backTarget: _desktopImportBackTarget(state)),
+      child: const LedgerConnectScreen(),
       transitionsBuilder: _onboardingFadeTransition,
     ),
   ),
@@ -700,10 +661,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             if (!context.mounted) return;
             if (!ref.read(appSecurityProvider).isPasswordConfigured) {
               context.go(
-                preserveDesktopImportEntry(
-                  state.uri,
-                  '/onboarding/ledger/set-password',
-                ),
+                '/onboarding/ledger/set-password',
                 extra: LedgerSetPasswordArgs(
                   account: args.account,
                   birthdayHeight: birthdayHeight,
@@ -712,10 +670,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               return;
             }
             context.go(
-              preserveDesktopImportEntry(
-                state.uri,
-                '/onboarding/ledger/customise-account',
-              ),
+              '/onboarding/ledger/customise-account',
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: birthdayHeight,
@@ -744,19 +699,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         child: SetPasswordScreen.ledger(
           ledgerBackTarget: OnboardingBackTarget.route(
             label: 'Wallet Birthday Height',
-            routePath: preserveDesktopImportEntry(
-              state.uri,
-              '/onboarding/ledger/birthday',
-            ),
+            routePath: '/onboarding/ledger/birthday',
             routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
           ledgerOnContinue: (password, inputSource) async {
             if (!context.mounted) return;
             context.go(
-              preserveDesktopImportEntry(
-                state.uri,
-                '/onboarding/ledger/customise-account',
-              ),
+              '/onboarding/ledger/customise-account',
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: args.birthdayHeight,
@@ -791,12 +740,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             label: args.pendingPassword == null
                 ? 'Wallet Birthday Height'
                 : 'Set Password',
-            routePath: preserveDesktopImportEntry(
-              state.uri,
-              args.pendingPassword == null
-                  ? '/onboarding/ledger/birthday'
-                  : '/onboarding/ledger/set-password',
-            ),
+            routePath: args.pendingPassword == null
+                ? '/onboarding/ledger/birthday'
+                : '/onboarding/ledger/set-password',
             routeExtra: args.pendingPassword == null
                 ? LedgerBirthdayArgs(account: args.account)
                 : LedgerSetPasswordArgs(
@@ -967,9 +913,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
-          child: KeystoneHowToConnectScreen(
-            backTarget: _desktopImportBackTarget(state),
-          ),
+          child: const KeystoneHowToConnectScreen(),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
@@ -1081,10 +1025,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             key: state.pageKey,
             transitionDuration: kOnboardingForwardDuration,
             reverseTransitionDuration: kOnboardingReverseDuration,
-            child: ImportSecretPassphraseScreen(
-              args: args,
-              backTarget: _desktopImportBackTarget(state),
-            ),
+            child: ImportSecretPassphraseScreen(args: args),
             transitionsBuilder: _onboardingFadeTransition,
           );
         },

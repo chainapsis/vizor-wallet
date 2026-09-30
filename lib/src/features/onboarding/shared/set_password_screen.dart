@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
@@ -136,13 +135,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         pendingPassword: password,
         passwordInputSource: inputSource,
       );
-      router.go(
-        args.flow == SetPasswordFlow.importWallet ||
-                args.flow == SetPasswordFlow.importKeystone
-            ? desktopImportLocation(context, customiseArgs.routePath)
-            : customiseArgs.routePath,
-        extra: customiseArgs,
-      );
+      router.go(customiseArgs.routePath, extra: customiseArgs);
       return;
     }
 
@@ -289,10 +282,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         ? null
         : onboarding_chrome.OnboardingBackTarget.route(
             label: _backLabel(standardArgs.flow),
-            routePath: desktopImportLocation(
-              context,
-              standardArgs.backRoutePath,
-            ),
+            routePath: standardArgs.backRoutePath,
             routeExtra: standardArgs.backRouteExtra,
           );
 

@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../import/desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -98,9 +97,7 @@ class LedgerOnboardingShell extends ConsumerWidget {
 enum _LedgerConnectPhase { idle, awaitingApproval }
 
 class LedgerConnectScreen extends ConsumerStatefulWidget {
-  const LedgerConnectScreen({this.backTarget, super.key});
-
-  final OnboardingBackTarget? backTarget;
+  const LedgerConnectScreen({super.key});
 
   @override
   ConsumerState<LedgerConnectScreen> createState() =>
@@ -154,7 +151,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       if (!mounted) return;
       setState(() => _phase = _LedgerConnectPhase.idle);
       context.go(
-        desktopImportLocation(context, '/onboarding/ledger/birthday'),
+        '/onboarding/ledger/birthday',
         extra: LedgerBirthdayArgs(account: account),
       );
     } catch (error) {
@@ -180,7 +177,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     );
     if (!mounted || account == null) return;
     context.go(
-      desktopImportLocation(context, '/onboarding/ledger/birthday'),
+      '/onboarding/ledger/birthday',
       extra: LedgerBirthdayArgs(account: account),
     );
   }
@@ -240,12 +237,10 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     return LedgerOnboardingShell(
       activeStep: LedgerOnboardingStep.connect,
-      backTarget:
-          widget.backTarget ??
-          const OnboardingBackTarget.route(
-            label: 'Add account',
-            routePath: '/add-account',
-          ),
+      backTarget: const OnboardingBackTarget.route(
+        label: 'Add account',
+        routePath: '/add-account',
+      ),
       child: Center(
         child: SingleChildScrollView(
           child: SizedBox(

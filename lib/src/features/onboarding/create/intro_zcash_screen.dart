@@ -112,7 +112,6 @@ class _TitleBlock extends StatelessWidget {
           child: Text(
             'The Shielded World',
             style: AppTypography.displayLarge.copyWith(
-              fontWeight: FontWeight.w500,
               color: colors.text.accent,
             ),
             textAlign: TextAlign.center,
@@ -241,7 +240,7 @@ class _SetupIntroText extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Text(
-          "You're a few steps away from your first private wallet. "
+          "You're a few steps away from your first private wallet.\n"
           "Let's get you set up.",
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,

@@ -1,19 +1,12 @@
 import 'dart:async';
 
-import 'dart:ui' show Size, Offset, SemanticsAction, Tristate;
+import 'dart:ui' show Size, Offset;
 
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart'
     show FontLoader, rootBundle, LogicalKeyboardKey;
 import 'package:flutter/widgets.dart'
-    show
-        BorderRadius,
-        BoxDecoration,
-        DecoratedBox,
-        Focus,
-        Text,
-        ValueKey,
-        Widget;
+    show BorderRadius, BoxDecoration, DecoratedBox, Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -42,31 +35,17 @@ void main() {
     await tester.pumpWidget(_welcomeScreen());
 
     expect(find.text('Back'), findsNothing);
-    expect(find.text('Get started'), findsOneWidget);
-    expect(find.text('Import wallet'), findsOneWidget);
-    expect(find.text('Activate Gift Card'), findsOneWidget);
   });
 
-  testWidgets(
-    'Gift Card activation stays disabled until its TODO is connected',
-    (tester) async {
-      final semantics = tester.ensureSemantics();
-      try {
-        await _setDesktopViewport(tester);
-        await tester.pumpWidget(_welcomeScreen());
-        final button = find.byKey(const ValueKey('welcome_redeem_card_button'));
-        final node = tester.getSemantics(button);
-        expect(node.flagsCollection.isButton, isTrue);
-        expect(node.flagsCollection.isEnabled, Tristate.isFalse);
-        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
-        await tester.tap(button);
-        await tester.pump();
-        expect(find.text('Get started'), findsOneWidget);
-      } finally {
-        semantics.dispose();
-      }
-    },
-  );
+  testWidgets('shows Ledger on first wallet creation entry', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(
+      find.byKey(const ValueKey('welcome_connect_ledger_button')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('shows endpoint settings on first wallet creation entry', (
     tester,
@@ -105,7 +84,9 @@ void main() {
     expect(icon.color, AppIconColors.light.inverse);
   });
 
-  testWidgets('does not show placeholder legal links', (tester) async {
+  testWidgets('hides legal links while preserving footer space', (
+    tester,
+  ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_welcomeScreen());
 
@@ -115,7 +96,8 @@ void main() {
     final footerSpace = find.byKey(
       const ValueKey('welcome_legal_footer_space'),
     );
-    expect(footerSpace, findsNothing);
+    expect(footerSpace, findsOneWidget);
+    expect(tester.getSize(footerSpace), const Size(154, 36));
   });
 
   testWidgets('opens endpoint settings modal from welcome', (tester) async {
@@ -213,11 +195,6 @@ void main() {
     expect(find.text('Changing setting…'), findsOneWidget);
     expect(find.bySemanticsLabel('Close endpoint settings'), findsNothing);
     expect(api.enabled, isEmpty);
-    final createFocus = Focus.of(tester.element(find.text('Get started')));
-    expect(createFocus.canRequestFocus, isFalse);
-    createFocus.requestFocus();
-    await tester.pump();
-    expect(createFocus.hasFocus, isFalse);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.tapAt(const Offset(10, 10));
     await tester.pump();
@@ -315,13 +292,12 @@ void main() {
     await tester.pumpWidget(_welcomeScreen(showBackButton: true));
 
     expect(find.text('Back'), findsOneWidget);
-    expect(find.text('Activate Gift Card'), findsNothing);
     expect(
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey('welcome_import_wallet_button')),
+      find.byKey(const ValueKey('welcome_connect_ledger_button')),
       findsOneWidget,
     );
   });
@@ -341,10 +317,7 @@ void main() {
         ),
         GoRoute(
           path: '/add-account',
-          builder: (_, _) => const WelcomeScreen(
-            showBackButton: true,
-            animateBackground: false,
-          ),
+          builder: (_, _) => const WelcomeScreen(showBackButton: true),
         ),
       ],
     );
@@ -400,10 +373,7 @@ Widget _welcomeScreen({
     child: MaterialApp(
       home: AppTheme(
         data: theme,
-        child: WelcomeScreen(
-          showBackButton: showBackButton,
-          animateBackground: false,
-        ),
+        child: WelcomeScreen(showBackButton: showBackButton),
       ),
     ),
   );

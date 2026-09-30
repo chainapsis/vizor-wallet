@@ -150,10 +150,7 @@ const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 /// in a minimal `GoRouter` so the in-screen `context.go(...)` calls
 /// resolve instead of throwing if a reviewer taps a button during the
 /// preview.
-Widget buildWelcomeLargeUseCase(
-  BuildContext context, {
-  bool showBackButton = false,
-}) {
+Widget buildWelcomeLargeUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -162,7 +159,7 @@ Widget buildWelcomeLargeUseCase(
         () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
       ),
     ],
-    child: _WelcomeHarness(showBackButton: showBackButton),
+    child: _WelcomeHarness(),
   );
 }
 
@@ -3490,13 +3487,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 }
 
 class _WelcomeHarness extends StatefulWidget {
-  const _WelcomeHarness({
-    this.showNetworkSettingsInitially = false,
-    this.showBackButton = false,
-  });
+  const _WelcomeHarness({this.showNetworkSettingsInitially = false});
 
   final bool showNetworkSettingsInitially;
-  final bool showBackButton;
 
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
@@ -3515,7 +3508,6 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
           path: '/welcome',
           builder: (_, _) => WelcomeScreen(
             showNetworkSettingsInitially: widget.showNetworkSettingsInitially,
-            showBackButton: widget.showBackButton,
           ),
         ),
         // Stub destinations so buttons in the preview don't throw when
@@ -3527,13 +3519,8 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
               const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
-          path: '/import/method',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/import/method'),
-        ),
-        GoRoute(
-          path: '/home',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
+          path: '/import',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/import'),
         ),
       ],
     );
