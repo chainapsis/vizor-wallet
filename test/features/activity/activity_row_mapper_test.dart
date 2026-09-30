@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
@@ -17,6 +18,7 @@ void main() {
     BigInt? giftCardAmountZatoshi,
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
+    bool privateQueriesEnabled = false,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -27,6 +29,7 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              privateQueriesEnabled: privateQueriesEnabled,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
               giftCardBatchCount: giftCardBatchCount,
@@ -295,6 +298,59 @@ void main() {
     // are exactly what activityAmountTextForFormFactor yields for this raw text.
     expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
   });
+
+  testWidgets('an incomplete entry is marked, a complete one is not', (
+    tester,
+  ) async {
+    final complete = await mapRow(tester, _transaction(txKind: 'sent'));
+    expect(complete.amountSubtitle, isNull);
+
+    final provisional = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'unknown',
+        detailsComplete: false,
+        provisional: true,
+      ),
+      privateQueriesEnabled: true,
+    );
+    expect(provisional.amountSubtitle, kIncompleteDetailsText);
+
+    final undiscoveredSelfReceipt = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', provisional: true),
+      privateQueriesEnabled: true,
+    );
+    expect(undiscoveredSelfReceipt.amountSubtitle, kIncompleteDetailsText);
+
+    // A receive with every effect known can still lack a memo.
+    final missingDetails = await mapRow(
+      tester,
+      _transaction(txKind: 'received', detailsComplete: false),
+      privateQueriesEnabled: true,
+    );
+    expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
+
+    final publicIncomplete = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', detailsComplete: false, provisional: true),
+    );
+    expect(publicIncomplete.amountSubtitle, isNull);
+  });
+
+  testWidgets('a failed entry keeps its refund note', (tester) async {
+    final row = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        minedHeight: BigInt.zero,
+        expiredUnmined: true,
+        provisional: true,
+      ),
+    );
+    expect(row.amountSubtitle, 'Refunded');
+  });
 }
 
 rust_sync.TransactionInfo _transaction({
@@ -303,6 +359,8 @@ rust_sync.TransactionInfo _transaction({
   bool expiredUnmined = false,
   BigInt? displayAmount,
   String displayPool = 'shielded',
+  bool detailsComplete = true,
+  bool provisional = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
@@ -310,6 +368,9 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: detailsComplete,
+    provisional: provisional,
     blockTime: BigInt.from(1750000000),
     isTransparent: false,
     txKind: txKind,

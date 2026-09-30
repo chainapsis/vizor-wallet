@@ -127,8 +127,8 @@ pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor, get_transaction_data_requests,
     get_transaction_detail, get_transaction_history, get_unmined_txids_with_mined_output_evidence,
     get_wallet_balance, get_wallet_balances, ExportBirthdayAnchor, TransactionDetail,
-    TransactionDetailOutput, TransactionInfo, TransparentBalanceAuthority, TxDataRequest,
-    WalletBalance, WalletBalanceAvailability,
+    TransactionDetailOutput, TransactionFeeState, TransactionInfo, TransparentBalanceAuthority,
+    TxDataRequest, WalletBalance, WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

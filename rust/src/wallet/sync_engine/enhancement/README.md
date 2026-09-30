@@ -434,6 +434,53 @@ through the library's `test-dependencies` hook
   handle openers, balance reads and shielding entry point under a per-wallet
   mode override (`enhancement::test_mode`), after a fenced transition.
 
+### History completeness (Phase 5)
+
+Activity reads the library's `transaction_history_details` for every history
+transaction, through a configured handle over the same read transaction as the
+history rows, so both describe one database state. Each entry carries:
+
+- `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
+  longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
+  in Private queries mode show an unknown fee as "Unknown", and a receive
+  shows no fee.
+- `details_complete`: whether the recipients, payment amounts, and memos are
+  known. A missing recipient row does not mean there was no payment.
+- `provisional`: whether later discovery or enhancement can still change the
+  entry. It is true for provisional classifications or any unsettled pool
+  effect. Local construction can know every payment detail before scanning
+  discovers a receipt to the account's own external shielded address.
+
+Classification follows the facts it has:
+
+- **Shielding** is inferred only when the payment details are complete. With
+  partial details, a transparent spend that funded a shielded output cannot be
+  told apart from a payment.
+- **A provisional debit** whose outputs are unknown, or known only as change,
+  is one `sent` row for the net debit less any recorded fee, with pool
+  `unknown` and no recipient. Its change is not shown as a receive, and the
+  net amount is not presented as a payment amount.
+- **Transaction identity is stable.** Rows keep their txid while details
+  arrive, but their role can change, such as a provisional `sent` becoming
+  `shielded`. A receipt follows a changed role only when that transaction has
+  a single row, so separate self-send legs are not conflated.
+
+While Private queries is enabled, Activity rows mark an incomplete entry
+"Details incomplete", and receipts show a "Details: Incomplete" row and an
+"Unknown" fee when necessary. This is temporary integration feedback while
+private history approaches public-history completeness. With Private queries
+disabled, the existing presentation is preserved: no completeness notice and
+the previous placeholder or omitted fee row for an unrecorded fee. History
+refreshes on the sync events that already
+refresh it (`hasNewTx` or `isComplete`); recovery runs before a pass completes,
+so its commits are visible on the next refresh. No history gap starts any
+public lookup.
+
+Under `Public` handles, which is all of production, transparent effects count
+as settled, so an entry is provisional only while a shielded pool is not yet
+scanned through its height, or while the account spent in it and its payment
+details are missing.
+
 ## Transport and cancellation
 
 ```text

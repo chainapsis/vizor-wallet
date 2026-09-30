@@ -269,6 +269,8 @@ void main() {
         details: [
           rust_sync.TransactionDetail(
             txidHex: storageTxid,
+            detailsComplete: true,
+            provisional: false,
             txKind: 'sent',
             sourcePool: 'shielded',
             outputs: [
@@ -321,6 +323,8 @@ void main() {
         String address = 'destination',
       }) => rust_sync.TransactionDetail(
         txidHex: txid,
+        detailsComplete: true,
+        provisional: false,
         txKind: 'sent',
         outputs: [
           rust_sync.TransactionDetailOutput(
@@ -390,6 +394,8 @@ void main() {
           details: [
             rust_sync.TransactionDetail(
               txidHex: 'claim',
+              detailsComplete: true,
+              provisional: false,
               txKind: 'sent',
               outputs: [
                 rust_sync.TransactionDetailOutput(
@@ -2567,6 +2573,9 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,
@@ -2699,6 +2708,8 @@ class _ClaimDestinationRustApi implements RustLibApi {
     }
     return rust_sync.TransactionDetail(
       txidHex: txidHex,
+      detailsComplete: true,
+      provisional: false,
       txKind: txKind,
       outputs: [
         rust_sync.TransactionDetailOutput(

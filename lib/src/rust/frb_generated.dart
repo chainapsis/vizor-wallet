@@ -14298,8 +14298,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetail dco_decode_transaction_detail(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return TransactionDetail(
       txidHex: dco_decode_String(arr[0]),
       txKind: dco_decode_String(arr[1]),
@@ -14308,6 +14308,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourcePool: dco_decode_opt_String(arr[4]),
       memo: dco_decode_opt_String(arr[5]),
       outputs: dco_decode_list_transaction_detail_output(arr[6]),
+      detailsComplete: dco_decode_bool(arr[7]),
+      provisional: dco_decode_bool(arr[8]),
     );
   }
 
@@ -14326,23 +14328,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransactionFeeState dco_decode_transaction_fee_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransactionFeeState.values[raw as int];
+  }
+
+  @protected
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
       expiredUnmined: dco_decode_bool(arr[2]),
       accountBalanceDelta: dco_decode_i_64(arr[3]),
       fee: dco_decode_u_64(arr[4]),
-      blockTime: dco_decode_u_64(arr[5]),
-      isTransparent: dco_decode_bool(arr[6]),
-      txKind: dco_decode_String(arr[7]),
-      displayAmount: dco_decode_u_64(arr[8]),
-      displayPool: dco_decode_String(arr[9]),
-      createdTime: dco_decode_u_64(arr[10]),
+      feeState: dco_decode_transaction_fee_state(arr[5]),
+      blockTime: dco_decode_u_64(arr[6]),
+      isTransparent: dco_decode_bool(arr[7]),
+      txKind: dco_decode_String(arr[8]),
+      displayAmount: dco_decode_u_64(arr[9]),
+      displayPool: dco_decode_String(arr[10]),
+      createdTime: dco_decode_u_64(arr[11]),
+      detailsComplete: dco_decode_bool(arr[12]),
+      provisional: dco_decode_bool(arr[13]),
     );
   }
 
@@ -19206,6 +19217,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sourcePool = sse_decode_opt_String(deserializer);
     var var_memo = sse_decode_opt_String(deserializer);
     var var_outputs = sse_decode_list_transaction_detail_output(deserializer);
+    var var_detailsComplete = sse_decode_bool(deserializer);
+    var var_provisional = sse_decode_bool(deserializer);
     return TransactionDetail(
       txidHex: var_txidHex,
       txKind: var_txKind,
@@ -19214,6 +19227,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourcePool: var_sourcePool,
       memo: var_memo,
       outputs: var_outputs,
+      detailsComplete: var_detailsComplete,
+      provisional: var_provisional,
     );
   }
 
@@ -19235,6 +19250,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransactionFeeState sse_decode_transaction_fee_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransactionFeeState.values[inner];
+  }
+
+  @protected
   TransactionInfo sse_decode_transaction_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_txidHex = sse_decode_String(deserializer);
@@ -19242,24 +19266,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_expiredUnmined = sse_decode_bool(deserializer);
     var var_accountBalanceDelta = sse_decode_i_64(deserializer);
     var var_fee = sse_decode_u_64(deserializer);
+    var var_feeState = sse_decode_transaction_fee_state(deserializer);
     var var_blockTime = sse_decode_u_64(deserializer);
     var var_isTransparent = sse_decode_bool(deserializer);
     var var_txKind = sse_decode_String(deserializer);
     var var_displayAmount = sse_decode_u_64(deserializer);
     var var_displayPool = sse_decode_String(deserializer);
     var var_createdTime = sse_decode_u_64(deserializer);
+    var var_detailsComplete = sse_decode_bool(deserializer);
+    var var_provisional = sse_decode_bool(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
       expiredUnmined: var_expiredUnmined,
       accountBalanceDelta: var_accountBalanceDelta,
       fee: var_fee,
+      feeState: var_feeState,
       blockTime: var_blockTime,
       isTransparent: var_isTransparent,
       txKind: var_txKind,
       displayAmount: var_displayAmount,
       displayPool: var_displayPool,
       createdTime: var_createdTime,
+      detailsComplete: var_detailsComplete,
+      provisional: var_provisional,
     );
   }
 
@@ -23416,6 +23446,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.sourcePool, serializer);
     sse_encode_opt_String(self.memo, serializer);
     sse_encode_list_transaction_detail_output(self.outputs, serializer);
+    sse_encode_bool(self.detailsComplete, serializer);
+    sse_encode_bool(self.provisional, serializer);
   }
 
   @protected
@@ -23431,6 +23463,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_transaction_fee_state(
+    TransactionFeeState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_transaction_info(
     TransactionInfo self,
     SseSerializer serializer,
@@ -23441,12 +23482,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.expiredUnmined, serializer);
     sse_encode_i_64(self.accountBalanceDelta, serializer);
     sse_encode_u_64(self.fee, serializer);
+    sse_encode_transaction_fee_state(self.feeState, serializer);
     sse_encode_u_64(self.blockTime, serializer);
     sse_encode_bool(self.isTransparent, serializer);
     sse_encode_String(self.txKind, serializer);
     sse_encode_u_64(self.displayAmount, serializer);
     sse_encode_String(self.displayPool, serializer);
     sse_encode_u_64(self.createdTime, serializer);
+    sse_encode_bool(self.detailsComplete, serializer);
+    sse_encode_bool(self.provisional, serializer);
   }
 
   @protected

@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
@@ -23,11 +24,13 @@ import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.d
 import 'package:zcash_wallet/src/features/send/widgets/send_status_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txidHex =
@@ -984,6 +987,165 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a provisional debit shows an unknown fee and incomplete details',
+    (tester) async {
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            feeState: rust_sync.TransactionFeeState.unknown,
+            detailsComplete: false,
+            provisional: true,
+          ),
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      expect(find.byType(SendStatusContentView), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
+      expect(find.text('Incomplete'), findsOneWidget);
+    },
+  );
+
+  for (final kind in ['sent', 'received', 'shielded', 'migration']) {
+    for (final privateQueriesEnabled in [false, true]) {
+      testWidgets(
+        'feedback for $kind is private-only: $privateQueriesEnabled',
+        (tester) async {
+          await _pumpScreen(
+            tester,
+            privateQueriesEnabled: privateQueriesEnabled,
+            args: ActivityTransactionStatusArgs(
+              txidHex: _txidHex,
+              txKind: kind,
+              initialTransaction: _transaction(
+                txKind: kind,
+                fee: BigInt.zero,
+                feeState: rust_sync.TransactionFeeState.unknown,
+                detailsComplete: false,
+                provisional: true,
+              ),
+              initialDetail: _detail(
+                txKind: kind,
+                primaryAddress: kind == 'sent' ? _recipientAddress : null,
+              ),
+            ),
+          );
+
+          expect(
+            find.text('Incomplete'),
+            privateQueriesEnabled ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.text(kUnknownFeeText),
+            privateQueriesEnabled && kind != 'received'
+                ? findsOneWidget
+                : findsNothing,
+          );
+        },
+      );
+    }
+  }
+
+  testWidgets('an open receipt updates feedback when Private queries changes', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.unknown,
+          provisional: true,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ActivityTransactionStatusScreen)),
+    );
+    for (final enabled in [true, false]) {
+      await container.read(enhancePirProvider.notifier).set(enabled);
+      await tester.pump();
+      expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
+      expect(
+        find.text(kUnknownFeeText),
+        enabled ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
+    }
+  });
+
+  testWidgets('a dedicated receipt marks incomplete details', (tester) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(
+          txKind: 'received',
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: false,
+        ),
+        initialDetail: _detail(txKind: 'received'),
+      ),
+    );
+
+    expect(find.byType(ReceivedReceiptView), findsOneWidget);
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets('known payment details still mark unsettled effects', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent', provisional: true),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets('a complete receipt has no incomplete-details row', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsNothing);
+    expect(find.text(kUnknownFeeText), findsNothing);
+  });
+
   testWidgets('shows the loading/not-found fallback when no tx is available', (
     tester,
   ) async {
@@ -1077,6 +1239,9 @@ rust_sync.TransactionInfo _transaction({
   BigInt? minedHeight,
   bool expiredUnmined = false,
   BigInt? fee,
+  rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
+  bool detailsComplete = true,
+  bool provisional = false,
   BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
@@ -1085,6 +1250,9 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: fee ?? BigInt.zero,
+    feeState: feeState,
+    detailsComplete: detailsComplete,
+    provisional: provisional,
     blockTime: _blockTime,
     isTransparent: false,
     txKind: txKind,
@@ -1104,6 +1272,8 @@ rust_sync.TransactionDetail _detail({
 }) {
   return rust_sync.TransactionDetail(
     txidHex: _txidHex,
+    detailsComplete: true,
+    provisional: false,
     txKind: txKind,
     primaryAddress: primaryAddress,
     sourceAddress: sourceAddress,
@@ -1146,6 +1316,7 @@ Future<void> _pumpScreen(
   AccountNotifier? accountNotifier,
   bool pricingEnabled = true,
   bool privacyEnabled = false,
+  bool privateQueriesEnabled = false,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -1176,6 +1347,9 @@ Future<void> _pumpScreen(
       overrides: [
         swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
         privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
+        enhancePirProvider.overrideWith(
+          () => FakeEnhancePirNotifier(privateQueriesEnabled),
+        ),
         appBootstrapProvider.overrideWithValue(_bootstrap),
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),

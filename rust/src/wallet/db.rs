@@ -123,6 +123,17 @@ fn wallet_db(conn: rusqlite::Connection, db_path: &str, network: WalletNetwork) 
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path))
 }
 
+/// A configured wallet handle over a connection the caller already holds, so
+/// its reads share any transaction that connection has open.
+pub(crate) fn wallet_db_on<'c>(
+    conn: &'c rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+) -> WalletDb<&'c rusqlite::Connection, WalletNetwork, SystemClock, OsRng> {
+    WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path))
+}
+
 pub(crate) fn open_wallet_raw_conn_with_timeout(
     db_path: &str,
     timeout: Duration,
