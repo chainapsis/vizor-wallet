@@ -20,6 +20,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_review_screen.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 const _kManualInvalidWordMessage = 'Invalid secret passphrase word.';
@@ -333,7 +334,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
     // this screen is fully covered (RouteCoverageAware), so review and later
     // screens are not blanked while the seed is no longer visible.
     context
-        .push<Object?>(
+        .pushOnboarding<Object?>(
           '/import/review',
           extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
         )
@@ -343,7 +344,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/import');
+              context.goOnboarding('/import');
             }
             return;
           }
@@ -413,7 +414,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
           (_accepted.isNotEmpty || _typed.isNotEmpty) && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileImportProgress(1),
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.importWallet, OnboardingStage.phraseEntry).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Enter your Secret Passphrase',
         subtitle: 'Accept 12, 15, 18, 21 or 24 words',

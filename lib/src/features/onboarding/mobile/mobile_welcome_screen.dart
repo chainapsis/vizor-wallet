@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import 'mobile_onboarding_progress_scope.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -115,7 +117,9 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             'mobile_welcome_get_started',
                                           ),
                                           onPressed: () =>
-                                              context.push('/onboarding/intro'),
+                                              context.startOnboarding(
+                                                '/onboarding/intro',
+                                              ),
                                         ),
                                         const SizedBox(height: AppSpacing.sm),
                                         Semantics(
@@ -141,9 +145,10 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             pressedLabelColor:
                                                 WelcomeButtonTokens
                                                     .secondaryLabel,
-                                            onPressed: () => context.push(
-                                              '/onboarding/method',
-                                            ),
+                                            onPressed: () =>
+                                                context.startOnboarding(
+                                                  '/onboarding/method',
+                                                ),
                                             leading: const AppIcon(
                                               AppIcons.importWallet,
                                             ),
@@ -165,18 +170,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             enabled: false,
                                             child: AppButton(
                                               expand: true,
-                                              focusRingColor:
-                                                  WelcomeButtonTokens.focusRing,
                                               variant: AppButtonVariant.ghost,
-                                              enabledLabelColor:
-                                                  WelcomeButtonTokens
-                                                      .ghostLabel,
-                                              pressedLabelColor:
-                                                  WelcomeButtonTokens
-                                                      .ghostLabel,
-                                              pressedBackgroundColor:
-                                                  WelcomeButtonTokens
-                                                      .ghostHighlightedBackground,
                                               // TODO: Connect Gift Card activation once the claim flow is finalized.
                                               onPressed: null,
                                               disabledBackgroundColor:

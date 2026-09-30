@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+
+import 'mobile_onboarding_progress_scope.dart';
 
 import '../../../core/widgets/app_icon.dart';
 import '../../ledger/ledger_capability.dart';
@@ -25,14 +26,14 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
           iconName: AppIcons.key,
           title: 'Import secret passphrase',
           description: 'Vizor, ZODL, or any other wallet',
-          onPressed: () => context.push('/import'),
+          onPressed: () => context.pushOnboarding('/import'),
         ),
         MobileOnboardingSelectionCard(
           key: const ValueKey('mobile_welcome_link_desktop'),
           iconName: AppIcons.monitor,
           title: 'Link Vizor Desktop',
           description: 'Scan & connect to Vizor Desktop',
-          onPressed: () => context.push('/onboarding/link-desktop'),
+          onPressed: () => context.pushOnboarding('/onboarding/link-desktop'),
         ),
         MobileOnboardingSelectionCard(
           key: const ValueKey('mobile_import_hardware'),
@@ -41,7 +42,7 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
           description: showLedger
               ? 'Ledger or Keystone wallet'
               : 'Keystone wallet',
-          onPressed: () => context.push('/onboarding/hardware'),
+          onPressed: () => context.pushOnboarding('/onboarding/hardware'),
         ),
       ],
     );

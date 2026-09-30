@@ -8,6 +8,9 @@ import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -59,7 +62,13 @@ void main() {
 
     await tester.pumpWidget(
       _harness(
-        MobileCustomiseAccountScreen(progress: 0.75, onFinish: failImport),
+        MobileCustomiseAccountScreen(
+          position: OnboardingProgressPlan.forFlow(
+            OnboardingFlow.ledger,
+            setupMode: OnboardingSetupMode.createPasscode,
+          ).at(OnboardingStage.customiseAccount),
+          onFinish: failImport,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -218,7 +227,7 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('Windborne Wardbearer'), findsOneWidget);
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(7), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
       tester.getSize(
@@ -443,6 +452,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(_RecordingAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           ledgerAccountImporterProvider.overrideWithValue(({
@@ -459,8 +469,10 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, child) =>
-              AppTheme(data: AppThemeData.dark, child: child!),
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: child!),
+          ),
         ),
       ),
     );
@@ -514,13 +526,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           appSecurityProvider.overrideWith(() => securityNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -564,12 +580,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -611,12 +631,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -662,12 +686,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -698,8 +726,14 @@ AppButton _continueButton(WidgetTester tester) => tester.widget<AppButton>(
 
 Widget _harness(Widget child) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.dark,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: child,
     ),
   );
@@ -707,9 +741,15 @@ Widget _harness(Widget child) {
 
 Widget _routerHarness(GoRouter router) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.dark,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }

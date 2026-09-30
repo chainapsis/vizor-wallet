@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
@@ -25,6 +24,7 @@ import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
 
@@ -142,14 +142,14 @@ class _MobileSecretPassphraseScreenState
     final security = ref.read(appSecurityProvider);
     clearCreateOnboardingSecretState(ref.read);
     if (!security.isPasswordConfigured) {
-      context.go(
+      context.goOnboarding(
         '/onboarding/set-passcode',
         extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
       );
       return;
     }
 
-    context.go(
+    context.goOnboarding(
       '/onboarding/customise-account',
       extra: CustomiseAccountArgs(
         setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
@@ -191,7 +191,9 @@ class _MobileSecretPassphraseScreenState
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileCreateProgress(5),
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',

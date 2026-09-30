@@ -6,13 +6,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/seed_card.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -49,13 +51,17 @@ class _ConfiguredSecurityNotifier extends AppSecurityNotifier {
 Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       if (seedCreateMnemonic)
         createOnboardingMnemonicProvider.overrideWith(
           _TestCreateMnemonicNotifier.new,
         ),
     ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: child,
     ),
   );
@@ -78,6 +84,7 @@ Widget _routerApp(Stream<void> screenshotStream) {
   );
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       createOnboardingMnemonicProvider.overrideWith(
         _TestCreateMnemonicNotifier.new,
       ),
@@ -85,7 +92,10 @@ Widget _routerApp(Stream<void> screenshotStream) {
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -103,7 +113,8 @@ Widget _additionalAccountRouterApp() {
       GoRoute(
         path: '/onboarding/customise-account',
         builder: (_, state) {
-          final args = state.extra! as CustomiseAccountArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
           return Text('customise ${args.mnemonic}');
         },
       ),
@@ -111,11 +122,15 @@ Widget _additionalAccountRouterApp() {
   );
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       appSecurityProvider.overrideWith(_ConfiguredSecurityNotifier.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -179,7 +194,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(5), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.65306122449, 0.0001));
   });
 
   testWidgets('copy puts the full phrase on the clipboard', (tester) async {

@@ -1,40 +1,95 @@
-/// Create-flow step ordering for the steps-nav progress track:
-/// welcome -> intro -> address types -> things to know -> secret passphrase ->
-/// passcode -> customise account. Welcome itself does not
-/// show the track, but the following steps still count it so create progress
-/// starts after the user has already passed the first screen. Biometrics is a
-/// terminal completion screen and keeps its full progress value.
-const kMobileCreateStepCount = 7;
+/// Account preparation progress, separate from QR decoding and wallet sync.
+enum OnboardingFlow { create, importWallet, keystone, ledger, walletLink }
 
-/// Import-flow steps after method selection:
-/// secret passphrase entry (paste or manual) -> review -> birthday -> passcode
-/// -> customise account.
-const kMobileImportStepCount = 5;
+enum OnboardingSetupMode { createPasscode, reusePasscode }
 
-/// Initial fill shared by the import/hardware choices and create Introduction.
-const kMobileSelectionProgress = 60 / 196;
+enum OnboardingStage {
+  addressTypes,
+  thingsToKnow,
+  secretPassphrase,
+  phraseEntry,
+  phraseReview,
+  deviceIntro,
+  deviceScan,
+  deviceConnect,
+  linkIntro,
+  linkScan,
+  accountSelection,
+  contactSelection,
+  birthday,
+  passcode,
+  customiseAccount,
+}
 
-/// Track fill for step N. Denominator is one past the step count so the
-/// track is never empty on the first step nor full while the last step is
-/// still in progress.
-double mobileCreateProgress(int step) => step / (kMobileCreateStepCount + 1);
+/// A semantic position supplied to shared screens; only renderers use [value].
+class OnboardingProgressPosition {
+  const OnboardingProgressPosition._(this.value);
+  static const start = OnboardingProgressPosition._(60 / 196);
+  static const accountReady = OnboardingProgressPosition._(1);
+  final double value;
+}
 
-/// Fill the remaining track after selection, reserving full progress for
-/// terminal completion.
-double mobileImportProgress(int step) =>
-    kMobileSelectionProgress +
-    (1 - kMobileSelectionProgress) * step / (kMobileImportStepCount + 1);
+/// Immutable, deterministic plan for one account-preparation path.
+class OnboardingProgressPlan {
+  OnboardingProgressPlan.forFlow(this.flow, {required this.setupMode})
+    : stages = List.unmodifiable([
+        for (final stage in _stagesFor(flow))
+          if (setupMode == OnboardingSetupMode.createPasscode ||
+              stage != OnboardingStage.passcode)
+            stage,
+      ]);
 
-/// Keystone owns its own literal progress values today (0.2/0.4/0.6/0.8).
-/// Keep its passcode step on the previous 5/6 fill while create progress
-/// counts Welcome and the education screens.
-const kMobileKeystonePasscodeProgress = 5 / 6;
-const kMobileKeystoneCustomiseProgress = 6 / 7;
+  final OnboardingFlow flow;
+  final OnboardingSetupMode setupMode;
+  final List<OnboardingStage> stages;
 
-/// Desktop-link import has intro, scan, account selection, contact selection,
-/// then passcode.
-const kMobileWalletLinkPasscodeProgress = 5 / 6;
+  OnboardingProgressPosition at(OnboardingStage stage) {
+    final index = stages.indexOf(stage);
+    if (index < 0) {
+      throw ArgumentError.value(stage, 'stage', 'Not in $flow / $setupMode');
+    }
+    final start = OnboardingProgressPosition.start.value;
+    return OnboardingProgressPosition._(
+      start + (1 - start) * (index + 1) / (stages.length + 1),
+    );
+  }
 
-/// Ledger: connect, birthday, passcode, then account customisation.
-const kMobileLedgerPasscodeProgress = 0.75;
-const kMobileLedgerCustomiseProgress = 0.875;
+  static List<OnboardingStage> _stagesFor(OnboardingFlow flow) =>
+      switch (flow) {
+        OnboardingFlow.create => const [
+          OnboardingStage.addressTypes,
+          OnboardingStage.thingsToKnow,
+          OnboardingStage.secretPassphrase,
+          OnboardingStage.passcode,
+          OnboardingStage.customiseAccount,
+        ],
+        OnboardingFlow.importWallet => const [
+          OnboardingStage.phraseEntry,
+          OnboardingStage.phraseReview,
+          OnboardingStage.birthday,
+          OnboardingStage.passcode,
+          OnboardingStage.customiseAccount,
+        ],
+        OnboardingFlow.keystone => const [
+          OnboardingStage.deviceIntro,
+          OnboardingStage.deviceScan,
+          OnboardingStage.accountSelection,
+          OnboardingStage.birthday,
+          OnboardingStage.passcode,
+          OnboardingStage.customiseAccount,
+        ],
+        OnboardingFlow.ledger => const [
+          OnboardingStage.deviceConnect,
+          OnboardingStage.birthday,
+          OnboardingStage.passcode,
+          OnboardingStage.customiseAccount,
+        ],
+        OnboardingFlow.walletLink => const [
+          OnboardingStage.linkIntro,
+          OnboardingStage.linkScan,
+          OnboardingStage.accountSelection,
+          OnboardingStage.contactSelection,
+          OnboardingStage.passcode,
+        ],
+      };
+}

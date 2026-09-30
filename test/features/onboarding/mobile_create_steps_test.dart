@@ -9,7 +9,6 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
@@ -99,21 +98,20 @@ void main() {
     expect(find.byType(MobileWelcomeScreen), findsOneWidget);
   });
 
-  testWidgets('create education screens count welcome in progress', (
+  testWidgets('create education screens use shared stage progress', (
     tester,
   ) async {
-    expect(kMobileCreateStepCount, 7);
     await tester.pumpWidget(_app('/onboarding/intro'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(kMobileSelectionProgress, 0.0001));
+    expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/address-types'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(3), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.42176870748, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/things-to-know'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(4), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.53741496599, 0.0001));
   });
 
   for (final theme in [AppThemeData.light, AppThemeData.dark]) {

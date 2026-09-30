@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -24,8 +27,14 @@ const _validMnemonic =
 
 Widget _app() {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: const MobileImportManualScreen(wordListOverride: _wordList),
     ),
   );
@@ -43,16 +52,24 @@ Widget _routedApp() {
       GoRoute(
         path: '/import/review',
         builder: (_, state) {
-          final args = state.extra as ImportSecretPassphraseArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)
+                  as ImportSecretPassphraseArgs;
           return Scaffold(body: Text('Review: ${args.mnemonic}'));
         },
       ),
     ],
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -85,15 +102,23 @@ Widget _stackedManualApp() {
       GoRoute(
         path: '/import/review',
         builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as ImportSecretPassphraseArgs,
+          args:
+              mobileOnboardingPayload(state.extra)
+                  as ImportSecretPassphraseArgs,
         ),
       ),
     ],
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -103,8 +128,14 @@ Widget _screenshotApp({
   SensitivePrivacyOverlayController? privacyOverlayController,
 }) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: MobileImportManualScreen(
         wordListOverride: _wordList,
         screenshotStream: screenshotStream,

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+
+import 'mobile_onboarding_progress_scope.dart';
 
 import '../../../core/widgets/app_icon.dart';
 import '../../ledger/ledger_capability.dart';
@@ -24,7 +25,7 @@ class MobileHardwareSelectionScreen extends ConsumerWidget {
           iconName: AppIcons.keystone,
           title: 'Connect Keystone',
           description: 'Import from Keystone wallet',
-          onPressed: () => context.push('/onboarding/keystone'),
+          onPressed: () => context.pushOnboarding('/onboarding/keystone'),
         ),
         if (showLedger)
           MobileOnboardingSelectionCard(
@@ -32,7 +33,7 @@ class MobileHardwareSelectionScreen extends ConsumerWidget {
             iconName: AppIcons.ledger,
             title: 'Connect Ledger',
             description: 'Import from Ledger wallet',
-            onPressed: () => context.push('/onboarding/ledger'),
+            onPressed: () => context.pushOnboarding('/onboarding/ledger'),
           ),
       ],
     );

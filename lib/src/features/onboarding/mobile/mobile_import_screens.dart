@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -10,6 +9,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 /// Mnemonic lengths the wallet accepts. The Figma frames show a fixed
@@ -152,7 +152,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       if (!mounted) return;
       setState(() => _pasteState = _ImportPasteState.idle);
       if (!_isCurrentRoute) return;
-      context.push(
+      context.pushOnboarding(
         '/import/review',
         extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
       );
@@ -192,14 +192,16 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   void _openManual() {
-    context.push('/import/manual');
+    context.pushOnboarding('/import/manual');
   }
 
   @override
   Widget build(BuildContext context) {
     final isReading = _pasteState == _ImportPasteState.reading;
     return MobileOnboardingStepScaffold(
-      progress: mobileImportProgress(1),
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.importWallet, OnboardingStage.phraseEntry).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Import Wallet',
       subtitle: _kImportPasteHelperText,

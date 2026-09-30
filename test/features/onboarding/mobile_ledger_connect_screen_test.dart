@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -180,8 +182,10 @@ void main() {
           ],
           child: MaterialApp.router(
             routerConfig: router,
-            builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
+            builder: (_, child) => AppTheme(
+              data: AppThemeData.light,
+              child: MobileOnboardingProgressFrame(child: child!),
+            ),
           ),
         ),
       );
@@ -735,7 +739,8 @@ Widget _ledgerHarness({
       GoRoute(
         path: '/onboarding/ledger/birthday',
         builder: (_, state) {
-          final args = state.extra! as LedgerBirthdayArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)! as LedgerBirthdayArgs;
           return Text(
             'birthday-route-${args.account.transport.name}-${args.account.device?.model}',
             key: ValueKey(args.account.accountIndex),
@@ -776,7 +781,10 @@ Widget _ledgerHarness({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }

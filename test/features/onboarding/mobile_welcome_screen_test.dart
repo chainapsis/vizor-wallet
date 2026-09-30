@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -23,6 +24,8 @@ import 'package:zcash_wallet/src/features/onboarding/shared/welcome_button_token
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _app({
+  bool existingWallet = false,
+  AppSecurityNotifier? security,
   String initialLocation = '/welcome',
   AppThemeData theme = AppThemeData.light,
   String network = 'main',
@@ -46,11 +49,12 @@ Widget _app({
           rpcEndpointConfig: defaultRpcEndpointConfig(network),
           themeMode: ThemeMode.system,
           privacyModeEnabled: false,
-          isPasswordConfigured: false,
-          isUnlocked: false,
+          isPasswordConfigured: existingWallet,
+          isUnlocked: existingWallet,
           passwordRotationRecoveryFailed: false,
         ),
       ),
+      if (security != null) appSecurityProvider.overrideWith(() => security),
       ledgerTargetPlatformProvider.overrideWithValue(platform),
     ],
     child: MaterialApp.router(
@@ -84,6 +88,80 @@ void main() {
       ..physicalSize = const Size(520, 1000)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final existing in [false, true]) {
+    for (final entry in ['link', 'keystone', 'ledger']) {
+      testWidgets('$entry advances after selection (existing=$existing)', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _app(
+            existingWallet: existing,
+            initialLocation: existing ? '/add-account' : '/welcome',
+          ),
+        );
+        await tester.pumpAndSettle();
+        await _openMethodSelection(tester);
+        if (entry != 'link') {
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_import_hardware')),
+          );
+          await tester.pumpAndSettle();
+          expect(_stepsProgress(tester), closeTo(60 / 196, 1e-8));
+        }
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              entry == 'link'
+                  ? 'mobile_welcome_link_desktop'
+                  : 'mobile_welcome_$entry',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final expected = switch (entry) {
+          'link' => existing ? 0.44489795918 : 0.42176870748,
+          'keystone' => existing ? 0.42176870748 : 0.40524781341,
+          'ledger' => existing ? 0.47959183673 : 0.44489795918,
+          _ => throw StateError(entry),
+        };
+        expect(_stepsProgress(tester), closeTo(expected, 1e-8));
+        await tester.tap(find.bySemanticsLabel('Back'));
+        await tester.pumpAndSettle();
+        expect(_stepsProgress(tester), closeTo(60 / 196, 1e-8));
+      });
+    }
+  }
+
+  testWidgets(
+    'security changes do not reweight active pages; a new start captures them',
+    (tester) async {
+      final security = _MutableSecurity();
+      await tester.pumpWidget(_app(security: security));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_welcome_get_started')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
+      await tester.pumpAndSettle();
+      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
+      security.configure();
+      await tester.pumpAndSettle();
+      expect(_stepsProgress(tester), closeTo(0.42176870748, 1e-8));
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.bySemanticsLabel('Back'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_welcome_get_started')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_intro_continue')));
+      await tester.pumpAndSettle();
+      expect(_stepsProgress(tester), closeTo(0.44489795918, 1e-8));
+    },
+  );
 
   testWidgets('welcome exposes create and import without the method cards', (
     tester,
@@ -149,15 +227,6 @@ void main() {
       tester.getRect(find.byKey(hardwareKey)).bottom,
       lessThanOrEqualTo(screenHeight),
     );
-  });
-
-  testWidgets('create pushes the intro step', (tester) async {
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
   });
 
   testWidgets('import pushes the import entry step', (tester) async {
@@ -294,13 +363,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Shielded\nby default'), findsOneWidget);
     semantics.dispose();
-  });
-
-  testWidgets('Get started enters creation directly', (tester) async {
-    await pump(tester);
-    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
-    await tester.pumpAndSettle();
-    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
   });
 
   testWidgets('Import wallet opens its selector and can return', (
@@ -452,4 +514,14 @@ void main() {
       expect(find.text('Shielded\nby default'), findsOneWidget);
     }
   });
+}
+
+class _MutableSecurity extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: false, isUnlocked: false);
+  void configure() => state = const AppSecurityState(
+    isPasswordConfigured: true,
+    isUnlocked: true,
+  );
 }

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'mobile_onboarding_progress.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -89,7 +90,7 @@ class _MobileBiometricsScreenState
     final kind = biometric?.availability.kind ?? BiometricKind.none;
 
     return MobileOnboardingStepScaffold(
-      progress: 1,
+      progress: OnboardingProgressPosition.accountReady.value,
       showBackButton: false,
       aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.

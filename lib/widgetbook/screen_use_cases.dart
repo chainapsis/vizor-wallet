@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:go_router/go_router.dart';
+import '../src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import '../src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 
 import '../src/app_bootstrap.dart';
 import '../src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -2615,7 +2617,7 @@ class _MobileImportHarnessState extends State<_MobileImportHarness> {
         GoRoute(
           path: '/import/review',
           builder: (_, state) {
-            final extra = state.extra;
+            final extra = mobileOnboardingPayload(state.extra);
             final args = extra is ImportSecretPassphraseArgs
                 ? extra
                 : ImportSecretPassphraseArgs(
@@ -3809,7 +3811,10 @@ class _MobilePreviewFrame extends StatelessWidget {
           padding: safeAreaPadding,
           viewPadding: safeAreaPadding,
         ),
-        child: child,
+        child: MobileOnboardingProgressScope(
+          setupMode: OnboardingSetupMode.createPasscode,
+          child: child,
+        ),
       ),
     );
     if (!constrainToDesignSize) return frame;

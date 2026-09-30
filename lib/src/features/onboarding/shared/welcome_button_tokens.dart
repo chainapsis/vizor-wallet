@@ -9,14 +9,11 @@ abstract final class WelcomeButtonTokens {
   static const border = Color(0x1affffff);
   static const accentLabel = Color(0xd9ffffff);
   static const secondaryLabel = Primitives.p800Dark;
-  static const ghostLabel = Primitives.p700Dark;
   static const ghostDisabledLabel = Color(0x73ffffff);
   static const focusRing = Primitives.p800Dark;
 
   static const secondaryBackground = Color(0x33f7f7f7);
   static const secondaryHighlightedBackground = Color(0x4df7f7f7);
-  // Redeem uses the existing Ghost component's dark hover surface.
-  static const ghostHighlightedBackground = Primitives.p100Dark;
 
   static const accentGradient = [
     Color(0xff2c0e19),

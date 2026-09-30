@@ -20,6 +20,7 @@ import '../keystone/keystone_onboarding_flow.dart'
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'passcode_widgets.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
@@ -106,7 +107,13 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     if (args.flow != SetPasswordFlow.importWalletLink) {
       await router.push<void>(
         '/onboarding/customise-account',
-        extra: CustomiseAccountArgs(setupArgs: args, pendingPassword: passcode),
+        extra: MobileOnboardingRouteArgs(
+          setupMode: MobileOnboardingProgressScope.of(context).setupMode,
+          payload: CustomiseAccountArgs(
+            setupArgs: args,
+            pendingPassword: passcode,
+          ),
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -228,7 +235,12 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: _progressForFlow(widget.args.flow),
+              progress: MobileOnboardingProgressScope.of(context)
+                  .at(
+                    onboardingFlowForSetup(widget.args.flow),
+                    OnboardingStage.passcode,
+                  )
+                  .value,
               showBackButton: canNavigateBack,
               onBack: isSubmitting || !canNavigateBack
                   ? null
@@ -298,11 +310,3 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     );
   }
 }
-
-double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
-  SetPasswordFlow.create => mobileCreateProgress(6),
-  SetPasswordFlow.importLedger => kMobileLedgerPasscodeProgress,
-  SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
-  SetPasswordFlow.importWallet => mobileImportProgress(4),
-  SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,
-};

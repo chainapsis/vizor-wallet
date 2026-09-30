@@ -1,11 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 /// Step 2 — Figma `New Account` (8569:129347).
@@ -16,7 +16,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: kMobileSelectionProgress,
+      progress: OnboardingProgressPosition.start.value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
       titleStyle: AppTypography.displayLarge.copyWith(
@@ -45,7 +45,8 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
             expand: true,
             growWithContent: true,
             constrainContent: true,
-            onPressed: () => context.push('/onboarding/address-types'),
+            onPressed: () =>
+                context.pushOnboarding('/onboarding/address-types'),
             trailing: const AppIcon(AppIcons.chevronForward),
             child: const Text(
               'Tell me how Zcash works',
@@ -60,7 +61,8 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
             growWithContent: true,
             constrainContent: true,
             trailing: const AppIcon(AppIcons.skip),
-            onPressed: () => context.push('/onboarding/secret-passphrase'),
+            onPressed: () =>
+                context.pushOnboarding('/onboarding/secret-passphrase'),
             child: const Text(
               'I know how to use Zcash',
               textAlign: TextAlign.center,
@@ -105,7 +107,9 @@ class MobileAddressTypesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(3),
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.create, OnboardingStage.addressTypes).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
       contentGap: 32,
@@ -116,7 +120,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
         expand: true,
-        onPressed: () => context.push('/onboarding/things-to-know'),
+        onPressed: () => context.pushOnboarding('/onboarding/things-to-know'),
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
@@ -160,7 +164,9 @@ class MobileThingsToKnowScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(4),
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.create, OnboardingStage.thingsToKnow).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Things to know',
       contentGap: 32,
@@ -169,7 +175,8 @@ class MobileThingsToKnowScreen extends StatelessWidget {
       bottomArea: AppButton(
         key: const ValueKey('mobile_things_to_know_continue'),
         expand: true,
-        onPressed: () => context.push('/onboarding/secret-passphrase'),
+        onPressed: () =>
+            context.pushOnboarding('/onboarding/secret-passphrase'),
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),

@@ -28,11 +28,8 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_keystone_scan_card.dart';
 import 'mobile_onboarding_scaffold.dart';
-
-const _walletLinkIntroProgress = 0.2;
-const _walletLinkScanProgress = 0.4;
-const _walletLinkAccountsProgress = 0.6;
-const _walletLinkContactsProgress = 0.8;
+import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 
 typedef WalletLinkCompletionCallback =
     Future<void> Function({
@@ -49,14 +46,17 @@ class MobileWalletLinkIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileOnboardingStepScaffold(
-      progress: _walletLinkIntroProgress,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.walletLink, OnboardingStage.linkIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Link with Desktop',
       subtitle: 'Copy your desktop wallet to this phone',
       bottomArea: AppButton(
         key: const ValueKey('mobile_wallet_link_intro_scan'),
         expand: true,
-        onPressed: () => context.push('/onboarding/link-desktop/scan'),
+        onPressed: () =>
+            context.pushOnboarding('/onboarding/link-desktop/scan'),
         child: const Text("I'm ready to scan"),
       ),
       child: Column(
@@ -173,7 +173,7 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
         .read(mobileWalletLinkControllerProvider.notifier)
         .handleQrCode(raw);
     if (!context.mounted || !ok) return;
-    context.push('/onboarding/link-desktop/accounts');
+    context.pushOnboarding('/onboarding/link-desktop/accounts');
   }
 
   @override
@@ -183,7 +183,9 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
     final scanError = previewError ?? state.scanError;
     if (scanError == null) {
       return MobileOnboardingStepScaffold(
-        progress: _walletLinkScanProgress,
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Scan QR Code',
         subtitle: 'Copy your desktop wallet to this phone',
@@ -217,7 +219,9 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
       fit: StackFit.expand,
       children: [
         MobileOnboardingStepScaffold(
-          progress: _walletLinkScanProgress,
+          progress: MobileOnboardingProgressScope.of(
+            context,
+          ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
           onBack: () => Navigator.of(context).maybePop(),
           title: 'Scan QR Code',
           subtitle: 'Scan the code on your desktop',
@@ -436,7 +440,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
     final state = ref.watch(mobileWalletLinkControllerProvider);
     if (!state.hasPayload) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) context.go('/onboarding/link-desktop');
+        if (context.mounted) context.goOnboarding('/onboarding/link-desktop');
       });
     }
 
@@ -458,7 +462,9 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
         if (state.isAccountAlreadyImported(account.uuid)) account,
     ];
     return _WalletLinkSelectionScaffold(
-      progress: _walletLinkAccountsProgress,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.walletLink, OnboardingStage.accountSelection).value,
       title: 'Select account',
       subtitle: hasNothingToImport
           ? const TextSpan(
@@ -495,7 +501,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
           _continueToPasscodeOrImport(context, ref);
           return;
         }
-        context.push('/onboarding/link-desktop/contacts');
+        context.pushOnboarding('/onboarding/link-desktop/contacts');
       },
       child: hasNothingToImport
           ? const _WalletLinkNothingToImportCard()
@@ -580,7 +586,7 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
     final state = ref.watch(mobileWalletLinkControllerProvider);
     if (!state.hasPayload) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) context.go('/onboarding/link-desktop');
+        if (context.mounted) context.goOnboarding('/onboarding/link-desktop');
       });
     }
 
@@ -601,7 +607,9 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
         state.importableContactCount > 0 &&
         state.selectedContactCount == state.importableContactCount;
     return _WalletLinkSelectionScaffold(
-      progress: _walletLinkContactsProgress,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.walletLink, OnboardingStage.contactSelection).value,
       title: 'Import contacts',
       subtitle: TextSpan(
         text:
@@ -763,7 +771,7 @@ Future<void> _continueToPasscodeOrImport(
   final security = ref.read(appSecurityProvider);
   if (!security.isPasswordConfigured) {
     if (accounts.isEmpty) return;
-    context.push(
+    context.pushOnboarding(
       '/onboarding/set-passcode',
       extra: SetPasswordScreenArgs.importWalletLink(
         network: payload.network,

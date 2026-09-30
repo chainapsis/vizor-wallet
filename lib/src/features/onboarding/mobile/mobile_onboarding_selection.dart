@@ -33,7 +33,7 @@ class MobileOnboardingSelectionPage extends StatelessWidget {
           children: [
             MobileTopNav.steps(
               height: 74,
-              progress: kMobileSelectionProgress,
+              progress: OnboardingProgressPosition.start.value,
               progressOffset: const Offset(-4.5, 0),
               progressTrackColor: colors.background.inverse.withValues(
                 alpha: 0.35,

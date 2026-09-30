@@ -6,9 +6,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -17,8 +19,14 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 Widget _app() {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: const MobilePasscodeScreen(
         args: SetPasswordScreenArgs.create(mnemonic: 'stub mnemonic words'),
       ),
@@ -42,7 +50,8 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
       GoRoute(
         path: '/onboarding/customise-account',
         builder: (_, state) {
-          final args = state.extra! as CustomiseAccountArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
           return Text(
             'customise ${args.mnemonic} '
             '${args.setupArgs.importBirthdayHeight} '
@@ -55,13 +64,17 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
 
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       accountProvider.overrideWith(() => accountNotifier),
       appSecurityProvider.overrideWith(() => _RecordingAppSecurityNotifier()),
       syncProvider.overrideWith(() => _NoopSyncNotifier()),
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -81,7 +94,8 @@ Widget _createRouterApp({
       GoRoute(
         path: '/onboarding/customise-account',
         builder: (_, state) {
-          final args = state.extra! as CustomiseAccountArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
           return Text('customise ${args.mnemonic} ${args.pendingPassword}');
         },
       ),
@@ -90,10 +104,16 @@ Widget _createRouterApp({
   onRouter?.call(router);
 
   return ProviderScope(
-    overrides: [accountProvider.overrideWith(() => accountNotifier)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => accountNotifier),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -144,7 +164,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app());
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(6), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
   });
 
   testWidgets('import passcode progress follows the review import flow', (
@@ -154,7 +174,7 @@ void main() {
       _importApp(accountNotifier: _RecordingAccountNotifier()),
     );
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(mobileImportProgress(4), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
   });
 
   testWidgets('a mismatched confirmation restarts with an error', (

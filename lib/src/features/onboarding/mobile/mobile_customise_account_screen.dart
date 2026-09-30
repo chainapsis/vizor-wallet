@@ -20,6 +20,7 @@ import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 typedef MobileCustomiseAccountFinishCallback =
@@ -33,12 +34,12 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
   const MobileCustomiseAccountScreen({
     this.args,
     this.onFinish,
-    this.progress,
+    this.position,
     this.onBack,
     this.random,
     super.key,
   }) : assert(
-         args != null || (onFinish != null && progress != null),
+         args != null || (onFinish != null && position != null),
          'Custom setup args or an alternate completion presentation is required.',
        );
 
@@ -47,7 +48,7 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
   /// Alternate completion seam used by previews, tests, and hardware flows.
   final MobileCustomiseAccountFinishCallback? onFinish;
 
-  final double? progress;
+  final OnboardingProgressPosition? position;
   final VoidCallback? onBack;
 
   /// Optional entropy source for deterministic previews and tests.
@@ -242,16 +243,13 @@ class _MobileCustomiseAccountScreenState
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
       progress:
-          widget.progress ??
-          switch (widget.args!.flow) {
-            SetPasswordFlow.create => mobileCreateProgress(7),
-            SetPasswordFlow.importWallet => mobileImportProgress(5),
-            SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
-            SetPasswordFlow.importLedger => kMobileLedgerCustomiseProgress,
-            SetPasswordFlow.importWalletLink => throw StateError(
-              'Wallet Link does not use account customisation.',
-            ),
-          },
+          widget.position?.value ??
+          MobileOnboardingProgressScope.of(context)
+              .at(
+                onboardingFlowForSetup(widget.args!.flow),
+                OnboardingStage.customiseAccount,
+              )
+              .value,
       onBack: _isSubmitting ? null : widget.onBack,
       showBackButton: widget.onBack != null,
       title: 'Customise Account',
