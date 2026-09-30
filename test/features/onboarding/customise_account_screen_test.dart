@@ -308,6 +308,7 @@ void main() {
           args: const CustomiseAccountArgs(
             setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
           ),
+          random: _SequenceRandom([0, 0, 0]),
           onFinish: (_, profilePictureId) async {
             submittedProfilePictureId = profilePictureId;
           },

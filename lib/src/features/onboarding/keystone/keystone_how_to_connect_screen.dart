@@ -5,21 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../import/desktop_import_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'keystone_onboarding_flow.dart';
 
 class KeystoneHowToConnectScreen extends ConsumerWidget {
-  const KeystoneHowToConnectScreen({super.key});
+  const KeystoneHowToConnectScreen({this.backTarget, super.key});
+
+  final OnboardingBackTarget? backTarget;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return KeystoneOnboardingTrailingPane(
-      backTarget: const OnboardingBackTarget.route(
-        label: 'Welcome',
-        routePath: '/welcome',
-      ),
+      backTarget:
+          backTarget ??
+          const OnboardingBackTarget.route(
+            label: 'Welcome',
+            routePath: '/welcome',
+          ),
       bodyPadding: EdgeInsets.zero,
       child: _HeroLayout(ref: ref),
     );
@@ -93,7 +98,12 @@ class _ButtonStack extends StatelessWidget {
     return AppButton(
       onPressed: () {
         ref.read(keystoneOnboardingProvider.notifier).resetScan();
-        context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+        context.go(
+          desktopImportLocation(
+            context,
+            KeystoneOnboardingStep.scanQrCode.routePath,
+          ),
+        );
       },
       variant: AppButtonVariant.primary,
       minWidth: _buttonMinWidth,
