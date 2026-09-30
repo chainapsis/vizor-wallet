@@ -400,7 +400,8 @@ target equal to the chain tip, not quarantined, every contributing revision is
 qualified, and legacy public evidence agrees. A blocked promotion changes
 nothing, logs only its blocker count, and is retried after a later run; one
 account's blockers never hold back another. Nothing in this build can qualify
-a revision, so production never promotes. Tests qualify fixture revisions
+a revision. Production has no enabled recovery source; empty required intervals
+can promote without granting funds, while nonempty intervals need qualification. Tests qualify fixture revisions
 through the library's `test-dependencies` hook
 (`FixtureSource::qualified_in`).
 
@@ -408,24 +409,23 @@ through the library's `test-dependencies` hook
   and spends in the same transaction. A commit refused because the source is
   quarantined stops the run; one refused because the account is quarantined,
   or because an active account's revision is unqualified, skips that account.
-- **Balances.** `get_wallet_balances` reads the transparent fields from each
-  account's `transparent_ledger_snapshot` when the handle's mode is private:
-  the summary carries no transparent funds then. `WalletBalance` reports
-  `transparent_authority` (`Current`, `LastKnown`, or `Unavailable`) and, with
-  `LastKnown`, the informational `transparent_last_known` total; the
-  spendable transparent fields are then zero. Home shows the last-known amount
-  marked "(last known)", or "Unavailable", never an invented 0. Under `Public`
-  handles, which is all of production, the read is skipped and nothing changes.
-  The transparent fields never come from the cached summary under a private
-  mode, so ledger commits, promotion and rewinds cannot leave them stale; the
-  fenced policy apply also bumps the write epoch.
-- **Operations.** Shielding status and proposals read per-receiver balances
-  from the library's gated selector under private authority, and report
-  "transparent funds are unavailable" rather than an empty balance while
-  authority is missing. Send, PCZT, Ledger and Keystone paths are unchanged:
-  the library's selectors and `store_transactions_to_be_sent` authorize every
-  transparent input, and Dart maps the refusal to recovery copy instead of
-  insufficient funds.
+- **Balances.** `get_wallet_balances` reads the durable policy, wallet summary,
+  and each account's `transparent_ledger_snapshot` in one SQLite transaction.
+  A reopened Public handle on a durable PrivateRequired wallet is configured
+  privately for this read only; it never changes durable policy or spending
+  configuration. `WalletBalance` reports `Current`, `LastKnown`, or `Unavailable`.
+  Last-known amounts are informational and the spendable fields stay zero.
+  This composite read bypasses the summary-only cache to prevent mixing generations.
+- **Operations.** Shielding and software proposals use library selectors and
+  store authorization. Every hardware submission path (Ledger outbox, Keystone
+  full/compact batches, and legacy PCZT) additionally checks transparent inputs
+  through the library selector at the current network target before dispatch.
+  A SQLite `BEGIN IMMEDIATE` reservation prevents policy, evidence, and rewind
+  writes through that bounded send attempt, then rolls back without storing the
+  transaction. It may delay other writers for the RPC timeout. Chained TEX inputs
+  must name an existing output of an earlier finalized transaction in the batch.
+  Definite rejection still persists nothing; accepted or ambiguous prefixes retain
+  existing storage and recovery behavior. Cancellation drops the reservation.
 - **Lag, outage and rewind.** When the chain passes the covered height, or a
   rewind clips coverage, authority pauses and Home shows the last-known amount.
   A source outage never falls back to lightwalletd. The next run that covers
@@ -492,3 +492,13 @@ the obligation pending and is attempted at most once per checkpoint, without
 public fallback. Foreground, migration recovery, and the versioned native ABI use
 the same routing contract. Mainnet private preference enables private status;
 there is no separate release gate.
+
+## Phase 4 dependency update
+
+The four patched library crates use main revision
+`3bbc469932446f23e564e0eecb7bdd00dbf48dbb`. Trusted qualification, rather than
+candidate observation, now authorizes provisional revision replacement. The
+replacement regression explicitly qualifies fixture revisions at that boundary.
+Reader version 6 state is not supported by version 5 rollback readers; this pin
+remains preparatory work, with production private activation and real-source
+verification deferred.

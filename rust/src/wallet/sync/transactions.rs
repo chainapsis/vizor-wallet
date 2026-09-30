@@ -40,7 +40,6 @@ use zcash_protocol::{
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
 
 use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
 
@@ -202,8 +201,8 @@ pub(crate) fn get_wallet_balance(
 /// Under a private transparent ledger mode the summary carries no
 /// transparent funds, so the transparent fields come from each account's
 /// ledger snapshot: its authorized amounts, or none with the last-known
-/// amount when authority is unavailable. Production handles are `Public`, so
-/// this read is skipped there.
+/// amount when authority is unavailable. Durable private policy is respected
+/// even when this build opens a Public handle after restart.
 pub(crate) fn get_wallet_balances(
     db_path: &str,
     network: WalletNetwork,
@@ -214,57 +213,60 @@ pub(crate) fn get_wallet_balances(
         .map(|uuid| parse_account_uuid(uuid))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let summary = crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    // Read durable policy, summary, and authority from one snapshot. A reopened
+    // Public handle must not label a private-policy summary's suppressed zero
+    // as current funds. Configuring this read handle does not change policy.
+    db.transactionally(|db| {
+        match db.applied_transparent_policy() {
+            Err(
+                zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
+                    applied: TransparentLedgerMode::PrivateRequired,
+                    ..
+                },
+            ) => db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired),
+            result => {
+                result?;
+            }
+        }
+        let summary = db.get_wallet_summary(crate::wallet::confirmations_policy())?;
 
-    let Some(summary) = summary else {
-        return Ok(target_ids
+        let Some(summary) = summary else {
+            return Ok(target_ids
+                .iter()
+                .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
+                .collect());
+        };
+
+        target_ids
             .iter()
-            .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
-            .collect());
-    };
-
-    let ledger = if transparent_ledger_mode_for(db_path) == TransparentLedgerMode::Public {
-        None
-    } else {
-        Some(open_wallet_db_for_read(db_path, network)?)
-    };
-
-    target_ids
-        .iter()
-        .map(|target_id| {
-            let Some(b) = summary.account_balances().get(target_id) else {
-                return Ok(WalletBalance::unavailable(
-                    WalletBalanceAvailability::AccountUnavailable,
-                ));
-            };
-            let shielded = [
-                PoolBalance::of(b.sapling_balance()),
-                PoolBalance::of(b.orchard_balance()),
-                PoolBalance::of(b.ironwood_balance()),
-            ];
-            let (authority, last_known, transparent) = match &ledger {
-                None => (
-                    TransparentBalanceAuthority::Current,
-                    None,
-                    PoolBalance::of(&b.unshielded_balance()),
-                ),
-                Some(db) => ledger_transparent_balance(
-                    &db.transparent_ledger_snapshot(
+            .map(|target_id| {
+                let Some(b) = summary.account_balances().get(target_id) else {
+                    return Ok(WalletBalance::unavailable(
+                        WalletBalanceAvailability::AccountUnavailable,
+                    ));
+                };
+                let shielded = [
+                    PoolBalance::of(b.sapling_balance()),
+                    PoolBalance::of(b.orchard_balance()),
+                    PoolBalance::of(b.ironwood_balance()),
+                ];
+                let (authority, last_known, transparent) =
+                    ledger_transparent_balance(&db.transparent_ledger_snapshot(
                         *target_id,
                         crate::wallet::confirmations_policy(),
-                    )
-                    .map_err(|e| format!("Failed to read transparent ledger: {e}"))?,
-                ),
-            };
-            Ok(WalletBalance::from_pools(
-                WalletBalanceAvailability::Available,
-                authority,
-                last_known,
-                transparent,
-                shielded,
-            ))
-        })
-        .collect()
+                    )?);
+                Ok(WalletBalance::from_pools(
+                    WalletBalanceAvailability::Available,
+                    authority,
+                    last_known,
+                    transparent,
+                    shielded,
+                ))
+            })
+            .collect::<Result<Vec<_>, zcash_client_sqlite::error::SqliteClientError>>()
+    })
+    .map_err(|e| format!("Failed to read wallet balances: {e}"))
 }
 
 /// The transparent part of a balance under a private ledger mode.
