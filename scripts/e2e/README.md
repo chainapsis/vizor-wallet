@@ -45,22 +45,23 @@ scripts/e2e/flutter-macos-regtest-payment-link.sh
 # Retry a failed claim broadcast and survive a reorg.
 scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 
-# Competition, lost-response recovery, and archive/restore (three scenarios).
+# Competition, lost-response recovery, and removal after restart (three scenarios).
 scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh
 ```
 
 The outcomes runner uses four process phases for three scenarios: competition
-leaves a real losing card archived, the next process restores it, and a separate
+leaves a real losing card, the next process removes it, and a separate
 prepare/resume pair recovers a transaction whose accepted response was dropped.
 It checks five versus six confirmations, winner/loser balances, a fresh
 observer's spend evidence, retained secrets and claim databases, and zero
 transmissions during a manual status check. A fully spent competing card resolves
-to `Already claimed`; `Claim failed` is reserved for other settled failures.
+to `Claimed elsewhere` and can be removed; `Claim failed` is reserved for other
+settled failures.
 Automatic claim recovery is gated only during the manual-check measurement,
 then released to execute the production recovery path.
 
 Run this suite serially: it uses the shared Docker regtest chain and resets it
-between the competition/archive and response-loss scenarios by default. The
+between the competition/removal and response-loss scenarios by default. The
 fault proxy and node are pinned to local ports 19068 and 18232. macOS windows
 remain hidden by default. Logs are saved to `.regtest-logs/gift-card-outcomes.log`;
 the chain remains available for inspection afterward. As with the other runners,

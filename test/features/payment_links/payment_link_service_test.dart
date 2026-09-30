@@ -690,6 +690,59 @@ void main() {
       }
     }
 
+    test('a Card claimed elsewhere is removed only after its wallet', () async {
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final record = await store.saveReady(_link());
+      await store.setAvailability(
+        record.address,
+        PaymentLinkAvailability.claimedElsewhere,
+      );
+      final directory = (await wallet.locate(_link())).directory;
+      await directory.create(recursive: true);
+
+      // A wallet that cannot be deleted keeps the Card for another try.
+      Process.runSync('chmod', ['a-w', supportDirectory.path]);
+      try {
+        await expectLater(
+          service.removeReceivedCard(record.address),
+          throwsStateError,
+        );
+      } finally {
+        Process.runSync('chmod', ['u+w', supportDirectory.path]);
+      }
+      expect(await directory.exists(), isTrue);
+      expect(await store.find(record.address), isNotNull);
+
+      await service.removeReceivedCard(record.address);
+      expect(api.cancelledClaimSyncs, [
+        paymentLinkClaimWalletDirectoryName(_link()),
+        paymentLinkClaimWalletDirectoryName(_link()),
+      ]);
+      expect(await directory.exists(), isFalse);
+      expect(await store.find(record.address), isNull);
+    });
+
+    test('a Card that may still hold funds is not removed', () async {
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final record = await store.saveReady(_link());
+      await store.setAvailability(
+        record.address,
+        PaymentLinkAvailability.noBalance,
+      );
+      final directory = (await wallet.locate(_link())).directory;
+      await directory.create(recursive: true);
+
+      await expectLater(
+        service.removeReceivedCard(record.address),
+        throwsStateError,
+      );
+      expect(api.cancelledClaimSyncs, isEmpty);
+      expect(await directory.exists(), isTrue);
+      expect(await store.find(record.address), isNotNull);
+    });
+
     for (final currentExists in [false, true]) {
       test(
         'legacy submitting recovery with current cache=$currentExists',
@@ -2598,6 +2651,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   var syncStarted = Completer<void>();
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
+  final cancelledClaimSyncs = <String>[];
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
@@ -2647,6 +2701,11 @@ class _ClaimDestinationRustApi implements RustLibApi {
     localClaimTxids: localClaimTxids,
     verifiedHeight: BigInt.from(100),
   );
+
+  @override
+  void crateApiSyncCancelPaymentLinkClaimSync({required String claimId}) {
+    cancelledClaimSyncs.add(claimId);
+  }
 
   @override
   Future<void> crateApiSyncRunPaymentLinkClaimSync({
@@ -2720,6 +2779,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
 
   void reset() {
     requestedAccounts.clear();
+    cancelledClaimSyncs.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();
     lookupGate = null;

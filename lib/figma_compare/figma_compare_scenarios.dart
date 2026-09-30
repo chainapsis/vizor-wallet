@@ -462,7 +462,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'gift-card-claimed-elsewhere',
-    description: 'Gift Card already claimed outcome',
+    description: 'Gift Card claimed elsewhere outcome',
     builder: buildClaimedElsewhereUseCase,
     mobile: true,
   ),

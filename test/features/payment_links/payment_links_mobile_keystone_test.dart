@@ -419,6 +419,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<void> setReceivedCardArchived(String address, bool archived) async {}
 
   @override
+  Future<void> removeReceivedCard(String address) async {}
+
+  @override
   Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
 
   @override

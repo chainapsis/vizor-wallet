@@ -168,6 +168,9 @@ abstract interface class PaymentLinkOperations {
   Future<void> keepReceivedLink(VizorPaymentLink link);
 
   Future<void> setReceivedCardArchived(String address, bool archived);
+
+  /// Forgets a Card another wallet claimed first, with its claim wallet.
+  Future<void> removeReceivedCard(String address);
 }
 
 final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
@@ -1809,6 +1812,27 @@ class PaymentLinkService
     return _ref
         .read(paymentLinkClaimCoordinatorProvider)
         .trackRetention(() => _receivedStore.setArchived(address, archived));
+  }
+
+  @override
+  Future<void> removeReceivedCard(String address) {
+    return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
+      () async {
+        final record = await _receivedStore.find(address);
+        if (record == null) return;
+        if (!record.canRemove) {
+          throw StateError('Only a Card claimed elsewhere can be removed.');
+        }
+        final link = record.claimLink;
+        if (link != null) await _claimWallet.cancelClaimSync(link);
+        // The record goes only after its wallet, so a failed delete keeps the
+        // Card listed for another try.
+        if (!await _claimWallet.deleteRetained(record)) {
+          throw StateError('The Card wallet could not be deleted.');
+        }
+        await _receivedStore.remove(address);
+      },
+    );
   }
 
   Future<void> _refreshMainWalletAfterSend() async {
