@@ -6726,8 +6726,10 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
             let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_zip32_account_index = <u32>::sse_decode(&mut deserializer);
+            let api_is_first_wallet_account = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -6736,8 +6738,10 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
                             api_mnemonic,
                             api_bip39_passphrase,
                             api_network,
+                            api_db_path,
                             api_lightwalletd_url,
                             api_zip32_account_index,
+                            api_is_first_wallet_account,
                         )?;
                     Ok(output_ok)
                 })())

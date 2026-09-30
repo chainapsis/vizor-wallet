@@ -1105,8 +1105,10 @@ abstract class RustLibApi extends BaseApi {
     required String mnemonic,
     required String bip39Passphrase,
     required String network,
+    required String dbPath,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
+    required bool isFirstWalletAccount,
   });
 
   Future<ProposalResult> crateApiSyncProposePaymentLinkBatch({
@@ -8275,8 +8277,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String mnemonic,
     required String bip39Passphrase,
     required String network,
+    required String dbPath,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
+    required bool isFirstWalletAccount,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8285,8 +8289,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(mnemonic, serializer);
           sse_encode_String(bip39Passphrase, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_u_32(zip32AccountIndex, serializer);
+          sse_encode_bool(isFirstWalletAccount, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8304,8 +8310,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           mnemonic,
           bip39Passphrase,
           network,
+          dbPath,
           lightwalletdUrl,
           zip32AccountIndex,
+          isFirstWalletAccount,
         ],
         apiImpl: this,
       ),
@@ -8320,8 +8328,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "mnemonic",
           "bip39Passphrase",
           "network",
+          "dbPath",
           "lightwalletdUrl",
           "zip32AccountIndex",
+          "isFirstWalletAccount",
         ],
       );
 

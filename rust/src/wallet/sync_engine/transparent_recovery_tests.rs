@@ -708,3 +708,394 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     assert_eq!(sent_amount(&reimported), 900_000);
     assert!(!has_public_payload_work(&mut db, payment.txid()));
 }
+
+/// Phase 2 privacy boundaries: under a private transparent policy no inventoried
+/// sync lane sends a transparent address, outpoint, or txid to lightwalletd.
+mod private_transparent_policy {
+    use super::*;
+    use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
+    };
+
+    /// A wallet with a transparent receipt whose address history, parent
+    /// payload, and status work are all queued as public follow-on work.
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        path: String,
+        network: WalletNetwork,
+        db: WalletDatabase,
+        history_tx: Vec<u8>,
+    }
+
+    fn fixture() -> Fixture {
+        fixture_with_receipts(1)
+    }
+
+    /// Like [`fixture`], with receipts to the first `receipts` external
+    /// addresses, so address history plans that many independent addresses.
+    fn fixture_with_receipts(receipts: usize) -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let network = WalletNetwork::Regtest;
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let (uuid, _) =
+            keys::init_db_and_create_account(&path, network, &seed, Some(100), "policy").unwrap();
+        let addresses: Vec<_> =
+            keys::software_account_transparent_addresses(network, &seed, 0, receipts as u32)
+                .unwrap()
+                .iter()
+                .take(receipts)
+                .map(|address| TransparentAddress::decode(&network, address).unwrap())
+                .collect();
+        assert_eq!(addresses.len(), receipts);
+        let address = addresses[0];
+        let mut db = open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        for (index, recipient) in addresses.iter().enumerate() {
+            let receipt = legacy_transaction(
+                OutPoint::new([index as u8 + 1; 32], 0),
+                *recipient,
+                1_000_000,
+            );
+            store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
+            decrypt_and_store_transaction(
+                &network,
+                &mut db,
+                &receipt,
+                Some(BlockHeight::from_u32(100)),
+            )
+            .unwrap();
+        }
+        db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+        assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+        let discovered = legacy_transaction(OutPoint::new([9; 32], 0), address, 900_000);
+        let mut history_tx = Vec::new();
+        discovered.write(&mut history_tx).unwrap();
+        Fixture {
+            _dir: dir,
+            path,
+            network,
+            db,
+            history_tx,
+        }
+    }
+
+    impl Fixture {
+        /// Applies `mode` durably through a second connection, as a setting
+        /// transition or a newer build would.
+        fn apply(&self, mode: TransparentLedgerMode) {
+            let mut other =
+                open_wallet_db_with_timeout(&self.path, self.network, SYNC_DB_BUSY_TIMEOUT)
+                    .unwrap();
+            other.apply_transparent_policy(mode).unwrap();
+        }
+
+        fn queued_follow_on_work(&self) -> i64 {
+            rusqlite::Connection::open(&self.path)
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM tx_retrieval_queue", [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        }
+
+        fn private_required_session(&self) -> enhancement::EnhancementSession {
+            let policy = enhancement::EnhancementPolicy::current(self.network)
+                .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+            enhancement::EnhancementSession::with_policy(self.network, &self.path, policy)
+        }
+    }
+
+    #[tokio::test]
+    async fn checkpoint_withholds_work_queued_before_private_transition() {
+        let mut f = fixture();
+        let queued = f.queued_follow_on_work();
+        assert!(queued > 0, "fixture queues public follow-on work");
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+
+        let mut session = f.private_required_session();
+        assert!(!session
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap());
+        assert!(!session
+            .run_payload_recovery(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap());
+
+        assert_eq!(lwd.requests(), Vec::<String>::new());
+        assert_eq!(
+            f.queued_follow_on_work(),
+            queued,
+            "withheld work stays durable"
+        );
+    }
+
+    #[tokio::test]
+    async fn restoring_public_policy_releases_withheld_work() {
+        let mut f = fixture();
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        f.private_required_session()
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+        assert!(lwd.requests().is_empty());
+
+        f.apply(TransparentLedgerMode::Public);
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+        let requests = lwd.requests();
+        assert!(
+            requests
+                .iter()
+                .any(|path| path.ends_with("/GetTaddressTxids")),
+            "address history resumes: {requests:?}"
+        );
+        assert!(
+            requests
+                .iter()
+                .any(|path| path.ends_with("/GetTransaction")),
+            "parent and payload lookups resume: {requests:?}"
+        );
+    }
+
+    async fn refresh(
+        f: &mut Fixture,
+        lwd: &mut CapturingLwd,
+    ) -> Result<TransparentRefreshSummary, SyncError> {
+        let mut received = false;
+        let summary = refresh_utxos(
+            &mut lwd.client,
+            &f.path,
+            &mut f.db,
+            f.network,
+            BlockHeight::from_u32(200),
+            TransparentAccountSelection::All,
+            None,
+            &mut received,
+            None,
+            &|| false,
+        )
+        .await;
+        assert!(!received);
+        summary
+    }
+
+    #[tokio::test]
+    async fn utxo_refresh_is_withheld_without_advancing_query_height() {
+        let mut f = fixture();
+        let accounts = f.db.get_account_ids().unwrap();
+        let before = f.db.utxo_query_height(accounts[0]).unwrap();
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+
+        // This build's Public handle cannot operate on the stricter wallet.
+        assert!(refresh(&mut f, &mut lwd).await.is_err());
+        // A handle configured for the durable policy resolves to withheld.
+        f.db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        assert!(refresh(&mut f, &mut lwd).await.unwrap().withheld);
+
+        assert_eq!(lwd.requests(), Vec::<String>::new());
+        assert_eq!(f.db.utxo_query_height(accounts[0]).unwrap(), before);
+    }
+
+    /// Starts a lightwalletd on which the first `rpc` request makes another
+    /// connection apply `PrivateShadow`. That mode keeps public authority, so
+    /// only the new generation revokes lookups captured before it.
+    async fn transitioning_lwd(f: &Fixture, rpc: &'static str) -> CapturingLwd {
+        CapturingLwd::start_with(
+            f.history_tx.clone(),
+            0,
+            transition_on_first(
+                rpc,
+                &f.path,
+                f.network,
+                TransparentLedgerMode::PrivateShadow,
+            ),
+        )
+        .await
+    }
+
+    /// Requests recorded after the first `rpc` request.
+    fn requests_after_first(lwd: &CapturingLwd, rpc: &str) -> Vec<String> {
+        lwd.requests()
+            .into_iter()
+            .skip_while(|path| !path.ends_with(rpc))
+            .skip(1)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn transition_during_address_history_withholds_later_reads() {
+        let mut f = fixture();
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let address = unchecked[0][0].address();
+        let start = unchecked[0][0].block_range_start();
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        // Later operations, such as payload recovery, resolve lookups afresh
+        // under the new generation; this lane must not reuse its stale ones.
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        // The in-flight range is not acknowledged; it is retried from its start.
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        assert!(unchecked
+            .iter()
+            .any(|group| group[0].address() == address && group[0].block_range_start() == start));
+    }
+
+    /// An empty range answered after the transition is not acknowledged.
+    #[tokio::test]
+    async fn transition_during_empty_address_history_withholds_acknowledgement() {
+        let mut f = fixture();
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let (address, start) = (
+            unchecked[0][0].address(),
+            unchecked[0][0].block_range_start(),
+        );
+        f.history_tx.clear();
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        assert!(unchecked
+            .iter()
+            .any(|group| group[0].address() == address && group[0].block_range_start() == start));
+    }
+
+    /// The initial fill opens up to `MAX_ADDRESS_STREAMS` addresses in the poll
+    /// after the check; the transition must stop every address after it.
+    #[tokio::test]
+    async fn transition_during_address_history_fill_withholds_later_addresses() {
+        let mut f = fixture_with_receipts(6);
+        let planned = address_history::plan(&f.db.transaction_data_requests().unwrap()).len();
+        assert!(planned > 4, "more addresses than one fill: {planned}");
+        let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lwd.count("/GetTaddressTxids"),
+            4,
+            "only the first fill is sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn transition_during_public_payloads_withholds_later_requests() {
+        let mut f = fixture();
+        with_wallet_db_write_lock("test.queue_tx_retrieval", || {
+            f.db.transactionally(|db| {
+                db.queue_tx_retrieval(
+                    [0x31, 0x32].map(|b| TxId::from_bytes([b; 32])).into_iter(),
+                    None,
+                )
+            })
+        })
+        .unwrap();
+        let queued = f.queued_follow_on_work();
+        let mut lwd = transitioning_lwd(&f, "/GetTransaction").await;
+
+        enhancement::EnhancementSession::new(f.network, &f.path)
+            .run_payload_recovery(&mut f.db, &mut lwd.client, None, &|| false)
+            .await
+            .unwrap();
+
+        assert_eq!(lwd.count("/GetTransaction"), 1);
+        // The NotFound answered after the transition does not retire its request.
+        assert_eq!(f.queued_follow_on_work(), queued);
+        assert_eq!(
+            requests_after_first(&lwd, "/GetTransaction"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn transition_during_utxo_refresh_withholds_later_groups() {
+        let three_accounts = || {
+            let f = fixture();
+            for name in ["second", "third"] {
+                let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+                keys::add_account(&f.path, f.network, name, &seed, Some(100)).unwrap();
+            }
+            f
+        };
+        let mut unrevoked = three_accounts();
+        let mut lwd = CapturingLwd::start(unrevoked.history_tx.clone()).await;
+        refresh(&mut unrevoked, &mut lwd).await.unwrap();
+        let planned = lwd.count("/GetAddressUtxosStream");
+        assert!(
+            planned > MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS,
+            "the fixture plans more than one group: {planned}"
+        );
+
+        let mut f = three_accounts();
+        let mut lwd = transitioning_lwd(&f, "/GetAddressUtxosStream").await;
+        let summary = refresh(&mut f, &mut lwd).await.unwrap();
+
+        assert!(summary.withheld);
+        assert!(lwd.count("/GetAddressUtxosStream") <= MAX_CONCURRENT_TRANSPARENT_UTXO_STREAMS);
+
+        // The group answered after the transition advanced no metadata, so a
+        // later pass re-covers every planned batch.
+        let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
+        refresh(&mut f, &mut lwd).await.unwrap();
+        assert_eq!(lwd.count("/GetAddressUtxosStream"), planned);
+    }
+
+    #[test]
+    fn another_connections_transition_revokes_captured_lookups() {
+        let f = fixture();
+        let policy = enhancement::EnhancementPolicy::current(f.network);
+        let lookups = policy.public_transparent_lookups(&f.db).unwrap();
+        assert!(lookups.still_allowed(&f.db).unwrap());
+
+        // PrivateShadow keeps public authority, but a new generation still
+        // revokes lookups captured under the old one.
+        f.apply(TransparentLedgerMode::PrivateShadow);
+        assert!(!lookups.still_allowed(&f.db).unwrap());
+        let renewed = policy.public_transparent_lookups(&f.db).unwrap();
+        assert!(renewed.still_allowed(&f.db).unwrap());
+
+        // PrivateRequired revokes it too; this build's Public handle then fails
+        // closed rather than resolving any authority.
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        assert!(!matches!(renewed.still_allowed(&f.db), Ok(true)));
+        assert!(!matches!(
+            policy.public_transparent_lookups(&f.db),
+            Ok(lookups) if lookups.is_allowed()
+        ));
+    }
+
+    #[test]
+    fn unconfigured_handle_fails_closed() {
+        let f = fixture();
+        let conn = rusqlite::Connection::open(&f.path).unwrap();
+        let db: WalletDatabase = zcash_client_sqlite::WalletDb::from_connection(
+            conn,
+            f.network,
+            zcash_client_sqlite::util::SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        );
+        assert!(db.applied_transparent_policy().is_err());
+        assert!(enhancement::EnhancementPolicy::current(f.network)
+            .public_transparent_lookups(&db)
+            .is_err());
+    }
+}

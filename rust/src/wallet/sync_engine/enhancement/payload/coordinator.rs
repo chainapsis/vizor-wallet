@@ -25,6 +25,7 @@ use super::{
     super::{
         super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
         transport::await_request_with_cancel,
+        PublicTransparentLookups,
     },
     private::{
         random_rediscovery_offset, rediscovery_cover_range, EnhancePirRunError,
@@ -141,6 +142,7 @@ pub(in crate::wallet::sync_engine) struct ProductionEnhancementEffects<'a> {
     db_path: &'a str,
     lwd: &'a mut CompactTxStreamerClient<Channel>,
     cached: Option<&'a MemoryBlockSource>,
+    lookups: PublicTransparentLookups,
     public: PublicPayloadExecutor,
 }
 
@@ -150,12 +152,14 @@ impl<'a> ProductionEnhancementEffects<'a> {
         db_path: &'a str,
         lwd: &'a mut CompactTxStreamerClient<Channel>,
         cached: Option<&'a MemoryBlockSource>,
+        lookups: PublicTransparentLookups,
     ) -> Self {
         Self {
             network,
             db_path,
             lwd,
             cached,
+            lookups,
             public: PublicPayloadExecutor::default(),
         }
     }
@@ -221,6 +225,10 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         requests: &[PublicTransactionEnhancementRequest],
         should_exit: &impl Fn() -> bool,
     ) {
+        // Durable routing already withholds public work under a private policy;
+        // the executor re-checks the captured generation before each request so
+        // a transition made by another connection cannot release work routed
+        // before it.
         self.public
             .run(
                 self.lwd,
@@ -228,6 +236,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 self.db_path,
                 self.network,
                 requests,
+                self.lookups,
                 should_exit,
             )
             .await;

@@ -14,6 +14,7 @@ mod store;
 
 use std::collections::HashSet;
 
+use super::PublicTransparentLookups;
 use crate::wallet::{
     network::WalletNetwork,
     sync_engine::{SyncError, WalletDatabase},
@@ -98,6 +99,7 @@ pub(super) async fn run_requests<P, R>(
     reader: &mut RoutedStatusReader<P, R>,
     db: &mut WalletDatabase,
     work: &[TransactionStatusWork],
+    lookups: PublicTransparentLookups,
     attempted: &mut HashSet<TxId>,
     private_failed: &mut bool,
     db_path: &str,
@@ -108,11 +110,16 @@ where
     P: StatusSource,
     R: StatusSource,
 {
+    // Public status discloses the txid; private work is unaffected. Withheld
+    // public work is neither attempted nor actionable, so it stays durable.
+    let mut public_allowed =
+        work.iter().any(|work| !is_private(work)) && lookups.still_allowed(db)?;
     let pending: Vec<_> = work
         .iter()
         .copied()
         .filter(|work| !attempted.contains(&work.txid()))
         .filter(|work| !(*private_failed && is_private(work)))
+        .filter(|work| public_allowed || is_private(work))
         .collect();
     let actionable = !pending.is_empty();
     // set_transaction_status evaluates absence against this database's advertised chain tip.
@@ -132,6 +139,14 @@ where
         }
         if should_exit() {
             return Ok(actionable);
+        }
+        // Re-checked before each public dispatch: a transition by another
+        // connection withholds the remaining public work.
+        if !is_private(&work) {
+            public_allowed = public_allowed && lookups.still_allowed(db)?;
+            if !public_allowed {
+                continue;
+            }
         }
         let txid = work.txid();
         attempted.insert(txid);
@@ -174,6 +189,7 @@ where
             observation,
             required_through,
             decision_hash,
+            lookups,
         )? {
             ready.insert(txid.as_ref().to_vec());
         }

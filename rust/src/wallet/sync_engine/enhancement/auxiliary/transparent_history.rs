@@ -6,9 +6,13 @@ use futures::{FutureExt, StreamExt};
 use tonic::transport::Channel;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::{
-    data_api::{wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletWrite},
+    data_api::{
+        transparent_ledger::TransparentLedgerRead, wallet::decrypt_and_store_transaction,
+        TransactionDataRequest, WalletWrite,
+    },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BranchId;
 
@@ -18,7 +22,10 @@ use crate::wallet::{
     sync_engine::{lwd, SyncError, WalletDatabase},
 };
 
-use super::{super::payload::public::mined_height_from_raw_height, fees::fill_missing_fee};
+use super::{
+    super::{payload::public::mined_height_from_raw_height, PublicTransparentLookups},
+    fees::fill_missing_fee,
+};
 
 #[derive(Default)]
 pub(in crate::wallet::sync_engine::enhancement) struct HistoryPass {
@@ -33,6 +40,7 @@ impl HistoryPass {
         db_path: &str,
         requests: &[TransactionDataRequest],
         network: WalletNetwork,
+        lookups: PublicTransparentLookups,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         let mut planned = super::super::super::address_history::plan(requests);
@@ -70,6 +78,14 @@ impl HistoryPass {
         });
         let mut reads = super::super::super::address_history::HistoryReads::new(planned, open);
         loop {
+            // Every read sends a transparent address, and a stream opened by
+            // `resume` or the initial fill is first polled inside `next`, so
+            // this check precedes each dispatch. A transition by another
+            // connection withholds the rest: unacknowledged ranges stay
+            // unchecked and durable, and dropping `reads` cancels open streams.
+            if !lookups.still_allowed(db)? {
+                return Ok(false);
+            }
             let event = tokio::select! {
                 biased;
                 _ = super::super::super::watch_for_exit(should_exit) => return Ok(actionable),
@@ -109,21 +125,36 @@ impl HistoryPass {
                     }
                 }
                 None => {
-                    if let Err(error) =
+                    // A transition while this stream was open withholds the
+                    // acknowledgement, so the range is retried under the new
+                    // policy rather than marked checked under the old one. The
+                    // generation is read in the acknowledging transaction, so a
+                    // commit by another connection between the two fails the
+                    // write instead of slipping past the check.
+                    let acknowledged =
                         with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
-                            db.notify_address_checked(
-                                req.clone(),
-                                req.block_range_end().unwrap() - 1,
-                            )
-                        })
-                    {
-                        log::warn!(
-                            "sync: address completion write failed; retrying on a later sync: {error}"
-                        );
-                        self.failed_addresses.insert(req.address());
-                        continue;
+                            db.transactionally(|tx| {
+                                if !lookups.permits(tx.applied_transparent_policy()?) {
+                                    return Ok(false);
+                                }
+                                tx.notify_address_checked(
+                                    req.clone(),
+                                    req.block_range_end().unwrap() - 1,
+                                )?;
+                                Ok::<_, SqliteClientError>(true)
+                            })
+                        });
+                    match acknowledged {
+                        Ok(true) => read.finish_range(),
+                        Ok(false) => return Ok(false),
+                        Err(error) => {
+                            log::warn!(
+                                "sync: address completion write failed; retrying on a later sync: {error}"
+                            );
+                            self.failed_addresses.insert(req.address());
+                            continue;
+                        }
                     }
-                    read.finish_range();
                 }
             }
             reads.resume(read);

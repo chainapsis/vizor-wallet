@@ -283,6 +283,46 @@ from wallet outputs or locally stored parent transactions; missing values leave
 the fee unknown without network lookups. Fully shielded transactions can compute
 their fee locally. Fee persistence updates only a still-missing fee.
 
+## Transparent policy gate
+
+Every request that sends a transparent address, outpoint, or txid to public
+lightwalletd first resolves `EnhancementPolicy::public_transparent_lookups`:
+UTXO refresh, Ledger and software account discovery, the import balance
+preview, address history, public payloads, public status, and the public status
+checks that unbroadcast migration recovery runs before retiring a run. Fee enrichment
+and migration stop send no transaction identifiers, so they need no gate. The
+resolved value is the stricter of the captured mode and the policy durably
+applied to the wallet, stamped with the policy generation.
+
+- `Withheld` sends nothing and completes nothing. Queued work, unchecked
+  ranges, and UTXO query heights stay durable for a later authorized pass.
+- Every lane re-checks with `still_allowed` immediately before each dispatch
+  (a UTXO group, a Ledger discovery batch, an address-history fill or resumed
+  range, a status or payload request, a discovery probe), so a transition by
+  another connection, including one that keeps public authority, revokes
+  lookups captured under the old generation. A concurrent dispatch is bounded
+  by its buffer, so all of its requests start in the poll that follows the
+  check, with no yield in between. A check per request would run in that same
+  poll and could order no better against another connection's commit, which
+  may land between any check and its dispatch. The invariant is therefore: no
+  request is started after the lane has yielded since its last check. The rest
+  of the lane is withheld;
+  responses already in flight are stored, but nothing is acknowledged or
+  marked complete after the transition: an in-flight history range, even one
+  answered empty, stays unchecked, and UTXO refresh metadata and Ledger
+  discovery progress are not advanced, so later passes re-cover them. The
+  history acknowledgement reads the generation in its own SQLite transaction;
+  the Vizor-owned metadata writes re-check just before writing but not
+  atomically, a window the Phase 4 transition fence closes. Import-time requests (discovery probes, the
+  balance preview) re-check the same way, including after opening their
+  channel. A later operation resolves lookups afresh
+  under the new generation.
+- This build's Public handle cannot read a wallet whose durable policy is
+  `PrivateRequired`; the gate then returns an error, which also sends nothing.
+- Production always captures `Public`. `PrivateRequired` is reachable only in
+  tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
+  recovery exists.
+
 ## Transport and cancellation
 
 ```text

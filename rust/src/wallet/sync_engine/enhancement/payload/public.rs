@@ -8,10 +8,12 @@ use std::collections::HashSet;
 use tonic::{transport::Channel, Code, Status};
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction, PublicTransactionEnhancementRequest, WalletWrite,
+        transparent_ledger::TransparentLedgerRead, wallet::decrypt_and_store_transaction,
+        PublicTransactionEnhancementRequest, WalletWrite,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
@@ -21,7 +23,9 @@ use crate::wallet::{
 };
 
 use crate::wallet::sync_engine::{
-    enhancement::{auxiliary::fees::fill_missing_fee, transport::cancelable},
+    enhancement::{
+        auxiliary::fees::fill_missing_fee, transport::cancelable, PublicTransparentLookups,
+    },
     SyncError, WalletDatabase,
 };
 
@@ -40,7 +44,8 @@ pub(in crate::wallet::sync_engine) struct PublicPayloadExecutor {
 
 impl PublicPayloadExecutor {
     /// Dispatches each request not already failed in this pass, stopping
-    /// before the next dispatch once `should_exit` is set.
+    /// before the next dispatch once `should_exit` is set or `lookups` is no
+    /// longer authorized. Withheld requests stay queued for a later pass.
     pub(in crate::wallet::sync_engine) async fn run(
         &mut self,
         client: &mut CompactTxStreamerClient<Channel>,
@@ -48,15 +53,32 @@ impl PublicPayloadExecutor {
         db_path: &str,
         network: WalletNetwork,
         requests: &[PublicTransactionEnhancementRequest],
+        lookups: PublicTransparentLookups,
         should_exit: &impl Fn() -> bool,
     ) {
-        for request in requests {
+        for (index, request) in requests.iter().enumerate() {
             if should_exit() {
                 return;
             }
             let txid = request.txid();
             if self.failed.contains(&txid) {
                 continue;
+            }
+            // GetTransaction discloses the txid. A policy read failure withholds
+            // too; the work stays durable either way.
+            match lookups.still_allowed(db) {
+                Ok(true) => {}
+                Ok(false) => {
+                    log::info!(
+                        "sync: transparent policy withholds {} public payload requests",
+                        requests.len() - index
+                    );
+                    return;
+                }
+                Err(error) => {
+                    log::warn!("sync: withholding public payloads; policy check failed: {error}");
+                    return;
+                }
             }
             let txid_str = format!("{txid}");
 
@@ -89,10 +111,26 @@ impl PublicPayloadExecutor {
                     GetTransactionErrorAction::CompleteEnhancementNotFound => {
                         log::warn!("sync: get_transaction did not recognize {txid_str}: {e}");
                         self.failed.insert(txid);
-                        if let Err(e) = with_wallet_db_write_lock(
+                        // Retiring the request is a completion write: it reads
+                        // the generation in its own transaction, so a transition
+                        // while the lookup was in flight leaves it retryable.
+                        let retired = with_wallet_db_write_lock(
                             "sync_engine.enhance.notify_transaction_enhancement_not_found",
-                            || db.notify_transaction_enhancement_not_found(txid),
-                        ) {
+                            || {
+                                db.transactionally(|tx| {
+                                    if !lookups.permits(tx.applied_transparent_policy()?) {
+                                        return Ok(false);
+                                    }
+                                    tx.notify_transaction_enhancement_not_found(txid)?;
+                                    Ok::<_, SqliteClientError>(true)
+                                })
+                            },
+                        );
+                        if matches!(retired, Ok(false)) {
+                            log::info!("sync: transparent policy changed; {txid_str} stays queued");
+                            return;
+                        }
+                        if let Err(e) = retired {
                             log::error!(
                                 "sync: notify_transaction_enhancement_not_found failed: {e}"
                             );

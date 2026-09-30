@@ -327,12 +327,23 @@ impl RoutedPayloadEnhancement {
                                 result => result?,
                             };
                             for (request, record) in work.map_record(result.position, record) {
-                                let result = db.apply(request, &record)?;
-                                if result == EnhancePirStoreResult::Rejected {
-                                    return Err(SyncError::parse(
-                                        "PIR record failed wallet authentication",
-                                    )
-                                    .into());
+                                match db.apply(request, &record)? {
+                                    EnhancePirStoreResult::Rejected => {
+                                        return Err(SyncError::parse(
+                                            "PIR record failed wallet authentication",
+                                        )
+                                        .into());
+                                    }
+                                    // Mixed transaction under a private transparent
+                                    // policy: financial facts are kept and the
+                                    // transparent details stay pending. Never a
+                                    // retry or a public fallback.
+                                    EnhancePirStoreResult::PrivateDetailsUnsupported => {
+                                        log::info!(
+                                            "sync: transparent details of a mixed transaction are unavailable under the private transparent policy"
+                                        );
+                                    }
+                                    _ => {}
                                 }
                             }
                         }

@@ -2263,7 +2263,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusObservation};
+    use zakura_transaction_status::lightwalletd::LightwalletdSource;
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     super::migration::backfill_unbroadcast_migration_creation_evidence(
         db_path,
@@ -2293,19 +2293,74 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     let mut reader =
         sync_engine::enhancement::status::reader(db_path, network, &never_exit, public_source);
 
-    use zcash_client_backend::data_api::status::TransactionStatusRead;
     let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
-    status_db.set_status_mode(policy.status_mode());
-    for candidate in &candidates {
-        let txid = parse_txid_hex(&candidate.txid_hex)?;
-        let observation = reader
-            .observe(
-                status_db
-                    .transaction_status_work_for(txid)
-                    .map_err(|e| e.to_string())?,
-                Some(chain_tip_height),
-            )
-            .await;
+    policy.configure_db(&mut status_db);
+    let lookups = policy
+        .public_transparent_lookups(&status_db)
+        .map_err(|e| e.to_string())?;
+    let txids = candidates
+        .iter()
+        .map(|candidate| parse_txid_hex(&candidate.txid_hex))
+        .collect::<Result<Vec<_>, _>>()?;
+    verify_unbroadcast_migration_txids_absent(
+        &mut reader,
+        &status_db,
+        lookups,
+        &candidates,
+        &txids,
+        chain_tip_height,
+    )
+    .await?;
+
+    super::migration::retire_run_for_rebuild(
+        db_path,
+        network,
+        expected_run_id,
+        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
+    )
+}
+
+/// Confirms every unbroadcast migration transaction is absent before its run
+/// is retired. A public observation discloses the txid, so `lookups` is
+/// re-checked before each one, and again after it so an absence answered after
+/// a transition cannot retire the run; either way the run is left unchanged.
+/// Private observations are unaffected.
+async fn verify_unbroadcast_migration_txids_absent<P, R>(
+    reader: &mut sync_engine::enhancement::status::RoutedStatusReader<P, R>,
+    status_db: &super::WalletDatabase,
+    lookups: sync_engine::enhancement::PublicTransparentLookups,
+    candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
+    txids: &[TxId],
+    chain_tip_height: u32,
+) -> Result<(), String>
+where
+    P: zakura_transaction_status::StatusSource,
+    R: zakura_transaction_status::StatusSource,
+{
+    use zakura_transaction_status::StatusObservation;
+    use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
+    const WITHHELD: &str = "Migration recovery is unavailable under the private transparent policy; the run is unchanged";
+    for (candidate, txid) in candidates.iter().zip(txids) {
+        let work = status_db
+            .transaction_status_work_for(*txid)
+            .map_err(|e| e.to_string())?;
+        let public = matches!(work, TransactionStatusWork::Public(_));
+        if public
+            && !lookups
+                .still_allowed(status_db)
+                .map_err(|e| e.to_string())?
+        {
+            return Err(WITHHELD.into());
+        }
+        let observation = reader.observe(work, Some(chain_tip_height)).await;
+        // An absence answered after a transition must not retire the run.
+        if public
+            && !lookups
+                .still_allowed(status_db)
+                .map_err(|e| e.to_string())?
+        {
+            return Err(WITHHELD.into());
+        }
         match observation {
             Ok(StatusObservation::NotFound) => {}
             Ok(_) => {
@@ -2325,13 +2380,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
             }
         }
     }
-
-    super::migration::retire_run_for_rebuild(
-        db_path,
-        network,
-        expected_run_id,
-        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
-    )
+    Ok(())
 }
 
 async fn reconcile_scheduled_migration_txs_before_abandon(

@@ -69,6 +69,11 @@ mod tests {
     use super::*;
     use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 
+    /// Public lookups authorized under whatever policy generation the test
+    /// wallet holds.
+    const ALLOWED_LOOKUPS: super::super::PublicTransparentLookups =
+        super::super::PublicTransparentLookups::Allowed { generation: None };
+
     #[test]
     fn queue_stored_transactions_is_batch_scoped_idempotent_and_non_destructive() {
         let file = tempfile::NamedTempFile::new().unwrap();
@@ -659,6 +664,8 @@ mod tests {
             zakura_transaction_status::StatusObservation,
             zakura_transaction_status::StatusError,
         >,
+        /// Runs as each observation is dispatched.
+        on_observe: std::sync::Arc<dyn Fn() + Send + Sync>,
     }
     impl zakura_transaction_status::StatusSource for FakeStatusSource {
         type Session = Self;
@@ -676,6 +683,7 @@ mod tests {
             zakura_transaction_status::StatusError,
         > {
             self.requests.lock().unwrap().push(request);
+            (self.on_observe)();
             self.response
         }
     }
@@ -689,6 +697,7 @@ mod tests {
             opens: Default::default(),
             requests: Default::default(),
             response,
+            on_observe: std::sync::Arc::new(|| {}),
         }
     }
 
@@ -739,6 +748,7 @@ mod tests {
                         &mut reader,
                         &mut db,
                         &[work],
+                        ALLOWED_LOOKUPS,
                         &mut Default::default(),
                         &mut false,
                         path,
@@ -761,6 +771,7 @@ mod tests {
                     &mut reader,
                     &mut db,
                     &[work],
+                    ALLOWED_LOOKUPS,
                     &mut Default::default(),
                     &mut false,
                     path,
@@ -821,6 +832,7 @@ mod tests {
                 &mut reader,
                 &mut db,
                 &work,
+                ALLOWED_LOOKUPS,
                 &mut attempted,
                 &mut false,
                 file.path().to_str().unwrap(),
@@ -954,6 +966,7 @@ mod tests {
                     &mut reader,
                     &mut db,
                     &work,
+                    ALLOWED_LOOKUPS,
                     &mut std::collections::HashSet::new(),
                     &mut private_failed,
                     _file.path().to_str().unwrap(),
@@ -972,6 +985,7 @@ mod tests {
                 &mut reader,
                 &mut db,
                 &work,
+                ALLOWED_LOOKUPS,
                 &mut std::collections::HashSet::new(),
                 &mut private_failed,
                 _file.path().to_str().unwrap(),
@@ -1012,6 +1026,7 @@ mod tests {
             &mut reader,
             &mut db,
             &work,
+            ALLOWED_LOOKUPS,
             &mut std::collections::HashSet::new(),
             &mut private_failed,
             _file.path().to_str().unwrap(),
@@ -1053,6 +1068,7 @@ mod tests {
                 &mut reader,
                 &mut db,
                 &work,
+                ALLOWED_LOOKUPS,
                 &mut std::collections::HashSet::new(),
                 &mut private_failed,
                 _file.path().to_str().unwrap(),
@@ -1063,6 +1079,121 @@ mod tests {
             Err(SyncError::Network(_))
         ));
         assert!(!private_failed);
+    }
+
+    #[tokio::test]
+    async fn policy_transition_withholds_remaining_public_status_work() {
+        use zakura_transaction_status::StatusObservation;
+        use zcash_client_backend::data_api::{
+            status::{PublicTransactionStatusRequest, TransactionStatusWork},
+            transparent_ledger::{TransparentLedgerMode, TransparentLedgerWrite},
+        };
+        let (file, mut db, private_txid) = private_status_work_db();
+        let path = file.path().to_str().unwrap().to_owned();
+        // The first public request asks about a stored mined transaction, so a
+        // persisted absence would visibly clear its height.
+        let first = private_txid;
+        let second = TxId::from_bytes([0x72; 32]);
+        let private_work = db.transaction_status_work_for(private_txid).unwrap();
+        let work = vec![
+            TransactionStatusWork::Public(PublicTransactionStatusRequest::new(first)),
+            TransactionStatusWork::Public(PublicTransactionStatusRequest::new(second)),
+        ];
+        let lookups =
+            super::super::EnhancementPolicy::for_preference(WalletNetwork::Regtest, false)
+                .public_transparent_lookups(&db)
+                .unwrap();
+        // Another connection applies a new policy generation while the first
+        // public request is in flight. PrivateShadow keeps public authority, so
+        // only the generation change revokes the captured lookups.
+        let mut public = status_source(Ok(StatusObservation::NotFound));
+        let transition_path = path.clone();
+        public.on_observe = std::sync::Arc::new(move || {
+            crate::wallet::db::open_wallet_db_with_timeout(
+                &transition_path,
+                WalletNetwork::Regtest,
+                SYNC_DB_BUSY_TIMEOUT,
+            )
+            .unwrap()
+            .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+            .unwrap();
+        });
+        let public_requests = public.requests.clone();
+        let private = status_source(Ok(StatusObservation::Mined(BlockHeight::from_u32(100))));
+        let private_requests = private.requests.clone();
+        let mut reader = super::super::status::RoutedStatusReader::new(public, private);
+        let mut attempted = std::collections::HashSet::new();
+
+        assert!(super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &work,
+            lookups,
+            &mut attempted,
+            &mut false,
+            &path,
+            &mut std::collections::HashSet::new(),
+            &|| false,
+        )
+        .await
+        .unwrap());
+
+        let public_txids: Vec<_> = public_requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.txid)
+            .collect();
+        assert_eq!(
+            public_txids,
+            vec![first],
+            "no public dispatch after the transition"
+        );
+        assert_eq!(
+            db.get_tx_height(first).unwrap(),
+            Some(BlockHeight::from_u32(100)),
+            "an absence answered after the transition is not persisted"
+        );
+        assert!(
+            !attempted.contains(&second),
+            "withheld work stays unattempted"
+        );
+
+        // A later pass under the revoked lookups treats public work as not actionable.
+        assert!(!super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &work[1..2],
+            lookups,
+            &mut attempted,
+            &mut false,
+            &path,
+            &mut std::collections::HashSet::new(),
+            &|| false,
+        )
+        .await
+        .unwrap());
+        assert_eq!(public_requests.lock().unwrap().len(), 1);
+
+        // Private work is unaffected by the revoked public lookups.
+        super::super::status::run_requests(
+            &mut reader,
+            &mut db,
+            &[private_work],
+            lookups,
+            &mut std::collections::HashSet::new(),
+            &mut false,
+            &path,
+            &mut std::collections::HashSet::new(),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            private_requests.lock().unwrap().len(),
+            1,
+            "private work continues"
+        );
     }
 
     #[tokio::test]

@@ -402,7 +402,7 @@ pub extern "C" fn zcash_status_pir_observe_transaction_v2(
             Ok(db) => db,
             Err(_) => return 1,
         };
-        db.set_status_mode(policy.status_mode());
+        policy.configure_db(&mut db);
         let work = match db.transaction_status_work_for(txid) {
             Ok(work) => work,
             Err(_) => return 1,

@@ -20,6 +20,7 @@ use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
+use super::enhancement::EnhancementPolicy;
 use super::{get_taddress_txids, next_stream_message, watch_for_exit, SyncError};
 use crate::wallet::{
     db::{
@@ -210,6 +211,13 @@ async fn run_with<R: DiscoveryRpc>(
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
+    // Candidate addresses are sent to public lightwalletd; nothing is queried or
+    // marked complete unless the wallet's transparent policy authorizes that.
+    let lookups = EnhancementPolicy::current(network).public_transparent_lookups(db)?;
+    if !lookups.is_allowed() {
+        log::info!("sync: transparent policy withholds Ledger address-history discovery");
+        return Ok(());
+    }
     let mut accounts = Vec::new();
     for id in db
         .get_account_ids()
@@ -306,6 +314,15 @@ async fn run_with<R: DiscoveryRpc>(
                         "Ledger discovery candidate range is incomplete",
                     ));
                 }
+                // A batch never exceeds CONCURRENCY, so every stream below opens
+                // on first poll, right after this check. A transition by another
+                // connection withholds the rest of discovery.
+                if !lookups.still_allowed(db)? {
+                    log::info!(
+                        "sync: transparent policy changed; withholding remaining Ledger discovery"
+                    );
+                    return Ok(());
+                }
                 // Only stream headers are acquired concurrently. Bodies are drained and stored
                 // incrementally, so heavily reused addresses cannot accumulate unbounded history.
                 let opening = stream::iter(candidates)
@@ -338,6 +355,12 @@ async fn run_with<R: DiscoveryRpc>(
                     if should_exit() {
                         return Ok(());
                     }
+                    // Answers already received are stored, but progress is not
+                    // checkpointed after a transition, so a later pass under the
+                    // new policy re-covers these indices.
+                    if !lookups.still_allowed(db)? {
+                        return Ok(());
+                    }
                     progress.advance(used)?;
                     save(db_path, id, scope_code, progress, scan_tip, &hash.0, false)?;
                     log::info!(
@@ -366,7 +389,9 @@ async fn run_with<R: DiscoveryRpc>(
                 )?;
                 return Err(SyncError::other("Ledger discovery chain changed; retrying"));
             }
-            if should_exit() {
+            // The last batch may have been answered after a transition; a
+            // scope completed under stale authority would never be retried.
+            if should_exit() || !lookups.still_allowed(db)? {
                 return Ok(());
             }
             save(db_path, id, scope_code, progress, scan_tip, &hash.0, true)?;
@@ -405,7 +430,7 @@ async fn run_with<R: DiscoveryRpc>(
                 ));
             }
         }
-        if should_exit() {
+        if should_exit() || !lookups.still_allowed(db)? {
             return Ok(());
         }
         with_wallet_db_write_lock("ledger_discovery.complete", || {
@@ -1030,5 +1055,125 @@ mod tests {
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
         assert!(is_ready(&path, id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn private_transparent_policy_withholds_discovery_without_completing_it() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let (_dir, path, id, mut db, _) = ledger_fixture();
+        crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+        let mut rpc = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: None,
+            hash: 1,
+        };
+        let tip = BlockHeight::from_u32(2_600_000);
+        // This build's Public handle fails closed on the stricter wallet.
+        assert!(
+            run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
+                false
+            })
+            .await
+            .is_err()
+        );
+        // A handle configured for the durable policy skips discovery.
+        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
+            false
+        })
+        .await
+        .unwrap();
+
+        assert!(rpc.queries.lock().unwrap().is_empty());
+        assert!(
+            !is_ready(&path, id).unwrap(),
+            "withheld scopes stay incomplete"
+        );
+    }
+
+    /// Runs `on_history` as each address-history request is dispatched.
+    #[derive(Clone)]
+    struct HookedRpc {
+        inner: FakeRpc,
+        on_history: std::sync::Arc<dyn Fn() + Send + Sync>,
+    }
+    impl DiscoveryRpc for HookedRpc {
+        async fn block_hash(&mut self, height: u64) -> Result<BlockHash, SyncError> {
+            self.inner.block_hash(height).await
+        }
+        async fn history(&mut self, address: String, tip: u64) -> Result<History, SyncError> {
+            (self.on_history)();
+            self.inner.history(address, tip).await
+        }
+    }
+
+    #[tokio::test]
+    async fn transition_during_discovery_withholds_later_batches() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let (_dir, path, id, mut db, _) = ledger_fixture();
+        let transition_path = path.clone();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let inner = FakeRpc {
+            histories: Default::default(),
+            queries: Default::default(),
+            fail_address: None,
+            hash: 1,
+        };
+        let queries = inner.queries.clone();
+        // PrivateShadow keeps public authority, so only the generation change
+        // revokes the lookups discovery captured at its start.
+        let mut rpc = HookedRpc {
+            inner,
+            on_history: std::sync::Arc::new(move || {
+                if !fired.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    crate::wallet::db::open_wallet_db_with_timeout(
+                        &transition_path,
+                        WalletNetwork::Main,
+                        SYNC_DB_BUSY_TIMEOUT,
+                    )
+                    .unwrap()
+                    .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+                    .unwrap();
+                }
+            }),
+        };
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(2_600_000),
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        // The fake transitions synchronously inside the first open, which a
+        // real concurrent connection cannot order before the other opens: the
+        // whole batch starts in the poll after the check. What revocation must
+        // stop is the next batch.
+        assert_eq!(
+            queries.lock().unwrap().len(),
+            CONCURRENCY,
+            "only the batch dispatched before the transition is sent"
+        );
+        assert_eq!(
+            load(&path, id, 0).unwrap().unwrap().0,
+            Progress::default(),
+            "answers after the transition are not checkpointed"
+        );
+        assert!(!is_ready(&path, id).unwrap());
     }
 }
