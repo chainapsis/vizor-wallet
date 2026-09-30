@@ -302,6 +302,7 @@ class _PendingExternalDepositSwapProvider extends _FakeSwapProvider {
     : _statusGate = statusGate;
 
   final Completer<void>? _statusGate;
+  SwapIntentStatus nextStatus = SwapIntentStatus.awaitingExternalDeposit;
 
   @override
   Future<SwapIntentSnapshot> getStatus(
@@ -331,7 +332,7 @@ class _PendingExternalDepositSwapProvider extends _FakeSwapProvider {
       pairText: base.pairText,
       sellAmountText: base.sellAmountText,
       receiveEstimateText: base.receiveEstimateText,
-      status: SwapIntentStatus.awaitingExternalDeposit,
+      status: nextStatus,
       nextAction: 'Waiting for deposit confirmation',
       depositInstruction: base.depositInstruction,
     );

@@ -6164,18 +6164,6 @@ void main() {
       await _openActivitySurface(tester);
 
       expect(sessionStore.loadCount, greaterThanOrEqualTo(3));
-      expect(swapProvider.statusRequests, isEmpty);
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ActivityScreen)),
-        listen: false,
-      );
-      container
-          .read(swapStateProvider.notifier)
-          .selectIntent('0xpersisted-usdc-deposit');
-      await container
-          .read(swapStateProvider.notifier)
-          .refreshSelectedIntentStatus();
-      await tester.pump();
       expect(swapProvider.statusRequests, hasLength(1));
       expect(
         swapProvider.statusRequests.single.depositAddress,
@@ -6237,12 +6225,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(swapProvider.statusRequests, isEmpty);
-      await _openActivityDetail(tester, '0xcomplete');
-      await tester.tap(
-        find.byKey(const ValueKey('swap_deposit_confirm_button')),
-      );
-      await tester.pumpAndSettle();
       await _openActivitySurface(tester);
 
       expect(swapProvider.statusRequests, hasLength(1));
@@ -6502,6 +6484,75 @@ void main() {
     );
     expect(swapProvider.statusRequests.last.depositAddress, 'polling-deposit');
     expect(swapProvider.statusRequests.last.depositMemo, 'memo-7');
+  });
+
+  testWidgets('deposit page detects an external deposit without a button tap', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PendingExternalDepositSwapProvider();
+    final sessionStore = _FakeSwapPersistenceStore();
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        sessionStore: sessionStore,
+        statusPollInterval: const Duration(seconds: 20),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('swap_direction_externalToZec')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '140.35',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x8617e340b3d01fa5f11f306f4090fd50e238070d',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deposit tokens'), findsOneWidget);
+    expect(sessionStore.savedIntents.single.depositClaimedAt, isNull);
+    final initialRequestCount = swapProvider.statusRequests.length;
+    await tester.pump(const Duration(seconds: 21));
+    await tester.pumpAndSettle();
+    expect(
+      swapProvider.statusRequests.length,
+      greaterThan(initialRequestCount),
+    );
+    expect(
+      find.byKey(const ValueKey('swap_deposit_confirm_button')),
+      findsOneWidget,
+    );
+
+    swapProvider.nextStatus = SwapIntentStatus.depositObserved;
+    await tester.pump(const Duration(seconds: 21));
+    await tester.pumpAndSettle();
+    expect(
+      sessionStore.savedIntents.single.status,
+      SwapIntentStatus.depositObserved,
+    );
+    expect(sessionStore.savedIntents.single.depositClaimedAt, isNull);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_confirm_button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_status_page_content')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('restored swap status uses the stored deposit address', (
@@ -8269,8 +8320,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_deposit_confirm_button')));
     await tester.pumpAndSettle();
 
-    // Tapping "I've deposited" immediately routes to the status page;
-    // no provider status request is triggered by this tap.
+    // Tapping "I've deposited" immediately routes to the status page and
+    // requests a status check without waiting for the next polling interval.
+    expect(swapProvider.statusRequests, isNotEmpty);
     expect(swapProvider.submittedDeposits, isEmpty);
     expect(
       find.byKey(const ValueKey('swap_deposit_confirm_button')),

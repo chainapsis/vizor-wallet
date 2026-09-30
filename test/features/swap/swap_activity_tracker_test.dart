@@ -6,7 +6,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
-  test('automatic refresh skips unfunded and unbroadcast deposits', () async {
+  test('automatic refresh skips unsigned and unbroadcast ZEC deposits', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({});
     final tracker = SwapActivityTracker(
@@ -15,12 +15,6 @@ void main() {
     );
     final intents = [
       _intent(id: 'unsigned', depositAddress: 'unsigned', depositTxHash: null),
-      _intent(
-        id: 'external',
-        depositAddress: 'external',
-        depositTxHash: null,
-        status: SwapIntentStatus.awaitingExternalDeposit,
-      ).copyWith(direction: SwapDirection.externalToZec),
       _intent(
         id: 'unknown',
         depositAddress: 'unknown',
@@ -49,6 +43,93 @@ void main() {
     ).refreshOpenActivities(accountUuid: 'account-1', force: true);
     expect(provider.statusRequests, isEmpty);
   });
+
+  test(
+    'automatic refresh discovers external deposits without a claim',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({
+        'external': _snapshot(
+          id: 'external',
+          depositAddress: 'external',
+          status: SwapIntentStatus.awaitingExternalDeposit,
+        ),
+      });
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+      );
+      final intent = _intent(
+        id: 'external',
+        depositAddress: 'external',
+        depositTxHash: null,
+        status: SwapIntentStatus.awaitingExternalDeposit,
+      ).copyWith(direction: SwapDirection.externalToZec);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+
+      // Home/Activity must also keep an unclaimed external deposit fresh.
+      await SwapActivityStatusRefresher(
+        tracker: tracker,
+      ).refreshOpenActivities(accountUuid: 'account-1');
+      expect(provider.statusRequests, ['external']);
+      final waiting = await tracker.loadIntents(accountUuid: 'account-1');
+      expect(waiting.single.status, SwapIntentStatus.awaitingExternalDeposit);
+      expect(waiting.single.depositClaimedAt, isNull);
+
+      provider.statuses['external'] = _snapshot(
+        id: 'external',
+        depositAddress: 'external',
+        status: SwapIntentStatus.depositObserved,
+      );
+      final observed = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: waiting,
+      );
+      expect(provider.statusRequests, ['external', 'external']);
+      expect(observed.intents.single.status, SwapIntentStatus.depositObserved);
+      expect(observed.intents.single.depositClaimedAt, isNull);
+
+      provider.statuses['external'] = _snapshot(
+        id: 'external',
+        depositAddress: 'external',
+        status: SwapIntentStatus.complete,
+      );
+      final completed = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: observed.intents,
+      );
+      await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: completed.intents,
+      );
+      expect(provider.statusRequests, ['external', 'external', 'external']);
+    },
+  );
+
+  test(
+    'external deposit tracking survives an unknown provider status',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+      );
+      final intent = _intent(
+        id: 'external-unknown',
+        depositAddress: 'external-unknown',
+        depositTxHash: null,
+        status: SwapIntentStatus.providerStatusUnknown,
+      ).copyWith(direction: SwapDirection.externalToZec);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+
+      await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [intent],
+      );
+      expect(provider.statusRequests, ['external-unknown']);
+    },
+  );
 
   test(
     'automatic refresh tracks claimed, broadcast and observed deposits',

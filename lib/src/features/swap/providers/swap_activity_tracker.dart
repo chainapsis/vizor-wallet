@@ -346,11 +346,13 @@ class SwapActivityTracker {
     SwapIntent intent, {
     required String accountUuid,
   }) {
-    // A quote alone has no funds to track. Start background status checks only
-    // after a claimed deposit, a broadcast, or provider-observed progress.
+    // An issued external deposit address needs automatic discovery even before
+    // the user claims a deposit. Outgoing ZEC needs tracking only after funds
+    // may have reached the network or the provider has observed a deposit.
     return _isPersistableIntent(intent, accountUuid: accountUuid) &&
         !intent.status.isTerminal &&
-        (intent.depositClaimedAt != null ||
+        (intent.direction == SwapDirection.externalToZec ||
+            intent.depositClaimedAt != null ||
             intent.hasConfirmedDepositEvidence ||
             intent.hasProviderObservedDepositEvidence);
   }
