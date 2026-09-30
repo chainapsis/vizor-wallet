@@ -41,7 +41,9 @@ accepted root. It never trusts the file's root on its own.
 Use the mainnet build. NEAR address recovery always uses private directory discovery, independently of
 **NEAR swap privacy** and the general **Private queries** setting. This exception
 covers receiver discovery and matching note data. Ordinary transaction retrieval
-still follows Private queries. Creating a new private swap requires both switches
+still follows Private queries. Funding transactions pay transparent deposits, so
+their refund memos and deposit addresses come from a public lightwalletd fetch
+until transparent PIR exists. Creating a new private swap requires both switches
 on. Both default off.
 The [software-wallet guide](near-swap-software-poc.md) defines toggle behavior.
 The complete software implementation is saved on `adam/near-swap-complete-20260929`

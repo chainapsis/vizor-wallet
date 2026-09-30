@@ -232,6 +232,10 @@ pub(crate) fn observe_operation(
 }
 
 /// Funding uses the reserved key and a normal internal memo, never a payout OVK.
+///
+/// The memo stores only the refund index. Recovery reads the deposit address
+/// from the funding transaction's only transparent output and re-encodes it, so
+/// the deposit must be a canonically encoded P2PKH or P2SH address on this network.
 pub(crate) fn funding_memo(
     db: &WalletDatabase,
     network: WalletNetwork,
@@ -248,15 +252,20 @@ pub(crate) fn funding_memo(
     {
         return Err("Refund key was not reserved by this account".into());
     }
-    let memo =
-        RefundMemo::new(network.network_type(), index, deposit).map_err(|e| e.to_string())?;
-    MemoBytes::from_bytes(&memo.encode()).map_err(|e| e.to_string())
+    let address = Address::decode(&network, deposit)
+        .filter(|address| address.encode(&network) == deposit)
+        .ok_or("Invalid swap deposit address for this network")?;
+    if !matches!(address, Address::Transparent(_)) {
+        return Err("Swap refund recovery requires a transparent deposit address".into());
+    }
+    MemoBytes::from_bytes(&RefundMemo::new(index).encode()).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use secrecy::SecretVec;
+    use transparent::address::TransparentAddress;
     use zcash_client_backend::data_api::WalletWrite;
     use zcash_protocol::consensus::BlockHeight;
 
@@ -287,7 +296,7 @@ mod tests {
         let path = path.to_str().unwrap();
         let network = WalletNetwork::Regtest;
         super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
-        let (uuid, deposit) = super::super::keys::init_db_and_create_account(
+        let (uuid, unified) = super::super::keys::init_db_and_create_account(
             path,
             network,
             &SecretVec::new(vec![0; 32]),
@@ -296,6 +305,8 @@ mod tests {
         )
         .unwrap();
         let account = parse_account_uuid(&uuid).unwrap();
+        let deposit = Address::Transparent(TransparentAddress::PublicKeyHash([7; 20]));
+        let deposit = deposit.encode(&network);
         let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
         assert!(funding_memo(&db, network, account, 0, &deposit).is_err());
         db.reserve_swap_receiving_key(account, Purpose::Receive, BlockHeight::from_u32(100))
@@ -307,13 +318,25 @@ mod tests {
         drop(db);
         let db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
         let memo = funding_memo(&db, network, account, 0, &deposit).unwrap();
-        let decoded = RefundMemo::decode(network.network_type(), memo.as_array())
-            .unwrap()
-            .unwrap();
+        let decoded = RefundMemo::decode(memo.as_array()).unwrap().unwrap();
         assert_eq!(decoded.index(), 0);
-        assert_eq!(decoded.deposit_address(), deposit);
+        let p2sh = Address::Transparent(TransparentAddress::ScriptHash([7; 20]));
+        assert!(funding_memo(&db, network, account, 0, &p2sh.encode(&network)).is_ok());
         assert!(funding_memo(&db, network, account, 1, &deposit).is_err());
-        assert!(funding_memo(&db, network, account, 0, "not an address").is_err());
+
+        let rejected = |bad: &str| funding_memo(&db, network, account, 0, bad).unwrap_err();
+        let tex = Address::Tex([7; 20]).encode(&network);
+        for bad in [unified.as_str(), tex.as_str()] {
+            let error = rejected(bad);
+            assert!(error.contains("requires a transparent deposit"), "{error}");
+        }
+        let mainnet = Address::Transparent(TransparentAddress::PublicKeyHash([7; 20]))
+            .encode(&WalletNetwork::Main);
+        let padded = format!(" {deposit}");
+        for bad in [mainnet.as_str(), padded.as_str(), "not an address"] {
+            let error = rejected(bad);
+            assert!(error.contains("Invalid swap deposit address"), "{error}");
+        }
     }
 
     #[test]

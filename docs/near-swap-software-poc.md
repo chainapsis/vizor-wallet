@@ -57,8 +57,8 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
 2. Outgoing fee estimation and funding use the same normal proposal pipeline with
    a binary recovery memo on ordinary internal Ironwood change. The proposal must
    include that memo in the transaction paying the deposit address. A zero-value
-   change note is valid. Multi-step funding and deposit instructions requiring a
-   separate memo are rejected in this POC.
+   change note is valid. Multi-step funding, non-transparent deposit addresses and
+   deposit instructions requiring a separate memo are rejected in this POC.
 3. Every software restore registers 50 incoming lookahead keys from the account
    birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
@@ -66,9 +66,10 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
    Payments extend incoming lookahead until 50 consecutive indices are empty.
    Finish the extended window before reporting recovery complete. Each restored key
    keeps a fixed recovery height, so new blocks do not restart completed checks.
-   Funding memos also restore the deposit address and a pending watch. An initial
-   PIR check covers existing history while that watch covers new blocks. Vizor
-   checks NEAR status during sync, at most once per minute per pending refund.
+   Funding memos also restore a pending watch for the deposit address, which comes
+   from the funding transaction's transparent output. An initial PIR check covers
+   existing history while that watch covers new blocks. Vizor checks NEAR status
+   during sync, at most once per minute per pending refund.
    Terminal status saves the ten-block grace deadline, followed by PIR closeout.
    Failures and unknown statuses keep the watch active. Reopening preserves both
    polling times and deadlines.
