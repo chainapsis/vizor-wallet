@@ -24,6 +24,7 @@ import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
@@ -573,7 +574,12 @@ List<RouteBase> appAuthRoutes(
     path: '/storage-unavailable',
     builder: (_, _) => const StorageUnavailableScreen(),
   ),
-  GoRoute(path: '/unlock', builder: (_, _) => unlockScreen),
+  // No transition: a sliding unlock page would show the wallet behind it.
+  GoRoute(
+    path: '/unlock',
+    pageBuilder: (_, state) =>
+        NoTransitionPage(key: state.pageKey, child: unlockScreen),
+  ),
   GoRoute(
     path: '/lost-password',
     builder: (_, _) => const LostPasswordScreen(),
@@ -1572,7 +1578,10 @@ class ZcashWalletApp extends ConsumerWidget {
                                       router: router,
                                       child: LedgerOperationRecoveryHost(
                                         child: MobileNumericKeyboardToolbar(
-                                          child: child!,
+                                          child: BackgroundAutoLockHost(
+                                            router: router,
+                                            child: child!,
+                                          ),
                                         ),
                                       ),
                                     ),

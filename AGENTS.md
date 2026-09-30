@@ -710,7 +710,9 @@ recovery. It does not interrupt an active DB operation. Dart bounds its cleanup
 wait at 300ms. On macOS, the exit-only `desktop_exit` channel orders the window
 out synchronously and suppresses last-window auto-quit while Dart is preparing
 its exit reply; ordinary window visibility still uses `window_manager`.
-Backgrounding or hiding a window by itself does not end the session.
+Backgrounding or hiding a window by itself does not end the session, except
+that mobile returning after 15 minutes in the background locks it through the
+sign-out sequence (`BackgroundAutoLockHost`).
 Before the first balance read after restart, the DB migration gate recovers
 abandoned process-scoped reservations without network access. Legacy retained,
 signed, and ambiguous-broadcast reservations keep their expiry-based recovery.
