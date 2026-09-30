@@ -1,4 +1,5 @@
-//! Candidate transparent recovery (Phase 3 of the transparent PIR ledger).
+//! Private transparent recovery and activation (Phases 3–4 of the transparent
+//! PIR ledger).
 //!
 //! For each account the coordinator captures the library's watch set, asks a
 //! [`RecoverySource`] about the watched addresses with no database lock held,
@@ -6,11 +7,17 @@
 //! It repeats at the same target while the address window grows, the watch
 //! set changes, or open pages make progress.
 //!
-//! Candidate state lives only in the library's `tpir_*` tables. It never
-//! changes balances, input selection, locks, address allocation, or history,
-//! and it shares no checkpoint, queue, retry, or cache with shielded scanning,
-//! public UTXO refresh, or the `.receive.redb` receive cache. Neither of those
-//! becomes private evidence.
+//! A candidate account's state lives only in the library's `tpir_*` tables.
+//! It never changes balances, input selection, locks, address allocation, or
+//! history, and it shares no checkpoint, queue, retry, or cache with shielded
+//! scanning, public UTXO refresh, or the `.receive.redb` receive cache. Neither
+//! of those becomes private evidence.
+//!
+//! Under `PrivateRequired`, each candidate account is then offered for
+//! promotion on its own. The library rechecks everything and refuses while
+//! any blocker remains, including an unqualified revision; nothing in this
+//! build can qualify one, so production never promotes. An active account's
+//! later commits project into the wallet in the same transaction.
 //!
 //! Production has no private source: it captures `Public` and passes
 //! [`DisabledSource`], so [`run`] returns before any read or request. The
@@ -22,9 +29,10 @@ use std::time::Duration;
 
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        AddressRange, ChainPoint, CommitRejection, PageRequest, PendingPage, ReceiveEvent,
-        RecoveryRevision, SpendEvent, TransparentLedgerCommit, TransparentLedgerMode,
-        TransparentLedgerRead, TransparentLedgerWrite, TransparentWatchSet, WatchedAddress,
+        AccountLifecycle, AddressRange, ChainPoint, CommitRejection, PageRequest, PendingPage,
+        ReceiveEvent, RecoveryRevision, RefusedCommit, SpendEvent, TransparentLedgerCommit,
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite, TransparentWatchSet,
+        WatchedAddress,
     },
     WalletRead,
 };
@@ -137,6 +145,8 @@ pub(crate) struct RunStats {
     pub(crate) commits: usize,
     /// Commits refused as stale and retried from a fresh watch set.
     pub(crate) stale_retries: usize,
+    /// Candidate accounts promoted to private authority.
+    pub(crate) promoted: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -157,15 +167,20 @@ pub(crate) enum RunOutcome {
 }
 
 enum AccountOutcome {
+    /// Recovery reached the end of its passes; the account may be promoted.
     Done,
+    /// The account was skipped for this run; it is not offered for promotion.
+    Skipped,
     Stop(RunOutcome),
 }
 
-/// Runs candidate recovery for every account under `policy`.
+/// Runs private recovery for every account under `policy`, then, under
+/// `PrivateRequired`, offers each recovered candidate account for promotion.
 ///
 /// Runs only when both the captured mode and the wallet's durable policy
 /// permit private recovery (`PrivateShadow` or `PrivateRequired`). Holds the
-/// wallet write lock only for each commit, never across a source call.
+/// wallet write lock only for each commit or promotion, never across a source
+/// call.
 pub(crate) async fn run<S: RecoverySource>(
     db: &mut WalletDatabase,
     policy: EnhancementPolicy,
@@ -182,7 +197,15 @@ pub(crate) async fn run<S: RecoverySource>(
     let mut stats = RunStats::default();
     for account in db.get_account_ids().map_err(db_error)? {
         match recover_account(db, source, account, should_exit, &mut stats).await? {
-            AccountOutcome::Done => stats.accounts += 1,
+            AccountOutcome::Done => {
+                stats.accounts += 1;
+                if policy.transparent_mode() == TransparentLedgerMode::PrivateRequired
+                    && promote(db, account)?
+                {
+                    stats.promoted += 1;
+                }
+            }
+            AccountOutcome::Skipped => stats.accounts += 1,
             AccountOutcome::Stop(outcome) => return Ok(outcome),
         }
     }
@@ -228,11 +251,11 @@ async fn recover_account<S: RecoverySource>(
             }
             Ok(Err(SourceError::Failed)) => {
                 log::warn!("transparent ledger: source call failed");
-                return Ok(AccountOutcome::Done);
+                return Ok(AccountOutcome::Skipped);
             }
             Err(_) => {
                 log::warn!("transparent ledger: source call timed out");
-                return Ok(AccountOutcome::Done);
+                return Ok(AccountOutcome::Skipped);
             }
         };
         if should_exit() {
@@ -276,7 +299,7 @@ async fn recover_account<S: RecoverySource>(
                 stale += 1;
                 if stale > MAX_STALE_RETRIES {
                     log::warn!("transparent ledger: commits stayed stale; retrying next run");
-                    return Ok(AccountOutcome::Done);
+                    return Ok(AccountOutcome::Skipped);
                 }
                 if !durably_permitted(db)? {
                     return Ok(AccountOutcome::Stop(RunOutcome::NotEnabled));
@@ -296,13 +319,61 @@ async fn recover_account<S: RecoverySource>(
                 _,
             ))) => {
                 log::error!("transparent ledger: source produced a malformed commit");
-                return Ok(AccountOutcome::Done);
+                return Ok(AccountOutcome::Skipped);
+            }
+            Err(SqliteClientError::TransparentLedgerCommitRejected(CommitRejection::Refused(
+                refused,
+            ))) => {
+                return Ok(match refused {
+                    // An earlier integrity failure ended trust in this source.
+                    RefusedCommit::SourceQuarantined => {
+                        log::warn!("transparent ledger: source is quarantined; stopping");
+                        AccountOutcome::Stop(RunOutcome::Untrusted)
+                    }
+                    RefusedCommit::AccountQuarantined => {
+                        log::warn!("transparent ledger: account is quarantined; skipping");
+                        AccountOutcome::Skipped
+                    }
+                    RefusedCommit::UnqualifiedRevision => {
+                        log::warn!(
+                            "transparent ledger: source is not qualified for an active account"
+                        );
+                        AccountOutcome::Skipped
+                    }
+                });
             }
             Err(SqliteClientError::TransparentRecoveryNotEnabled) => {
                 return Ok(AccountOutcome::Stop(RunOutcome::NotEnabled));
             }
             Err(error) => return Err(db_error(error)),
         }
+    }
+}
+
+/// Offers a recovered candidate account for promotion. Returns whether it was
+/// promoted by this call; a blocked promotion changes nothing and is retried
+/// after a later run.
+fn promote(db: &mut WalletDatabase, account: AccountUuid) -> Result<bool, SyncError> {
+    match watch_set(db, account)? {
+        Some(watch) if watch.lifecycle == AccountLifecycle::Candidate => {}
+        _ => return Ok(false),
+    }
+    let promoted = with_wallet_db_write_lock("sync_engine.transparent_ledger.promote", || {
+        db.promote_transparent_account(account)
+    });
+    match promoted {
+        Ok(()) => Ok(true),
+        // Blockers name no address or outpoint; their count is enough to log.
+        Err(SqliteClientError::TransparentPromotionBlocked(blockers)) => {
+            log::info!(
+                "transparent ledger: promotion blocked ({} reasons)",
+                blockers.len()
+            );
+            Ok(false)
+        }
+        Err(SqliteClientError::TransparentRecoveryNotEnabled)
+        | Err(SqliteClientError::AccountUnknown) => Ok(false),
+        Err(error) => Err(db_error(error)),
     }
 }
 

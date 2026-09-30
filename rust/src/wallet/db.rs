@@ -10,7 +10,7 @@ use voting_crypto_deps::rand::rngs::OsRng;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
 
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::transparent_ledger_mode;
+use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
 
 pub(crate) type WalletDatabase = WalletDb<rusqlite::Connection, WalletNetwork, SystemClock, OsRng>;
 
@@ -53,7 +53,7 @@ pub(crate) fn open_wallet_db_with_timeout(
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
     ensure_mined_transaction_history(&conn)?;
-    Ok(wallet_db(conn, network))
+    Ok(wallet_db(conn, db_path, network))
 }
 
 /// Preserve mined evidence before backend rewinds clear it, including sends
@@ -103,7 +103,7 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, false)?;
-    Ok(wallet_db(conn, network))
+    Ok(wallet_db(conn, db_path, network))
 }
 
 pub(crate) fn open_wallet_db_readonly_with_timeout(
@@ -112,15 +112,15 @@ pub(crate) fn open_wallet_db_readonly_with_timeout(
     timeout: Duration,
 ) -> Result<WalletDatabase, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(timeout))?;
-    Ok(wallet_db(conn, network))
+    Ok(wallet_db(conn, db_path, network))
 }
 
 /// Every wallet handle selects its transparent ledger mode explicitly; the
 /// library rejects transparent selection, stores, and history on an
 /// unconfigured handle.
-fn wallet_db(conn: rusqlite::Connection, network: WalletNetwork) -> WalletDatabase {
+fn wallet_db(conn: rusqlite::Connection, db_path: &str, network: WalletNetwork) -> WalletDatabase {
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
-        .with_transparent_ledger_mode(transparent_ledger_mode())
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path))
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(

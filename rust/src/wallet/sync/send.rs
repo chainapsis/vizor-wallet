@@ -58,13 +58,14 @@ use zcash_client_backend::data_api::wallet::input_selection::{
 use zcash_client_backend::{
     data_api::{
         error::Error as WalletError,
+        transparent_ledger::{TransparentAuthority, TransparentLedgerMode, TransparentLedgerRead},
         wallet::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             ConfirmationsPolicy, TargetHeight,
         },
         Account as _, AccountMeta, Balance, CoinbaseFilter, ConsolidationNotes, InputSource,
         MaxSpendMode, NoteFilter, NoteRetention, OutputLockStore, ReceivedNotes, TargetValue,
-        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
+        TransparentBalances, TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -74,7 +75,9 @@ use zcash_client_backend::{
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
-use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
+use zcash_client_sqlite::{
+    error::SqliteClientError, wallet::commitment_tree, AccountUuid, ReceivedNoteId,
+};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
@@ -1222,9 +1225,7 @@ fn ledger_shielding_progress(
         .chain_height()
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
-    let balances = db
-        .get_transparent_balances(id, (tip + 1).into(), ConfirmationsPolicy::MIN)
-        .map_err(|e| e.to_string())?;
+    let balances = transparent_shielding_balances(db, id, (tip + 1).into())?;
     let mut progress = LedgerShieldingProgress {
         input_count: 0,
         input_limit: crate::wallet::ledger::MAX_TRANSPARENT_INPUTS as u32,
@@ -3745,6 +3746,76 @@ fn active_ironwood_migrations() -> &'static Mutex<HashSet<String>> {
     ACTIVE_IRONWOOD_MIGRATIONS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+/// Why shielding is unavailable while an account's private transparent
+/// ledger holds no current authority. Shielded-funded operations stay
+/// available.
+pub(crate) const TRANSPARENT_RECOVERY_INCOMPLETE: &str =
+    "Transparent recovery is incomplete; transparent funds are unavailable until it completes";
+
+/// Spendable transparent balances by receiver for shielding at `target`.
+///
+/// Under public authority these are the wallet's transparent balances. Under
+/// a private ledger mode the library withholds that per-address read, so the
+/// balances are summed from the library's gated selector, which admits only
+/// outputs its private authority covers. With no current authority, shielding
+/// reports recovery as incomplete rather than a zero balance.
+fn transparent_shielding_balances(
+    db: &WalletDatabase,
+    account: AccountUuid,
+    target: TargetHeight,
+) -> Result<TransparentBalances, String> {
+    let confirmations = ConfirmationsPolicy::MIN;
+    match db.get_transparent_balances(account, target, confirmations) {
+        Ok(balances) => return Ok(balances),
+        // Only a handle configured for the private ledger reads it; any other
+        // handle keeps the library's refusal.
+        Err(SqliteClientError::TransparentAuthorityUnavailable)
+            if matches!(
+                db.transparent_ledger_mode(),
+                Ok(TransparentLedgerMode::PrivateRequired)
+            ) => {}
+        Err(e) => return Err(format!("Failed to get transparent balances: {e}")),
+    }
+    let snapshot = db
+        .transparent_ledger_snapshot(account, confirmations)
+        .map_err(|e| format!("Failed to read transparent ledger: {e}"))?;
+    if snapshot.authority != TransparentAuthority::Private {
+        return Err(TRANSPARENT_RECOVERY_INCOMPLETE.into());
+    }
+    let receivers = db
+        .get_transparent_receivers(account, true, true)
+        .map_err(|e| e.to_string())?;
+    let addresses: Vec<TransparentAddress> = receivers.keys().copied().collect();
+    let outputs = db
+        .get_spendable_transparent_outputs_for_addresses(
+            &addresses,
+            target,
+            confirmations,
+            CoinbaseFilter::AllTransparentOutputs,
+            LockFilter::Policy(&LockedInputPolicy::default()),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut balances = TransparentBalances::new();
+    for output in outputs {
+        let address = *output.recipient_address();
+        let Some(metadata) = receivers.get(&address) else {
+            continue;
+        };
+        let origin = metadata
+            .scope()
+            .map_or(TransparentKeyOrigin::Imported, |scope| {
+                TransparentKeyOrigin::Derived { scope }
+            });
+        balances
+            .entry(address)
+            .or_insert((origin, Balance::ZERO))
+            .1
+            .add_spendable_value(output.value())
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(balances)
+}
+
 fn shielding_threshold() -> Result<Zatoshis, String> {
     Zatoshis::from_u64(SHIELDING_THRESHOLD_ZATOSHI)
         .map_err(|_| "Bad shielding threshold".to_string())
@@ -3760,13 +3831,7 @@ fn build_shielding_proposal(
         .chain_height()
         .map_err(|e| format!("Failed to read chain height: {e}"))?
         .ok_or("Wallet must sync before shielding transparent funds")?;
-    let balances = db
-        .get_transparent_balances(
-            account_id,
-            (chain_height + 1).into(),
-            ConfirmationsPolicy::MIN,
-        )
-        .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
+    let balances = transparent_shielding_balances(db, account_id, (chain_height + 1).into())?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
     let account = db

@@ -20,6 +20,63 @@ pub(crate) fn transparent_ledger_mode() -> TransparentLedgerMode {
     TransparentLedgerMode::Public
 }
 
+/// Transparent ledger mode for a handle on the wallet at `db_path`.
+///
+/// Production always returns [`transparent_ledger_mode`]. Tests can select a
+/// stricter mode for one wallet file, so private activation runs through the
+/// same handle openers, balance reads, and spend paths as production.
+pub(crate) fn transparent_ledger_mode_for(db_path: &str) -> TransparentLedgerMode {
+    #[cfg(test)]
+    if let Some(mode) = test_mode::get(db_path) {
+        return mode;
+    }
+    let _ = db_path;
+    transparent_ledger_mode()
+}
+
+/// Test seam: a per-wallet-file override of the handle mode. Keyed by path, so
+/// parallel tests on other wallets are unaffected.
+#[cfg(test)]
+pub(crate) mod test_mode {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock, PoisonError};
+
+    use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+
+    fn overrides() -> &'static Mutex<HashMap<String, TransparentLedgerMode>> {
+        static OVERRIDES: OnceLock<Mutex<HashMap<String, TransparentLedgerMode>>> = OnceLock::new();
+        OVERRIDES.get_or_init(Default::default)
+    }
+
+    pub(crate) fn get(db_path: &str) -> Option<TransparentLedgerMode> {
+        overrides()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(db_path)
+            .copied()
+    }
+
+    /// Handles opened on `db_path` use `mode` until the guard drops.
+    pub(crate) fn set(db_path: &str, mode: TransparentLedgerMode) -> ModeOverride {
+        overrides()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(db_path.to_owned(), mode);
+        ModeOverride(db_path.to_owned())
+    }
+
+    pub(crate) struct ModeOverride(String);
+
+    impl Drop for ModeOverride {
+        fn drop(&mut self) {
+            overrides()
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&self.0);
+        }
+    }
+}
+
 /// Resolves the install preference once so status and payload retrieval cannot
 /// observe different values during the same operation.
 ///
