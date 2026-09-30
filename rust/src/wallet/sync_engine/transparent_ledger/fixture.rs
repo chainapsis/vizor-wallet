@@ -1,6 +1,6 @@
 //! A deterministic in-memory [`RecoverySource`] for tests.
 //!
-//! It answers from a fixed set of mined receives and spends. Its revisions use
+//! It answers from a configurable set of mined receives and spends. Its revisions use
 //! [`FIXTURE_SOURCE`] as their source id; a fixture revision can never qualify
 //! a production account.
 
@@ -79,6 +79,22 @@ impl FixtureSource {
 
     pub(crate) fn spend(&self, spend: SpendEvent) -> &Self {
         self.with(|state| state.spends.push(spend))
+    }
+
+    /// Replaces a publication's facts under a higher provisional lineage.
+    pub(crate) fn replace_events(
+        &self,
+        receives: Vec<ReceiveEvent>,
+        spends: Vec<SpendEvent>,
+    ) -> &Self {
+        self.with(|state| {
+            state.receives = receives;
+            state.spends = spends;
+            if let Some(revision) = &mut state.revision {
+                revision.lineage += 1;
+                revision.revision = format!("r{}", revision.lineage).into_bytes();
+            }
+        })
     }
 
     pub(crate) fn unsupported(&self, address: TransparentAddress) -> &Self {

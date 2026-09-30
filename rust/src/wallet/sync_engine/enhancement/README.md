@@ -363,6 +363,9 @@ balances, input selection, locks, address allocation and history ignore it.
   make progress. The cap is 8 passes per account.
   - A stale commit (reorg, deleted account, superseded revision, or a changed
     policy generation) is retried up to three times from a fresh watch set.
+  - A newer provisional revision retracts the older revision's observations.
+    Events survive only when another independent or sealed observation supports
+    them; a complete replacement can therefore withdraw receives and spends.
   - An integrity rejection stops the run: the source's session is no longer
     trusted.
   - A malformed commit is logged and skips the account.

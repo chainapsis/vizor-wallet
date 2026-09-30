@@ -311,6 +311,51 @@ async fn fixture_recovery_converges_to_the_exact_set() {
 }
 
 #[tokio::test]
+async fn replacement_revisions_retract_withdrawn_events() {
+    let mut wallet = shadow_wallet();
+    let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
+    let funding = receive(1, address, 50_000, 150);
+    let source = FixtureSource::new(main_hash);
+    source
+        .receive(funding.clone())
+        .spend(spend(2, &funding, 170));
+    recover(&mut wallet, &source).await;
+    assert_complete(&wallet, &source);
+
+    // A complete replacement keeps the output but withdraws its spend.
+    source.replace_events(vec![funding.clone()], vec![]);
+    recover(&mut wallet, &source).await;
+    assert_complete(&wallet, &source);
+    let replaced = wallet
+        .db
+        .transparent_candidate_recovery(wallet.account)
+        .unwrap();
+    assert_eq!(replaced.unspent, [funding.outpoint]);
+    assert_eq!(replaced.recovered_unverified, Some(funding.value));
+
+    // Replaying the replacement is idempotent.
+    recover(&mut wallet, &source).await;
+    assert_eq!(
+        wallet
+            .db
+            .transparent_candidate_recovery(wallet.account)
+            .unwrap(),
+        replaced
+    );
+
+    // A further complete replacement withdraws the receive as well.
+    source.replace_events(vec![], vec![]);
+    recover(&mut wallet, &source).await;
+    assert_complete(&wallet, &source);
+    let empty = wallet
+        .db
+        .transparent_candidate_recovery(wallet.account)
+        .unwrap();
+    assert!(empty.unspent.is_empty());
+    assert_eq!(empty.recovered_unverified, Some(Zatoshis::ZERO));
+}
+
+#[tokio::test]
 async fn empty_ranges_complete_recovery() {
     let mut wallet = shadow_wallet();
     let source = FixtureSource::new(main_hash);
