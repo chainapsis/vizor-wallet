@@ -16,12 +16,6 @@ void main() {
     final intents = [
       _intent(id: 'unsigned', depositAddress: 'unsigned', depositTxHash: null),
       _intent(
-        id: 'unknown',
-        depositAddress: 'unknown',
-        depositTxHash: null,
-        status: SwapIntentStatus.providerStatusUnknown,
-      ),
-      _intent(
         id: 'unbroadcast',
         depositAddress: 'unbroadcast',
       ).copyWith(broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast),
@@ -106,30 +100,78 @@ void main() {
     },
   );
 
-  test(
-    'external deposit tracking survives an unknown provider status',
-    () async {
-      final store = _MemorySwapActivityStore();
-      final provider = _StatusSwapProvider({});
-      final tracker = SwapActivityTracker(
-        activityStore: store,
-        swapProvider: provider,
-      );
-      final intent = _intent(
-        id: 'external-unknown',
-        depositAddress: 'external-unknown',
-        depositTxHash: null,
-        status: SwapIntentStatus.providerStatusUnknown,
-      ).copyWith(direction: SwapDirection.externalToZec);
-      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+  for (final direction in SwapDirection.values) {
+    test(
+      '${direction.name} tracking survives an unknown provider status without deposit evidence',
+      () async {
+        final store = _MemorySwapActivityStore();
+        final provider = _StatusSwapProvider({});
+        final tracker = SwapActivityTracker(
+          activityStore: store,
+          swapProvider: provider,
+        );
+        final intent = _intent(
+          id: 'unknown',
+          depositAddress: 'unknown',
+          depositTxHash: null,
+          status: SwapIntentStatus.providerStatusUnknown,
+        ).copyWith(direction: direction);
+        await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
 
-      await tracker.refreshOpenIntents(
-        accountUuid: 'account-1',
-        currentIntents: [intent],
-      );
-      expect(provider.statusRequests, ['external-unknown']);
-    },
-  );
+        await tracker.refreshOpenIntents(
+          accountUuid: 'account-1',
+          currentIntents: [intent],
+        );
+        expect(provider.statusRequests, ['unknown']);
+      },
+    );
+  }
+
+  test('ZEC tracking continues after processing becomes unknown', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({
+      'unknown': _snapshot(
+        id: 'unknown',
+        depositAddress: 'unknown',
+        status: SwapIntentStatus.providerStatusUnknown,
+      ),
+    });
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+    );
+    final intent = _intent(
+      id: 'unknown',
+      depositAddress: 'unknown',
+      depositTxHash: null,
+      status: SwapIntentStatus.processing,
+    );
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+
+    final unknown = await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [intent],
+    );
+    expect(
+      unknown.intents.single.status,
+      SwapIntentStatus.providerStatusUnknown,
+    );
+    expect(unknown.intents.single.hasConfirmedDepositEvidence, isFalse);
+    expect(unknown.intents.single.hasProviderObservedDepositEvidence, isFalse);
+
+    provider.statuses['unknown'] = _snapshot(
+      id: 'unknown',
+      depositAddress: 'unknown',
+      status: SwapIntentStatus.complete,
+    );
+    await SwapActivityStatusRefresher(
+      tracker: tracker,
+    ).refreshOpenActivities(accountUuid: 'account-1', force: true);
+
+    expect(provider.statusRequests, ['unknown', 'unknown']);
+    final completed = await tracker.loadIntents(accountUuid: 'account-1');
+    expect(completed.single.status, SwapIntentStatus.complete);
+  });
 
   test(
     'automatic refresh tracks claimed, broadcast and observed deposits',
