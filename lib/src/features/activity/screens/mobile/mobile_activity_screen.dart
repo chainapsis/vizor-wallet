@@ -23,6 +23,7 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
+import '../../transaction_completeness.dart';
 import '../../widgets/activity_feed.dart';
 import 'mobile_transaction_status_screen.dart';
 
@@ -214,7 +215,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             .map(
               (tx) =>
                   '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-                  '${tx.txKind}:${tx.displayAmount}',
+                  '${tx.txKind}:${tx.displayAmount}:'
+                  '${transactionCompletenessSignature(tx)}',
             )
             .join('|') ??
         '';

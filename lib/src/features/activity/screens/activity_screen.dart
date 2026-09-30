@@ -25,6 +25,7 @@ import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
+import '../transaction_completeness.dart';
 import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
 
@@ -290,7 +291,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     return sync?.recentTransactions
             .map(
               (tx) =>
-                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}',
+                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}:'
+                  '${transactionCompletenessSignature(tx)}',
             )
             .join('|') ??
         '';

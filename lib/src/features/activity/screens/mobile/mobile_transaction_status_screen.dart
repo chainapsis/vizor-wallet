@@ -213,6 +213,13 @@ class _MobileTransactionStatusScreenState
       if (!_txidsMatch(widget.args.txidHex, tx.txidHex)) continue;
       if (txKind == null || _txKindMatches(txKind, tx.txKind)) return tx;
     }
+    final shown = _transaction ?? widget.args.initialTransaction;
+    if (shown != null && shown.provisional) {
+      return provisionalRoleSuccessor(
+        transactions,
+        (other) => _txidsMatch(widget.args.txidHex, other),
+      );
+    }
     return null;
   }
 
@@ -226,7 +233,8 @@ class _MobileTransactionStatusScreenState
     for (final tx in sync?.recentTransactions ?? const []) {
       if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-            '${tx.txKind}:${tx.displayAmount}:${tx.fee}';
+            '${tx.txKind}:${tx.displayAmount}:${tx.fee}:'
+            '${transactionCompletenessSignature(tx)}';
       }
     }
     return '';

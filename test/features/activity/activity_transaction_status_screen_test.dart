@@ -933,10 +933,30 @@ void main() {
       expect(find.byType(SendStatusContentView), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text(kUnknownFeeText), findsOneWidget);
-        expect(find.text('Details'), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
       expect(find.text('Incomplete'), findsOneWidget);
     },
   );
+
+  testWidgets('a dedicated receipt marks incomplete details', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(
+          txKind: 'received',
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: false,
+        ),
+        initialDetail: _detail(txKind: 'received'),
+      ),
+    );
+
+    expect(find.byType(ReceivedReceiptView), findsOneWidget);
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
 
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,

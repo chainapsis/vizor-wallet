@@ -189,6 +189,12 @@ class _ActivityTransactionStatusScreenState
           return tx;
         }
       }
+      if (_shownTransactionIsProvisional) {
+        return provisionalRoleSuccessor(
+          transactions,
+          (other) => _txidsMatch(txidHex, other),
+        );
+      }
       return null;
     }
     for (final tx in transactions) {
@@ -196,6 +202,9 @@ class _ActivityTransactionStatusScreenState
     }
     return null;
   }
+
+  bool get _shownTransactionIsProvisional =>
+      (_transaction ?? widget.args.initialTransaction)?.provisional ?? false;
 
   String _recentTxSignature(SyncState? sync) {
     final txKind =
@@ -213,6 +222,7 @@ class _ActivityTransactionStatusScreenState
             tx.txKind,
             tx.displayAmount,
             tx.fee,
+            transactionCompletenessSignature(tx),
           ].join(':');
         }
       }
@@ -227,6 +237,7 @@ class _ActivityTransactionStatusScreenState
           tx.txKind,
           tx.displayAmount,
           tx.fee,
+          transactionCompletenessSignature(tx),
         ].join(':');
       }
     }
@@ -818,6 +829,18 @@ class _ActivityTransactionStatusScreenState
       );
     }
 
+    // Dedicated receipts show what is known; the notice says it may be partial.
+    // The fallback receipt carries its own row.
+    if (redesignedContent != null &&
+        tx != null &&
+        transactionDetailsIncomplete(tx)) {
+      redesignedContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [redesignedContent, const _IncompleteDetailsNotice()],
+      );
+    }
+
     final verifyAddress = _verifyAddress;
     final verifyAccountUuid =
         _activeAccountUuid ??
@@ -854,6 +877,28 @@ class _ActivityTransactionStatusScreenState
 String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
   zcashDisplayTxidHex(protocolTxid, ZcashExplorerTxidOrder.protocol),
 );
+
+/// Marks a dedicated receipt whose entry is incomplete.
+class _IncompleteDetailsNotice extends StatelessWidget {
+  const _IncompleteDetailsNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return _ReceiptContentColumn(
+      child: ReviewWrapCard(
+        children: [
+          ReviewListRow(
+            label: 'Details',
+            value: 'Incomplete',
+            trailingIconName: AppIcons.help,
+            trailingIconColor: context.colors.text.secondary,
+            trailingIconTooltip: kIncompleteDetailsHelpText,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Centered 420px content column for the received/shielding receipts.
 ///

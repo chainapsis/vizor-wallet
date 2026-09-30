@@ -649,6 +649,57 @@ void main() {
     },
   );
 
+  testWidgets('a provisional entry follows its transaction to a new role', (
+    tester,
+  ) async {
+    final provisional = _tx(
+      displayPool: 'unknown',
+      feeState: rust_sync.TransactionFeeState.unknown,
+      detailsComplete: false,
+      provisional: true,
+    );
+    await tester.pumpWidget(
+      _app(
+        provisional,
+        history: [_tx(kind: 'shielded', displayPool: 'shielded')],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('From transparent balance'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a provisional entry never picks one leg of several', (
+    tester,
+  ) async {
+    final provisional = _tx(
+      displayPool: 'unknown',
+      feeState: rust_sync.TransactionFeeState.unknown,
+      detailsComplete: false,
+      provisional: true,
+    );
+    await tester.pumpWidget(
+      _app(
+        provisional,
+        history: [
+          _tx(kind: 'shielded', displayPool: 'shielded'),
+          _tx(kind: 'received', displayPool: 'shielded'),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('From transparent balance'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,
   ) async {
