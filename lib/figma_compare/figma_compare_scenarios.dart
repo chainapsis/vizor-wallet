@@ -1,3 +1,4 @@
+import 'welcome_capture.dart';
 import 'ledger_pairing_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'caps_lock_capture.dart';
@@ -51,6 +52,7 @@ class FigmaCompareScenario {
     this.mobile = false,
     this.scrollToEnd = false,
     this.allowFocus = false,
+    this.renderShadows = false,
   });
 
   final String id;
@@ -60,6 +62,7 @@ class FigmaCompareScenario {
   final bool mobile;
   final bool scrollToEnd;
   final bool allowFocus;
+  final bool renderShadows;
 }
 
 /// Deterministic previews for the screens changed on the current branch.
@@ -68,6 +71,34 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-welcome',
+    description: 'Desktop initial Welcome with deterministic video poster',
+    builder: buildDesktopWelcomeCapture,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-add-account-welcome',
+    description: 'Desktop Welcome without Gift Card activation',
+    builder: buildDesktopAddAccountWelcomeCapture,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-welcome',
+    description: 'Mobile initial Welcome with deterministic video poster',
+    builder: buildMobileWelcomeCapture,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-add-account-welcome',
+    description: 'Mobile Welcome without Gift Card activation',
+    builder: buildMobileAddAccountWelcomeCapture,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-import',
     description: 'Desktop onboarding import method selection',
@@ -1288,27 +1319,32 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'welcome-large',
     description: 'Desktop first-wallet welcome screen',
     builder: buildWelcomeLargeUseCase,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'welcome-network-settings',
     description:
         'Desktop first-wallet network settings with Tor and private queries',
     builder: buildWelcomeNetworkSettingsUseCase,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'welcome-private-queries-enabled',
     description: 'Desktop onboarding with private queries enabled',
     builder: buildWelcomePrivateQueriesEnabledUseCase,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'welcome-private-queries-changing',
     description: 'Desktop onboarding while private queries are being saved',
     builder: buildWelcomePrivateQueriesChangingUseCase,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'welcome-network-settings-tor-connected',
     description: 'Desktop first-wallet network settings with Tor connected',
     builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+    renderShadows: true,
   ),
   FigmaCompareScenario(
     id: 'swap-tor-blocked',

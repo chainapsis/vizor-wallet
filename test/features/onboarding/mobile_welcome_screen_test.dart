@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:ui' show SemanticsAction, Tristate;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +16,9 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_backdrop.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/welcome_button_tokens.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _app({
   String initialLocation = '/welcome',
@@ -21,7 +26,10 @@ Widget _app({
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
-    routes: mobileOnboardingRoutes(),
+    routes: [
+      ...mobileOnboardingRoutes(),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+    ],
   );
   return ProviderScope(
     overrides: [
@@ -29,7 +37,10 @@ Widget _app({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: theme, child: child!),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(disableAnimations: true),
+        child: AppTheme(data: theme, child: child!),
+      ),
     ),
   );
 }
@@ -80,6 +91,7 @@ String _assetNameForKey(WidgetTester tester, Key key) {
 }
 
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -87,7 +99,7 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('welcome shows the Get started call to action only', (
+  testWidgets('welcome exposes create and import without the method cards', (
     tester,
   ) async {
     await tester.pumpWidget(_app());
@@ -100,26 +112,6 @@ void main() {
     expect(find.text('Get started'), findsOneWidget);
     // The entry points moved to the method-selection step.
     expect(find.text('Create Wallet'), findsNothing);
-  });
-
-  testWidgets('hero illustration fills the whole screen', (tester) async {
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
-
-    // The full-bleed hero is the Positioned.fill background. Guards against
-    // the Stack collapsing to its min-height content column (which would
-    // shrink the hero into a band at the top).
-    final hero = find.byWidgetPredicate(
-      (w) =>
-          w is Image &&
-          w.image is AssetImage &&
-          (w.image as AssetImage).assetName.contains('mobile_welcome_hero'),
-    );
-    expect(hero, findsOneWidget);
-    final size = tester.getSize(hero);
-    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-    expect(size.width, screen.width);
-    expect(size.height, screen.height);
   });
 
   testWidgets(
@@ -383,5 +375,162 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('Back'), findsOneWidget);
+  });
+
+  Future<void> pump(
+    WidgetTester tester, {
+    String location = '/welcome',
+    AppThemeData theme = AppThemeData.light,
+  }) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_app(initialLocation: location, theme: theme));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'initial Welcome shows the current copy and accessible action sizes',
+    (tester) async {
+      await pump(tester);
+      expect(find.text('Shielded\nby default'), findsOneWidget);
+      for (final key in [
+        'mobile_welcome_get_started',
+        'mobile_welcome_import',
+        'mobile_welcome_redeem_card',
+      ]) {
+        final size = tester.getSize(find.byKey(ValueKey(key)));
+        expect(size.width, 240);
+        expect(size.height, greaterThanOrEqualTo(44));
+      }
+    },
+  );
+
+  testWidgets('Gift Card TODO is disabled with no tap action or destination', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await pump(tester);
+    final button = find.byKey(const ValueKey('mobile_welcome_redeem_card'));
+    final node = tester.getSemantics(button);
+    expect(node.flagsCollection.isButton, isTrue);
+    expect(node.flagsCollection.isEnabled, Tristate.isFalse);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Shielded\nby default'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('Get started keeps the existing creation method screen', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile_welcome_create')), findsOneWidget);
+  });
+
+  testWidgets('Import wallet keeps the existing import entry and can return', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
+    await tester.pumpAndSettle();
+    final router = GoRouter.of(tester.element(find.byType(MobileImportScreen)));
+    expect(
+      GoRouterState.of(
+        tester.element(find.byType(MobileImportScreen)),
+      ).uri.path,
+      '/import',
+    );
+    router.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('Shielded\nby default'), findsOneWidget);
+  });
+
+  testWidgets('add-account Welcome hides Gift Card and returns home', (
+    tester,
+  ) async {
+    await pump(tester, location: '/add-account');
+    expect(find.text('Activate Gift Card'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_welcome_redeem_card')),
+      findsNothing,
+    );
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('home-route'), findsOneWidget);
+  });
+
+  testWidgets('reduced motion uses the poster at the Figma video slot', (
+    tester,
+  ) async {
+    await pump(tester);
+    final poster = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is AssetImage &&
+          (widget.image as AssetImage).assetName == kMobileWelcomePosterAsset,
+    );
+    expect(poster, findsOneWidget);
+    expect(tester.getSize(poster).width, 394);
+  });
+
+  for (final theme in {
+    'light': AppThemeData.light,
+    'dark': AppThemeData.dark,
+  }.entries) {
+    testWidgets('keyboard focus keeps the fixed dark palette (${theme.key})', (
+      tester,
+    ) async {
+      await pump(tester, theme: theme.value);
+      for (final key in [
+        'mobile_welcome_get_started',
+        'mobile_welcome_import',
+      ]) {
+        final target = find.byKey(ValueKey(key));
+        final label = find
+            .descendant(of: target, matching: find.byType(Text))
+            .first;
+        Focus.of(tester.element(label)).requestFocus();
+        await tester.pumpAndSettle();
+        final opacity = find.descendant(
+          of: target,
+          matching: find.byType(AnimatedOpacity),
+        );
+        expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+        final ring = tester.widget<DecoratedBox>(
+          find.descendant(of: opacity, matching: find.byType(DecoratedBox)),
+        );
+        expect(
+          ((ring.decoration as ShapeDecoration).shape as OutlinedBorder)
+              .side
+              .color,
+          WelcomeButtonTokens.focusRing,
+        );
+      }
+    });
+  }
+
+  testWidgets('touch feedback retains label contrast and cancels cleanly', (
+    tester,
+  ) async {
+    await pump(tester);
+    for (final entry in {
+      'Get started': WelcomeButtonTokens.accentLabel,
+      'Import wallet': WelcomeButtonTokens.secondaryLabel,
+    }.entries) {
+      final label = find.text(entry.key);
+      final gesture = await tester.startGesture(tester.getCenter(label));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(
+        DefaultTextStyle.of(tester.element(label)).style.color,
+        entry.value,
+      );
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(find.text('Shielded\nby default'), findsOneWidget);
+    }
   });
 }
