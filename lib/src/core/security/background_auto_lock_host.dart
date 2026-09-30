@@ -24,12 +24,14 @@ class BackgroundAutoLockHost extends ConsumerStatefulWidget {
     required this.router,
     required this.child,
     this.timeout = kBackgroundAutoLockTimeout,
+    this.now,
     super.key,
   });
 
   final GoRouter router;
   final Widget child;
   final Duration timeout;
+  final DateTime Function()? now;
 
   @override
   ConsumerState<BackgroundAutoLockHost> createState() =>
@@ -46,10 +48,12 @@ class _BackgroundAutoLockHostState
     super.initState();
     if (kAppFormFactor != AppFormFactor.mobile) return;
     _listener = AppLifecycleListener(
-      onHide: () => _hiddenAt = DateTime.now(),
+      onHide: () => _hiddenAt = _now(),
       onShow: _onShow,
     );
   }
+
+  DateTime _now() => widget.now?.call() ?? DateTime.now();
 
   @override
   void dispose() {
@@ -60,11 +64,11 @@ class _BackgroundAutoLockHostState
   void _onShow() {
     final hiddenAt = _hiddenAt;
     _hiddenAt = null;
-    // Wall clock: monotonic clocks stop while the device sleeps.
-    if (hiddenAt == null ||
-        DateTime.now().difference(hiddenAt) < widget.timeout) {
-      return;
-    }
+    if (hiddenAt == null) return;
+    // Wall clock: monotonic clocks stop while the device sleeps. A clock moved
+    // backwards cannot prove a short absence, so it locks.
+    final away = _now().difference(hiddenAt);
+    if (!away.isNegative && away < widget.timeout) return;
 
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured ||

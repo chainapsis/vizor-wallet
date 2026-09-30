@@ -52,11 +52,19 @@ class _FakeWalletNotifier extends WalletNotifier {
   FutureOr<WalletState> build() => const WalletState(hasWallet: true);
 }
 
-Future<void> _sendToBackgroundAndBack(WidgetTester tester) async {
+Future<void> _sendToBackgroundAndBack(
+  WidgetTester tester, {
+  void Function()? whileAway,
+}) async {
   for (final state in const [
     AppLifecycleState.inactive,
     AppLifecycleState.hidden,
     AppLifecycleState.paused,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  whileAway?.call();
+  for (final state in const [
     AppLifecycleState.hidden,
     AppLifecycleState.inactive,
     AppLifecycleState.resumed,
@@ -73,7 +81,11 @@ void main() {
   late GoRouter router;
   late ProviderContainer container;
 
-  Future<void> pumpHost(WidgetTester tester, {required Duration timeout}) async {
+  Future<void> pumpHost(
+    WidgetTester tester, {
+    required Duration timeout,
+    DateTime Function()? now,
+  }) async {
     security = _FakeSecurityNotifier();
     account = _FakeAccountNotifier();
     sync = _FakeSyncNotifier();
@@ -103,6 +115,7 @@ void main() {
           builder: (_, child) => BackgroundAutoLockHost(
             router: router,
             timeout: timeout,
+            now: now,
             child: child!,
           ),
         ),
@@ -132,6 +145,21 @@ void main() {
 
     expect(security.locks, 0);
     expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('locks when the clock moved backwards while away', (
+    tester,
+  ) async {
+    var now = DateTime(2026, 9, 30, 12);
+    await pumpHost(tester, timeout: const Duration(hours: 1), now: () => now);
+
+    await _sendToBackgroundAndBack(
+      tester,
+      whileAway: () => now = now.subtract(const Duration(days: 1)),
+    );
+
+    expect(security.locks, 1);
+    expect(find.text('unlock'), findsOneWidget);
   });
 
   testWidgets('does not lock during a voting submission', (tester) async {
