@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
@@ -262,6 +263,44 @@ void main() {
     // are exactly what activityAmountTextForFormFactor yields for this raw text.
     expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
   });
+
+  testWidgets('an incomplete entry is marked, a complete one is not', (
+    tester,
+  ) async {
+    final complete = await mapRow(tester, _transaction(txKind: 'sent'));
+    expect(complete.amountSubtitle, isNull);
+
+    final provisional = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'unknown',
+        detailsComplete: false,
+        provisional: true,
+      ),
+    );
+    expect(provisional.amountSubtitle, kIncompleteDetailsText);
+
+    // A receive with every effect known can still lack a memo.
+    final missingDetails = await mapRow(
+      tester,
+      _transaction(txKind: 'received', detailsComplete: false),
+    );
+    expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
+  });
+
+  testWidgets('a failed entry keeps its refund note', (tester) async {
+    final row = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        minedHeight: BigInt.zero,
+        expiredUnmined: true,
+        provisional: true,
+      ),
+    );
+    expect(row.amountSubtitle, 'Refunded');
+  });
 }
 
 rust_sync.TransactionInfo _transaction({
@@ -270,6 +309,8 @@ rust_sync.TransactionInfo _transaction({
   bool expiredUnmined = false,
   BigInt? displayAmount,
   String displayPool = 'shielded',
+  bool detailsComplete = true,
+  bool provisional = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
@@ -278,8 +319,8 @@ rust_sync.TransactionInfo _transaction({
     accountBalanceDelta: 0,
     fee: BigInt.zero,
     feeState: rust_sync.TransactionFeeState.notApplicable,
-    detailsComplete: true,
-    provisional: false,
+    detailsComplete: detailsComplete,
+    provisional: provisional,
     blockTime: BigInt.from(1750000000),
     isTransparent: false,
     txKind: txKind,

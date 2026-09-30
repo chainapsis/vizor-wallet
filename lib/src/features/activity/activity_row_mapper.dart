@@ -9,6 +9,7 @@ import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
 import 'gift_card_activity_index.dart';
 import 'models/activity_row_data.dart';
+import 'transaction_completeness.dart';
 
 const _activityAmountPrivacyMaskLength = 3;
 
@@ -112,7 +113,11 @@ ActivityRowData buildTransactionActivityRow({
         : isInbound
         ? colors.text.positiveStrong
         : outgoingAmountColor(colors),
-    amountSubtitle: isFailed && amount != BigInt.zero ? 'Refunded' : null,
+    amountSubtitle: isFailed && amount != BigInt.zero
+        ? 'Refunded'
+        : transactionDetailsIncomplete(transaction)
+        ? kIncompleteDetailsText
+        : null,
     statusText: isFailed
         ? 'Failed'
         : isPending

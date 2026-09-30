@@ -36,6 +36,7 @@ import '../../send/widgets/send_status_content_view.dart';
 import '../../send/widgets/send_verify_address_overlay.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../gift_card_activity_index.dart';
+import '../transaction_completeness.dart';
 import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
@@ -305,6 +306,7 @@ class _ActivityTransactionStatusScreenState
     required bool privacyModeEnabled,
     GiftCardActivityMetadata? giftCard,
   }) {
+    if (tx != null && transactionFeeIsUnknown(tx)) return kUnknownFeeText;
     if (tx == null || tx.fee <= BigInt.zero) return '--';
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     return hideAmountIfPrivacyMode(
@@ -486,7 +488,7 @@ class _ActivityTransactionStatusScreenState
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
-        feeText: tx.fee > BigInt.zero
+        feeText: tx.fee > BigInt.zero || transactionFeeIsUnknown(tx)
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
         memoText: hasMemo ? memo : null,
@@ -631,7 +633,7 @@ class _ActivityTransactionStatusScreenState
         : tx.minedHeight == BigInt.zero
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
-    final feeText = tx.fee > BigInt.zero
+    final feeText = tx.fee > BigInt.zero || transactionFeeIsUnknown(tx)
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
 
@@ -699,6 +701,14 @@ class _ActivityTransactionStatusScreenState
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
+              if (transactionDetailsIncomplete(tx))
+                ReviewListRow(
+                  label: 'Details',
+                  value: 'Incomplete',
+                  trailingIconName: AppIcons.help,
+                  trailingIconColor: colors.text.secondary,
+                  trailingIconTooltip: kIncompleteDetailsHelpText,
+                ),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(

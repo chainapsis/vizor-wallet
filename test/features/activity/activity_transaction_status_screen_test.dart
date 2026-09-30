@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
@@ -911,6 +912,52 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a provisional debit shows an unknown fee and incomplete details',
+    (tester) async {
+      await _pumpScreen(
+        tester,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            feeState: rust_sync.TransactionFeeState.unknown,
+            detailsComplete: false,
+            provisional: true,
+          ),
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      expect(find.byType(SendStatusContentView), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsOneWidget);
+        expect(find.text('Details'), findsOneWidget);
+      expect(find.text('Incomplete'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a complete receipt has no incomplete-details row', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsNothing);
+    expect(find.text(kUnknownFeeText), findsNothing);
+  });
+
   testWidgets('shows the loading/not-found fallback when no tx is available', (
     tester,
   ) async {
@@ -1004,6 +1051,9 @@ rust_sync.TransactionInfo _transaction({
   BigInt? minedHeight,
   bool expiredUnmined = false,
   BigInt? fee,
+  rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
+  bool detailsComplete = true,
+  bool provisional = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -1011,9 +1061,9 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: fee ?? BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.known,
-    detailsComplete: true,
-    provisional: false,
+    feeState: feeState,
+    detailsComplete: detailsComplete,
+    provisional: provisional,
     blockTime: _blockTime,
     isTransparent: false,
     txKind: txKind,

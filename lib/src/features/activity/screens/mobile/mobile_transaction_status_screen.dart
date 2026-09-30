@@ -40,6 +40,7 @@ import '../../../swap/models/swap_fiat_value_formatting.dart';
 import '../../activity_row_mapper.dart'
     show formatActivityTimestamp, giftCardActivityTitle;
 import '../../gift_card_activity_index.dart';
+import '../../transaction_completeness.dart';
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -702,6 +703,8 @@ class _MobileTransactionStatusScreenState
                           giftCard: giftCard,
                           privacyModeEnabled: privacyModeEnabled,
                         ),
+                        detailsIncomplete:
+                            tx != null && transactionDetailsIncomplete(tx),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -754,12 +757,11 @@ class _MobileTransactionStatusScreenState
     GiftCardActivityMetadata? giftCard,
   }) {
     // Receives, including redeemed cards, show no network fee.
-    if (tx == null ||
-        tx.fee <= BigInt.zero ||
-        tx.txKind == 'received' ||
-        tx.txKind == 'receiving') {
+    if (tx == null || tx.txKind == 'received' || tx.txKind == 'receiving') {
       return null;
     }
+    if (transactionFeeIsUnknown(tx)) return kUnknownFeeText;
+    if (tx.fee <= BigInt.zero) return null;
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     if (privacyModeEnabled) {
       return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
@@ -1005,6 +1007,7 @@ class _DetailCard extends StatelessWidget {
     required this.onOpenExplorer,
     required this.feeText,
     this.isCardCreation = false,
+    this.detailsIncomplete = false,
   });
 
   final _TxPhase phase;
@@ -1018,6 +1021,7 @@ class _DetailCard extends StatelessWidget {
   final VoidCallback onOpenExplorer;
   final String? feeText;
   final bool isCardCreation;
+  final bool detailsIncomplete;
 
   @override
   Widget build(BuildContext context) {
@@ -1081,6 +1085,25 @@ class _DetailCard extends StatelessWidget {
               onTap: onOpenExplorer,
             ),
           ),
+          if (detailsIncomplete) ...[
+            const SizedBox(height: AppSpacing.xs),
+            _ListRow(
+              key: const ValueKey('mobile_tx_status_details_incomplete'),
+              label: 'Details',
+              value: _ValueWithIcon(
+                text: 'Incomplete',
+                iconName: AppIcons.help,
+                iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
+                onTap: () => unawaited(
+                  showMobileTxFeeInfoSheet(
+                    context,
+                    title: 'Details incomplete',
+                    description: kIncompleteDetailsHelpText,
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (feeText != null) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default` (#d4d4d4 light).

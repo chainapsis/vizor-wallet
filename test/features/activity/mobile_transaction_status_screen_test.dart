@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -84,6 +85,9 @@ rust_sync.TransactionInfo _tx({
   String displayPool = 'shielded',
   BigInt? blockTime,
   BigInt? createdTime,
+  rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
+  bool detailsComplete = true,
+  bool provisional = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -91,9 +95,9 @@ rust_sync.TransactionInfo _tx({
     expiredUnmined: expired,
     accountBalanceDelta: 0,
     fee: fee ?? BigInt.from(15000),
-    feeState: rust_sync.TransactionFeeState.known,
-    detailsComplete: true,
-    provisional: false,
+    feeState: feeState,
+    detailsComplete: detailsComplete,
+    provisional: provisional,
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: false,
     txKind: kind,
@@ -324,9 +328,7 @@ void main() {
   });
 
   for (final fee in [0, 15000]) {
-    testWidgets('redeemed card shows no fee row with fee $fee', (
-      tester,
-    ) async {
+    testWidgets('redeemed card shows no fee row with fee $fee', (tester) async {
       await tester.binding.setSurfaceSize(const Size(393, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -619,6 +621,45 @@ void main() {
     expect(find.text('0.00015 ZEC'), findsOneWidget);
     expect(find.text('Timestamp'), findsOneWidget);
     expect(find.text('efcdab89...67452301'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a provisional debit shows an unknown fee and incomplete details',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _tx(
+            fee: BigInt.zero,
+            displayPool: 'unknown',
+            feeState: rust_sync.TransactionFeeState.unknown,
+            detailsComplete: false,
+            provisional: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        findsOneWidget,
+      );
+      expect(find.text('Incomplete'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a complete receipt has no incomplete-details row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_tx()));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsNothing,
+    );
+    expect(find.text(kUnknownFeeText), findsNothing);
   });
 
   testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {
