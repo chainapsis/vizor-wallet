@@ -797,6 +797,40 @@ void main() {
       expect(biometric.reads, 1);
     });
 
+    testWidgets('auto-prompt waits until the app is active again', (
+      tester,
+    ) async {
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
+      await AppSecureStore.instance.writePlain(
+        kBiometricUnlockEnabledKey,
+        'true',
+      );
+      final biometric = FakeBiometricUnlock(
+        avail: faceAvailability,
+        escrow: '999999',
+      )..readCompleter = Completer<String>();
+      // Returning from the background: iOS reports inactive before the
+      // surface is shown again.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      addTearDown(
+        () => tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        ),
+      );
+
+      await tester.pumpWidget(_app(biometric: biometric));
+      await _pumpUntilBiometricRead(tester, biometric);
+
+      expect(find.byType(MobileBiometricSignInView), findsOneWidget);
+      expect(biometric.reads, 0);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _pumpUntilBiometricRead(tester, biometric);
+
+      expect(biometric.reads, 1);
+    });
+
     testWidgets('cancel falls back to the numpad with a retry key', (
       tester,
     ) async {
