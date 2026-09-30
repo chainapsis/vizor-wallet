@@ -32,6 +32,9 @@ String friendlyShieldBalanceError(Object error) {
   if (isTransparentLedgerNeedsNewerBuildError(message)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
+  if (isTransparentRecoveryIncompleteError(message)) {
+    return transparentRecoveryIncompleteMessage;
+  }
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";

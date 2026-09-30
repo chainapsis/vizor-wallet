@@ -48,6 +48,7 @@ import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
+import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
@@ -312,8 +313,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+    final transparentBalance = TransparentBalanceDisplay.of(sync);
     final canShieldTransparentBalance =
         sync.canShieldTransparentBalance && !isMigrationRequired;
     final isImportingForBackground =
@@ -394,8 +394,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 migratingBalanceText: formatZecAmount(migratingBalance),
                 waitingForMigrationConfirmation:
                     waitingForMigrationConfirmation,
-                transparentBalanceText: _formatZec(transparentBalance),
-                hasTransparentBalance: transparentBalance > BigInt.zero,
+                transparentBalanceText: transparentBalance.text(_formatZec),
+                hasTransparentBalance: transparentBalance.visible,
                 canShieldBalance: canShieldTransparentBalance,
                 isShieldingBalance: _isShieldingBalance,
                 shieldBalanceError: _shieldBalanceError,

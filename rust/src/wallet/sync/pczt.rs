@@ -36,7 +36,9 @@
 //!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
 //!    shielded or transparent signatures are rejected before persistence.
 //!
-//! 2. **Broadcast precedes persistence.** A definite lightwalletd rejection
+//! 2. **Authority is checked before broadcast; broadcast precedes persistence.**
+//!    Transparent input authorization holds a SQLite writer reservation through
+//!    each bounded submission so recovery cannot revoke it between check and send. A definite lightwalletd rejection
 //!    must leave that PCZT out of the wallet DB. After each ordered broadcast
 //!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
 //!    a later store failure rolls back every earlier write in that prefix.
@@ -1727,17 +1729,31 @@ async fn store_and_broadcast_pczts_inner(
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
             }
-            let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
-                &mut client,
-                &item.extracted.raw_tx,
+            let earlier = prepared[..index]
+                .iter()
+                .map(|p| &p.extracted.tx)
+                .collect::<Vec<_>>();
+            let attempt = match super::hardware_authority::dispatch(
+                db_path,
+                network,
+                &item.extracted.tx,
+                &earlier,
+                latest.height,
+                crate::wallet::sync_engine::send_transaction_with_status(
+                    &mut client,
+                    &item.extracted.raw_tx,
+                ),
             )
             .await
             {
-                Ok(response) => match super::broadcast::send_response_rejection_error(&response) {
-                    Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
-                    None => PcztBroadcastAttempt::Accepted,
-                },
-                Err(error) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Ok(Ok(response)) => {
+                    match super::broadcast::send_response_rejection_error(&response) {
+                        Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
+                        None => PcztBroadcastAttempt::Accepted,
+                    }
+                }
+                Ok(Err(error)) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Err(error) => PcztBroadcastAttempt::RouteUnavailable(error),
             };
             match pczt_broadcast_step(index, prepared.len(), attempt) {
                 PcztBroadcastStep::Continue => {}
@@ -2244,11 +2260,15 @@ pub async fn extract_and_broadcast_pczt(
         return Err(error);
     }
 
-    let resp = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
-        &tx_bytes,
+    let resp = match super::hardware_authority::dispatch(
+        db_path,
+        network,
+        &tx,
+        &[],
+        latest.height,
+        crate::wallet::sync_engine::send_transaction_with_status(&mut client, &tx_bytes),
     )
-    .await
+    .await?
     {
         Ok(resp) => resp,
         // Once SendTransaction has started, a gRPC status is not proof that

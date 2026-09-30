@@ -14347,6 +14347,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentBalanceAuthority dco_decode_transparent_balance_authority(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransparentBalanceAuthority.values[raw as int];
+  }
+
+  @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -14515,28 +14523,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
-      transparent: dco_decode_u_64(arr[1]),
-      sapling: dco_decode_u_64(arr[2]),
-      orchard: dco_decode_u_64(arr[3]),
-      ironwood: dco_decode_u_64(arr[4]),
-      transparentLocked: dco_decode_u_64(arr[5]),
-      saplingLocked: dco_decode_u_64(arr[6]),
-      orchardLocked: dco_decode_u_64(arr[7]),
-      ironwoodLocked: dco_decode_u_64(arr[8]),
-      transparentPending: dco_decode_u_64(arr[9]),
-      saplingPending: dco_decode_u_64(arr[10]),
-      orchardPending: dco_decode_u_64(arr[11]),
-      ironwoodPending: dco_decode_u_64(arr[12]),
-      changePendingConfirmation: dco_decode_u_64(arr[13]),
-      valuePendingSpendability: dco_decode_u_64(arr[14]),
-      uneconomicValue: dco_decode_u_64(arr[15]),
-      spendable: dco_decode_u_64(arr[16]),
-      locked: dco_decode_u_64(arr[17]),
-      total: dco_decode_u_64(arr[18]),
+      transparentAuthority: dco_decode_transparent_balance_authority(arr[1]),
+      transparentLastKnown: dco_decode_opt_box_autoadd_u_64(arr[2]),
+      transparent: dco_decode_u_64(arr[3]),
+      sapling: dco_decode_u_64(arr[4]),
+      orchard: dco_decode_u_64(arr[5]),
+      ironwood: dco_decode_u_64(arr[6]),
+      transparentLocked: dco_decode_u_64(arr[7]),
+      saplingLocked: dco_decode_u_64(arr[8]),
+      orchardLocked: dco_decode_u_64(arr[9]),
+      ironwoodLocked: dco_decode_u_64(arr[10]),
+      transparentPending: dco_decode_u_64(arr[11]),
+      saplingPending: dco_decode_u_64(arr[12]),
+      orchardPending: dco_decode_u_64(arr[13]),
+      ironwoodPending: dco_decode_u_64(arr[14]),
+      changePendingConfirmation: dco_decode_u_64(arr[15]),
+      valuePendingSpendability: dco_decode_u_64(arr[16]),
+      uneconomicValue: dco_decode_u_64(arr[17]),
+      spendable: dco_decode_u_64(arr[18]),
+      locked: dco_decode_u_64(arr[19]),
+      total: dco_decode_u_64(arr[20]),
     );
   }
 
@@ -19254,6 +19264,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentBalanceAuthority sse_decode_transparent_balance_authority(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransparentBalanceAuthority.values[inner];
+  }
+
+  @protected
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_requestType = sse_decode_String(deserializer);
@@ -19456,6 +19475,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance sse_decode_wallet_balance(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_availability = sse_decode_wallet_balance_availability(deserializer);
+    var var_transparentAuthority = sse_decode_transparent_balance_authority(
+      deserializer,
+    );
+    var var_transparentLastKnown = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
@@ -19476,6 +19501,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
       availability: var_availability,
+      transparentAuthority: var_transparentAuthority,
+      transparentLastKnown: var_transparentLastKnown,
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
@@ -23423,6 +23450,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_transparent_balance_authority(
+    TransparentBalanceAuthority self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_tx_data_request(
     TxDataRequest self,
     SseSerializer serializer,
@@ -23584,6 +23620,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_wallet_balance(WalletBalance self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_wallet_balance_availability(self.availability, serializer);
+    sse_encode_transparent_balance_authority(
+      self.transparentAuthority,
+      serializer,
+    );
+    sse_encode_opt_box_autoadd_u_64(self.transparentLastKnown, serializer);
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);

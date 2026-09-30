@@ -1,8 +1,9 @@
 //! A deterministic in-memory [`RecoverySource`] for tests.
 //!
 //! It answers from a configurable set of mined receives and spends. Its revisions use
-//! [`FIXTURE_SOURCE`] as their source id; a fixture revision can never qualify
-//! a production account.
+//! [`FIXTURE_SOURCE`] as their source id. Only the library's test-only hook
+//! can qualify one ([`FixtureSource::qualified_in`]), so a fixture revision can
+//! never qualify a production account.
 
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
@@ -17,6 +18,10 @@ use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::{RecoverySource, SourceBounds, SourceError, SourceRequest, SourceResult};
+use crate::wallet::{
+    db::{open_wallet_db_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT},
+    network::WalletNetwork,
+};
 
 pub(crate) const FIXTURE_SOURCE: &[u8] = b"vizor-fixture";
 const PAGE: &[u8] = b"fixture-page";
@@ -44,6 +49,8 @@ struct State {
     /// Run one per call, before answering: a test's concurrent change.
     hooks: VecDeque<Hook>,
     revision: Option<RecoveryRevision>,
+    /// The wallet in which each new revision is qualified, as a verifier would.
+    qualify_in: Option<(String, WalletNetwork)>,
     calls: usize,
     bounds: Option<SourceBounds>,
 }
@@ -62,6 +69,7 @@ impl FixtureSource {
                 failure: None,
                 hooks: VecDeque::new(),
                 revision: None,
+                qualify_in: None,
                 calls: 0,
                 bounds: None,
             }),
@@ -108,6 +116,12 @@ impl FixtureSource {
         self.with(|state| state.published = height.map(BlockHeight::from_u32))
     }
 
+    /// Follows a reorg: later answers anchor to blocks hashed by `hash`, under
+    /// a new revision.
+    pub(crate) fn rehash(&self, hash: fn(u32) -> BlockHash) -> &Self {
+        self.with(|state| state.hash = hash)
+    }
+
     pub(crate) fn split_pages(&self) -> &Self {
         self.with(|state| state.split_pages = true)
     }
@@ -119,6 +133,12 @@ impl FixtureSource {
     /// Runs `hook` at the start of a later call, one hook per call in order.
     pub(crate) fn on_call(&self, hook: impl FnOnce() + Send + 'static) -> &Self {
         self.with(|state| state.hooks.push_back(Box::new(hook)))
+    }
+
+    /// Qualifies each new revision in the wallet at `path` before answering
+    /// with it, through the library's test-only hook.
+    pub(crate) fn qualified_in(&self, path: &str, network: WalletNetwork) -> &Self {
+        self.with(|state| state.qualify_in = Some((path.to_owned(), network)))
     }
 
     pub(crate) fn calls(&self) -> usize {
@@ -256,7 +276,7 @@ impl State {
             height: anchor.height,
             hash: anchor.hash,
         };
-        match &self.revision {
+        let revision = match &self.revision {
             Some(revision) if revision.publication == publication => revision.clone(),
             previous => {
                 let lineage = previous.as_ref().map_or(1, |r| r.lineage + 1);
@@ -270,6 +290,17 @@ impl State {
                 self.revision = Some(revision.clone());
                 revision
             }
+        };
+        // Replacements may advance lineage without changing the publication
+        // anchor. Every returned revision still needs trusted qualification.
+        if let Some((path, network)) = &self.qualify_in {
+            let mut db = open_wallet_db_with_timeout(path, *network, SYNC_DB_BUSY_TIMEOUT)
+                .expect("open fixture wallet");
+            with_wallet_db_write_lock("test.transparent_ledger.qualify", || {
+                db.qualify_transparent_revision(&revision)
+            })
+            .expect("qualify fixture revision");
         }
+        revision
     }
 }

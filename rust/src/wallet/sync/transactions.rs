@@ -24,7 +24,13 @@ use std::{
 
 use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
-use zcash_client_backend::data_api::{WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{
+    transparent_ledger::{
+        TransparentAuthority, TransparentLedgerBalance, TransparentLedgerMode,
+        TransparentLedgerRead, TransparentLedgerSnapshot,
+    },
+    Balance, WalletRead, WalletWrite,
+};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
@@ -53,9 +59,26 @@ pub(crate) enum WalletBalanceAvailability {
     AccountUnavailable,
 }
 
+/// What the transparent fields of a [`WalletBalance`] represent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransparentBalanceAuthority {
+    /// Current authorized amounts, from public discovery or an active private
+    /// ledger complete through the chain tip.
+    Current,
+    /// No current authority. The transparent fields are zero because nothing
+    /// is spendable; `transparent_last_known` holds the prior amount, which is
+    /// informational only.
+    LastKnown,
+    /// No current authority and no prior amount. Unknown, not zero.
+    Unavailable,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WalletBalance {
     pub availability: WalletBalanceAvailability,
+    pub transparent_authority: TransparentBalanceAuthority,
+    /// The prior transparent total when `transparent_authority` is `LastKnown`.
+    pub transparent_last_known: Option<u64>,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -76,23 +99,77 @@ pub(crate) struct WalletBalance {
 impl WalletBalance {
     fn unavailable(availability: WalletBalanceAvailability) -> Self {
         debug_assert_ne!(availability, WalletBalanceAvailability::Available);
+        Self::from_pools(
+            availability,
+            TransparentBalanceAuthority::Unavailable,
+            None,
+            PoolBalance::default(),
+            [PoolBalance::default(); 3],
+        )
+    }
+
+    /// Assembles a balance from one transparent and three shielded pools
+    /// (Sapling, Orchard, Ironwood), deriving the cross-pool totals.
+    fn from_pools(
+        availability: WalletBalanceAvailability,
+        transparent_authority: TransparentBalanceAuthority,
+        transparent_last_known: Option<u64>,
+        transparent: PoolBalance,
+        [sapling, orchard, ironwood]: [PoolBalance; 3],
+    ) -> Self {
+        let pools = [transparent, sapling, orchard, ironwood];
         Self {
             availability,
-            transparent: 0,
-            sapling: 0,
-            orchard: 0,
-            ironwood: 0,
-            transparent_locked: 0,
-            sapling_locked: 0,
-            orchard_locked: 0,
-            ironwood_locked: 0,
-            transparent_pending: 0,
-            sapling_pending: 0,
-            orchard_pending: 0,
-            ironwood_pending: 0,
-            change_pending_confirmation: 0,
-            value_pending_spendability: 0,
-            uneconomic_value: 0,
+            transparent_authority,
+            transparent_last_known,
+            transparent: transparent.spendable,
+            sapling: sapling.spendable,
+            orchard: orchard.spendable,
+            ironwood: ironwood.spendable,
+            transparent_locked: transparent.locked,
+            sapling_locked: sapling.locked,
+            orchard_locked: orchard.locked,
+            ironwood_locked: ironwood.locked,
+            transparent_pending: transparent.change + transparent.pending,
+            sapling_pending: sapling.change + sapling.pending,
+            orchard_pending: orchard.change + orchard.pending,
+            ironwood_pending: ironwood.change + ironwood.pending,
+            change_pending_confirmation: pools.iter().map(|p| p.change).sum(),
+            value_pending_spendability: pools.iter().map(|p| p.pending).sum(),
+            uneconomic_value: pools.iter().map(|p| p.uneconomic).sum(),
+        }
+    }
+}
+
+/// One pool's balance categories, in zatoshis.
+#[derive(Clone, Copy, Debug, Default)]
+struct PoolBalance {
+    spendable: u64,
+    locked: u64,
+    change: u64,
+    pending: u64,
+    uneconomic: u64,
+}
+
+impl PoolBalance {
+    fn of(balance: &Balance) -> Self {
+        Self {
+            spendable: u64::from(balance.spendable_value()),
+            locked: u64::from(balance.locked_value()),
+            change: u64::from(balance.change_pending_confirmation()),
+            pending: u64::from(balance.value_pending_spendability()),
+            uneconomic: u64::from(balance.uneconomic_value()),
+        }
+    }
+
+    fn of_transparent(balance: &TransparentLedgerBalance) -> Self {
+        let (regular, coinbase) = (Self::of(&balance.regular), Self::of(&balance.coinbase));
+        Self {
+            spendable: regular.spendable + coinbase.spendable,
+            locked: regular.locked + coinbase.locked,
+            change: regular.change + coinbase.change,
+            pending: regular.pending + coinbase.pending,
+            uneconomic: regular.uneconomic + coinbase.uneconomic,
         }
     }
 }
@@ -120,6 +197,12 @@ pub(crate) fn get_wallet_balance(
 /// missing from the summary yields `AccountUnavailable` rather than an
 /// error, matching the single-account behaviour, so one unknown account
 /// cannot fail the whole batch.
+///
+/// Under a private transparent ledger mode the summary carries no
+/// transparent funds, so the transparent fields come from each account's
+/// ledger snapshot: its authorized amounts, or none with the last-known
+/// amount when authority is unavailable. Durable private policy is respected
+/// even when this build opens a Public handle after restart.
 pub(crate) fn get_wallet_balances(
     db_path: &str,
     network: WalletNetwork,
@@ -130,69 +213,88 @@ pub(crate) fn get_wallet_balances(
         .map(|uuid| parse_account_uuid(uuid))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let summary = crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    // Read durable policy, summary, and authority from one snapshot. A reopened
+    // Public handle must not label a private-policy summary's suppressed zero
+    // as current funds. Configuring this read handle does not change policy.
+    db.transactionally(|db| {
+        match db.applied_transparent_policy() {
+            Err(
+                zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
+                    applied: TransparentLedgerMode::PrivateRequired,
+                    ..
+                },
+            ) => db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired),
+            result => {
+                result?;
+            }
+        }
+        let summary = db.get_wallet_summary(crate::wallet::confirmations_policy())?;
 
-    let Some(summary) = summary else {
-        return Ok(target_ids
+        let Some(summary) = summary else {
+            return Ok(target_ids
+                .iter()
+                .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
+                .collect());
+        };
+
+        target_ids
             .iter()
-            .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
-            .collect());
-    };
+            .map(|target_id| {
+                let Some(b) = summary.account_balances().get(target_id) else {
+                    return Ok(WalletBalance::unavailable(
+                        WalletBalanceAvailability::AccountUnavailable,
+                    ));
+                };
+                let shielded = [
+                    PoolBalance::of(b.sapling_balance()),
+                    PoolBalance::of(b.orchard_balance()),
+                    PoolBalance::of(b.ironwood_balance()),
+                ];
+                let (authority, last_known, transparent) =
+                    ledger_transparent_balance(&db.transparent_ledger_snapshot(
+                        *target_id,
+                        crate::wallet::confirmations_policy(),
+                    )?);
+                Ok(WalletBalance::from_pools(
+                    WalletBalanceAvailability::Available,
+                    authority,
+                    last_known,
+                    transparent,
+                    shielded,
+                ))
+            })
+            .collect::<Result<Vec<_>, zcash_client_sqlite::error::SqliteClientError>>()
+    })
+    .map_err(|e| format!("Failed to read wallet balances: {e}"))
+}
 
-    Ok(target_ids
-        .iter()
-        .map(
-            |target_id| match summary.account_balances().get(target_id) {
-                Some(b) => {
-                    let transparent_change =
-                        u64::from(b.unshielded_balance().change_pending_confirmation());
-                    let sapling_change =
-                        u64::from(b.sapling_balance().change_pending_confirmation());
-                    let orchard_change =
-                        u64::from(b.orchard_balance().change_pending_confirmation());
-                    let ironwood_change =
-                        u64::from(b.ironwood_balance().change_pending_confirmation());
-                    let transparent_pending =
-                        u64::from(b.unshielded_balance().value_pending_spendability());
-                    let sapling_pending =
-                        u64::from(b.sapling_balance().value_pending_spendability());
-                    let orchard_pending =
-                        u64::from(b.orchard_balance().value_pending_spendability());
-                    let ironwood_pending =
-                        u64::from(b.ironwood_balance().value_pending_spendability());
-
-                    WalletBalance {
-                        availability: WalletBalanceAvailability::Available,
-                        transparent: u64::from(b.unshielded_balance().spendable_value()),
-                        sapling: u64::from(b.sapling_balance().spendable_value()),
-                        orchard: u64::from(b.orchard_balance().spendable_value()),
-                        ironwood: u64::from(b.ironwood_balance().spendable_value()),
-                        transparent_locked: u64::from(b.unshielded_balance().locked_value()),
-                        sapling_locked: u64::from(b.sapling_balance().locked_value()),
-                        orchard_locked: u64::from(b.orchard_balance().locked_value()),
-                        ironwood_locked: u64::from(b.ironwood_balance().locked_value()),
-                        transparent_pending: transparent_change + transparent_pending,
-                        sapling_pending: sapling_change + sapling_pending,
-                        orchard_pending: orchard_change + orchard_pending,
-                        ironwood_pending: ironwood_change + ironwood_pending,
-                        change_pending_confirmation: transparent_change
-                            + sapling_change
-                            + orchard_change
-                            + ironwood_change,
-                        value_pending_spendability: transparent_pending
-                            + sapling_pending
-                            + orchard_pending
-                            + ironwood_pending,
-                        uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
-                            + u64::from(b.sapling_balance().uneconomic_value())
-                            + u64::from(b.orchard_balance().uneconomic_value())
-                            + u64::from(b.ironwood_balance().uneconomic_value()),
-                    }
-                }
-                None => WalletBalance::unavailable(WalletBalanceAvailability::AccountUnavailable),
-            },
-        )
-        .collect())
+/// The transparent part of a balance under a private ledger mode.
+fn ledger_transparent_balance<A>(
+    snapshot: &TransparentLedgerSnapshot<A>,
+) -> (TransparentBalanceAuthority, Option<u64>, PoolBalance) {
+    match (snapshot.authority, &snapshot.authorized) {
+        (TransparentAuthority::Public | TransparentAuthority::Private, Some(authorized)) => (
+            TransparentBalanceAuthority::Current,
+            None,
+            PoolBalance::of_transparent(authorized),
+        ),
+        _ => match &snapshot.last_known {
+            Some(last_known) => (
+                TransparentBalanceAuthority::LastKnown,
+                Some(
+                    u64::from(last_known.balance.regular.total())
+                        + u64::from(last_known.balance.coinbase.total()),
+                ),
+                PoolBalance::default(),
+            ),
+            None => (
+                TransparentBalanceAuthority::Unavailable,
+                None,
+                PoolBalance::default(),
+            ),
+        },
+    }
 }
 
 // ======================== Transaction Enhancement Requests ========================
