@@ -60,6 +60,11 @@ impl EnhancementPolicy {
         self.private
     }
 
+    /// The transparent ledger mode captured for this operation.
+    pub(crate) fn transparent_mode(self) -> TransparentLedgerMode {
+        self.transparent
+    }
+
     pub(crate) fn status_mode(self) -> TransactionStatusMode {
         if self.private {
             TransactionStatusMode::Private

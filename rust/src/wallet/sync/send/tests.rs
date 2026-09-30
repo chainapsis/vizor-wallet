@@ -4430,35 +4430,29 @@ fn gift_card_batch_ledger_limits_orchard_actions() {
     );
 }
 
-/// Records public status observations and runs `on_observe` as each one
-/// is dispatched.
-struct HookedStatusSource {
+/// Records the status observations actually sent.
+struct RecordingStatusSource {
     observed: std::sync::Arc<std::sync::Mutex<Vec<TxId>>>,
-    on_observe: std::sync::Arc<dyn Fn() + Send + Sync>,
 }
-impl zakura_transaction_status::StatusSource for HookedStatusSource {
+impl zakura_transaction_status::StatusSource for RecordingStatusSource {
     type Session = Self;
     async fn open(self) -> Result<Self, zakura_transaction_status::StatusError> {
         Ok(self)
     }
 }
-impl zakura_transaction_status::StatusSession for HookedStatusSource {
+impl zakura_transaction_status::StatusSession for RecordingStatusSource {
     async fn observe(
         &mut self,
         request: zakura_transaction_status::StatusRequest,
     ) -> Result<zakura_transaction_status::StatusObservation, zakura_transaction_status::StatusError>
     {
         self.observed.lock().unwrap().push(request.txid);
-        (self.on_observe)();
         Ok(zakura_transaction_status::StatusObservation::NotFound)
     }
 }
 
 #[tokio::test]
 async fn policy_transition_withholds_remaining_migration_status_checks() {
-    use zcash_client_backend::data_api::transparent_ledger::{
-        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite,
-    };
     let network = WalletNetwork::Regtest;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
@@ -4469,7 +4463,6 @@ async fn policy_transition_withholds_remaining_migration_status_checks() {
     let policy = sync_engine::enhancement::EnhancementPolicy::for_preference(network, false);
     let mut status_db = super::super::open_wallet_db_for_read(&path, network).unwrap();
     policy.configure_db(&mut status_db);
-    let lookups = policy.public_transparent_lookups(&status_db).unwrap();
     let candidates: Vec<_> = [0x41u8, 0x42]
         .iter()
         .map(
@@ -4481,52 +4474,52 @@ async fn policy_transition_withholds_remaining_migration_status_checks() {
         )
         .collect();
     let txids = [0x41u8, 0x42].map(|b| TxId::from_bytes([b; 32]));
-    // PrivateShadow keeps public authority; only the new generation revokes.
+    // Every dispatch lands a transition that bumps the generation; the modes
+    // keep public authority, so only the generation revokes.
+    let _transitions = sync_engine::test_lwd::transition_on_every_dispatch(&path, network);
     let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let transition_path = path.clone();
-    let public = HookedStatusSource {
-        observed: observed.clone(),
-        // Alternates modes so every observation bumps the generation.
-        on_observe: std::sync::Arc::new(move || {
-            let mut db = crate::wallet::db::open_wallet_db_with_timeout(
-                &transition_path,
-                network,
-                crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
-            )
-            .unwrap();
-            let next = match db.applied_transparent_policy().unwrap().mode {
-                TransparentLedgerMode::PrivateShadow => TransparentLedgerMode::Public,
-                _ => TransparentLedgerMode::PrivateShadow,
-            };
-            db.apply_transparent_policy(next).unwrap();
-        }),
+    let gated_reader = |gate: &sync_engine::TransparentLookupGate| {
+        sync_engine::enhancement::status::RoutedStatusReader::new(
+            sync_engine::enhancement::status::gated(
+                RecordingStatusSource {
+                    observed: observed.clone(),
+                },
+                gate.clone(),
+            ),
+            RecordingStatusSource {
+                observed: Default::default(),
+            },
+        )
     };
-    let private = HookedStatusSource {
-        observed: Default::default(),
-        on_observe: std::sync::Arc::new(|| {}),
+    let gate = |status_db: &super::super::WalletDatabase| {
+        sync_engine::TransparentLookupGate::for_wallet(
+            policy.public_transparent_lookups(status_db).unwrap(),
+            &path,
+            network,
+        )
+        .unwrap()
     };
-    let mut reader = sync_engine::enhancement::status::RoutedStatusReader::new(public, private);
 
+    let first = gate(&status_db);
     let result = verify_unbroadcast_migration_txids_absent(
-        &mut reader,
+        &mut gated_reader(&first),
         &status_db,
-        lookups,
+        &first,
         &candidates,
         &txids,
         200,
     )
     .await;
-
     assert!(result.unwrap_err().contains("private transparent policy"));
     assert_eq!(*observed.lock().unwrap(), vec![txids[0]]);
 
     // A single candidate answered absent after a transition cannot retire the
     // run either: there is no later candidate to notice the revocation.
-    let lookups = policy.public_transparent_lookups(&status_db).unwrap();
+    let second = gate(&status_db);
     let result = verify_unbroadcast_migration_txids_absent(
-        &mut reader,
+        &mut gated_reader(&second),
         &status_db,
-        lookups,
+        &second,
         &candidates[..1],
         &txids[..1],
         200,
