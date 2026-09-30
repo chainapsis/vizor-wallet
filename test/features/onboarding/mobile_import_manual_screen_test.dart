@@ -235,18 +235,39 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('method_import')));
     await tester.pumpAndSettle();
+    final entryProgress = tester
+        .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+        .widthFactor!;
     await tester.tap(
       find.byKey(const ValueKey('mobile_import_enter_manually')),
     );
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+          .widthFactor,
+      entryProgress,
+    );
     await tester.tap(find.byKey(const ValueKey('mobile_import_manual_finish')));
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+          .widthFactor,
+      greaterThan(entryProgress),
+    );
     await tester.tap(find.byKey(const ValueKey('mobile_import_review_clear')));
     await tester.pumpAndSettle();
 
     expect(find.text('Import Wallet'), findsOneWidget);
     expect(find.text('Enter your Secret Passphrase'), findsNothing);
     expect(find.text('Review Import'), findsNothing);
+    expect(
+      tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+          .widthFactor,
+      entryProgress,
+    );
 
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();

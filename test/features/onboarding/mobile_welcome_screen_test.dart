@@ -8,8 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
@@ -23,6 +25,8 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 Widget _app({
   String initialLocation = '/welcome',
   AppThemeData theme = AppThemeData.light,
+  String network = 'main',
+  TargetPlatform platform = TargetPlatform.iOS,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -33,7 +37,21 @@ Widget _app({
   );
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appBootstrapProvider.overrideWithValue(
+        AppBootstrapState(
+          initialLocation: initialLocation,
+          initialAccountState: AppBootstrapState.empty.initialAccountState,
+          initialSyncSnapshot: AppSyncSnapshot.empty,
+          network: network,
+          rpcEndpointConfig: defaultRpcEndpointConfig(network),
+          themeMode: ThemeMode.system,
+          privacyModeEnabled: false,
+          isPasswordConfigured: false,
+          isUnlocked: false,
+          passwordRotationRecoveryFailed: false,
+        ),
+      ),
+      ledgerTargetPlatformProvider.overrideWithValue(platform),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -146,11 +164,46 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await _openMethodSelection(tester);
+    final selectionProgress = _stepsProgress(tester);
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_passphrase')));
     await tester.pumpAndSettle();
     expect(find.byType(MobileImportScreen), findsOneWidget);
+    expect(_stepsProgress(tester), greaterThan(selectionProgress));
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(_stepsProgress(tester), selectionProgress);
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    for (final network in ['main', 'test']) {
+      testWidgets(
+        '$platform $network hardware summary matches its destination',
+        (tester) async {
+          await tester.pumpWidget(_app(network: network, platform: platform));
+          await tester.pumpAndSettle();
+          await _openMethodSelection(tester);
+          expect(
+            find.text(
+              network == 'main'
+                  ? 'Ledger or Keystone wallet'
+                  : 'Keystone wallet',
+            ),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_import_hardware')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Connect Keystone'), findsOneWidget);
+          expect(
+            find.text('Connect Ledger'),
+            network == 'main' ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
+  }
 
   testWidgets('link desktop pushes the wallet link intro step', (tester) async {
     await tester.pumpWidget(_app());
@@ -284,6 +337,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
       await tester.pumpAndSettle();
+      final selectionProgress = _stepsProgress(tester);
       for (final choice in [
         (key: 'mobile_import_passphrase', screen: MobileImportScreen),
         (
@@ -295,9 +349,13 @@ void main() {
         await tester.tap(find.byKey(ValueKey(choice.key)));
         await tester.pumpAndSettle();
         expect(find.byType(choice.screen), findsOneWidget);
+        if (choice.screen == MobileImportScreen) {
+          expect(_stepsProgress(tester), greaterThan(selectionProgress));
+        }
         await tester.tap(find.bySemanticsLabel('Back'));
         await tester.pumpAndSettle();
         expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+        expect(_stepsProgress(tester), selectionProgress);
       }
       await tester.tap(find.bySemanticsLabel('Back'));
       await tester.pumpAndSettle();

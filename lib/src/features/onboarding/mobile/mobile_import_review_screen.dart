@@ -15,9 +15,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
+import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-const _kImportReviewProgress = 60 / 196;
 const _kImportReviewSeedCardHeight = 385.0;
 const _kImportReviewSeedChipWidth = 90.0;
 const _kImportReviewSeedColumns = 3;
@@ -132,7 +132,7 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
       sensitiveContentVisible: words.isNotEmpty && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: _kImportReviewProgress,
+        progress: mobileImportProgress(2),
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Review Import',
         subtitle: 'Review your secret passphrase\nbefore import starts.',

@@ -382,11 +382,20 @@ void main() {
     _mockClipboard(tester, _validMnemonic);
     await tester.pumpWidget(_entryAppWithBirthdayProbe());
     await tester.pumpAndSettle();
+    final entryProgress = tester
+        .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+        .widthFactor!;
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
     expect(find.text('Review Import'), findsOneWidget);
+    expect(
+      tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+          .widthFactor,
+      greaterThan(entryProgress),
+    );
     expect(
       find.byKey(const ValueKey('mobile_import_review_seed_card')),
       findsOneWidget,

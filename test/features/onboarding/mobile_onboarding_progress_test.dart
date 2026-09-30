@@ -13,13 +13,15 @@ void main() {
     expect(mobileCreateProgress(7), closeTo(7 / 8, 0.0001));
   });
 
-  test('import progress includes the review step', () {
+  test('import advances after selection and reserves terminal completion', () {
     expect(kMobileImportStepCount, 5);
-    expect(mobileImportProgress(1), closeTo(1 / 6, 0.0001));
-    expect(mobileImportProgress(2), closeTo(2 / 6, 0.0001));
-    expect(mobileImportProgress(3), closeTo(3 / 6, 0.0001));
-    expect(mobileImportProgress(4), closeTo(4 / 6, 0.0001));
-    expect(mobileImportProgress(5), closeTo(5 / 6, 0.0001));
+    var previous = kMobileSelectionProgress;
+    for (var step = 1; step <= kMobileImportStepCount; step++) {
+      final progress = mobileImportProgress(step);
+      expect(progress, greaterThan(previous));
+      expect(progress, lessThan(1));
+      previous = progress;
+    }
   });
 
   test('keystone passcode progress stays on the existing fill', () {
