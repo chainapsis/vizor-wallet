@@ -172,6 +172,12 @@ void main() {
     await tester.pump();
 
     expect(
+      find.text(
+        "Sets the maximum rate change you'll accept. Network fees are separate.",
+      ),
+      findsOneWidget,
+    );
+    expect(
       tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_minus'))),
       const Size(60, 50),
     );

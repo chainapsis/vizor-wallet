@@ -146,15 +146,15 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          if (widget.paymentMode) ...[
-            Text(
-              'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
+          Text(
+            widget.paymentMode
+                ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'
+                : "Sets the maximum rate change you'll accept. Network fees are separate.",
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
             ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
           for (final bps in swapSlippagePresetBps) ...[
             _SlippageRadioCard(
               bps: bps,

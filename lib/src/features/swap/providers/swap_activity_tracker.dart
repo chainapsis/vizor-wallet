@@ -346,8 +346,13 @@ class SwapActivityTracker {
     SwapIntent intent, {
     required String accountUuid,
   }) {
+    // A quote alone has no funds to track. Start background status checks only
+    // after a claimed deposit, a broadcast, or provider-observed progress.
     return _isPersistableIntent(intent, accountUuid: accountUuid) &&
-        !intent.status.isTerminal;
+        !intent.status.isTerminal &&
+        (intent.depositClaimedAt != null ||
+            intent.hasConfirmedDepositEvidence ||
+            intent.hasProviderObservedDepositEvidence);
   }
 
   static bool _canRefreshIntent(
@@ -356,8 +361,7 @@ class SwapActivityTracker {
     required bool includeTerminal,
   }) {
     if (includeTerminal) return intent.status != SwapIntentStatus.complete;
-    if (!_isPersistableIntent(intent, accountUuid: accountUuid)) return false;
-    return !intent.status.isTerminal;
+    return _shouldAutoRefreshIntent(intent, accountUuid: accountUuid);
   }
 
   static bool _isPersistableIntent(

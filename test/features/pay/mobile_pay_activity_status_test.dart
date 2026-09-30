@@ -229,11 +229,11 @@ void main() {
     expect(card.top - header.bottom, 76);
   });
 
-  testWidgets('failed Pay renders shared paid and refund evidence', (
+  testWidgets('refunded Pay keeps its amount header and refund evidence', (
     tester,
   ) async {
     final intent = _intent(
-      status: SwapIntentStatus.failed,
+      status: SwapIntentStatus.refunded,
       depositTxHash: null,
       originChainTxHash: 'provider-origin-txid',
       providerRefundInfo: const SwapProviderRefundInfo(
@@ -250,6 +250,13 @@ void main() {
       _harness(
         MobileSwapStatusContent(
           presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
           payHeaderRow: MobileSwapReviewHeaderRow(
             label: presentation.payLabel,
             amountText: presentation.payAmountText,
@@ -269,19 +276,79 @@ void main() {
     );
     await tester.pump();
 
-    expect(presentation.payStatus, isNull);
-    expect(find.text('You paid'), findsWidgets);
-    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(presentation.payStatus?.phase, PayActivityStatusPhase.refunded);
+    expect(find.text('Amount'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_pay_status_header')),
-      findsNothing,
+      findsOneWidget,
     );
-    expect(find.text('ZEC refunded to'), findsOneWidget);
-    expect(find.text('Fees'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_asset_row')),
+      findsOneWidget,
+    );
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_pay_status_details')),
-      findsNothing,
+      findsOneWidget,
     );
+  });
+
+  testWidgets('failed Pay keeps the amount header and source amount', (
+    tester,
+  ) async {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.failed,
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '4.125 ZEC',
+          refundedAmountText: '0 ZEC',
+        ),
+      ).copyWith(oneClickRefundTo: 'u1refund-address'),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapStatusContent(
+          presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
+          payHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.payLabel,
+            amountText: presentation.payAmountText,
+            asset: presentation.payAsset,
+          ),
+          receiveHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.receiveLabel,
+            amountText: presentation.receiveAmountText,
+            asset: presentation.receiveAsset,
+          ),
+          activeTab: SwapStatusTab.details,
+          detailsExpanded: false,
+          onTabChanged: (_) {},
+          onToggleDetails: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(presentation.payStatus?.phase, PayActivityStatusPhase.failed);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_header')),
+      findsOneWidget,
+    );
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Source amount'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
   });
 
   test(
@@ -454,6 +521,13 @@ void main() {
         _intent(status: SwapIntentStatus.complete),
       ),
       'Paid',
+    );
+    expect(
+      mobileSwapActivityTitle(
+        _state(),
+        _intent(status: SwapIntentStatus.refunded),
+      ),
+      'Payment refunded',
     );
 
     final swap = _intent(status: SwapIntentStatus.processing, payMode: false);

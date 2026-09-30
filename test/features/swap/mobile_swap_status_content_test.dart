@@ -10,12 +10,18 @@ import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart'
-    show SwapDirection, SwapIntent, SwapIntentStatus;
+    show
+        SwapDirection,
+        SwapIntent,
+        SwapIntentStatus,
+        SwapProviderRefundInfo,
+        SwapQuoteMode,
+        SwapState;
 import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
-    show mobileSwapStatusRecipientFullAddress;
+    show mobileSwapStatusHeaderLabels, mobileSwapStatusRecipientFullAddress;
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -122,6 +128,50 @@ SwapIntent _intent({
 }
 
 void main() {
+  test('mobile failed and refunded headers do not imply delivery', () {
+    for (final status in [SwapIntentStatus.failed, SwapIntentStatus.refunded]) {
+      final labels = mobileSwapStatusHeaderLabels(status);
+      expect(labels.pay, 'Deposit amount');
+      expect(labels.receive, 'Expected to receive');
+    }
+    expect(
+      mobileSwapStatusHeaderLabels(SwapIntentStatus.complete).receive,
+      'You received',
+    );
+  });
+
+  test('refunded mobile swap keeps its copyable refund address in details', () {
+    final intent =
+        _intent(
+          direction: SwapDirection.externalToZec,
+          recipient: 'u1recipient-address',
+        ).copyWith(
+          status: SwapIntentStatus.refunded,
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '100.00 USDC',
+            refundedAmountText: '99.99 USDC',
+          ),
+        );
+    final state = SwapState(
+      direction: SwapDirection.externalToZec,
+      quoteMode: SwapQuoteMode.exactInput,
+      amountText: '',
+      receiveAmountText: '',
+      receiveFiatText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [intent],
+    );
+
+    final presentation = swapActivityStatusPresentationForIntent(state, intent);
+    final refund = presentation.details.singleWhere(
+      (row) => row.label == 'Refund to',
+    );
+    expect(refund.copyable, isTrue);
+    expect(refund.copyText, '0xrefund-address');
+  });
+
   const details = [
     SwapStatusDetailRowData(
       label: 'Total fees',
@@ -181,6 +231,31 @@ void main() {
     // The terminal card itself still renders.
     expect(find.text('Completed'), findsOneWidget);
     expect(_tooltipWithMessage(swapTotalFeesTooltip), findsOneWidget);
+  });
+
+  testWidgets('refunded terminal status shows Refunded instead of Failed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: false,
+            badgeKind: SwapStatusBadgeKind.refunded,
+            details: const [
+              SwapStatusDetailRowData(
+                label: 'Refunded amount',
+                value: '2.2976 USDC',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Refunded'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+    expect(find.text('2.2976 USDC'), findsOneWidget);
   });
 
   testWidgets('in-progress (details tab) omits the View on Near Intents link', (

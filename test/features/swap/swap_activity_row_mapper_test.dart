@@ -818,8 +818,8 @@ void main() {
       ),
     );
 
-    expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'USDC Refunded');
+    expect(row!.title, 'Swap refunded');
+    expect(row!.subtitle, 'USDC');
     expect(row!.amountIconName, AppIcons.uturnUp);
     expect(row!.statusText, 'Refunded');
     expect(row!.statusIconName, AppIcons.uturnUp);
@@ -858,8 +858,8 @@ void main() {
       ),
     );
 
-    expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'ZEC Refunded');
+    expect(row!.title, 'Swap refunded');
+    expect(row!.subtitle, 'ZEC');
     expect(row!.statusText, 'Refunded');
     expect(row!.childRows, isEmpty);
   });

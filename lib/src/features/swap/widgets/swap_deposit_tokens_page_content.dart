@@ -58,6 +58,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       now: now,
       memo: memo,
       mobile: mobile,
+      showNetworkGuidance: true,
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
@@ -128,6 +129,7 @@ class _SwapDepositPageShell extends StatelessWidget {
     this.now,
     this.memo,
     this.mobile = false,
+    this.showNetworkGuidance = false,
   });
 
   final SwapAsset asset;
@@ -139,6 +141,7 @@ class _SwapDepositPageShell extends StatelessWidget {
   final String? memo;
   final Widget actionArea;
   final bool mobile;
+  final bool showNetworkGuidance;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +167,10 @@ class _SwapDepositPageShell extends StatelessWidget {
             now: now,
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        if (showNetworkGuidance)
+          _DepositNetworkGuidance(asset: asset)
+        else
+          const SizedBox(height: AppSpacing.lg),
         _DepositDetailsList(
           asset: asset,
           amountText: amountText,
@@ -203,7 +209,10 @@ class _SwapDepositPageShell extends StatelessWidget {
               now: now,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          if (showNetworkGuidance)
+            _DepositNetworkGuidance(asset: asset)
+          else
+            const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
             asset: asset,
             amountText: amountText,
@@ -212,6 +221,31 @@ class _SwapDepositPageShell extends StatelessWidget {
           ),
           actionArea,
         ],
+      ),
+    );
+  }
+}
+
+/// Keeps the token and network beside the QR without moving the deposit rows.
+class _DepositNetworkGuidance extends StatelessWidget {
+  const _DepositNetworkGuidance({required this.asset});
+
+  final SwapAsset asset;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('swap_deposit_network_guidance'),
+      height: AppSpacing.lg,
+      child: Center(
+        child: Text(
+          'Send only ${asset.symbol} on ${asset.chainLabel}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelMedium.copyWith(
+            color: context.colors.text.secondary,
+          ),
+        ),
       ),
     );
   }

@@ -155,7 +155,7 @@ ActivityRowData buildSwapActivityRow({
     subtitle: payMode
         ? _payActivitySubtitle(receiveAsset)
         : returnsFunds
-        ? '${sellAsset?.symbol ?? 'ZEC'} Refunded'
+        ? sellAsset?.symbol ?? 'ZEC'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
       payMode
@@ -345,9 +345,8 @@ bool _isPositiveSwapAmount(String? amountText) {
 String _payActivityTitle(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => 'Paid',
-    SwapIntentStatus.failed ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.refunded => 'Payment failed',
+    SwapIntentStatus.refunded => 'Payment refunded',
+    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Payment failed',
     _ => 'Payment in progress',
   };
 }
@@ -482,9 +481,8 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
 String _swapActivityTitle(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => 'Swapped',
-    SwapIntentStatus.failed ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.refunded => 'Swap failed',
+    SwapIntentStatus.refunded => 'Swap refunded',
+    SwapIntentStatus.failed || SwapIntentStatus.expired => 'Swap failed',
     _ => 'Swapping...',
   };
 }

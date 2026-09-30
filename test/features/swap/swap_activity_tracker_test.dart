@@ -1,10 +1,138 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
+  test('automatic refresh skips unfunded and unbroadcast deposits', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+    );
+    final intents = [
+      _intent(id: 'unsigned', depositAddress: 'unsigned', depositTxHash: null),
+      _intent(
+        id: 'external',
+        depositAddress: 'external',
+        depositTxHash: null,
+        status: SwapIntentStatus.awaitingExternalDeposit,
+      ).copyWith(direction: SwapDirection.externalToZec),
+      _intent(
+        id: 'unknown',
+        depositAddress: 'unknown',
+        depositTxHash: null,
+        status: SwapIntentStatus.providerStatusUnknown,
+      ),
+      _intent(
+        id: 'unbroadcast',
+        depositAddress: 'unbroadcast',
+      ).copyWith(broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast),
+    ];
+    await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
+    final savesBefore = store.saveCount;
+
+    final result = await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: intents,
+    );
+    expect(result.didRefresh, isFalse);
+    expect(provider.statusRequests, isEmpty);
+    expect(store.saveCount, savesBefore);
+
+    // Home/Activity's forced refresh still respects whether funds need tracking.
+    await SwapActivityStatusRefresher(
+      tracker: tracker,
+    ).refreshOpenActivities(accountUuid: 'account-1', force: true);
+    expect(provider.statusRequests, isEmpty);
+  });
+
+  test(
+    'automatic refresh tracks claimed, broadcast and observed deposits',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+      );
+      final intents = [
+        _intent(
+          id: 'claimed',
+          depositAddress: 'claimed',
+          depositTxHash: null,
+          status: SwapIntentStatus.awaitingExternalDeposit,
+        ).copyWith(
+          direction: SwapDirection.externalToZec,
+          depositClaimedAt: DateTime.now().toUtc(),
+        ),
+        _intent(id: 'broadcast', depositAddress: 'broadcast'),
+        _intent(
+          id: 'origin',
+          depositAddress: 'origin',
+          depositTxHash: null,
+        ).copyWith(originChainTxHash: 'observed-origin-tx'),
+        _intent(
+          id: 'amount',
+          depositAddress: 'amount',
+          depositTxHash: null,
+        ).copyWith(
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '1 ZEC',
+          ),
+        ),
+        for (final status in [
+          SwapIntentStatus.depositObserved,
+          SwapIntentStatus.processing,
+          SwapIntentStatus.incompleteDeposit,
+        ])
+          _intent(
+            id: status.name,
+            depositAddress: status.name,
+            status: status,
+            depositTxHash: null,
+          ),
+      ];
+      await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
+      await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: intents,
+      );
+      expect(
+        provider.statusRequests,
+        intents.map((intent) => intent.depositAddress).toList(),
+      );
+    },
+  );
+
+  test(
+    'explicit deposit check works before automatic tracking starts',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+      );
+      final intent = _intent(
+        id: 'external',
+        depositAddress: 'external',
+        depositTxHash: null,
+        status: SwapIntentStatus.awaitingExternalDeposit,
+      ).copyWith(direction: SwapDirection.externalToZec);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+      await tracker.refreshIntent(
+        accountUuid: 'account-1',
+        currentIntents: [intent],
+        intentId: intent.id,
+      );
+      expect(provider.statusRequests, ['external']);
+    },
+  );
+
   test('refreshes every open activity for the active account', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({
@@ -257,6 +385,7 @@ SwapIntent _intent({
   required String id,
   required String depositAddress,
   SwapIntentStatus status = SwapIntentStatus.awaitingDeposit,
+  String? depositTxHash = 'broadcast-deposit-tx',
 }) {
   return SwapIntent(
     id: id,
@@ -269,6 +398,7 @@ SwapIntent _intent({
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: depositAddress,
+    depositTxHash: depositTxHash,
     providerQuoteId: 'quote-$id',
     accountUuid: 'account-1',
   );

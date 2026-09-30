@@ -809,23 +809,36 @@ class _SwapTerminalDetails extends StatelessWidget {
         // Figma keeps the Status row in its own `List` group, separated from
         // the metadata rows by the card's 16px group gap.
         const SizedBox(height: AppSpacing.sm),
-        ..._detailRowsWithFeeDivider(rows),
+        ..._detailRowsWithFeeDivider(
+          rows,
+          dividerBeforeLabel: badgeKind == SwapStatusBadgeKind.refunded
+              ? 'Refunded amount'
+              : null,
+        ),
       ],
     );
   }
 }
 
-/// Renders [rows] as detail rows, inserting the shared hairline divider before
-/// the final fee row when the last row is one — the in-progress and terminal
-/// detail lists end with `Swap fee` / `Total fees`, but the incomplete-deposit
-/// list ends with a deposit-tx row and gets no divider.
-List<Widget> _detailRowsWithFeeDivider(List<SwapStatusDetailRowData> rows) {
+/// Separates the refund outcome from transaction metadata when requested;
+/// other detail lists retain the divider before their final fee row.
+List<Widget> _detailRowsWithFeeDivider(
+  List<SwapStatusDetailRowData> rows, {
+  String? dividerBeforeLabel,
+}) {
   if (rows.isEmpty) return const [];
   final lastIndex = rows.length - 1;
-  final dividerBeforeLast = rows.length > 1 && _isFeeRow(rows[lastIndex].label);
+  final outcomeIndex = dividerBeforeLabel == null
+      ? -1
+      : rows.indexWhere((row) => row.label == dividerBeforeLabel);
+  final dividerIndex = outcomeIndex >= 0
+      ? (outcomeIndex > 0 ? outcomeIndex : -1)
+      : rows.length > 1 && _isFeeRow(rows[lastIndex].label)
+      ? lastIndex
+      : -1;
   return [
     for (var index = 0; index < rows.length; index++) ...[
-      if (index == lastIndex && dividerBeforeLast) const _DetailDivider(),
+      if (index == dividerIndex) const _DetailDivider(),
       _DetailRow(row: rows[index]),
     ],
   ];
@@ -867,6 +880,7 @@ class _StatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final failed = badgeKind == SwapStatusBadgeKind.failed;
+    final refunded = badgeKind == SwapStatusBadgeKind.refunded;
     final signalColor = failed
         ? colors.text.destructive
         : colors.text.positiveStrong;
@@ -875,7 +889,11 @@ class _StatusRow extends StatelessWidget {
       label: 'Status',
       value: label,
       valueColor: signalColor,
-      leadingIconName: failed ? AppIcons.warning : AppIcons.checkCircle,
+      leadingIconName: failed
+          ? AppIcons.warning
+          : refunded
+          ? AppIcons.uturnUp
+          : AppIcons.checkCircle,
     );
   }
 }
