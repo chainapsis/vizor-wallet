@@ -549,3 +549,16 @@ replacement regression explicitly qualifies fixture revisions at that boundary.
 Reader version 6 state is not supported by version 5 rollback readers; this pin
 remains preparatory work, with production private activation and real-source
 verification deferred.
+
+### History refresh and batch receipt totals
+
+Activity lists and open receipts reload when sync completes, even when the ten
+recent transactions are unchanged. This exposes newly enhanced older entries
+without reopening the screen. Repeated completed snapshots do not trigger a
+reload by themselves.
+
+In Private queries mode, a batch gift-card receipt with an unknown network fee
+shows an unknown total and an unknown network-fee breakdown. It does not add
+zero to the card amount and redemption reserves to manufacture an exact total.
+Known fees, including zero, retain exact totals. Public-mode presentation is
+unchanged.

@@ -233,7 +233,12 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       }
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
-      if (_recentSignature(previous?.value) != _recentSignature(next.value)) {
+      // Enhancement can change older rows outside the ten recent transactions.
+      final syncCompleted =
+          next.value?.isSyncComplete == true &&
+          previous?.value?.isSyncComplete != true;
+      if (_recentSignature(previous?.value) != _recentSignature(next.value) ||
+          syncCompleted) {
         unawaited(_loadTransactions());
       }
     });

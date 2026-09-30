@@ -152,6 +152,70 @@ class _FakeSwapActivityStore implements SwapActivityStore {
 }
 
 void main() {
+  testWidgets('older mobile history refreshes after completed sync', (
+    tester,
+  ) async {
+    var transaction = _tx(
+      txidHex: 'old',
+      blockTime: BigInt.from(1800000000),
+      kind: 'sent',
+    );
+    var loads = 0;
+    await tester.pumpWidget(
+      _app((_) async {
+        loads++;
+        return [transaction];
+      }),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileActivityScreen)),
+    );
+    final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+    final recent = List.generate(
+      10,
+      (i) => _tx(txidHex: 'recent-$i', blockTime: BigInt.from(1800000000)),
+    );
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final before = loads;
+    transaction = _tx(
+      txidHex: 'old',
+      blockTime: BigInt.from(1800000000),
+      kind: 'received',
+    );
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(loads, before + 1);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('Received'), findsOneWidget);
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        percentage: 1,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(loads, before + 1);
+  });
+
   testWidgets('groups loaded history into dated sections', (tester) async {
     final now = DateTime.now();
     final thisWeek = BigInt.from(now.millisecondsSinceEpoch ~/ 1000 - 60);

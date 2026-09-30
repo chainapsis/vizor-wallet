@@ -22,6 +22,9 @@ class GiftCardActivityBatch {
 
   final int count;
   final String totalLabel;
+
+  /// Fully formatted total, including its denomination when known.
+  /// An unknown total has no numeric amount or denomination.
   final String totalText;
   final String breakdownText;
 }
@@ -197,7 +200,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                   else if (batch != null)
                     ReviewListRow(
                       label: batch.totalLabel,
-                      value: '${batch.totalText} ZEC',
+                      value: batch.totalText,
                       trailingIconName: AppIcons.help,
                       trailingIconColor: context.colors.text.secondary,
                       trailingIconTooltip: batch.breakdownText,

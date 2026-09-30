@@ -129,7 +129,7 @@ Widget buildGiftCardBatchActivityDetailUseCase(BuildContext context) {
                 batch: const GiftCardActivityBatch(
                   count: 20,
                   totalLabel: 'Total spent',
-                  totalText: '2.0035',
+                  totalText: '2.0035 ZEC',
                   breakdownText:
                       'Cards 2 ZEC · Redeem fees 0.002 ZEC · '
                       'Network fee 0.0015 ZEC',

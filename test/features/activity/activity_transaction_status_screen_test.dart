@@ -242,6 +242,155 @@ void main() {
     expect(find.text(r'$142.23'), findsOneWidget);
   });
 
+  for (final privateQueries in [false, true]) {
+    testWidgets(
+      'batch unknown fees preserve public presentation, private=$privateQueries',
+      (tester) async {
+        await _pumpScreen(
+          tester,
+          privateQueriesEnabled: privateQueries,
+          args: ActivityTransactionStatusArgs(
+            txidHex: _txidHex,
+            txKind: 'sent',
+            initialTransaction: _transaction(
+              txKind: 'sent',
+              fee: BigInt.zero,
+              feeState: rust_sync.TransactionFeeState.unknown,
+            ),
+            giftCard: GiftCardActivityMetadata(
+              kind: GiftCardActivityKind.created,
+              amountZatoshi: BigInt.from(200000000),
+              amountPerCardZatoshi: BigInt.from(10000000),
+              claimFeeReserveZatoshi: BigInt.from(200000),
+              batchCount: 20,
+              artworkId: 'ruby',
+              message: null,
+            ),
+          ),
+        );
+        final batch = tester
+            .widget<GiftCardActivityDetailView>(
+              find.byType(GiftCardActivityDetailView),
+            )
+            .batch!;
+        if (privateQueries) {
+          expect(find.text('Unknown'), findsOneWidget);
+          expect(batch.breakdownText, contains('Network fee Unknown'));
+          expect(batch.breakdownText, isNot(contains('Network fee 0 ZEC')));
+          expect(find.text('2.002 ZEC'), findsNothing);
+        } else {
+          expect(find.text('Unknown'), findsNothing);
+          expect(find.text('2.002 ZEC'), findsOneWidget);
+          expect(batch.breakdownText, contains('Network fee 0 ZEC'));
+        }
+      },
+    );
+  }
+
+  testWidgets('batch known zero fee has an exact total in private queries', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent', fee: BigInt.zero),
+        giftCard: GiftCardActivityMetadata(
+          kind: GiftCardActivityKind.created,
+          amountZatoshi: BigInt.from(200000000),
+          amountPerCardZatoshi: BigInt.from(10000000),
+          claimFeeReserveZatoshi: BigInt.from(200000),
+          batchCount: 20,
+          artworkId: 'ruby',
+          message: null,
+        ),
+      ),
+    );
+    expect(find.text('2.002 ZEC'), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+  });
+
+  testWidgets(
+    'older desktop receipt refreshes on sync completion without recent changes',
+    (tester) async {
+      var transaction = _transaction(
+        txKind: 'sent',
+        feeState: rust_sync.TransactionFeeState.unknown,
+        detailsComplete: false,
+        provisional: true,
+      );
+      var loads = 0;
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: transaction,
+        ),
+        historyLoader: (_) async {
+          loads++;
+          return [transaction];
+        },
+        detailLoader: (_, tx) async => _detail(txKind: tx.txKind),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ActivityTransactionStatusScreen)),
+      );
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      final recent = List.generate(
+        10,
+        (i) => _transaction(
+          txidHex: '${i + 1}'.padLeft(64, '0'),
+          txKind: 'received',
+        ),
+      );
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          recentTransactions: recent,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final before = loads;
+      transaction = _transaction(txKind: 'shielded', fee: BigInt.from(10000));
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          recentTransactions: recent,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(loads, before + 1);
+      expect(find.byType(ShieldedReceiptView), findsOneWidget);
+      expect(find.text('Incomplete'), findsNothing);
+      expect(find.text('Unknown'), findsNothing);
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          percentage: 1,
+          recentTransactions: recent,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        loads,
+        before + 1,
+        reason: 'unchanged completed snapshots do not reload',
+      );
+    },
+  );
+
   testWidgets('renders one receipt for a created gift card batch', (
     tester,
   ) async {
@@ -1317,6 +1466,12 @@ Future<void> _pumpScreen(
   bool pricingEnabled = true,
   bool privacyEnabled = false,
   bool privateQueriesEnabled = false,
+  Future<List<rust_sync.TransactionInfo>> Function(String)? historyLoader,
+  Future<rust_sync.TransactionDetail?> Function(
+    String,
+    rust_sync.TransactionInfo,
+  )?
+  detailLoader,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1512, 982));
   addTearDown(() async {
@@ -1328,7 +1483,11 @@ Future<void> _pumpScreen(
     routes: [
       GoRoute(
         path: '/activity/tx/:txid',
-        builder: (_, _) => ActivityTransactionStatusScreen(args: args),
+        builder: (_, _) => ActivityTransactionStatusScreen(
+          args: args,
+          historyLoader: historyLoader,
+          detailLoader: detailLoader,
+        ),
       ),
       GoRoute(
         path: '/activity',

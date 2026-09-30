@@ -311,7 +311,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentSignature(previous?.value);
       final nextSig = _recentSignature(next.value);
-      if (prevSig != nextSig) {
+      // Enhancement can change older rows outside the ten recent transactions.
+      final syncCompleted =
+          next.value?.isSyncComplete == true &&
+          previous?.value?.isSyncComplete != true;
+      if (prevSig != nextSig || syncCompleted) {
         _refreshTransactionsAfterSyncChange();
       }
     });

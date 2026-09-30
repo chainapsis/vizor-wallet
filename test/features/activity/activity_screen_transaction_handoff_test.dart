@@ -54,6 +54,63 @@ void main() {
     expect(find.text('Received'), findsOneWidget);
   });
 
+  testWidgets('older desktop history refreshes after completed sync', (
+    tester,
+  ) async {
+    var history = [_transaction];
+    var loads = 0;
+    await _pumpActivityScreen(
+      tester,
+      historyLoader: (_) async {
+        loads++;
+        return history;
+      },
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ActivityScreen)),
+    );
+    final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+    final recent = <rust_sync.TransactionInfo>[];
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final before = loads;
+    history = [];
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(loads, before + 1);
+    expect(find.text('Received'), findsNothing);
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        percentage: 1,
+        recentTransactions: recent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      loads,
+      before + 1,
+      reason: 'unchanged completed snapshots do not reload',
+    );
+  });
+
   testWidgets('the handoff still happens while the account holds', (
     tester,
   ) async {
@@ -76,8 +133,9 @@ Future<void> _settleRealAsync(WidgetTester tester) async {
 }
 
 Future<_SwitchableAccountNotifier> _pumpActivityScreen(
-  WidgetTester tester,
-) async {
+  WidgetTester tester, {
+  ActivityHistoryLoader? historyLoader,
+}) async {
   await tester.binding.setSurfaceSize(const Size(1280, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -87,8 +145,9 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
     routes: [
       GoRoute(
         path: '/activity',
-        builder: (_, _) =>
-            ActivityScreen(historyLoader: (_) async => [_transaction]),
+        builder: (_, _) => ActivityScreen(
+          historyLoader: historyLoader ?? (_) async => [_transaction],
+        ),
       ),
       GoRoute(
         path: '/activity/tx/:txid',

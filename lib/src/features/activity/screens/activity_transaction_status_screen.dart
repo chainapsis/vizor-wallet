@@ -591,6 +591,10 @@ class _ActivityTransactionStatusScreenState
         denomination: '',
       );
       final reserve = giftCard.claimFeeReserveZatoshi!;
+      final feeUnknown = _showUnknownFee(tx);
+      final networkFeeText = feeUnknown
+          ? kUnknownFeeText
+          : '${privateAmount(tx.fee)} ZEC';
       final networkFeeLabel = isInFlight || isFailed
           ? 'Estimated network fee'
           : 'Network fee';
@@ -602,11 +606,13 @@ class _ActivityTransactionStatusScreenState
               : isInFlight
               ? 'Submitted total'
               : 'Total spent',
-          totalText: privateAmount(giftCard.amountZatoshi + reserve + tx.fee),
+          totalText: feeUnknown
+              ? kUnknownFeeText
+              : '${privateAmount(giftCard.amountZatoshi + reserve + tx.fee)} ZEC',
           breakdownText:
               'Cards ${privateAmount(giftCard.amountZatoshi)} ZEC · '
               'Redeem fees ${privateAmount(reserve)} ZEC · '
-              '$networkFeeLabel ${privateAmount(tx.fee)} ZEC',
+              '$networkFeeLabel $networkFeeText',
         ),
         isInFlight: isInFlight,
         isFailed: isFailed,
@@ -827,7 +833,11 @@ class _ActivityTransactionStatusScreenState
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentTxSignature(previous?.value);
       final nextSig = _recentTxSignature(next.value);
-      if (prevSig != nextSig) {
+      // Enhancement can change older rows outside the ten recent transactions.
+      final syncCompleted =
+          next.value?.isSyncComplete == true &&
+          previous?.value?.isSyncComplete != true;
+      if (prevSig != nextSig || syncCompleted) {
         unawaited(_loadTransaction());
       }
     });

@@ -211,6 +211,64 @@ Widget _app(
 }
 
 void main() {
+  testWidgets(
+    'older mobile receipt refreshes on sync completion without recent changes',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final initial = _tx(
+        fee: BigInt.zero,
+        feeState: rust_sync.TransactionFeeState.unknown,
+        detailsComplete: false,
+        provisional: true,
+      );
+      final history = [initial];
+      await tester.pumpWidget(
+        _app(initial, history: history, privateQueriesEnabled: true),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        findsOneWidget,
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileTransactionStatusScreen)),
+      );
+      final notifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      final recent = List.generate(
+        10,
+        (i) => _tx(txid: '${i + 1}'.padLeft(64, '0')),
+      );
+      notifier.setSyncState(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          recentTransactions: recent,
+        ),
+      );
+      await tester.pumpAndSettle();
+      history[0] = _tx(kind: 'shielded');
+      notifier.setSyncState(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: false,
+          isSyncComplete: true,
+          recentTransactions: recent,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        findsNothing,
+      );
+      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(find.text('From transparent balance'), findsOneWidget);
+    },
+  );
+
   testWidgets('pending claim transaction ID opens the broadcast hash', (
     tester,
   ) async {
