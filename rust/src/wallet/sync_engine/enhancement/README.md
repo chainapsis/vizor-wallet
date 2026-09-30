@@ -340,6 +340,51 @@ transition in production, so the fence is not built yet.
   tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
   recovery exists.
 
+## Candidate transparent recovery
+
+Phase 3 adds a candidate-recovery coordinator beside this module,
+`sync_engine/transparent_ledger.rs`. It is a separate discovery loop from
+enhancement: it shares only the captured `EnhancementPolicy` and the sync
+lifetime. Candidate state lives in wallet-libraries' `tpir_*` tables, and
+balances, input selection, locks, address allocation and history ignore it.
+
+- **Source boundary.** `RecoverySource::recover` takes one account's watched
+  addresses, open pages and target, plus `SourceBounds` (queries, bytes, pages
+  and time). It returns a normalized `SourceResult`: a revision, an anchor,
+  receives, spends, checked and unsupported ranges, and opened and completed
+  pages. `DisabledSource` always answers `Unavailable`. The deterministic
+  `FixtureSource` is test-only, and its revisions carry the `vizor-fixture`
+  source id. No source falls back to lightwalletd, and the coordinator takes no
+  lightwalletd client.
+- **Passes.** For each account the coordinator reads `transparent_watch_set`,
+  calls the source with no database lock held, and applies the answer through
+  `apply_transparent_ledger_commit` under the wallet write lock. It repeats at
+  the same target while the window grows, the watch set changes, or open pages
+  make progress. The cap is 8 passes per account.
+  - A stale commit (reorg, deleted account, superseded revision, or a changed
+    policy generation) is retried up to three times from a fresh watch set.
+  - A newer provisional revision retracts the older revision's observations.
+    Events survive only when another independent or sealed observation supports
+    them; a complete replacement can therefore withdraw receives and spends.
+  - An integrity rejection stops the run: the source's session is no longer
+    trusted.
+  - A malformed commit is logged and skips the account.
+  - A timeout or source failure leaves the account for a later run.
+  - Cancellation and mode changes stop between passes. Applied commits and
+    open pages stay durable for the next run.
+- **Scheduling.** `run_sync_impl` calls the coordinator once per completed
+  sync, at the fully scanned height, before locks are reconciled. Its errors are
+  logged and never fail the sync. It has its own progress, retries and
+  completion, and it does not touch UTXO refresh, the `.receive.redb` cache, or
+  the shielded checkpoints; neither of those becomes private evidence.
+- **Production is unchanged.** Production captures `Public` and passes
+  `DisabledSource`, so the coordinator returns `NotEnabled` before any read. A
+  private handle on a durably `Public` wallet does not start either.
+- **Diagnostics.** Logs carry only outcome counts. Rejection payloads, which
+  name addresses and outpoints, are never logged. Candidate amounts from
+  `transparent_candidate_recovery` are unverified: they can be above or below
+  the real balance.
+
 ## Transport and cancellation
 
 ```text

@@ -59,6 +59,7 @@ pub(crate) mod mempool;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
+pub(crate) mod transparent_ledger;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
@@ -4522,6 +4523,37 @@ async fn run_sync_impl(
                 "Ledger recovery was invalidated during sync; retrying",
             ));
         }
+    }
+    // Candidate transparent recovery runs at the fully scanned height, after
+    // the shielded scan settles. It keeps its own progress in the library and
+    // never fails the sync. Production captures `Public`, so it returns before
+    // any read.
+    match transparent_ledger::run(
+        &mut db,
+        enhancement.policy(),
+        &transparent_ledger::DisabledSource,
+        &should_exit,
+    )
+    .await
+    {
+        Ok(transparent_ledger::RunOutcome::Exited) => {
+            log::info!(
+                "[{}] sync: exiting during candidate transparent recovery",
+                elapsed()
+            );
+            return Ok(());
+        }
+        Ok(transparent_ledger::RunOutcome::NotEnabled) => {}
+        Ok(outcome) => log::info!(
+            "[{}] sync: candidate transparent recovery: {:?}",
+            elapsed(),
+            outcome
+        ),
+        Err(error) => log::warn!(
+            "[{}] sync: candidate transparent recovery failed: {}",
+            elapsed(),
+            error
+        ),
     }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
