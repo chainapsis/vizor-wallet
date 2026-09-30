@@ -86,6 +86,11 @@ impl EnhancementSession {
         }
     }
 
+    /// The policy captured for this sync, shared by every lane it runs.
+    pub(super) fn policy(&self) -> EnhancementPolicy {
+        self.policy
+    }
+
     pub(super) fn take_ready_resubmission(&mut self) -> HashSet<Vec<u8>> {
         std::mem::take(&mut self.ready_resubmission)
     }
