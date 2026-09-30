@@ -2849,6 +2849,19 @@ class TransactionInfo {
           createdTime == other.createdTime;
 }
 
+/// What the transparent fields of a [`WalletBalance`] represent.
+enum TransparentBalanceAuthority {
+  /// Current authorized amounts.
+  current,
+
+  /// No current authority: the transparent fields are zero because nothing
+  /// is spendable, and `transparent_last_known` holds the prior amount.
+  lastKnown,
+
+  /// No current authority and no prior amount. Show as unavailable, never 0.
+  unavailable,
+}
+
 class TxDataRequest {
   final String requestType;
   final String? txid;
@@ -2886,6 +2899,11 @@ class TxDataRequest {
 
 class WalletBalance {
   final WalletBalanceAvailability availability;
+  final TransparentBalanceAuthority transparentAuthority;
+
+  /// Informational prior transparent total, present only with
+  /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+  final BigInt? transparentLastKnown;
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
@@ -2919,6 +2937,8 @@ class WalletBalance {
 
   const WalletBalance({
     required this.availability,
+    required this.transparentAuthority,
+    this.transparentLastKnown,
     required this.transparent,
     required this.sapling,
     required this.orchard,
@@ -2942,6 +2962,8 @@ class WalletBalance {
   @override
   int get hashCode =>
       availability.hashCode ^
+      transparentAuthority.hashCode ^
+      transparentLastKnown.hashCode ^
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
@@ -2967,6 +2989,8 @@ class WalletBalance {
       other is WalletBalance &&
           runtimeType == other.runtimeType &&
           availability == other.availability &&
+          transparentAuthority == other.transparentAuthority &&
+          transparentLastKnown == other.transparentLastKnown &&
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&

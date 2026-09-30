@@ -24,6 +24,16 @@ void main() {
         transparentLedgerNeedsNewerBuildMessage,
       );
     });
+
+    test('reports incomplete private recovery, not insufficient funds', () {
+      expect(
+        friendlyProposeSendError(
+          'Propose failed: Transparent funds are unavailable: private '
+          'transparent authority is required but not available',
+        ),
+        transparentRecoveryIncompleteMessage,
+      );
+    });
   });
 
   group('friendlyPaymentRequestCheckError', () {
