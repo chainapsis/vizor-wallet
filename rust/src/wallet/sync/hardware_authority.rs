@@ -10,7 +10,7 @@
 use std::future::Future;
 
 use voting_crypto_deps::rand::rngs::OsRng;
-use zcash_client_backend::data_api::{InputSource, WalletRead};
+use zcash_client_backend::data_api::WalletRead;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BlockHeight;
@@ -23,8 +23,9 @@ use crate::wallet::{
 
 /// Authorizes `tx` immediately before polling `send`. Earlier finalized batch
 /// transactions may supply local chained inputs (TEX); the output must exist.
-/// Unknown, withdrawn, spent, immature, or unauthorized wallet inputs fail
-/// before `send` is polled. Shielded-only transactions require no reservation.
+/// Unknown, withdrawn, competing-spent, immature, or unauthorized wallet inputs fail
+/// before `send` is polled. Exact stored retries may consume their own recorded inputs.
+/// Shielded-only transactions require no reservation.
 pub(crate) async fn dispatch<T>(
     db_path: &str,
     network: WalletNetwork,
@@ -54,33 +55,37 @@ pub(crate) async fn dispatch<T>(
     if db.chain_height().map_err(|e| e.to_string())?.is_none() {
         return Err("Transparent broadcast authority unavailable: chain height unknown".into());
     }
-    for input in inputs {
-        let prevout = input.prevout();
-        if let Some(parent) = earlier
-            .iter()
-            .find(|parent| parent.txid() == *prevout.txid())
-        {
-            if parent
-                .transparent_bundle()
-                .is_none_or(|b| b.vout.get(prevout.n() as usize).is_none())
-            {
-                return Err(
-                    "Transparent broadcast authority unavailable: invalid chained output".into(),
-                );
-            }
-            continue;
-        }
-        if db
-            .get_unspent_transparent_output(prevout, target.into())
-            .map_err(|e| format!("Transparent broadcast authority unavailable: {e}"))?
-            .is_none()
-        {
-            return Err(
-                "Transparent broadcast authority unavailable: input is not spendable".into(),
-            );
-        }
-    }
+    db.check_transparent_transaction_inputs(tx, earlier, target.into())
+        .map_err(|e| format!("Transparent broadcast authority unavailable: {e}"))?;
     let result = send.await;
     drop(db);
     Ok(result)
+}
+
+/// Reconciles finalized bytes against mined wallet evidence before considering expiry.
+/// The read transaction binds the compatibility check and evidence to one snapshot.
+pub(crate) fn stored_mined(
+    db_path: &str,
+    network: WalletNetwork,
+    tx: &Transaction,
+) -> Result<bool, String> {
+    use rusqlite::OptionalExtension;
+    use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+    let db = crate::wallet::db::wallet_db_on(&conn, db_path, network);
+    db.transparent_ledger_mode()
+        .map_err(|e| format!("Stored transaction authority unavailable: {e}"))?;
+    let mut raw = Vec::new();
+    tx.write(&mut raw).map_err(|e| e.to_string())?;
+    let stored: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT raw FROM transactions WHERE txid = ?1 AND mined_height IS NOT NULL",
+            [tx.txid().as_ref()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+    Ok(stored.as_deref() == Some(raw.as_slice()))
 }
