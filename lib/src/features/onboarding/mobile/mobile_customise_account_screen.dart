@@ -244,7 +244,7 @@ class _MobileCustomiseAccountScreenState
       progress:
           widget.progress ??
           switch (widget.args!.flow) {
-            SetPasswordFlow.create => mobileCreateProgress(8),
+            SetPasswordFlow.create => mobileCreateProgress(7),
             SetPasswordFlow.importWallet => mobileImportProgress(5),
             SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
             SetPasswordFlow.importLedger => kMobileLedgerCustomiseProgress,

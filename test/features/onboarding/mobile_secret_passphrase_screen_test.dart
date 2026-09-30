@@ -179,7 +179,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(6), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(5), 0.0001));
   });
 
   testWidgets('copy puts the full phrase on the clipboard', (tester) async {

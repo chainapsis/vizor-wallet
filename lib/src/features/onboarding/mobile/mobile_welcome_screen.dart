@@ -114,9 +114,8 @@ class MobileWelcomeScreen extends StatelessWidget {
                                           semanticKey: const ValueKey(
                                             'mobile_welcome_get_started',
                                           ),
-                                          onPressed: () => context.push(
-                                            '/onboarding/method',
-                                          ),
+                                          onPressed: () =>
+                                              context.push('/onboarding/intro'),
                                         ),
                                         const SizedBox(height: AppSpacing.sm),
                                         Semantics(
@@ -142,8 +141,9 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             pressedLabelColor:
                                                 WelcomeButtonTokens
                                                     .secondaryLabel,
-                                            onPressed: () =>
-                                                context.push('/import'),
+                                            onPressed: () => context.push(
+                                              '/onboarding/method',
+                                            ),
                                             leading: const AppIcon(
                                               AppIcons.importWallet,
                                             ),

@@ -144,7 +144,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app());
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(7), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(6), 0.0001));
   });
 
   testWidgets('import passcode progress follows the review import flow', (

@@ -6,9 +6,7 @@ import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-
-/// The import and hardware selectors share the first visible progress slot.
-const kMobileSelectionProgress = 60 / 196;
+import 'mobile_onboarding_progress.dart';
 
 class MobileOnboardingSelectionPage extends StatelessWidget {
   const MobileOnboardingSelectionPage({

@@ -394,8 +394,8 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-method-selection-ledger',
-    description: 'Mobile method selection with Ledger available',
+    id: 'mobile-onboarding-import',
+    description: 'Mobile import method selection',
     builder: buildMobileMethodSelectionCapture,
     desktop: false,
     mobile: true,

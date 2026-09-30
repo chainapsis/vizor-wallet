@@ -1,15 +1,18 @@
 /// Create-flow step ordering for the steps-nav progress track:
-/// welcome -> method selection -> intro -> address types -> things to know ->
-/// secret passphrase -> passcode -> customise account. Welcome itself does not
+/// welcome -> intro -> address types -> things to know -> secret passphrase ->
+/// passcode -> customise account. Welcome itself does not
 /// show the track, but the following steps still count it so create progress
 /// starts after the user has already passed the first screen. Biometrics is a
 /// terminal completion screen and keeps its full progress value.
-const kMobileCreateStepCount = 8;
+const kMobileCreateStepCount = 7;
 
 /// Import-flow step ordering:
 /// secret passphrase entry (paste or manual) -> review -> birthday -> passcode
 /// -> customise account.
 const kMobileImportStepCount = 5;
+
+/// Initial fill shared by the import/hardware choices and create Introduction.
+const kMobileSelectionProgress = 60 / 196;
 
 /// Track fill for step N. Denominator is one past the step count so the
 /// track is never empty on the first step nor full while the last step is
@@ -20,7 +23,7 @@ double mobileImportProgress(int step) => step / (kMobileImportStepCount + 1);
 
 /// Keystone owns its own literal progress values today (0.2/0.4/0.6/0.8).
 /// Keep its passcode step on the previous 5/6 fill while create progress
-/// counts welcome and the shared method-selection screen.
+/// counts Welcome and the education screens.
 const kMobileKeystonePasscodeProgress = 5 / 6;
 const kMobileKeystoneCustomiseProgress = 6 / 7;
 

@@ -356,7 +356,6 @@ Future<void> restoreWalletDbFromDriver() async {
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
-  await tapWidget(tester, const ValueKey('mobile_welcome_create'));
   await tapAppButton(tester, const ValueKey('mobile_intro_continue'));
   await tapAppButton(tester, const ValueKey('mobile_address_types_continue'));
   await tapAppButton(tester, const ValueKey('mobile_things_to_know_continue'));
@@ -393,8 +392,8 @@ Future<void> importWalletViaPaste(
   required bool isFirstWallet,
 }) async {
   logE2e('importing wallet (first=$isFirstWallet)');
-  await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
   await tapWidget(tester, const ValueKey('mobile_welcome_import'));
+  await tapWidget(tester, const ValueKey('mobile_import_passphrase'));
   await Clipboard.setData(ClipboardData(text: mnemonic));
   await tapAppButton(tester, const ValueKey('mobile_import_paste'));
   await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));

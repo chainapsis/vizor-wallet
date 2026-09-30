@@ -10,7 +10,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -88,34 +88,32 @@ void main() {
     expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
   });
 
-  testWidgets('intro Back returns to the existing method selection', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app('/onboarding/method'));
+  testWidgets('intro Back returns to Welcome', (tester) async {
+    await tester.pumpWidget(_app('/welcome'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('mobile_welcome_create')));
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
     await tester.pumpAndSettle();
     expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
-    expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+    expect(find.byType(MobileWelcomeScreen), findsOneWidget);
   });
 
   testWidgets('create education screens count welcome in progress', (
     tester,
   ) async {
-    expect(kMobileCreateStepCount, 8);
+    expect(kMobileCreateStepCount, 7);
     await tester.pumpWidget(_app('/onboarding/intro'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(3), 0.0001));
+    expect(_stepsProgress(tester), closeTo(kMobileSelectionProgress, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/address-types'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(4), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(3), 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/things-to-know'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(5), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(4), 0.0001));
   });
 
   for (final theme in [AppThemeData.light, AppThemeData.dark]) {

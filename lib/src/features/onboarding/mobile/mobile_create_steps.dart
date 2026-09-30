@@ -8,7 +8,7 @@ import '../../../core/widgets/app_icon.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-/// Step 3 — Figma `New Account` (8569:129347).
+/// Step 2 — Figma `New Account` (8569:129347).
 class MobileOnboardingIntroScreen extends StatelessWidget {
   const MobileOnboardingIntroScreen({super.key});
 
@@ -16,7 +16,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(3),
+      progress: kMobileSelectionProgress,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
       titleStyle: AppTypography.displayLarge.copyWith(
@@ -97,7 +97,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
   }
 }
 
-/// Step 4 — Figma `New Wallet02` (4752:24608).
+/// Step 3 — Figma `New Wallet02` (4752:24608).
 class MobileAddressTypesScreen extends StatelessWidget {
   const MobileAddressTypesScreen({super.key});
 
@@ -105,7 +105,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(4),
+      progress: mobileCreateProgress(3),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
       contentGap: 32,
@@ -152,7 +152,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
   }
 }
 
-/// Step 5 — Figma `New Wallet03` (4752:24673).
+/// Step 4 — Figma `New Wallet03` (4752:24673).
 class MobileThingsToKnowScreen extends StatelessWidget {
   const MobileThingsToKnowScreen({super.key});
 
@@ -160,7 +160,7 @@ class MobileThingsToKnowScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(5),
+      progress: mobileCreateProgress(4),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Things to know',
       contentGap: 32,

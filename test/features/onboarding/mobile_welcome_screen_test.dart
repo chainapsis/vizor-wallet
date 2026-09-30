@@ -10,9 +10,9 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
@@ -45,10 +45,9 @@ Widget _app({
   );
 }
 
-/// Welcome → "Get started" → Method Selection (where the entry points now
-/// live).
+/// Welcome → Import wallet → import method selection.
 Future<void> _openMethodSelection(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+  await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
   await tester.pumpAndSettle();
 }
 
@@ -57,37 +56,6 @@ double _stepsProgress(WidgetTester tester) {
     find.byType(FractionallySizedBox).first,
   );
   return fill.widthFactor!;
-}
-
-BoxDecoration _cardBackgroundDecoration(WidgetTester tester, Key cardKey) {
-  return tester
-      .widgetList<DecoratedBox>(
-        find.descendant(
-          of: find.byKey(cardKey),
-          matching: find.byType(DecoratedBox),
-        ),
-      )
-      .map((box) => box.decoration)
-      .whereType<BoxDecoration>()
-      .firstWhere((decoration) => decoration.color != null);
-}
-
-Color? _cardIconColor(WidgetTester tester, Key cardKey) {
-  final icon = tester.widget<AppIcon>(
-    find
-        .descendant(of: find.byKey(cardKey), matching: find.byType(AppIcon))
-        .first,
-  );
-  return icon.color;
-}
-
-Color? _textColor(WidgetTester tester, String text) {
-  return tester.widget<Text>(find.text(text)).style?.color;
-}
-
-String _assetNameForKey(WidgetTester tester, Key key) {
-  final image = tester.widget<Image>(find.byKey(key));
-  return (image.image as AssetImage).assetName;
 }
 
 void main() {
@@ -110,42 +78,39 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Get started'), findsOneWidget);
-    // The entry points moved to the method-selection step.
+    // Method cards are shown after choosing Import wallet.
     expect(find.text('Create Wallet'), findsNothing);
   });
 
-  testWidgets(
-    'Get started opens method selection with the four entry points and '
-    'no legal footer',
-    (tester) async {
-      await tester.pumpWidget(_app());
-      await tester.pumpAndSettle();
-      await _openMethodSelection(tester);
+  testWidgets('Import wallet opens the three import methods and '
+      'no legal footer', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await _openMethodSelection(tester);
 
-      expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
-      expect(find.text('Create Wallet'), findsOneWidget);
-      expect(find.text('Import Wallet'), findsOneWidget);
-      expect(find.text('Link Vizor Desktop'), findsOneWidget);
-      expect(find.text('Connect Keystone'), findsOneWidget);
-      expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
-      expect(find.textContaining('you agree to our'), findsNothing);
-      expect(find.text('Terms'), findsNothing);
-      expect(find.text('Privacy'), findsNothing);
-    },
-  );
+    expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+    expect(find.text('Import secret passphrase'), findsOneWidget);
+    expect(find.text('Import Account\nto Vizor'), findsOneWidget);
+    expect(find.text('Link Vizor Desktop'), findsOneWidget);
+    expect(find.text('Connect hardware wallet'), findsOneWidget);
+    expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
+    expect(find.textContaining('you agree to our'), findsNothing);
+    expect(find.text('Terms'), findsNothing);
+    expect(find.text('Privacy'), findsNothing);
+  });
 
   testWidgets('method selection content scrolls on short screens', (
     tester,
   ) async {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
-    binding.platformDispatcher.views.first.physicalSize = const Size(393, 568);
+    binding.platformDispatcher.views.first.physicalSize = const Size(393, 480);
 
     await tester.pumpWidget(_app(initialLocation: '/onboarding/method'));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
 
-    const keystoneKey = ValueKey('mobile_welcome_keystone');
+    const hardwareKey = ValueKey('mobile_import_hardware');
     final scrollable = find.byKey(
       const ValueKey('mobile_method_selection_scroll'),
     );
@@ -154,7 +119,7 @@ void main() {
     final screenHeight =
         tester.view.physicalSize.height / tester.view.devicePixelRatio;
     expect(
-      tester.getRect(find.byKey(keystoneKey)).bottom,
+      tester.getRect(find.byKey(hardwareKey)).bottom,
       greaterThan(screenHeight),
     );
 
@@ -163,160 +128,15 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      tester.getRect(find.byKey(keystoneKey)).bottom,
+      tester.getRect(find.byKey(hardwareKey)).bottom,
       lessThanOrEqualTo(screenHeight),
-    );
-  });
-
-  testWidgets('method cards use full-card figma background assets', (
-    tester,
-  ) async {
-    final binding = TestWidgetsFlutterBinding.ensureInitialized();
-    binding.platformDispatcher.views.first.physicalSize = const Size(393, 852);
-
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
-    await _openMethodSelection(tester);
-
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_create_wallet_art'),
-      ),
-      'assets/illustrations/method_create_card_bg.png',
-    );
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_import_wallet_art'),
-      ),
-      'assets/illustrations/method_import_card_bg.png',
-    );
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_link_vizor_desktop_art'),
-      ),
-      'assets/illustrations/method_link_desktop_card_bg.png',
-    );
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_connect_keystone_art'),
-      ),
-      'assets/illustrations/method_keystone_card_bg.png',
-    );
-
-    expect(
-      find.byKey(const ValueKey('mobile_method_create_wallet_content')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('method cards use figma light theme colors and assets', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app(initialLocation: '/onboarding/method'));
-    await tester.pumpAndSettle();
-
-    final colors = AppThemeData.light.colors;
-
-    expect(
-      _cardBackgroundDecoration(
-        tester,
-        const ValueKey('mobile_welcome_create'),
-      ).color,
-      colors.background.homeCard,
-    );
-    expect(_textColor(tester, 'Create Wallet'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
-      colors.text.homeCard,
-    );
-
-    expect(
-      _cardBackgroundDecoration(
-        tester,
-        const ValueKey('mobile_welcome_import'),
-      ).color,
-      colors.background.homeCard,
-    );
-    expect(_textColor(tester, 'Import Wallet'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
-      colors.text.homeCard,
-    );
-    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
-      colors.text.homeCard,
-    );
-
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_connect_keystone_art'),
-      ),
-      'assets/illustrations/method_keystone_card_bg.png',
-    );
-  });
-
-  testWidgets('method cards use figma dark theme colors and assets', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(initialLocation: '/onboarding/method', theme: AppThemeData.dark),
-    );
-    await tester.pumpAndSettle();
-
-    final colors = AppThemeData.dark.colors;
-
-    expect(
-      _cardBackgroundDecoration(
-        tester,
-        const ValueKey('mobile_welcome_create'),
-      ).color,
-      colors.background.homeCard,
-    );
-    expect(_textColor(tester, 'Create Wallet'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_create')),
-      colors.text.homeCard,
-    );
-
-    expect(
-      _cardBackgroundDecoration(
-        tester,
-        const ValueKey('mobile_welcome_import'),
-      ).color,
-      colors.background.homeCard,
-    );
-    expect(_textColor(tester, 'Import Wallet'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_import')),
-      colors.text.homeCard,
-    );
-    expect(_textColor(tester, 'Link Vizor Desktop'), colors.text.homeCard);
-    expect(
-      _cardIconColor(tester, const ValueKey('mobile_welcome_link_desktop')),
-      colors.text.homeCard,
-    );
-
-    expect(
-      _assetNameForKey(
-        tester,
-        const ValueKey('mobile_method_connect_keystone_art'),
-      ),
-      'assets/illustrations/method_keystone_card_bg.png',
     );
   });
 
   testWidgets('create pushes the intro step', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
-    await _openMethodSelection(tester);
-
-    await tester.tap(find.byKey(const ValueKey('mobile_welcome_create')));
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
     await tester.pumpAndSettle();
 
     expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
@@ -327,7 +147,7 @@ void main() {
     await tester.pumpAndSettle();
     await _openMethodSelection(tester);
 
-    await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
+    await tester.tap(find.byKey(const ValueKey('mobile_import_passphrase')));
     await tester.pumpAndSettle();
     expect(find.byType(MobileImportScreen), findsOneWidget);
   });
@@ -361,6 +181,8 @@ void main() {
     await tester.pumpAndSettle();
     await _openMethodSelection(tester);
 
+    await tester.tap(find.byKey(const ValueKey('mobile_import_hardware')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_keystone')));
     await tester.pumpAndSettle();
 
@@ -421,33 +243,72 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('Get started keeps the existing creation method screen', (
-    tester,
-  ) async {
+  testWidgets('Get started enters creation directly', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
     await tester.pumpAndSettle();
-    expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile_welcome_create')), findsOneWidget);
+    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
   });
 
-  testWidgets('Import wallet keeps the existing import entry and can return', (
+  testWidgets('Import wallet opens its selector and can return', (
     tester,
   ) async {
     await pump(tester);
     await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
     await tester.pumpAndSettle();
-    final router = GoRouter.of(tester.element(find.byType(MobileImportScreen)));
+    final router = GoRouter.of(
+      tester.element(find.byType(MobileMethodSelectionScreen)),
+    );
     expect(
       GoRouterState.of(
-        tester.element(find.byType(MobileImportScreen)),
+        tester.element(find.byType(MobileMethodSelectionScreen)),
       ).uri.path,
-      '/import',
+      '/onboarding/method',
     );
     router.pop();
     await tester.pumpAndSettle();
     expect(find.text('Shielded\nby default'), findsOneWidget);
   });
+
+  for (final entry in ['/welcome', '/add-account']) {
+    testWidgets('$entry retains its caller through create and every import '
+        'choice', (tester) async {
+      await pump(tester, location: entry);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_welcome_get_started')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
+      await tester.pumpAndSettle();
+      for (final choice in [
+        (key: 'mobile_import_passphrase', screen: MobileImportScreen),
+        (
+          key: 'mobile_welcome_link_desktop',
+          screen: MobileWalletLinkIntroScreen,
+        ),
+        (key: 'mobile_import_hardware', screen: MobileHardwareSelectionScreen),
+      ]) {
+        await tester.tap(find.byKey(ValueKey(choice.key)));
+        await tester.pumpAndSettle();
+        expect(find.byType(choice.screen), findsOneWidget);
+        await tester.tap(find.bySemanticsLabel('Back'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileMethodSelectionScreen), findsOneWidget);
+      }
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      final welcome = find.byKey(const ValueKey('mobile_welcome_get_started'));
+      expect(GoRouterState.of(tester.element(welcome)).uri.path, entry);
+      expect(
+        find.byKey(const ValueKey('mobile_welcome_redeem_card')),
+        entry == '/welcome' ? findsOneWidget : findsNothing,
+      );
+    });
+  }
 
   testWidgets('add-account Welcome hides Gift Card and returns home', (
     tester,

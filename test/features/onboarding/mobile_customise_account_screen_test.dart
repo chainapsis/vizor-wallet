@@ -218,7 +218,7 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('Windborne Wardbearer'), findsOneWidget);
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(8), 0.0001));
+    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(7), 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
       tester.getSize(

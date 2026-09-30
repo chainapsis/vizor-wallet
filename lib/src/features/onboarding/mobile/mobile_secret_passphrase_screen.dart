@@ -191,7 +191,7 @@ class _MobileSecretPassphraseScreenState
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileCreateProgress(6),
+        progress: mobileCreateProgress(5),
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',
