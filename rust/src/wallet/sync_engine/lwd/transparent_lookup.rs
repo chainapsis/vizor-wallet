@@ -3,16 +3,28 @@
 //!
 //! The raw RPC helpers are private to `lwd`, so a lane can reach them only
 //! through [`TransparentLookupGate`], which re-checks authorization
-//! immediately before each individual RPC. Per-RPC checks narrow, but cannot
-//! close, the window between a check and its dispatch: another connection may
-//! commit a transition in between. Closing it needs a transition-side fence
-//! (see the enhancement README).
+//! immediately before each individual RPC.
+//!
+//! A per-RPC check alone cannot close the window between the check and the
+//! request: a transition could commit in between. The in-process policy fence
+//! closes it. Every dispatch holds a shared lease from its check until its
+//! request has been sent, and [`apply_transparent_policy_fenced`], the only
+//! way this build applies a transparent policy, takes the exclusive side. A
+//! waiting transition blocks new leases, waits for in-flight requests to
+//! drain, and only then commits, so no request authorized under the old
+//! policy is sent after the new one applies. A transition made by another
+//! process is outside the fence; the per-RPC check still bounds it to the
+//! requests already in flight.
 
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use tokio::sync::RwLock;
 use tonic::{transport::Channel, Status};
-use zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy;
+use zcash_client_backend::data_api::transparent_ledger::{
+    AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerWrite,
+};
 use zcash_client_backend::proto::service::{
     compact_tx_streamer_client::CompactTxStreamerClient, GetAddressUtxosReply, RawTransaction,
 };
@@ -20,9 +32,38 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
-    db::{open_wallet_db_readonly_with_timeout, SYNC_DB_BUSY_TIMEOUT},
+    db::{open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
 };
+
+/// Shared by every public transparent lookup in flight; held exclusively by a
+/// policy transition. Tokio's lock is fair: once a transition waits, new
+/// leases queue behind it.
+static POLICY_FENCE: RwLock<()> = RwLock::const_new(());
+
+/// Durably applies `mode` as the wallet's transparent policy behind the fence.
+///
+/// Blocks new public lookups at once, waits up to `drain` for requests already
+/// in flight, then commits. If they do not drain in time, nothing is applied
+/// and the error says so; the caller retries. Lookups resumed after the
+/// transition re-check the new policy and are withheld unless it keeps public
+/// authority under the generation they captured, which it never does.
+// Production never applies a transparent policy until private recovery ships;
+// private activation fixtures do.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn apply_transparent_policy_fenced(
+    db: &mut WalletDatabase,
+    mode: TransparentLedgerMode,
+    drain: Duration,
+) -> Result<AppliedTransparentPolicy, SyncError> {
+    let _fence = tokio::time::timeout(drain, POLICY_FENCE.write())
+        .await
+        .map_err(|_| SyncError::db("transparent policy: public lookups did not drain in time"))?;
+    with_wallet_db_write_lock("sync_engine.transparent_policy.apply", || {
+        db.apply_transparent_policy(mode)
+    })
+    .map_err(|error| SyncError::db(format!("apply_transparent_policy: {error}")))
+}
 
 use super::super::{enhancement::PublicTransparentLookups, SyncError, WalletDatabase};
 
@@ -93,7 +134,11 @@ impl TransparentLookupGate {
 
     /// Runs `rpc` only if lookups are still authorized. `rpc` is lazy, so the
     /// check precedes the request on the wire; `None` means withheld.
+    ///
+    /// Holds a policy-fence lease from the check until `rpc` completes, so a
+    /// fenced transition cannot commit between the two.
     pub(crate) async fn dispatch<F: Future>(&self, rpc: F) -> Result<Option<F::Output>, SyncError> {
+        let _lease = POLICY_FENCE.read().await;
         if !self.permits()? {
             return Ok(None);
         }
@@ -216,6 +261,98 @@ mod tests {
         // This build's Public read handle cannot read the stricter policy.
         assert!(gate.dispatch(rpc(&sent)).await.is_err());
         assert_eq!(sent.load(Ordering::SeqCst), 0);
+    }
+
+    /// A request in flight when a fenced transition starts is sent under the
+    /// policy it was checked against, and the transition commits only after it.
+    /// Without the fence, the transition would commit mid-request.
+    #[tokio::test]
+    async fn a_fenced_transition_waits_for_in_flight_lookups() {
+        let (_dir, path, gate) = wallet();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let in_flight = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.dispatch(async { released.await.unwrap() }).await }
+        });
+        // Let the dispatch take its lease and pass its check.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        let blocked = apply_transparent_policy_fenced(
+            &mut db,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_millis(100),
+        )
+        .await;
+        assert!(blocked.is_err(), "the request is still in flight");
+        assert!(
+            gate.permits().unwrap(),
+            "a transition that could not drain applies nothing"
+        );
+
+        release.send(()).unwrap();
+        assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
+        apply_transparent_policy_fenced(
+            &mut db,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        let sent = AtomicUsize::new(0);
+        assert_eq!(gate.dispatch(rpc(&sent)).await.unwrap(), None);
+        assert_eq!(sent.load(Ordering::SeqCst), 0);
+    }
+
+    /// Once a transition waits, a new lookup cannot start ahead of it: it
+    /// resumes after the commit and is withheld.
+    #[tokio::test]
+    async fn a_waiting_transition_blocks_new_lookups() {
+        let (_dir, path, gate) = wallet();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let in_flight = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.dispatch(async { released.await.unwrap() }).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let transition = tokio::spawn(async move {
+            let mut db =
+                open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                    .unwrap();
+            apply_transparent_policy_fenced(
+                &mut db,
+                TransparentLedgerMode::PrivateShadow,
+                Duration::from_secs(5),
+            )
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let sent = Arc::new(AtomicUsize::new(0));
+        let late = tokio::spawn({
+            let gate = gate.clone();
+            let sent = sent.clone();
+            async move { gate.dispatch(async move { rpc(&sent).await }).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            sent.load(Ordering::SeqCst),
+            0,
+            "queued behind the transition"
+        );
+
+        release.send(()).unwrap();
+        in_flight.await.unwrap().unwrap();
+        transition.await.unwrap().unwrap();
+        assert_eq!(late.await.unwrap().unwrap(), None);
+        assert_eq!(
+            sent.load(Ordering::SeqCst),
+            0,
+            "withheld under the new policy"
+        );
     }
 
     #[tokio::test]
