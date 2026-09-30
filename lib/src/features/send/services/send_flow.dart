@@ -547,6 +547,9 @@ String friendlyProposeSendError(String raw) {
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
+  if (isTransparentRecoveryIncompleteError(raw)) {
+    return transparentRecoveryIncompleteMessage;
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
       lower.contains('wallet sync failed before balance refresh') ||

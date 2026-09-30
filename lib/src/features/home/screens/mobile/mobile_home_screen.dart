@@ -53,6 +53,7 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/transparent_balance_display.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
 import 'mobile_ledger_shield_screen.dart';
@@ -1033,10 +1034,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               sync.saplingPendingBalance +
               sync.orchardPendingBalance +
               sync.ironwoodPendingBalance;
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+    final transparentBalance = TransparentBalanceDisplay.of(sync);
     final hasBalance =
-        shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
+        shieldedBalance > BigInt.zero ||
+        (transparentBalance.amount ?? BigInt.zero) > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = _mobileHomeFiatTextForZatoshi(
       shieldedBalance,
@@ -1144,10 +1145,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ).compactBalance.amountText,
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
-              transparentBalanceText: ZecAmount.fromZatoshi(
-                transparentBalance,
-              ).compactBalance.amountText,
-              hasTransparentBalance: transparentBalance > BigInt.zero,
+              transparentBalanceText: transparentBalance.text(
+                (amount) =>
+                    ZecAmount.fromZatoshi(amount).compactBalance.amountText,
+              ),
+              hasTransparentBalance: transparentBalance.visible,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
