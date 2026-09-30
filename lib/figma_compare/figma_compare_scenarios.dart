@@ -39,6 +39,7 @@ import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
+import 'mobile_hardware_selection_capture.dart';
 import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
 
@@ -107,6 +108,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-onboarding-intro',
     description: 'Mobile Introduction: The Shielded World',
     builder: buildMobileOnboardingIntroCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-hardware',
+    description: 'Mobile hardware wallet selection with Ledger available',
+    builder: buildMobileHardwareSelectionCapture,
     desktop: false,
     mobile: true,
   ),
