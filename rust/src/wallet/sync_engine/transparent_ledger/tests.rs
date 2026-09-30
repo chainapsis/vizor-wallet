@@ -316,6 +316,7 @@ async fn replacement_revisions_retract_withdrawn_events() {
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let funding = receive(1, address, 50_000, 150);
     let source = FixtureSource::new(main_hash);
+    source.qualified_in(&wallet.path, NETWORK);
     source
         .receive(funding.clone())
         .spend(spend(2, &funding, 170));

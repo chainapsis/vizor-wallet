@@ -276,7 +276,7 @@ impl State {
             height: anchor.height,
             hash: anchor.hash,
         };
-        match &self.revision {
+        let revision = match &self.revision {
             Some(revision) if revision.publication == publication => revision.clone(),
             previous => {
                 let lineage = previous.as_ref().map_or(1, |r| r.lineage + 1);
@@ -287,17 +287,20 @@ impl State {
                     sealed: false,
                     publication,
                 };
-                if let Some((path, network)) = &self.qualify_in {
-                    let mut db = open_wallet_db_with_timeout(path, *network, SYNC_DB_BUSY_TIMEOUT)
-                        .expect("open fixture wallet");
-                    with_wallet_db_write_lock("test.transparent_ledger.qualify", || {
-                        db.qualify_transparent_revision(&revision)
-                    })
-                    .expect("qualify fixture revision");
-                }
                 self.revision = Some(revision.clone());
                 revision
             }
+        };
+        // Replacements may advance lineage without changing the publication
+        // anchor. Every returned revision still needs trusted qualification.
+        if let Some((path, network)) = &self.qualify_in {
+            let mut db = open_wallet_db_with_timeout(path, *network, SYNC_DB_BUSY_TIMEOUT)
+                .expect("open fixture wallet");
+            with_wallet_db_write_lock("test.transparent_ledger.qualify", || {
+                db.qualify_transparent_revision(&revision)
+            })
+            .expect("qualify fixture revision");
         }
+        revision
     }
 }

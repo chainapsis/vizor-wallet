@@ -308,3 +308,249 @@ async fn activation_stops_public_lookups_captured_before_it() {
     let withheld = required().public_transparent_lookups(&wallet.db).unwrap();
     assert!(!withheld.is_allowed());
 }
+
+#[tokio::test]
+async fn reopened_public_handle_displays_durable_private_authority() {
+    let mut wallet = wallet();
+    let mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    drop(mode); // Simulate restart: this build opens Public handles again.
+    let current = balance(&wallet, &wallet.uuid);
+    assert_eq!(
+        current.transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
+    assert_eq!(current.transparent, VALUE);
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP + 1))
+        .unwrap();
+    let stale = balance(&wallet, &wallet.uuid);
+    assert_eq!(
+        stale.transparent_authority,
+        TransparentBalanceAuthority::LastKnown
+    );
+    assert_eq!(stale.transparent, 0);
+    assert_eq!(stale.transparent_last_known, Some(VALUE));
+}
+
+#[tokio::test]
+async fn reopened_public_handle_never_labels_candidate_funds_current() {
+    let mut wallet = wallet();
+    let mode = activate(&mut wallet).await;
+    let source = FixtureSource::new(main_hash);
+    source.receive(receive(1, external(&wallet, 0), VALUE, 150));
+    run_required(&mut wallet, &source).await;
+    drop(mode);
+    let b = balance(&wallet, &wallet.uuid);
+    assert_ne!(
+        b.transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
+    assert_eq!(b.transparent, 0);
+}
+
+// Authorization tests use finalized transaction effects; signature/proof validation
+// remains in the PCZT preparation layer before this shared dispatch boundary.
+fn hardware_tx(inputs: Vec<OutPoint>) -> zcash_primitives::transaction::Transaction {
+    use transparent::{
+        address::Script,
+        bundle::{Authorized, Bundle, TxIn, TxOut},
+    };
+    use zcash_primitives::transaction::{TransactionData, TxVersion};
+    TransactionData::<zcash_primitives::transaction::Authorized>::from_parts(
+        TxVersion::V5,
+        zcash_protocol::consensus::BranchId::Nu5,
+        0,
+        BlockHeight::from_u32(1000),
+        Some(Bundle {
+            vin: inputs
+                .into_iter()
+                .map(|p| TxIn::from_parts(p, Script::default(), u32::MAX))
+                .collect(),
+            vout: vec![TxOut::new(
+                Zatoshis::const_from_u64(10_000),
+                Script::default(),
+            )],
+            authorization: Authorized,
+        }),
+        None,
+        None,
+        None,
+    )
+    .freeze()
+    .unwrap()
+}
+
+#[tokio::test]
+async fn hardware_authority_blocks_revocation_and_preserves_inputs_on_rejection() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let funding = receive(1, external(&wallet, 0), VALUE, 150);
+    let tx = hardware_tx(vec![funding.outpoint]);
+    let before = snapshot_for_hardware(&wallet);
+    let other = rusqlite::Connection::open(&wallet.path).unwrap();
+    other.busy_timeout(Duration::ZERO).unwrap();
+    let result = crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        async {
+            // A concurrent policy/recovery/rewind writer cannot commit after
+            // authorization but before the bounded submission finishes.
+            assert!(other
+                .execute(
+                    "UPDATE tpir_meta SET policy_generation = policy_generation",
+                    []
+                )
+                .is_err());
+            Err::<(), _>("definite rejection")
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, Err("definite rejection"));
+    assert_eq!(snapshot_for_hardware(&wallet), before);
+    assert_eq!(
+        count(
+            &wallet.path,
+            &format!(
+                "SELECT COUNT(*) FROM transactions WHERE txid=x'{}'",
+                hex::encode(tx.txid().as_ref())
+            )
+        ),
+        0
+    );
+    other
+        .execute(
+            "UPDATE tpir_meta SET policy_generation = policy_generation",
+            [],
+        )
+        .unwrap();
+}
+
+fn snapshot_for_hardware(
+    wallet: &Wallet,
+) -> zcash_client_backend::data_api::transparent_ledger::TransparentLedgerSnapshot<AccountUuid> {
+    wallet
+        .db
+        .transparent_ledger_snapshot(wallet.account, crate::wallet::confirmations_policy())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn hardware_authority_withholds_stale_or_withdrawn_inputs_before_dispatch() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let sent = std::cell::Cell::new(0);
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP + 1))
+        .unwrap();
+    assert!(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        (TIP + 1).into(),
+        async {
+            sent.set(sent.get() + 1);
+        }
+    )
+    .await
+    .is_err());
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP))
+        .unwrap();
+    source.replace_events(vec![], vec![]);
+    run_required(&mut wallet, &source).await;
+    assert!(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        async {
+            sent.set(sent.get() + 1);
+        }
+    )
+    .await
+    .is_err());
+    assert_eq!(sent.get(), 0);
+}
+
+#[tokio::test]
+async fn hardware_authority_cancellation_releases_writer_reservation() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let mut dispatch = Box::pin(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        std::future::pending::<()>(),
+    ));
+    assert!(futures::poll!(&mut dispatch).is_pending());
+    let other = rusqlite::Connection::open(&wallet.path).unwrap();
+    other.busy_timeout(Duration::ZERO).unwrap();
+    assert!(other
+        .execute(
+            "UPDATE tpir_meta SET policy_generation = policy_generation",
+            []
+        )
+        .is_err());
+    drop(dispatch);
+    other
+        .execute(
+            "UPDATE tpir_meta SET policy_generation = policy_generation",
+            [],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn hardware_authority_admits_only_existing_chained_outputs() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let parent = hardware_tx(vec![]);
+    let child = hardware_tx(vec![OutPoint::new(*parent.txid().as_ref(), 0)]);
+    assert_eq!(
+        crate::wallet::sync::hardware_authority::dispatch(
+            &wallet.path,
+            NETWORK,
+            &child,
+            &[&parent],
+            TIP.into(),
+            async { true },
+        )
+        .await
+        .unwrap(),
+        true
+    );
+    let invalid = hardware_tx(vec![OutPoint::new(*parent.txid().as_ref(), 1)]);
+    assert!(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &invalid,
+        &[&parent],
+        TIP.into(),
+        async { panic!("withheld") },
+    )
+    .await
+    .is_err());
+}
