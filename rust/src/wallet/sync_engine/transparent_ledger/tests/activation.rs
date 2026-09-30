@@ -554,3 +554,51 @@ async fn hardware_authority_admits_only_existing_chained_outputs() {
     .await
     .is_err());
 }
+
+#[tokio::test]
+async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale() {
+    use crate::wallet::sync_engine::{send_transaction_with_status, test_lwd::CapturingLwd};
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let mut raw = Vec::new();
+    tx.write(&mut raw).unwrap();
+    let mut lwd = CapturingLwd::start(Vec::new()).await;
+    // The capturing service records transport requests; it does not relay or
+    // validate the fixture's synthetic signatures. This checks the real RPC
+    // future's polling boundary independently of PCZT proof/signature tests.
+    let before = snapshot_for_hardware(&wallet);
+    let _response = crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        send_transaction_with_status(&mut lwd.client, &raw),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lwd.count("/SendTransaction"), 1);
+    assert_eq!(snapshot_for_hardware(&wallet), before);
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP + 1))
+        .unwrap();
+    assert!(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        (TIP + 1).into(),
+        send_transaction_with_status(&mut lwd.client, &raw),
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        lwd.count("/SendTransaction"),
+        1,
+        "stale authority never polls the RPC"
+    );
+}
