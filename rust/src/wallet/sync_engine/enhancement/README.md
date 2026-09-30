@@ -296,7 +296,9 @@ lane cannot reach them any other way; the public status source is wrapped by
 `status::lightwalletd_source`. Fee enrichment and migration stop send no
 transaction identifiers, so they need no gate. The iOS FFI
 `zcash_lightwalletd_observe_transaction` has no wallet context and stays out of
-scope until Phase 4.
+scope: gating it needs wallet context across the C ABI and Swift. Production
+keeps `Public` authority throughout preparation, so it cannot disclose under a
+private policy yet, but it is a blocker for production private activation.
 
 A lane captures `EnhancementPolicy::public_transparent_lookups` once: the
 stricter of the captured mode and the policy durably applied to the wallet,
@@ -324,15 +326,19 @@ and UTXO query heights stay durable for a later authorized pass. A later
 operation resolves lookups afresh under the new generation, and a withheld
 lane never regains the generation it captured.
 
-Per-RPC checks narrow the check-to-dispatch window but cannot close it: another
-connection may commit a transition between a check and its request, and a
-disclosure cannot be undone. Phase 4, where the private-queries toggle can move
-a live wallet to `PrivateRequired`, needs a transition-side fence: a transition
-to a stricter mode blocks new public-lookup leases and drains or cancels
-in-flight ones before it commits, modeled on the destructive-operation drain
-and `ledgerOperationLifecycleProvider`. That likely needs a hook beside
-`apply_transparent_policy` in wallet-libraries. Nothing in this build applies a
-transition in production, so the fence is not built yet.
+Per-RPC checks narrow the check-to-dispatch window but cannot close it alone: a
+transition could commit between a check and its request, and a disclosure
+cannot be undone. The in-process **policy fence** closes it. Every dispatch
+holds a shared lease from its check until its request has been sent, and
+`apply_transparent_policy_fenced`, the only way this build applies a
+transparent policy, takes the exclusive side. A waiting transition blocks new
+leases at once, waits up to its drain deadline for in-flight requests, and only
+then commits; if they do not drain in time it applies nothing and fails, and
+the caller retries. Lookups queued behind it resume under the new generation
+and are withheld. No wallet-libraries hook is needed: the fence lives beside
+the only code that sends lookups. A transition made by another process is
+outside the fence, and the per-RPC check still bounds it to requests already in
+flight. Production never applies a transition yet; fixture activation does.
 
 - This build's Public handle cannot read a wallet whose durable policy is
   `PrivateRequired`; the gate then returns an error, which also sends nothing.
@@ -340,7 +346,7 @@ transition in production, so the fence is not built yet.
   tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
   recovery exists.
 
-## Candidate transparent recovery
+## Private transparent recovery and activation
 
 Phase 3 adds a candidate-recovery coordinator beside this module,
 `sync_engine/transparent_ledger.rs`. It is a separate discovery loop from
@@ -384,6 +390,49 @@ balances, input selection, locks, address allocation and history ignore it.
   name addresses and outpoints, are never logged. Candidate amounts from
   `transparent_candidate_recovery` are unverified: they can be above or below
   the real balance.
+
+### Activation (Phase 4)
+
+Under `PrivateRequired`, the coordinator offers each account whose passes
+finished to `promote_transparent_account`, one account at a time. The library
+rechecks everything in one transaction: the account is complete through a
+target equal to the chain tip, not quarantined, every contributing revision is
+qualified, and legacy public evidence agrees. A blocked promotion changes
+nothing, logs only its blocker count, and is retried after a later run; one
+account's blockers never hold back another. Nothing in this build can qualify
+a revision, so production never promotes. Tests qualify fixture revisions
+through the library's `test-dependencies` hook
+(`FixtureSource::qualified_in`).
+
+- **Active accounts.** Their later commits project into the wallet's outputs
+  and spends in the same transaction. A commit refused because the source is
+  quarantined stops the run; one refused because the account is quarantined,
+  or because an active account's revision is unqualified, skips that account.
+- **Balances.** `get_wallet_balances` reads the transparent fields from each
+  account's `transparent_ledger_snapshot` when the handle's mode is private:
+  the summary carries no transparent funds then. `WalletBalance` reports
+  `transparent_authority` (`Current`, `LastKnown`, or `Unavailable`) and, with
+  `LastKnown`, the informational `transparent_last_known` total; the
+  spendable transparent fields are then zero. Home shows the last-known amount
+  marked "(last known)", or "Unavailable", never an invented 0. Under `Public`
+  handles, which is all of production, the read is skipped and nothing changes.
+  The transparent fields never come from the cached summary under a private
+  mode, so ledger commits, promotion and rewinds cannot leave them stale; the
+  fenced policy apply also bumps the write epoch.
+- **Operations.** Shielding status and proposals read per-receiver balances
+  from the library's gated selector under private authority, and report
+  "transparent funds are unavailable" rather than an empty balance while
+  authority is missing. Send, PCZT, Ledger and Keystone paths are unchanged:
+  the library's selectors and `store_transactions_to_be_sent` authorize every
+  transparent input, and Dart maps the refusal to recovery copy instead of
+  insufficient funds.
+- **Lag, outage and rewind.** When the chain passes the covered height, or a
+  rewind clips coverage, authority pauses and Home shows the last-known amount.
+  A source outage never falls back to lightwalletd. The next run that covers
+  the new chain restores authority; activation survives rewinds.
+- **Tests.** `transparent_ledger/tests/activation.rs` drives the production
+  handle openers, balance reads and shielding entry point under a per-wallet
+  mode override (`enhancement::test_mode`), after a fenced transition.
 
 ## Transport and cancellation
 
