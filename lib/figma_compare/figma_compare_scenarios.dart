@@ -1,4 +1,4 @@
-import 'welcome_capture.dart';
+import 'mobile_welcome_capture.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
@@ -54,6 +54,7 @@ class FigmaCompareScenario {
     this.scrollToEnd = false,
     this.allowFocus = false,
     this.renderShadows = false,
+    this.platform,
   });
 
   final String id;
@@ -64,6 +65,7 @@ class FigmaCompareScenario {
   final bool scrollToEnd;
   final bool allowFocus;
   final bool renderShadows;
+  final TargetPlatform? platform;
 }
 
 /// Deterministic previews for the screens changed on the current branch.
