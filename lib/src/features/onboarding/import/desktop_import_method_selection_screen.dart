@@ -1,0 +1,44 @@
+import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/widgets/app_icon.dart';
+import 'desktop_method_selection.dart';
+
+class DesktopImportMethodSelectionScreen extends StatelessWidget {
+  const DesktopImportMethodSelectionScreen({
+    this.cancelRoute = '/welcome',
+    this.hardwareRoute = '/import/hardware',
+    this.secretPassphraseRoute = '/import?entry=import-method',
+    super.key,
+  });
+
+  final String cancelRoute;
+  final String hardwareRoute;
+  final String secretPassphraseRoute;
+
+  @override
+  Widget build(BuildContext context) {
+    return DesktopMethodSelectionScaffold(
+      title: 'Import Account\nto Vizor',
+      subtitle: 'Select the method you want.',
+      footerLabel: 'Cancel',
+      onFooterPressed: () => context.go(cancelRoute),
+      cards: [
+        DesktopMethodSelectionCard(
+          key: const ValueKey('desktop_import_secret_passphrase_card'),
+          iconName: AppIcons.key,
+          title: 'Import secret passphrase',
+          description: 'Vizor or any other Zcash wallet',
+          onPressed: () => context.go(secretPassphraseRoute),
+        ),
+        DesktopMethodSelectionCard(
+          key: const ValueKey('desktop_import_hardware_card'),
+          iconName: AppIcons.usb,
+          title: 'Connect hardware wallet',
+          description: 'Ledger or Keystone wallet',
+          onPressed: () => context.go(hardwareRoute),
+        ),
+      ],
+    );
+  }
+}

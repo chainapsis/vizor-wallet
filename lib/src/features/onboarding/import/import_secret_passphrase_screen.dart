@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
+import 'desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -36,6 +37,7 @@ bool _isValidBip39Passphrase(String value, {bool allowEmpty = false}) {
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
   const ImportSecretPassphraseScreen({
     this.args,
+    this.backTarget,
     this.privacyOverlayController,
     this.wordListOverride,
     this.mnemonicValidatorOverride,
@@ -45,6 +47,7 @@ class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
   });
 
   final ImportSecretPassphraseArgs? args;
+  final OnboardingBackTarget? backTarget;
   final SensitivePrivacyOverlayController? privacyOverlayController;
   final List<String>? wordListOverride;
   final bool Function(String mnemonic)? mnemonicValidatorOverride;
@@ -514,7 +517,7 @@ class _ImportSecretPassphraseScreenState
 
     if (!mounted) return;
     context.go(
-      '/import/birthday',
+      desktopImportLocation(context, '/import/birthday'),
       extra: ImportBirthdayArgs(
         mnemonic: _mnemonic,
         bip39Passphrase: _bip39Passphrase,
@@ -535,10 +538,9 @@ class _ImportSecretPassphraseScreenState
     final colors = context.colors;
 
     return ImportOnboardingTrailingPane(
-      backTarget: OnboardingBackTarget.callback(
-        label: 'Welcome',
-        onTap: _handleBack,
-      ),
+      backTarget:
+          widget.backTarget ??
+          OnboardingBackTarget.callback(label: 'Welcome', onTap: _handleBack),
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasSensitiveImportMaterial,
         controller: _privacyOverlayController,

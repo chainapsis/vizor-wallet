@@ -1,4 +1,5 @@
 import 'ledger_pairing_capture.dart';
+import 'desktop_onboarding_selection_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
@@ -67,6 +68,16 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-import',
+    description: 'Desktop onboarding import method selection',
+    builder: buildDesktopOnboardingImportCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-hardware',
+    description: 'Desktop onboarding hardware wallet selection',
+    builder: buildDesktopOnboardingHardwareCapture,
+  ),
   FigmaCompareScenario(
     id: 'caps-lock-unlock',
     description: 'Unlock screen with Caps Lock warning',
