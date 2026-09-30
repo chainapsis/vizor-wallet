@@ -38,6 +38,7 @@ import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
+import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -96,6 +97,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Mobile Welcome without Gift Card activation',
     builder: buildMobileAddAccountWelcomeCapture,
     renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-onboarding-intro',
+    description: 'Mobile Introduction: The Shielded World',
+    builder: buildMobileOnboardingIntroCapture,
     desktop: false,
     mobile: true,
   ),

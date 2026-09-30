@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -7,7 +8,7 @@ import '../../../core/widgets/app_icon.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-/// Step 3 — Figma `Onboarding 1 Intro` (4394:78213).
+/// Step 3 — Figma `New Account` (8569:129347).
 class MobileOnboardingIntroScreen extends StatelessWidget {
   const MobileOnboardingIntroScreen({super.key});
 
@@ -18,8 +19,23 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
       progress: mobileCreateProgress(3),
       onBack: () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
+      titleStyle: AppTypography.displayLarge.copyWith(
+        fontWeight: FontWeight.w500,
+      ),
+      topNavHeight: 74,
+      topNavProgressOffset: const Offset(-4.5, 0),
+      topNavProgressTrackColor: colors.background.inverse.withValues(
+        alpha: 0.35,
+      ),
+      contentGap: AppSpacing.base,
       // Line break matches the Figma subtitle wrap.
       subtitle: 'Zcash (ZEC) built around financial\nprivacy & self-custody.',
+      bottomAreaPadding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.s,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -27,16 +43,28 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
           AppButton(
             key: const ValueKey('mobile_intro_continue'),
             expand: true,
+            growWithContent: true,
+            constrainContent: true,
             onPressed: () => context.push('/onboarding/address-types'),
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Tell me how Zcash works'),
+            child: const Text(
+              'Tell me how Zcash works',
+              textAlign: TextAlign.center,
+            ),
           ),
           const SizedBox(height: AppSpacing.s),
-          _TextLinkButton(
+          AppButton(
             key: const ValueKey('mobile_intro_skip'),
-            label: 'I know how to use Zcash',
-            trailingIconName: AppIcons.skip,
-            onTap: () => context.push('/onboarding/secret-passphrase'),
+            variant: AppButtonVariant.ghost,
+            expand: true,
+            growWithContent: true,
+            constrainContent: true,
+            trailing: const AppIcon(AppIcons.skip),
+            onPressed: () => context.push('/onboarding/secret-passphrase'),
+            child: const Text(
+              'I know how to use Zcash',
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),
@@ -53,13 +81,13 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
           // intro frame's vertical rhythm.
           const SizedBox(height: AppSpacing.base + AppSpacing.md),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Text(
               "You're a few steps away from your first private wallet. "
               "Let's get you set up.",
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.primary,
+                color: colors.text.accent,
               ),
             ),
           ),
@@ -183,41 +211,59 @@ class _DarkInfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
+      key: const ValueKey('mobile_intro_info_card'),
       width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 175),
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.large),
       ),
+      foregroundDecoration: BoxDecoration(
+        border: Border.all(color: const Color(0x26FFFFFF)),
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          // Figma `Card Pattern` (4394:81168): concentric shield
-          // outlines at ~4% alpha behind the card content.
-          Positioned.fill(
-            child: Image.asset(
-              'assets/illustrations/onboarding_card_pattern.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            child: Column(
-              children: [
-                const SizedBox(height: AppSpacing.md),
-                AppIcon(iconName, size: 28, color: colors.text.homeCard),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.homeCard,
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          children: [
+            // Figma `Card Pattern` (8569:129370) overflows its 397×163
+            // frame and is clipped by the card. Keep the complete SVG so
+            // the outlines also continue through the bottom of the card.
+            Positioned(
+              top: -566.5,
+              left: (constraints.maxWidth - 397) / 2 + 1 - 345.24,
+              width: 1086.34,
+              height: 1220.5,
+              child: Opacity(
+                opacity: 0.15,
+                child: SvgPicture.asset(
+                  'assets/illustrations/mobile_onboarding_intro_pattern.svg',
+                  excludeFromSemantics: true,
                 ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.base,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(iconName, size: 24, color: colors.text.homeCard),
+                  const SizedBox(height: AppSpacing.s),
+                  Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.homeCard,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -406,50 +452,6 @@ class _AddressChip extends StatelessWidget {
             style: AppTypography.codeMedium.copyWith(color: textColor),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _TextLinkButton extends StatelessWidget {
-  const _TextLinkButton({
-    required this.label,
-    required this.onTap,
-    this.trailingIconName,
-    super.key,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final String? trailingIconName;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = context.colors.text.primary;
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 44,
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(color: color),
-                ),
-                if (trailingIconName != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  AppIcon(trailingIconName!, size: 18, color: color),
-                ],
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
