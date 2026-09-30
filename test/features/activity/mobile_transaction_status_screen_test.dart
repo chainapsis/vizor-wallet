@@ -700,6 +700,18 @@ void main() {
     );
   });
 
+  testWidgets('known payment details still mark unsettled effects', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_tx(provisional: true)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,
   ) async {

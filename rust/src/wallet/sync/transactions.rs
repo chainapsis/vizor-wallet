@@ -574,10 +574,16 @@ impl HistoryCompleteness {
         }
     }
 
+    /// Local intent can know every payment detail before scanning discovers
+    /// all owned effects. Public discovery still counts as settled.
     fn of(details: &TransactionHistoryDetails) -> Self {
         Self {
             details_complete: details.payment_details == DetailCompleteness::Complete,
-            provisional: details.classification == HistoryClassification::Provisional,
+            provisional: details.classification == HistoryClassification::Provisional
+                || details
+                    .effects
+                    .iter()
+                    .any(|effect| !effect.completeness.is_settled()),
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unknown => Fee::Unknown,
@@ -2706,6 +2712,112 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].info.tx_kind, "received");
         assert!(!rows[0].info.provisional);
+    }
+
+    #[test]
+    fn local_history_with_incomplete_effects_stays_provisional_until_scanned() {
+        use zcash_client_backend::data_api::transparent_ledger::{EffectCompleteness, PoolEffect};
+        use zcash_protocol::{value::Zatoshis, PoolType};
+
+        // Local construction knows the payment, but scanning still has to
+        // discover the receipt to the account's own external shielded address.
+        let mut details = TransactionHistoryDetails {
+            txid: TxId::from_bytes([1; 32]),
+            mined_height: None,
+            effects: vec![PoolEffect {
+                pool: PoolType::SAPLING,
+                received: Zatoshis::from_u64(140_000).unwrap(),
+                spent: Zatoshis::from_u64(200_000).unwrap(),
+                completeness: EffectCompleteness::Incomplete,
+            }],
+            payment_details: DetailCompleteness::Complete,
+            fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
+            classification: HistoryClassification::LocalIntent,
+            pending_private_details: vec![],
+        };
+        let pending = HistoryCompleteness::of(&details);
+        assert!(pending.details_complete);
+        assert!(pending.provisional);
+        assert_eq!(pending.fee, Fee::Known(10_000));
+
+        let mut base = tx_base_for_history();
+        base.attach_history(pending);
+        let mut summary = ActivitySummary::default();
+        summary.sent.amount = 50_000;
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].info.details_complete);
+        assert!(rows[0].info.provisional);
+
+        details.effects[0].received = Zatoshis::from_u64(190_000).unwrap();
+        details.effects[0].completeness = EffectCompleteness::Complete;
+        let scanned = HistoryCompleteness::of(&details);
+        assert!(scanned.details_complete);
+        assert!(!scanned.provisional);
+        assert_eq!(scanned.fee, pending.fee);
+    }
+
+    #[test]
+    fn history_mapping_keeps_public_discovery_settled_and_provisional_classification() {
+        use zcash_client_backend::data_api::transparent_ledger::{EffectCompleteness, PoolEffect};
+        use zcash_protocol::{value::Zatoshis, PoolType};
+
+        let mut details = TransactionHistoryDetails {
+            txid: TxId::from_bytes([1; 32]),
+            mined_height: None,
+            effects: vec![
+                PoolEffect {
+                    pool: PoolType::SAPLING,
+                    received: Zatoshis::ZERO,
+                    spent: Zatoshis::ZERO,
+                    completeness: EffectCompleteness::Complete,
+                },
+                PoolEffect {
+                    pool: PoolType::Transparent,
+                    received: Zatoshis::ZERO,
+                    spent: Zatoshis::ZERO,
+                    completeness: EffectCompleteness::PublicDiscovery,
+                },
+            ],
+            payment_details: DetailCompleteness::Complete,
+            fee: FeeState::NotApplicable,
+            classification: HistoryClassification::Reconstructed,
+            pending_private_details: vec![],
+        };
+        for classification in [
+            HistoryClassification::LocalIntent,
+            HistoryClassification::Reconstructed,
+            HistoryClassification::Provisional,
+        ] {
+            details.classification = classification;
+            for completeness in [
+                EffectCompleteness::Complete,
+                EffectCompleteness::PublicDiscovery,
+                EffectCompleteness::Incomplete,
+            ] {
+                // The unsettled effect need not be the first one.
+                details.effects[1].completeness = completeness;
+                let mapped = HistoryCompleteness::of(&details);
+                assert_eq!(
+                    mapped.provisional,
+                    classification == HistoryClassification::Provisional
+                        || completeness == EffectCompleteness::Incomplete,
+                    "{classification:?} with {completeness:?}"
+                );
+                assert!(mapped.details_complete);
+                assert_eq!(mapped.fee, Fee::NotApplicable);
+            }
+        }
+
+        // A missing memo alone does not make settled effects provisional.
+        details.classification = HistoryClassification::Reconstructed;
+        details.effects[1].completeness = EffectCompleteness::PublicDiscovery;
+        details.payment_details = DetailCompleteness::Incomplete;
+        details.fee = FeeState::Unknown;
+        let mapped = HistoryCompleteness::of(&details);
+        assert!(!mapped.details_complete);
+        assert!(!mapped.provisional);
+        assert_eq!(mapped.fee, Fee::Unknown);
     }
 
     #[test]

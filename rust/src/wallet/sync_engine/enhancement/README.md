@@ -446,7 +446,9 @@ history rows, so both describe one database state. Each entry carries:
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
-  entry.
+  entry. It is true for provisional classifications or any unsettled pool
+  effect. Local construction can know every payment detail before scanning
+  discovers a receipt to the account's own external shielded address.
 
 Classification follows the facts it has:
 
@@ -457,8 +459,10 @@ Classification follows the facts it has:
   is one `sent` row for the net debit less any recorded fee, with pool
   `unknown` and no recipient. Its change is not shown as a receive, and the
   net amount is not presented as a payment amount.
-- **Identity is stable.** Rows keep their txid and role while details arrive;
-  enrichment only changes their amounts and flags.
+- **Transaction identity is stable.** Rows keep their txid while details
+  arrive, but their role can change, such as a provisional `sent` becoming
+  `shielded`. A receipt follows a changed role only when that transaction has
+  a single row, so separate self-send legs are not conflated.
 
 Activity rows mark an incomplete entry "Details incomplete", and receipts show
 a "Details: Incomplete" row. History refreshes on the sync events that already

@@ -958,6 +958,23 @@ void main() {
     expect(find.text('Incomplete'), findsOneWidget);
   });
 
+  testWidgets('known payment details still mark unsettled effects', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(txKind: 'sent', provisional: true),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,
   ) async {

@@ -281,6 +281,12 @@ void main() {
     );
     expect(provisional.amountSubtitle, kIncompleteDetailsText);
 
+    final undiscoveredSelfReceipt = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', provisional: true),
+    );
+    expect(undiscoveredSelfReceipt.amountSubtitle, kIncompleteDetailsText);
+
     // A receive with every effect known can still lack a memo.
     final missingDetails = await mapRow(
       tester,
