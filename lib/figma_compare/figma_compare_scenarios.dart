@@ -1,6 +1,7 @@
 import 'welcome_capture.dart';
 import 'ledger_pairing_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
+import 'desktop_onboarding_intro_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
 // Figma comparison tooling is dev-only and may reuse Widgetbook fixtures.
@@ -54,6 +55,7 @@ class FigmaCompareScenario {
     this.scrollToEnd = false,
     this.allowFocus = false,
     this.renderShadows = false,
+    this.platform,
   });
 
   final String id;
@@ -64,6 +66,7 @@ class FigmaCompareScenario {
   final bool scrollToEnd;
   final bool allowFocus;
   final bool renderShadows;
+  final TargetPlatform? platform;
 }
 
 /// Deterministic previews for the screens changed on the current branch.
@@ -106,6 +109,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileOnboardingIntroCapture,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-intro',
+    description: 'Desktop Introduction: The Shielded World',
+    builder: buildDesktopOnboardingIntroCapture,
+    platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-import',

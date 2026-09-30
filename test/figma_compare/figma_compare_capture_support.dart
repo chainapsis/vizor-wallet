@@ -48,6 +48,10 @@ void runFigmaCompareCaptureTest({
               : 'pay-recipient',
         );
     final scenario = configuration.resolveScenario(expectedFormFactor);
+    if (scenario.platform != null) {
+      debugDefaultTargetPlatformOverride = scenario.platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    }
     final shadowsWereDisabled = debugDisableShadows;
     if (scenario.renderShadows) {
       debugDisableShadows = false;
