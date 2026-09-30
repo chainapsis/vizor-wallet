@@ -2725,6 +2725,12 @@ class TransactionDetail {
   final String? memo;
   final List<TransactionDetailOutput> outputs;
 
+  /// Whether `outputs` holds every recipient and memo.
+  final bool detailsComplete;
+
+  /// See [`TransactionInfo::provisional`].
+  final bool provisional;
+
   const TransactionDetail({
     required this.txidHex,
     required this.txKind,
@@ -2733,6 +2739,8 @@ class TransactionDetail {
     this.sourcePool,
     this.memo,
     required this.outputs,
+    required this.detailsComplete,
+    required this.provisional,
   });
 
   @override
@@ -2743,7 +2751,9 @@ class TransactionDetail {
       sourceAddress.hashCode ^
       sourcePool.hashCode ^
       memo.hashCode ^
-      outputs.hashCode;
+      outputs.hashCode ^
+      detailsComplete.hashCode ^
+      provisional.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2756,7 +2766,9 @@ class TransactionDetail {
           sourceAddress == other.sourceAddress &&
           sourcePool == other.sourcePool &&
           memo == other.memo &&
-          outputs == other.outputs;
+          outputs == other.outputs &&
+          detailsComplete == other.detailsComplete &&
+          provisional == other.provisional;
 }
 
 class TransactionDetailOutput {
@@ -2790,12 +2802,28 @@ class TransactionDetailOutput {
           usesOrchardReceiver == other.usesOrchardReceiver;
 }
 
+/// The fee of a transaction as it concerns the account.
+enum TransactionFeeState {
+  /// The account paid the recorded `fee`.
+  known,
+
+  /// The account spent funds, or may have, but the fee is not recorded.
+  /// Show it as unknown, never as zero.
+  unknown,
+
+  /// The account spent nothing, so it paid no fee.
+  notApplicable,
+}
+
 class TransactionInfo {
   final String txidHex;
   final BigInt minedHeight;
   final bool expiredUnmined;
   final PlatformInt64 accountBalanceDelta;
+
+  /// The recorded fee. Zero unless `fee_state` is `Known`.
   final BigInt fee;
+  final TransactionFeeState feeState;
   final BigInt blockTime;
   final bool isTransparent;
   final String txKind;
@@ -2803,18 +2831,28 @@ class TransactionInfo {
   final String displayPool;
   final BigInt createdTime;
 
+  /// Whether the recipients, payment amounts, and memos are known.
+  final bool detailsComplete;
+
+  /// Whether later discovery or enhancement can still change this entry.
+  /// A provisional debit is a net amount, not a payment amount.
+  final bool provisional;
+
   const TransactionInfo({
     required this.txidHex,
     required this.minedHeight,
     required this.expiredUnmined,
     required this.accountBalanceDelta,
     required this.fee,
+    required this.feeState,
     required this.blockTime,
     required this.isTransparent,
     required this.txKind,
     required this.displayAmount,
     required this.displayPool,
     required this.createdTime,
+    required this.detailsComplete,
+    required this.provisional,
   });
 
   @override
@@ -2824,12 +2862,15 @@ class TransactionInfo {
       expiredUnmined.hashCode ^
       accountBalanceDelta.hashCode ^
       fee.hashCode ^
+      feeState.hashCode ^
       blockTime.hashCode ^
       isTransparent.hashCode ^
       txKind.hashCode ^
       displayAmount.hashCode ^
       displayPool.hashCode ^
-      createdTime.hashCode;
+      createdTime.hashCode ^
+      detailsComplete.hashCode ^
+      provisional.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2841,12 +2882,15 @@ class TransactionInfo {
           expiredUnmined == other.expiredUnmined &&
           accountBalanceDelta == other.accountBalanceDelta &&
           fee == other.fee &&
+          feeState == other.feeState &&
           blockTime == other.blockTime &&
           isTransparent == other.isTransparent &&
           txKind == other.txKind &&
           displayAmount == other.displayAmount &&
           displayPool == other.displayPool &&
-          createdTime == other.createdTime;
+          createdTime == other.createdTime &&
+          detailsComplete == other.detailsComplete &&
+          provisional == other.provisional;
 }
 
 /// What the transparent fields of a [`WalletBalance`] represent.

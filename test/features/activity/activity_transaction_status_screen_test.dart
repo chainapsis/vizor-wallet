@@ -1011,6 +1011,9 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: fee ?? BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.known,
+    detailsComplete: true,
+    provisional: false,
     blockTime: _blockTime,
     isTransparent: false,
     txKind: txKind,
@@ -1030,6 +1033,8 @@ rust_sync.TransactionDetail _detail({
 }) {
   return rust_sync.TransactionDetail(
     txidHex: _txidHex,
+    detailsComplete: true,
+    provisional: false,
     txKind: txKind,
     primaryAddress: primaryAddress,
     sourceAddress: sourceAddress,

@@ -91,6 +91,9 @@ rust_sync.TransactionInfo _tx({
     expiredUnmined: expired,
     accountBalanceDelta: 0,
     fee: fee ?? BigInt.from(15000),
+    feeState: rust_sync.TransactionFeeState.known,
+    detailsComplete: true,
+    provisional: false,
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: false,
     txKind: kind,
@@ -111,6 +114,8 @@ rust_sync.TransactionDetail _detail({
 }) {
   return rust_sync.TransactionDetail(
     txidHex: txid,
+    detailsComplete: true,
+    provisional: false,
     txKind: kind,
     primaryAddress: primaryAddress ?? _address,
     sourceAddress: sourceAddress,

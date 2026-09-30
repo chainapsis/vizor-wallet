@@ -602,3 +602,65 @@ async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale()
         "stale authority never polls the RPC"
     );
 }
+
+/// History of projected activity: discovery found the effects, not the
+/// transactions, so a debit is shown as a provisional net amount.
+#[tokio::test]
+async fn projected_history_shows_a_known_debit_with_change_as_provisional() {
+    use crate::wallet::sync::{get_transaction_history, TransactionFeeState};
+
+    const CHANGE: u64 = 600_000;
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    let funding = receive(1, external(&wallet, 0), VALUE, 150);
+    let change = derived(&wallet, TransparentKeyScope::INTERNAL, 0);
+    source
+        .spend(spend(3, &funding, 170))
+        .receive(receive(3, change, CHANGE, 170));
+
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(stats.promoted, 1);
+
+    let history = get_transaction_history(&wallet.path, NETWORK, None, &wallet.uuid).unwrap();
+    let rows = |tag: u8| {
+        let txid = hex::encode([tag; 32]);
+        history
+            .iter()
+            .filter(|tx| tx.txid_hex == txid)
+            .collect::<Vec<_>>()
+    };
+
+    let received = rows(1);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].tx_kind, "received");
+    assert_eq!(received[0].display_amount, VALUE);
+    assert_eq!(received[0].fee_state, TransactionFeeState::NotApplicable);
+    assert!(received[0].details_complete);
+    assert!(!received[0].provisional);
+
+    // The change is not a receive, and the debit is not a payment amount.
+    let sent = rows(3);
+    assert_eq!(sent.len(), 1, "one row for the debit, none for its change");
+    assert_eq!(sent[0].tx_kind, "sent");
+    assert_eq!(sent[0].display_amount, VALUE - CHANGE);
+    assert_eq!(sent[0].display_pool, "unknown");
+    assert_eq!(sent[0].fee_state, TransactionFeeState::Unknown);
+    assert_eq!(sent[0].fee, 0);
+    assert!(!sent[0].details_complete);
+    assert!(sent[0].provisional);
+
+    let detail = crate::wallet::sync::get_transaction_detail(
+        &wallet.path,
+        NETWORK,
+        &wallet.uuid,
+        &sent[0].txid_hex,
+        "sent",
+    )
+    .unwrap();
+    assert!(!detail.details_complete);
+    assert!(detail.provisional);
+    assert_eq!(detail.primary_address, None, "no recipient is invented");
+}

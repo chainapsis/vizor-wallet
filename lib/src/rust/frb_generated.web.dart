@@ -1218,6 +1218,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TransactionDetailOutput dco_decode_transaction_detail_output(dynamic raw);
 
   @protected
+  TransactionFeeState dco_decode_transaction_fee_state(dynamic raw);
+
+  @protected
   TransactionInfo dco_decode_transaction_info(dynamic raw);
 
   @protected
@@ -2803,6 +2806,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TransactionDetailOutput sse_decode_transaction_detail_output(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransactionFeeState sse_decode_transaction_fee_state(
     SseDeserializer deserializer,
   );
 
@@ -4721,6 +4729,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_transaction_detail_output(
     TransactionDetailOutput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transaction_fee_state(
+    TransactionFeeState self,
     SseSerializer serializer,
   );
 
