@@ -42,6 +42,7 @@ class _BackgroundAutoLockHostState
     extends ConsumerState<BackgroundAutoLockHost> {
   AppLifecycleListener? _listener;
   DateTime? _hiddenAt;
+  bool _lockPending = false;
 
   @override
   void initState() {
@@ -51,6 +52,10 @@ class _BackgroundAutoLockHostState
       onHide: () => _hiddenAt = _now(),
       onShow: _onShow,
     );
+    // A lock deferred for a voting submission applies once it finishes.
+    ref.listenManual(votingSubmissionGuardProvider, (_, guards) {
+      if (guards.isEmpty) _lockIfPending();
+    });
   }
 
   DateTime _now() => widget.now?.call() ?? DateTime.now();
@@ -69,13 +74,20 @@ class _BackgroundAutoLockHostState
     // backwards cannot prove a short absence, so it locks.
     final away = _now().difference(hiddenAt);
     if (!away.isNegative && away < widget.timeout) return;
+    _lockPending = true;
+    _lockIfPending();
+  }
 
+  void _lockIfPending() {
+    // Same guard as sign-out: the lock waits for the submission to finish.
+    if (!_lockPending || ref.read(votingSubmissionGuardProvider).isNotEmpty) {
+      return;
+    }
+    _lockPending = false;
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured ||
         !security.isUnlocked ||
-        !(ref.read(walletProvider).value?.hasWallet ?? false) ||
-        // Same guard as sign-out; the next return re-evaluates.
-        ref.read(votingSubmissionGuardProvider).isNotEmpty) {
+        !(ref.read(walletProvider).value?.hasWallet ?? false)) {
       return;
     }
 

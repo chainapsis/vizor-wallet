@@ -162,15 +162,20 @@ void main() {
     expect(find.text('unlock'), findsOneWidget);
   });
 
-  testWidgets('does not lock during a voting submission', (tester) async {
+  testWidgets('waits for a voting submission, then locks', (tester) async {
     await pumpHost(tester, timeout: Duration.zero);
-    container
-        .read(votingSubmissionGuardProvider.notifier)
-        .acquire(accountUuid: 'account-1', roundId: 'round-1');
+    final guards = container.read(votingSubmissionGuardProvider.notifier);
+    final guard = guards.acquire(accountUuid: 'account-1', roundId: 'round-1');
 
     await _sendToBackgroundAndBack(tester);
 
     expect(security.locks, 0);
     expect(find.text('home'), findsOneWidget);
+
+    guards.release(guard);
+    await tester.pumpAndSettle();
+
+    expect(security.locks, 1);
+    expect(find.text('unlock'), findsOneWidget);
   });
 }
