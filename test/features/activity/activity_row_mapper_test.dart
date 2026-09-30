@@ -17,6 +17,7 @@ void main() {
     BigInt? giftCardAmountZatoshi,
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
+    bool privateQueriesEnabled = false,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -27,6 +28,7 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              privateQueriesEnabled: privateQueriesEnabled,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
               giftCardBatchCount: giftCardBatchCount,
@@ -278,12 +280,14 @@ void main() {
         detailsComplete: false,
         provisional: true,
       ),
+      privateQueriesEnabled: true,
     );
     expect(provisional.amountSubtitle, kIncompleteDetailsText);
 
     final undiscoveredSelfReceipt = await mapRow(
       tester,
       _transaction(txKind: 'sent', provisional: true),
+      privateQueriesEnabled: true,
     );
     expect(undiscoveredSelfReceipt.amountSubtitle, kIncompleteDetailsText);
 
@@ -291,8 +295,15 @@ void main() {
     final missingDetails = await mapRow(
       tester,
       _transaction(txKind: 'received', detailsComplete: false),
+      privateQueriesEnabled: true,
     );
     expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
+
+    final publicIncomplete = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', detailsComplete: false, provisional: true),
+    );
+    expect(publicIncomplete.amountSubtitle, isNull);
   });
 
   testWidgets('a failed entry keeps its refund note', (tester) async {

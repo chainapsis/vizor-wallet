@@ -3,7 +3,7 @@ import '../../rust/api/sync.dart' as rust_sync;
 /// Shown for a fee the wallet has not recorded. An unknown fee is never 0.
 const kUnknownFeeText = 'Unknown';
 
-/// Marks an activity entry that later discovery or enhancement can change.
+/// Temporary private-mode feedback for an entry discovery can still change.
 const kIncompleteDetailsText = 'Details incomplete';
 
 /// Explains [kIncompleteDetailsText] on a receipt.

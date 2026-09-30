@@ -442,7 +442,8 @@ history rows, so both describe one database state. Each entry carries:
 
 - `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
   longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
-  show an unknown fee as "Unknown", and a receive shows no fee.
+  in Private queries mode show an unknown fee as "Unknown", and a receive
+  shows no fee.
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
@@ -464,8 +465,13 @@ Classification follows the facts it has:
   `shielded`. A receipt follows a changed role only when that transaction has
   a single row, so separate self-send legs are not conflated.
 
-Activity rows mark an incomplete entry "Details incomplete", and receipts show
-a "Details: Incomplete" row. History refreshes on the sync events that already
+While Private queries is enabled, Activity rows mark an incomplete entry
+"Details incomplete", and receipts show a "Details: Incomplete" row and an
+"Unknown" fee when necessary. This is temporary integration feedback while
+private history approaches public-history completeness. With Private queries
+disabled, the existing presentation is preserved: no completeness notice and
+the previous placeholder or omitted fee row for an unrecorded fee. History
+refreshes on the sync events that already
 refresh it (`hasNewTx` or `isComplete`); recovery runs before a pass completes,
 so its commits are visible on the next refresh. No history gap starts any
 public lookup.

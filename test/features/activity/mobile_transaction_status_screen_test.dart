@@ -25,11 +25,13 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_tr
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_enhance_pir_notifier.dart';
 
 String _reverseHexBytes(String hex) {
   final bytes = [
@@ -160,6 +162,7 @@ Widget _app(
   Map<String, AccountInfo> ownAccounts = const {},
   bool pricingEnabled = true,
   bool privacyEnabled = false,
+  bool privateQueriesEnabled = false,
   String? routeTxid,
   List<rust_sync.TransactionInfo>? history,
 }) {
@@ -168,6 +171,9 @@ Widget _app(
     overrides: [
       swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
       privacyModeProvider.overrideWith(() => _FixedPrivacy(privacyEnabled)),
+      enhancePirProvider.overrideWith(
+        () => FakeEnhancePirNotifier(privateQueriesEnabled),
+      ),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(
@@ -635,6 +641,7 @@ void main() {
             detailsComplete: false,
             provisional: true,
           ),
+          privateQueriesEnabled: true,
         ),
       );
       await tester.pumpAndSettle();
@@ -649,6 +656,71 @@ void main() {
     },
   );
 
+  for (final kind in ['sent', 'received', 'shielded', 'migration']) {
+    for (final privateQueriesEnabled in [false, true]) {
+      testWidgets(
+        'feedback for $kind is private-only: $privateQueriesEnabled',
+        (tester) async {
+          await tester.pumpWidget(
+            _app(
+              _tx(
+                kind: kind,
+                fee: BigInt.zero,
+                feeState: rust_sync.TransactionFeeState.unknown,
+                detailsComplete: false,
+                provisional: true,
+              ),
+              privateQueriesEnabled: privateQueriesEnabled,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+            privateQueriesEnabled ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.text(kUnknownFeeText),
+            privateQueriesEnabled && kind != 'received'
+                ? findsOneWidget
+                : findsNothing,
+          );
+        },
+      );
+    }
+  }
+
+  testWidgets('an open receipt updates feedback when Private queries changes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(
+          fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.unknown,
+          provisional: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileTransactionStatusScreen)),
+    );
+    for (final enabled in [true, false]) {
+      await container.read(enhancePirProvider.notifier).set(enabled);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        enabled ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text(kUnknownFeeText),
+        enabled ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
+    }
+  });
+
   testWidgets('a provisional entry follows its transaction to a new role', (
     tester,
   ) async {
@@ -662,6 +734,7 @@ void main() {
       _app(
         provisional,
         history: [_tx(kind: 'shielded', displayPool: 'shielded')],
+        privateQueriesEnabled: true,
       ),
     );
     await tester.pumpAndSettle();
@@ -689,6 +762,7 @@ void main() {
           _tx(kind: 'shielded', displayPool: 'shielded'),
           _tx(kind: 'received', displayPool: 'shielded'),
         ],
+        privateQueriesEnabled: true,
       ),
     );
     await tester.pumpAndSettle();
@@ -703,7 +777,9 @@ void main() {
   testWidgets('known payment details still mark unsettled effects', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_tx(provisional: true)));
+    await tester.pumpWidget(
+      _app(_tx(provisional: true), privateQueriesEnabled: true),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -715,7 +791,7 @@ void main() {
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(_tx()));
+    await tester.pumpWidget(_app(_tx(), privateQueriesEnabled: true));
     await tester.pumpAndSettle();
 
     expect(

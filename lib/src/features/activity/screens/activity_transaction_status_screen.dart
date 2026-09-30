@@ -22,6 +22,7 @@ import '../../../core/widgets/review_info_row.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -312,12 +313,19 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  // Temporary integration feedback is scoped to the Private queries setting.
+  bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
+      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+
+  bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
+      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+
   String _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
     GiftCardActivityMetadata? giftCard,
   }) {
-    if (tx != null && transactionFeeIsUnknown(tx)) return kUnknownFeeText;
+    if (tx != null && _showUnknownFee(tx)) return kUnknownFeeText;
     if (tx == null || tx.fee <= BigInt.zero) return '--';
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     return hideAmountIfPrivacyMode(
@@ -499,7 +507,7 @@ class _ActivityTransactionStatusScreenState
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
-        feeText: tx.fee > BigInt.zero || transactionFeeIsUnknown(tx)
+        feeText: tx.fee > BigInt.zero || _showUnknownFee(tx)
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
         memoText: hasMemo ? memo : null,
@@ -644,7 +652,7 @@ class _ActivityTransactionStatusScreenState
         : tx.minedHeight == BigInt.zero
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
-    final feeText = tx.fee > BigInt.zero || transactionFeeIsUnknown(tx)
+    final feeText = tx.fee > BigInt.zero || _showUnknownFee(tx)
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
 
@@ -712,7 +720,7 @@ class _ActivityTransactionStatusScreenState
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
-              if (transactionDetailsIncomplete(tx))
+              if (_showIncompleteDetails(tx))
                 ReviewListRow(
                   label: 'Details',
                   value: 'Incomplete',
@@ -831,9 +839,7 @@ class _ActivityTransactionStatusScreenState
 
     // Dedicated receipts show what is known; the notice says it may be partial.
     // The fallback receipt carries its own row.
-    if (redesignedContent != null &&
-        tx != null &&
-        transactionDetailsIncomplete(tx)) {
+    if (redesignedContent != null && tx != null && _showIncompleteDetails(tx)) {
       redesignedContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

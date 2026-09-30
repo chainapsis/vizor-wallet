@@ -33,6 +33,7 @@ ActivityRowData buildTransactionActivityRow({
   DateTime? giftCardActivityTimestamp,
   String? giftCardDisplayPool,
   bool privacyModeEnabled = false,
+  bool privateQueriesEnabled = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
 }) {
@@ -115,7 +116,7 @@ ActivityRowData buildTransactionActivityRow({
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
         ? 'Refunded'
-        : transactionDetailsIncomplete(transaction)
+        : privateQueriesEnabled && transactionDetailsIncomplete(transaction)
         ? kIncompleteDetailsText
         : null,
     statusText: isFailed
