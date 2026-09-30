@@ -12,7 +12,7 @@ schema until its upgrade path is qualified.
    scanning so an old payment can be checked for a later spend.
 2. At the accepted tip, authenticate pending Ironwood memos through ordinary
    enhancement, following the general Private queries setting.
-   Funding memos register refund keys. Incoming recovery registers 50 lookahead
+   Funding memos register refund keys. Incoming recovery registers 30 lookahead
    keys. Historical key registration uses private discovery rather than queuing
    another block scan.
 3. Accept the receiver publication against a locally scanned block. Download its
@@ -232,8 +232,8 @@ payment will arrive. A late payment still belongs to the same key; receipt durin
 an active watch is detected locally, while receipt after final PIR closeout needs
 an explicit later recovery as described above.
 
-The seed-recovery gap is 50, and issuance may not exceed 50 slots after the highest
-canonical receipt (indices 0 through 49 before the first receipt). Provider deposit
+The seed-recovery gap is 30, and issuance may not exceed 30 slots after the highest
+canonical receipt (indices 0 through 29 before the first receipt). Provider deposit
 status and local issuance do not advance that boundary. This bound is enforced
 before a draft is resumed as well as before a new reservation is created. Every
 address must have complete verified history before quoting, with no sync restart.
@@ -261,7 +261,7 @@ reservations; coordinating concurrent issuance across devices remains outside
 this POC.
 
 Automated tests cover the paid/empty/paid/paid/paid example, restart, explicit quote
-rejection versus lost responses, the three-reservation cap, the 50-slot bound,
+rejection versus lost responses, the three-reservation cap, the 30-slot bound,
 late-payment races, stale statuses, canonical anchors, and deletion draining.
 For a manual check, start three small incoming attempts without funding them and
 confirm a fourth is blocked; quote refreshes should keep the same receive slot.

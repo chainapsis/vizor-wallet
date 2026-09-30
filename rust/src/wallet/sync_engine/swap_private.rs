@@ -475,6 +475,7 @@ async fn run_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::swap_receiving::RECEIVE_LOOKAHEAD;
     use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
 
     #[test]
@@ -514,12 +515,12 @@ mod tests {
             hash: [0; 32],
         };
         db.enable_private_swap_recovery(account).unwrap();
-        db.maintain_swap_receive_lookahead(account, 50, height)
+        db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, height)
             .unwrap();
         assert!(!crate::api::sync::enhance_pir_enabled());
         assert!(!crate::api::sync::near_swap_privacy_enabled());
         let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len(), 50);
+        assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
         for (account, key) in work {
             db.mark_swap_directory_checked(account, key.key, through)
                 .unwrap();
@@ -528,13 +529,14 @@ mod tests {
 
         // Model the registry advancement after a verified payment at the edge.
         // The library tests exercise the actual compact note decryption.
-        db.recover_swap_receiving_key(account, KeyId::new(Purpose::Receive, 49), height)
+        let edge = u64::from(RECEIVE_LOOKAHEAD) - 1;
+        db.recover_swap_receiving_key(account, KeyId::new(Purpose::Receive, edge), height)
             .unwrap();
-        db.maintain_swap_receive_lookahead(account, 50, height)
+        db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, height)
             .unwrap();
         let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len(), 50);
-        assert!(work.iter().all(|(_, key)| key.key.index() >= 50));
+        assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
+        assert!(work.iter().all(|(_, key)| key.key.index() > edge));
         for (account, key) in work {
             db.mark_swap_directory_checked(account, key.key, through)
                 .unwrap();

@@ -31,7 +31,8 @@ pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> 
     }
     Ok(())
 }
-const RECEIVE_LOOKAHEAD: u32 =
+/// Incoming lookahead window, equal to the library's seed-recovery gap.
+pub(crate) const RECEIVE_LOOKAHEAD: u32 =
     zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT as u32;
 const MAX_RESERVATION_TIP_LAG: u64 = 10;
 

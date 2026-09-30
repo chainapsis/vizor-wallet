@@ -36,7 +36,7 @@ service. Native Rust mnemonic lookup and Dart storage must use the same service.
 Do not reuse the installed app's wallet identity for this test.
 
 See [private recovery](near-swap-private-recovery-poc.md) for the directory protocol
-and the 48-hour, three-reservation, and 50-slot incoming-address policy.
+and the 48-hour, three-reservation, and 30-slot incoming-address policy.
 
 ## Wallet flow
 
@@ -59,11 +59,11 @@ and the 48-hour, three-reservation, and 50-slot incoming-address policy.
    include that memo in the transaction paying the deposit address. A zero-value
    change note is valid. Multi-step funding, non-transparent deposit addresses and
    deposit instructions requiring a separate memo are rejected in this POC.
-3. Every software restore registers 50 incoming lookahead keys from the account
+3. Every software restore registers 30 incoming lookahead keys from the account
    birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
 4. After ordinary scanning, refund keys and incoming lookahead use PIR discovery.
-   Payments extend incoming lookahead until 50 consecutive indices are empty.
+   Payments extend incoming lookahead until 30 consecutive indices are empty.
    Finish the extended window before reporting recovery complete. Each restored key
    keeps a fixed recovery height, so new blocks do not restart completed checks.
    Funding memos also restore a pending watch for the deposit address, which comes
@@ -87,7 +87,7 @@ replays the account's public Ironwood recovery interval. Receiver discovery and
 matching note enhancement still use PIR. No nullifier service is required.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
-beyond 50 consecutive unpaid indices. Incoming recovery cannot reconstruct a
+beyond 30 consecutive unpaid indices. Incoming recovery cannot reconstruct a
 provider association without its deposit address. Restored refund polling does
 not recreate the full UI activity record or infer funds from provider status.
 
