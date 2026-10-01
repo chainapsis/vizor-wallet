@@ -181,8 +181,13 @@ fn transparent_send_with_own_transparent_change_counts_movement_once() {
 
     let funding = legacy_transaction(OutPoint::new([9; 32], 0), external, 1_000_000);
     store_transparent_outputs(&mut db, &[downloaded(&uuid, &funding, 100)]).unwrap();
-    decrypt_and_store_transaction(&network, &mut db, &funding, Some(BlockHeight::from_u32(100)))
-        .unwrap();
+    decrypt_and_store_transaction(
+        &network,
+        &mut db,
+        &funding,
+        Some(BlockHeight::from_u32(100)),
+    )
+    .unwrap();
 
     // 1_000_000 in: 600_000 to an outside address, 390_000 back to the
     // wallet's internal address, 10_000 fee.
