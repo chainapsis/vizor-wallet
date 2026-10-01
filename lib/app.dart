@@ -596,6 +596,16 @@ List<RouteBase> appAuthRoutes(
   ),
 ];
 
+OnboardingBackTarget _desktopOnboardingEntryBackTarget(Ref ref) {
+  final hasWallet =
+      ref.read(walletProvider).value?.hasWallet ??
+      ref.read(appBootstrapProvider).hasWallet;
+  return OnboardingBackTarget.route(
+    label: hasWallet ? 'Add account' : 'Welcome',
+    routePath: hasWallet ? '/add-account' : '/welcome',
+  );
+}
+
 /// Desktop onboarding tree: welcome, the create/import/keystone
 /// split-view shells, and the keystone entry aliases. The mobile tree
 /// replaces these with single-pane mobile onboarding screens (same
@@ -913,7 +923,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const KeystoneHowToConnectScreen(),
+          child: KeystoneHowToConnectScreen(
+            backTarget: _desktopOnboardingEntryBackTarget(ref),
+          ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
@@ -1025,7 +1037,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             key: state.pageKey,
             transitionDuration: kOnboardingForwardDuration,
             reverseTransitionDuration: kOnboardingReverseDuration,
-            child: ImportSecretPassphraseScreen(args: args),
+            child: ImportSecretPassphraseScreen(
+              args: args,
+              backTarget: _desktopOnboardingEntryBackTarget(ref),
+            ),
             transitionsBuilder: _onboardingFadeTransition,
           );
         },
