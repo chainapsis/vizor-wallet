@@ -75,6 +75,20 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'mobile-accounts-unbacked-removal',
+    description: 'Unbacked software account removal warning',
+    builder: buildMobileAccountsUnbackedUpRemoveCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-accounts-unbacked-reset',
+    description: 'Last unbacked software account resets the wallet',
+    builder: buildMobileAccountsUnbackedUpResetCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-onboarding-welcome',
     description: 'Mobile initial Welcome with deterministic video poster',
     builder: buildMobileWelcomeCapture,

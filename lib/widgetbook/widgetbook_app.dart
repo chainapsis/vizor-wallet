@@ -688,6 +688,14 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileAccountsRemoveAccountUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Remove unbacked account',
+                      builder: buildMobileAccountsUnbackedUpRemoveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Reset unbacked wallet',
+                      builder: buildMobileAccountsUnbackedUpResetUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Remove account during migration',
                       builder:
                           buildMobileAccountsActiveMigrationRemoveAccountUseCase,

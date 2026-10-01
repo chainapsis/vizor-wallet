@@ -1502,6 +1502,72 @@ Widget buildMobileAccountsRemoveAccountUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileAccountsUnbackedUpRemoveUseCase(
+  BuildContext context, {
+  bool captureSheet = false,
+}) {
+  final accounts = _accountsDesignState.copyWith(
+    accounts: [
+      for (final account in _accountsDesignState.accounts)
+        account.uuid == 'preview-account-3'
+            ? account.copyWith(setupPending: true)
+            : account,
+    ],
+  );
+  return _buildMobileAccountRemovalPreview(
+    accounts,
+    account: accounts.accounts[2],
+    captureSheet: captureSheet,
+  );
+}
+
+Widget buildMobileAccountsUnbackedUpResetUseCase(
+  BuildContext context, {
+  bool captureSheet = false,
+}) {
+  final account = _accountsDesignState.accounts.first.copyWith(
+    setupPending: true,
+  );
+  return _buildMobileAccountRemovalPreview(
+    AccountState(accounts: [account], activeAccountUuid: account.uuid),
+    account: account,
+    captureSheet: captureSheet,
+  );
+}
+
+Widget buildMobileAccountsUnbackedUpRemoveCapture(BuildContext context) =>
+    buildMobileAccountsUnbackedUpRemoveUseCase(context, captureSheet: true);
+
+Widget buildMobileAccountsUnbackedUpResetCapture(BuildContext context) =>
+    buildMobileAccountsUnbackedUpResetUseCase(context, captureSheet: true);
+
+Widget _buildMobileAccountRemovalPreview(
+  AccountState accounts, {
+  required AccountInfo account,
+  required bool captureSheet,
+}) {
+  if (!captureSheet) {
+    return _buildMobileAccountsUseCase(
+      accounts,
+      initialSheetAccountUuid: account.uuid,
+      initialSheet: MobileAccountsInitialSheet.removeAccount,
+    );
+  }
+  // Root-navigator sheets paint outside the capture boundary. Compose the
+  // production sheet inside the frame only for deterministic image capture.
+  return _MobilePreviewFrame(
+    child: MobileModalOverlay(
+      background: _buildMobileAccountsUseCase(accounts),
+      child: MobileAccountRemovalSheet(
+        account: account,
+        isLastAccount: accounts.accounts.length == 1,
+        hasActiveMigration: false,
+        unsharedGiftCardCount: 0,
+      ),
+    ),
+  );
+}
+
 Widget buildMobileAccountsActiveMigrationRemoveAccountUseCase(
   BuildContext context,
 ) {
@@ -2824,6 +2890,9 @@ Widget _buildMobileAccountsUseCase(
     overrides: [
       appBootstrapProvider.overrideWithValue(_accountsBootstrap(accountState)),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
+      ),
       receiveAddressServiceProvider.overrideWithValue(
         const _PreviewReceiveAddressService(),
       ),
@@ -3270,6 +3339,10 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
     _router = GoRouter(
       initialLocation: '/accounts',
       routes: [
+        GoRoute(
+          path: '/welcome',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/welcome'),
+        ),
         GoRoute(
           path: '/accounts',
           builder: (_, _) => MobileAccountsScreen(
@@ -4140,6 +4213,11 @@ class _PreviewBiometricUnlockNotifier extends BiometricUnlockNotifier {
 
   @override
   Future<String?> readPasscode({required String reason}) async => passcode;
+
+  @override
+  Future<void> disable() async {
+    state = AsyncData(initialState.copyWith(enabled: false));
+  }
 }
 
 /// The schedule screens reach for `GoRouter` to resolve their back
