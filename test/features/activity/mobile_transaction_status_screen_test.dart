@@ -1112,6 +1112,8 @@ void main() {
             txidHex: tx.txidHex,
             txKind: 'unknown',
             outputs: const [],
+            detailsComplete: true,
+            provisional: false,
           ),
         ),
       );

@@ -1346,6 +1346,11 @@ rust_sync.TransactionInfo _zeroValueTx(String kind) {
     expiredUnmined: false,
     accountBalanceDelta: kind == 'sent' ? -10000 : 0,
     fee: BigInt.from(10000),
+    feeState: kind == 'sent'
+        ? rust_sync.TransactionFeeState.known
+        : rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: kind,
@@ -1377,6 +1382,8 @@ rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
         usesOrchardReceiver: true,
       ),
     ],
+    detailsComplete: true,
+    provisional: false,
   );
 }
 
