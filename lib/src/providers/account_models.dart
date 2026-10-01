@@ -47,6 +47,9 @@ class AccountInfo {
   /// Whether this account still needs to back up its secret passphrase.
   final bool setupPending;
 
+  /// Whether the deferred Zcash introduction is still offered on Home.
+  final bool giftEducationPending;
+
   /// Keeps the Home backup prompt hidden until this UTC instant. The backup
   /// itself remains incomplete while this is set.
   final DateTime? backupReminderSnoozedUntilUtc;
@@ -71,6 +74,7 @@ class AccountInfo {
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
     this.setupPending = false,
+    this.giftEducationPending = false,
     this.backupReminderSnoozedUntilUtc,
     this.backupReminderSnoozeCount = 0,
   }) : hardwareSignerKind =
@@ -97,6 +101,7 @@ class AccountInfo {
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
     bool? setupPending,
+    bool? giftEducationPending,
     DateTime? backupReminderSnoozedUntilUtc,
     bool clearBackupReminderSnooze = false,
     int? backupReminderSnoozeCount,
@@ -117,6 +122,7 @@ class AccountInfo {
     walletLinkSourceAccountUuid:
         walletLinkSourceAccountUuid ?? this.walletLinkSourceAccountUuid,
     setupPending: setupPending ?? this.setupPending,
+    giftEducationPending: giftEducationPending ?? this.giftEducationPending,
     backupReminderSnoozedUntilUtc: clearBackupReminderSnooze
         ? null
         : backupReminderSnoozedUntilUtc ?? this.backupReminderSnoozedUntilUtc,
@@ -141,6 +147,7 @@ class AccountInfo {
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
     if (setupPending) 'setupPending': true,
+    if (giftEducationPending) 'giftEducationPending': true,
     if (backupReminderSnoozedUntilUtc case final snoozedUntil?)
       'backupReminderSnoozedUntilUtc': snoozedUntil.toUtc().toIso8601String(),
     if (backupReminderSnoozeCount > 0)
@@ -179,6 +186,7 @@ class AccountInfo {
         json['walletLinkSourceAccountUuid'],
       ),
       setupPending: json['setupPending'] == true,
+      giftEducationPending: json['giftEducationPending'] == true,
       backupReminderSnoozedUntilUtc: _dateTimeUtcFromJson(
         json['backupReminderSnoozedUntilUtc'],
       ),

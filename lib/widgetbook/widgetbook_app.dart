@@ -356,6 +356,30 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Mobile',
                   useCases: [
                     WidgetbookUseCase(
+                      name: 'Home manual backup and Zcash education carousel',
+                      builder: buildMobileHomeBackupAndEducationUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home education after backup completes',
+                      builder: buildMobileHomeEducationOnlyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home Zcash introduction without setup progress',
+                      builder: buildMobileZcashEducationIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home Zcash address types without setup progress',
+                      builder: buildMobileZcashEducationAddressTypesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home Zcash final introduction page',
+                      builder: buildMobileZcashEducationThingsToKnowUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile Home backup reminder',
+                      builder: buildMobileHomeBackupReminderUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Default',
                       builder: buildMobileHomeDefaultUseCase,
                     ),
@@ -733,10 +757,6 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Secret passphrase gate',
                       builder: buildSettingsSecretPassphraseGateUseCase,
-                    ),
-                    WidgetbookUseCase(
-                      name: 'Mobile Home backup reminder',
-                      builder: buildMobileHomeBackupReminderUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Mobile backup intro',

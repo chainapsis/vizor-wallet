@@ -682,6 +682,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         }),
       );
 
+  /// Completes only the deferred Zcash introduction, independently of backup.
+  Future<void> markGiftEducationComplete(String uuid) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _updateAccountSetupMetadata(
+          uuid,
+          (account) => account.copyWith(giftEducationPending: false),
+        ),
+      );
+
   Future<void> _updateAccountSetupMetadata(
     String uuid,
     AccountInfo Function(AccountInfo) update,
@@ -695,6 +705,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     AccountInfo merge(AccountInfo account) => account.uuid == uuid
         ? account.copyWith(
             setupPending: updated.setupPending,
+            giftEducationPending: updated.giftEducationPending,
             backupReminderSnoozedUntilUtc:
                 updated.backupReminderSnoozedUntilUtc,
             backupReminderSnoozeCount: updated.backupReminderSnoozeCount,

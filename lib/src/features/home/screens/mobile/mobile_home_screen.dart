@@ -54,6 +54,7 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../widgets/mobile_home_carousel.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
 import 'mobile_ledger_shield_screen.dart';
@@ -1247,7 +1248,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            const _MobileBackupEntry(),
+            const _MobileSetupCarousel(),
             const _MobileVotingEntry(),
             if (widget.ironwoodMigrationCta.visible) ...[
               const SizedBox(height: AppSpacing.s),
@@ -1488,25 +1489,64 @@ class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
   }
 }
 
-class _MobileBackupEntry extends ConsumerWidget {
-  const _MobileBackupEntry();
+class _MobileSetupCarousel extends ConsumerWidget {
+  const _MobileSetupCarousel();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(showBackupReminderProvider)) return const SizedBox.shrink();
+    final items = <MobileHomeCarouselItem>[];
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+    );
+    if (ref.watch(showBackupReminderProvider)) {
+      items.add(
+        MobileHomeCarouselItem(
+          id: 'wallet-setup',
+          child: _MobileHomeEntryCard(
+            key: const ValueKey('mobile_home_backup'),
+            icon: AppIcons.shieldKeyhole,
+            title: 'Secure your wallet',
+            subtitle: 'Back up your secret passphrase\nLast step',
+            emphasized: true,
+            showChevron: false,
+            onTap: () => context.push(
+              '/setup/backup',
+              extra: ref.read(accountProvider).value?.activeAccountUuid,
+            ),
+          ),
+        ),
+      );
+    }
+    final educationPending = ref.watch(
+      accountProvider.select(
+        (state) => state.value?.activeAccount?.giftEducationPending ?? false,
+      ),
+    );
+    if (educationPending) {
+      items.add(
+        MobileHomeCarouselItem(
+          id: 'zcash-education',
+          child: _MobileHomeEntryCard(
+            key: const ValueKey('mobile_home_zcash_education'),
+            icon: AppIcons.book,
+            title: 'Learn about Zcash',
+            subtitle: 'Privacy, address types, and what to expect',
+            emphasized: true,
+            showChevron: false,
+            onTap: () => context.push(
+              '/setup/education/intro',
+              extra: ref.read(accountProvider).value?.activeAccountUuid,
+            ),
+          ),
+        ),
+      );
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.s),
-      child: _MobileHomeEntryCard(
-        key: const ValueKey('mobile_home_backup'),
-        icon: AppIcons.shieldKeyhole,
-        title: 'Secure your wallet',
-        subtitle: 'Back up your secret passphrase\nLast step',
-        emphasized: true,
-        showChevron: false,
-        onTap: () {
-          final uuid = ref.read(accountProvider).value?.activeAccountUuid;
-          if (uuid != null) context.push('/setup/backup', extra: uuid);
-        },
+      child: MobileHomeCarousel(
+        key: ValueKey('mobile_home_setup_carousel_$activeAccountUuid'),
+        items: items,
       ),
     );
   }

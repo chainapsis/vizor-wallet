@@ -10,14 +10,31 @@ import 'mobile_onboarding_scaffold.dart';
 
 /// Step 2 — Figma `New Account` (8569:129347).
 class MobileOnboardingIntroScreen extends StatelessWidget {
-  const MobileOnboardingIntroScreen({super.key});
+  const MobileOnboardingIntroScreen({
+    super.key,
+    this.onContinue,
+    this.onBack,
+    this.showProgress = true,
+    this.actionsEnabled = true,
+    this.onSkip,
+    this.closingText =
+        "You're a few steps away from your first private wallet. Let's get you set up.",
+  });
+
+  final VoidCallback? onContinue;
+  final VoidCallback? onBack;
+  final bool showProgress;
+  final bool actionsEnabled;
+  final VoidCallback? onSkip;
+  final String closingText;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
       progress: OnboardingProgressPosition.start.value,
-      onBack: () => Navigator.of(context).maybePop(),
+      showProgress: showProgress,
+      onBack: onBack ?? () => Navigator.of(context).maybePop(),
       title: 'The Shielded World',
       titleStyle: AppTypography.displayLarge.copyWith(
         fontWeight: FontWeight.w500,
@@ -45,8 +62,10 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
             expand: true,
             growWithContent: true,
             constrainContent: true,
-            onPressed: () =>
-                context.pushOnboarding('/onboarding/address-types'),
+            onPressed: !actionsEnabled
+                ? null
+                : onContinue ??
+                      () => context.pushOnboarding('/onboarding/address-types'),
             trailing: const AppIcon(AppIcons.chevronForward),
             child: const Text(
               'Tell me how Zcash works',
@@ -61,8 +80,12 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
             growWithContent: true,
             constrainContent: true,
             trailing: const AppIcon(AppIcons.skip),
-            onPressed: () =>
-                context.pushOnboarding('/onboarding/secret-passphrase'),
+            onPressed: !actionsEnabled
+                ? null
+                : onSkip ??
+                      () => context.pushOnboarding(
+                        '/onboarding/secret-passphrase',
+                      ),
             child: const Text(
               'I know how to use Zcash',
               textAlign: TextAlign.center,
@@ -85,8 +108,7 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Text(
-              "You're a few steps away from your first private wallet. "
-              "Let's get you set up.",
+              closingText,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.accent,
@@ -101,16 +123,30 @@ class MobileOnboardingIntroScreen extends StatelessWidget {
 
 /// Step 3 — Figma `New Wallet02` (4752:24608).
 class MobileAddressTypesScreen extends StatelessWidget {
-  const MobileAddressTypesScreen({super.key});
+  const MobileAddressTypesScreen({
+    super.key,
+    this.onContinue,
+    this.onBack,
+    this.showProgress = true,
+    this.actionsEnabled = true,
+  });
+
+  final VoidCallback? onContinue;
+  final VoidCallback? onBack;
+  final bool showProgress;
+  final bool actionsEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: MobileOnboardingProgressScope.of(
-        context,
-      ).at(OnboardingFlow.create, OnboardingStage.addressTypes).value,
-      onBack: () => Navigator.of(context).maybePop(),
+      showProgress: showProgress,
+      progress: !showProgress
+          ? 0
+          : MobileOnboardingProgressScope.of(
+              context,
+            ).at(OnboardingFlow.create, OnboardingStage.addressTypes).value,
+      onBack: onBack ?? () => Navigator.of(context).maybePop(),
       title: 'Zcash Address Types',
       contentGap: 32,
       bottomAreaPadding: _educationActionPadding(context),
@@ -120,7 +156,10 @@ class MobileAddressTypesScreen extends StatelessWidget {
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
         expand: true,
-        onPressed: () => context.pushOnboarding('/onboarding/things-to-know'),
+        onPressed: !actionsEnabled
+            ? null
+            : onContinue ??
+                  () => context.pushOnboarding('/onboarding/things-to-know'),
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
@@ -158,16 +197,30 @@ class MobileAddressTypesScreen extends StatelessWidget {
 
 /// Step 4 — Figma `New Wallet03` (4752:24673).
 class MobileThingsToKnowScreen extends StatelessWidget {
-  const MobileThingsToKnowScreen({super.key});
+  const MobileThingsToKnowScreen({
+    super.key,
+    this.onContinue,
+    this.onBack,
+    this.showProgress = true,
+    this.actionsEnabled = true,
+  });
+
+  final VoidCallback? onContinue;
+  final VoidCallback? onBack;
+  final bool showProgress;
+  final bool actionsEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileOnboardingStepScaffold(
-      progress: MobileOnboardingProgressScope.of(
-        context,
-      ).at(OnboardingFlow.create, OnboardingStage.thingsToKnow).value,
-      onBack: () => Navigator.of(context).maybePop(),
+      showProgress: showProgress,
+      progress: !showProgress
+          ? 0
+          : MobileOnboardingProgressScope.of(
+              context,
+            ).at(OnboardingFlow.create, OnboardingStage.thingsToKnow).value,
+      onBack: onBack ?? () => Navigator.of(context).maybePop(),
       title: 'Things to know',
       contentGap: 32,
       bottomAreaPadding: _educationActionPadding(context),
@@ -175,8 +228,10 @@ class MobileThingsToKnowScreen extends StatelessWidget {
       bottomArea: AppButton(
         key: const ValueKey('mobile_things_to_know_continue'),
         expand: true,
-        onPressed: () =>
-            context.pushOnboarding('/onboarding/secret-passphrase'),
+        onPressed: !actionsEnabled
+            ? null
+            : onContinue ??
+                  () => context.pushOnboarding('/onboarding/secret-passphrase'),
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),

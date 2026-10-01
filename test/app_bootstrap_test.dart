@@ -117,6 +117,40 @@ void main() {
   );
 
   test(
+    'bootstrap preserves deferred Zcash education independently of backup',
+    () {
+      const rustAccount = AccountInfo(
+        uuid: 'education',
+        name: 'Rust',
+        order: 0,
+      );
+      for (final backupPending in [false, true]) {
+        for (final educationPending in [false, true]) {
+          final stored = rustAccount.copyWith(
+            setupPending: backupPending,
+            giftEducationPending: educationPending,
+          );
+          final merged = mergeBootstrappedAccountInfo(
+            rustAccount: rustAccount,
+            storedAccount: AccountInfo.fromJson(stored.toJson()),
+            order: 0,
+          );
+          expect(merged.setupPending, backupPending);
+          expect(merged.giftEducationPending, educationPending);
+        }
+      }
+      expect(
+        mergeBootstrappedAccountInfo(
+          rustAccount: rustAccount,
+          storedAccount: null,
+          order: 0,
+        ).giftEducationPending,
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'mergeBootstrappedAccountInfo normalizes legacy profile picture ids',
     () {
       const rustAccount = AccountInfo(

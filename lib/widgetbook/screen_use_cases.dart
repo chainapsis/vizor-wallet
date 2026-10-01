@@ -60,6 +60,7 @@ import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_screens.dart';
+import '../src/features/onboarding/mobile/mobile_gift_education_screen.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -1092,20 +1093,65 @@ Widget buildMobileBackupCompletionUseCase(BuildContext context) =>
 Widget buildMobileHomeBackupReminderUseCase(BuildContext context) =>
     _buildMobileHomeUseCase(
       votingVisible: false,
-      accountState: _backupPreviewState,
+      accountState: _setupPreviewState,
       syncState: SyncState(
-        accountUuid: _backupPreviewState.activeAccountUuid,
+        accountUuid: _setupPreviewState.activeAccountUuid,
         hasAccountScopedData: true,
         percentage: 1,
         totalBalance: BigInt.zero,
       ),
-      backupPreview: true,
+      setupPreview: true,
     );
 
-final _backupPreviewState = _accountsDesignState.copyWith(
+Widget buildMobileHomeBackupAndEducationUseCase(BuildContext context) =>
+    _buildMobileDeferredSetupUseCase();
+
+Widget buildMobileHomeEducationOnlyUseCase(BuildContext context) =>
+    _buildMobileDeferredSetupUseCase(backupPending: false);
+
+Widget buildMobileZcashEducationIntroUseCase(BuildContext context) =>
+    _buildMobileDeferredSetupUseCase(initialLocation: '/setup/education/intro');
+
+Widget buildMobileZcashEducationAddressTypesUseCase(BuildContext context) =>
+    _buildMobileDeferredSetupUseCase(
+      initialLocation: '/setup/education/address-types',
+    );
+
+Widget buildMobileZcashEducationThingsToKnowUseCase(BuildContext context) =>
+    _buildMobileDeferredSetupUseCase(
+      initialLocation: '/setup/education/things-to-know',
+    );
+
+Widget _buildMobileDeferredSetupUseCase({
+  bool backupPending = true,
+  String initialLocation = '/home',
+}) {
+  final accounts = _setupPreviewState.copyWith(
+    accounts: [
+      for (final account in _setupPreviewState.accounts)
+        account.copyWith(
+          setupPending: backupPending && !account.isHardware,
+          giftEducationPending: !account.isHardware,
+        ),
+    ],
+  );
+  return _buildMobileHomeUseCase(
+    votingVisible: false,
+    initialLocation: initialLocation,
+    accountState: accounts,
+    syncState: SyncState(
+      accountUuid: accounts.activeAccountUuid,
+      hasAccountScopedData: true,
+      percentage: 1,
+    ),
+    setupPreview: true,
+  );
+}
+
+final _setupPreviewState = _accountsDesignState.copyWith(
   accounts: [
     for (final account in _accountsDesignState.accounts)
-      account.copyWith(setupPending: true),
+      account.copyWith(setupPending: !account.isHardware),
   ],
 );
 
@@ -1122,8 +1168,8 @@ Widget _buildMobileBackupUseCase(
         _accountsBootstrap(_accountsDesignState),
       ),
       accountProvider.overrideWith(
-        () => _PreviewBackupAccountNotifier(
-          pending ? _backupPreviewState : _accountsDesignState,
+        () => _PreviewSetupAccountNotifier(
+          pending ? _setupPreviewState : _accountsDesignState,
         ),
       ),
       appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
@@ -1217,11 +1263,11 @@ class _MobileBackupHarnessState extends State<_MobileBackupHarness> {
   Widget build(BuildContext context) => Router.withConfig(config: _router);
 }
 
-class _PreviewBackupAccountNotifier extends _PreviewAccountNotifier {
-  _PreviewBackupAccountNotifier(super.initialState);
+class _PreviewSetupAccountNotifier extends _PreviewAccountNotifier {
+  _PreviewSetupAccountNotifier(super.initialState);
 
   @override
-  Future<void> markBackedUp(String uuid) async => _updateBackup(
+  Future<void> markBackedUp(String uuid) async => _updateSetupMetadata(
     uuid,
     (account) =>
         account.copyWith(setupPending: false, clearBackupReminderSnooze: true),
@@ -1229,7 +1275,7 @@ class _PreviewBackupAccountNotifier extends _PreviewAccountNotifier {
 
   @override
   Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async =>
-      _updateBackup(uuid, (account) {
+      _updateSetupMetadata(uuid, (account) {
         final count = (account.backupReminderSnoozeCount + 1).clamp(1, 3);
         return account.copyWith(
           backupReminderSnoozeCount: count,
@@ -1239,7 +1285,17 @@ class _PreviewBackupAccountNotifier extends _PreviewAccountNotifier {
         );
       });
 
-  void _updateBackup(String uuid, AccountInfo Function(AccountInfo) update) {
+  @override
+  Future<void> markGiftEducationComplete(String uuid) async =>
+      _updateSetupMetadata(
+        uuid,
+        (account) => account.copyWith(giftEducationPending: false),
+      );
+
+  void _updateSetupMetadata(
+    String uuid,
+    AccountInfo Function(AccountInfo) update,
+  ) {
     final current = state.requireValue;
     state = AsyncData(
       current.copyWith(
@@ -2543,7 +2599,8 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
     buildMobileHomeDefaultUseCase(context, votingVisible: false);
 
 Widget _buildMobileHomeUseCase({
-  bool backupPreview = false,
+  String initialLocation = '/home',
+  bool setupPreview = false,
   bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
@@ -2563,6 +2620,7 @@ Widget _buildMobileHomeUseCase({
   NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
+    initialLocation: initialLocation,
     openAccountsSheet: openAccountsSheet,
     showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
   );
@@ -2576,11 +2634,11 @@ Widget _buildMobileHomeUseCase({
         ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
       accountProvider.overrideWith(
-        () => backupPreview
-            ? _PreviewBackupAccountNotifier(accountState)
+        () => setupPreview
+            ? _PreviewSetupAccountNotifier(accountState)
             : _PreviewAccountNotifier(accountState),
       ),
-      if (backupPreview) ...[
+      if (setupPreview) ...[
         appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
         biometricUnlockProvider.overrideWith(
           () => _PreviewBiometricUnlockNotifier(
@@ -3263,10 +3321,12 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
 
 class _MobileHomeHarness extends StatefulWidget {
   const _MobileHomeHarness({
+    this.initialLocation = '/home',
     required this.openAccountsSheet,
     required this.showStaticIronwoodAnnouncement,
   });
 
+  final String initialLocation;
   final bool openAccountsSheet;
   final bool showStaticIronwoodAnnouncement;
 
@@ -3282,8 +3342,20 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: '/home',
+      initialLocation: widget.initialLocation,
       routes: [
+        for (final entry in {
+          '/setup/education/intro': GiftEducationPage.intro,
+          '/setup/education/address-types': GiftEducationPage.addressTypes,
+          '/setup/education/things-to-know': GiftEducationPage.thingsToKnow,
+        }.entries)
+          GoRoute(
+            path: entry.key,
+            builder: (_, state) => MobileGiftEducationScreen(
+              page: entry.value,
+              accountUuid: state.extra as String?,
+            ),
+          ),
         GoRoute(
           path: '/setup/backup',
           builder: (_, state) => MobileSeedPhraseScreen(

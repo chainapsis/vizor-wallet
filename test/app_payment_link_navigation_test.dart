@@ -35,6 +35,8 @@ void main() {
       '/settings/change-password',
       '/setup/backup',
       '/setup/backup/reveal',
+      '/setup/education/intro',
+      '/setup/education/address-types',
     ]) {
       expect(
         paymentLinkEntryBlockedAtLocation(location),

@@ -13,8 +13,20 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 const _accounts = AccountState(
   accounts: [
-    AccountInfo(uuid: 'a', name: 'First', order: 0, setupPending: true),
-    AccountInfo(uuid: 'b', name: 'Second', order: 1, setupPending: true),
+    AccountInfo(
+      uuid: 'a',
+      name: 'First',
+      order: 0,
+      setupPending: true,
+      giftEducationPending: true,
+    ),
+    AccountInfo(
+      uuid: 'b',
+      name: 'Second',
+      order: 1,
+      setupPending: true,
+      giftEducationPending: true,
+    ),
   ],
   activeAccountUuid: 'a',
   activeAddress: 'u1address',
@@ -136,6 +148,7 @@ void main() {
       await notifier.markBackedUp('a');
       final accounts = container.read(accountProvider).requireValue.accounts;
       expect(accounts.first.setupPending, isFalse);
+      expect(accounts.first.giftEducationPending, isTrue);
       expect(accounts.first.backupReminderSnoozedUntilUtc, isNull);
       expect(accounts.first.backupReminderSnoozeCount, 0);
       expect(accounts.last.setupPending, isTrue);
@@ -151,10 +164,55 @@ void main() {
   );
 
   test(
+    'education completion persists without changing a snoozed backup or another account',
+    () async {
+      final now = DateTime.utc(2026, 10, 1);
+      await notifier.snoozeBackupReminder('a', now: now);
+      await notifier.markGiftEducationComplete('a');
+      final accounts = container.read(accountProvider).requireValue.accounts;
+      expect(accounts.first.giftEducationPending, isFalse);
+      expect(accounts.first.setupPending, isTrue);
+      expect(
+        accounts.first.backupReminderSnoozedUntilUtc,
+        now.add(const Duration(days: 2)),
+      );
+      expect(accounts.first.backupReminderSnoozeCount, 1);
+      expect(accounts.last.giftEducationPending, isTrue);
+      final json =
+          jsonDecode((await storage.read(key: 'zcash_accounts'))!) as List;
+      final merged = mergeBootstrappedAccountInfo(
+        rustAccount: const AccountInfo(uuid: 'a', name: 'Rust', order: 0),
+        storedAccount: AccountInfo.fromJson(json.first as Map<String, dynamic>),
+        order: 0,
+      );
+      expect(merged.giftEducationPending, isFalse);
+      expect(merged.setupPending, isTrue);
+      expect(merged.backupReminderSnoozeCount, 1);
+      await expectLater(
+        notifier.markGiftEducationComplete('missing'),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
     'failed persistence leaves completion and snooze state unchanged',
     () async {
       storage.fail = true;
       await expectLater(notifier.markBackedUp('a'), throwsA(anything));
+      await expectLater(
+        notifier.markGiftEducationComplete('a'),
+        throwsA(anything),
+      );
+      expect(
+        container
+            .read(accountProvider)
+            .requireValue
+            .accounts
+            .first
+            .giftEducationPending,
+        isTrue,
+      );
       await expectLater(notifier.snoozeBackupReminder('a'), throwsA(anything));
       expect(
         container
