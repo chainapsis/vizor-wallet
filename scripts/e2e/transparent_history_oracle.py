@@ -11,6 +11,7 @@ Subcommands:
   compare   observed views vs expected views; nonzero exit on any mismatch
   gate      suite verdict: per-case matrix, negative controls, required cases
   manifest  frozen public fixture data, code pins, and checksums
+  reprofile re-apply a changed profile to saved chain facts (development aid)
 
 Mode-specific expectations live in transparent_history_profile_<mode>.py.
 """
@@ -388,6 +389,34 @@ def derive(args):
     )
 
 
+def reprofile(args):
+    """Re-applies the profile to the chain facts saved at derive time.
+
+    Development aid for profile changes. Its inputs are the oracle's own chain
+    facts and the authored manifest, never an observation, so it cannot turn
+    a candidate's output into an expectation.
+    """
+    expected = load(args.expected)
+    cases = load(args.cases)
+    cases["txs"] = [t for t in cases["txs"] if t["txid"] in expected["facts"]]
+    profile = load_profile(expected["profile"])
+    context = {
+        "checkpoint": expected["checkpoint"],
+        "tip": expected["tip"],
+        "tip_hash": expected["tip_hash"],
+        "cases": cases,
+        "facts": expected["facts"],
+        "effects": expected["effects"],
+        "accounts": expected["accounts"],
+        "alice_accounts": sorted(expected["accounts"]),
+    }
+    expected["cases"] = cases["cases"]
+    expected["activity"] = profile.activity(context)
+    expected["account_checks"] = profile.account_checks(context)
+    dump(args.out, expected)
+    print(f"reprofiled {expected['checkpoint']}: activity={len(expected['activity'])}")
+
+
 # -------------------------------------------------------------- compare -----
 
 
@@ -566,9 +595,11 @@ def check_constraints(item, rows, view, expected):
 
 
 def compare_views(expected, observed):
-    """Returns {case: {variant: [problems]}} plus suite-level problems."""
+    """Returns {case: {variant: [problems]}}, suite-level problems, and
+    informational observations for cases asserted at other checkpoints."""
     results = {}
     suite = []
+    info = []
     views = {(v["variant"], v["account"]): v for v in observed["views"]}
     tx_case = expected["tx_case"]
 
@@ -629,16 +660,21 @@ def compare_views(expected, observed):
         if check.get("case"):
             record(check["case"], check["variant"], [])
         for problem, txids in problems:
+            owners = sorted({tx_case[t] for t in txids if t in tx_case})
+            asserted = [c for c in owners if asserts_variant(c, check["variant"])]
             if check.get("case"):
                 cases = [check["case"]]
+            elif asserted:
+                cases = asserted
+            elif owners:
+                # The owning cases are asserted at another checkpoint; record
+                # the observation without failing this one.
+                info.append(
+                    f"{check['variant']} {check['account']} ({'/'.join(owners)}): {problem}"
+                )
+                continue
             else:
-                cases = sorted(
-                    {
-                        tx_case[t]
-                        for t in txids
-                        if t in tx_case and asserts_variant(tx_case[t], check["variant"])
-                    }
-                ) or ["suite"]
+                cases = ["suite"]
             for case in cases:
                 if case == "suite":
                     suite.append(f"{check['variant']} {check['account']}: {problem}")
@@ -671,7 +707,7 @@ def compare_views(expected, observed):
                     suite.append(
                         f"requests {variant}: SendTransaction of {subjects[:1]} not built by this wallet"
                     )
-    return results, suite
+    return results, suite, info
 
 
 def account_problems(check, view, expected, observed, views):
@@ -744,11 +780,18 @@ def account_problems(check, view, expected, observed, views):
             problems.append((f"balance unavailable: {view.get('balance_error')}", []))
         else:
             if balance["transparent"] != exp["transparent_balance"]:
+                # Attribute to the outputs the wallet and the chain disagree
+                # on: wallet-unspent (mined or not) versus chain UTXOs.
+                wallet_unspent = {
+                    (e["txid"], e["index"]) for e in view["ledger"] if not e["mined_spenders"]
+                }
+                chain_unspent = {(e["txid"], e["index"]) for e in exp["utxos"]}
+                differing = sorted({t for t, _ in wallet_unspent ^ chain_unspent})
                 problems.append(
                     (
                         f"transparent balance {balance['transparent']} != chain "
                         f"{exp['transparent_balance']}",
-                        [e["txid"] for e in exp["utxos"]],
+                        differing or [e["txid"] for e in exp["utxos"]],
                     )
                 )
             if balance["transparent_authority"] not in check.get("authority", ["current"]):
@@ -799,7 +842,7 @@ def compare(args):
     observed = load(args.observed)
     if args.mutate:
         expected = apply_mutation(expected, args.mutate)
-    results, suite = compare_views(expected, observed)
+    results, suite, info = compare_views(expected, observed)
     failed = {
         case: {v: p for v, p in variants.items() if p}
         for case, variants in results.items()
@@ -811,7 +854,10 @@ def compare(args):
         "evaluated": {c: sorted(v) for c, v in results.items()},
         "failures": failed,
         "suite_failures": suite,
+        "informational": info,
     }
+    for line in info[:10]:
+        print(f"info: {line}")
     if args.report:
         dump(args.report, report)
     for case in sorted(results):
@@ -1028,6 +1074,11 @@ def main():
     p.add_argument("--mutate-ownership", action="store_true")
     p.add_argument("--ui-out", help="also write app-layer (fresh restore) expectations")
     p.set_defaults(func=derive)
+    p = sub.add_parser("reprofile")
+    p.add_argument("--expected", required=True)
+    p.add_argument("--cases", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=reprofile)
     p = sub.add_parser("compare")
     p.add_argument("--expected", required=True)
     p.add_argument("--observed", required=True)

@@ -46,6 +46,25 @@ impl Faucet {
             );
         }
         chain.mine(REST_BLOCKS as u32);
+        // zcashd's wallet processes blocks on its own notification thread and
+        // can lag the tip under load; wait until every source is visible.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+        for (zaddr, _) in &sources {
+            loop {
+                let balance = chain
+                    .rpc_ok("z_getbalance", json!([zaddr, 1]))
+                    .as_f64()
+                    .unwrap_or(0.0);
+                if balance > 1.0 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "faucet source {zaddr} still holds {balance} ZEC"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
         Faucet {
             sources: RefCell::new(sources),
         }
@@ -78,12 +97,28 @@ impl Faucet {
             }
         };
         let zaddr = self.sources.borrow()[source].0.clone();
-        let opid = chain
-            .rpc_ok("z_sendmany", json!([zaddr, amounts, 1, null, policy]))
-            .as_str()
-            .unwrap()
-            .to_string();
-        let txid = chain.wait_operation(&opid);
+        // zcashd may not yet consider a just-confirmed note spendable (its
+        // witness/anchor lags under load): mine and retry a few times.
+        let mut attempt = 0;
+        let txid = loop {
+            let opid = chain
+                .rpc_ok("z_sendmany", json!([zaddr, amounts, 1, null, policy]))
+                .as_str()
+                .unwrap()
+                .to_string();
+            match chain.try_wait_operation(&opid) {
+                Ok(txid) => break txid,
+                Err(op) if attempt < 5 && op.to_string().contains("Insufficient funds") => {
+                    eprintln!(
+                        "[faucet] {zaddr} not spendable yet (balance {}); mining",
+                        chain.rpc_ok("z_getbalance", json!([zaddr, 1]))
+                    );
+                    attempt += 1;
+                    chain.mine(1);
+                }
+                Err(op) => panic!("faucet payment failed: {op}"),
+            }
+        };
         chain.wait_mempool(&txid);
         // Mined at the next block at the earliest; its change needs the rest.
         self.sources.borrow_mut()[source].1 = chain.tip() + 1 + REST_BLOCKS;
