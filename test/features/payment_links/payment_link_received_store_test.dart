@@ -54,6 +54,35 @@ void main() {
     },
   );
 
+  test(
+    'setup account survives restart, claim submission, and receipt updates',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link, setupAccountUuid: 'gift-wallet');
+      store = PaymentLinkReceivedStore(storage);
+      expect((await store.find(link.address))?.setupAccountUuid, 'gift-wallet');
+      await store.saveReady(link);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'gift-wallet',
+        priorTxids: [],
+      );
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'gift-wallet',
+        claimTxids: 'claim-tx',
+      );
+      await store.markReceived(address: link.address);
+      store = PaymentLinkReceivedStore(storage);
+      final received = (await store.find(link.address))!;
+      expect(received.setupAccountUuid, 'gift-wallet');
+      expect(received.destinationAccountUuid, 'gift-wallet');
+      expect(received.status, PaymentLinkReceivedStatus.received);
+    },
+  );
+
   test('old records without provenance preserve their date', () async {
     final storage = _FakePaymentLinkReceivedStorage();
     final store = PaymentLinkReceivedStore(storage);

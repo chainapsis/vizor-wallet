@@ -781,6 +781,33 @@ pub fn existing_software_seed_account_state(
     })
 }
 
+/// The account whose viewing key `seed` derives at `account_index`, if any.
+pub fn software_account_uuid_for_seed(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<Option<String>, String> {
+    let expected = software_account_ufvk(network, seed, account_index)?.encode(&network);
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_ids = db
+        .get_account_ids()
+        .map_err(|e| format!("Failed to list accounts: {e}"))?;
+    for id in account_ids {
+        let account = db
+            .get_account(id)
+            .map_err(|e| format!("Failed to get account: {e}"))?
+            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+        if account
+            .ufvk()
+            .is_some_and(|ufvk| ufvk.encode(&network) == expected)
+        {
+            return Ok(Some(id.expose_uuid().to_string()));
+        }
+    }
+    Ok(None)
+}
+
 /// List all accounts in the wallet database.
 pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<AccountInfo>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
@@ -1709,6 +1736,26 @@ mod tests {
 
         let expected = software_account_ufvk(WalletNetwork::Main, &seed, 0).unwrap();
         assert_eq!(ufvk, expected.encode(&WalletNetwork::Main));
+    }
+
+    #[test]
+    fn test_software_account_uuid_for_seed_matches_only_its_account() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let other = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+
+        let (uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        let found =
+            software_account_uuid_for_seed(db_path_str, WalletNetwork::Main, &seed, 0).unwrap();
+        assert_eq!(found, Some(uuid));
+        let missing =
+            software_account_uuid_for_seed(db_path_str, WalletNetwork::Main, &other, 0).unwrap();
+        assert_eq!(missing, None);
     }
 
     #[test]
