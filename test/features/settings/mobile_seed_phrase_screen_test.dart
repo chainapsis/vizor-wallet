@@ -4,11 +4,13 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
@@ -148,6 +150,8 @@ Widget _app({
   AppSecurityNotifier Function()? securityNotifier,
   Future<int> Function(String accountUuid)? birthdayHeightLoader,
   Future<int> Function(int height)? birthdayBlockTimeLoader,
+  TextScaler textScaler = TextScaler.noScaling,
+  EdgeInsets safeAreaPadding = EdgeInsets.zero,
 }) {
   return ProviderScope(
     overrides: [
@@ -164,7 +168,14 @@ Widget _app({
         ),
     ],
     child: MaterialApp(
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: textScaler,
+          padding: safeAreaPadding,
+          viewPadding: safeAreaPadding,
+        ),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
       home: MobileSeedPhraseScreen(
         accountUuid: accountUuid,
         screenshotStream: screenshotStream,
@@ -194,6 +205,7 @@ Widget _routerApp(GoRouter router) {
 
 Future<void> _revealSecret(WidgetTester tester) async {
   for (final digit in '111111'.split('')) {
+    await tester.ensureVisible(find.bySemanticsLabel('Digit $digit'));
     await tester.tap(find.bySemanticsLabel('Digit $digit'));
     await tester.pump();
   }
@@ -243,6 +255,89 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('BIP39 Passphrase'), findsOneWidget);
     expect(find.text(_bip39Passphrase), findsOneWidget);
+  });
+
+  testWidgets('small screen with large text keeps passcode entry usable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 568);
+    await tester.pumpWidget(
+      _app(
+        textScaler: TextScaler.linear(2),
+        safeAreaPadding: const EdgeInsets.only(top: 55, bottom: 24),
+        biometric: _FakeBiometricController(initialState: _faceBiometricState),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.bySemanticsLabel('Sign in with Face ID'));
+    await tester.pumpAndSettle();
+    expect(
+      find.bySemanticsLabel('Sign in with Face ID').hitTestable(),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.bySemanticsLabel('Digit 1'));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Digit 1').hitTestable(), findsOneWidget);
+    await _revealSecret(tester);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('large text keeps a long BIP39 value and copy control usable', (
+    tester,
+  ) async {
+    const longPassphrase =
+        'a long recovery passphrase with symbols #123 and additional words';
+    String? copiedText;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copiedText = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(() {
+      SensitiveClipboard.debugCancelPendingExpiration();
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    tester.view.physicalSize = const Size(320, 568);
+    await tester.pumpWidget(
+      _app(
+        textScaler: TextScaler.linear(2),
+        accountNotifier: () =>
+            _FakeAccountNotifier(_accountState, longPassphrase),
+        birthdayHeightLoader: (_) async => 3000000,
+        birthdayBlockTimeLoader: (_) async =>
+            DateTime.utc(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+      ),
+    );
+    await _revealSecret(tester);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final value = find.byKey(const ValueKey('mobile_bip39_passphrase_value'));
+    await tester.ensureVisible(value);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(value).width, greaterThan(0));
+    expect(
+      find.bySemanticsLabel('Copy BIP39 passphrase').hitTestable(),
+      findsOneWidget,
+    );
+    await tester.tap(find.bySemanticsLabel('Copy BIP39 passphrase'));
+    await tester.pump();
+    expect(copiedText, longPassphrase);
+    SensitiveClipboard.debugCancelPendingExpiration();
+    await tester.ensureVisible(find.text('3000000'));
+    await tester.pumpAndSettle();
+    expect(find.text('September 1, 2026'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Copy Birthday block height').hitTestable(),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('hides the BIP39 section when no passphrase was stored', (

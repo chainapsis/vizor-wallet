@@ -30,6 +30,7 @@ import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/privacy/sensitive_privacy_overlay.dart';
+import '../src/core/security/software_wallet_secret.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
@@ -81,6 +82,7 @@ import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
+import '../src/providers/app_security_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
@@ -1060,6 +1062,117 @@ Widget buildSettingsSecretPassphraseGateUseCase(BuildContext context) {
     '/settings/secret-passphrase',
     const SettingsSeedPhraseScreen(),
   );
+}
+
+Widget buildMobileSettingsSecretPassphraseGateUseCase(BuildContext context) =>
+    _buildMobileBackupUseCase(context, reveal: false);
+
+Widget buildMobileSettingsSecretPassphraseRevealUseCase(BuildContext context) =>
+    _buildMobileBackupUseCase(context, reveal: true);
+
+Widget buildMobileSettingsSecretPassphraseGateLargeTextUseCase(
+  BuildContext context,
+) => _buildMobileBackupUseCase(context, reveal: false, largeText: true);
+
+Widget buildMobileSettingsSecretPassphraseRevealLargeTextUseCase(
+  BuildContext context,
+) => _buildMobileBackupUseCase(context, reveal: true, largeText: true);
+
+Widget _buildMobileBackupUseCase(
+  BuildContext context, {
+  required bool reveal,
+  bool largeText = false,
+}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _accountsBootstrap(_accountsDesignState),
+      ),
+      accountProvider.overrideWith(_PreviewBackupAccountNotifier.new),
+      appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(
+          const BiometricUnlockState(
+            availability: BiometricAvailability(
+              supported: true,
+              enrolled: true,
+              kind: BiometricKind.face,
+            ),
+            enabled: true,
+          ),
+          passcode: reveal ? '111111' : null,
+        ),
+      ),
+    ],
+    child: MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: largeText ? TextScaler.linear(2) : TextScaler.noScaling,
+      ),
+      child: _MobilePreviewFrame(
+        constrainToDesignSize: false,
+        child: _MobileBackupHarness(key: ValueKey((reveal, largeText))),
+      ),
+    ),
+  );
+}
+
+class _MobileBackupHarness extends StatefulWidget {
+  const _MobileBackupHarness({super.key});
+
+  @override
+  State<_MobileBackupHarness> createState() => _MobileBackupHarnessState();
+}
+
+class _MobileBackupHarnessState extends State<_MobileBackupHarness> {
+  final _privacyController = SensitivePrivacyOverlayController();
+  late final _router = GoRouter(
+    initialLocation: '/settings/secret-passphrase',
+    routes: [
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        routes: [
+          GoRoute(
+            path: 'secret-passphrase',
+            builder: (_, _) => MobileSeedPhraseScreen(
+              screenshotStream: const Stream.empty(),
+              privacyOverlayController: _privacyController,
+              birthdayHeightLoader: (_) async => 3000000,
+              birthdayBlockTimeLoader: (_) async =>
+                  DateTime.utc(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    _privacyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
+
+class _PreviewBackupAccountNotifier extends _PreviewAccountNotifier {
+  _PreviewBackupAccountNotifier() : super(_accountsDesignState);
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async => const SoftwareWalletSecret(
+    mnemonic: _previewMnemonic,
+    bip39Passphrase: '123CAsd#41 recovery phrase 123CAsd#41',
+  );
+}
+
+class _PreviewBackupSecurityNotifier extends AppSecurityNotifier {
+  @override
+  Future<bool> confirmPassword(String password) async => true;
 }
 
 Widget buildSettingsSecretPassphraseRevealUseCase(BuildContext context) {
@@ -3825,15 +3938,16 @@ class _MobilePreviewFrame extends StatelessWidget {
 }
 
 class _PreviewBiometricUnlockNotifier extends BiometricUnlockNotifier {
-  _PreviewBiometricUnlockNotifier(this.initialState);
+  _PreviewBiometricUnlockNotifier(this.initialState, {this.passcode});
 
   final BiometricUnlockState initialState;
+  final String? passcode;
 
   @override
   Future<BiometricUnlockState> build() async => initialState;
 
   @override
-  Future<String?> readPasscode({required String reason}) async => null;
+  Future<String?> readPasscode({required String reason}) async => passcode;
 }
 
 /// The schedule screens reach for `GoRouter` to resolve their back
