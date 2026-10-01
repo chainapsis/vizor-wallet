@@ -167,18 +167,18 @@ class MobileWelcomeScreen extends StatelessWidget {
                                               'mobile_welcome_redeem_card',
                                             ),
                                             button: true,
-                                            enabled: false,
+                                            enabled: true,
                                             child: AppButton(
                                               expand: true,
                                               variant: AppButtonVariant.ghost,
-                                              // TODO: Connect Gift Card activation once the claim flow is finalized.
-                                              onPressed: null,
+                                              onPressed: () =>
+                                                  context.push('/gift'),
                                               disabledBackgroundColor:
                                                   const Color(0x00000000),
                                               leading: const AppIcon(
                                                 AppIcons.giftCard,
                                                 color: WelcomeButtonTokens
-                                                    .ghostDisabledLabel,
+                                                    .accentLabel,
                                               ),
                                               growWithContent: true,
                                               constrainContent: true,
@@ -186,7 +186,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                                                 'Activate Gift Card',
                                                 style: TextStyle(
                                                   color: WelcomeButtonTokens
-                                                      .ghostDisabledLabel,
+                                                      .accentLabel,
                                                 ),
                                                 textAlign: TextAlign.center,
                                               ),

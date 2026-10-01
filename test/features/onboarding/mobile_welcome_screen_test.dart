@@ -349,7 +349,7 @@ void main() {
     },
   );
 
-  testWidgets('Gift Card TODO is disabled with no tap action or destination', (
+  testWidgets('Gift Card activation opens the first-wallet entry', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
@@ -357,11 +357,14 @@ void main() {
     final button = find.byKey(const ValueKey('mobile_welcome_redeem_card'));
     final node = tester.getSemantics(button);
     expect(node.flagsCollection.isButton, isTrue);
-    expect(node.flagsCollection.isEnabled, Tristate.isFalse);
-    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
+    expect(node.flagsCollection.isEnabled, Tristate.isTrue);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
     await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('Shielded\nby default'), findsOneWidget);
+    expect(
+      find.text('Create wallet by redeeming Vizor Gift Card'),
+      findsOneWidget,
+    );
     semantics.dispose();
   });
 

@@ -22,6 +22,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../payment_links/providers/gift_claim_flow_provider.dart';
 
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
@@ -37,6 +38,7 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
     this.position,
     this.onBack,
     this.random,
+    this.actionsEnabled = true,
     super.key,
   }) : assert(
          args != null || (onFinish != null && position != null),
@@ -53,6 +55,9 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
+
+  /// A terminal setup failure can require reopening instead of creating again.
+  final bool actionsEnabled;
 
   @override
   ConsumerState<MobileCustomiseAccountScreen> createState() =>
@@ -76,7 +81,8 @@ class _MobileCustomiseAccountScreenState
   int get _nameLength => accountNameCharacterLength(_nameController.text);
   bool get _nameValid => isAccountNameLengthValid(_nameController.text);
   bool get _isSubmitting => _submitPhase != _SubmitPhase.idle;
-  bool get _canContinue => !_isSubmitting && _nameValid;
+  bool get _canContinue =>
+      widget.actionsEnabled && !_isSubmitting && _nameValid;
 
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
@@ -219,7 +225,7 @@ class _MobileCustomiseAccountScreenState
     if (pendingPassword == null) {
       await createAccount();
       clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
+      router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
       return;
     }
 

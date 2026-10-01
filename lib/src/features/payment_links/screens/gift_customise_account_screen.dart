@@ -1,0 +1,68 @@
+import 'dart:math';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../onboarding/mobile/mobile_customise_account_screen.dart';
+import '../../onboarding/mobile/mobile_onboarding_progress.dart';
+import '../services/gift_claim_setup_coordinator.dart';
+import '../services/payment_link_service.dart';
+import '../../../providers/account_provider.dart';
+
+class GiftCustomiseAccountArgs {
+  const GiftCustomiseAccountArgs({
+    required this.passcode,
+    required this.inspection,
+  });
+  final String passcode;
+  final PaymentLinkClaimInspection inspection;
+}
+
+/// Uses the same name and profile UI as normal wallet creation.
+class GiftCustomiseAccountScreen extends ConsumerStatefulWidget {
+  const GiftCustomiseAccountScreen({
+    required this.args,
+    this.random,
+    super.key,
+  });
+  final GiftCustomiseAccountArgs args;
+  final Random? random;
+
+  @override
+  ConsumerState<GiftCustomiseAccountScreen> createState() =>
+      _GiftCustomiseAccountScreenState();
+}
+
+class _GiftCustomiseAccountScreenState
+    extends ConsumerState<GiftCustomiseAccountScreen> {
+  bool _requiresRestart = false;
+
+  @override
+  Widget build(BuildContext context) => MobileCustomiseAccountScreen(
+    random: widget.random,
+    actionsEnabled: !_requiresRestart,
+    position: OnboardingProgressPlan.forFlow(
+      OnboardingFlow.gift,
+      setupMode: OnboardingSetupMode.createPasscode,
+    ).at(OnboardingStage.customiseAccount),
+    onFinish: (name, profilePictureId) async {
+      try {
+        await completeGiftClaimWalletSetup(
+          ref,
+          password: widget.args.passcode,
+          accountName: name,
+          profilePictureId: profilePictureId,
+          inspection: widget.args.inspection,
+          // Match normal account creation: security is committed before
+          // asking for biometric unlock, then continue to Home.
+          onComplete: () {
+            if (context.mounted) context.go('/onboarding/biometrics');
+          },
+        );
+      } on WalletAccountStateUncertainException {
+        if (mounted) setState(() => _requiresRestart = true);
+        rethrow;
+      }
+    },
+  );
+}

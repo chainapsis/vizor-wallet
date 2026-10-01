@@ -2667,6 +2667,7 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
 Widget _buildMobileHomeUseCase({
   String initialLocation = '/home',
   bool setupPreview = false,
+  bool inheritWalletState = false,
   bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
@@ -2699,12 +2700,13 @@ Widget _buildMobileHomeUseCase({
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
         ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
-      accountProvider.overrideWith(
-        () => setupPreview
-            ? _PreviewSetupAccountNotifier(accountState)
-            : _PreviewAccountNotifier(accountState),
-      ),
-      if (setupPreview) ...[
+      if (!inheritWalletState)
+        accountProvider.overrideWith(
+          () => setupPreview
+              ? _PreviewSetupAccountNotifier(accountState)
+              : _PreviewAccountNotifier(accountState),
+        ),
+      if (setupPreview && !inheritWalletState) ...[
         appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
         biometricUnlockProvider.overrideWith(
           () => _PreviewBiometricUnlockNotifier(
@@ -2718,12 +2720,13 @@ Widget _buildMobileHomeUseCase({
       receiveAddressServiceProvider.overrideWithValue(
         const _PreviewReceiveAddressService(),
       ),
-      syncProvider.overrideWith(
-        () => _PreviewSyncNotifier(
-          accountState.activeAccountUuid,
-          initialState: syncState,
+      if (!inheritWalletState)
+        syncProvider.overrideWith(
+          () => _PreviewSyncNotifier(
+            accountState.activeAccountUuid,
+            initialState: syncState,
+          ),
         ),
-      ),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _PreviewZecMarketDataSource(marketData),
@@ -2734,9 +2737,10 @@ Widget _buildMobileHomeUseCase({
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
         return const [];
       }),
-      giftCardActivityIndexProvider.overrideWith(
-        (ref, accountUuid) async => giftCardActivityIndex,
-      ),
+      if (!inheritWalletState)
+        giftCardActivityIndexProvider.overrideWith(
+          (ref, accountUuid) async => giftCardActivityIndex,
+        ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return migrationCta;
       }),
@@ -5885,4 +5889,32 @@ class _PreviewWelcomePrivacy extends EnhancePirNotifier {
   bool build() => enabled;
   @override
   Future<void> set(bool enabled) async => state = enabled;
+}
+
+/// Home harness for the Gift walkthrough; all wallet lifecycle data comes from
+/// its in-memory parent fixture, including the pending claim Activity row.
+Widget buildMobileGiftHomeReviewUseCase(
+  BuildContext context, {
+  AccountInfo? account,
+}) {
+  final gift =
+      account ??
+      const AccountInfo(
+        uuid: 'gift-preview',
+        name: 'My gift wallet',
+        order: 0,
+        setupPending: true,
+        giftEducationPending: true,
+      );
+  return _buildMobileHomeUseCase(
+    accountState: AccountState(
+      accounts: [gift],
+      activeAccountUuid: gift.uuid,
+      activeAddress: 'u1preview',
+    ),
+    syncState: SyncState(accountUuid: gift.uuid),
+    inheritWalletState: true,
+    votingVisible: false,
+    swapEnabled: false,
+  );
 }

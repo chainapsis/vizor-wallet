@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/app_security_provider.dart';
+import '../../features/payment_links/providers/gift_claim_flow_provider.dart';
+import '../../features/payment_links/screens/gift_claim_screen.dart';
+import '../../features/payment_links/screens/gift_passcode_screen.dart';
+import '../../features/payment_links/screens/gift_customise_account_screen.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -33,6 +37,34 @@ import '../../features/onboarding/shared/onboarding_flow_args.dart';
 /// Mobile-only additions: `/onboarding/set-passcode` (the passcode is
 /// the wallet password on mobile) and `/onboarding/biometrics`.
 List<RouteBase> mobileOnboardingRoutes() => [
+  GoRoute(
+    path: '/gift',
+    pageBuilder: (_, state) =>
+        _mobileOnboardingPage(state, child: const GiftClaimScreen()),
+  ),
+  GoRoute(
+    path: '/gift/passcode',
+    redirect: (context, _) =>
+        ProviderScope.containerOf(
+              context,
+            ).read(giftClaimFlowProvider)?.inspection ==
+            null
+        ? '/gift'
+        : null,
+    pageBuilder: (_, state) =>
+        _mobileOnboardingPage(state, child: const GiftPasscodeScreen()),
+  ),
+  GoRoute(
+    path: '/gift/customise',
+    redirect: (_, state) =>
+        state.extra is GiftCustomiseAccountArgs ? null : '/gift',
+    pageBuilder: (_, state) => _mobileOnboardingPage(
+      state,
+      child: GiftCustomiseAccountScreen(
+        args: state.extra as GiftCustomiseAccountArgs,
+      ),
+    ),
+  ),
   GoRoute(
     path: '/welcome',
     pageBuilder: (context, state) =>

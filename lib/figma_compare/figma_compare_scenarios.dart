@@ -21,6 +21,7 @@ import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
+import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/payment_link_mobile_use_cases.dart';
 import '../widgetbook/payment_link_use_cases.dart';
@@ -85,6 +86,34 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-accounts-unbacked-reset',
     description: 'Last unbacked software account resets the wallet',
     builder: buildMobileAccountsUnbackedUpResetCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-inspected',
+    description: 'Checked Gift Card and new/import wallet actions',
+    builder: buildMobileGiftOnboardingInspected,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-entry',
+    description: 'Walletless Gift Card entry',
+    builder: buildMobileGiftOnboardingEntry,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-checking',
+    description: 'Gift Card inspection skeleton without amount or artwork',
+    builder: buildMobileGiftOnboardingChecking,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-customise',
+    description: 'Gift wallet customisation before committing setup',
+    builder: buildMobileGiftOnboardingCustomise,
     desktop: false,
     mobile: true,
   ),

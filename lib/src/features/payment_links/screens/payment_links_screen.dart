@@ -33,6 +33,7 @@ import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
+import '../providers/gift_claim_flow_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_batch_export.dart';
 import '../services/payment_link_batch_limits.dart';
@@ -224,7 +225,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     // already waiting jumps mobile straight to the redeem page, so the landing
     // never flashes before the loading state it is about to show.
     if (kAppFormFactor == AppFormFactor.mobile &&
-        ref.read(paymentLinkIntakeProvider).pendingLink != null) {
+        (ref.read(giftClaimSetupReturnProvider) != null ||
+            ref.read(paymentLinkIntakeProvider).pendingLink != null)) {
       _page = PaymentLinksLocalPage.redeem;
       _redeemState = PaymentLinkRedeemVisualState.loading;
     }
@@ -432,7 +434,58 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       unawaited(_refreshFundingProgress(records: initialCards.created));
       unawaited(_refreshReceivedClaims(records: initialCards.received));
     }
-    await _consumePendingPaymentLink();
+    final giftReturn = kAppFormFactor == AppFormFactor.mobile
+        ? ref.read(giftClaimSetupReturnProvider)
+        : null;
+    if (giftReturn != null) {
+      await _finishGiftSetupReturn(giftReturn);
+    } else {
+      await _consumePendingPaymentLink();
+    }
+  }
+
+  /// Pins the gift to the account selected by import before leaving this page.
+  Future<void> _finishGiftSetupReturn(GiftClaimSetupReturn request) async {
+    final accounts = ref.read(accountProvider).value;
+    final recipient = request.recipientAccountUuid(
+      currentAccountUuids:
+          accounts?.accounts.map((account) => account.uuid) ?? const [],
+      activeAccountUuid: accounts?.activeAccountUuid,
+    );
+    if (recipient == null) {
+      ref.read(giftClaimSetupReturnProvider.notifier).clearIfMatches(request);
+      await _consumePendingPaymentLink();
+      return;
+    }
+    final returnNotifier = ref.read(giftClaimSetupReturnProvider.notifier);
+    final coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
+    final store = ref.read(paymentLinkReceivedStoreProvider);
+    try {
+      var saved = false;
+      await coordinator.trackRetention(() async {
+        await store.saveReady(request.link, setupAccountUuid: recipient);
+        saved = true;
+      });
+      if (!saved) return;
+      if (!returnNotifier.clearIfMatches(request)) return;
+      _paymentLinkIntake.discard(request.link);
+      unawaited(
+        coordinator
+            .claimSetupCard(
+              request.inspection,
+              destinationAccountUuid: recipient,
+            )
+            .catchError((Object error) {
+              log(
+                'GiftClaimSetupReturn: claim needs recovery: ${error.runtimeType}',
+              );
+            }),
+      );
+      if (mounted) context.go('/home');
+    } catch (_) {
+      returnNotifier.clearIfMatches(request);
+      if (mounted) await _consumePendingPaymentLink();
+    }
   }
 
   /// Whether the open group's records are loaded, in any account.
@@ -2719,7 +2772,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               _ => '$usedCount of $count used',
             }
           : switch (_batchPendingKind(members)) {
-              PaymentLinkBatchPendingKind.incomplete => 'Some cards aren’t ready',
+              PaymentLinkBatchPendingKind.incomplete =>
+                'Some cards aren’t ready',
               PaymentLinkBatchPendingKind.unconfirmedBroadcast =>
                 'Payment status pending',
               PaymentLinkBatchPendingKind.confirming => 'Confirming payment',

@@ -519,6 +519,11 @@ String? appRedirect({
     if (!hasWallet) return '/welcome';
     return requiresUnlock ? '/unlock' : '/home';
   }
+  if (_isRouteOrChild(state.matchedLocation, '/gift')) {
+    if (kAppFormFactor != AppFormFactor.mobile) return '/';
+    if (hasWallet) return requiresUnlock ? '/unlock' : '/payment-links';
+    return null;
+  }
   if (!hasWallet && isUnlockFlow) return '/welcome';
   if (!hasWallet && !isOnboarding && !isPublicLegal && !isUninstall) {
     return '/welcome';
@@ -1875,7 +1880,24 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     // owns intake while it is already visible, including its local wizard.
     if (location == '/' ||
         location == '/unlock' ||
-        location == '/payment-links') {
+        location == '/payment-links' ||
+        _isRouteOrChild(location, '/gift')) {
+      return;
+    }
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        location == '/welcome' &&
+        !(ref.read(walletProvider).value?.hasWallet ??
+            ref.read(appBootstrapProvider).hasWallet)) {
+      _navigationScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigationScheduled = false;
+        if (!mounted ||
+            widget.router.state.matchedLocation != '/welcome' ||
+            ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+          return;
+        }
+        widget.router.push('/gift');
+      });
       return;
     }
     final deferredMessage = paymentLinkEntryDeferredMessageAtLocation(

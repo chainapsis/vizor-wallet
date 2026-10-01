@@ -35,6 +35,7 @@ const _kManualSuggestionChipHeight = 36.0;
 class MobileImportManualScreen extends StatefulWidget {
   const MobileImportManualScreen({
     this.wordListOverride,
+    this.mnemonicValidator,
     this.initialAcceptedWords = const [],
     this.initialTypedWord,
     this.initialError,
@@ -46,6 +47,9 @@ class MobileImportManualScreen extends StatefulWidget {
   /// Test seam — production loads the Rust BIP39 list.
   @visibleForTesting
   final List<String>? wordListOverride;
+
+  /// Preview boundary; production validates the phrase checksum through Rust.
+  final String? Function(List<String> words)? mnemonicValidator;
 
   /// Test/Widgetbook seam for previewing later word-entry states.
   @visibleForTesting
@@ -325,7 +329,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
 
   void _continueToReview() {
     final words = [..._accepted];
-    final error = validateImportedMnemonic(words);
+    final error = (widget.mnemonicValidator ?? validateImportedMnemonic)(words);
     if (error != null) {
       setState(() => _error = error);
       return;

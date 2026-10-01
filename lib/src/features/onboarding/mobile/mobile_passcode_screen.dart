@@ -37,9 +37,21 @@ enum _PasscodePhase { create, confirm, submitting }
 /// Import flows still use the desktop set-password sequence (prepare → account
 /// mutation under the sync pause → commit, with rollback on failure).
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
-  const MobilePasscodeScreen({required this.args, super.key});
+  const MobilePasscodeScreen({
+    required SetPasswordScreenArgs this.args,
+    super.key,
+  }) : onConfirmed = null,
+       position = null;
 
-  final SetPasswordScreenArgs args;
+  const MobilePasscodeScreen.giftCard({
+    required Future<void> Function(String passcode) this.onConfirmed,
+    required OnboardingProgressPosition this.position,
+    super.key,
+  }) : args = null;
+
+  final SetPasswordScreenArgs? args;
+  final Future<void> Function(String passcode)? onConfirmed;
+  final OnboardingProgressPosition? position;
 
   @override
   ConsumerState<MobilePasscodeScreen> createState() =>
@@ -97,7 +109,23 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
   /// Software, Keystone, and Ledger setup continue to account customisation without
   /// persisting the pending passcode. Wallet Link remains an immediate import.
   Future<void> _submit(String passcode) async {
-    final args = widget.args;
+    final onConfirmed = widget.onConfirmed;
+    if (onConfirmed != null) {
+      setState(() => _phase = _PasscodePhase.submitting);
+      try {
+        await onConfirmed(passcode);
+      } catch (error) {
+        if (mounted) _error = onboardingSubmitErrorMessage(error);
+      }
+      if (!mounted) return;
+      setState(() {
+        _phase = _PasscodePhase.create;
+        _entry = '';
+        _firstPasscode = null;
+      });
+      return;
+    }
+    final args = widget.args!;
     setState(() {
       _phase = _PasscodePhase.submitting;
       _error = null;
@@ -235,12 +263,13 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: MobileOnboardingProgressScope.of(context)
-                  .at(
-                    onboardingFlowForSetup(widget.args.flow),
-                    OnboardingStage.passcode,
-                  )
-                  .value,
+              progress:
+                  (widget.position ??
+                          MobileOnboardingProgressScope.of(context).at(
+                            onboardingFlowForSetup(widget.args!.flow),
+                            OnboardingStage.passcode,
+                          ))
+                      .value,
               showBackButton: canNavigateBack,
               onBack: isSubmitting || !canNavigateBack
                   ? null

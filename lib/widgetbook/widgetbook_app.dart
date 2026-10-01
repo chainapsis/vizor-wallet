@@ -20,6 +20,7 @@ import 'keystone_use_cases.dart';
 import 'ledger_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
+import 'mobile_gift_onboarding_use_cases.dart';
 import 'payment_request_use_cases.dart';
 import 'request_amount_use_cases.dart';
 import 'pay_use_cases.dart';
@@ -1193,6 +1194,42 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Detail - Redeemed',
                       builder: buildGiftCardRedeemedDetailPreview,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Full walkthrough',
+                      builder: buildMobileGiftOnboardingWalkthrough,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Card entry',
+                      builder: buildMobileGiftOnboardingEntry,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Gift found',
+                      builder: buildMobileGiftOnboardingInspected,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Checking card',
+                      builder: buildMobileGiftOnboardingChecking,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Passcode',
+                      builder: buildMobileGiftOnboardingPasscode,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Customise account',
+                      builder: buildMobileGiftOnboardingCustomise,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Face ID',
+                      builder: buildMobileGiftOnboardingBiometrics,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Long scan warning',
+                      builder: buildMobileGiftOnboardingLongSyncWarning,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Setup error',
+                      builder: buildMobileGiftOnboardingSubmissionError,
                     ),
                     WidgetbookUseCase(
                       name: 'Home - Empty',

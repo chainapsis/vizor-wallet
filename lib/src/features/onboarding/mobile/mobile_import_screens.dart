@@ -74,6 +74,8 @@ class MobileImportScreen extends StatefulWidget {
   const MobileImportScreen({
     this.initialPreviewError,
     this.initialPreviewErrorDuration = AppToast.defaultDuration,
+    this.readClipboardText,
+    this.validatePastedWords,
     super.key,
   });
 
@@ -83,6 +85,10 @@ class MobileImportScreen extends StatefulWidget {
 
   @visibleForTesting
   final Duration initialPreviewErrorDuration;
+
+  /// Deterministic preview boundaries; production uses the clipboard and Rust.
+  final Future<String?> Function()? readClipboardText;
+  final String? Function(List<String> words)? validatePastedWords;
 
   @override
   State<MobileImportScreen> createState() => _MobileImportScreenState();
@@ -118,7 +124,9 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
 
     String? text;
     try {
-      text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+      text = widget.readClipboardText != null
+          ? await widget.readClipboardText!()
+          : (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     } catch (e) {
       log('MobileImport: ERROR reading clipboard: $e');
       if (!mounted) return;
@@ -171,6 +179,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
   }
 
   String? _validatePastedMnemonic(List<String> words) {
+    final validate = widget.validatePastedWords;
+    if (validate != null) return validate(words);
     if (!kMnemonicWordCounts.contains(words.length)) {
       return _kImportNoPhraseError;
     }
