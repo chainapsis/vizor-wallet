@@ -101,6 +101,25 @@ class _FakeReceiveAddressService implements ReceiveAddressService {
 
 /// The QR placeholder spinner animates indefinitely, so pumpAndSettle
 /// would time out; settle with bounded pumps instead.
+/// Pumps in real time until [done] holds, failing after [timeout]. Call only
+/// inside [WidgetTester.runAsync]: encoding the request PNG is real
+/// asynchronous work whose duration follows machine load, so a fixed delay
+/// fails on a busy host.
+Future<void> _pumpInRealTimeUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!done()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Timed out after $timeout waiting for the request share outcome');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await tester.pump();
+  }
+}
+
 Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
@@ -678,8 +697,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('request_share_button')));
       await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump();
+      await _pumpInRealTimeUntil(tester, () => shares.isNotEmpty);
     });
     await tester.pump();
 
@@ -867,8 +885,10 @@ void main() {
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('request_share_button')));
       await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump();
+      await _pumpInRealTimeUntil(
+        tester,
+        () => find.byType(AppToast).evaluate().isNotEmpty,
+      );
     });
     await tester.pump();
 

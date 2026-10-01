@@ -1219,11 +1219,25 @@ Future<void> _saveRequestQr(
     await tester.binding.setSurfaceSize(null);
   });
 
+  // The save ends with a toast unless the dialog was cancelled. Track the
+  // picker's outcome so the wait below ends on that, not on elapsed time.
+  var pickerSettled = false;
+  var expectToast = true;
+  Future<String?> trackedPicker({required String suggestedName}) async {
+    try {
+      final picked = await picker(suggestedName: suggestedName);
+      expectToast = picked != null;
+      return picked;
+    } finally {
+      pickerSettled = true;
+    }
+  }
+
   await tester.pumpWidget(
     _receiveHarness(
       extraOverrides: [
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
-        requestQrSaveLocationPickerProvider.overrideWithValue(picker),
+        requestQrSaveLocationPickerProvider.overrideWithValue(trackedPicker),
       ],
     ),
   );
@@ -1243,10 +1257,33 @@ Future<void> _saveRequestQr(
   await tester.runAsync(() async {
     await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
     await tester.pump();
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    await tester.pump();
+    // Encoding the PNG and writing the file are real asynchronous work whose
+    // duration follows machine load, so a fixed delay fails on a busy host.
+    await _pumpInRealTimeUntil(
+      tester,
+      () =>
+          pickerSettled &&
+          (!expectToast || find.byType(AppToast).evaluate().isNotEmpty),
+    );
   });
   await tester.pump();
+}
+
+/// Pumps in real time until [done] holds, failing after [timeout]. Call only
+/// inside [WidgetTester.runAsync].
+Future<void> _pumpInRealTimeUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!done()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Timed out after $timeout waiting for the request QR outcome');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await tester.pump();
+  }
 }
 
 String _requestQrData(WidgetTester tester) {
