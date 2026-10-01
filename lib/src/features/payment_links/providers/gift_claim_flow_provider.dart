@@ -7,6 +7,7 @@ import '../../../../main.dart' show log;
 import '../../../providers/wallet_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
+import '../services/gift_claim_import_store.dart';
 import 'payment_link_claim_coordinator_provider.dart';
 import 'payment_link_intake_provider.dart';
 
@@ -33,55 +34,48 @@ class GiftClaimFlowState {
   final GiftClaimFailure? failure;
 }
 
-/// The Card that should reopen after the recipient finishes normal wallet
-/// setup instead of using the one-step Gift Card wallet flow.
+/// Carries the inspected Card through normal wallet import. The import commits
+/// its recipient and starts the claim before Face ID; a restart uses the journal.
 @immutable
-class GiftClaimSetupReturn {
+class GiftClaimSetupReturn extends GiftClaimImportHandoff {
   const GiftClaimSetupReturn({
-    required this.link,
-    required this.accountUuidsBeforeSetup,
+    required super.link,
+    required super.accountUuidsBeforeSetup,
     required this.inspection,
   });
 
-  final VizorPaymentLink link;
-  final Set<String> accountUuidsBeforeSetup;
   final PaymentLinkClaimInspection inspection;
-
-  /// Wallet setup makes its newly created or primary imported account active.
-  /// That active account receives the gift. A sole new account is the safe
-  /// fallback if setup has not restored the active marker yet; an ambiguous
-  /// multi-account result must wait for an explicit active account.
-  String? recipientAccountUuid({
-    required Iterable<String> currentAccountUuids,
-    required String? activeAccountUuid,
-  }) {
-    final added = currentAccountUuids
-        .where((uuid) => !accountUuidsBeforeSetup.contains(uuid))
-        .toList(growable: false);
-    if (activeAccountUuid != null && added.contains(activeAccountUuid)) {
-      return activeAccountUuid;
-    }
-    return added.length == 1 ? added.single : null;
-  }
 }
 
 class GiftClaimSetupReturnNotifier extends Notifier<GiftClaimSetupReturn?> {
   @override
   GiftClaimSetupReturn? build() => null;
 
-  void begin(
+  Future<void> begin(
     VizorPaymentLink link, {
     required Iterable<String> accountUuidsBeforeSetup,
     required PaymentLinkClaimInspection inspection,
-  }) {
-    state = GiftClaimSetupReturn(
+  }) async {
+    final request = GiftClaimSetupReturn(
       link: link,
       accountUuidsBeforeSetup: Set.unmodifiable(accountUuidsBeforeSetup),
       inspection: inspection,
     );
+    state = request;
+    try {
+      await ref.read(giftClaimImportStoreProvider).save(request);
+    } catch (_) {
+      clearIfMatches(request);
+      rethrow;
+    }
   }
 
-  void clear() => state = null;
+  Future<void> clear() async {
+    final request = state;
+    if (request == null) return;
+    await ref.read(giftClaimImportStoreProvider).clear(request);
+    clearIfMatches(request);
+  }
 
   /// Completes only the handoff this caller started. A newer Card may have
   /// replaced it while an earlier claim was preparing off-screen.
@@ -152,15 +146,22 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   void closeAfterPop(GiftClaimFlowState? poppedFlow) {
     if (!ref.mounted || !identical(state, poppedFlow)) return;
     if (ref.read(walletProvider).value?.hasWallet == true) return;
-    close();
+    unawaited(
+      close().catchError((Object error) {
+        log('Gift import cleanup failed: ${error.runtimeType}');
+      }),
+    );
   }
 
   /// The user left `/gift`: drop the Card and its unsaved claim wallet.
-  void close() {
+  Future<void> close() async {
     final current = state;
     _generation++;
+    if (ref.read(giftClaimSetupReturnProvider) != null) {
+      await ref.read(giftClaimSetupReturnProvider.notifier).clear();
+      if (!ref.mounted || !identical(state, current)) return;
+    }
     state = null;
-    ref.read(giftClaimSetupReturnProvider.notifier).clear();
     _queueInspectionCleanup(current);
     final pending = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (current != null &&
@@ -170,32 +171,30 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
     }
   }
 
-  /// The user continues into wallet setup. The link waits in the intake queue
-  /// and the claim wallet stays, so the Card opens scanned once a wallet
-  /// exists. The flow stays open in case the user comes back.
-  bool handOffToSetup({
+  /// Persist the Card before leaving for normal wallet import. The live caller
+  /// retains its inspection so committing the imported recipient needs no scan.
+  Future<bool> handOffToSetup({
     Iterable<String> accountUuidsBeforeSetup = const <String>[],
-  }) {
+  }) async {
     final current = state;
     if (current == null || current.inspection == null) return false;
     if (ref.read(paymentLinkIntakeProvider.notifier).prioritize(current.link) !=
         PaymentLinkIntakeResult.accepted) {
       return false;
     }
-    ref
+    await ref
         .read(giftClaimSetupReturnProvider.notifier)
         .begin(
           current.inspection?.link ?? current.link,
           accountUuidsBeforeSetup: accountUuidsBeforeSetup,
           inspection: current.inspection!,
         );
-    return true;
+    return ref.mounted && identical(state, current);
   }
 
   /// The recipient chose the dedicated one-step Gift Card wallet instead.
-  void cancelSetupReturn() {
-    ref.read(giftClaimSetupReturnProvider.notifier).clear();
-  }
+  Future<void> cancelSetupReturn() =>
+      ref.read(giftClaimSetupReturnProvider.notifier).clear();
 
   void _check(VizorPaymentLink link, {required bool allowLongSync}) {
     final generation = ++_generation;

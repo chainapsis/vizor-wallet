@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -224,6 +225,7 @@ class _MobileCustomiseAccountScreenState
     final pendingPassword = args.pendingPassword;
     if (pendingPassword == null) {
       await createAccount();
+      await completeGiftClaimImportSetup(ref);
       clearCustomisedAccountDraft(ref, args.flow);
       router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
       return;
@@ -240,6 +242,7 @@ class _MobileCustomiseAccountScreenState
         await createAccount();
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
+        await completeGiftClaimImportSetup(ref);
         clearCustomisedAccountDraft(ref, args.flow);
         router.go('/onboarding/biometrics');
       });

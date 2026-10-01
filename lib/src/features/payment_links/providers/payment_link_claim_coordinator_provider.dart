@@ -4,12 +4,15 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../models/vizor_payment_link.dart';
 import 'payment_link_claim_lifecycle_registry_provider.dart';
 import '../services/payment_link_received_store.dart';
 import '../services/payment_link_service.dart';
+import '../services/gift_claim_import_store.dart';
+import 'gift_claim_failure_notice_provider.dart';
 
 typedef PaymentLinkClaimSubmitter =
     Future<PaymentLinkClaimResult> Function(PaymentLinkClaimSession session);
@@ -76,6 +79,17 @@ final paymentLinkSetupClaimPreparerProvider =
 final paymentLinkClaimRecoveryRetryDelayProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 10);
 });
+
+/// Deterministic previews replace native setup-journal reads with this gate.
+final paymentLinkSetupJournalPendingProvider =
+    Provider<Future<bool> Function()>((ref) {
+      return () async {
+        final store = AppSecureStore.instance;
+        return await store.readPlain(kPendingAccountMnemonicStorageKey) !=
+                null ||
+            await store.readPlain(kGiftWalletSetupStartedStorageKey) != null;
+      };
+    });
 
 /// Owns claim work whose lifetime must not depend on a Gift Card screen.
 ///
@@ -195,28 +209,90 @@ class PaymentLinkClaimCoordinator {
     PaymentLinkClaimInspection inspection,
     String destinationAccountUuid,
   ) async {
-    if (!_canRunRecovery) {
-      throw StateError('The wallet is not ready to claim the Gift Card.');
-    }
-    final operations = _ref.read(paymentLinkOperationsProvider);
-    final saved = await _ref
-        .read(paymentLinkReceivedStoreProvider)
-        .find(inspection.link.address);
-    if (!_canRunRecovery) return;
-    if (saved?.setupAccountUuid != destinationAccountUuid ||
-        saved?.claimLink?.hasSameCanonicalPayload(inspection.link) != true) {
-      throw const PaymentLinkClaimDestinationChangedException();
-    }
-    final session = await prepareSetupClaim(
-      inspection.link,
-      destinationAccountUuid: destinationAccountUuid,
-      prepare: () => operations.bindClaimDestination(
-        inspection,
+    try {
+      if (!_canRunRecovery) {
+        throw StateError('The wallet is not ready to claim the Gift Card.');
+      }
+      final operations = _ref.read(paymentLinkOperationsProvider);
+      final saved = await _ref
+          .read(paymentLinkReceivedStoreProvider)
+          .find(inspection.link.address);
+      if (!_canRunRecovery) return;
+      if (saved?.setupAccountUuid != destinationAccountUuid ||
+          saved?.claimLink?.hasSameCanonicalPayload(inspection.link) != true) {
+        throw const PaymentLinkClaimDestinationChangedException();
+      }
+      final session = await prepareSetupClaim(
+        inspection.link,
         destinationAccountUuid: destinationAccountUuid,
-      ),
-    );
+        prepare: () => operations.bindClaimDestination(
+          inspection,
+          destinationAccountUuid: destinationAccountUuid,
+        ),
+      );
+      if (!_canRunRecovery) return;
+      await _submitOrRetainSetupClaim(session);
+      await _reportSetupFailure(inspection.link, destinationAccountUuid);
+    } catch (error, stackTrace) {
+      await _reportSetupFailure(
+        inspection.link,
+        destinationAccountUuid,
+        operationFailed: true,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<void> _reportSetupFailure(
+    VizorPaymentLink link,
+    String accountUuid, {
+    bool operationFailed = false,
+  }) async {
+    if (kAppFormFactor != AppFormFactor.mobile || !_canRunRecovery) return;
+    final store = _ref.read(paymentLinkReceivedStoreProvider);
+    final record = await store.find(link.address);
+    if (!_canRunRecovery ||
+        record == null ||
+        record.setupAccountUuid != accountUuid ||
+        record.claimLink?.hasSameCanonicalPayload(link) != true ||
+        record.status == PaymentLinkReceivedStatus.received) {
+      return;
+    }
+    // A submitting/receiving record can mean the network accepted the spend.
+    // An unknown outcome remains in recovery rather than being called failed.
+    final failed =
+        record.availability == PaymentLinkAvailability.failed ||
+        record.availability == PaymentLinkAvailability.rejected ||
+        record.availability == PaymentLinkAvailability.claimedElsewhere;
+    if (!failed && (!operationFailed || record.isClaimInFlight)) return;
+    if (!failed) {
+      await store.setAvailability(link.address, PaymentLinkAvailability.failed);
+    }
     if (!_canRunRecovery) return;
-    await _submitOrRetainSetupClaim(session);
+    _ref
+        .read(giftClaimFailureNoticeProvider.notifier)
+        .report(link, accountUuid);
+  }
+
+  Future<void> _restoreImportHandoff() async {
+    if (kAppFormFactor != AppFormFactor.mobile) return;
+    final journal = _ref.read(giftClaimImportStoreProvider);
+    if (journal.hasLiveHandoff) return;
+    final handoff = await journal.load();
+    if (!_canRunRecovery || handoff == null) return;
+    final accounts = _ref.read(accountProvider).value;
+    final recipient = handoff.recipientAccountUuid(
+      currentAccountUuids: accounts?.accounts.map((a) => a.uuid) ?? const [],
+      activeAccountUuid: accounts?.activeAccountUuid,
+    );
+    if (recipient == null) return;
+    await trackRetention(() async {
+      if (!_canRunRecovery) return;
+      await _ref
+          .read(paymentLinkReceivedStoreProvider)
+          .saveReady(handoff.link, setupAccountUuid: recipient);
+      await journal.clear(handoff);
+    });
   }
 
   Future<void> _submitOrRetainSetupClaim(
@@ -352,6 +428,7 @@ class PaymentLinkClaimCoordinator {
   void resumeAfterReset() {
     if (_disposed) return;
     _resetQuiesced = false;
+    _ref.read(giftClaimImportStoreProvider).resetMemory();
     final security = _ref.read(appSecurityProvider);
     if (security.isPasswordConfigured && security.isUnlocked) resume();
   }
@@ -373,6 +450,8 @@ class PaymentLinkClaimCoordinator {
 
     var retry = true;
     try {
+      await _restoreImportHandoff();
+      if (!_canRunRecovery) return const [];
       final records = await _ref.read(paymentLinkClaimRecoveryRunnerProvider)();
       await _resumeReadySetupClaims(records);
       if (!_canRunRecovery) {
@@ -396,9 +475,7 @@ class PaymentLinkClaimCoordinator {
     // Security opens its session before unlock restores interrupted account
     // setup. Never submit a setup Card until that durable journal is cleared.
     // The same gate protects the password-commit -> journal-cleanup boundary.
-    final store = AppSecureStore.instance;
-    if (await store.readPlain(kPendingAccountMnemonicStorageKey) != null ||
-        await store.readPlain(kGiftWalletSetupStartedStorageKey) != null) {
+    if (await _ref.read(paymentLinkSetupJournalPendingProvider)()) {
       return;
     }
     for (final record in records) {
@@ -426,6 +503,11 @@ class PaymentLinkClaimCoordinator {
           ),
         );
       } catch (error, stackTrace) {
+        await _reportSetupFailure(
+          link,
+          destinationAccountUuid,
+          operationFailed: true,
+        );
         debugPrint(
           '[zcash] PaymentLinkClaim: automatic setup claim preparation failed '
           'type=${error.runtimeType}\n$stackTrace',
@@ -438,7 +520,13 @@ class PaymentLinkClaimCoordinator {
       }
       try {
         await _submitOrRetainSetupClaim(session);
+        await _reportSetupFailure(link, destinationAccountUuid);
       } catch (error, stackTrace) {
+        await _reportSetupFailure(
+          link,
+          destinationAccountUuid,
+          operationFailed: true,
+        );
         debugPrint(
           '[zcash] PaymentLinkClaim: automatic setup claim submission failed '
           'type=${error.runtimeType}\n$stackTrace',

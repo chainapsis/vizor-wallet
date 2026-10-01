@@ -225,6 +225,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: PaymentLinksScreen(
+          initialReceivedCardAddress: state.uri.queryParameters['received'],
           initialCards: state.extra is PaymentLinkCardsSnapshot
               ? state.extra! as PaymentLinkCardsSnapshot
               : null,

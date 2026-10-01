@@ -242,6 +242,98 @@ void main() {
   });
 
   testWidgets(
+    'actionable notice stays readable and dismissible at large text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final semantics = tester.ensureSemantics();
+      try {
+        late BuildContext toastContext;
+        var openedCard = false;
+        await tester.pumpWidget(
+          _ThemedHarness(
+            theme: AppThemeData.light,
+            child: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: AppToastHost(
+                child: Builder(
+                  builder: (context) {
+                    toastContext = context;
+                    return const SizedBox.expand();
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        void showNotice() => showAppToast(
+          toastContext,
+          'Couldn’t redeem your gift card.',
+          duration: null,
+          action: AppToastAction(
+            label: 'View card',
+            onPressed: () => openedCard = true,
+          ),
+        );
+        showNotice();
+        await tester.pump(const Duration(seconds: 30));
+        expect(tester.takeException(), isNull);
+        expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
+        final message = tester.widget<Text>(
+          find.text('Couldn’t redeem your gift card.'),
+        );
+        expect(message.maxLines, isNull);
+        final action = find.widgetWithText(TextButton, 'View card');
+        expect(tester.getSize(action).height, greaterThanOrEqualTo(44));
+        expect(
+          tester.getSize(find.byType(IconButton)).width,
+          greaterThanOrEqualTo(44),
+        );
+        expect(
+          tester.getSemantics(find.byType(AppToast)),
+          matchesSemantics(isLiveRegion: true),
+        );
+        await tester.tap(find.bySemanticsLabel('Dismiss notification'));
+        await tester.pump();
+        expect(find.byType(AppToast), findsNothing);
+        expect(openedCard, isFalse);
+        showNotice();
+        await tester.pump();
+        await tester.tap(action);
+        await tester.pump();
+        expect(openedCard, isTrue);
+        expect(find.byType(AppToast), findsNothing);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('screen dismissal does not remove a replacement toast', (
+    tester,
+  ) async {
+    late BuildContext toastContext;
+    await tester.pumpWidget(
+      _ThemedHarness(
+        theme: AppThemeData.light,
+        child: AppToastHost(
+          child: Builder(
+            builder: (context) {
+              toastContext = context;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+    final dismiss = showAppToast(toastContext, 'Old notice', duration: null);
+    showAppToast(toastContext, 'Address copied');
+    dismiss?.call();
+    await tester.pump();
+    expect(find.text('Address copied'), findsOneWidget);
+  });
+
+  testWidgets(
     'active host fallback restores parent after nested host disposes',
     (tester) async {
       await tester.pumpWidget(

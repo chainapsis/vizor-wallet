@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -25,6 +26,7 @@ import 'fakes/fake_sync_notifier.dart';
 import 'support/payment_link_navigation_support.dart';
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   for (final reveal in [false, true]) {
     testWidgets(
       reveal
@@ -169,6 +171,7 @@ void main() {
     // fake it resolves at once into the received page — and the landing is
     // never shown on the way.
     expect(find.byType(PaymentLinksHomeMobileView), findsNothing);
+    await pumpUntilPresent(tester, find.byType(PaymentLinkReceivedMobileView));
     expect(find.byType(PaymentLinkReceivedMobileView), findsOneWidget);
   });
 }

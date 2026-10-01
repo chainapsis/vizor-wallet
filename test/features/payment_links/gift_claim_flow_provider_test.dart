@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
@@ -17,6 +19,7 @@ import '../../support/payment_links_screen_support.dart'
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
   late _FlowOperations operations;
   late _Wallet wallet;
@@ -40,6 +43,33 @@ void main() {
 
   GiftClaimFlowNotifier flow(ProviderContainer container) =>
       container.read(giftClaimFlowProvider.notifier);
+
+  test(
+    'a malformed import journal never exposes its bearer in recovery errors',
+    () async {
+      final raw = '{"link":"${incomingLink.toUri()}"';
+      FlutterSecureStorage.setMockInitialValues({
+        'zcash_gift_card_import_handoff_v1': raw,
+      });
+      final container = makeContainer();
+      await expectLater(
+        container.read(giftClaimImportStoreProvider).load(),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.source,
+            'source',
+            isNull,
+          ),
+        ),
+      );
+      expect(
+        await const FlutterSecureStorage().read(
+          key: 'zcash_gift_card_import_handoff_v1',
+        ),
+        raw,
+      );
+    },
+  );
 
   test('checks a Card without an account', () async {
     final container = makeContainer();
@@ -95,7 +125,7 @@ void main() {
     operations.completeNext(_inspection(incomingLink));
     await pumpEventQueue();
 
-    flow(container).close();
+    await flow(container).close();
     await pumpEventQueue();
 
     expect(container.read(giftClaimFlowProvider), isNull);
@@ -107,7 +137,7 @@ void main() {
     final container = makeContainer();
     flow(container).open(incomingLink);
 
-    flow(container).close();
+    await flow(container).close();
     operations.completeNext(_inspection(incomingLink));
     await pumpEventQueue();
 
@@ -119,7 +149,7 @@ void main() {
     final container = makeContainer();
     flow(container).open(incomingLink);
     flow(container).open(secondIncomingLink);
-    flow(container).close();
+    await flow(container).close();
 
     operations.completeNext(_inspection(incomingLink));
     operations.completeNext(_inspection(secondIncomingLink));
@@ -170,7 +200,7 @@ void main() {
     operations.discardGate = cleanup;
 
     flow(container).open(incomingLink);
-    flow(container).close();
+    await flow(container).close();
     flow(container).open(corrected);
     operations.completeNext(_inspection(incomingLink));
     await pumpEventQueue();
@@ -208,7 +238,7 @@ void main() {
     operations.completeNext(_inspection(incomingLink));
     await pumpEventQueue();
 
-    flow(container).handOffToSetup();
+    await flow(container).handOffToSetup();
     await pumpEventQueue();
 
     expect(operations.discarded, isEmpty);
@@ -236,7 +266,7 @@ void main() {
       operations.completeNext(_inspection(secondIncomingLink));
       await pumpEventQueue();
 
-      expect(flow(container).handOffToSetup(), isTrue);
+      expect(await flow(container).handOffToSetup(), isTrue);
       expect(
         container
             .read(paymentLinkIntakeProvider)
@@ -286,17 +316,17 @@ void main() {
     );
   });
 
-  test('setup completion does not clear a newer Card request', () {
+  test('setup completion does not clear a newer Card request', () async {
     final container = makeContainer();
     final notifier = container.read(giftClaimSetupReturnProvider.notifier);
 
-    notifier.begin(
+    await notifier.begin(
       incomingLink,
       accountUuidsBeforeSetup: const {'existing'},
       inspection: _inspection(incomingLink),
     );
     final earlier = container.read(giftClaimSetupReturnProvider)!;
-    notifier.begin(
+    await notifier.begin(
       secondIncomingLink,
       inspection: _inspection(secondIncomingLink),
       accountUuidsBeforeSetup: const {'existing'},
@@ -316,7 +346,7 @@ void main() {
       flow(container).open(incomingLink);
       operations.completeNext(_inspection(incomingLink));
       await pumpEventQueue();
-      flow(container).handOffToSetup();
+      await flow(container).handOffToSetup();
 
       wallet.create();
       await pumpEventQueue();

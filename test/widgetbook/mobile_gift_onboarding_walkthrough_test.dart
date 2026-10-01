@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_biometrics_screen.dart';
@@ -247,6 +248,14 @@ void main() {
     await _advance(tester);
     expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
     expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileBiometricsScreen)),
+    );
+    final card =
+        (await container.read(paymentLinkReceivedStoreProvider).load()).single;
+    expect(card.status, PaymentLinkReceivedStatus.receiving);
+    expect(card.setupAccountUuid, 'gift-preview');
+    expect(await container.read(giftClaimImportStoreProvider).load(), isNull);
     await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
     await _advance(tester);
     expect(find.text(name), findsWidgets);
@@ -303,6 +312,26 @@ void main() {
       );
     },
   );
+  testWidgets('claim failure preview waits for Home and opens its Card', (
+    tester,
+  ) async {
+    await _render(tester, buildMobileGiftOnboardingClaimFailure);
+    await _advance(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await _advance(tester);
+    expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+    expect(find.text('Couldn’t redeem your gift card.'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('mobile_biometrics_not_now')));
+    await _advance(tester);
+    expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
+    expect(find.text('Gift card redemption failed'), findsNothing);
+    await tester.tap(find.text('View card'));
+    await _advance(tester);
+    expect(find.text('Couldn’t redeem your gift card.'), findsNothing);
+  });
+
   testWidgets('an existing wallet import returns to the inspected gift', (
     tester,
   ) async {

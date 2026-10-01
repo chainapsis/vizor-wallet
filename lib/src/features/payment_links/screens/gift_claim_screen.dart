@@ -49,6 +49,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   bool _showsBack = false;
   bool _reading = false;
   bool _invalidPaste = false;
+  bool _handingOff = false;
 
   @override
   void initState() {
@@ -62,19 +63,38 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         unawaited(_showLongSyncWarning(next!));
       });
     }, fireImmediately: true);
-    // A link that arrived before this screen opened waits in the queue.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ref.read(giftClaimFlowProvider) != null) return;
-      final pending = ref.read(paymentLinkIntakeProvider).pendingLink;
-      if (pending != null) {
-        ref.read(giftClaimFlowProvider.notifier).open(pending);
-      }
-    });
+    ref.listenManual(paymentLinkIntakeProvider, (_, next) {
+      if (next.pendingLink == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Consume only on the visible empty entry. Further links stay queued
+        // while a Card or the wallet setup it owns is open.
+        if (!mounted ||
+            ModalRoute.of(context)?.isCurrent != true ||
+            ref.read(giftClaimFlowProvider) != null ||
+            ref.read(giftClaimSetupReturnProvider) != null) {
+          return;
+        }
+        final pending = ref.read(paymentLinkIntakeProvider).pendingLink;
+        if (pending != null) {
+          ref.read(giftClaimFlowProvider.notifier).open(pending);
+        }
+      });
+    }, fireImmediately: true);
   }
 
-  void _close() {
-    ref.read(giftClaimFlowProvider.notifier).close();
-    context.go('/welcome');
+  Future<void> _close() async {
+    try {
+      await ref.read(giftClaimFlowProvider.notifier).close();
+      if (mounted) context.go('/welcome');
+    } catch (_) {
+      if (mounted) {
+        showAppToast(
+          context,
+          'Couldn’t close the card. Try again.',
+          iconName: AppIcons.warning,
+        );
+      }
+    }
   }
 
   Future<void> _showLongSyncWarning(GiftClaimFlowState flow) async {
@@ -87,33 +107,59 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     }
   }
 
-  void _continueToSetup(String location) {
-    final saved = ref
-        .read(giftClaimFlowProvider.notifier)
-        .handOffToSetup(
-          accountUuidsBeforeSetup:
-              ref
-                  .read(accountProvider)
-                  .value
-                  ?.accounts
-                  .map((account) => account.uuid) ??
-              const <String>[],
+  Future<void> _continueToSetup(String location) async {
+    if (_handingOff) return;
+    _handingOff = true;
+    try {
+      final saved = await ref
+          .read(giftClaimFlowProvider.notifier)
+          .handOffToSetup(
+            accountUuidsBeforeSetup:
+                ref
+                    .read(accountProvider)
+                    .value
+                    ?.accounts
+                    .map((account) => account.uuid) ??
+                const <String>[],
+          );
+      if (!mounted) return;
+      if (!saved) {
+        showAppToast(
+          context,
+          'Too many gift cards are waiting. Finish another card first.',
+          iconName: AppIcons.warning,
+          tone: AppToastTone.destructive,
         );
-    if (!saved) {
-      showAppToast(
-        context,
-        'Too many gift cards are waiting. Finish another card first.',
-        iconName: AppIcons.warning,
-        tone: AppToastTone.destructive,
-      );
-      return;
+        return;
+      }
+      if (mounted && saved) context.startOnboarding(location);
+    } catch (_) {
+      if (mounted) {
+        showAppToast(
+          context,
+          'Couldn’t save the card. Try again.',
+          iconName: AppIcons.warning,
+        );
+      }
+    } finally {
+      _handingOff = false;
     }
-    context.startOnboarding(location);
   }
 
-  void _createGiftWallet() {
-    ref.read(giftClaimFlowProvider.notifier).cancelSetupReturn();
-    context.push('/gift/passcode');
+  Future<void> _createGiftWallet() async {
+    if (_handingOff) return;
+    try {
+      await ref.read(giftClaimFlowProvider.notifier).cancelSetupReturn();
+      if (mounted) context.push('/gift/passcode');
+    } catch (_) {
+      if (mounted) {
+        showAppToast(
+          context,
+          'Couldn’t save the card. Try again.',
+          iconName: AppIcons.warning,
+        );
+      }
+    }
   }
 
   Future<void> _paste() async {
@@ -281,12 +327,17 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
 
   Widget _guardBack(Widget child) {
     final phase = ref.watch(giftClaimFlowProvider)?.phase;
+    final hasHandoff = ref.watch(giftClaimSetupReturnProvider) != null;
     return PopScope<void>(
       canPop:
+          !hasHandoff &&
           phase != GiftClaimPhase.checking &&
           phase != GiftClaimPhase.longSyncConfirmation,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) return;
+        if (!didPop) {
+          if (hasHandoff && !_handingOff) unawaited(_close());
+          return;
+        }
         final flow = ref.read(giftClaimFlowProvider);
         final notifier = ref.read(giftClaimFlowProvider.notifier);
         scheduleMicrotask(() => notifier.closeAfterPop(flow));

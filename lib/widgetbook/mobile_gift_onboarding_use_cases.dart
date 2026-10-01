@@ -19,6 +19,10 @@ import '../src/features/onboarding/mobile/mobile_keystone_screens.dart';
 import '../src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import '../src/features/onboarding/mobile/mobile_wallet_link_screens.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
+import '../src/features/payment_links/services/gift_claim_import_store.dart';
+import '../src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
+import '../src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart';
+import '../src/core/widgets/app_toast.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
@@ -61,6 +65,8 @@ Widget buildMobileGiftOnboardingLongSyncWarning(BuildContext context) =>
 
 Widget buildMobileGiftOnboardingSubmissionError(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', failCreation: true);
+Widget buildMobileGiftOnboardingClaimFailure(BuildContext context) =>
+    const _GiftPreview(initialLocation: '/gift/customise', failClaim: true);
 Widget buildMobileGiftOnboardingBiometrics(BuildContext context) =>
     const _GiftPreview(initialLocation: '/onboarding/biometrics');
 
@@ -94,12 +100,14 @@ class _GiftPreview extends StatefulWidget {
     this.inspected = false,
     this.longSyncWarning = false,
     this.failCreation = false,
+    this.failClaim = false,
   });
   final String initialLocation;
   final bool checking;
   final bool inspected;
   final bool longSyncWarning;
   final bool failCreation;
+  final bool failClaim;
   @override
   State<_GiftPreview> createState() => _GiftPreviewState();
 }
@@ -202,10 +210,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
           const IgnorePointer(child: MobileWalletLinkIntroScreen()),
         ),
       ),
-      GoRoute(
-        path: '/welcome',
-        builder: (_, _) => const MobileWelcomeScreen(),
-      ),
+      GoRoute(path: '/welcome', builder: (_, _) => const MobileWelcomeScreen()),
       GoRoute(path: '/gift', builder: (_, _) => const GiftClaimScreen()),
       GoRoute(
         path: '/gift/passcode',
@@ -220,7 +225,9 @@ class _GiftPreviewState extends State<_GiftPreview> {
       ),
       GoRoute(
         path: '/payment-links',
-        builder: (_, _) => const PaymentLinksScreen(),
+        builder: (_, state) => PaymentLinksScreen(
+          initialReceivedCardAddress: state.uri.queryParameters['received'],
+        ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const _GiftHomePreview()),
     ],
@@ -239,6 +246,12 @@ class _GiftPreviewState extends State<_GiftPreview> {
       child: ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          paymentLinkSetupJournalPendingProvider.overrideWithValue(
+            () async => false,
+          ),
+          giftClaimImportStoreProvider.overrideWith(
+            (ref) => GiftClaimImportStore(storage: _GiftPreviewImportStorage()),
+          ),
           if (widget.longSyncWarning)
             giftClaimFlowProvider.overrideWith(_LongSyncGiftFlow.new)
           else if (widget.checking)
@@ -261,6 +274,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
           paymentLinkOperationsProvider.overrideWith(
             (ref) => _GiftPreviewOperations(
               ref.watch(paymentLinkReceivedStoreProvider),
+              failClaim: widget.failClaim,
             ),
           ),
           giftCardActivityIndexProvider.overrideWith((ref, uuid) async {
@@ -285,7 +299,12 @@ class _GiftPreviewState extends State<_GiftPreview> {
             size: Size(393, 852),
             padding: EdgeInsets.only(top: 55, bottom: 24),
           ),
-          child: Router.withConfig(config: _router),
+          child: AppToastHost(
+            child: GiftClaimFailureToastListener(
+              router: _router,
+              child: Router.withConfig(config: _router),
+            ),
+          ),
         ),
       ),
     ),
@@ -583,7 +602,8 @@ class _MemoryGiftStorage implements PaymentLinkReceivedStorage {
 }
 
 class _GiftPreviewOperations implements PaymentLinkOperations {
-  _GiftPreviewOperations(this.store);
+  _GiftPreviewOperations(this.store, {this.failClaim = false});
+  final bool failClaim;
   final PaymentLinkReceivedStore store;
   static const claimTxid =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -615,18 +635,22 @@ class _GiftPreviewOperations implements PaymentLinkOperations {
   Future<PaymentLinkClaimSession> bindClaimDestination(
     PaymentLinkClaimInspection inspection, {
     required String destinationAccountUuid,
-  }) async => PaymentLinkClaimSession(
-    link: inspection.link,
-    destinationAddress: 'u1preview',
-    destinationAccountUuid: destinationAccountUuid,
-    directory: inspection.directory,
-    dbPath: inspection.dbPath,
-    accountUuid: inspection.accountUuid,
-    totalZatoshi: inspection.totalZatoshi,
-    claimableZatoshi: inspection.link.amountZatoshi,
-    feeZatoshi: BigInt.from(10000),
-    availability: PaymentLinkAvailability.available,
-  );
+  }) async {
+    if (failClaim) throw StateError('Preview claim failed.');
+    return PaymentLinkClaimSession(
+      link: inspection.link,
+      destinationAddress: 'u1preview',
+      destinationAccountUuid: destinationAccountUuid,
+      directory: inspection.directory,
+      dbPath: inspection.dbPath,
+      accountUuid: inspection.accountUuid,
+      totalZatoshi: inspection.totalZatoshi,
+      claimableZatoshi: inspection.link.amountZatoshi,
+      feeZatoshi: BigInt.from(10000),
+      availability: PaymentLinkAvailability.available,
+    );
+  }
+
   @override
   Future<void> keepReceivedLink(
     VizorPaymentLink link, {
@@ -711,4 +735,14 @@ class _InspectedGiftFlow extends GiftClaimFlowNotifier {
     phase: GiftClaimPhase.inspected,
     inspection: _previewInspection(_link),
   );
+}
+
+class _GiftPreviewImportStorage implements GiftClaimImportStorage {
+  String? _value;
+  @override
+  Future<String?> read() async => _value;
+  @override
+  Future<void> write(String value) async => _value = value;
+  @override
+  Future<void> delete() async => _value = null;
 }

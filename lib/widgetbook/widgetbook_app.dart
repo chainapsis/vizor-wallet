@@ -1228,6 +1228,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingLongSyncWarning,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Claim failure toast',
+                      builder: buildMobileGiftOnboardingClaimFailure,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Onboarding - Setup error',
                       builder: buildMobileGiftOnboardingSubmissionError,
                     ),

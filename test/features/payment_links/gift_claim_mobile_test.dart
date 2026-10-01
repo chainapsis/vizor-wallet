@@ -14,6 +14,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_biometrics_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -25,6 +26,9 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_cl
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_claim_outcome_view.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -54,18 +58,24 @@ void main() {
     FakePaymentLinkClipboard? paymentClipboard,
     BiometricUnlock? biometric,
     Size size = const Size(393, 852),
+    bool restored = false,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    FlutterSecureStorage.setMockInitialValues({});
+    if (!restored) FlutterSecureStorage.setMockInitialValues({});
     final store = PaymentLinkReceivedStore(_MemoryStorage());
     operations = _GiftOperations(store);
     await tester.pumpWidget(
       ProviderScope(
+        key: UniqueKey(),
         overrides: [
           appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
-          accountProvider.overrideWith(_NoAccounts.new),
-          appSecurityProvider.overrideWith(_Security.new),
+          accountProvider.overrideWith(
+            restored ? _ImportedAccounts.new : _NoAccounts.new,
+          ),
+          appSecurityProvider.overrideWith(
+            restored ? _RestoredSecurity.new : _Security.new,
+          ),
           biometricUnlockServiceProvider.overrideWithValue(
             biometric ?? _NoBiometrics(),
           ),
@@ -79,7 +89,12 @@ void main() {
         child: const ZcashWalletApp(),
       ),
     );
-    await pumpUntilPresent(tester, find.byType(MobileWelcomeScreen));
+    await pumpUntilPresent(
+      tester,
+      restored
+          ? keyed('mobile_home_receive')
+          : find.byType(MobileWelcomeScreen),
+    );
     return ProviderScope.containerOf(
       tester.element(find.byType(ZcashWalletApp)),
     );
@@ -170,6 +185,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(location(tester), '/gift');
     expect(find.text('Gift found'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Close'));
+    for (var frame = 0; frame < 30 && location(tester) != '/welcome'; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(location(tester), '/welcome');
+    expect(await GiftClaimImportStore().load(), isNull);
   });
 
   testWidgets('a wallet made from the Card claims it and opens Home', (
@@ -346,6 +367,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.claimedDestinations, ['new-account']);
+    expect(container.read(giftClaimFailureNoticeProvider), isNull);
+    expect(find.byType(AppToast), findsNothing);
   });
 
   for (final enable in [true, false]) {
@@ -382,6 +405,8 @@ void main() {
       );
       expect(container.read(appSecurityProvider).isPasswordConfigured, isTrue);
       expect(operations.claimedDestinations, ['new-account']);
+      expect(container.read(giftClaimFailureNoticeProvider), isNull);
+      expect(find.byType(AppToast), findsNothing);
 
       await tester.tap(
         keyed(
@@ -448,16 +473,70 @@ void main() {
       await tester.tap(keyed('mobile_customise_account_continue'));
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
+      expect(container.read(giftClaimFailureNoticeProvider), isNotNull);
+      expect(find.byType(AppToast), findsNothing);
+      await tester.pump(const Duration(seconds: 20));
       await tester.tap(keyed('mobile_biometrics_not_now'));
       await tester.pumpAndSettle();
       expect(location(tester), '/home');
+      expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
+      expect(find.text('View card'), findsOneWidget);
+      expect(container.read(giftClaimFailureNoticeProvider), isNull);
       final saved =
           (await container.read(paymentLinkReceivedStoreProvider).load())
               .single;
       expect(saved.setupAccountUuid, 'new-account');
       expect(saved.status, PaymentLinkReceivedStatus.readyToClaim);
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'new-account',
+        createdRecords: const [],
+        receivedRecords: [saved],
+      );
+      expect(index.withPendingClaims(const []), isEmpty);
+      await tester.tap(find.text('View card'));
+      await tester.pumpAndSettle();
+      expect(location(tester), '/payment-links');
+      expect(find.byType(PaymentLinkClaimOutcomeView), findsOneWidget);
+      expect(find.byType(AppToast), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/payment-links');
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/home');
+      expect(find.byType(AppToast), findsNothing);
     },
   );
+
+  testWidgets('a failure after Home opens shows the toast there', (
+    tester,
+  ) async {
+    final container = await reachGiftCustomise(tester);
+    final gate = Completer<void>();
+    operations.bindGate = gate;
+    operations.bindFails = true;
+    await tester.tap(keyed('mobile_customise_account_continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(keyed('mobile_biometrics_not_now'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/home');
+    expect(find.byType(AppToast), findsNothing);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
+    expect(container.read(giftClaimFailureNoticeProvider), isNull);
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pump();
+    expect(find.byType(AppToast), findsOneWidget);
+    final router = GoRouter.of(tester.element(find.byType(Navigator).last));
+    router.push('/payment-links');
+    await tester.pumpAndSettle();
+    expect(find.byType(AppToast), findsNothing);
+    router.pop();
+    await tester.pumpAndSettle();
+    expect(location(tester), '/home');
+    expect(find.byType(AppToast), findsNothing);
+  });
 
   testWidgets('an incoming Card opens over Welcome', (tester) async {
     final container = await pumpWelcome(tester);
@@ -474,6 +553,72 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('You can create your wallet now.'), findsOneWidget);
+  });
+
+  testWidgets('a link received on the empty Gift entry starts checking', (
+    tester,
+  ) async {
+    final container = await pumpWelcome(tester);
+    await tester.tap(keyed('mobile_welcome_redeem_card'));
+    await tester.pumpAndSettle();
+    expect(find.text('Paste card link'), findsOneWidget);
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(paymentLinkNavigationLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(find.text('Gift found'), findsOneWidget);
+    final open = container.read(giftClaimFlowProvider);
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(container.read(giftClaimFlowProvider), same(open));
+    expect(
+      container.read(paymentLinkIntakeProvider).pendingLinks,
+      hasLength(2),
+    );
+  });
+
+  testWidgets('wallet import handoff is durable before leaving the Card', (
+    tester,
+  ) async {
+    final container = await pumpWelcome(tester);
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(paymentLinkNavigationLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/onboarding/method');
+    // A fresh store has no knowledge of the first process's provider state.
+    final recovered = await GiftClaimImportStore().load();
+    expect(
+      recovered?.link.hasSameCanonicalPayload(paymentLinkNavigationLink),
+      isTrue,
+    );
+    expect(recovered?.accountUuidsBeforeSetup, isEmpty);
+  });
+
+  testWidgets('restart after import binds and claims the saved Card', (
+    tester,
+  ) async {
+    final container = await pumpWelcome(tester);
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(paymentLinkNavigationLink.toUri().toString());
+    await tester.pumpAndSettle();
+    await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
+    await tester.pumpAndSettle();
+    // Lose the first process's queues and inspection, keeping OS secure storage.
+    final restarted = await pumpWelcome(tester, restored: true);
+    await tester.pumpAndSettle();
+    final record =
+        (await restarted.read(paymentLinkReceivedStoreProvider).load()).single;
+    expect(record.setupAccountUuid, 'new-account');
+    expect(record.destinationAccountUuid, 'new-account');
+    expect(record.status, PaymentLinkReceivedStatus.receiving);
+    expect(operations.claimedDestinations, ['new-account']);
+    expect(await restarted.read(giftClaimImportStoreProvider).load(), isNull);
   });
 
   testWidgets('gift choice actions expose button semantics', (tester) async {
@@ -714,6 +859,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   final retainedClaimAddresses = <String>[];
   bool waiting = false;
   bool bindFails = false;
+  Completer<void>? bindGate;
   Completer<void>? inspectionGate;
   Completer<void>? broadcastGate;
   final allowLongSyncChecks = <bool>[];
@@ -726,6 +872,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
     required String destinationAccountUuid,
   }) async {
     bindDestinations.add(destinationAccountUuid);
+    await bindGate?.future;
     if (bindFails) throw StateError('no receive address');
     return PaymentLinkClaimSession(
       link: inspection.link,
@@ -955,4 +1102,19 @@ class _CountingClipboard extends FakePaymentLinkClipboard {
     readCalls++;
     return super.readText();
   }
+}
+
+class _ImportedAccounts extends _NoAccounts {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [AccountInfo(uuid: 'new-account', name: 'Imported', order: 0)],
+    activeAccountUuid: 'new-account',
+    activeAddress: 'u1new',
+  );
+}
+
+class _RestoredSecurity extends _Security {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
 }

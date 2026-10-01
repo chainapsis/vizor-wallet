@@ -77,6 +77,7 @@ import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
+import 'src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
@@ -1195,6 +1196,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(
     path: '/payment-links',
     builder: (_, state) => PaymentLinksScreen(
+      initialReceivedCardAddress: state.uri.queryParameters['received'],
       initialCards: state.extra is PaymentLinkCardsSnapshot
           ? state.extra! as PaymentLinkCardsSnapshot
           : null,
@@ -1809,7 +1811,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     // navigation for a parked prefill (claim + present the card). Draining
     // here on unlock too would race and clobber that navigation. The wallet
     // listener still covers the loading -> loaded transition.
-    return AppToastHost(child: widget.child);
+    return AppToastHost(
+      child: GiftClaimFailureToastListener(
+        router: widget.router,
+        child: widget.child,
+      ),
+    );
   }
 
   String get _currentLocation =>
